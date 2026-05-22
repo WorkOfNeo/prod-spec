@@ -1,0 +1,15 @@
+# Nixpacks build override.
+#
+# Puppeteer 25 / @puppeteer/browsers downloads chrome-headless-shell as a .zip
+# and requires a system `unzip` binary to extract it. The default Nixpacks
+# Ubuntu image doesn't include unzip, so npm ci fails during the puppeteer
+# postinstall.
+#
+# We override the install phase to install unzip first, then run npm ci as
+# Nixpacks normally would.
+
+[phases.install]
+cmds = [
+  "sudo apt-get install -y --no-install-recommends unzip",
+  "npm ci"
+]
