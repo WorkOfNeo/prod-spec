@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "prisma generate",
+    "db:deploy": "prisma migrate deploy",
+    "release": "prisma migrate deploy"
   },
   "dependencies": {
     "@azure/identity": "^4.13.1",
