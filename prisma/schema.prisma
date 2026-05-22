@@ -1,0 +1,273 @@
+// Prisma schema for Prod Spec
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =====================================================
+// Better-Auth tables
+// Field shape matches Better-Auth's expected schema.
+// =====================================================
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  name          String
+  image         String?
+  role          UserRole @default(REVIEWER)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sessions      Session[]
+  accounts      Account[]
+  reviewActions ReviewAction[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  REVIEWER
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verifications")
+}
+
+// =====================================================
+// Domain — ProdSpec
+// =====================================================
+
+model Customer {
+  id             String   @id @default(cuid())
+  slug           String   @unique
+  name           String
+  sharepointPath String?
+  supplierEmail  String?
+  config         Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  templates Template[]
+  styles    Style[]
+
+  @@map("customers")
+}
+
+model Template {
+  id           String   @id @default(cuid())
+  customerId   String
+  docType      DocType
+  businessArea String?
+  layout       Json
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, docType, businessArea])
+  @@index([customerId])
+  @@map("templates")
+}
+
+enum DocType {
+  WASHCARE
+  STICKER
+  CARTON_MARKING
+  COLOUR_STICKER
+}
+
+model Style {
+  id            String      @id @default(cuid())
+  customerId    String
+  mondayItemId  String      @unique
+  mondayBoardId String
+  name          String
+  businessArea  String?
+  rawData       Json        @default("{}")
+  completionPct Int         @default(0)
+  missingFields Json        @default("[]")
+  status        StyleStatus @default(PENDING)
+  lastSyncedAt  DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id])
+  jobs     Job[]
+
+  @@index([customerId])
+  @@index([status])
+  @@map("styles")
+}
+
+enum StyleStatus {
+  PENDING
+  READY
+  GENERATING
+  AWAITING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+model Job {
+  id            String        @id @default(cuid())
+  styleId       String
+  status        JobStatus     @default(QUEUED)
+  triggerSource TriggerSource
+  documentTypes Json          @default("[]")
+  error         String?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  style         Style          @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  logs          Log[]
+  reviewActions ReviewAction[]
+  assets        JobAsset[]
+
+  @@index([status])
+  @@index([styleId])
+  @@map("jobs")
+}
+
+model JobAsset {
+  id        String   @id @default(cuid())
+  jobId     String
+  docType   DocType
+  fileName  String
+  pdf       Bytes
+  createdAt DateTime @default(now())
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@unique([jobId, docType])
+  @@map("job_assets")
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  AWAITING_REVIEW
+  APPROVED
+  REJECTED
+  FAILED
+}
+
+enum TriggerSource {
+  WEBHOOK
+  MANUAL_RERUN
+  ADMIN_TEST
+}
+
+model Log {
+  id        String   @id @default(cuid())
+  jobId     String?
+  level     LogLevel @default(INFO)
+  message   String
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  job Job? @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([createdAt])
+  @@map("logs")
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARN
+  ERROR
+}
+
+model ReviewAction {
+  id        String           @id @default(cuid())
+  jobId     String
+  userId    String
+  action    ReviewActionType
+  reason    String?
+  createdAt DateTime         @default(now())
+
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([jobId])
+  @@map("review_actions")
+}
+
+enum ReviewActionType {
+  APPROVED
+  REJECTED
+}
+
+// Track Monday webhook subscriptions we own.
+// IMPORTANT: this table is append/refresh-only. We never call Monday's
+// delete-webhook endpoint from code (see global rule in CLAUDE.md).
+model MondayWebhook {
+  id              String   @id @default(cuid())
+  mondayWebhookId String   @unique
+  boardId         String
+  eventType       String
+  url             String
+  createdAt       DateTime @default(now())
+
+  @@unique([boardId, eventType])
+  @@index([boardId])
+  @@map("monday_webhooks")
+}

@@ -1,36 +1,170 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Prod Spec
 
-## Getting Started
+Internal web app for Contrast Company that turns Monday.com order data into print-ready PDFs (washcare, barcode sticker, carton marking, colour sticker) and deposits them to SharePoint.
 
-First, run the development server:
+**Status:** M1–M4 implemented. M5 stabilisation in progress. Pending real Monday column-mapping + Azure credentials to run end-to-end against Netto Germany.
+
+---
+
+## Stack
+
+- Next.js 16 (app router, `proxy.ts` not `middleware.ts`)
+- PostgreSQL on Railway, Prisma 7 (client output in `src/generated/prisma`)
+- Better-Auth (email + password, allowlist-gated signup, ADMIN/REVIEWER roles)
+- Microsoft Graph (SharePoint read/write) via `@azure/identity` + `@microsoft/microsoft-graph-client`
+- Monday GraphQL API + webhooks (append-only registry)
+- Puppeteer (single shared browser) + bwip-js (EAN-13 server-side render)
+- Resend for review notifications + supplier delivery emails
+
+---
+
+## Local setup
 
 ```bash
+npm install
+
+# Fill in .env — see .env.example. Required to boot:
+#   DATABASE_URL, BETTER_AUTH_SECRET, SIGNUP_ALLOWLIST
+# Required for end-to-end flow:
+#   MONDAY_API_TOKEN, MONDAY_WEBHOOK_SECRET, JOB_RUNNER_SECRET,
+#   AZURE_* + SHAREPOINT_SITE_ID, RESEND_API_KEY + EMAIL_FROM,
+#   REVIEW_NOTIFICATION_EMAIL, PROD_SPEC_BASE_URL
+
+npx prisma migrate dev --name init
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`BETTER_AUTH_SECRET`, `MONDAY_WEBHOOK_SECRET`, and `JOB_RUNNER_SECRET` can be generated with `openssl rand -base64 32` / `openssl rand -hex 32`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Project layout
 
-## Learn More
+```
+src/
+├── app/
+│   ├── (admin)/                       # auth-gated admin UI
+│   │   ├── styles/                    # list + detail + review screens
+│   │   ├── jobs/                      # run log + "Run pending jobs now"
+│   │   └── settings/                  # customer config CRUD + webhook registry
+│   ├── (auth)/                        # login + signup
+│   └── api/
+│       ├── auth/[...all]/             # Better-Auth handler
+│       ├── webhooks/monday/           # Monday → us
+│       ├── jobs/run/                  # runner (cron / inline / "run now")
+│       └── admin/
+│           ├── customers/             # CRUD (ADMIN)
+│           ├── webhooks/              # bootstrap registry (ADMIN)
+│           ├── jobs/[id]/             # approve / reject / preview
+│           └── styles/[id]/rerun/     # manual re-run
+├── lib/
+│   ├── db.ts                          # Prisma singleton (@prisma/adapter-pg)
+│   ├── auth.ts                        # Better-Auth config
+│   ├── auth-server.ts                 # requireRole / getServerSession
+│   ├── customers/config.ts            # CustomerConfig zod schema
+│   ├── customers/resolve.ts           # board id → customer lookup
+│   ├── monday/                        # client, webhook, ingest, completion
+│   ├── sharepoint/                    # auth, client, upload
+│   ├── pdf/                           # renderer, barcode, mapper, templates/*
+│   ├── queue/                         # enqueue, runner, trigger
+│   └── email/                         # Resend wrapper + templates
+└── proxy.ts                           # auth redirects (Next.js 16 rename of middleware)
+```
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## End-to-end flow
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Monday board emits a `change_column_value` or `create_item` event.
+2. Monday POSTs to `/api/webhooks/monday?token=<MONDAY_WEBHOOK_SECRET>`.
+3. Receiver verifies the token, fetches the item, resolves the customer by board id, runs the column-mapping → `StyleData`, computes completion %, upserts a `Style` row.
+4. If completion is 100% and no in-flight job exists for the style, a `Job` is enqueued and `/api/jobs/run` is triggered inline.
+5. Runner claims jobs with `FOR UPDATE SKIP LOCKED`, renders all enabled doc types via Puppeteer, stores PDF bytes on `JobAsset`, marks job `AWAITING_REVIEW`, emails `REVIEW_NOTIFICATION_EMAIL`.
+6. Reviewer opens the link, previews PDFs inline at `/styles/[id]/review`, and clicks Approve or Reject.
+7. **Approve** → SharePoint upload at the customer's `sharepointPath` + supplier email (with `[Correction]` prefix on re-runs).
+8. **Reject** → reason logged, optional Monday status writeback.
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Operator playbook
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Onboarding a new customer (the M4 promise)
+
+No code changes — config only.
+
+1. Sign in as ADMIN.
+2. Go to `/settings` → **+ Add customer**.
+3. Set the slug (kebab-case, permanent), name, supplier email, SharePoint folder path.
+4. Paste the customer's Monday column mapping into `columnMapping` in the config JSON. Each field maps to a Monday column id.
+5. List the customer's Monday board IDs under `mondayBoardIds` so the webhook receiver routes events to this customer.
+6. Set `requiredFields` to the columns that must be filled for a style to be ready.
+7. Save.
+8. From `/settings`, click **+ Bootstrap webhooks** (or POST `/api/admin/webhooks` with the new board IDs).
+
+### Registering Monday webhooks
+
+Append-only — code never deletes. Bootstrap calls `create_webhook` only for events not already in our local registry.
+
+```bash
+curl -X POST $PROD_SPEC_BASE_URL/api/admin/webhooks \
+  -H "Content-Type: application/json" \
+  -H "Cookie: <session-cookie-from-sign-in>" \
+  -d '{"boardId": "1234567890", "events": ["change_column_value", "create_item"]}'
+```
+
+Response: `{created, skipped, foreign}` — the `foreign` array surfaces webhooks that exist on Monday but not in our DB (created via the Monday UI). We never touch them.
+
+### Triggering a re-run
+
+- **UI**: open `/styles/[id]` → **Re-run**.
+- **API**: `POST /api/admin/styles/[id]/rerun` with a signed-in cookie.
+
+Re-runs overwrite the previous SharePoint files and, on approval, send a supplier email with `[Correction]` prefix.
+
+### Running pending jobs manually
+
+The runner fires automatically after a webhook brings a style to 100% completion. To process queued jobs out-of-band:
+
+- **UI**: `/jobs` → **Run pending jobs now**.
+- **Cron**: `curl -X POST $PROD_SPEC_BASE_URL/api/jobs/run?secret=$JOB_RUNNER_SECRET`. Recommended cadence: every minute on Railway cron, as a safety net for the inline trigger.
+
+### Reading the logs
+
+- `/jobs` shows recent job runs (top) and the last 100 log entries (bottom).
+- Each `Log` row has a level (DEBUG/INFO/WARN/ERROR) and a free-text message. Failed jobs include an error tag like `[MAPPING_FAILED]`, `[RENDER_FAILED]`, `[BARCODE_FAILED]`, `[PERSIST_FAILED]`, `[CONFIG_INVALID]`.
+- `npx prisma studio` for ad-hoc inspection of `Job`, `JobAsset`, `Log`, `ReviewAction`.
+
+### Roles
+
+- **ADMIN**: customer config, webhook bootstrap, all reviewer actions. First user to sign up is auto-promoted to ADMIN.
+- **REVIEWER**: read customers, view styles + jobs, approve/reject, re-run, run pending jobs.
+
+To promote a user, update the `users.role` column directly in Prisma Studio or with `npx prisma db execute`.
+
+### Adjusting a template
+
+Templates live under `src/lib/pdf/templates/`. Each consumes the canonical `StyleData` shape from `src/lib/pdf/types.ts`. Per-customer toggles belong in `Customer.config` so the template stays generic; raw layout/styling tweaks go in the template file itself.
+
+---
+
+## Phase 1 blockers (real-data unblockers)
+
+Items needed to run the full loop against a real Netto Germany order. The code paths exist; these inputs fill them in:
+
+- **Monday column mapping** — paste into the Netto Germany customer config (`columnMapping`).
+- **Barcode source decision** — Monday sub-items (Option A) vs PO PDF (Option B). Drives the `parseSizes` logic in `src/lib/pdf/mapper.ts`.
+- **Azure app registration** — `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, and the SharePoint site id from Contrast IT.
+- **SharePoint folder structure** — put the target folder path in the customer's `sharepointPath` field.
+- **Print spec** — DPI, colour profile, bleed sign-off. Puppeteer outputs RGB. If supplier requires CMYK, swap renderer before going live.
+- **Wash-care symbol set** — current implementation uses Unicode placeholders. Replace with the GINETEX/ISO 3758 SVG set when available.
+
+The full kickoff plan with milestone breakdown lives at `/Users/niels/.claude/plans/prod-spec-zesty-flurry.md`.
+
+---
+
+## Deployment notes
+
+- **Railway**: deploy `main` to a single service. Postgres comes from a Railway Postgres add-on. Internal URL (`*.railway.internal`) for `DATABASE_URL`; public proxy URL with `?sslmode=require` only needed for local migrations.
+- **Set every env var from `.env.example`** in Railway before first boot. Missing `BETTER_AUTH_SECRET` will throw immediately.
+- **Puppeteer on Railway**: the default `puppeteer` package downloads Chromium at install time. If image build is too slow, switch to `puppeteer-core` + a base image with Chromium preinstalled.
+- **Job runner schedule**: add a Railway cron hitting `POST /api/jobs/run?secret=$JOB_RUNNER_SECRET` every minute. Inline triggering covers the happy path; cron handles missed runs.
