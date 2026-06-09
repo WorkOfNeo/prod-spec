@@ -3,15 +3,18 @@ import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { getSessionWithRole } from "@/lib/auth-server";
+import { getColumnConfig } from "@/lib/monday/column-config";
 import { MondayPanel, type BoardSummary } from "./monday-panel";
+import { ColumnConfigForm } from "./column-config-form";
 
 export const dynamic = "force-dynamic";
 
 export default async function MondaySettingsPage() {
-  const [{ role }, customers, webhooks] = await Promise.all([
+  const [{ role }, customers, webhooks, columnConfig] = await Promise.all([
     getSessionWithRole(),
     db.customer.findMany({ orderBy: { name: "asc" } }),
     db.mondayWebhook.findMany({ orderBy: { createdAt: "desc" } }),
+    getColumnConfig(),
   ]);
   const isAdmin = role === "ADMIN";
 
@@ -54,6 +57,15 @@ export default async function MondaySettingsPage() {
       </p>
 
       <section className="mt-6">
+        <h2 className="mb-2 text-sm font-semibold text-zinc-700">Shared column mapping (all customers)</h2>
+        <ColumnConfigForm
+          initial={{ columnMapping: columnConfig.columnMapping, requiredFields: columnConfig.requiredFields }}
+          updatedAt={columnConfig.updatedAt.toISOString()}
+          isAdmin={isAdmin}
+        />
+      </section>
+
+      <section className="mt-8">
         <h2 className="mb-2 text-sm font-semibold text-zinc-700">Boards</h2>
         <MondayPanel boards={boards} isAdmin={isAdmin} />
       </section>

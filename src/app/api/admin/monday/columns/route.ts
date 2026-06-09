@@ -1,15 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/lib/auth-server";
 import { getBoardColumns } from "@/lib/monday/client";
+import { getColumnConfig } from "@/lib/monday/column-config";
 import { resolveCustomerByBoardId } from "@/lib/customers/resolve";
 
 export const runtime = "nodejs";
 
-// Readiness check: confirm every column id we'd sync for a board actually
-// exists on the live board before flipping webhooks on. Cross-references the
-// customer's columnMapping + requiredFields against Monday's column metadata.
-// Wiki scar (Contrast): a stale/typo'd column id silently resolves to nothing
-// and produces empty mirror fields with no error.
+// Readiness check: confirm every column id in the SHARED column config actually
+// exists on the live board before flipping webhooks on. The mapping is global
+// (same columns for all customers), so this validates one mapping against the
+// board's real columns. Wiki scar (Contrast): a stale/typo'd column id silently
+// resolves to nothing and produces empty mirror fields with no error.
 export async function GET(req: NextRequest) {
   const auth = await requireRole(["ADMIN"]);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -25,18 +26,9 @@ export async function GET(req: NextRequest) {
   }
 
   const byId = new Map(columns.map((c) => [c.id, c]));
+  const config = await getColumnConfig();
   const resolved = await resolveCustomerByBoardId(boardId);
 
-  if (!resolved) {
-    return NextResponse.json({
-      boardId,
-      customer: null,
-      warning: "No customer config lists this board id. Add it to a customer's mondayBoardIds first.",
-      boardColumns: columns,
-    });
-  }
-
-  const { customer, config } = resolved;
   const requiredIds = new Set(config.requiredFields.map((f) => f.id));
 
   // Every mapped column: does its configured id exist on the live board?
@@ -66,7 +58,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     boardId,
-    customer: { id: customer.id, slug: customer.slug, name: customer.name },
+    customer: resolved ? { id: resolved.customer.id, slug: resolved.customer.slug, name: resolved.customer.name } : null,
     ready: mapped.every((m) => m.existsOnBoard) && requiredMissing.length === 0,
     mapped,
     requiredMissing,

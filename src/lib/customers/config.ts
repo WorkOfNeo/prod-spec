@@ -36,15 +36,16 @@ export const RequiredFieldSchema = z.object({
 });
 export type RequiredField = z.infer<typeof RequiredFieldSchema>;
 
-export const CustomerConfigSchema = z
-  .object({
-    mondayBoardIds: z.array(z.string().min(1)).default([]),
-    columnMapping: ColumnMappingSchema.default({}),
-    requiredFields: z.array(RequiredFieldSchema).default([]),
-    enabledDocTypes: z.array(z.enum(DOC_TYPES)).default([...DOC_TYPES]),
-    sharepointPath: z.string().optional(),
-  })
-  .strict();
+// Per-customer config. NOTE: column mapping + required fields used to live
+// here, but the same columns are synced for ALL customers, so they moved to a
+// single global row (see @/lib/monday/column-config). This schema is no longer
+// `.strict()` so that legacy customer configs still carrying `columnMapping` /
+// `requiredFields` keys parse cleanly — the extra keys are simply ignored.
+export const CustomerConfigSchema = z.object({
+  mondayBoardIds: z.array(z.string().min(1)).default([]),
+  enabledDocTypes: z.array(z.enum(DOC_TYPES)).default([...DOC_TYPES]),
+  sharepointPath: z.string().optional(),
+});
 
 export type CustomerConfig = z.infer<typeof CustomerConfigSchema>;
 
@@ -57,39 +58,9 @@ export function tryParseCustomerConfig(raw: unknown): { ok: true; data: Customer
   return result.success ? { ok: true, data: result.data } : { ok: false, error: result.error };
 }
 
-// Default config for Netto Germany — placeholder column IDs match the
-// names used in the early webhook scaffolding. Replace with the real IDs
-// from Dilip's column-mapping doc.
+// Default config for a new customer. Column mapping is global now, so a
+// customer just needs its board ids and which doc types to generate.
 export const NETTO_GERMANY_DEFAULT_CONFIG: CustomerConfig = {
   mondayBoardIds: [],
-  columnMapping: {
-    styleNumber: "style_number",
-    businessArea: "business_area",
-    composition: "composition",
-    productNameTranslations: "product_name_translations",
-    washCare: "wash_care",
-    sizes: "sizes",
-    ean13: "ean13",
-    klNumber: "kl_no",
-    supplierNumber: "supplier_number",
-    lot: "lot",
-    cartonQty: "carton_qty",
-    cartonEan: "carton_ean",
-    colourName: "colour_name",
-    colourCode: "colour_code",
-    price: "price",
-    supplierEmail: "supplier_email",
-  },
-  requiredFields: [
-    { id: "business_area", label: "Business area" },
-    { id: "supplier_number", label: "Supplier" },
-    { id: "supplier_email", label: "Supplier email" },
-    { id: "composition", label: "Composition" },
-    { id: "wash_care", label: "Wash care" },
-    { id: "sizes", label: "Sizes" },
-    { id: "carton_qty", label: "Carton quantity (outer VE)" },
-    { id: "kl_no", label: "KL Number" },
-    { id: "lot", label: "Lot" },
-  ],
   enabledDocTypes: [...DOC_TYPES],
 };

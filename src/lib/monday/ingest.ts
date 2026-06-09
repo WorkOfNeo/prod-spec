@@ -1,8 +1,8 @@
 import { db } from "@/lib/db";
 import { columnText, getItem, type MondayItem } from "./client";
 import { evaluateCompletion } from "./completion";
+import { getColumnConfig } from "./column-config";
 import { resolveCustomerByBoardId, ensureNettoGermany } from "@/lib/customers/resolve";
-import { parseCustomerConfig } from "@/lib/customers/config";
 
 export type IngestResult = {
   styleId: string;
@@ -20,12 +20,14 @@ export async function ingestMondayItem(itemId: string | number, item?: MondayIte
   // No customer claims this board — fall back to Netto Germany for M2.
   // Once Customer 2/3 are configured, this fallback should be removed.
   const customer = resolved?.customer ?? (await ensureNettoGermany());
-  const config = resolved?.config ?? parseCustomerConfig(customer.config);
 
-  const businessAreaColumn = config.columnMapping.businessArea;
+  // Column mapping + required fields are shared across all customers.
+  const columnConfig = await getColumnConfig();
+
+  const businessAreaColumn = columnConfig.columnMapping.businessArea;
   const businessArea = businessAreaColumn ? columnText(fetched, businessAreaColumn) || null : null;
 
-  const { completionPct, missingFields } = evaluateCompletion(fetched, config.requiredFields);
+  const { completionPct, missingFields } = evaluateCompletion(fetched, columnConfig.requiredFields);
   const status = completionPct === 100 ? "READY" : "PENDING";
 
   const style = await db.style.upsert({

@@ -198,7 +198,9 @@ function ColumnCheckView({ data }: { data: ColumnCheck }) {
   return (
     <div className="mt-2 rounded-md bg-zinc-50 p-3 text-xs">
       <div className="mb-2 flex items-center gap-2">
-        <span className="font-medium text-zinc-700">{data.customer?.name}</span>
+        <span className="font-medium text-zinc-700">
+          Shared mapping vs board{data.customer ? ` · ${data.customer.name}` : ""}
+        </span>
         {data.ready ? <Pill tone="green">all synced columns present</Pill> : <Pill tone="red">missing columns</Pill>}
       </div>
       <table className="w-full">
