@@ -34,23 +34,36 @@ export async function setAutoGenerateEnabled(enabled: boolean): Promise<void> {
   });
 }
 
-const SUPPLIER_CONTACT_EMAIL_COL_KEY = "supplierContactEmailColumn";
+const SUPPLIER_REVIEW_CC_KEY = "supplierReviewCcEmails";
 
-// Monday column ID for the supplier's CONTACT-PERSON email — the CC on the
-// "ready for review" approval email. Admin-configurable from /settings so it
-// can be set in-app without a redeploy; falls back to the
-// MONDAY_SUPPLIER_COL_CONTACT_EMAIL env var when unset. Empty string ⇒ no CC.
-export async function getSupplierContactEmailColumn(): Promise<string> {
-  const row = await db.appSetting.findUnique({ where: { key: SUPPLIER_CONTACT_EMAIL_COL_KEY } });
-  const fromDb = typeof row?.value === "string" ? row.value.trim() : "";
-  return fromDb || (process.env.MONDAY_SUPPLIER_COL_CONTACT_EMAIL ?? "").trim();
+// Actual email address(es) CC'd on every supplier "ready for review" approval
+// email — entered comma-separated by an admin at /settings. DB-backed so it
+// can change without a redeploy. Returns a clean, de-duplicated list.
+export async function getSupplierReviewCcEmails(): Promise<string[]> {
+  const row = await db.appSetting.findUnique({ where: { key: SUPPLIER_REVIEW_CC_KEY } });
+  return parseEmailList(typeof row?.value === "string" ? row.value : "");
 }
 
-export async function setSupplierContactEmailColumn(columnId: string): Promise<void> {
-  const value = columnId.trim();
+export async function setSupplierReviewCcEmails(raw: string): Promise<void> {
+  // Store the normalised, de-duplicated comma list.
+  const value = parseEmailList(raw).join(", ");
   await db.appSetting.upsert({
-    where: { key: SUPPLIER_CONTACT_EMAIL_COL_KEY },
-    create: { key: SUPPLIER_CONTACT_EMAIL_COL_KEY, value },
+    where: { key: SUPPLIER_REVIEW_CC_KEY },
+    create: { key: SUPPLIER_REVIEW_CC_KEY, value },
     update: { value },
   });
+}
+
+// Split a free-typed list on comma / semicolon / newline, trim, drop blanks,
+// de-dupe case-insensitively while preserving the entry order.
+function parseEmailList(raw: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(/[,;\n]/)) {
+    const email = part.trim();
+    if (!email || seen.has(email.toLowerCase())) continue;
+    seen.add(email.toLowerCase());
+    out.push(email);
+  }
+  return out;
 }

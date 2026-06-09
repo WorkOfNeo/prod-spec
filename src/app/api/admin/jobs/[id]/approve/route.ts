@@ -5,6 +5,7 @@ import { uploadJobAssets } from "@/lib/sharepoint/upload";
 import { getFile } from "@/lib/sharepoint/client";
 import { sendEmail } from "@/lib/email/client";
 import { supplierApprovalEmail } from "@/lib/email/templates/review-notification";
+import { getSupplierReviewCcEmails } from "@/lib/settings/app-settings";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -96,7 +97,17 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
   // so approval still surfaces to an operator who can forward manually.
   const supplier = job.style.supplier;
   const supplierEmail = supplier?.email?.trim() || process.env.SUPPLIER_NOTIFICATION_EMAIL || null;
-  const ccEmail = supplier?.contactEmail?.trim() || null;
+  // CC = the admin-typed review CC list (from /settings) plus the supplier's
+  // own synced contact email if present, de-duplicated.
+  const reviewCc = await getSupplierReviewCcEmails();
+  const ccList = Array.from(
+    new Set(
+      [...reviewCc, supplier?.contactEmail ?? ""]
+        .map((e) => e.trim())
+        .filter(Boolean),
+    ),
+  );
+  const ccDisplay = ccList.length > 0 ? ccList.join(", ") : null;
 
   // Summary surfaced back to the reviewer (and written to the job log) so the
   // recipients can be confirmed even when email sending is turned off. When
@@ -109,7 +120,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     folderUrl: string | null;
     sent: boolean;
     note?: string;
-  } = { to: supplierEmail, cc: ccEmail, attachments: 0, folderUrl, sent: false };
+  } = { to: supplierEmail, cc: ccDisplay, attachments: 0, folderUrl, sent: false };
 
   if (supplierEmail) {
     const isCorrection = job.triggerSource === "MANUAL_RERUN";
@@ -130,7 +141,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     }));
     const sendResult = await sendEmail({
       to: supplierEmail,
-      cc: ccEmail ?? undefined,
+      cc: ccList.length > 0 ? ccList : undefined,
       subject: email.subject,
       html: email.html,
       text: email.text,
@@ -146,7 +157,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       data: {
         jobId: job.id,
         level: "INFO",
-        message: `supplier review email ${verb} · To: ${supplierEmail}${ccEmail ? ` · CC: ${ccEmail}` : ""} · ${attachments.length} attachment(s)${folderUrl ? ` · folder: ${folderUrl}` : ""}${isCorrection ? " · correction" : ""}`,
+        message: `supplier review email ${verb} · To: ${supplierEmail}${ccDisplay ? ` · CC: ${ccDisplay}` : ""} · ${attachments.length} attachment(s)${folderUrl ? ` · folder: ${folderUrl}` : ""}${isCorrection ? " · correction" : ""}`,
       },
     });
   } else {
