@@ -18,7 +18,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     where: { id },
     include: {
       assets: true,
-      style: { include: { customer: true } },
+      style: { include: { customer: true, supplier: true } },
     },
   });
   if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
@@ -26,7 +26,19 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ error: `Cannot approve job in status ${job.status}` }, { status: 400 });
   }
 
-  const folderPath = job.style.customer.sharepointPath ?? `prodspec/${job.style.customer.slug}/${job.style.mondayItemId}`;
+  // Deterministic folder layout: prodspec/<customer-slug>/<supplier-slug?>/<style-id>.
+  // Once the SharePoint folder convention is finalised, parse Supplier.sharepointUrl
+  // (which is the supplier's *hyperlink* in their portal, not an upload path).
+  const customerSlug = job.style.customer.slug;
+  const supplierSlug = job.style.supplier
+    ? slugify(job.style.supplier.name)
+    : null;
+  const folderPath = [
+    "prodspec",
+    customerSlug,
+    ...(supplierSlug ? [supplierSlug] : []),
+    job.style.mondayItemId,
+  ].join("/");
 
   const uploaded = await uploadJobAssets({
     folderPath,
@@ -42,6 +54,16 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       where: { id: job.styleId },
       data: { status: "APPROVED" },
     }),
+    // Cascade the approval to any assets that were still pending. Assets
+    // already individually decided (approved or rejected) keep their state.
+    db.jobAsset.updateMany({
+      where: { jobId: job.id, reviewStatus: "PENDING_REVIEW" },
+      data: {
+        reviewStatus: "APPROVED",
+        reviewedAt: new Date(),
+        reviewedById: session.user.id,
+      },
+    }),
     db.reviewAction.create({
       data: { jobId: job.id, userId: session.user.id, action: "APPROVED" },
     }),
@@ -55,7 +77,11 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     }),
   ]);
 
-  const supplierEmail = job.style.customer.supplierEmail;
+  // Supplier email isn't a Monday-mirrored field; the M1 Customer.supplierEmail
+  // was dropped in favour of the per-Supplier mirror, which doesn't carry an
+  // email yet. Until that's added, fall back to REVIEW_NOTIFICATION_EMAIL so
+  // approval at least surfaces to an operator who can forward manually.
+  const supplierEmail = process.env.SUPPLIER_NOTIFICATION_EMAIL ?? null;
   if (supplierEmail) {
     const isCorrection = job.triggerSource === "MANUAL_RERUN";
     const email = supplierApprovalEmail({
@@ -79,10 +105,20 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       data: {
         jobId: job.id,
         level: "WARN",
-        message: "no supplier email on customer record — files uploaded but supplier was not notified",
+        message: "SUPPLIER_NOTIFICATION_EMAIL not set — files uploaded but supplier was not notified",
       },
     });
   }
 
   return NextResponse.json({ ok: true, uploaded });
+}
+
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .slice(0, 60);
 }

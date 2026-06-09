@@ -22,6 +22,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   });
   if (!style) notFound();
 
+  const sharepointConfigured = Boolean(process.env.AZURE_CLIENT_ID && process.env.SHAREPOINT_SITE_ID);
   const job = style.jobs[0];
   if (!job) {
     return (
@@ -45,7 +46,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             {style.customer.name} · {job.assets.length} documents
           </p>
         </div>
-        <ReviewActions jobId={job.id} styleId={style.id} />
+        <ReviewActions jobId={job.id} styleId={style.id} sharepointConfigured={sharepointConfigured} />
       </div>
 
       <div className="mt-6 grid grid-cols-2 gap-4">

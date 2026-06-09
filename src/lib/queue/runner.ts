@@ -1,12 +1,19 @@
 import { db } from "@/lib/db";
-import { generateDoc } from "@/lib/pdf/generate";
+import { renderPdf } from "@/lib/pdf/renderer";
 import { mapMondayItemToStyleData } from "@/lib/pdf/mapper";
+import { effectiveStyleItem } from "@/lib/styles/resolved-fields";
+import type { TemplateVariant } from "@/lib/pdf/template-registry";
 import type { MondayItem } from "@/lib/monday/client";
 import { sendEmail } from "@/lib/email/client";
 import { reviewNotificationEmail } from "@/lib/email/templates/review-notification";
-import { parseCustomerConfig } from "@/lib/customers/config";
-import { getColumnConfig } from "@/lib/monday/column-config";
-import type { DocType } from "@/generated/prisma/enums";
+import { MANUAL_COLUMN_IDS, parseCustomerConfig } from "@/lib/customers/config";
+import {
+  DEFAULT_OUTPUTS,
+  parseProdSpecColumnMapping,
+  parseProdSpecOutputs,
+  resolveOutputVariant,
+  type ProdSpecOutput,
+} from "@/lib/prod-spec/config";
 
 const STALE_RUNNING_MS = 15 * 60 * 1000;
 
@@ -78,7 +85,7 @@ async function releaseStaleRunning(): Promise<void> {
 export async function processJob(jobId: string): Promise<void> {
   const job = await db.job.findUniqueOrThrow({
     where: { id: jobId },
-    include: { style: { include: { customer: true } } },
+    include: { style: { include: { customer: true, qrImage: true, supplier: { select: { country: true } } } } },
   });
 
   await db.log.create({ data: { jobId: job.id, level: "INFO", message: "job started" } });
@@ -90,29 +97,142 @@ export async function processJob(jobId: string): Promise<void> {
     throw new RunnerError("CONFIG_INVALID", `customer config invalid: ${(err as Error).message}`);
   }
 
-  // Column mapping is shared across all customers.
-  const columnConfig = await getColumnConfig();
+  // Pull the ProdSpec (if resolved during ingest) so we can read its
+  // per-output dimensions and supplier-specific overrides. When the Style
+  // has no ProdSpec (manual entries, or ingests without a known BA), we
+  // fall back to Customer.config-only defaults.
+  const prodSpec = job.style.prodSpecId
+    ? await db.prodSpec.findUnique({ where: { id: job.style.prodSpecId } })
+    : null;
 
   let styleData: ReturnType<typeof mapMondayItemToStyleData>;
   try {
-    const item = job.style.rawData as unknown as MondayItem;
-    styleData = mapMondayItemToStyleData(item, job.style.customer.name, columnConfig.columnMapping);
+    // Inject the canonical Style.poNumber as the manual.* fallback so the PO
+    // renders on labels (care-label-02) even when the mapped PO column isn't
+    // the one this style's board populated. See effectiveStyleItem.
+    const item = effectiveStyleItem({
+      rawData: job.style.rawData,
+      poNumber: job.style.poNumber,
+      supplier: job.style.supplier,
+    }) as MondayItem;
+    // Resolution order for column mapping:
+    //   1. ProdSpec.columnMapping  (when non-empty — operator override)
+    //   2. Customer.config.columnMapping (when non-empty — per-tenant default)
+    //   3. MANUAL_COLUMN_IDS  (only for `mondayBoardId === "manual"` styles —
+    //      these are produced by /api/admin/styles/manual which writes the
+    //      manual.* synthetic ids; without this fallback the mapper reads
+    //      nothing and the PDF renders blank).
+    //
+    // Real Monday styles whose Customer has no column mapping yet still
+    // render blank — that's the desired behaviour (forces the operator to
+    // configure mapping before generating PDFs they'd just throw away).
+    const prodSpecMapping =
+      prodSpec && Object.keys(prodSpec.columnMapping as object).length > 0
+        ? parseProdSpecColumnMapping(prodSpec.columnMapping)
+        : null;
+    const customerMapping =
+      Object.keys(config.columnMapping).length > 0 ? config.columnMapping : null;
+    const isManualStyle = job.style.mondayBoardId === "manual";
+    const effectiveMapping =
+      prodSpecMapping ??
+      customerMapping ??
+      (isManualStyle ? { ...MANUAL_COLUMN_IDS } : config.columnMapping);
+    styleData = mapMondayItemToStyleData(
+      item,
+      {
+        customerName: job.style.customer.name,
+        customerLogoUrl: config.logoUrl,
+        barcodeFont: config.barcodeFont,
+        prodSpecLogoSvg: prodSpec?.logoSvg ?? null,
+        careInstructionsByLang: parseCareInstructions(prodSpec?.careInstructionsByLang),
+        qrImageUrl: job.style.qrImage?.image ?? null,
+      },
+      effectiveMapping,
+    );
   } catch (err) {
     throw new RunnerError("MAPPING_FAILED", `monday → style data mapping failed: ${(err as Error).message}`);
   }
 
-  const docTypes = config.enabledDocTypes.length > 0 ? config.enabledDocTypes : (["WASHCARE", "STICKER", "CARTON_MARKING", "COLOUR_STICKER"] as DocType[]);
+  // Pick which variants to render. ProdSpec.outputs is the source of truth
+  // when available — the operator selected those explicitly in the editor.
+  // Falls back to DEFAULT_OUTPUTS (one of each variant) for manual styles
+  // that haven't resolved a ProdSpec yet.
+  const outputs: ProdSpecOutput[] = (() => {
+    if (prodSpec) {
+      const parsed = parseProdSpecOutputs(prodSpec.outputs);
+      const enabled = parsed.filter((o) => o.enabled !== false);
+      if (enabled.length > 0) return enabled;
+    }
+    return DEFAULT_OUTPUTS;
+  })();
 
-  const generated: Array<{ docType: DocType; fileName: string; pdf: Buffer }> = [];
-  for (const docType of docTypes) {
+  type Generated = {
+    variant: TemplateVariant;
+    output: ProdSpecOutput;
+    fileName: string;
+    pdf: Buffer;
+  };
+  const generated: Generated[] = [];
+  for (const output of outputs) {
+    const variant = resolveOutputVariant(output);
+    if (!variant) {
+      // Unknown variant — happens when a registered variant gets removed
+      // from code but old ProdSpec rows still reference its key. Log and
+      // skip rather than fail the whole job.
+      await db.log.create({
+        data: {
+          jobId: job.id,
+          level: "WARN",
+          message: `skipping output: variant "${output.variantKey}" not in registry`,
+        },
+      });
+      continue;
+    }
     try {
-      const doc = await generateDoc(docType, styleData);
-      generated.push(doc);
+      const html = await variant.render(styleData, {
+        widthMm: output.widthMm,
+        heightMm: output.heightMm,
+      });
+      const pdf = await renderPdf({ html });
+      generated.push({
+        variant,
+        output,
+        fileName: fileNameFor(variant, styleData.styleNumber),
+        pdf,
+      });
     } catch (err) {
       const reason = (err as Error).message;
       const tag = reason.toLowerCase().includes("barcode") ? "BARCODE_FAILED" : "RENDER_FAILED";
-      throw new RunnerError(tag, `${docType} render failed: ${reason}`);
+      throw new RunnerError(tag, `${variant.key} render failed: ${reason}`);
     }
+  }
+
+  if (generated.length === 0) {
+    // Three different reasons we land here — give the operator the right
+    // next-action for each:
+    //   (a) Style not linked to any ProdSpec     → set BusinessArea on the Style
+    //   (b) ProdSpec exists but outputs is empty → add variants on /prod-specs/<id>
+    //   (c) ProdSpec has outputs, all disabled / unknown variant keys
+    const reason = (() => {
+      if (!prodSpec) {
+        return (
+          "Style has no ProdSpec linked — likely missing a Business Area. " +
+          "Edit the Style and set both Customer and Business Area; the ProdSpec is auto-matched by that pair."
+        );
+      }
+      const prodSpecOutputs = Array.isArray(prodSpec.outputs) ? prodSpec.outputs : [];
+      if (prodSpecOutputs.length === 0) {
+        return (
+          `ProdSpec "${prodSpec.name}" has no Outputs configured — open ` +
+          `/prod-specs/${prodSpec.id} and use '+ Add output' to pick variants like care-label-01 / care-label-02.`
+        );
+      }
+      return (
+        `ProdSpec "${prodSpec.name}" has ${prodSpecOutputs.length} output(s) but all are disabled ` +
+        `or reference unknown variant keys — check the Outputs section in /prod-specs/${prodSpec.id}.`
+      );
+    })();
+    throw new RunnerError("NO_OUTPUTS", reason);
   }
 
   try {
@@ -122,7 +242,9 @@ export async function processJob(jobId: string): Promise<void> {
         db.jobAsset.create({
           data: {
             jobId: job.id,
-            docType: doc.docType,
+            docType: doc.variant.docType,
+            variantKey: doc.variant.key,
+            displayName: `${doc.variant.name} · ${doc.output.widthMm}×${doc.output.heightMm} mm`,
             fileName: doc.fileName,
             pdf: toPlainBytes(doc.pdf),
           },
@@ -140,7 +262,7 @@ export async function processJob(jobId: string): Promise<void> {
         data: {
           jobId: job.id,
           level: "INFO",
-          message: `generated ${generated.length} documents (${generated.map((d) => d.docType).join(", ")})`,
+          message: `generated ${generated.length} documents (${generated.map((d) => d.variant.key).join(", ")})`,
         },
       }),
     ]);
@@ -190,6 +312,9 @@ async function notifyReviewer(
 }
 
 async function markFailed(jobId: string, error: string): Promise<void> {
+  // Print to stderr too — `next dev` only shows the prisma query stream by
+  // default, so otherwise the actual exception never reaches the terminal.
+  console.error(`[runner] job ${jobId} FAILED: ${error}`);
   await db.job.update({
     where: { id: jobId },
     data: { status: "FAILED", error, finishedAt: new Date() },
@@ -202,4 +327,21 @@ export class RunnerError extends Error {
     super(`[${tag}] ${message}`);
     this.name = "RunnerError";
   }
+}
+
+function fileNameFor(variant: TemplateVariant, styleNumber: string): string {
+  const slug = styleNumber.replace(/[^a-z0-9-]+/gi, "-").toLowerCase();
+  return `${slug}-${variant.key}.pdf`;
+}
+
+// Safely coerce ProdSpec.careInstructionsByLang JSON into a flat
+// { langCode: string } map. Invalid shapes return {} so the template
+// can render with no care text rather than crash.
+function parseCareInstructions(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "string" && v.trim()) out[k.toLowerCase()] = v;
+  }
+  return out;
 }

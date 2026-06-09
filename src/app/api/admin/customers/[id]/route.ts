@@ -8,8 +8,6 @@ export const runtime = "nodejs";
 
 const PATCH_SCHEMA = z.object({
   name: z.string().min(1).max(120).optional(),
-  sharepointPath: z.string().nullable().optional(),
-  supplierEmail: z.string().email().nullable().optional(),
   config: CustomerConfigSchema.optional(),
 });
 
@@ -43,8 +41,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     where: { id },
     data: {
       ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
-      ...(parsed.data.sharepointPath !== undefined ? { sharepointPath: parsed.data.sharepointPath } : {}),
-      ...(parsed.data.supplierEmail !== undefined ? { supplierEmail: parsed.data.supplierEmail } : {}),
       ...(parsed.data.config !== undefined ? { config: parsed.data.config as unknown as object } : {}),
     },
   });

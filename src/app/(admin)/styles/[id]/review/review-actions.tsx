@@ -3,7 +3,15 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function ReviewActions({ jobId, styleId }: { jobId: string; styleId: string }) {
+export function ReviewActions({
+  jobId,
+  styleId,
+  sharepointConfigured,
+}: {
+  jobId: string;
+  styleId: string;
+  sharepointConfigured: boolean;
+}) {
   const router = useRouter();
   const [pending, setPending] = useState<"approve" | "reject" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -59,14 +67,23 @@ export function ReviewActions({ jobId, styleId }: { jobId: string; styleId: stri
         >
           {pending === "reject" ? "Rejecting…" : "Reject"}
         </button>
-        <button
-          type="button"
-          onClick={approve}
-          disabled={pending !== null}
-          className="rounded-md bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-        >
-          {pending === "approve" ? "Approving…" : "Approve & publish"}
-        </button>
+        {sharepointConfigured ? (
+          <button
+            type="button"
+            onClick={approve}
+            disabled={pending !== null}
+            className="rounded-md bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {pending === "approve" ? "Approving…" : "Approve & publish"}
+          </button>
+        ) : (
+          <span
+            title="Set AZURE_CLIENT_ID + SHAREPOINT_SITE_ID to enable publishing"
+            className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs text-zinc-500"
+          >
+            Approve disabled — SharePoint not configured
+          </span>
+        )}
       </div>
       {error && <span className="text-xs text-red-600">{error}</span>}
     </div>

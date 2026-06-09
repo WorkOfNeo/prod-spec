@@ -1,67 +1,122 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/lib/auth-server";
-import { getBoardColumns } from "@/lib/monday/client";
-import { getColumnConfig } from "@/lib/monday/column-config";
-import { resolveCustomerByBoardId } from "@/lib/customers/resolve";
+import { MondayError } from "@/lib/monday/client";
 
 export const runtime = "nodejs";
 
-// Readiness check: confirm every column id in the SHARED column config actually
-// exists on the live board before flipping webhooks on. The mapping is global
-// (same columns for all customers), so this validates one mapping against the
-// board's real columns. Wiki scar (Contrast): a stale/typo'd column id silently
-// resolves to nothing and produces empty mirror fields with no error.
+const MONDAY_API_URL = "https://api.monday.com/v2";
+
+// Discovery endpoint — given a Monday boardId, returns every column's id,
+// title, type, and parsed settings, plus the first item's column_values
+// so you can see what each column actually emits. Use this output to fill
+// in the MONDAY_*_COL_* env vars without leaving the app.
+//
+// Usage: GET /api/admin/monday/columns?boardId=6979419195
 export async function GET(req: NextRequest) {
-  const auth = await requireRole(["ADMIN"]);
+  const auth = await requireRole(["ADMIN", "REVIEWER"]);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const boardId = req.nextUrl.searchParams.get("boardId");
-  if (!boardId) return NextResponse.json({ error: "boardId required" }, { status: 400 });
-
-  let columns;
-  try {
-    columns = await getBoardColumns(boardId);
-  } catch (err) {
-    return NextResponse.json({ error: `Failed to fetch board columns: ${(err as Error).message}` }, { status: 502 });
+  if (!boardId) {
+    return NextResponse.json(
+      { error: "boardId query param required (e.g. ?boardId=6979419195)" },
+      { status: 400 },
+    );
   }
 
-  const byId = new Map(columns.map((c) => [c.id, c]));
-  const config = await getColumnConfig();
-  const resolved = await resolveCustomerByBoardId(boardId);
+  const token = process.env.MONDAY_API_TOKEN;
+  if (!token) {
+    return NextResponse.json({ error: "MONDAY_API_TOKEN not set" }, { status: 500 });
+  }
 
-  const requiredIds = new Set(config.requiredFields.map((f) => f.id));
+  const apiVersion = process.env.MONDAY_API_VERSION ?? "2024-10";
+  const query = `query ($ids: [ID!]) {
+    boards (ids: $ids) {
+      id
+      name
+      description
+      columns { id title type description settings_str }
+      items_page (limit: 1) {
+        items {
+          id
+          name
+          column_values { id type text value }
+        }
+      }
+    }
+  }`;
 
-  // Every mapped column: does its configured id exist on the live board?
-  const mapped = Object.entries(config.columnMapping)
-    .filter(([, columnId]) => typeof columnId === "string" && columnId.length > 0)
-    .map(([field, columnId]) => {
-      const col = byId.get(columnId as string);
-      return {
-        field,
-        columnId: columnId as string,
-        required: requiredIds.has(columnId as string),
-        existsOnBoard: Boolean(col),
-        title: col?.title ?? null,
-        type: col?.type ?? null,
-      };
-    });
+  const res = await fetch(MONDAY_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: token, "API-Version": apiVersion },
+    body: JSON.stringify({ query, variables: { ids: [String(boardId)] } }),
+  });
 
-  // Required fields that don't resolve to a real board column — the dangerous set.
-  const requiredMissing = config.requiredFields
-    .filter((f) => !byId.has(f.id))
-    .map((f) => ({ id: f.id, label: f.label }));
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    return NextResponse.json(
+      { error: `Monday HTTP ${res.status}`, body: text.slice(0, 1000) },
+      { status: 502 },
+    );
+  }
 
-  const mappedIds = new Set(mapped.map((m) => m.columnId));
-  const unmappedBoardColumns = columns
-    .filter((c) => !mappedIds.has(c.id))
-    .map((c) => ({ id: c.id, title: c.title, type: c.type }));
+  const body = (await res.json()) as {
+    data?: {
+      boards?: Array<{
+        id: string;
+        name: string;
+        description: string | null;
+        columns: Array<{ id: string; title: string; type: string; description: string | null; settings_str: string | null }>;
+        items_page?: { items: Array<{ id: string; name: string; column_values: Array<{ id: string; type: string; text: string | null; value: string | null }> }> };
+      }>;
+    };
+    errors?: unknown;
+    error_message?: string;
+  };
+
+  if (body.errors || body.error_message) {
+    throw new MondayError(body.error_message ?? "GraphQL errors", body.errors ?? body.error_message);
+  }
+
+  const board = body.data?.boards?.[0];
+  if (!board) return NextResponse.json({ error: `Board ${boardId} not found` }, { status: 404 });
+
+  // Parse settings_str for each column so dropdown labels etc. are
+  // visible directly without manual JSON parsing.
+  const columns = board.columns.map((c) => ({
+    id: c.id,
+    title: c.title,
+    type: c.type,
+    description: c.description,
+    settings: c.settings_str ? safeJsonParse(c.settings_str) : null,
+  }));
+
+  // Same for the sample item's column values.
+  const sampleItem = board.items_page?.items?.[0];
+  const sample = sampleItem
+    ? {
+        id: sampleItem.id,
+        name: sampleItem.name,
+        columns: sampleItem.column_values.map((cv) => ({
+          id: cv.id,
+          type: cv.type,
+          text: cv.text,
+          value: cv.value ? safeJsonParse(cv.value) : null,
+        })),
+      }
+    : null;
 
   return NextResponse.json({
-    boardId,
-    customer: resolved ? { id: resolved.customer.id, slug: resolved.customer.slug, name: resolved.customer.name } : null,
-    ready: mapped.every((m) => m.existsOnBoard) && requiredMissing.length === 0,
-    mapped,
-    requiredMissing,
-    unmappedBoardColumns,
+    board: { id: board.id, name: board.name, description: board.description },
+    columns,
+    sample,
   });
+}
+
+function safeJsonParse(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
 }

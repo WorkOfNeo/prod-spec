@@ -9,8 +9,6 @@ export const runtime = "nodejs";
 const BODY_SCHEMA = z.object({
   slug: z.string().min(1).max(64).regex(/^[a-z0-9-]+$/, "slug must be kebab-case"),
   name: z.string().min(1).max(120),
-  sharepointPath: z.string().optional().nullable(),
-  supplierEmail: z.string().email().optional().nullable(),
   config: CustomerConfigSchema,
 });
 
@@ -42,14 +40,10 @@ export async function POST(req: NextRequest) {
     create: {
       slug: parsed.data.slug,
       name: parsed.data.name,
-      sharepointPath: parsed.data.sharepointPath ?? null,
-      supplierEmail: parsed.data.supplierEmail ?? null,
       config: parsed.data.config as unknown as object,
     },
     update: {
       name: parsed.data.name,
-      sharepointPath: parsed.data.sharepointPath ?? null,
-      supplierEmail: parsed.data.supplierEmail ?? null,
       config: parsed.data.config as unknown as object,
     },
   });

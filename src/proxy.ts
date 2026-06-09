@@ -4,6 +4,12 @@ import { getSessionCookie } from "better-auth/cookies";
 const AUTH_PAGES = new Set(["/login", "/signup"]);
 
 export function proxy(request: NextRequest) {
+  // Dev escape hatch — auth fully disabled (see AUTH_DISABLED in
+  // src/lib/auth-server.ts). Let every request through; no login required.
+  if (process.env.AUTH_DISABLED === "true") {
+    return NextResponse.next();
+  }
+
   const sessionCookie = getSessionCookie(request);
   const { pathname } = request.nextUrl;
 
@@ -21,5 +27,18 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/styles/:path*", "/jobs/:path*", "/settings/:path*", "/login", "/signup"],
+  matcher: [
+    "/",
+    "/styles/:path*",
+    "/jobs/:path*",
+    "/settings/:path*",
+    "/customers/:path*",
+    "/suppliers/:path*",
+    "/business-areas/:path*",
+    "/prod-specs/:path*",
+    "/sync/:path*",
+    "/monday-inspect/:path*",
+    "/login",
+    "/signup",
+  ],
 };

@@ -25,9 +25,10 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  sessions      Session[]
-  accounts      Account[]
-  reviewActions ReviewAction[]
+  sessions       Session[]
+  accounts       Account[]
+  reviewActions  ReviewAction[]
+  reviewedAssets JobAsset[]     @relation("AssetReviewer")
 
   @@map("users")
 }
@@ -87,23 +88,219 @@ model Verification {
 }
 
 // =====================================================
-// Domain — ProdSpec
+// Domain — Monday mirrors + ProdSpec
+//
+// Customer / Supplier / BusinessArea rows are mirrored from Monday boards
+// (see src/lib/monday/sync.ts). We never delete remote records from code;
+// rows whose Monday source has disappeared get marked `active = false`.
 // =====================================================
 
 model Customer {
-  id             String   @id @default(cuid())
-  slug           String   @unique
-  name           String
-  sharepointPath String?
-  supplierEmail  String?
-  config         Json     @default("{}")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id               String    @id @default(cuid())
+  slug             String    @unique
+  // Monday item id on board 3317892788. Nullable so legacy / hand-rolled
+  // rows (e.g. the seeded netto-germany used by the manual-style form) can
+  // exist without a Monday source.
+  mondayItemId     String?   @unique
+  // = Monday "Account" column
+  name             String
+  priority         String?
+  salesResponsible String?
+  country          String?
+  location         String?
+  lastSyncedAt     DateTime?
+  active           Boolean   @default(true)
+  // Customer-wide knobs — barcode font, logo URL, etc. See
+  // src/lib/customers/config.ts for the parsed shape.
+  config           Json      @default("{}")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   templates Template[]
   styles    Style[]
+  prodSpecs ProdSpec[]
 
+  @@index([active])
   @@map("customers")
+}
+
+model Supplier {
+  id            String    @id @default(cuid())
+  mondayItemId  String    @unique
+  name          String
+  purchaser     String?
+  address       String?
+  location      String?
+  postCode      String?
+  country       String?
+  sharepointUrl String?
+  lastSyncedAt  DateTime?
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  styles            Style[]
+  prodSpecSuppliers ProdSpecSupplier[]
+
+  @@index([active])
+  @@map("suppliers")
+}
+
+// Mirrored options from the BusinessArea dropdown on the Styles board.
+// `mondayValue` is the raw label as it lives in Monday; `name` is the
+// editable display we render in our UI.
+//
+// `mergedIntoId` makes this BA an alias of another. Set via the admin
+// merge tool when Monday has duplicate variants for the same concept
+// (e.g. "PL" and "Private Label"). Ingest follows the redirect so
+// future Monday items with the alias mondayValue still resolve to the
+// canonical BA's Styles / ProdSpecs.
+model BusinessArea {
+  id           String    @id @default(cuid())
+  mondayValue  String    @unique
+  name         String
+  active       Boolean   @default(true)
+  lastSyncedAt DateTime?
+  mergedIntoId String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  mergedInto BusinessArea?  @relation("BusinessAreaMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  aliases    BusinessArea[] @relation("BusinessAreaMerge")
+  styles     Style[]
+  prodSpecs  ProdSpec[]
+
+  @@index([active])
+  @@index([mergedIntoId])
+  @@map("business_areas")
+}
+
+// Language is the canonical translation namespace. Every JSON translation
+// map in the app (WashSymbol.translations, Country.nameTranslations,
+// ProdSpec.careInstructionsByLang) uses Language.code as its key.
+//
+// Decoupled from Country because the relationship isn't 1:1 — e.g.
+// Switzerland speaks de-CH / fr-CH / it-CH; Austrian German (de-AT) is
+// a regional variant of German. Operators manage the *set of supported
+// languages* here; Country points to one of them as its primary language.
+model Language {
+  id         String   @id @default(cuid())
+  // BCP 47 / ISO 639-1 code — "en", "da", "de-AT", "nl-BE". Lowercase
+  // language part, uppercase region part. Used as the JSON key for every
+  // translation map. Immutable after create (renaming orphans existing
+  // translations).
+  code       String   @unique
+  // English name shown in admin lists ("English", "Austrian", "Swiss").
+  name       String
+  // Self-language name (endonym) — "Dansk", "Deutsch", "Österreichisch".
+  // Optional; shown alongside `name` to disambiguate similar languages.
+  nativeName String?
+  active     Boolean  @default(true)
+  // Sort order in dialog grids — useful when an operator wants "English
+  // first, Danish second, German third". Defaults to alphabetical via
+  // ordered seeding.
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([active])
+  @@index([sortOrder])
+  @@map("languages")
+}
+
+// Country is a geographic entity — used for Customer / Supplier addresses
+// and the eventual Style.countryOfOrigin field. Points to a primary
+// Language via `languageCode` (informal reference, not a FK).
+//
+// Holds *its own* name in other languages — "Made in China" needs to
+// render as "Fremstillet i Kina" / "Fabriqué en Chine" / "Wyprodukowano
+// w Chinach" depending on label language. Key for nameTranslations is
+// Language.code.
+model Country {
+  id               String   @id @default(cuid())
+  // ISO 3166-1 alpha-2 (DK, DE, CN, ...). Unique so seeding is idempotent.
+  code             String   @unique
+  // English name — canonical fallback when no translation exists.
+  nameEn           String
+  // ISO 639-1 lowercase language code (da, de, zh, ...). The JSON key
+  // every translation map uses. Two countries sharing a language (US + GB
+  // → en) only need the translation set once.
+  languageCode     String
+  // Translations of *this country's name itself* in each language.
+  // { da: "Kina", de: "China", fr: "Chine", pl: "Chiny", ... }
+  nameTranslations Json     @default("{}")
+  active           Boolean  @default(true)
+  // Raw value Monday emits when sync'ing the country-of-origin column.
+  // Optional — only relevant once a Monday column for it exists.
+  mondayValue      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([active])
+  @@index([languageCode])
+  @@index([mondayValue])
+  @@map("countries")
+}
+
+// First-class config bundle for one Customer × BusinessArea combo. Holds
+// the per-output PDF dimensions, the attached suppliers, the required-
+// field set, and the auto-generation threshold.
+model ProdSpec {
+  id                        String  @id @default(cuid())
+  customerId                String
+  businessAreaId            String
+  // Auto-derived from "<Customer name> · <BusinessArea name>" but editable.
+  name                      String
+  // Per-doc-type config: { WASHCARE: { enabled: true, widthMm: 30, heightMm: 60 }, ... }
+  // See ProdSpecOutputsSchema in src/lib/prod-spec/config.ts.
+  outputs                   Json    @default("{}")
+  // Optional logo (SVG markup) used by templates that render a
+  // customer × business-area branded header (e.g. care-label-01). Stored
+  // as text so it travels with the row and inlines into the PDF without
+  // a network fetch.
+  logoSvg                   String?
+  // Multilingual care-instruction strings rendered on care-label-02 back.
+  // Shape: { en: "Wash with similar colours / ...", da: "vaskes med ...", ... }
+  // Lang keys are lowercase ISO 639-1; empty / missing langs are skipped.
+  careInstructionsByLang    Json    @default("{}")
+  // Overrides Customer-level column mapping if present; otherwise inherits.
+  columnMapping             Json    @default("{}")
+  // [{ id: "monday_column_id", label: "Composition" }, ...]
+  requiredFields            Json    @default("[]")
+  autoGenerateThresholdPct  Int     @default(100)
+  // Defaults to false so auto-created scaffolds (Style ingest, /import
+  // Accept) land in "needs configuration" until an admin reviews them.
+  // The PATCH endpoint auto-activates on any non-active field change.
+  // Inactive ProdSpecs are excluded from Job auto-enqueue — a Style at
+  // 100% completion still stays PENDING until its ProdSpec is active.
+  active                    Boolean @default(false)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  customer     Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  businessArea BusinessArea       @relation(fields: [businessAreaId], references: [id], onDelete: Restrict)
+  suppliers    ProdSpecSupplier[]
+  styles       Style[]
+  jobs         Job[]
+
+  @@unique([customerId, businessAreaId])
+  @@index([customerId])
+  @@index([businessAreaId])
+  @@map("prod_specs")
+}
+
+model ProdSpecSupplier {
+  id         String   @id @default(cuid())
+  prodSpecId String
+  supplierId String
+  createdAt  DateTime @default(now())
+
+  prodSpec ProdSpec @relation(fields: [prodSpecId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@unique([prodSpecId, supplierId])
+  @@index([supplierId])
+  @@map("prod_spec_suppliers")
 }
 
 model Template {
@@ -125,36 +322,104 @@ model Template {
 
 enum DocType {
   WASHCARE
+  CARE_LABEL
   STICKER
+  HANGTAG
   CARTON_MARKING
   COLOUR_STICKER
 }
 
+// =====================================================
+// App settings — global, app-wide configuration as a small key-value
+// store. One row per setting key; `value` holds JSON so new global flags
+// can be added without a migration. Today it backs the "auto-generate
+// outputs" master switch (key: "autoGenerateEnabled"), read by the
+// auto-enqueue paths (Monday style webhook, import promotion).
+// =====================================================
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("app_settings")
+}
+
 model Style {
-  id            String      @id @default(cuid())
-  customerId    String
-  mondayItemId  String      @unique
-  mondayBoardId String
-  name          String
-  businessArea  String?
-  rawData       Json        @default("{}")
-  completionPct Int         @default(0)
-  missingFields Json        @default("[]")
-  status        StyleStatus @default(PENDING)
-  lastSyncedAt  DateTime?
+  id             String      @id @default(cuid())
+  customerId     String
+  // FKs resolved from the local Monday mirrors during ingest. Nullable
+  // because the linked rows may not exist yet (mirrors not yet synced).
+  businessAreaId String?
+  supplierId     String?
+  prodSpecId     String?
+  // Optional link to a QR image from the QrImage library, rendered on
+  // care-label-02 page 4. SetNull on delete so retiring a QR image
+  // doesn't cascade-delete styles.
+  qrImageId      String?
+  mondayItemId   String      @unique
+  mondayBoardId  String
+  name           String
+  // Free-text fallback retained so legacy data and the manual entry form
+  // keep working until BusinessArea mirror is populated.
+  businessArea   String?
+  // PO Number — visibility filter, NOT a gating trigger. Rows without one
+  // are still synced but hidden from the print queue by default.
+  poNumber       String?
+  styleFolderUrl String?
+  // Monday group this item lives in (e.g. "✅ Done", "⏰ Behind
+  // Schedule", "Cancelled"). Captured from MondayItem.group on every
+  // ingest so list views / scans can default-hide archived items
+  // without re-syncing. groupId stays stable across Monday-side title
+  // changes; groupTitle is the editable label operators see.
+  groupId        String?
+  groupTitle     String?
+  rawData        Json        @default("{}")
+  completionPct  Int         @default(0)
+  missingFields  Json        @default("[]")
+  status         StyleStatus @default(PENDING)
+  // -------- PO → EAN resolution (scraped from the Purchase Order PDF) --------
+  // eanStatus is BOTH the durable state and the queue: rows land in PENDING
+  // when a PO number is filled (Monday ingest), the EAN runner
+  // (/api/po-eans/run) drains them, and PO_FOUND_NO_EANS marks "we have the
+  // PO but the PDF has no barcode/EAN page yet" — retried by the sweep so it
+  // resolves automatically once the supplier adds barcodes.
+  eanStatus           StyleEanStatus @default(NONE)
+  // Carton / assortment-level EAN from the PO (single value, not per-size).
+  cartonEan           String?
+  // Which PO PDF we matched, for audit/debug.
+  poFileName          String?
+  // When the last resolution attempt landed (success OR terminal failure).
+  // The retry sweep compares this against its cutoff to re-queue stuck rows.
+  eanResolvedAt       DateTime?
+  // Set when a worker claims the row (PENDING→RESOLVING); used for stale
+  // recovery, mirrors Job.startedAt.
+  eanResolveStartedAt DateTime?
+  lastSyncedAt   DateTime?
   // Soft lifecycle from Monday. We never hard-delete a Style: an
   // item_archived / item_deleted webhook stamps these instead, so the row
   // (and its full Log trail) survives for audit while the UI hides it.
-  archivedAt    DateTime?
-  deletedAt     DateTime?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  archivedAt     DateTime?
+  deletedAt      DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
-  customer Customer @relation(fields: [customerId], references: [id])
-  jobs     Job[]
+  customer         Customer      @relation(fields: [customerId], references: [id])
+  businessAreaRef  BusinessArea? @relation(fields: [businessAreaId], references: [id], onDelete: SetNull)
+  supplier         Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  prodSpec         ProdSpec?     @relation(fields: [prodSpecId], references: [id], onDelete: SetNull)
+  qrImage          QrImage?      @relation(fields: [qrImageId], references: [id], onDelete: SetNull)
+  jobs             Job[]
+  eans             StyleEan[]
 
   @@index([customerId])
   @@index([status])
+  @@index([businessAreaId])
+  @@index([supplierId])
+  @@index([prodSpecId])
+  @@index([qrImageId])
+  @@index([poNumber])
+  @@index([groupTitle])
+  @@index([eanStatus])
   @@index([archivedAt])
   @@index([deletedAt])
   @@map("styles")
@@ -169,9 +434,63 @@ enum StyleStatus {
   REJECTED
 }
 
+// Per-size EAN resolved from a Style's Purchase Order PDF. One row per size
+// in the style's size run, kept in `position` order, written by the EAN
+// runner (src/lib/po/ean-runner.ts). `ean13` is null when that size has no
+// matching barcode in the PO. The carton/assortment EAN is a single value
+// and lives on Style.cartonEan, not here.
+model StyleEan {
+  id           String   @id @default(cuid())
+  styleId      String
+  // 0-based index into the style's size run — preserves print order.
+  position     Int
+  // Size label as it appears on the style (e.g. "M", "ONE SIZE").
+  size         String
+  // 13-digit EAN, or null when no PO variant matched this size.
+  ean13        String?
+  // The PO variant label we matched this size against (audit).
+  variantLabel String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
+
+  @@unique([styleId, position])
+  @@index([styleId])
+  @@map("style_eans")
+}
+
+enum StyleEanStatus {
+  // No PO number yet, or EAN resolution doesn't apply.
+  NONE
+  // PO number is set → queued for the EAN runner to resolve.
+  PENDING
+  // Claimed by a worker pass (PENDING→RESOLVING); stale rows recover to PENDING.
+  RESOLVING
+  // Every size in the run has an EAN.
+  RESOLVED
+  // Some sizes have EANs, some don't — or the PO had extra unmatched variants.
+  PARTIAL
+  // PO PDF was found and downloaded, but it has no barcode/EAN page yet.
+  // This is the "have PO, no EANs" flag; the sweep retries these.
+  PO_FOUND_NO_EANS
+  // No PO PDF could be located in the SharePoint Suppliers library.
+  PO_NOT_FOUND
+  // SharePoint / download / parse failure.
+  ERROR
+}
+
 model Job {
   id            String        @id @default(cuid())
   styleId       String
+  // Snapshot of the resolved ProdSpec at enqueue time. Nullable because
+  // legacy rows and Styles without a resolved (Customer × BA) pair have
+  // no ProdSpec. Used for analytics — `count(jobs) group by prodSpecId`
+  // gives us "how often is each ProdSpec generating PDFs".
+  //
+  // SetNull on delete: removing a ProdSpec mustn't cascade out the
+  // historical Job rows — they still document what happened.
+  prodSpecId    String?
   status        JobStatus     @default(QUEUED)
   triggerSource TriggerSource
   documentTypes Json          @default("[]")
@@ -182,28 +501,51 @@ model Job {
   updatedAt     DateTime      @updatedAt
 
   style         Style          @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  prodSpec      ProdSpec?      @relation(fields: [prodSpecId], references: [id], onDelete: SetNull)
   logs          Log[]
   reviewActions ReviewAction[]
   assets        JobAsset[]
 
   @@index([status])
   @@index([styleId])
+  @@index([prodSpecId])
   @@map("jobs")
 }
 
 model JobAsset {
-  id        String   @id @default(cuid())
-  jobId     String
-  docType   DocType
-  fileName  String
-  pdf       Bytes
-  createdAt DateTime @default(now())
+  id           String            @id @default(cuid())
+  jobId        String
+  docType      DocType
+  // Template variant that produced this asset. References a key in
+  // src/lib/pdf/template-registry.ts. Multiple assets per job can share
+  // a docType but each variantKey is unique within a job.
+  variantKey   String?
+  fileName     String
+  // Human-readable label for the "Delivered Prod Specs" list. Set from
+  // the variant's `name` at render time; falls back to the docType label.
+  displayName  String?
+  pdf          Bytes
+  // Per-asset review state — separate from the parent Job's status so
+  // we can approve some outputs and reject others with reasons.
+  reviewStatus AssetReviewStatus @default(PENDING_REVIEW)
+  rejectReason String?
+  reviewedAt   DateTime?
+  reviewedById String?
+  createdAt    DateTime          @default(now())
 
-  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job        Job   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("AssetReviewer", fields: [reviewedById], references: [id])
 
   @@index([jobId])
-  @@unique([jobId, docType])
+  @@index([reviewStatus, docType])
+  @@unique([jobId, variantKey])
   @@map("job_assets")
+}
+
+enum AssetReviewStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
 }
 
 enum JobStatus {
@@ -219,6 +561,12 @@ enum TriggerSource {
   WEBHOOK
   MANUAL_RERUN
   ADMIN_TEST
+  // Job enqueued by the /import flow when a ghost item is promoted to a
+  // Style row (Manual Import bulk action, or one-click Accept on a new
+  // (Customer × BusinessArea) combination). Kept distinct from WEBHOOK
+  // so dashboards can tell "promoted by an operator" apart from "ingest
+  // fired by Monday".
+  MANUAL_IMPORT
 }
 
 model Log {
@@ -290,4 +638,344 @@ model MondayColumnConfig {
   updatedAt      DateTime @updatedAt
 
   @@map("monday_column_config")
+}
+
+// Audit trail for bulk Monday → local mirror syncs. One row per sync run.
+model SyncJob {
+  id          String       @id @default(cuid())
+  kind        SyncKind
+  status      SyncStatus   @default(RUNNING)
+  itemsTotal  Int          @default(0)
+  itemsSynced Int          @default(0)
+  itemsFailed Int          @default(0)
+  // Items that didn't error but couldn't be auto-classified — e.g. a
+  // Style whose customer link is unset AND whose leading-name token
+  // matches multiple customers. Distinct from "failed" so dashboards
+  // can show "needs operator action" separately from "actually broken".
+  itemsSkipped Int         @default(0)
+  error       String?
+  startedAt   DateTime     @default(now())
+  finishedAt  DateTime?
+
+  @@index([kind])
+  @@index([startedAt])
+  @@map("sync_jobs")
+}
+
+enum SyncKind {
+  CUSTOMERS
+  SUPPLIERS
+  BUSINESS_AREAS
+  STYLES
+  ALL
+  // Ghost-DB sink ("Sync" button on the Monday page). Tracked here so
+  // the admin progress UI can poll the same /api/admin/sync/progress
+  // endpoint the Fill flow uses.
+  SINK_ALL
+  SINK_BOARD
+}
+
+enum SyncStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// Laundering action a wash-care symbol concerns and a care-instruction line
+// is about — the closed GINETEX set. A symbol marked `restrictive` (a "Do
+// not …" symbol) removes every CareLabel tagged with the same action on
+// care-label-02 (see src/lib/care-labels/visibility.ts). The exact string
+// values are mirrored in src/lib/care-labels/actions.ts for the DB-free
+// renderer/preview/UI layers.
+enum LaunderingAction {
+  WASHING
+  BLEACHING
+  TUMBLE_DRYING
+  IRONING
+  DRY_CLEANING
+}
+
+// Global wash-care symbol catalogue. Admin-managed via /settings/washcare-symbols.
+// Each row holds the SVG content directly (small payloads, no need for blob
+// storage). `mondayValue` is an optional free-text key used to resolve a
+// Monday-emitted wash-care label back to one of these rows during ingest.
+model WashSymbol {
+  id          String   @id @default(cuid())
+  // Stable kebab-case identifier referenced by the renderer and column
+  // mapping (e.g. "wash30", "iron_low"). Unique so the renderer can do
+  // O(1) lookups, and so seeding the standard set is idempotent.
+  code        String   @unique
+  name        String
+  // Raw SVG markup. Optional so a row can be created as a placeholder
+  // (code + name) and the admin uploads the file afterwards.
+  svg         String?
+  // Value emitted by Monday (column text or option label). Optional —
+  // can be filled later when the wash-care column shape is confirmed.
+  mondayValue String?
+  // Per-language care-text translations rendered on multilingual labels
+  // (e.g. care-label-02 back). Keyed by ISO 639-1 lowercase language code
+  // (matches Country.languageCode). Missing languages fall back to `name`.
+  // Shape: { en: "Wash at 30°C", da: "Vask ved 30°", de: "30°C Wäsche", ... }
+  translations Json    @default("{}")
+  // The laundering action this symbol concerns ("Iron low" / "Do not iron"
+  // → IRONING). Drives action-based care-instruction suppression. Nullable:
+  // a symbol that maps to no laundering action suppresses nothing.
+  action      LaunderingAction?
+  // True for a prohibition symbol ("Do not …"). A restrictive symbol removes
+  // every active CareLabel tagged with the same `action` on care-label-02 —
+  // the "prohibition symbols always override extra care instructions" rule.
+  restrictive Boolean  @default(false)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([active])
+  @@index([mondayValue])
+  @@map("wash_symbols")
+}
+
+// =====================================================
+// Certificate logos — DB-managed via /settings/certificates.
+// Rendered on care-label-02 page 4. A Style declares which certificates
+// apply via its Monday "__certificates__1" column (comma-separated, e.g.
+// "FSC, OEKOTEX"); the renderer matches those names against this library
+// (case-insensitive) and prints the logos that resolve.
+// =====================================================
+model Certificate {
+  id        String   @id @default(cuid())
+  // Display name AND the match key against a Style's certificates list.
+  // Unique + matched case-insensitively in the loader.
+  name      String   @unique
+  // Raw SVG markup OR a data URL ("data:image/png;base64,…"). Same dual
+  // storage convention as WashSymbol.svg. Optional so a row can be a
+  // placeholder until artwork is uploaded.
+  logo      String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active])
+  @@map("certificates")
+}
+
+// =====================================================
+// Care labels — DB-managed via /settings/care-labels.
+// Each row is one care-instruction line printed on care-label-02. Add as
+// many as needed; print order is `sortOrder`. The line's per-language text
+// is resolved from the Translation dictionary at render time (sourceText
+// is the lookup key), so translations live on the Monday translations
+// board, not here.
+//
+// Primary visibility rule is action-based: a line tagged with `action`
+// (e.g. IRONING) is removed whenever the style carries a restrictive symbol
+// of the same action ("Do not iron"). Splitting compound lines into atomic
+// action-tagged ones ("wash inside out" + "iron inside out") lets a single
+// prohibition drop just the offending part — the renderer composes only the
+// survivors. `action` null ⇒ never auto-suppressed.
+//
+// showIfSymbols / hideIfSymbols are a manual override on top, matched
+// against a style's wash-care symbol CODES:
+//   showIfSymbols  — if non-empty, the line shows ONLY when at least one
+//                    of these symbols is present on the style.
+//   hideIfSymbols  — if non-empty, the line is HIDDEN when at least one of
+//                    these symbols is present. Hide (manual or action) wins.
+// =====================================================
+model CareLabel {
+  id            String   @id @default(cuid())
+  sourceText    String
+  sortOrder     Int      @default(0)
+  // Laundering action this line's text is about. Auto-removed by a present
+  // restrictive symbol of the same action. See LaunderingAction.
+  action        LaunderingAction?
+  showIfSymbols Json     @default("[]")
+  hideIfSymbols Json     @default("[]")
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([active])
+  @@map("care_labels")
+}
+
+// =====================================================
+// QR images — DB-managed via /settings/qr-codes.
+// A Style links to at most one (Style.qrImageId); care-label-02 page 4
+// renders it as-is. The image source is uploaded by the operator — we
+// don't generate QR codes, we just store and place the picture.
+// =====================================================
+model QrImage {
+  id        String   @id @default(cuid())
+  name      String
+  // Image data URL ("data:image/png;base64,…" / svg). Required — a QR
+  // entry with no image is meaningless.
+  image     String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  styles    Style[]
+
+  @@index([active])
+  @@map("qr_images")
+}
+
+// =====================================================
+// Translation dictionary — the canonical English→multilang store, sync'd
+// from Monday board 9671510799 ("ALL translations": wash-care phrases,
+// care-label text, "Made in <country>" lines, …).
+//
+// Replaces the hardcoded MADE_IN_PHRASE / COUNTRY_NAMES tables and the
+// ProdSpec.careInstructionsByLang stopgap: the renderer normalises an
+// English phrase to `key` and reads the per-language string from
+// `translations` (same JSON-keyed-by-Language.code convention as
+// WashSymbol.translations / Country.nameTranslations). Missing languages
+// fall back to `sourceText`.
+// =====================================================
+model Translation {
+  id           String    @id @default(cuid())
+  // Normalised lookup key (lowercased, whitespace-collapsed) derived from
+  // sourceText. Unique so sync is idempotent and renderer lookups are O(1);
+  // the renderer normalises its query the same way. Board duplicates of the
+  // same English phrase collapse onto one row (their translations match).
+  key          String    @unique
+  // Original English phrase as it appears on the board (Monday item Name).
+  // The canonical fallback when a language is missing.
+  sourceText   String
+  // Per-language translations keyed by Language.code (lowercase ISO 639-1
+  // + optional region, e.g. "de-AT"). Shape: { da: "…", de: "…", fr: "…" }.
+  translations Json      @default("{}")
+  // Monday group the phrase came from ("Translations", "translation new
+  // words") — informational, handy for admin filtering. Optional.
+  category     String?
+  // Source ghost item id (board 9671510799). Indexed, not unique — multiple
+  // items can normalise to the same `key`; we upsert by `key`.
+  mondayItemId String?
+  active       Boolean   @default(true)
+  lastSyncedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([active])
+  @@index([mondayItemId])
+  @@map("translations")
+}
+
+// =====================================================
+// Monday "ghost" tables — raw API sink, board-agnostic.
+//
+// Every board we know about lands here unmodified: its metadata in
+// MondayGhostBoard, its column definitions (with parsed `settings_str`)
+// in MondayGhostColumn, every item's column_values JSON in
+// MondayGhostItem, and every dropdown/status label flattened into
+// MondayGhostDropdownOption.
+//
+// These tables exist so we can sync first and decide later — the typed
+// domain mirrors (Customer, Supplier, Style, BusinessArea, WashSymbol,
+// ...) get populated from ghost rows by separate transformers. Useful
+// for new boards we haven't fully mapped yet (e.g. the Pre Order board
+// 7322835224) and for inspecting dropdown sources before seeding a
+// downstream catalog.
+//
+// As with MondayWebhook, deletions of upstream rows must never delete
+// ghost rows from code — we only stamp `lastSyncedAt`. Operators clean
+// up ghost data by hand if needed.
+// =====================================================
+
+model MondayGhostBoard {
+  id            String   @id @default(cuid())
+  // Monday's numeric board id — what env vars and webhooks reference.
+  mondayBoardId String   @unique
+  // Board name as Monday returns it. Re-synced on every sink run.
+  name          String
+  description   String?
+  // Friendly label shown in the admin nav ("Pre Order", "Styles",
+  // "Customers"). Editable separate from Monday's name so we can rename
+  // for our UI without confusing the source-of-truth field.
+  label         String?
+  itemCount     Int      @default(0)
+  lastSyncedAt  DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  columns       MondayGhostColumn[]
+  items         MondayGhostItem[]
+
+  @@map("monday_ghost_boards")
+}
+
+model MondayGhostColumn {
+  id             String   @id @default(cuid())
+  boardId        String
+  // Column id as Monday emits it (e.g. "dropdown_mktbzd1f", "name").
+  mondayColumnId String
+  title          String
+  // Raw Monday column type — "text", "dropdown", "status", "board_relation",
+  // "numbers", "people", "country", "link", "mirror", ...
+  type           String
+  description    String?
+  // Parsed `settings_str` JSON — includes the labels[] array for
+  // dropdowns/statuses, board_ids for board_relation, etc.
+  settings       Json     @default("null")
+  lastSyncedAt   DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  board          MondayGhostBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  options        MondayGhostDropdownOption[]
+
+  @@unique([boardId, mondayColumnId])
+  @@index([boardId])
+  @@index([type])
+  @@map("monday_ghost_columns")
+}
+
+model MondayGhostItem {
+  id            String   @id @default(cuid())
+  boardId       String
+  // Monday's item id — same value Style.mondayItemId, Customer.mondayItemId
+  // etc. reference. Unique within a board.
+  mondayItemId  String
+  name          String
+  groupId       String?
+  groupTitle    String?
+  // Full `column_values` array as Monday returns it — each entry is
+  // { id, type, text, value (parsed JSON or null) }. We store this raw
+  // so downstream transformers can read whatever shape they need.
+  columnValues  Json     @default("[]")
+  lastSyncedAt  DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  board         MondayGhostBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@unique([boardId, mondayItemId])
+  @@index([boardId])
+  @@index([name])
+  @@map("monday_ghost_items")
+}
+
+// Flattened dropdown / status labels. One row per (column, optionId).
+// Source for seeding downstream catalogs (WashSymbol, future Trim,
+// Size, Composition catalogs) — the seed scripts pick the rows whose
+// boardColumn matches the configured Monday column id.
+model MondayGhostDropdownOption {
+  id            String   @id @default(cuid())
+  boardColumnId String
+  // Monday's option id (stringified — numeric in JSON but stored as
+  // text so it survives changes in numeric encoding).
+  optionId      String
+  label         String
+  // Monday's color id for the option (status columns mostly). Null for
+  // dropdowns that don't carry a color.
+  color         String?
+  lastSyncedAt  DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  boardColumn   MondayGhostColumn @relation(fields: [boardColumnId], references: [id], onDelete: Cascade)
+
+  @@unique([boardColumnId, optionId])
+  @@index([boardColumnId])
+  @@index([label])
+  @@map("monday_ghost_dropdown_options")
 }

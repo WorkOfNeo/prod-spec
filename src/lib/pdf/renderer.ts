@@ -52,6 +52,10 @@ export async function renderPdf(opts: RenderOptions): Promise<Buffer> {
   try {
     await page.emulateMediaType("print");
     await page.setContent(opts.html, { waitUntil: "load" });
+    // Wait on the FontFaceSet promise so @import'd Google Fonts (barcode
+    // font, etc.) have landed before the PDF snapshot. Without this, the
+    // first cold render uses the fallback monospace font.
+    await page.evaluate(() => document.fonts.ready);
     const result = await page.pdf({ ...DEFAULT_PDF_OPTIONS, ...opts.pdf });
     return Buffer.from(result);
   } finally {

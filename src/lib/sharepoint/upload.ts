@@ -1,11 +1,10 @@
 import { ensureFolder, uploadFile, type SharePointFile } from "./client";
-import type { GeneratedDoc } from "@/lib/pdf/generate";
 
 export type UploadResult = SharePointFile & { docType: string };
 
 export async function uploadJobAssets(input: {
   folderPath: string;
-  assets: Array<Pick<GeneratedDoc, "fileName" | "docType"> & { pdf: Buffer }>;
+  assets: Array<{ fileName: string; docType: string; pdf: Buffer }>;
 }): Promise<UploadResult[]> {
   const folder = input.folderPath.replace(/^\/+|\/+$/g, "");
   if (folder) await ensureFolder(folder);

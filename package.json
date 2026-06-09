@@ -12,7 +12,10 @@
     "lint": "eslint",
     "postinstall": "prisma generate",
     "db:deploy": "prisma migrate deploy",
-    "release": "prisma migrate deploy"
+    "release": "prisma migrate deploy",
+    "explain-style": "tsx --env-file=.env scripts/explain-style.ts",
+    "seed-column-mapping": "tsx --env-file=.env scripts/seed-default-column-mapping.ts",
+    "seed-washsymbol-monday": "tsx --env-file=.env scripts/seed-washsymbol-monday-values.ts"
   },
   "dependencies": {
     "@azure/identity": "^4.13.1",
@@ -27,6 +30,7 @@
     "isomorphic-fetch": "^3.0.0",
     "lucide-react": "^1.16.0",
     "next": "16.2.6",
+    "pdf-parse": "^2.4.5",
     "prisma": "^7.8.0",
     "puppeteer": "^25.0.4",
     "react": "19.2.4",
