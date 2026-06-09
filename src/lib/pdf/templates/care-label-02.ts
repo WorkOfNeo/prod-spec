@@ -1,5 +1,6 @@
 import type { StyleData } from "../types";
 import type { OutputDims } from "../template-registry";
+import { resolveOutputLangs, resolveOutputLangCodes, type OutputLang } from "../output-langs";
 import { escapeHtml, htmlDocument, tFor } from "./base";
 import { loadWashcareSymbols, type WashcareSymbolMap } from "../washcare-symbols";
 import { loadCertificates, type CertificateMap } from "../certificates";
@@ -70,6 +71,16 @@ const LANGS_FRONT_COMPOSITION: Array<{ code: string; label: string }> = [
 // phrase for each comes from the Translation dictionary at render time
 // (translatePhrase(dict, "Made in <country>", code)).
 const LANGS_MADE_IN = ["en", "da", "de", "fi", "no", "sv", "nl", "fr", "pl"] as const;
+
+// Split the care-instruction languages across Sheet 2 BACK (top) and Sheet 3
+// FRONT (bottom). When the ProdSpec selects an explicit language set, render
+// the whole selection on the top panel (Sheet 3 keeps made-in / PO / brand);
+// otherwise keep the printer's reference split (en…nl on top, fr/pl below).
+function resolveCareLangs(style: StyleData): { top: OutputLang[]; bottom: OutputLang[] } {
+  const selected = style.outputLanguages ?? [];
+  if (selected.length === 0) return { top: LANGS_CARE_TOP, bottom: LANGS_CARE_BOTTOM };
+  return { top: selected.map((code) => ({ code, label: code.toUpperCase() })), bottom: [] };
+}
 
 // Print-house brand block. Static today because the SaaS is single-
 // tenant for Contrast Company; promote to per-customer config the day
@@ -247,7 +258,8 @@ function pageCompositionAndSymbols(
   // English composition once. translatePhrase degrades to the English
   // source when the board has no entry for that language — we skip those so
   // the label never prints "PL : <English>".
-  const translationRows = LANGS_FRONT_COMPOSITION.filter(({ code }) => code !== "en")
+  const translationRows = resolveOutputLangs(style, LANGS_FRONT_COMPOSITION)
+    .filter(({ code }) => code !== "en")
     .map(({ code, label }) => {
       const entered = tFor(style.composition, code);
       const translated = originalText
@@ -301,7 +313,7 @@ function pageCareTop(
   labels: CareLabel[],
   dict: TranslationDictionary,
 ): string {
-  const rows = careLangRows(style, LANGS_CARE_TOP, labels, dict);
+  const rows = careLangRows(style, resolveCareLangs(style).top, labels, dict);
   if (!rows) {
     return `
       <div class="page">
@@ -323,8 +335,12 @@ function pageCareBottomAndBrand(
   labels: CareLabel[],
   dict: TranslationDictionary,
 ): string {
-  const careRows = careLangRows(style, LANGS_CARE_BOTTOM, labels, dict);
-  const madeIn = renderMadeInBlock(style.countryOfOrigin, dict);
+  const careRows = careLangRows(style, resolveCareLangs(style).bottom, labels, dict);
+  const madeIn = renderMadeInBlock(
+    style.countryOfOrigin,
+    dict,
+    resolveOutputLangCodes(style, LANGS_MADE_IN),
+  );
   const po = style.poNumber
     ? `<div class="po-line">PO No.: ${escapeHtml(style.poNumber)}</div>`
     : "";
@@ -419,6 +435,7 @@ function careLangRows(
 function renderMadeInBlock(
   rawCountry: string | undefined,
   dict: TranslationDictionary,
+  langCodes: ReadonlyArray<string>,
 ): string {
   if (!rawCountry || !rawCountry.trim()) return "";
   const country = rawCountry.trim();
@@ -435,7 +452,8 @@ function renderMadeInBlock(
   // languages whose phrase coincides don't repeat; when nothing is
   // translated every language collapses to the single English phrase.
   const seen = new Set<string>();
-  const phrases = LANGS_MADE_IN.map((code) => translatePhrase(dict, english, code).trim())
+  const phrases = langCodes
+    .map((code) => translatePhrase(dict, english, code).trim())
     .filter((p) => p && !seen.has(p) && (seen.add(p), true));
   const text = phrases.length > 0 ? phrases.join(" / ") : english;
 

@@ -45,6 +45,13 @@ export const MONDAY_SUPPLIER_COLS = {
   postCode: process.env.MONDAY_SUPPLIER_COL_POST_CODE ?? "",
   country: process.env.MONDAY_SUPPLIER_COL_COUNTRY ?? "",
   sharepointUrl: process.env.MONDAY_SUPPLIER_COL_SHAREPOINT_URL ?? "",
+  // Supplier's main inbox (To: on the "ready for review" email) and the
+  // named contact person at the supplier (CC:). Until these env vars point
+  // at real board columns, sync leaves the fields null and the approval
+  // flow falls back to SUPPLIER_NOTIFICATION_EMAIL.
+  email: process.env.MONDAY_SUPPLIER_COL_EMAIL ?? "",
+  contactEmail: process.env.MONDAY_SUPPLIER_COL_CONTACT_EMAIL ?? "",
+  contactName: process.env.MONDAY_SUPPLIER_COL_CONTACT_NAME ?? "",
 } as const;
 
 // Column IDs on the Styles board (6979419195).

@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { renderPdf } from "@/lib/pdf/renderer";
 import { mapMondayItemToStyleData } from "@/lib/pdf/mapper";
 import { effectiveStyleItem } from "@/lib/styles/resolved-fields";
+import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import type { TemplateVariant } from "@/lib/pdf/template-registry";
 import type { MondayItem } from "@/lib/monday/client";
 import { sendEmail } from "@/lib/email/client";
@@ -10,6 +11,7 @@ import { MANUAL_COLUMN_IDS, parseCustomerConfig } from "@/lib/customers/config";
 import {
   DEFAULT_OUTPUTS,
   parseProdSpecColumnMapping,
+  parseProdSpecLanguages,
   parseProdSpecOutputs,
   resolveOutputVariant,
   type ProdSpecOutput,
@@ -145,6 +147,7 @@ export async function processJob(jobId: string): Promise<void> {
         barcodeFont: config.barcodeFont,
         prodSpecLogoSvg: prodSpec?.logoSvg ?? null,
         careInstructionsByLang: parseCareInstructions(prodSpec?.careInstructionsByLang),
+        outputLanguages: parseProdSpecLanguages(prodSpec?.outputLanguages),
         qrImageUrl: job.style.qrImage?.image ?? null,
       },
       effectiveMapping,
@@ -157,7 +160,7 @@ export async function processJob(jobId: string): Promise<void> {
   // when available — the operator selected those explicitly in the editor.
   // Falls back to DEFAULT_OUTPUTS (one of each variant) for manual styles
   // that haven't resolved a ProdSpec yet.
-  const outputs: ProdSpecOutput[] = (() => {
+  let outputs: ProdSpecOutput[] = (() => {
     if (prodSpec) {
       const parsed = parseProdSpecOutputs(prodSpec.outputs);
       const enabled = parsed.filter((o) => o.enabled !== false);
@@ -165,6 +168,49 @@ export async function processJob(jobId: string): Promise<void> {
     }
     return DEFAULT_OUTPUTS;
   })();
+
+  // Per-output generation: a job may be scoped to specific variant keys (the
+  // auto-enqueue paths set these to the outputs whose own required fields
+  // just landed). Empty ⇒ render all enabled outputs (manual full regen /
+  // legacy rows). When scoped, re-check each output's required fields at run
+  // time so a field that regressed since enqueue doesn't ship an incomplete
+  // output — not-ready ones are skipped (logged), not failed.
+  const scopedKeys: string[] = Array.isArray(job.variantKeys)
+    ? (job.variantKeys as unknown[]).filter((x): x is string => typeof x === "string")
+    : [];
+  if (scopedKeys.length > 0) {
+    const want = new Set(scopedKeys);
+    const readyKeys = new Set(
+      (prodSpec
+        ? outputReadinessForStyle({
+            rawData: job.style.rawData,
+            poNumber: job.style.poNumber,
+            supplier: job.style.supplier,
+            customer: { config: job.style.customer.config },
+            prodSpec: { outputs: prodSpec.outputs, columnMapping: prodSpec.columnMapping },
+          })
+        : []
+      )
+        .filter((r) => r.ready)
+        .map((r) => r.variantKey),
+    );
+    const next: ProdSpecOutput[] = [];
+    for (const o of outputs) {
+      if (!want.has(o.variantKey)) continue;
+      if (!readyKeys.has(o.variantKey)) {
+        await db.log.create({
+          data: {
+            jobId: job.id,
+            level: "WARN",
+            message: `skipping output ${o.variantKey}: its required fields are no longer all present`,
+          },
+        });
+        continue;
+      }
+      next.push(o);
+    }
+    outputs = next;
+  }
 
   type Generated = {
     variant: TemplateVariant;

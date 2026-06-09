@@ -2,6 +2,7 @@ import type { StyleData } from "../../types";
 import type { OutputDims } from "../../template-registry";
 import { escapeHtml, fontBarcode, htmlDocument, tFor } from "../base";
 import { loadWashcareSymbols, type WashcareSymbolMap } from "../../washcare-symbols";
+import { resolveOutputLangCodes } from "../../output-langs";
 import {
   loadTranslationDictionary,
   translateComposition,
@@ -76,7 +77,7 @@ function infoAreaPage(
   // back to English when the board lacks a language — skip those so we don't
   // print an English line under a non-EN flag.
   const originalText = tFor(style.composition, "en") || style.composition[0]?.text || "";
-  const composition = LANGUAGES_FOR_INFO_AREA.map((lang) => {
+  const composition = resolveOutputLangCodes(style, LANGUAGES_FOR_INFO_AREA).map((lang) => {
     const entered = tFor(style.composition, lang);
     const translated = originalText
       ? translateComposition(dict, originalText, lang)

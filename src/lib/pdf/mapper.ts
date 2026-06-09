@@ -10,6 +10,8 @@ export type MapperOptions = {
   barcodeFont?: BarcodeFontConfig;
   prodSpecLogoSvg?: string | null;
   careInstructionsByLang?: Record<string, string>;
+  // ProdSpec.outputLanguages — the languages this style's outputs render.
+  outputLanguages?: string[];
   // Resolved by the runner from the Style's linked QrImage row. Threaded
   // through here (rather than read from a Monday column) because it's a
   // per-style DB link, not synced board data.
@@ -84,6 +86,7 @@ export function mapMondayItemToStyleData(
     barcodeFont: opts.barcodeFont ?? DEFAULT_BARCODE_FONT,
     prodSpecLogoSvg: opts.prodSpecLogoSvg ?? null,
     careInstructionsByLang: opts.careInstructionsByLang ?? {},
+    outputLanguages: opts.outputLanguages ?? [],
     certificates: parseCertificates(readField("certificates")),
     qrImageUrl: opts.qrImageUrl ?? null,
   };

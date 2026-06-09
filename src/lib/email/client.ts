@@ -15,6 +15,10 @@ export type SendOpts = {
   subject: string;
   html: string;
   text?: string;
+  // Carbon-copy recipients (e.g. the supplier's contact person).
+  cc?: string | string[];
+  // File attachments. `content` is the raw bytes; Resend base64-encodes it.
+  attachments?: Array<{ filename: string; content: Buffer }>;
 };
 
 export async function sendEmail(opts: SendOpts): Promise<{ id?: string; sent: boolean }> {

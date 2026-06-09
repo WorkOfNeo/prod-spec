@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
 import { uploadJobAssets } from "@/lib/sharepoint/upload";
+import { getFile } from "@/lib/sharepoint/client";
 import { sendEmail } from "@/lib/email/client";
 import { supplierApprovalEmail } from "@/lib/email/templates/review-notification";
 
@@ -77,11 +78,25 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     }),
   ]);
 
-  // Supplier email isn't a Monday-mirrored field; the M1 Customer.supplierEmail
-  // was dropped in favour of the per-Supplier mirror, which doesn't carry an
-  // email yet. Until that's added, fall back to REVIEW_NOTIFICATION_EMAIL so
-  // approval at least surfaces to an operator who can forward manually.
-  const supplierEmail = process.env.SUPPLIER_NOTIFICATION_EMAIL ?? null;
+  // Resolve the SharePoint *folder* link for the email. getFile issues a
+  // driveItem GET at the folder path (it works for folders too and returns
+  // their webUrl); fall back to the supplier's portal link, then the first
+  // uploaded file's webUrl.
+  let folderUrl: string | null = null;
+  try {
+    folderUrl = (await getFile(folderPath))?.webUrl ?? null;
+  } catch {
+    folderUrl = null;
+  }
+  folderUrl = folderUrl ?? job.style.supplier?.sharepointUrl ?? uploaded[0]?.webUrl ?? null;
+
+  // Recipient: the supplier's mirrored inbox (To), CC the named contact
+  // person. Both come from the Monday suppliers board. When the board
+  // carries no supplier email yet, fall back to SUPPLIER_NOTIFICATION_EMAIL
+  // so approval still surfaces to an operator who can forward manually.
+  const supplier = job.style.supplier;
+  const supplierEmail = supplier?.email?.trim() || process.env.SUPPLIER_NOTIFICATION_EMAIL || null;
+  const ccEmail = supplier?.contactEmail?.trim() || null;
   if (supplierEmail) {
     const isCorrection = job.triggerSource === "MANUAL_RERUN";
     const email = supplierApprovalEmail({
@@ -90,14 +105,28 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       styleNumber: job.style.mondayItemId,
       customerName: job.style.customer.name,
       files: uploaded.map((f) => ({ name: f.name, webUrl: f.webUrl })),
+      folderUrl,
       isCorrection,
     });
-    await sendEmail({ to: supplierEmail, subject: email.subject, html: email.html, text: email.text });
+    // Attach the generated PDFs so the supplier can review them directly,
+    // not only via the SharePoint link.
+    const attachments = job.assets.map((a) => ({
+      filename: a.fileName,
+      content: Buffer.from(a.pdf),
+    }));
+    await sendEmail({
+      to: supplierEmail,
+      cc: ccEmail ?? undefined,
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+      attachments,
+    });
     await db.log.create({
       data: {
         jobId: job.id,
         level: "INFO",
-        message: `supplier email sent to ${supplierEmail}${isCorrection ? " (correction)" : ""}`,
+        message: `supplier review email sent to ${supplierEmail}${ccEmail ? ` (cc ${ccEmail})` : ""} · ${attachments.length} attachment(s)${isCorrection ? " · correction" : ""}`,
       },
     });
   } else {
@@ -105,7 +134,8 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       data: {
         jobId: job.id,
         level: "WARN",
-        message: "SUPPLIER_NOTIFICATION_EMAIL not set — files uploaded but supplier was not notified",
+        message:
+          "No supplier email — board field empty and SUPPLIER_NOTIFICATION_EMAIL unset; files uploaded but supplier was not notified",
       },
     });
   }

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import {
   parseProdSpecColumnMapping,
+  parseProdSpecLanguages,
   parseProdSpecOutputs,
   parseProdSpecRequiredFields,
 } from "@/lib/prod-spec/config";
@@ -40,6 +41,7 @@ export default async function ProdSpecDetailPage({ params }: { params: Promise<{
   const columnMapping = safeParse(() => parseProdSpecColumnMapping(prodSpec.columnMapping), {});
   const requiredFields = safeParse(() => parseProdSpecRequiredFields(prodSpec.requiredFields), []);
   const careInstructionsByLang = parseLangMap(prodSpec.careInstructionsByLang);
+  const outputLanguages = safeParse(() => parseProdSpecLanguages(prodSpec.outputLanguages), []);
 
   const attachedSupplierIds = prodSpec.suppliers.map((s) => s.supplierId);
 
@@ -66,6 +68,7 @@ export default async function ProdSpecDetailPage({ params }: { params: Promise<{
         initialOutputs={outputs}
         initialLogoSvg={prodSpec.logoSvg}
         initialCareInstructionsByLang={careInstructionsByLang}
+        initialOutputLanguages={outputLanguages}
         availableLanguages={languages}
         initialColumnMapping={columnMapping}
         initialRequiredFields={requiredFields}
