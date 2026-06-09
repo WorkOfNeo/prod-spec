@@ -14,6 +14,7 @@ import {
 import { ingestMondayItem, IngestSkip } from "./ingest";
 import { ghostItemToMondayItem } from "./sink";
 import { ensureProdSpecsForStyle } from "@/lib/prod-spec/ensure";
+import { getSupplierContactEmailColumn } from "@/lib/settings/app-settings";
 import {
   extractLinkedItemId,
   readGhostColumnText,
@@ -215,6 +216,10 @@ export async function upsertSupplierFromMondayItem(item: MondayItem): Promise<vo
     if (!id) return null;
     return extractLinkUrl(columnValue(item, id)) || columnText(item, id) || null;
   };
+  // Contact-email column is admin-configurable in /settings (DB-backed),
+  // falling back to MONDAY_SUPPLIER_COL_CONTACT_EMAIL. Resolved per upsert so
+  // a settings change takes effect on the next sync without a redeploy.
+  const contactEmailCol = await getSupplierContactEmailColumn();
 
   await db.supplier.upsert({
     where: { mondayItemId: item.id },
@@ -228,7 +233,7 @@ export async function upsertSupplierFromMondayItem(item: MondayItem): Promise<vo
       country: readCol(MONDAY_SUPPLIER_COLS.country),
       sharepointUrl: linkVal(MONDAY_SUPPLIER_COLS.sharepointUrl),
       email: readCol(MONDAY_SUPPLIER_COLS.email),
-      contactEmail: readCol(MONDAY_SUPPLIER_COLS.contactEmail),
+      contactEmail: readCol(contactEmailCol),
       contactName: readCol(MONDAY_SUPPLIER_COLS.contactName),
       lastSyncedAt: new Date(),
       active: true,
@@ -242,7 +247,7 @@ export async function upsertSupplierFromMondayItem(item: MondayItem): Promise<vo
       country: MONDAY_SUPPLIER_COLS.country ? readCol(MONDAY_SUPPLIER_COLS.country) : undefined,
       sharepointUrl: MONDAY_SUPPLIER_COLS.sharepointUrl ? linkVal(MONDAY_SUPPLIER_COLS.sharepointUrl) : undefined,
       email: MONDAY_SUPPLIER_COLS.email ? readCol(MONDAY_SUPPLIER_COLS.email) : undefined,
-      contactEmail: MONDAY_SUPPLIER_COLS.contactEmail ? readCol(MONDAY_SUPPLIER_COLS.contactEmail) : undefined,
+      contactEmail: contactEmailCol ? readCol(contactEmailCol) : undefined,
       contactName: MONDAY_SUPPLIER_COLS.contactName ? readCol(MONDAY_SUPPLIER_COLS.contactName) : undefined,
       lastSyncedAt: new Date(),
       active: true,

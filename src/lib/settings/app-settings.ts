@@ -33,3 +33,24 @@ export async function setAutoGenerateEnabled(enabled: boolean): Promise<void> {
     update: { value: enabled },
   });
 }
+
+const SUPPLIER_CONTACT_EMAIL_COL_KEY = "supplierContactEmailColumn";
+
+// Monday column ID for the supplier's CONTACT-PERSON email — the CC on the
+// "ready for review" approval email. Admin-configurable from /settings so it
+// can be set in-app without a redeploy; falls back to the
+// MONDAY_SUPPLIER_COL_CONTACT_EMAIL env var when unset. Empty string ⇒ no CC.
+export async function getSupplierContactEmailColumn(): Promise<string> {
+  const row = await db.appSetting.findUnique({ where: { key: SUPPLIER_CONTACT_EMAIL_COL_KEY } });
+  const fromDb = typeof row?.value === "string" ? row.value.trim() : "";
+  return fromDb || (process.env.MONDAY_SUPPLIER_COL_CONTACT_EMAIL ?? "").trim();
+}
+
+export async function setSupplierContactEmailColumn(columnId: string): Promise<void> {
+  const value = columnId.trim();
+  await db.appSetting.upsert({
+    where: { key: SUPPLIER_CONTACT_EMAIL_COL_KEY },
+    create: { key: SUPPLIER_CONTACT_EMAIL_COL_KEY, value },
+    update: { value },
+  });
+}
