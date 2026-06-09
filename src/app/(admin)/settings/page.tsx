@@ -1,4 +1,4 @@
-import { getAutoGenerateEnabled, getSupplierContactEmailColumn } from "@/lib/settings/app-settings";
+import { getAutoGenerateEnabled, getSupplierReviewCcEmails } from "@/lib/settings/app-settings";
 import { AutoGenerateSetting } from "./auto-generate-setting";
 import { SupplierContactEmailSetting } from "./supplier-contact-email-setting";
 
@@ -9,9 +9,9 @@ export const dynamic = "force-dynamic";
 // entries; global, app-wide flags that don't belong to a catalogue land
 // here — starting with the auto-generate master switch.
 export default async function SettingsPage() {
-  const [autoGenerateEnabled, supplierContactEmailColumn] = await Promise.all([
+  const [autoGenerateEnabled, supplierReviewCcEmails] = await Promise.all([
     getAutoGenerateEnabled(),
-    getSupplierContactEmailColumn(),
+    getSupplierReviewCcEmails(),
   ]);
 
   return (
@@ -23,7 +23,7 @@ export default async function SettingsPage() {
 
       <div className="mt-6 grid max-w-2xl gap-4">
         <AutoGenerateSetting initialEnabled={autoGenerateEnabled} />
-        <SupplierContactEmailSetting initialColumnId={supplierContactEmailColumn} />
+        <SupplierContactEmailSetting initialEmails={supplierReviewCcEmails.join(", ")} />
       </div>
 
       <p className="mt-6 max-w-2xl text-xs text-zinc-500">
