@@ -1,8 +1,24 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
+import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
+import { getVariant } from "@/lib/pdf/template-registry";
 import { NewProdSpecButton } from "./new-prod-spec-button";
 import { ProdSpecsTable } from "./prod-specs-table";
+
+// Resolve a ProdSpec.outputs JSON blob into display chips for the list.
+// Defensive: malformed JSON yields [] rather than crashing the whole page.
+function summariseOutputs(raw: unknown): Array<{ key: string; name: string; enabled: boolean }> {
+  try {
+    return parseProdSpecOutputs(raw).map((o) => ({
+      key: o.variantKey,
+      name: getVariant(o.variantKey)?.name ?? o.variantKey,
+      enabled: o.enabled !== false,
+    }));
+  } catch {
+    return [];
+  }
+}
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +63,12 @@ export default async function ProdSpecsPage() {
         </div>
         <div className="flex flex-shrink-0 gap-2">
           <Link
+            href="/prod-specs/languages"
+            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+          >
+            Languages
+          </Link>
+          <Link
             href="/prod-specs/suggestions"
             className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
           >
@@ -61,31 +83,37 @@ export default async function ProdSpecsPage() {
       </div>
 
       <ProdSpecsTable
-        rows={prodSpecs.map((ps) => ({
-          id: ps.id,
-          name: ps.name,
-          customerName: ps.customer.name,
-          businessAreaName: ps.businessArea.name,
-          businessAreaMondayValue: ps.businessArea.mondayValue,
-          supplierCount: ps._count.suppliers,
-          styleCount: ps._count.styles,
-          jobCount: ps._count.jobs,
-          autoGenerateThresholdPct: ps.autoGenerateThresholdPct,
-          active: ps.active,
-          updatedAt: formatDate(ps.updatedAt),
-          // Pre-built lower-case search blob — keeps the client-side
-          // filter a single string check regardless of which field
-          // matches. Includes mondayValue so "PL" hits both alias and
-          // canonical rows.
-          searchBlob: [
-            ps.name,
-            ps.customer.name,
-            ps.businessArea.name,
-            ps.businessArea.mondayValue,
-          ]
-            .join(" ")
-            .toLowerCase(),
-        }))}
+        rows={prodSpecs.map((ps) => {
+          const outputs = summariseOutputs(ps.outputs);
+          return {
+            id: ps.id,
+            name: ps.name,
+            customerName: ps.customer.name,
+            businessAreaName: ps.businessArea.name,
+            businessAreaMondayValue: ps.businessArea.mondayValue,
+            outputs,
+            supplierCount: ps._count.suppliers,
+            styleCount: ps._count.styles,
+            jobCount: ps._count.jobs,
+            autoGenerateThresholdPct: ps.autoGenerateThresholdPct,
+            active: ps.active,
+            updatedAt: formatDate(ps.updatedAt),
+            // Pre-built lower-case search blob — keeps the client-side
+            // filter a single string check regardless of which field
+            // matches. Includes mondayValue so "PL" hits both alias and
+            // canonical rows, and the output names so a search for
+            // "care label" finds every spec that produces one.
+            searchBlob: [
+              ps.name,
+              ps.customer.name,
+              ps.businessArea.name,
+              ps.businessArea.mondayValue,
+              ...outputs.map((o) => o.name),
+            ]
+              .join(" ")
+              .toLowerCase(),
+          };
+        })}
       />
     </div>
   );

@@ -13,6 +13,9 @@ export type ProdSpecRow = {
   customerName: string;
   businessAreaName: string;
   businessAreaMondayValue: string;
+  // The custom outputs configured on this prod spec, resolved to display
+  // names server-side. `enabled: false` outputs are shown muted.
+  outputs: Array<{ key: string; name: string; enabled: boolean }>;
   supplierCount: number;
   styleCount: number;
   jobCount: number;
@@ -58,6 +61,7 @@ export function ProdSpecsTable({ rows }: { rows: ProdSpecRow[] }) {
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Customer</th>
               <th className="px-4 py-3">Business area</th>
+              <th className="px-4 py-3">Outputs</th>
               <th className="px-4 py-3">Suppliers</th>
               <th className="px-4 py-3">Styles</th>
               <th
@@ -74,7 +78,7 @@ export function ProdSpecsTable({ rows }: { rows: ProdSpecRow[] }) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-12 text-center text-zinc-500">
+                <td colSpan={10} className="px-4 py-12 text-center text-zinc-500">
                   {rows.length === 0
                     ? "No prod specs yet. They auto-create when the first Style ingests with a known customer × business area pair."
                     : "No prod specs match the current search."}
@@ -95,6 +99,27 @@ export function ProdSpecsTable({ rows }: { rows: ProdSpecRow[] }) {
                   </td>
                   <td className="px-4 py-3 text-zinc-600">{ps.customerName}</td>
                   <td className="px-4 py-3 text-zinc-600">{ps.businessAreaName}</td>
+                  <td className="px-4 py-3">
+                    {ps.outputs.length === 0 ? (
+                      <span className="text-zinc-400">—</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {ps.outputs.map((o) => (
+                          <span
+                            key={o.key}
+                            title={o.enabled ? o.name : `${o.name} (disabled)`}
+                            className={`inline-flex rounded-full px-2 py-0.5 text-[11px] ${
+                              o.enabled
+                                ? "bg-zinc-100 text-zinc-700"
+                                : "bg-zinc-50 text-zinc-400 line-through"
+                            }`}
+                          >
+                            {o.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3 tabular-nums text-zinc-600">
                     {ps.supplierCount}
                   </td>

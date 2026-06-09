@@ -4,7 +4,7 @@ import { isChallenge, isEventPayload, verifyWebhookRequest } from "@/lib/monday/
 import { ingestMondayItem, markStyleArchived, markStyleDeleted } from "@/lib/monday/ingest";
 import { enqueueGenerationJob } from "@/lib/queue/enqueue";
 import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
-import { hasAllRequiredDetailFields } from "@/lib/styles/detail-fields";
+import { pendingOutputKeysForStyle } from "@/lib/styles/output-readiness";
 import { triggerRunner, triggerEanRunner } from "@/lib/queue/trigger";
 import { MONDAY_BOARDS } from "@/lib/monday/boards";
 import { getItem } from "@/lib/monday/client";
@@ -132,21 +132,25 @@ async function handleStyleEvent(pulseId: number): Promise<void> {
   const autoGenerateEnabled = await getAutoGenerateEnabled();
 
   // Auto-enqueue only when the ProdSpec is ACTIVE — operator hasn't yet
-  // reviewed inactive scaffolds. Threshold + required-detail-fields +
-  // in-flight checks. The detail-field check is last so it only queries
-  // for an otherwise-eligible style.
-  if (
-    autoGenerateEnabled &&
-    result.prodSpecActive &&
-    result.completionPct >= result.autoGenerateThresholdPct &&
-    (await hasAllRequiredDetailFields(result.styleId))
-  ) {
+  // reviewed inactive scaffolds. Per-output generation: enqueue a job scoped
+  // to the outputs whose OWN required fields are now filled and that haven't
+  // been generated yet, instead of waiting for the whole prod spec. The
+  // in-flight guard keeps us to one job at a time; any output that becomes
+  // ready while a job runs is picked up on the next sync.
+  if (autoGenerateEnabled && result.prodSpecActive) {
     const inflight = await db.job.count({
       where: { styleId: result.styleId, status: { in: ["QUEUED", "RUNNING"] } },
     });
     if (inflight === 0) {
-      await enqueueGenerationJob({ styleId: result.styleId, triggerSource: "WEBHOOK" });
-      await triggerRunner();
+      const pending = await pendingOutputKeysForStyle(result.styleId);
+      if (pending.length > 0) {
+        await enqueueGenerationJob({
+          styleId: result.styleId,
+          triggerSource: "WEBHOOK",
+          variantKeys: pending,
+        });
+        await triggerRunner();
+      }
     }
   }
 }

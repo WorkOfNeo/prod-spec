@@ -33,9 +33,12 @@ type Props = {
   initialOutputs: ProdSpecOutput[];
   initialLogoSvg: string | null;
   initialCareInstructionsByLang: Record<string, string>;
+  // Lowercase language codes this prod spec's outputs render. Empty ⇒
+  // templates use their built-in default set.
+  initialOutputLanguages: string[];
   // Active Language rows from the DB — drives the column set in the
-  // Care instructions editor. Adding a row to /languages adds an input
-  // here automatically.
+  // Care instructions editor and the Output languages toggles. Adding a
+  // row to /languages adds an input here automatically.
   availableLanguages: Array<{ code: string; name: string }>;
   initialColumnMapping: ColumnMapping;
   initialRequiredFields: RequiredField[];
@@ -53,6 +56,11 @@ export function ProdSpecEditor(props: Props) {
   const [logoSvg, setLogoSvg] = useState<string>(props.initialLogoSvg ?? "");
   const [careByLang, setCareByLang] = useState<Record<string, string>>(
     props.initialCareInstructionsByLang ?? {},
+  );
+  // Selected output languages. Stored as a Set; the saved order follows the
+  // /languages sortOrder (props.availableLanguages order) so output is stable.
+  const [outputLangs, setOutputLangs] = useState<Set<string>>(
+    () => new Set(props.initialOutputLanguages ?? []),
   );
   const [logoErr, setLogoErr] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -92,6 +100,15 @@ export function ProdSpecEditor(props: Props) {
         enabled: true,
       },
     ]);
+  }
+
+  function toggleLang(code: string, next: boolean) {
+    setOutputLangs((prev) => {
+      const s = new Set(prev);
+      if (next) s.add(code);
+      else s.delete(code);
+      return s;
+    });
   }
 
   // Accept SVG (stored as raw markup) or PNG/JPG (stored as a base64
@@ -163,6 +180,17 @@ export function ProdSpecEditor(props: Props) {
   // Serialised supplier list — Combobox wants a string[], not a Set.
   const supplierIdList = useMemo(() => Array.from(supplierIds), [supplierIds]);
 
+  // Selected output languages, ordered by /languages sortOrder (the order of
+  // props.availableLanguages). Any selected code no longer in the active set
+  // (e.g. a language got deactivated) is appended at the end rather than
+  // silently dropped on an unrelated save.
+  const outputLanguageList = useMemo(() => {
+    const active = props.availableLanguages.map((l) => l.code);
+    const inOrder = active.filter((c) => outputLangs.has(c));
+    const extras = Array.from(outputLangs).filter((c) => !active.includes(c));
+    return [...inOrder, ...extras];
+  }, [outputLangs, props.availableLanguages]);
+
   // The current form payload, derived. Used for dirty-detection: when its
   // serialisation differs from `lastSavedPayloadRef`, auto-save kicks in.
   // JSON textareas can be invalid — in that case we *don't* short-circuit
@@ -190,6 +218,7 @@ export function ProdSpecEditor(props: Props) {
         outputs,
         logoSvg: logoSvg.trim() ? logoSvg : null,
         careInstructionsByLang: careByLang,
+        outputLanguages: outputLanguageList,
         columnMapping,
         requiredFields,
         supplierIds: supplierIdList,
@@ -204,6 +233,7 @@ export function ProdSpecEditor(props: Props) {
     outputs,
     logoSvg,
     careByLang,
+    outputLanguageList,
     columnMappingText,
     requiredFieldsText,
     supplierIdList,
@@ -530,6 +560,52 @@ export function ProdSpecEditor(props: Props) {
             </p>
           </div>
         </div>
+      </Section>
+
+      <Section title="Output languages" wide>
+        <p className="mb-3 text-xs text-zinc-500">
+          Languages this prod spec&apos;s outputs render (care labels, info area, …).
+          Each language&apos;s text is pulled from the synced Translation board. Leave
+          all off to fall back to the template&apos;s built-in default set. Manage the
+          list at <code className="font-mono">/languages</code>, or toggle across all
+          prod specs on the <code className="font-mono">/prod-specs/languages</code> matrix.
+        </p>
+        {props.availableLanguages.length === 0 ? (
+          <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            No active languages — visit <code className="font-mono">/languages</code> and click{" "}
+            <strong>Seed standard set</strong>.
+          </p>
+        ) : (
+          <>
+            <div className="mb-3 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setOutputLangs(new Set(props.availableLanguages.map((l) => l.code)))}
+                className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                onClick={() => setOutputLangs(new Set())}
+                className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+              >
+                Clear
+              </button>
+              <span className="text-xs text-zinc-500">{outputLanguageList.length} selected</span>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
+              {props.availableLanguages.map(({ code, name }) => (
+                <Toggle
+                  key={code}
+                  checked={outputLangs.has(code)}
+                  onChange={(next) => toggleLang(code, next)}
+                  label={`${name} (${code})`}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </Section>
 
       <Section title="Care instructions (per language)" wide>

@@ -134,6 +134,15 @@ model Supplier {
   postCode      String?
   country       String?
   sharepointUrl String?
+  // Supplier contact details, mirrored from the Monday suppliers board.
+  // `email` is the supplier's main inbox (To: on the review email);
+  // `contactEmail` is the named contact person at the supplier (CC:);
+  // `contactName` is that person's display name. All optional — when the
+  // board column is unmapped or blank the approval flow falls back to
+  // SUPPLIER_NOTIFICATION_EMAIL.
+  email         String?
+  contactEmail  String?
+  contactName   String?
   lastSyncedAt  DateTime?
   active        Boolean   @default(true)
   createdAt     DateTime  @default(now())
@@ -263,6 +272,11 @@ model ProdSpec {
   // Shape: { en: "Wash with similar colours / ...", da: "vaskes med ...", ... }
   // Lang keys are lowercase ISO 639-1; empty / missing langs are skipped.
   careInstructionsByLang    Json    @default("{}")
+  // Languages this ProdSpec's outputs render, as an array of lowercase
+  // language codes (e.g. ["en","da","de"]). Toggled per ProdSpec in the
+  // editor and the /prod-specs/languages matrix. Empty array ⇒ templates
+  // fall back to their built-in default language set (backward compatible).
+  outputLanguages           Json    @default("[]")
   // Overrides Customer-level column mapping if present; otherwise inherits.
   columnMapping             Json    @default("{}")
   // [{ id: "monday_column_id", label: "Composition" }, ...]
@@ -494,6 +508,11 @@ model Job {
   status        JobStatus     @default(QUEUED)
   triggerSource TriggerSource
   documentTypes Json          @default("[]")
+  // Output variant keys this job should render (per-output generation).
+  // Empty array ⇒ "all enabled outputs" (manual full-regen / legacy rows).
+  // Non-empty ⇒ the runner renders exactly this subset, re-checking each
+  // output's readiness at run time. See src/lib/queue/runner.ts.
+  variantKeys   Json          @default("[]")
   error         String?
   startedAt     DateTime?
   finishedAt    DateTime?

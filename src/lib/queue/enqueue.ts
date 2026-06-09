@@ -4,6 +4,11 @@ import type { TriggerSource } from "@/generated/prisma/enums";
 export async function enqueueGenerationJob(input: {
   styleId: string;
   triggerSource: TriggerSource;
+  // Output variant keys this job should render. Per-output generation: the
+  // auto-enqueue paths pass the outputs whose own required fields just
+  // landed. Omitted / empty ⇒ the runner renders all enabled outputs
+  // (manual full-regen / legacy behaviour).
+  variantKeys?: string[];
 }): Promise<{ jobId: string }> {
   // Snapshot the Style's resolved ProdSpec so analytics queries can group
   // jobs by ProdSpec without joining through Style (and so the link
@@ -24,13 +29,18 @@ export async function enqueueGenerationJob(input: {
       // resolved ProdSpec at processing time, not from a snapshot here.
       // Kept on the model for backward compat with old rows.
       documentTypes: [],
+      variantKeys: input.variantKeys ?? [],
     },
   });
+  const scope =
+    input.variantKeys && input.variantKeys.length > 0
+      ? ` · outputs: ${input.variantKeys.join(", ")}`
+      : "";
   await db.log.create({
     data: {
       jobId: job.id,
       level: "INFO",
-      message: `job enqueued (${input.triggerSource.toLowerCase()})`,
+      message: `job enqueued (${input.triggerSource.toLowerCase()})${scope}`,
     },
   });
   return { jobId: job.id };

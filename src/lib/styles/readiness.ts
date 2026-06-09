@@ -8,6 +8,7 @@ export type ReadinessReason =
   | "ready"
   | "auto_off"
   | "incomplete"
+  | "partial"
   | "missing_fields"
   | "no_prod_spec"
   | "inactive";
@@ -30,9 +31,18 @@ export function computeReadiness(opts: {
   completionPct: number;
   prodSpec: { autoGenerateThresholdPct: number; active: boolean } | null;
   autoGenerateEnabled: boolean;
-  // Required detail fields that are empty for this style (labels). The set is
-  // the union of the fields the style's enabled outputs need; defaults to none.
+  // Required detail fields that are empty for this style (labels). Legacy
+  // union view — used only when no per-output summary is supplied.
   missingDetailFields?: ReadonlyArray<string>;
+  // Per-output generation summary. When present (and the style has outputs)
+  // this drives the readiness reason: each output generates as soon as ITS
+  // OWN required fields are filled, so a style can be partly ready.
+  outputs?: {
+    total: number;
+    ready: number;
+    // Outputs still waiting, with the labels of their empty fields.
+    blocking: Array<{ name: string; missing: string[] }>;
+  };
 }): Readiness {
   const { completionPct, prodSpec, autoGenerateEnabled } = opts;
   const missingDetailFields = opts.missingDetailFields ?? [];
@@ -54,39 +64,69 @@ export function computeReadiness(opts: {
         "Link a Prod Spec (Customer × Business area) on the Prod Spec tab before this style can generate.",
     };
   }
-  if (!meetsThreshold) {
-    return {
-      ...base,
-      reason: "incomplete",
-      tone: "incomplete",
-      shortLabel: "Not ready",
-      title: `Not ready — ${completionPct}% of required columns filled`,
-      detail: `Fill the missing required columns below to reach the ${threshold}% threshold this Prod Spec needs.`,
-    };
+
+  // ---- Per-output path (preferred): each output gates on its own fields ----
+  if (opts.outputs && opts.outputs.total > 0) {
+    const { total, ready, blocking } = opts.outputs;
+    const waiting = blocking
+      .map((b) => `${b.name} (${b.missing.join(", ")})`)
+      .join("; ");
+    if (ready === 0) {
+      return {
+        ...base,
+        reason: "incomplete",
+        tone: "incomplete",
+        shortLabel: "Not ready",
+        title: `Not ready — 0 of ${total} outputs have their fields`,
+        detail: `Each output generates as soon as its own required fields are filled. Waiting on: ${waiting}.`,
+      };
+    }
+    if (ready < total) {
+      return {
+        ...base,
+        reason: "partial",
+        tone: "incomplete",
+        shortLabel: `${ready}/${total} ready`,
+        title: `${ready} of ${total} outputs ready`,
+        detail: `${ready} output${ready === 1 ? "" : "s"} can generate now; the rest follow as their fields land. Waiting on: ${waiting}.`,
+      };
+    }
+    // ready === total → fall through to the active / auto-generate checks.
+  } else {
+    // ---- Legacy union path (no per-output summary supplied) ----
+    if (!meetsThreshold) {
+      return {
+        ...base,
+        reason: "incomplete",
+        tone: "incomplete",
+        shortLabel: "Not ready",
+        title: `Not ready — ${completionPct}% of required columns filled`,
+        detail: `Fill the missing required columns below to reach the ${threshold}% threshold this Prod Spec needs.`,
+      };
+    }
+    if (missingDetailFields.length > 0) {
+      return {
+        ...base,
+        reason: "missing_fields",
+        tone: "incomplete",
+        shortLabel: "Missing fields",
+        title: `Not ready — ${missingDetailFields.length} required field${
+          missingDetailFields.length === 1 ? "" : "s"
+        } empty`,
+        detail: `These required detail fields are empty: ${missingDetailFields.join(", ")}.`,
+      };
+    }
   }
-  if (missingDetailFields.length > 0) {
-    return {
-      ...base,
-      reason: "missing_fields",
-      tone: "incomplete",
-      shortLabel: "Missing fields",
-      title: `Not ready — ${missingDetailFields.length} required field${
-        missingDetailFields.length === 1 ? "" : "s"
-      } empty`,
-      detail: `These required detail fields are empty: ${missingDetailFields.join(
-        ", ",
-      )}. Configured in Settings ▸ Required fields.`,
-    };
-  }
+
   if (!prodSpec.active) {
     return {
       ...base,
       reason: "inactive",
       tone: "blocked",
       shortLabel: "Inactive",
-      title: "Required columns complete — but the Prod Spec is inactive",
+      title: "Outputs ready — but the Prod Spec is inactive",
       detail:
-        "All required columns are filled, yet this style's Prod Spec is inactive. Activate it on the Prod Spec tab to allow generation.",
+        "Every output has the fields it needs, yet this style's Prod Spec is inactive. Activate it on the Prod Spec tab to allow generation.",
     };
   }
   if (!autoGenerateEnabled) {
@@ -97,7 +137,7 @@ export function computeReadiness(opts: {
       shortLabel: "Auto off",
       title: "Ready — but automatic generation is OFF",
       detail:
-        "Meets the threshold on an active Prod Spec, but auto-generation is switched off globally in Settings. It won't run on sync until you turn it on (you can still Re-run manually).",
+        "Ready on an active Prod Spec, but auto-generation is switched off globally in Settings. It won't run on sync until you turn it on (you can still Re-run manually).",
     };
   }
   return {
@@ -106,6 +146,6 @@ export function computeReadiness(opts: {
     tone: "ready",
     shortLabel: "Ready",
     title: "Ready to generate",
-    detail: `Meets the ${threshold}% threshold on an active Prod Spec — new syncs generate automatically.`,
+    detail: "Every output has its required fields on an active Prod Spec — new syncs generate automatically.",
   };
 }

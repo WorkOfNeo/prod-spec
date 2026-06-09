@@ -11,6 +11,7 @@ import {
 import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
 import { findMissingDetailFields } from "@/lib/styles/detail-fields";
 import { computeReadiness, type Readiness, type ReadinessTone } from "@/lib/styles/readiness";
+import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import { RerunButton } from "./rerun-button";
 import { ProdSpecTab } from "./prod-spec-tab";
 import { EanPanel } from "./ean-panel";
@@ -137,6 +138,18 @@ export default async function StyleDetail({
     fields: requiredKeys.map((k) => ({ label: STYLE_FIELD_LABELS[k], ok: !reqMissing.has(k) })),
   };
 
+  // Per-output readiness for the banner — each output generates as soon as
+  // its own fields land. Customer mapping (empty override) matches reqMapping.
+  const outputReadiness = style.prodSpec
+    ? outputReadinessForStyle({
+        rawData: style.rawData,
+        poNumber: style.poNumber,
+        supplier: style.supplier,
+        customer: { config: style.customer.config },
+        prodSpec: { outputs: style.prodSpec.outputs, columnMapping: {} },
+      })
+    : [];
+
   const readiness = computeReadiness({
     completionPct: style.completionPct,
     prodSpec: style.prodSpec
@@ -147,6 +160,13 @@ export default async function StyleDetail({
       : null,
     autoGenerateEnabled,
     missingDetailFields: missingDetail.map((m) => m.label),
+    outputs: {
+      total: outputReadiness.length,
+      ready: outputReadiness.filter((o) => o.ready).length,
+      blocking: outputReadiness
+        .filter((o) => !o.ready)
+        .map((o) => ({ name: o.name, missing: o.missing.map((m) => m.label) })),
+    },
   });
 
   // Read-only resolved spec fields for the Details tab — same resolution
@@ -280,10 +300,7 @@ export default async function StyleDetail({
           readiness={readiness}
           eanView={eanView}
           requiredFieldKeys={requiredKeys}
-          requiredFields={{
-            filled: prodSpecReadiness.filled,
-            total: prodSpecReadiness.total,
-          }}
+          requiredFields={prodSpecReadiness}
         />
       )}
 
@@ -349,10 +366,14 @@ function DetailsTab({
   readiness: Readiness;
   eanView: EanView;
   requiredFieldKeys: readonly string[];
-  requiredFields: { filled: number; total: number };
+  requiredFields: { filled: number; total: number; fields: Array<{ label: string; ok: boolean }> };
 }) {
   const tone = READINESS_TONE[readiness.tone];
   const requiredSet = new Set(requiredFieldKeys);
+  // Output fields the enabled outputs need but that are empty — the real
+  // "can it generate" gate, distinct from the required-columns completion %.
+  const missingOutput = requiredFields.fields.filter((f) => !f.ok).map((f) => f.label);
+  const outputComplete = requiredFields.total > 0 && missingOutput.length === 0;
   return (
     <>
       <div className={`mt-6 flex items-start gap-3 rounded-lg border p-4 ${tone.box}`}>
@@ -364,13 +385,16 @@ function DetailsTab({
       </div>
 
       <section className="mt-6 grid grid-cols-3 gap-6">
+        {/* 1 — Required COLUMNS: progress toward the auto-generate threshold
+            (measured against the customer's required columns). A separate
+            check from the output fields in card 2. */}
         <div className="rounded-lg border border-zinc-200 bg-white p-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">Completion</div>
+          <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            Required columns
+          </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-semibold">{style.completionPct}%</span>
-            <span className="text-xs text-zinc-400">
-              of required columns · runs at ≥ {readiness.threshold}%
-            </span>
+            <span className="text-xs text-zinc-400">filled · auto-runs at ≥ {readiness.threshold}%</span>
           </div>
           <div className="mt-2">
             <CompletionBar
@@ -379,23 +403,9 @@ function DetailsTab({
               ready={readiness.hasProdSpec && readiness.meetsThreshold}
             />
           </div>
-          {requiredFields.total > 0 && (
-            <div className="mt-3 flex items-baseline gap-1.5 text-xs">
-              <span className="text-zinc-500">Required fields filled:</span>
-              <span
-                className={`font-semibold tabular-nums ${
-                  requiredFields.filled === requiredFields.total
-                    ? "text-emerald-600"
-                    : "text-amber-600"
-                }`}
-              >
-                {requiredFields.filled}/{requiredFields.total}
-              </span>
-            </div>
-          )}
           {missing.length > 0 ? (
             <div className="mt-3">
-              <div className="text-xs font-medium text-zinc-500">Missing required columns</div>
+              <div className="text-xs font-medium text-zinc-500">Missing columns</div>
               <ul className="mt-1 space-y-0.5 text-xs text-zinc-600">
                 {missing.slice(0, 8).map((m) => (
                   <li key={m.id}>· {m.label}</li>
@@ -406,16 +416,52 @@ function DetailsTab({
               </ul>
             </div>
           ) : (
-            <div className="mt-3 text-xs text-emerald-600">All required columns filled.</div>
+            <div className="mt-3 text-xs text-zinc-500">All required columns filled.</div>
           )}
         </div>
+
+        {/* 2 — Required OUTPUT FIELDS: what the enabled outputs actually need to
+            render. This is the real "can it generate" gate, and the reason the
+            banner can read "Not ready" even when columns are 100%. */}
+        <div className="rounded-lg border border-zinc-200 bg-white p-4">
+          <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">Output fields</div>
+          {requiredFields.total > 0 ? (
+            <>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span
+                  className={`text-2xl font-semibold tabular-nums ${
+                    outputComplete ? "text-emerald-600" : "text-amber-600"
+                  }`}
+                >
+                  {requiredFields.filled}/{requiredFields.total}
+                </span>
+                <span className="text-xs text-zinc-400">the fields this style&rsquo;s outputs need</span>
+              </div>
+              {missingOutput.length > 0 ? (
+                <div className="mt-3">
+                  <div className="text-xs font-medium text-zinc-500">Missing — blocks generation</div>
+                  <ul className="mt-1 space-y-0.5 text-xs text-amber-700">
+                    {missingOutput.map((l) => (
+                      <li key={l}>· {l}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div className="mt-3 text-xs text-emerald-600">All output fields present.</div>
+              )}
+            </>
+          ) : (
+            <div className="mt-2 text-sm text-zinc-400">
+              This style&rsquo;s outputs need no detail fields.
+            </div>
+          )}
+        </div>
+
+        {/* 3 — Workflow status + last sync. */}
         <div className="rounded-lg border border-zinc-200 bg-white p-4">
           <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">Status</div>
           <div className="mt-2 text-lg">{style.status.toLowerCase().replace(/_/g, " ")}</div>
-        </div>
-        <div className="rounded-lg border border-zinc-200 bg-white p-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">Last synced</div>
-          <div className="mt-2 text-sm text-zinc-700">{formatDate(style.lastSyncedAt)}</div>
+          <div className="mt-2 text-xs text-zinc-400">Last synced {formatDate(style.lastSyncedAt)}</div>
         </div>
       </section>
 

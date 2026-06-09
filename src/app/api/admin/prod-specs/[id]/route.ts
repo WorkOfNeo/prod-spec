@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-server";
 import {
   ProdSpecOutputsSchema,
+  parseProdSpecLanguages,
 } from "@/lib/prod-spec/config";
 import { ColumnMappingSchema, RequiredFieldSchema } from "@/lib/customers/config";
 
@@ -25,6 +26,11 @@ const PATCH_SCHEMA = z.object({
   requiredFields: z.array(RequiredFieldSchema).optional(),
   // Optional supplier set — if present, replaces the entire attached list.
   supplierIds: z.array(z.string().min(1)).optional(),
+  // Output language codes (lowercase) this prod spec renders. Deliberately
+  // excluded from `hasOtherChange` below: toggling languages (from the
+  // editor or the /prod-specs/languages matrix) must not auto-activate a
+  // draft prod spec.
+  outputLanguages: z.array(z.string().min(1)).optional(),
 });
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -85,6 +91,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
           : {}),
         ...(d.columnMapping !== undefined ? { columnMapping: d.columnMapping as unknown as object } : {}),
         ...(d.requiredFields !== undefined ? { requiredFields: d.requiredFields as unknown as object } : {}),
+        ...(d.outputLanguages !== undefined ? { outputLanguages: parseProdSpecLanguages(d.outputLanguages) } : {}),
       },
     });
 

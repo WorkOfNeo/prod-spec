@@ -26,6 +26,7 @@ export default async function SuppliersPage() {
             <tr>
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Purchaser</th>
+              <th className="px-4 py-3">Email / contact</th>
               <th className="px-4 py-3">Country</th>
               <th className="px-4 py-3">Location</th>
               <th className="px-4 py-3">Folder</th>
@@ -38,7 +39,7 @@ export default async function SuppliersPage() {
           <tbody>
             {suppliers.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-12 text-center text-zinc-500">
+                <td colSpan={10} className="px-4 py-12 text-center text-zinc-500">
                   No suppliers yet. Run the Supplier sync from <a href="/sync" className="underline">/sync</a>.
                 </td>
               </tr>
@@ -50,6 +51,15 @@ export default async function SuppliersPage() {
                 >
                   <td className="px-4 py-3 font-medium">{s.name}</td>
                   <td className="px-4 py-3 text-zinc-600">{s.purchaser ?? "—"}</td>
+                  <td className="px-4 py-3 text-xs text-zinc-600">
+                    {s.email ? <div>{s.email}</div> : <span className="text-zinc-400">—</span>}
+                    {s.contactEmail && (
+                      <div className="text-zinc-400">
+                        cc {s.contactName ? `${s.contactName} · ` : ""}
+                        {s.contactEmail}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-zinc-600">{s.country ?? "—"}</td>
                   <td className="px-4 py-3 text-zinc-600">{s.location ?? "—"}</td>
                   <td className="px-4 py-3 text-xs">

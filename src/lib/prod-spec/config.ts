@@ -95,6 +95,24 @@ export function parseProdSpecRequiredFields(raw: unknown): RequiredField[] {
   return z.array(RequiredFieldSchema).parse(raw ?? []);
 }
 
+// Coerce ProdSpec.outputLanguages JSON into a clean array of lowercase
+// language codes (e.g. ["en","da","de"]). Drops non-strings / blanks and
+// dedupes while preserving order. Empty array ⇒ templates use their
+// built-in default language set (see src/lib/pdf/output-langs.ts).
+export function parseProdSpecLanguages(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const v of raw) {
+    if (typeof v !== "string") continue;
+    const code = v.trim().toLowerCase();
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    out.push(code);
+  }
+  return out;
+}
+
 // Resolve an output entry to its registered variant. Returns null if the
 // variantKey is stale (e.g. a variant got removed from code) — the runner
 // logs and skips in that case.

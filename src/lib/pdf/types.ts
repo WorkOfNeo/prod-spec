@@ -85,6 +85,13 @@ export type StyleData = {
   // template (no placeholder).
   careInstructionsByLang?: Record<string, string>;
 
+  // Languages this style's outputs should render, as lowercase codes
+  // (the ProdSpec's selected `outputLanguages`). Templates iterate these
+  // instead of their hardcoded language list. Empty / undefined ⇒ the
+  // template falls back to its built-in default set. See
+  // src/lib/pdf/output-langs.ts (resolveOutputLangs).
+  outputLanguages?: string[];
+
   // Certificate names attached to the style, parsed from the Monday
   // "__certificates__1" column (e.g. ["FSC", "OEKOTEX"]). care-label-02
   // page 4 resolves each against the Certificate library and prints the

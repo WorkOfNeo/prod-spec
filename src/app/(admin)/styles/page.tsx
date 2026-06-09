@@ -4,6 +4,7 @@ import { formatDate } from "@/lib/utils";
 import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
 import { computeReadiness } from "@/lib/styles/readiness";
 import { findMissingDetailFields, requiredFieldKeysFromOutputs } from "@/lib/styles/detail-fields";
+import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import { effectiveStyleItem } from "@/lib/styles/resolved-fields";
 import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
 import { HIDDEN_STYLE_GROUP_TERMS } from "@/lib/import/heuristics";
@@ -90,6 +91,18 @@ export default async function StylesPage() {
                   requiredKeys,
                 )
               : [];
+          // Per-output readiness: each output generates as soon as its own
+          // fields land. Uses the customer mapping (empty override) to match
+          // mappingFor above.
+          const outputReadiness = s.prodSpec
+            ? outputReadinessForStyle({
+                rawData: s.rawData,
+                poNumber: s.poNumber,
+                supplier: s.supplier,
+                customer: { config: s.customer.config },
+                prodSpec: { outputs: s.prodSpec.outputs, columnMapping: {} },
+              })
+            : [];
           const r = computeReadiness({
             completionPct: s.completionPct,
             prodSpec: s.prodSpec
@@ -100,6 +113,13 @@ export default async function StylesPage() {
               : null,
             autoGenerateEnabled,
             missingDetailFields: missingDetailFields.map((f) => f.label),
+            outputs: {
+              total: outputReadiness.length,
+              ready: outputReadiness.filter((o) => o.ready).length,
+              blocking: outputReadiness
+                .filter((o) => !o.ready)
+                .map((o) => ({ name: o.name, missing: o.missing.map((m) => m.label) })),
+            },
           });
           return {
             id: s.id,
