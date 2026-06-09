@@ -23,6 +23,10 @@ export default async function StylesPage() {
       // these never belong on the list, not even behind "Show archived".
       // A null group is kept (matches neither term). See HIDDEN_STYLE_GROUP_TERMS.
       where: {
+        // Archived / deleted Monday items are retained for the audit log but
+        // hidden here (soft lifecycle stamped by the webhook).
+        archivedAt: null,
+        deletedAt: null,
         NOT: HIDDEN_STYLE_GROUP_TERMS.map((term) => ({
           groupTitle: { contains: term, mode: "insensitive" as const },
         })),

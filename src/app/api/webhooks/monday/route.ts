@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { isChallenge, isEventPayload, verifyWebhookRequest } from "@/lib/monday/webhook";
-import { ingestMondayItem } from "@/lib/monday/ingest";
+import { ingestMondayItem, markStyleArchived, markStyleDeleted } from "@/lib/monday/ingest";
 import { enqueueGenerationJob } from "@/lib/queue/enqueue";
 import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
 import { hasAllRequiredDetailFields } from "@/lib/styles/detail-fields";
@@ -48,6 +48,27 @@ export async function POST(req: NextRequest) {
   if (!event.pulseId) {
     // Some events (e.g. column-settings changes) don't carry a pulseId.
     return NextResponse.json({ ok: true, skipped: "no pulseId" });
+  }
+
+  // Soft lifecycle: an archived / deleted Monday item is flagged on the mirror
+  // (never dropped) so its row + Log trail survive for audit and the styles
+  // list stops surfacing it. Don't fall through to ingest — the item may no
+  // longer be fetchable from Monday.
+  if (event.type === "item_archived" || event.type === "item_deleted") {
+    const lifecycle =
+      event.type === "item_deleted"
+        ? await markStyleDeleted(event.pulseId)
+        : await markStyleArchived(event.pulseId);
+    await db.log.create({
+      data: {
+        level: "INFO",
+        message: lifecycle.matched
+          ? `style ${lifecycle.styleId} flagged ${event.type} (hidden from UI, retained for log)`
+          : `${event.type} for unknown item ${event.pulseId} — nothing in mirror to flag`,
+        payload: { pulseId: event.pulseId, type: event.type, styleId: lifecycle.styleId },
+      },
+    });
+    return NextResponse.json({ ok: true });
   }
 
   try {

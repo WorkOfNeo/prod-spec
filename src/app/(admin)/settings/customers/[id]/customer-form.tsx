@@ -92,7 +92,7 @@ export function CustomerForm({ mode, initial, customerId }: Props) {
       <label className="text-xs font-medium text-zinc-700">
         Config JSON
         <span className="ml-2 font-normal text-zinc-500">
-          (mondayBoardIds, columnMapping, requiredFields, enabledDocTypes)
+          (mondayBoardIds, enabledDocTypes, sharepointPath) — column mapping is shared, edit it under Settings → Monday
         </span>
         <textarea
           value={configText}

@@ -339,3 +339,27 @@ function extractLinkUrl(raw: unknown): string | null {
   }
   return null;
 }
+
+export type LifecycleResult = { matched: boolean; styleId?: string };
+
+// Soft lifecycle handlers (ported from the Monday webhooks work). We never
+// hard-delete: an archived / deleted Monday item is flagged so the row + its
+// Log trail survive for audit, and the UI stops surfacing it. Idempotent —
+// re-stamping an already-flagged row is fine.
+export async function markStyleArchived(itemId: string | number): Promise<LifecycleResult> {
+  const result = await db.style.updateMany({
+    where: { mondayItemId: String(itemId), archivedAt: null },
+    data: { archivedAt: new Date() },
+  });
+  const style = await db.style.findUnique({ where: { mondayItemId: String(itemId) }, select: { id: true } });
+  return { matched: result.count > 0 || style !== null, styleId: style?.id };
+}
+
+export async function markStyleDeleted(itemId: string | number): Promise<LifecycleResult> {
+  const result = await db.style.updateMany({
+    where: { mondayItemId: String(itemId), deletedAt: null },
+    data: { deletedAt: new Date() },
+  });
+  const style = await db.style.findUnique({ where: { mondayItemId: String(itemId) }, select: { id: true } });
+  return { matched: result.count > 0 || style !== null, styleId: style?.id };
+}

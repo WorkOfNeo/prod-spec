@@ -88,6 +88,15 @@ src/
 
 ## Operator playbook
 
+### Column mapping is shared across all customers
+
+The same Monday columns are synced for every customer, so the column mapping + required fields live in **one global row**, not per-customer. Edit them under `/settings` → **Register & fill →** (`/settings/monday`) → **Shared column mapping**:
+
+- `columnMapping` — each field → a Monday column id.
+- `requiredFields` — the column ids that must be filled for a style to be ready.
+
+Per-customer config (`Customer.config`) now only carries `mondayBoardIds`, `enabledDocTypes`, and `sharepointPath`. (Legacy customer configs that still contain `columnMapping` / `requiredFields` keys parse fine — those keys are ignored.)
+
 ### Onboarding a new customer (the M4 promise)
 
 No code changes — config only.
@@ -95,24 +104,37 @@ No code changes — config only.
 1. Sign in as ADMIN.
 2. Go to `/settings` → **+ Add customer**.
 3. Set the slug (kebab-case, permanent), name, supplier email, SharePoint folder path.
-4. Paste the customer's Monday column mapping into `columnMapping` in the config JSON. Each field maps to a Monday column id.
-5. List the customer's Monday board IDs under `mondayBoardIds` so the webhook receiver routes events to this customer.
-6. Set `requiredFields` to the columns that must be filled for a style to be ready.
-7. Save.
-8. From `/settings`, click **+ Bootstrap webhooks** (or POST `/api/admin/webhooks` with the new board IDs).
+4. List the customer's Monday board IDs under `mondayBoardIds` so the webhook receiver routes events to this customer.
+5. Save.
+6. The shared column mapping already applies — no per-customer mapping needed.
+7. From `/settings` → **Register & fill →** (`/settings/monday`): **Check columns** to confirm the shared mapping resolves against this board, **Register webhooks**, then **Fill now** for the one-time backfill.
 
 ### Registering Monday webhooks
 
-Append-only — code never deletes. Bootstrap calls `create_webhook` only for events not already in our local registry.
+**UI (recommended):** `/settings` → **Register & fill →** (or go straight to `/settings/monday`). Per board you can:
+
+1. **Check columns** — confirms every column id in the customer's `columnMapping` / `requiredFields` actually exists on the live Monday board before you flip webhooks on. (Wiki scar: a stale column id silently resolves to nothing and produces empty mirror fields with no error.)
+2. **Register webhooks** — defaults to `create_item`, `change_column_value`, `change_status_column_value`, `item_archived`, `item_deleted`. Append-only: only events not already in our registry are created.
+3. **Fill now** — one-time backfill of every existing item on the board into the `Style` mirror. **Mirror-only**: it does *not* enqueue jobs or email reviewers. After the fill, incoming webhooks keep the mirror current and drive the pipe.
+
+**API equivalent** — append-only, code never deletes:
 
 ```bash
 curl -X POST $PROD_SPEC_BASE_URL/api/admin/webhooks \
   -H "Content-Type: application/json" \
   -H "Cookie: <session-cookie-from-sign-in>" \
-  -d '{"boardId": "1234567890", "events": ["change_column_value", "create_item"]}'
+  -d '{"boardId": "1234567890", "events": ["create_item", "change_column_value", "change_status_column_value", "item_archived", "item_deleted"]}'
+
+# Column readiness:
+curl "$PROD_SPEC_BASE_URL/api/admin/monday/columns?boardId=1234567890" -H "Cookie: <session>"
+# One-time mirror backfill:
+curl -X POST $PROD_SPEC_BASE_URL/api/admin/monday/sync \
+  -H "Content-Type: application/json" -H "Cookie: <session>" -d '{"boardId": "1234567890"}'
 ```
 
-Response: `{created, skipped, foreign}` — the `foreign` array surfaces webhooks that exist on Monday but not in our DB (created via the Monday UI). We never touch them.
+Register response: `{created, skipped, foreign}` — the `foreign` array surfaces webhooks that exist on Monday but not in our DB (created via the Monday UI). We never touch them.
+
+**Archive / delete** never hard-delete a mirror row. An `item_archived` / `item_deleted` webhook stamps `archivedAt` / `deletedAt` on the `Style` so it drops out of the UI lists while the row and its full `Log` trail survive for audit. A later edit to the item clears the flag and it reappears.
 
 ### Triggering a re-run
 

@@ -395,6 +395,11 @@ model Style {
   // recovery, mirrors Job.startedAt.
   eanResolveStartedAt DateTime?
   lastSyncedAt   DateTime?
+  // Soft lifecycle from Monday. We never hard-delete a Style: an
+  // item_archived / item_deleted webhook stamps these instead, so the row
+  // (and its full Log trail) survives for audit while the UI hides it.
+  archivedAt     DateTime?
+  deletedAt      DateTime?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
@@ -415,6 +420,8 @@ model Style {
   @@index([poNumber])
   @@index([groupTitle])
   @@index([eanStatus])
+  @@index([archivedAt])
+  @@index([deletedAt])
   @@map("styles")
 }
 
@@ -618,6 +625,19 @@ model MondayWebhook {
   @@unique([boardId, eventType])
   @@index([boardId])
   @@map("monday_webhooks")
+}
+
+// Shared Monday column mapping — the SAME columns are synced for every
+// customer, so the mapping + required fields live in a single global row
+// rather than being duplicated per customer. Singleton: id is always "global".
+model MondayColumnConfig {
+  id             String   @id @default("global")
+  columnMapping  Json     @default("{}")
+  requiredFields Json     @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("monday_column_config")
 }
 
 // Audit trail for bulk Monday → local mirror syncs. One row per sync run.
