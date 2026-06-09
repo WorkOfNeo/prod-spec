@@ -142,6 +142,11 @@ model Style {
   missingFields Json        @default("[]")
   status        StyleStatus @default(PENDING)
   lastSyncedAt  DateTime?
+  // Soft lifecycle from Monday. We never hard-delete a Style: an
+  // item_archived / item_deleted webhook stamps these instead, so the row
+  // (and its full Log trail) survives for audit while the UI hides it.
+  archivedAt    DateTime?
+  deletedAt     DateTime?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
@@ -150,6 +155,8 @@ model Style {
 
   @@index([customerId])
   @@index([status])
+  @@index([archivedAt])
+  @@index([deletedAt])
   @@map("styles")
 }
 

@@ -78,9 +78,19 @@ export default async function SettingsPage() {
       </section>
 
       <section className="mt-8">
-        <h2 className="text-sm font-semibold text-zinc-700">Monday webhooks</h2>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-zinc-700">Monday webhooks</h2>
+          <Link
+            href="/settings/monday"
+            className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
+          >
+            Register &amp; fill →
+          </Link>
+        </div>
         <p className="mt-1 text-xs text-zinc-500">
-          Append-only registry. Deletion is a manual action, never automated (project rule).
+          Append-only registry. Deletion is a manual action, never automated (project rule). Register webhooks,
+          check synced columns, and run the one-time fill from the{" "}
+          <Link href="/settings/monday" className="underline">Monday page</Link>.
         </p>
         <div className="mt-2 overflow-hidden rounded-lg border border-zinc-200 bg-white">
           <table className="w-full text-sm">

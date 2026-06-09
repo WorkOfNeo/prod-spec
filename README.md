@@ -99,20 +99,34 @@ No code changes — config only.
 5. List the customer's Monday board IDs under `mondayBoardIds` so the webhook receiver routes events to this customer.
 6. Set `requiredFields` to the columns that must be filled for a style to be ready.
 7. Save.
-8. From `/settings`, click **+ Bootstrap webhooks** (or POST `/api/admin/webhooks` with the new board IDs).
+8. From `/settings` → **Register & fill →** (`/settings/monday`): **Check columns** to confirm the mapping resolves, **Register webhooks**, then **Fill now** for the one-time backfill.
 
 ### Registering Monday webhooks
 
-Append-only — code never deletes. Bootstrap calls `create_webhook` only for events not already in our local registry.
+**UI (recommended):** `/settings` → **Register & fill →** (or go straight to `/settings/monday`). Per board you can:
+
+1. **Check columns** — confirms every column id in the customer's `columnMapping` / `requiredFields` actually exists on the live Monday board before you flip webhooks on. (Wiki scar: a stale column id silently resolves to nothing and produces empty mirror fields with no error.)
+2. **Register webhooks** — defaults to `create_item`, `change_column_value`, `change_status_column_value`, `item_archived`, `item_deleted`. Append-only: only events not already in our registry are created.
+3. **Fill now** — one-time backfill of every existing item on the board into the `Style` mirror. **Mirror-only**: it does *not* enqueue jobs or email reviewers. After the fill, incoming webhooks keep the mirror current and drive the pipe.
+
+**API equivalent** — append-only, code never deletes:
 
 ```bash
 curl -X POST $PROD_SPEC_BASE_URL/api/admin/webhooks \
   -H "Content-Type: application/json" \
   -H "Cookie: <session-cookie-from-sign-in>" \
-  -d '{"boardId": "1234567890", "events": ["change_column_value", "create_item"]}'
+  -d '{"boardId": "1234567890", "events": ["create_item", "change_column_value", "change_status_column_value", "item_archived", "item_deleted"]}'
+
+# Column readiness:
+curl "$PROD_SPEC_BASE_URL/api/admin/monday/columns?boardId=1234567890" -H "Cookie: <session>"
+# One-time mirror backfill:
+curl -X POST $PROD_SPEC_BASE_URL/api/admin/monday/sync \
+  -H "Content-Type: application/json" -H "Cookie: <session>" -d '{"boardId": "1234567890"}'
 ```
 
-Response: `{created, skipped, foreign}` — the `foreign` array surfaces webhooks that exist on Monday but not in our DB (created via the Monday UI). We never touch them.
+Register response: `{created, skipped, foreign}` — the `foreign` array surfaces webhooks that exist on Monday but not in our DB (created via the Monday UI). We never touch them.
+
+**Archive / delete** never hard-delete a mirror row. An `item_archived` / `item_deleted` webhook stamps `archivedAt` / `deletedAt` on the `Style` so it drops out of the UI lists while the row and its full `Log` trail survive for audit. A later edit to the item clears the flag and it reappears.
 
 ### Triggering a re-run
 

@@ -52,6 +52,10 @@ export async function ingestMondayItem(itemId: string | number, item?: MondayIte
       missingFields: missingFields as unknown as object,
       status,
       lastSyncedAt: new Date(),
+      // The item is live in Monday (it emitted this event / was returned by
+      // the API), so it is no longer archived or deleted. Clear any prior flag.
+      archivedAt: null,
+      deletedAt: null,
     },
   });
 
@@ -62,4 +66,27 @@ export async function ingestMondayItem(itemId: string | number, item?: MondayIte
     completionPct,
     missingFields,
   };
+}
+
+export type LifecycleResult = { matched: boolean; styleId?: string };
+
+// Soft lifecycle handlers. We never hard-delete: an archived / deleted Monday
+// item is flagged so the row + its Log trail survive for audit, and the UI
+// stops surfacing it. Idempotent — re-stamping an already-flagged row is fine.
+export async function markStyleArchived(itemId: string | number): Promise<LifecycleResult> {
+  const result = await db.style.updateMany({
+    where: { mondayItemId: String(itemId), archivedAt: null },
+    data: { archivedAt: new Date() },
+  });
+  const style = await db.style.findUnique({ where: { mondayItemId: String(itemId) }, select: { id: true } });
+  return { matched: result.count > 0 || style !== null, styleId: style?.id };
+}
+
+export async function markStyleDeleted(itemId: string | number): Promise<LifecycleResult> {
+  const result = await db.style.updateMany({
+    where: { mondayItemId: String(itemId), deletedAt: null },
+    data: { deletedAt: new Date() },
+  });
+  const style = await db.style.findUnique({ where: { mondayItemId: String(itemId) }, select: { id: true } });
+  return { matched: result.count > 0 || style !== null, styleId: style?.id };
 }
