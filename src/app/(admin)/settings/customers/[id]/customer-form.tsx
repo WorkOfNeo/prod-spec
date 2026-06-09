@@ -7,8 +7,6 @@ import type { CustomerConfig } from "@/lib/customers/config";
 type Initial = {
   slug: string;
   name: string;
-  sharepointPath: string;
-  supplierEmail: string;
   config: CustomerConfig;
 };
 
@@ -20,8 +18,6 @@ export function CustomerForm({ mode, initial, customerId }: Props) {
   const router = useRouter();
   const [slug, setSlug] = useState(initial.slug);
   const [name, setName] = useState(initial.name);
-  const [sharepointPath, setSharepointPath] = useState(initial.sharepointPath);
-  const [supplierEmail, setSupplierEmail] = useState(initial.supplierEmail);
   const [configText, setConfigText] = useState(JSON.stringify(initial.config, null, 2));
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -41,8 +37,6 @@ export function CustomerForm({ mode, initial, customerId }: Props) {
 
       const payload: Record<string, unknown> = {
         name,
-        sharepointPath: sharepointPath || null,
-        supplierEmail: supplierEmail || null,
         config,
       };
       if (mode === "create") payload.slug = slug;
@@ -94,28 +88,6 @@ export function CustomerForm({ mode, initial, customerId }: Props) {
           />
         </label>
       </div>
-
-      <label className="text-xs font-medium text-zinc-700">
-        SharePoint folder path
-        <input
-          type="text"
-          value={sharepointPath}
-          onChange={(e) => setSharepointPath(e.target.value)}
-          className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
-          placeholder="ProdSpec/Netto Germany"
-        />
-      </label>
-
-      <label className="text-xs font-medium text-zinc-700">
-        Supplier email
-        <input
-          type="email"
-          value={supplierEmail}
-          onChange={(e) => setSupplierEmail(e.target.value)}
-          className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
-          placeholder="supplier@example.com"
-        />
-      </label>
 
       <label className="text-xs font-medium text-zinc-700">
         Config JSON

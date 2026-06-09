@@ -43,6 +43,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       where: { id: job.styleId },
       data: { status: "REJECTED" },
     }),
+    // Cascade the rejection onto every asset that was still awaiting
+    // review — gives the Delivered Prod Specs panel + analytics a
+    // consistent record. Already-decided assets keep their state.
+    db.jobAsset.updateMany({
+      where: { jobId: job.id, reviewStatus: "PENDING_REVIEW" },
+      data: {
+        reviewStatus: "REJECTED",
+        rejectReason: parsed.data.reason,
+        reviewedAt: new Date(),
+        reviewedById: session.user.id,
+      },
+    }),
     db.reviewAction.create({
       data: { jobId: job.id, userId: session.user.id, action: "REJECTED", reason: parsed.data.reason },
     }),

@@ -27,8 +27,6 @@ export default async function EditCustomerPage({ params }: { params: Promise<{ i
         initial={{
           slug: customer.slug,
           name: customer.name,
-          sharepointPath: customer.sharepointPath ?? "",
-          supplierEmail: customer.supplierEmail ?? "",
           config,
         }}
       />

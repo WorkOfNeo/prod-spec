@@ -2,9 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
 import { enqueueGenerationJob } from "@/lib/queue/enqueue";
-import { triggerRunner } from "@/lib/queue/trigger";
+import { runPendingJobs } from "@/lib/queue/runner";
 
 export const runtime = "nodejs";
+// Rendering 6 PDFs in sequence can take a while on a cold Puppeteer.
+export const maxDuration = 300;
 
 export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const session = await getServerSession();
@@ -27,7 +29,19 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
   await db.log.create({
     data: { jobId, level: "INFO", message: `manual re-run requested by ${session.user.email}` },
   });
-  await triggerRunner();
 
-  return NextResponse.json({ ok: true, jobId });
+  // Run inline. The admin clicked "Re-run" and is waiting on the response;
+  // there's no benefit to dispatching to a background runner here. Matches
+  // the manual-style flow at /api/admin/styles/manual.
+  //
+  // (The webhook path keeps using triggerRunner because Monday will retry
+  // a slow response, and the webhook should ack fast.)
+  const summary = await runPendingJobs(1);
+
+  return NextResponse.json({
+    ok: true,
+    jobId,
+    jobsProcessed: summary.processed,
+    jobsFailed: summary.failed,
+  });
 }

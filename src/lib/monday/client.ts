@@ -21,6 +21,14 @@ export type MondayColumnValue = {
   type?: string;
   text: string | null;
   value: string | null;
+  // Monday API 2024-10+: board_relation columns return `value: null` from
+  // the legacy serialization, and the real link lives in `linked_item_ids`
+  // exposed via the `... on BoardRelationValue` GraphQL fragment. We
+  // query for it explicitly so ingest / sink can read the link. Older
+  // boards that still emit the legacy `{ linkedPulseIds: [...] }` payload
+  // in `value` keep working — extractLinkedItemId handles both.
+  linked_item_ids?: string[] | null;
+  display_value?: string | null;
 };
 
 export type MondayItem = {
@@ -77,7 +85,11 @@ const ITEM_FIELDS = `
   name
   group { id title }
   board { id }
-  column_values { id type text value }
+  column_values {
+    id type text value
+    ... on BoardRelationValue { linked_item_ids display_value }
+    ... on MirrorValue { display_value }
+  }
 `;
 
 export async function getItem(itemId: string | number): Promise<MondayItem | null> {
@@ -190,15 +202,32 @@ export async function changeItemValue(input: {
 
 export function columnText(item: MondayItem, columnId: string): string {
   const col = item.column_values.find((c) => c.id === columnId);
-  return col?.text ?? "";
+  if (!col) return "";
+  // Mirror columns (e.g. Pre-Order "🌍 Country of Origin") return an empty
+  // `text`; their value lives in `display_value`. Fall back to it so a
+  // mapped mirror column resolves like any other.
+  if (col.text && col.text.trim()) return col.text;
+  return col.display_value ?? "";
 }
 
 export function columnValue(item: MondayItem, columnId: string): unknown {
   const col = item.column_values.find((c) => c.id === columnId);
-  if (!col?.value) return null;
-  try {
-    return JSON.parse(col.value);
-  } catch {
-    return col.value;
+  if (!col) return null;
+  if (col.value) {
+    try {
+      return JSON.parse(col.value);
+    } catch {
+      return col.value;
+    }
   }
+  // Board-relation columns return `value: null` on Monday API 2024-10+;
+  // their link payload comes through `linked_item_ids`. Synthesize the
+  // legacy `{ linkedPulseIds: [{ linkedPulseId }] }` shape so the rest
+  // of the codebase (extractLinkedItemId, etc.) keeps working.
+  if (Array.isArray(col.linked_item_ids) && col.linked_item_ids.length > 0) {
+    return {
+      linkedPulseIds: col.linked_item_ids.map((id) => ({ linkedPulseId: String(id) })),
+    };
+  }
+  return null;
 }

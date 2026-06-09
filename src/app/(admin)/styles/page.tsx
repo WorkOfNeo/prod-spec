@@ -1,24 +1,58 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
+import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
+import { computeReadiness } from "@/lib/styles/readiness";
+import { findMissingDetailFields, requiredFieldKeysFromOutputs } from "@/lib/styles/detail-fields";
+import { effectiveStyleItem } from "@/lib/styles/resolved-fields";
+import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
+import { HIDDEN_STYLE_GROUP_TERMS } from "@/lib/import/heuristics";
+import { StylesTable } from "./styles-table";
+import { eanStatusMeta } from "@/lib/po/ean-status-meta";
 
 export const dynamic = "force-dynamic";
 
-const STATUS_STYLES: Record<string, string> = {
-  PENDING: "bg-amber-100 text-amber-800",
-  READY: "bg-emerald-100 text-emerald-800",
-  GENERATING: "bg-blue-100 text-blue-800",
-  AWAITING_REVIEW: "bg-purple-100 text-purple-800",
-  APPROVED: "bg-emerald-100 text-emerald-800",
-  REJECTED: "bg-red-100 text-red-800",
-};
-
 export default async function StylesPage() {
-  const styles = await db.style.findMany({
-    include: { customer: true },
-    orderBy: { updatedAt: "desc" },
-    take: 200,
-  });
+  // Load all styles for client-side search. At ~4k rows the initial
+  // HTML payload is bigger than the legacy 200-row cap, but the table
+  // renders in <500 ms and the filtering UX is instant. Switch to
+  // server-side pagination if the row count ever crosses ~20k.
+  const [styles, autoGenerateEnabled] = await Promise.all([
+    db.style.findMany({
+      // Hard-exclude the "Templates" (Pre-Order stubs) and "Done" groups —
+      // these never belong on the list, not even behind "Show archived".
+      // A null group is kept (matches neither term). See HIDDEN_STYLE_GROUP_TERMS.
+      where: {
+        NOT: HIDDEN_STYLE_GROUP_TERMS.map((term) => ({
+          groupTitle: { contains: term, mode: "insensitive" as const },
+        })),
+      },
+      include: {
+        // config feeds the per-style required-field check below.
+        customer: { select: { name: true, config: true } },
+        businessAreaRef: { select: { name: true } },
+        // Country falls back to the linked supplier's country when the mapped
+        // mirror column is empty (see effectiveStyleItem).
+        supplier: { select: { country: true } },
+        // Threshold the completion bar is measured against + the enabled
+        // outputs, whose union of required fields drives the readiness check.
+        prodSpec: { select: { autoGenerateThresholdPct: true, active: true, outputs: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+    }),
+    getAutoGenerateEnabled(),
+  ]);
+
+  // Parse each customer's column mapping once, not per style row.
+  const mappingByCustomer = new Map<string, ColumnMapping>();
+  const mappingFor = (customerId: string, config: unknown): ColumnMapping => {
+    let m = mappingByCustomer.get(customerId);
+    if (!m) {
+      m = parseCustomerConfig(config).columnMapping;
+      mappingByCustomer.set(customerId, m);
+    }
+    return m;
+  };
 
   return (
     <div className="px-8 py-8">
@@ -26,65 +60,78 @@ export default async function StylesPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Styles</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            {styles.length} {styles.length === 1 ? "style" : "styles"} synced from Monday.
+            {styles.length} {styles.length === 1 ? "style" : "styles"} on file. Search
+            across name, customer, business area, PO# and status, or use the filter
+            chips (click to cycle: has → missing).
           </p>
         </div>
+        <Link
+          href="/styles/new"
+          className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+        >
+          + New manual style
+        </Link>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
-            <tr>
-              <th className="px-4 py-3">Style</th>
-              <th className="px-4 py-3">Customer</th>
-              <th className="px-4 py-3">Business area</th>
-              <th className="px-4 py-3">Completion</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Last synced</th>
-            </tr>
-          </thead>
-          <tbody>
-            {styles.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-zinc-500">
-                  No styles synced yet. Trigger a Monday webhook event to populate.
-                </td>
-              </tr>
-            ) : (
-              styles.map((s) => (
-                <tr key={s.id} className="border-t border-zinc-100 hover:bg-zinc-50">
-                  <td className="px-4 py-3 font-medium">
-                    <Link href={`/styles/${s.id}`} className="hover:underline">{s.name}</Link>
-                  </td>
-                  <td className="px-4 py-3 text-zinc-600">{s.customer.name}</td>
-                  <td className="px-4 py-3 text-zinc-600">{s.businessArea ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 w-24 overflow-hidden rounded-full bg-zinc-100">
-                        <div
-                          className="h-full bg-zinc-900"
-                          style={{ width: `${s.completionPct}%` }}
-                        />
-                      </div>
-                      <span className="text-xs tabular-nums text-zinc-600">{s.completionPct}%</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                        STATUS_STYLES[s.status] ?? "bg-zinc-100 text-zinc-700"
-                      }`}
-                    >
-                      {s.status.toLowerCase().replace(/_/g, " ")}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-zinc-500">{formatDate(s.lastSyncedAt)}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      <StylesTable
+        autoGenerateEnabled={autoGenerateEnabled}
+        rows={styles.map((s) => {
+          const ba = s.businessAreaRef?.name ?? s.businessArea ?? null;
+          const requiredKeys = requiredFieldKeysFromOutputs(s.prodSpec?.outputs);
+          const missingDetailFields =
+            requiredKeys.length > 0
+              ? findMissingDetailFields(
+                  effectiveStyleItem(s),
+                  mappingFor(s.customerId, s.customer.config),
+                  requiredKeys,
+                )
+              : [];
+          const r = computeReadiness({
+            completionPct: s.completionPct,
+            prodSpec: s.prodSpec
+              ? {
+                  autoGenerateThresholdPct: s.prodSpec.autoGenerateThresholdPct,
+                  active: s.prodSpec.active,
+                }
+              : null,
+            autoGenerateEnabled,
+            missingDetailFields: missingDetailFields.map((f) => f.label),
+          });
+          return {
+            id: s.id,
+            name: s.name,
+            poNumber: s.poNumber,
+            customerName: s.customer.name,
+            businessArea: ba,
+            completionPct: s.completionPct,
+            threshold: s.prodSpec?.autoGenerateThresholdPct ?? null,
+            hasProdSpec: Boolean(s.prodSpec),
+            hasSupplier: Boolean(s.supplierId),
+            // How many of the fields this style's outputs need carry a value
+            // (filled / total). 0 total = its outputs need nothing / none set.
+            requiredTotal: requiredKeys.length,
+            requiredFilled: requiredKeys.length - missingDetailFields.length,
+            readiness: { tone: r.tone, label: r.shortLabel, hint: r.title },
+            status: s.status,
+            eanStatus: s.eanStatus,
+            groupTitle: s.groupTitle,
+            lastSyncedAt: formatDate(s.lastSyncedAt),
+            searchBlob: [
+              s.name,
+              s.customer.name,
+              ba ?? "",
+              s.poNumber ?? "",
+              s.status,
+              s.status.toLowerCase().replace(/_/g, " "),
+              s.groupTitle ?? "",
+              r.shortLabel,
+              eanStatusMeta(s.eanStatus).label,
+            ]
+              .join(" ")
+              .toLowerCase(),
+          };
+        })}
+      />
     </div>
   );
 }

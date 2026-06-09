@@ -18,8 +18,6 @@ export default function NewCustomerPage() {
         initial={{
           slug: "",
           name: "",
-          sharepointPath: "",
-          supplierEmail: "",
           config: NETTO_GERMANY_DEFAULT_CONFIG,
         }}
       />
