@@ -97,6 +97,20 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
   const supplier = job.style.supplier;
   const supplierEmail = supplier?.email?.trim() || process.env.SUPPLIER_NOTIFICATION_EMAIL || null;
   const ccEmail = supplier?.contactEmail?.trim() || null;
+
+  // Summary surfaced back to the reviewer (and written to the job log) so the
+  // recipients can be confirmed even when email sending is turned off. When
+  // RESEND_API_KEY / EMAIL_FROM aren't set, sendEmail no-ops and returns
+  // { sent: false } — we still report exactly who it WOULD have gone to.
+  const notification: {
+    to: string | null;
+    cc: string | null;
+    attachments: number;
+    folderUrl: string | null;
+    sent: boolean;
+    note?: string;
+  } = { to: supplierEmail, cc: ccEmail, attachments: 0, folderUrl, sent: false };
+
   if (supplierEmail) {
     const isCorrection = job.triggerSource === "MANUAL_RERUN";
     const email = supplierApprovalEmail({
@@ -114,7 +128,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       filename: a.fileName,
       content: Buffer.from(a.pdf),
     }));
-    await sendEmail({
+    const sendResult = await sendEmail({
       to: supplierEmail,
       cc: ccEmail ?? undefined,
       subject: email.subject,
@@ -122,25 +136,33 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       text: email.text,
       attachments,
     });
+    notification.attachments = attachments.length;
+    notification.sent = sendResult.sent;
+    if (!sendResult.sent) {
+      notification.note = "Email sending is off (RESEND_API_KEY / EMAIL_FROM not set) — preview only.";
+    }
+    const verb = sendResult.sent ? "sent" : "PREVIEW (sending off) — would send";
     await db.log.create({
       data: {
         jobId: job.id,
         level: "INFO",
-        message: `supplier review email sent to ${supplierEmail}${ccEmail ? ` (cc ${ccEmail})` : ""} · ${attachments.length} attachment(s)${isCorrection ? " · correction" : ""}`,
+        message: `supplier review email ${verb} · To: ${supplierEmail}${ccEmail ? ` · CC: ${ccEmail}` : ""} · ${attachments.length} attachment(s)${folderUrl ? ` · folder: ${folderUrl}` : ""}${isCorrection ? " · correction" : ""}`,
       },
     });
   } else {
+    notification.note =
+      "No supplier email resolved — set the Monday supplier email column (MONDAY_SUPPLIER_COL_EMAIL) + re-sync, or set SUPPLIER_NOTIFICATION_EMAIL.";
     await db.log.create({
       data: {
         jobId: job.id,
         level: "WARN",
         message:
-          "No supplier email — board field empty and SUPPLIER_NOTIFICATION_EMAIL unset; files uploaded but supplier was not notified",
+          "No supplier email — board field empty and SUPPLIER_NOTIFICATION_EMAIL unset; files uploaded but no recipient resolved",
       },
     });
   }
 
-  return NextResponse.json({ ok: true, uploaded });
+  return NextResponse.json({ ok: true, uploaded, notification });
 }
 
 function slugify(s: string): string {
