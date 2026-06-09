@@ -1,4 +1,5 @@
 import { formatDate } from "@/lib/utils";
+import { RegisterWebhooksButton } from "./register-webhooks-button";
 
 type WebhookRow = {
   id: string;
@@ -14,11 +15,16 @@ type WebhookRow = {
 export function WebhooksTab({ webhooks }: { webhooks: WebhookRow[] }) {
   return (
     <section>
-      <div className="mb-2">
-        <h2 className="text-sm font-semibold text-zinc-700">Monday webhooks</h2>
-        <p className="mt-1 text-xs text-zinc-500">
-          Append-only registry. Deletion is a manual action, never automated (project rule).
-        </p>
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-700">Monday webhooks</h2>
+          <p className="mt-1 text-xs text-zinc-500">
+            Append-only registry. Deletion is a manual action, never automated (project rule).
+            <strong> Register</strong> subscribes the Pre-Order, Styles, Customers and Suppliers
+            boards so changes flow in live.
+          </p>
+        </div>
+        <RegisterWebhooksButton />
       </div>
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
         <table className="w-full text-sm">
