@@ -105,6 +105,75 @@ export async function getBoardItems(boardId: string | number, limit = 100): Prom
   return data.boards?.[0]?.items_page?.items ?? [];
 }
 
+// Walk every page of a board for a one-time backfill. Monday caps items_page
+// at 500/page and hands back a cursor; next_items_page continues from it until
+// the cursor is null. pageLimit is the per-request size, not a total cap.
+export async function getAllBoardItems(
+  boardId: string | number,
+  pageLimit = 100,
+): Promise<MondayItem[]> {
+  const first = await gql<{
+    boards: Array<{ items_page: { cursor: string | null; items: MondayItem[] } }>;
+  }>(
+    `query ($ids: [ID!], $limit: Int!) {
+      boards (ids: $ids) {
+        items_page (limit: $limit) {
+          cursor
+          items { ${ITEM_FIELDS} }
+        }
+      }
+    }`,
+    { ids: [String(boardId)], limit: pageLimit },
+  );
+
+  const page = first.boards?.[0]?.items_page;
+  if (!page) return [];
+
+  const items: MondayItem[] = [...page.items];
+  let cursor = page.cursor;
+
+  while (cursor) {
+    const next = await gql<{
+      next_items_page: { cursor: string | null; items: MondayItem[] };
+    }>(
+      `query ($cursor: String!, $limit: Int!) {
+        next_items_page (cursor: $cursor, limit: $limit) {
+          cursor
+          items { ${ITEM_FIELDS} }
+        }
+      }`,
+      { cursor, limit: pageLimit },
+    );
+    items.push(...next.next_items_page.items);
+    cursor = next.next_items_page.cursor;
+  }
+
+  return items;
+}
+
+export type MondayBoardColumn = {
+  id: string;
+  title: string;
+  type: string;
+};
+
+// Live column metadata for a board. Used by the readiness check to confirm
+// every column id we rely on in a customer's config actually exists on the
+// board before we flip webhooks on. Wiki scar: silent column-id misses.
+export async function getBoardColumns(boardId: string | number): Promise<MondayBoardColumn[]> {
+  const data = await gql<{
+    boards: Array<{ columns: MondayBoardColumn[] | null }> | null;
+  }>(
+    `query ($ids: [ID!]) {
+      boards (ids: $ids) {
+        columns { id title type }
+      }
+    }`,
+    { ids: [String(boardId)] },
+  );
+  return data.boards?.[0]?.columns ?? [];
+}
+
 // Wiki gotcha: Monday subitems live on a SEPARATE board id, but the API
 // exposes them via the parent item's `subitems` field. This helper goes
 // through the parent — callers that need the subitem board id can read

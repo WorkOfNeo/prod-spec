@@ -14,7 +14,9 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 export default async function StylesPage() {
+  // Archived / deleted Monday items are retained for the audit log but hidden here.
   const styles = await db.style.findMany({
+    where: { archivedAt: null, deletedAt: null },
     include: { customer: true },
     orderBy: { updatedAt: "desc" },
     take: 200,

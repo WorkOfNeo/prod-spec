@@ -5,6 +5,7 @@ import type { MondayItem } from "@/lib/monday/client";
 import { sendEmail } from "@/lib/email/client";
 import { reviewNotificationEmail } from "@/lib/email/templates/review-notification";
 import { parseCustomerConfig } from "@/lib/customers/config";
+import { getColumnConfig } from "@/lib/monday/column-config";
 import type { DocType } from "@/generated/prisma/enums";
 
 const STALE_RUNNING_MS = 15 * 60 * 1000;
@@ -89,10 +90,13 @@ export async function processJob(jobId: string): Promise<void> {
     throw new RunnerError("CONFIG_INVALID", `customer config invalid: ${(err as Error).message}`);
   }
 
+  // Column mapping is shared across all customers.
+  const columnConfig = await getColumnConfig();
+
   let styleData: ReturnType<typeof mapMondayItemToStyleData>;
   try {
     const item = job.style.rawData as unknown as MondayItem;
-    styleData = mapMondayItemToStyleData(item, job.style.customer.name, config.columnMapping);
+    styleData = mapMondayItemToStyleData(item, job.style.customer.name, columnConfig.columnMapping);
   } catch (err) {
     throw new RunnerError("MAPPING_FAILED", `monday → style data mapping failed: ${(err as Error).message}`);
   }
