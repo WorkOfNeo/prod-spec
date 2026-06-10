@@ -27,9 +27,14 @@ type WebhookActivityRow = {
 const EVENT_LABELS: Record<string, string> = {
   create_item: "Item created",
   create_subitem: "Subitem created",
+  // Monday delivers `update_*` as the payload type even when you subscribe
+  // to `change_column_value`; map both so the log reads cleanly either way.
   change_column_value: "Column changed",
+  update_column_value: "Column changed",
   change_status_column_value: "Status changed",
   change_specific_column_value: "Column changed",
+  update_specific_column_value: "Column changed",
+  update_name: "Name changed",
   item_archived: "Item archived",
   item_deleted: "Item deleted",
   item_moved_to_any_group: "Item moved",

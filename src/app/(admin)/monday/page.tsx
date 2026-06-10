@@ -157,7 +157,8 @@ function normalizeWebhookLog(
       event,
       board: boardId === "?" ? "—" : (boardLabelById.get(boardId) ?? boardId),
       item: pulse === "?" ? "—" : pulse,
-      detail: "",
+      // For column-change events, surface "<column>: <old> → <new>".
+      detail: describeChange(row.payload) ?? "",
     };
   }
 
@@ -179,6 +180,75 @@ function normalizeWebhookLog(
 
   // Other `monday.webhook …` info lines (board-event ignored / unknown board).
   return { ...base, event: "info", board: "—", item: "—", detail: m.replace(/^monday\.webhook /, "") };
+}
+
+// Build a readable "<column>: <old> → <new>" from a stored Monday webhook
+// payload. Monday's change-column events carry `event.value` +
+// `event.previousValue` (shape varies by column type) and `columnTitle`.
+function describeChange(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const event = (payload as { event?: unknown }).event;
+  if (!event || typeof event !== "object") return null;
+  const e = event as Record<string, unknown>;
+  if (!("value" in e) && !("previousValue" in e)) return null;
+  const title =
+    typeof e.columnTitle === "string" && e.columnTitle.trim()
+      ? e.columnTitle.trim()
+      : typeof e.columnId === "string"
+        ? e.columnId
+        : "Value";
+  const from = valueToText(e.previousValue);
+  const to = valueToText(e.value);
+  if (from == null && to == null) return null;
+  return `${title}: ${from ?? "—"} → ${to ?? "—"}`;
+}
+
+// Collapse Monday's per-column-type value object into a short string.
+// Covers the shapes seen on these boards (status/color, dropdown, date,
+// numeric/text), with a truncated-JSON fallback for anything unexpected.
+function valueToText(v: unknown): string | null {
+  if (v == null) return null;
+  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+    return String(v);
+  }
+  if (typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    // status / color → { label: { text } }
+    if (o.label && typeof o.label === "object") {
+      const t = (o.label as Record<string, unknown>).text;
+      if (typeof t === "string") return t;
+    }
+    if (typeof o.label === "string") return o.label;
+    // dropdown → { chosenValues: [{ name }] }
+    if (Array.isArray(o.chosenValues)) {
+      const names = (o.chosenValues as unknown[])
+        .map((c) =>
+          c && typeof c === "object" && "name" in c
+            ? String((c as { name: unknown }).name)
+            : null,
+        )
+        .filter((n): n is string => !!n);
+      if (names.length) return names.join(", ");
+    }
+    // date → { date, time }
+    if (typeof o.date === "string") {
+      return typeof o.time === "string" && o.time ? `${o.date} ${o.time}` : o.date;
+    }
+    // numeric / text → { value } ; some columns wrap as { text }
+    if (typeof o.value === "string" || typeof o.value === "number") return String(o.value);
+    if (typeof o.text === "string") return o.text;
+    // people → { personsAndTeams: [...] }
+    if (Array.isArray(o.personsAndTeams)) {
+      return `${(o.personsAndTeams as unknown[]).length} assignee(s)`;
+    }
+  }
+  try {
+    const s = JSON.stringify(v);
+    if (!s || s === "{}" || s === "null") return null;
+    return s.length > 48 ? `${s.slice(0, 45)}…` : s;
+  } catch {
+    return null;
+  }
 }
 
 // Async wrappers — `searchParams` is async-only in Next 16, so the
