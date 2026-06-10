@@ -13,6 +13,7 @@ import { db } from "@/lib/db";
 import { MONDAY_BOARD_LABELS, MONDAY_BOARDS } from "./boards";
 import { getBoardMeta, getBoardItems, getNextItemsPage } from "./client-pagination";
 import type { MondayItem } from "./client";
+import { slog, serr, errorSampler } from "./sync-log";
 
 export type SinkResult = {
   boardId: string;
@@ -29,6 +30,7 @@ export async function sinkBoard(boardId: string): Promise<SinkResult> {
   const startedAt = Date.now();
   const meta = await getBoardMeta(boardId);
   if (!meta) throw new Error(`Board ${boardId} not found on Monday`);
+  slog("sink", "board start", { board: meta.id, name: meta.name });
 
   // Pick a friendly label if this board id matches one of our known keys.
   // Otherwise leave it null and let the operator name it from the UI.
@@ -87,6 +89,7 @@ export async function sinkBoard(boardId: string): Promise<SinkResult> {
     columnIdMap.set(col.id, row.id);
     columnsSynced++;
   }
+  slog("sink", "columns synced", { board: meta.id, columns: columnsSynced });
 
   // -----------------------------------------------------
   // Step 2 — page through items, batched in parallel chunks.
@@ -102,6 +105,7 @@ export async function sinkBoard(boardId: string): Promise<SinkResult> {
   let itemsTotal = 0;
   let itemsSynced = 0;
   let itemsFailed = 0;
+  const itemErrors = errorSampler(`sink:${meta.id}`);
 
   let { items, cursor } = await getBoardItems(meta.id, 200);
   while (true) {
@@ -111,16 +115,29 @@ export async function sinkBoard(boardId: string): Promise<SinkResult> {
       const settled = await Promise.allSettled(
         chunk.map((item) => upsertGhostItem(board.id, item, now)),
       );
-      for (const r of settled) {
-        if (r.status === "fulfilled") itemsSynced++;
-        else itemsFailed++;
-      }
+      settled.forEach((r, j) => {
+        if (r.status === "fulfilled") {
+          itemsSynced++;
+        } else {
+          itemsFailed++;
+          itemErrors.record(`item ${chunk[j]?.id ?? "?"} upsert failed`, r.reason);
+        }
+      });
     }
+    // One line per page (~200 items) so a long Pre-Order sink shows
+    // liveness in the Railway log stream instead of looking hung.
+    slog("sink", "items progress", {
+      board: meta.id,
+      total: itemsTotal,
+      synced: itemsSynced,
+      failed: itemsFailed,
+    });
     if (!cursor) break;
     const next = await getNextItemsPage(cursor, 200);
     items = next.items;
     cursor = next.cursor;
   }
+  itemErrors.done();
 
   // -----------------------------------------------------
   // Step 3 — flatten dropdown / status options into MondayGhostDropdownOption.
@@ -166,6 +183,15 @@ export async function sinkBoard(boardId: string): Promise<SinkResult> {
   await db.mondayGhostBoard.update({
     where: { id: board.id },
     data: { itemCount: itemsTotal, lastSyncedAt: now },
+  });
+
+  slog("sink", "board done", {
+    board: meta.id,
+    items: `${itemsSynced}/${itemsTotal}`,
+    failed: itemsFailed,
+    columns: columnsSynced,
+    options: dropdownOptionsSynced,
+    ms: Date.now() - startedAt,
   });
 
   return {
@@ -355,6 +381,7 @@ export async function sinkAllKnownBoards(): Promise<{
 }> {
   const { listKnownBoards } = await import("./boards");
   const boards = listKnownBoards();
+  slog("sink-all", "start", { boards: boards.length });
 
   const job = await db.syncJob.create({
     data: {
@@ -372,6 +399,9 @@ export async function sinkAllKnownBoards(): Promise<{
         const r = await sinkBoard(b.id);
         results.push({ key: b.key, ...r });
       } catch (err) {
+        // Keep going so one broken board doesn't block the rest — but log
+        // the reason so it's visible instead of buried in `failed[]`.
+        serr("sink-all", `board ${b.key} (${b.id}) failed`, err);
         failed.push({ key: b.key, boardId: b.id, error: (err as Error).message });
       }
       // Update after each board so the progress bar ticks up board-by-board.
@@ -389,7 +419,9 @@ export async function sinkAllKnownBoards(): Promise<{
         itemsFailed: failed.length,
       },
     });
+    slog("sink-all", "done", { ok: results.length, failed: failed.length });
   } catch (err) {
+    serr("sink-all", "run aborted", err);
     await db.syncJob.update({
       where: { id: job.id },
       data: { status: "FAILED", finishedAt: new Date(), error: (err as Error).message },

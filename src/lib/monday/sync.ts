@@ -14,6 +14,7 @@ import {
 import { ingestMondayItem, IngestSkip } from "./ingest";
 import { ghostItemToMondayItem } from "./sink";
 import { ensureProdSpecsForStyle } from "@/lib/prod-spec/ensure";
+import { slog, serr, errorSampler } from "./sync-log";
 import {
   extractLinkedItemId,
   readGhostColumnText,
@@ -76,6 +77,7 @@ async function withSyncJob<T extends Omit<SyncResult, "syncJobId">>(
   ) => Promise<T>,
 ): Promise<SyncResult> {
   const job = await db.syncJob.create({ data: { kind, status: "RUNNING" } });
+  slog("fill", `${kind} start`);
   const recordProgress = async (
     synced: number,
     failed: number,
@@ -100,8 +102,15 @@ async function withSyncJob<T extends Omit<SyncResult, "syncJobId">>(
         itemsTotal: result.itemsTotal,
       },
     });
+    slog("fill", `${kind} done`, {
+      synced: result.itemsSynced,
+      failed: result.itemsFailed,
+      skipped: result.itemsSkipped,
+      total: result.itemsTotal,
+    });
     return { syncJobId: job.id, ...result };
   } catch (err) {
+    serr("fill", `${kind} FAILED`, err);
     await db.syncJob.update({
       where: { id: job.id },
       data: { status: "FAILED", finishedAt: new Date(), error: (err as Error).message },
@@ -170,6 +179,8 @@ export async function syncCustomers(): Promise<SyncResult> {
     let synced = 0;
     let failed = 0;
     const remoteIds = new Set<string>();
+    const errs = errorSampler("fill:customers");
+    slog("fill:customers", "items", { total: ghostItems.length });
 
     await recordProgress(0, 0, ghostItems.length, 0);
 
@@ -179,11 +190,16 @@ export async function syncCustomers(): Promise<SyncResult> {
         await upsertCustomerFromMondayItem(item);
         remoteIds.add(item.id);
         synced++;
-      } catch {
+      } catch (err) {
         failed++;
+        errs.record(`customer ${ghost.mondayItemId} (${ghost.name})`, err);
       }
       await recordProgress(synced, failed, ghostItems.length);
+      if ((synced + failed) % 500 === 0) {
+        slog("fill:customers", "progress", { done: synced + failed, total: ghostItems.length, failed });
+      }
     }
+    errs.done();
 
     // Mark customers we couldn't find in the ghost mirror as inactive —
     // but only those that originated from Monday. Legacy hand-rolled
@@ -266,6 +282,8 @@ export async function syncSuppliers(): Promise<SyncResult> {
     let synced = 0;
     let failed = 0;
     const remoteIds = new Set<string>();
+    const errs = errorSampler("fill:suppliers");
+    slog("fill:suppliers", "items", { total: ghostItems.length });
 
     await recordProgress(0, 0, ghostItems.length, 0);
 
@@ -275,11 +293,16 @@ export async function syncSuppliers(): Promise<SyncResult> {
         await upsertSupplierFromMondayItem(item);
         remoteIds.add(item.id);
         synced++;
-      } catch {
+      } catch (err) {
         failed++;
+        errs.record(`supplier ${ghost.mondayItemId} (${ghost.name})`, err);
       }
       await recordProgress(synced, failed, ghostItems.length);
+      if ((synced + failed) % 500 === 0) {
+        slog("fill:suppliers", "progress", { done: synced + failed, total: ghostItems.length, failed });
+      }
     }
+    errs.done();
 
     await db.supplier.updateMany({
       where: { NOT: { mondayItemId: { in: Array.from(remoteIds) } } },
@@ -390,6 +413,8 @@ export async function syncStyles(): Promise<SyncResult> {
     let synced = 0;
     let failed = 0;
     let skipped = 0;
+    const errs = errorSampler("fill:styles");
+    slog("fill:styles", "items", { total: ghostItems.length });
     await recordProgress(0, 0, ghostItems.length, 0);
 
     for (const ghost of ghostItems) {
@@ -401,11 +426,24 @@ export async function syncStyles(): Promise<SyncResult> {
         // IngestSkip = "needs operator action" (ambiguous / unmatched
         // customer). Track separately from real errors so dashboards
         // don't read "broken" when the situation is "needs review".
-        if (err instanceof IngestSkip) skipped++;
-        else failed++;
+        if (err instanceof IngestSkip) {
+          skipped++;
+        } else {
+          failed++;
+          errs.record(`style ${ghost.mondayItemId} (${ghost.name})`, err);
+        }
       }
       await recordProgress(synced, failed, ghostItems.length, skipped);
+      if ((synced + failed + skipped) % 500 === 0) {
+        slog("fill:styles", "progress", {
+          done: synced + failed + skipped,
+          total: ghostItems.length,
+          failed,
+          skipped,
+        });
+      }
     }
+    errs.done();
 
     return {
       itemsTotal: ghostItems.length,
@@ -587,11 +625,18 @@ export async function enrichStylesFromPreOrder(): Promise<EnrichmentResult> {
 
 export async function syncAll(): Promise<SyncAllResult> {
   const overall = await db.syncJob.create({ data: { kind: "ALL", status: "RUNNING" } });
+  slog("fill:all", "start");
   try {
     const customers = await syncCustomers();
     const suppliers = await syncSuppliers();
     const businessAreas = await syncBusinessAreas();
     const styles = await syncStyles();
+    slog("fill:all", "domains done", {
+      customers: customers.itemsSynced,
+      suppliers: suppliers.itemsSynced,
+      businessAreas: businessAreas.itemsSynced,
+      styles: styles.itemsSynced,
+    });
 
     // Auto-create ProdSpec rows for every (Customer × BA) combo seen on
     // Style rows. Idempotent — skips combos that already exist.
@@ -604,6 +649,7 @@ export async function syncAll(): Promise<SyncAllResult> {
       const created = await ensureProdSpecsForStyle(s.customerId, s.businessAreaId!);
       if (created) prodSpecsCreated++;
     }
+    slog("fill:all", "prod specs created", { count: prodSpecsCreated });
 
     // Pre-Order is now the SOURCE of Style rows (syncStyles reads it
     // directly), so the old "merge Pre-Order columns onto Styles-board
@@ -627,6 +673,16 @@ export async function syncAll(): Promise<SyncAllResult> {
       },
     });
 
+    slog("fill:all", "done", {
+      synced:
+        customers.itemsSynced + suppliers.itemsSynced + businessAreas.itemsSynced + styles.itemsSynced,
+      failed:
+        customers.itemsFailed + suppliers.itemsFailed + businessAreas.itemsFailed + styles.itemsFailed,
+      skipped:
+        customers.itemsSkipped + suppliers.itemsSkipped + businessAreas.itemsSkipped + styles.itemsSkipped,
+      prodSpecs: prodSpecsCreated,
+    });
+
     return {
       syncJobId: overall.id,
       customers,
@@ -637,6 +693,7 @@ export async function syncAll(): Promise<SyncAllResult> {
       enrichment,
     };
   } catch (err) {
+    serr("fill:all", "FAILED", err);
     await db.syncJob.update({
       where: { id: overall.id },
       data: { status: "FAILED", finishedAt: new Date(), error: (err as Error).message },

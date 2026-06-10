@@ -1,0 +1,916 @@
+[
+  {
+    "id": "cmppp7gsq000iy4sa2ww2qrmb",
+    "name": "SOK Palveluässä",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7h17000ky4savwgbf64z",
+    "name": "JYSK Kft.",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7hw5000qy4sabzfo7nyo",
+    "name": "DOLLARSTORE APS",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7i88000ty4saafbjsmpd",
+    "name": "Lindex AB, c/o Lindex H.K Ltd",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7igz000vy4sae3div03u",
+    "name": "Ge-kås Ullared AB",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7ivc000yy4saa2f2nr7r",
+    "name": "JYSK LINEN'N FURNITURE Inc.",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7jam0011y4sauhksqify",
+    "name": "JYSK BUL EOOD",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7jj20013y4savlqm76us",
+    "name": "NORMAL A/S",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7jn10014y4sapejtjdaa",
+    "name": "Jysk DBL Iberia S.L.U",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7ke10019y4sagas2jj0d",
+    "name": "Rusta AB",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7fcz0006y4saxirh6luv",
+    "name": "Migros",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7hs0000py4sabgo25qs7",
+    "name": "Netto Sp. z o.o.",
+    "columnMapping": {}
+  },
+  {
+    "id": "cmppp7fqc0009y4sa83gmzqvb",
+    "name": "JYSK SE",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7g2z000cy4saw3fid1pi",
+    "name": "Netto DK (fakt kto)",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7gf4000fy4sa221ecoiz",
+    "name": "REMA 1000 Danmark A/S",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7lts001ly4sajne7y9l7",
+    "name": "Test Customer NWF 1",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7etl0002y4saduxhd40a",
+    "name": "Kondor Sp. z o.o.",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7k050017y4sayr7rfopm",
+    "name": "CITTI Märkte GmbH & Co. KG\tMühlendamm 1, 024113 Kiel, Deutschland",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7fm70008y4sazwqjh5nh",
+    "name": "Netto ApS & Co. KG",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7g70000dy4sas7kvf2mf",
+    "name": "COOP Danmark (fakt kto)",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7ly4001my4sauc14uyjr",
+    "name": "Test Customer NWF 2",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7kme001by4sa29gqs5oo",
+    "name": "Danmarks Radio",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7kyv001ey4sarlz8h4mx",
+    "name": "JYSK BV",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7l30001fy4saeyhnhzjj",
+    "name": "JYSK A/S",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7lga001iy4sa3f7zrzh0",
+    "name": "NORMA",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7gwu000jy4saoh9b4ci8",
+    "name": "Tokmanni Oy",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7h9p000my4saj1asd4xl",
+    "name": "SIA DO IT",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7i45000sy4sa9d70vgjk",
+    "name": "ICA Sverige AB",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7j550010y4sashm03lqx",
+    "name": "JYSK AB",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7jr80015y4samd171kee",
+    "name": "MAXIMA",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7exw0003y4sa5j8tjnh3",
+    "name": "Cooneen by Design Ltd",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7fh50007y4sa9o7a1tu3",
+    "name": "Otto's AG Zentrallager",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7fui000ay4sayr3nue4n",
+    "name": "Woolworth GmbH",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7i05000ry4sayo1dcjum",
+    "name": "Runsven AB",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7he0000ny4safiuxm6be",
+    "name": "Coop Norge Handel AS",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7h5i000ly4sa3v9cs1mc",
+    "name": "Spar Kjøp AS",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7ilj000wy4sa71octxx5",
+    "name": "REWE Zentral AG",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7izu000zy4sabv0ow73l",
+    "name": "Jysk Sp. z o.o.",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7f7d0005y4sac1v8k0sp",
+    "name": "Jula AB",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7gob000hy4sajjjc6mxa",
+    "name": "Kesko Corp/K-Citymarket",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7m7k001oy4samvwsspv4",
+    "name": "Test Customer NWF 4",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7kqn001cy4sa60c397n3",
+    "name": "StylePit.com A/S",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7f2m0004y4san62n7mcp",
+    "name": "Kaufland Dienstleistung GmbH & Co. KG",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7fyy000by4saa0x8dki3",
+    "name": "NKD Group GmbH",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7gjo000gy4sa4r4p1n6o",
+    "name": "Salling Group A/S",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7ki5001ay4sawelglwxm",
+    "name": "Bon Prix",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7lc8001hy4savn0o9ckw",
+    "name": "Matalan (Cooneen).",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppdr6uj0000gesa7xqpueks",
+    "name": "Netto Germany",
+    "columnMapping": {
+      "lot": "manual.lot",
+      "ean13": "manual.ean13",
+      "price": "manual.price",
+      "sizes": "manual.sizes",
+      "klNumber": "manual.klNumber",
+      "poNumber": "po_number__1",
+      "washCare": "manual.washCare",
+      "cartonEan": "manual.cartonEan",
+      "cartonQty": "manual.cartonQty",
+      "colourCode": "manual.colourCode",
+      "colourName": "manual.colourName",
+      "composition": "manual.composition",
+      "styleNumber": "manual.styleNumber",
+      "businessArea": "manual.businessArea",
+      "supplierEmail": "manual.supplierEmail",
+      "supplierNumber": "manual.supplierNumber",
+      "countryOfOrigin": "mirror1__1",
+      "productNameTranslations": "manual.productNameTranslations"
+    }
+  },
+  {
+    "id": "cmppp7mbu001py4sa56rbrrk4",
+    "name": "Brandhouse",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7m2x001ny4sa896ag3sv",
+    "name": "Test Customer NWF 3",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7iqm000xy4sau72cox65",
+    "name": "GALERIA Karstadt Kaufhof GmbH",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7gav000ey4sarjbmthbr",
+    "name": "COOP Danmark (Coop 365)",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7jvx0016y4samq8o3o9g",
+    "name": "Harald Nyborg A/S",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7kus001dy4sas2zripq4",
+    "name": "Ancien Site : SCA",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7lky001jy4saihn3lm26",
+    "name": "Party In a Box",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7hno000oy4sar4eev8pb",
+    "name": "Europris AS",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7ici000uy4sa81vi5z3d",
+    "name": "Netto Marknad AB",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7jet0012y4sakls16xwk",
+    "name": "Lehner-Versand AG",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7k470018y4sas55hqagh",
+    "name": "Basic & More",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7l7j001gy4sa2rylwgmx",
+    "name": "KULT / OLYMP HADES (Görgens Gruppe)",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  },
+  {
+    "id": "cmppp7lpe001ky4saqumqpsnx",
+    "name": "KiK Textilien und Non-Food GmbH",
+    "columnMapping": {
+      "lot": "po.numeric_mktagw13",
+      "sizes": "po.sizes__1",
+      "poNumber": "po_number__1",
+      "washCare": "po.dropdown_mktbzd1f",
+      "cartonEan": "po.numeric_mktagpmg",
+      "cartonQty": "po.text2__1",
+      "colourCode": "dropdown3__1",
+      "composition": "dropdown5__1",
+      "countryOfOrigin": "mirror1__1"
+    }
+  }
+]

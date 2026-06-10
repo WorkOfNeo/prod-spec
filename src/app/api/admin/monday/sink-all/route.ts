@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth-server";
 import { sinkAllKnownBoards } from "@/lib/monday/sink";
+import { runAndRespond } from "@/lib/monday/sync-route";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -13,6 +14,5 @@ export async function POST() {
   const auth = await requireRole(["ADMIN", "REVIEWER"]);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const result = await sinkAllKnownBoards();
-  return NextResponse.json(result);
+  return runAndRespond("sink-all", () => sinkAllKnownBoards());
 }
