@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import type { DocType } from "@/generated/prisma/enums";
 import { setDynamicVariants, type TemplateVariant } from "@/lib/pdf/template-registry";
 import { parseLayoutDef, type LayoutDef } from "./schema";
-import { layoutReadinessColumns, staticRequiredColumns, defUsesOrderNo } from "./tokens";
+import { layoutReadinessColumns, staticRequiredColumns, defNeedsDynamicReadiness } from "./tokens";
 import { renderLayoutHtml } from "./render";
 
 // =====================================================
@@ -61,9 +61,9 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     defaultWidthMm: first.widthMm,
     defaultHeightMm: first.heightMm,
     requiredFields,
-    // {{orderNo}} is branch-dependent (FOB → customerOrderNo, DDP → poNumber);
-    // only the taken branch's column gates readiness.
-    readiness: defUsesOrderNo(def) ? (resolve) => layoutReadinessColumns(def, resolve) : undefined,
+    // Branch-dependent content ({{orderNo}}, {{if …}} conditionals) gates
+    // readiness by the TAKEN branch only — evaluated per style.
+    readiness: defNeedsDynamicReadiness(def) ? (resolve) => layoutReadinessColumns(def, resolve) : undefined,
     // Page dimensions live IN the layout (per page) — the ProdSpec-level
     // dims override that applies to coded variants is ignored here (the
     // dims param is dropped from the signature deliberately).

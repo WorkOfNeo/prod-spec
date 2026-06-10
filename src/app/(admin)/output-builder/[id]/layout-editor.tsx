@@ -4,11 +4,14 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   LAYOUT_GRID_COLS,
+  LAYOUT_GRID_ROWS,
   TOKEN_RE,
+  blockId,
   type LayoutAnchor,
   type LayoutBlock,
   type LayoutDef,
   type LayoutPage,
+  type LayoutRect,
 } from "@/lib/output-layouts/schema";
 import { LAYOUT_TOKENS, tokenMeta } from "@/lib/output-layouts/token-meta";
 import { PreviewFrame } from "@/components/output-preview";
@@ -16,11 +19,18 @@ import { PreviewFrame } from "@/components/output-preview";
 // =====================================================
 // Output Builder editor — one layout, three panes:
 //   left   pages (title + mm dims + orientation)
-//   center canvas (true aspect, 12-col grid, corner blocks) + true-render preview
+//   center canvas (true aspect, 12×12 grid) + true-render preview
 //   right  block inspector + variables palette
-// Test data: pick customer × business area, cycle through that pair's
-// styles ranked fullest-first; the preview below the canvas always shows
-// the REAL renderer's output for the selected style.
+//
+// Two block placement models:
+//   • corner blocks — click a "+ text" corner zone; anchored, width in
+//     grid columns, grows inward
+//   • rect blocks — DRAW a rectangle on the grid (pointer drag); placed
+//     by cell coords with align/valign — fully centered designs
+//
+// Test data: pick customer × business area, search or cycle through that
+// pair's styles ranked fullest-first; the preview below the canvas always
+// shows the REAL renderer's output for the selected style.
 // =====================================================
 
 const AUTOSAVE_MS = 1200;
@@ -28,6 +38,18 @@ const PREVIEW_DEBOUNCE_MS = 600;
 const PT_TO_MM = 25.4 / 72;
 
 const DOC_TYPES = ["WASHCARE", "CARE_LABEL", "STICKER", "HANGTAG", "CARTON_MARKING", "COLOUR_STICKER"] as const;
+
+// Id generators — module scope, called from event handlers only (the
+// react-hooks/purity rule forbids impure calls reachable from render).
+let blockSeq = 0;
+function newBlockId(): string {
+  blockSeq += 1;
+  return `b-${Date.now().toString(36)}-${blockSeq}`;
+}
+function newPageId(): string {
+  blockSeq += 1;
+  return `p-${Date.now().toString(36)}-${blockSeq}`;
+}
 
 const ANCHORS: Array<{ key: LayoutAnchor; label: string }> = [
   { key: "top-left", label: "Top left" },
@@ -60,6 +82,16 @@ type LayoutProps = {
   definition: LayoutDef;
 };
 
+type DrawState = {
+  startCol: number;
+  startRow: number;
+  curCol: number;
+  curRow: number;
+  startX: number;
+  startY: number;
+  moved: boolean;
+};
+
 export function LayoutEditor({
   layout,
   customers,
@@ -80,7 +112,12 @@ export function LayoutEditor({
   const [version, setVersion] = useState(layout.version);
 
   const [pageIdx, setPageIdx] = useState(0);
-  const [sel, setSel] = useState<LayoutAnchor | null>(null);
+  const [sel, setSel] = useState<string | null>(null);
+  // Draw state lives in a ref (handlers must see updates within the same
+  // tick — fast pointermoves outrun React renders) and is mirrored into
+  // state purely to render the ghost rectangle.
+  const drawRef = useRef<DrawState | null>(null);
+  const [draw, setDraw] = useState<DrawState | null>(null);
 
   const [saveState, setSaveState] = useState<"saved" | "dirty" | "saving" | "error">("saved");
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -95,6 +132,8 @@ export function LayoutEditor({
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [previewSample, setPreviewSample] = useState(false);
   const [unresolved, setUnresolved] = useState<string[]>([]);
+  const [showValues, setShowValues] = useState(false);
+  const [tokenValues, setTokenValues] = useState<Record<string, string>>({});
 
   const [publishing, setPublishing] = useState(false);
   const [publishErrors, setPublishErrors] = useState<string[]>([]);
@@ -103,10 +142,11 @@ export function LayoutEditor({
   const [langSel, setLangSel] = useState(languages[0]?.code ?? "en");
 
   const contentTaRef = useRef<HTMLTextAreaElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const firstRender = useRef(true);
 
   const page: LayoutPage | undefined = def.pages[pageIdx];
-  const selBlock = page?.blocks.find((b) => b.anchor === sel) ?? null;
+  const selBlock = page?.blocks.find((b) => blockId(b) === sel) ?? null;
   const testStyle = styles[styleIdx] ?? null;
 
   // ---- definition mutators (immutably rewrite def) --------------------
@@ -121,11 +161,11 @@ export function LayoutEditor({
   );
 
   const updateBlock = useCallback(
-    (anchor: LayoutAnchor, patch: Partial<LayoutBlock>) => {
+    (id: string, patch: Partial<LayoutBlock>) => {
       setDef((d) => ({
         pages: d.pages.map((p, i) =>
           i === pageIdx
-            ? { ...p, blocks: p.blocks.map((b) => (b.anchor === anchor ? { ...b, ...patch } : b)) }
+            ? { ...p, blocks: p.blocks.map((b) => (blockId(b) === id ? { ...b, ...patch } : b)) }
             : p,
         ),
       }));
@@ -133,9 +173,10 @@ export function LayoutEditor({
     [pageIdx],
   );
 
-  function addBlock(anchor: LayoutAnchor) {
-    if (!page || page.blocks.some((b) => b.anchor === anchor)) return;
+  function addCornerBlock(anchor: LayoutAnchor) {
+    if (!page || page.blocks.some((b) => b.anchor === anchor && !b.rect)) return;
     const block: LayoutBlock = {
+      id: newBlockId(),
       anchor,
       cols: 6,
       fontPt: 9,
@@ -146,13 +187,31 @@ export function LayoutEditor({
     setDef((d) => ({
       pages: d.pages.map((p, i) => (i === pageIdx ? { ...p, blocks: [...p.blocks, block] } : p)),
     }));
-    setSel(anchor);
+    setSel(block.id!);
   }
 
-  function removeBlock(anchor: LayoutAnchor) {
+  function addRectBlock(rect: LayoutRect) {
+    const block: LayoutBlock = {
+      id: newBlockId(),
+      rect,
+      cols: 6,
+      align: "left",
+      valign: "top",
+      fontPt: 9,
+      bold: false,
+      lineHeight: 1.4,
+      lines: ["New text"],
+    };
+    setDef((d) => ({
+      pages: d.pages.map((p, i) => (i === pageIdx ? { ...p, blocks: [...p.blocks, block] } : p)),
+    }));
+    setSel(block.id!);
+  }
+
+  function removeBlock(id: string) {
     // Misclick guard: blocks with real content confirm before vanishing
     // (there is no undo). Fresh "New text" blocks delete silently.
-    const block = page?.blocks.find((b) => b.anchor === anchor);
+    const block = page?.blocks.find((b) => blockId(b) === id);
     const content = (block?.lines ?? []).join(" ").trim();
     if (content && content !== "New text") {
       const lineCount = (block?.lines ?? []).filter((l) => l.trim()).length;
@@ -160,32 +219,35 @@ export function LayoutEditor({
     }
     setDef((d) => ({
       pages: d.pages.map((p, i) =>
-        i === pageIdx ? { ...p, blocks: p.blocks.filter((b) => b.anchor !== anchor) } : p,
+        i === pageIdx ? { ...p, blocks: p.blocks.filter((b) => blockId(b) !== id) } : p,
       ),
     }));
     setSel(null);
   }
 
-  // Move the selected block to another corner; if occupied, swap.
-  function moveBlock(from: LayoutAnchor, to: LayoutAnchor) {
-    if (from === to) return;
+  // Move a CORNER block to another corner; if occupied, swap.
+  function moveBlock(id: string, to: LayoutAnchor) {
+    const from = page?.blocks.find((b) => blockId(b) === id)?.anchor;
+    if (!from || from === to) return;
     setDef((d) => ({
       pages: d.pages.map((p, i) => {
         if (i !== pageIdx) return p;
         return {
           ...p,
-          blocks: p.blocks.map((b) =>
-            b.anchor === from ? { ...b, anchor: to } : b.anchor === to ? { ...b, anchor: from } : b,
-          ),
+          blocks: p.blocks.map((b) => {
+            if (b.rect) return b;
+            if (blockId(b) === id) return { ...b, anchor: to };
+            if (b.anchor === to) return { ...b, anchor: from };
+            return b;
+          }),
         };
       }),
     }));
-    setSel(to);
   }
 
   function addPage() {
     const last = def.pages[def.pages.length - 1];
-    const id = `p${Date.now().toString(36)}`;
+    const id = newPageId();
     setDef((d) => ({
       pages: [
         ...d.pages,
@@ -205,6 +267,70 @@ export function LayoutEditor({
     setDef((d) => ({ pages: d.pages.filter((_, j) => j !== i) }));
     setPageIdx((cur) => Math.max(0, cur >= i ? cur - 1 : cur));
     setSel(null);
+  }
+
+  // ---- draw-to-place (rect blocks) -------------------------------------
+
+  function cellFromPointer(e: { clientX: number; clientY: number }): { col: number; row: number } | null {
+    const el = canvasRef.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const col = Math.min(LAYOUT_GRID_COLS - 1, Math.max(0, Math.floor(((e.clientX - r.left) / r.width) * LAYOUT_GRID_COLS)));
+    const row = Math.min(LAYOUT_GRID_ROWS - 1, Math.max(0, Math.floor(((e.clientY - r.top) / r.height) * LAYOUT_GRID_ROWS)));
+    return { col, row };
+  }
+
+  function onCanvasPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.button !== 0) return;
+    // Blocks and corner zones handle their own clicks.
+    if ((e.target as HTMLElement).closest("[data-block],[data-zone]")) return;
+    const cell = cellFromPointer(e);
+    if (!cell) return;
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // Inactive/synthetic pointer — drawing still works without capture.
+    }
+    const d: DrawState = {
+      startCol: cell.col,
+      startRow: cell.row,
+      curCol: cell.col,
+      curRow: cell.row,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+    };
+    drawRef.current = d;
+    setDraw(d);
+  }
+
+  function onCanvasPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const cur = drawRef.current;
+    if (!cur) return;
+    const cell = cellFromPointer(e);
+    if (!cell) return;
+    const moved =
+      cur.moved || Math.abs(e.clientX - cur.startX) > 4 || Math.abs(e.clientY - cur.startY) > 4;
+    const d: DrawState = { ...cur, curCol: cell.col, curRow: cell.row, moved };
+    drawRef.current = d;
+    setDraw(d);
+  }
+
+  function onCanvasPointerUp() {
+    const d = drawRef.current;
+    drawRef.current = null;
+    setDraw(null);
+    if (!d) return;
+    if (!d.moved) {
+      // Plain click on empty grid — just deselect.
+      setSel(null);
+      return;
+    }
+    const col = Math.min(d.startCol, d.curCol);
+    const row = Math.min(d.startRow, d.curRow);
+    const colSpan = Math.abs(d.curCol - d.startCol) + 1;
+    const rowSpan = Math.abs(d.curRow - d.startRow) + 1;
+    addRectBlock({ col, row, colSpan, rowSpan });
   }
 
   // ---- autosave --------------------------------------------------------
@@ -317,14 +443,22 @@ export function LayoutEditor({
             definition: def,
             styleId: testStyle?.id,
             pageIndex: pageIdx,
+            includeTokenValues: showValues,
+            valuesLang: langSel,
           }),
         });
         if (cancelled || !res.ok) return;
-        const body = (await res.json()) as { html: string; unresolved: string[]; usingSampleData: boolean };
+        const body = (await res.json()) as {
+          html: string;
+          unresolved: string[];
+          usingSampleData: boolean;
+          tokenValues?: Record<string, string>;
+        };
         if (cancelled) return;
         setPreviewHtml(body.html);
         setUnresolved(body.unresolved);
         setPreviewSample(body.usingSampleData);
+        if (body.tokenValues) setTokenValues(body.tokenValues);
       } catch {
         // network hiccup — keep the last good preview
       }
@@ -334,7 +468,7 @@ export function LayoutEditor({
       window.clearTimeout(t);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(def), testStyle?.id, pageIdx]);
+  }, [JSON.stringify(def), testStyle?.id, pageIdx, showValues, langSel]);
 
   // Delete / Backspace removes the selected block — unless the user is
   // typing in an input, textarea or select (e.g. the content editor).
@@ -408,7 +542,7 @@ export function LayoutEditor({
       next = text.length > 0 ? `${text}\n${token}` : token;
       caret = next.length;
     }
-    updateBlock(selBlock.anchor, { lines: next.split("\n").slice(0, 30) });
+    updateBlock(blockId(selBlock), { lines: next.split("\n").slice(0, 30) });
     window.setTimeout(() => {
       const el = contentTaRef.current;
       if (el) {
@@ -434,6 +568,15 @@ export function LayoutEditor({
   }
 
   if (!page) return null;
+
+  const ghost = draw
+    ? {
+        col: Math.min(draw.startCol, draw.curCol),
+        row: Math.min(draw.startRow, draw.curRow),
+        colSpan: Math.abs(draw.curCol - draw.startCol) + 1,
+        rowSpan: Math.abs(draw.curRow - draw.startRow) + 1,
+      }
+    : null;
 
   return (
     <div className="min-h-screen bg-white">
@@ -796,52 +939,69 @@ export function LayoutEditor({
           <div className="flex items-baseline justify-between">
             <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Canvas</div>
             <div className="font-mono text-[11px] text-zinc-400">
-              {page.widthMm} × {page.heightMm} mm · {orientation} · grid {LAYOUT_GRID_COLS} × {LAYOUT_GRID_COLS}
+              {page.widthMm} × {page.heightMm} mm · {orientation} · grid {LAYOUT_GRID_COLS} × {LAYOUT_GRID_ROWS}
             </div>
           </div>
           <div className="mt-2 flex justify-center rounded-lg border border-zinc-200 bg-zinc-50/60 px-6 py-10">
             <div
-              className="relative border border-zinc-300 bg-white shadow-sm"
+              ref={canvasRef}
+              onPointerDown={onCanvasPointerDown}
+              onPointerMove={onCanvasPointerMove}
+              onPointerUp={onCanvasPointerUp}
+              className="relative touch-none border border-zinc-300 bg-white shadow-sm"
               style={{
                 width: page.widthMm * scale,
                 height: page.heightMm * scale,
+                cursor: draw ? "crosshair" : "default",
                 backgroundImage:
                   "repeating-linear-gradient(to right, transparent 0, transparent calc(8.3333% - 1px), rgba(24,24,27,0.045) calc(8.3333% - 1px), rgba(24,24,27,0.045) 8.3333%)," +
                   "repeating-linear-gradient(to bottom, transparent 0, transparent calc(8.3333% - 1px), rgba(24,24,27,0.045) calc(8.3333% - 1px), rgba(24,24,27,0.045) 8.3333%)",
               }}
             >
               {ANCHORS.map(({ key }) => {
-                const block = page.blocks.find((b) => b.anchor === key);
-                if (!block) {
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => addBlock(key)}
-                      className={`absolute flex items-center justify-center rounded border border-dashed border-zinc-200 text-[11px] font-medium text-zinc-300 transition-colors hover:border-zinc-400 hover:text-zinc-500 ${zoneClass(key)}`}
-                      style={{ width: "42%", height: "40%" }}
-                      title={`Add a text block ${key.replace("-", " ")}`}
-                    >
-                      + text
-                    </button>
-                  );
-                }
+                const occupied = page.blocks.some((b) => !b.rect && b.anchor === key);
+                if (occupied) return null;
                 return (
-                  <CanvasBlock
+                  <button
                     key={key}
-                    block={block}
-                    page={page}
-                    scale={scale}
-                    selected={sel === key}
-                    onSelect={() => setSel(key)}
-                    onRemove={() => removeBlock(key)}
-                  />
+                    data-zone
+                    type="button"
+                    onClick={() => addCornerBlock(key)}
+                    className={`absolute flex items-center justify-center rounded border border-dashed border-zinc-200 text-[11px] font-medium text-zinc-300 transition-colors hover:border-zinc-400 hover:text-zinc-500 ${zoneClass(key)}`}
+                    style={{ width: "34%", height: "30%" }}
+                    title={`Add a corner text block ${key.replace("-", " ")}`}
+                  >
+                    + text
+                  </button>
                 );
               })}
+              {page.blocks.map((block) => (
+                <CanvasBlock
+                  key={blockId(block)}
+                  block={block}
+                  page={page}
+                  scale={scale}
+                  selected={sel === blockId(block)}
+                  onSelect={() => setSel(blockId(block))}
+                  onRemove={() => removeBlock(blockId(block))}
+                />
+              ))}
+              {ghost ? (
+                <div
+                  className="pointer-events-none absolute rounded-sm border border-zinc-900/50 bg-zinc-900/5"
+                  style={{
+                    left: `${(ghost.col / LAYOUT_GRID_COLS) * 100}%`,
+                    top: `${(ghost.row / LAYOUT_GRID_ROWS) * 100}%`,
+                    width: `${(ghost.colSpan / LAYOUT_GRID_COLS) * 100}%`,
+                    height: `${(ghost.rowSpan / LAYOUT_GRID_ROWS) * 100}%`,
+                  }}
+                />
+              ) : null}
             </div>
           </div>
           <p className="mt-2 text-center text-xs text-zinc-400">
-            Click a corner to add a block · click a block to edit · blocks grow from their corner inward
+            <b className="font-medium text-zinc-500">Drag on the grid</b> to draw a block exactly where you want it ·
+            click a corner for a quick anchored block · click a block to edit
           </p>
 
           {/* true render preview */}
@@ -879,12 +1039,13 @@ export function LayoutEditor({
           <div className="rounded-lg border border-zinc-200 p-4">
             <div className="flex items-baseline justify-between">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                Block{selBlock ? ` — ${selBlock.anchor.replace("-", " ")}` : ""}
+                Block
+                {selBlock ? (selBlock.rect ? " — grid" : ` — ${selBlock.anchor?.replace("-", " ")}`) : ""}
               </div>
               {selBlock ? (
                 <button
                   type="button"
-                  onClick={() => removeBlock(selBlock.anchor)}
+                  onClick={() => removeBlock(blockId(selBlock))}
                   className="text-[11px] font-medium text-zinc-400 hover:text-red-600"
                   title="Delete this block (or press Del with it selected)"
                 >
@@ -893,42 +1054,124 @@ export function LayoutEditor({
               ) : null}
             </div>
             {!selBlock ? (
-              <p className="mt-2 text-xs text-zinc-400">Select a block on the canvas, or click an empty corner to add one.</p>
+              <p className="mt-2 text-xs text-zinc-400">
+                Select a block on the canvas, click an empty corner, or drag on the grid to draw one.
+              </p>
             ) : (
               <div className="mt-3 space-y-4">
-                <div className="grid grid-cols-2 gap-1.5">
-                  {ANCHORS.map(({ key, label }) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => moveBlock(selBlock.anchor, key)}
-                      className={`rounded-md border px-2 py-1.5 text-[11px] font-medium ${
-                        selBlock.anchor === key
-                          ? "border-zinc-900 bg-zinc-900 text-white"
-                          : "border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                <div>
-                  <div className="flex items-baseline justify-between">
-                    <label className="text-xs text-zinc-500">Width</label>
-                    <span className="font-mono text-[11px] text-zinc-400">
-                      {selBlock.cols} cols ≈ {((page.widthMm * selBlock.cols) / LAYOUT_GRID_COLS).toFixed(1)} mm
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={LAYOUT_GRID_COLS}
-                    value={selBlock.cols}
-                    onChange={(e) => updateBlock(selBlock.anchor, { cols: Number(e.target.value) })}
-                    className="mt-1 w-full accent-zinc-900"
-                  />
-                </div>
+                {selBlock.rect ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <RectStepper
+                        label="Column"
+                        value={selBlock.rect.col + 1}
+                        min={1}
+                        max={LAYOUT_GRID_COLS - selBlock.rect.colSpan + 1}
+                        onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, col: v - 1 } })}
+                      />
+                      <RectStepper
+                        label="Row"
+                        value={selBlock.rect.row + 1}
+                        min={1}
+                        max={LAYOUT_GRID_ROWS - selBlock.rect.rowSpan + 1}
+                        onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, row: v - 1 } })}
+                      />
+                      <RectStepper
+                        label="Width (cols)"
+                        value={selBlock.rect.colSpan}
+                        min={1}
+                        max={LAYOUT_GRID_COLS - selBlock.rect.col}
+                        onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, colSpan: v } })}
+                      />
+                      <RectStepper
+                        label="Height (rows)"
+                        value={selBlock.rect.rowSpan}
+                        min={1}
+                        max={LAYOUT_GRID_ROWS - selBlock.rect.row}
+                        onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, rowSpan: v } })}
+                      />
+                    </div>
+                    <div className="font-mono text-[11px] text-zinc-400">
+                      ≈ {((page.widthMm * selBlock.rect.colSpan) / LAYOUT_GRID_COLS).toFixed(1)} ×{" "}
+                      {((page.heightMm * selBlock.rect.rowSpan) / LAYOUT_GRID_ROWS).toFixed(1)} mm
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <label className="text-xs text-zinc-500">Align</label>
+                        <div className="mt-1 flex overflow-hidden rounded-md border border-zinc-200">
+                          {(["left", "center", "right"] as const).map((a) => (
+                            <button
+                              key={a}
+                              type="button"
+                              onClick={() => updateBlock(blockId(selBlock), { align: a })}
+                              className={`px-2 py-1 text-[11px] font-medium capitalize ${
+                                (selBlock.align ?? "left") === a
+                                  ? "bg-zinc-900 text-white"
+                                  : "bg-white text-zinc-500 hover:bg-zinc-50"
+                              }`}
+                            >
+                              {a}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-zinc-500">Vertical</label>
+                        <div className="mt-1 flex overflow-hidden rounded-md border border-zinc-200">
+                          {(["top", "middle", "bottom"] as const).map((v) => (
+                            <button
+                              key={v}
+                              type="button"
+                              onClick={() => updateBlock(blockId(selBlock), { valign: v })}
+                              className={`px-2 py-1 text-[11px] font-medium capitalize ${
+                                (selBlock.valign ?? "top") === v
+                                  ? "bg-zinc-900 text-white"
+                                  : "bg-white text-zinc-500 hover:bg-zinc-50"
+                              }`}
+                            >
+                              {v}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {ANCHORS.map(({ key, label }) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => moveBlock(blockId(selBlock), key)}
+                          className={`rounded-md border px-2 py-1.5 text-[11px] font-medium ${
+                            selBlock.anchor === key
+                              ? "border-zinc-900 bg-zinc-900 text-white"
+                              : "border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <div>
+                      <div className="flex items-baseline justify-between">
+                        <label className="text-xs text-zinc-500">Width</label>
+                        <span className="font-mono text-[11px] text-zinc-400">
+                          {selBlock.cols} cols ≈ {((page.widthMm * selBlock.cols) / LAYOUT_GRID_COLS).toFixed(1)} mm
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={1}
+                        max={LAYOUT_GRID_COLS}
+                        value={selBlock.cols}
+                        onChange={(e) => updateBlock(blockId(selBlock), { cols: Number(e.target.value) })}
+                        className="mt-1 w-full accent-zinc-900"
+                      />
+                    </div>
+                  </>
+                )}
 
                 <div>
                   <div className="flex items-baseline justify-between">
@@ -941,9 +1184,10 @@ export function LayoutEditor({
                     max={24}
                     step={0.5}
                     value={selBlock.fontPt}
-                    onChange={(e) => updateBlock(selBlock.anchor, { fontPt: Number(e.target.value) })}
+                    onChange={(e) => updateBlock(blockId(selBlock), { fontPt: Number(e.target.value) })}
                     className="mt-1 w-full accent-zinc-900"
                   />
+                  <p className="mt-0.5 text-[10px] text-zinc-400">Barcodes and wash symbols scale with the font size.</p>
                 </div>
 
                 <div className="flex items-center gap-4">
@@ -951,7 +1195,7 @@ export function LayoutEditor({
                     <input
                       type="checkbox"
                       checked={selBlock.bold}
-                      onChange={(e) => updateBlock(selBlock.anchor, { bold: e.target.checked })}
+                      onChange={(e) => updateBlock(blockId(selBlock), { bold: e.target.checked })}
                       className="accent-zinc-900"
                     />
                     Bold
@@ -960,7 +1204,7 @@ export function LayoutEditor({
                     Line height
                     <select
                       value={selBlock.lineHeight}
-                      onChange={(e) => updateBlock(selBlock.anchor, { lineHeight: Number(e.target.value) })}
+                      onChange={(e) => updateBlock(blockId(selBlock), { lineHeight: Number(e.target.value) })}
                       className="rounded border border-zinc-200 px-1 py-0.5 text-xs"
                     >
                       {[1.2, 1.3, 1.4, 1.5, 1.6, 1.8].map((lh) => (
@@ -977,7 +1221,7 @@ export function LayoutEditor({
                   <textarea
                     ref={contentTaRef}
                     value={selBlock.lines.join("\n")}
-                    onChange={(e) => updateBlock(selBlock.anchor, { lines: e.target.value.split("\n").slice(0, 30) })}
+                    onChange={(e) => updateBlock(blockId(selBlock), { lines: e.target.value.split("\n").slice(0, 30) })}
                     rows={6}
                     spellCheck={false}
                     className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-2 font-mono text-xs leading-relaxed"
@@ -988,9 +1232,21 @@ export function LayoutEditor({
           </div>
 
           <div className="rounded-lg border border-zinc-200 p-4">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Variables</div>
+            <div className="flex items-baseline justify-between">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Variables</div>
+              <label className="flex items-center gap-1.5 text-[11px] text-zinc-500" title="Resolve every variable against the selected test style">
+                <input
+                  type="checkbox"
+                  checked={showValues}
+                  onChange={(e) => setShowValues(e.target.checked)}
+                  className="accent-zinc-900"
+                />
+                Show values
+              </label>
+            </div>
             <p className="mt-1 text-[11px] text-zinc-400">
               {selBlock ? "Click to insert at the cursor." : "Select a block first."}
+              {showValues && testStyle ? ` Values from ${testStyle.name}.` : ""}
             </p>
             {(["Style", "Order & carton"] as const).map((group) => (
               <div key={group} className="mt-3">
@@ -1002,6 +1258,7 @@ export function LayoutEditor({
                       token={`{{${t.key}}}`}
                       title={`${t.label}${t.example ? ` — e.g. ${t.example}` : ""}`}
                       disabled={!selBlock}
+                      value={showValues ? (tokenValues[t.key] ?? "") : undefined}
                       onClick={() => insertToken(`{{${t.key}}}`)}
                     />
                   ))}
@@ -1030,27 +1287,52 @@ export function LayoutEditor({
                     token={`{{${t.key}:${langSel}}}`}
                     title={t.label}
                     disabled={!selBlock}
+                    value={showValues ? (tokenValues[`${t.key}:${langSel}`] ?? "") : undefined}
                     onClick={() => insertToken(`{{${t.key}:${langSel}}}`)}
                   />
                 ))}
               </div>
             </div>
             <div className="mt-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">Barcodes</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">Barcodes & symbols</div>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 <TokenChip
                   token="{{barcode:cartonEan}}"
-                  title="Carton EAN as Code 128 bars + number"
+                  title="Carton EAN as Code 128 bars + number — scales with the block font size"
                   disabled={!selBlock}
+                  value={showValues ? (tokenValues["barcode:cartonEan"] ?? "") : undefined}
                   onClick={() => insertToken("{{barcode:cartonEan}}")}
                 />
                 <TokenChip
                   token="{{barcode:ean13}}"
-                  title="First size EAN as EAN-13 bars"
+                  title="First size EAN as EAN-13 bars — scales with the block font size"
                   disabled={!selBlock}
+                  value={showValues ? (tokenValues["barcode:ean13"] ?? "") : undefined}
                   onClick={() => insertToken("{{barcode:ean13}}")}
                 />
+                <TokenChip
+                  token="{{washSymbols}}"
+                  title="The style's wash care symbols as a row of icons — scales with the block font size"
+                  disabled={!selBlock}
+                  value={showValues ? (tokenValues["washSymbols"] ?? "") : undefined}
+                  onClick={() => insertToken("{{washSymbols}}")}
+                />
               </div>
+            </div>
+            <div className="mt-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">Logic</div>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                <TokenChip
+                  token="{{if …}} {{else}} {{endif}}"
+                  title='Conditional content — e.g. {{if deliveryTerm == FOB}}{{customerOrderNo}}{{else}}{{poNumber}}{{endif}}. Compares case-insensitively; also supports !=.'
+                  disabled={!selBlock}
+                  onClick={() => insertToken("{{if deliveryTerm == FOB}}{{customerOrderNo}}{{else}}{{poNumber}}{{endif}}")}
+                />
+              </div>
+              <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
+                One condition per line, no nesting. Example: show the customer&apos;s order number on FOB orders,
+                the Contrast PO otherwise.
+              </p>
             </div>
           </div>
         </div>
@@ -1074,7 +1356,7 @@ function zoneClass(anchor: LayoutAnchor): string {
   }
 }
 
-function blockPosition(anchor: LayoutAnchor): React.CSSProperties {
+function anchorPosition(anchor: LayoutAnchor): React.CSSProperties {
   switch (anchor) {
     case "top-left":
       return { top: "2%", left: "1.5%", textAlign: "left" };
@@ -1085,6 +1367,37 @@ function blockPosition(anchor: LayoutAnchor): React.CSSProperties {
     case "bottom-right":
       return { bottom: "2%", right: "1.5%", textAlign: "right" };
   }
+}
+
+function RectStepper({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div>
+      <label className="text-xs text-zinc-500">{label}</label>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          if (Number.isInteger(v) && v >= min && v <= max) onChange(v);
+        }}
+        className="mt-1 w-full rounded-md border border-zinc-200 px-2 py-1 text-sm tabular-nums"
+      />
+    </div>
+  );
 }
 
 function CanvasBlock({
@@ -1103,19 +1416,43 @@ function CanvasBlock({
   onRemove: () => void;
 }) {
   const fontPx = Math.max(block.fontPt * PT_TO_MM * scale, 7);
-  const widthPx = ((page.widthMm * block.cols) / LAYOUT_GRID_COLS) * scale;
+
+  let positionStyle: React.CSSProperties;
+  if (block.rect) {
+    const r = block.rect;
+    positionStyle = {
+      left: `${(r.col / LAYOUT_GRID_COLS) * 100}%`,
+      top: `${(r.row / LAYOUT_GRID_ROWS) * 100}%`,
+      width: `${(r.colSpan / LAYOUT_GRID_COLS) * 100}%`,
+      height: `${(r.rowSpan / LAYOUT_GRID_ROWS) * 100}%`,
+      display: "flex",
+      flexDirection: "column",
+      justifyContent: block.valign === "middle" ? "center" : block.valign === "bottom" ? "flex-end" : "flex-start",
+      textAlign: (block.align ?? "left") as React.CSSProperties["textAlign"],
+    };
+  } else {
+    const anchor = block.anchor ?? "top-left";
+    positionStyle = {
+      ...anchorPosition(anchor),
+      width: ((page.widthMm * block.cols) / LAYOUT_GRID_COLS) * scale,
+      maxWidth: "96%",
+      ...(block.align ? { textAlign: block.align } : {}),
+    };
+  }
+
   // The delete badge sits on the block's inward-facing top corner so it
   // never hangs outside the page edge the block is anchored to.
-  const badgePos: React.CSSProperties = block.anchor.endsWith("left")
-    ? { top: -8, right: -8 }
-    : { top: -8, left: -8 };
+  const badgePos: React.CSSProperties =
+    !block.rect && block.anchor?.endsWith("left") ? { top: -8, right: -8 } : { top: -8, left: -8 };
+
   return (
     <div
+      data-block
       onClick={onSelect}
       className={`absolute cursor-pointer rounded-sm px-1 py-0.5 ${
         selected ? "ring-2 ring-zinc-900/80 ring-offset-1" : "hover:ring-1 hover:ring-zinc-300"
-      }`}
-      style={{ ...blockPosition(block.anchor), width: widthPx, maxWidth: "96%" }}
+      } ${block.rect ? "bg-white/40" : ""}`}
+      style={positionStyle}
     >
       {selected ? (
         <button
@@ -1149,27 +1486,35 @@ function CanvasBlock({
   );
 }
 
-// Literal text plain, {{tokens}} as muted mono chips, unknown tokens red.
+// Literal text plain, {{tokens}} as muted mono chips, {{if}}/{{else}}/
+// {{endif}} control tags as italic chips, unknown tokens red.
+const CANVAS_CHIP_RE =
+  /\{\{(?:if\b[^{}]*|else|endif)\}\}|\{\{[a-zA-Z][a-zA-Z0-9]*(?::[a-zA-Z0-9-]+)?\}\}/g;
+
 function CanvasLine({ line }: { line: string }) {
   const parts: React.ReactNode[] = [];
-  const re = new RegExp(TOKEN_RE.source, "g");
+  const re = new RegExp(CANVAS_CHIP_RE.source, "g");
   let last = 0;
   let m: RegExpExecArray | null;
   let i = 0;
   while ((m = re.exec(line)) !== null) {
     if (m.index > last) parts.push(<span key={`t${i++}`}>{line.slice(last, m.index)}</span>);
-    const known = tokenMeta(m[1]) !== null;
+    const raw = m[0];
+    const isControl = /^\{\{(if\b|else\}\}|endif\}\})/.test(raw);
+    let cls: string;
+    if (isControl) {
+      cls = "border-zinc-200 bg-white italic text-zinc-400";
+    } else {
+      const keyMatch = /^\{\{([a-zA-Z][a-zA-Z0-9]*)/.exec(raw);
+      const known = keyMatch ? tokenMeta(keyMatch[1]) !== null : false;
+      cls = known ? "border-zinc-200 bg-zinc-50 text-zinc-600" : "border-red-200 bg-red-50 text-red-600";
+    }
     parts.push(
-      <span
-        key={`k${i++}`}
-        className={`rounded border px-0.5 font-mono text-[0.82em] ${
-          known ? "border-zinc-200 bg-zinc-50 text-zinc-600" : "border-red-200 bg-red-50 text-red-600"
-        }`}
-      >
-        {m[0]}
+      <span key={`k${i++}`} className={`rounded border px-0.5 font-mono text-[0.82em] ${cls}`}>
+        {raw}
       </span>,
     );
-    last = m.index + m[0].length;
+    last = m.index + raw.length;
   }
   if (last < line.length) parts.push(<span key={`e${i}`}>{line.slice(last)}</span>);
   if (parts.length === 0) parts.push(<span key="empty">&nbsp;</span>);
@@ -1180,11 +1525,14 @@ function TokenChip({
   token,
   title,
   disabled,
+  value,
   onClick,
 }: {
   token: string;
   title: string;
   disabled: boolean;
+  // undefined → chip only; string → value row beneath ("—" when empty).
+  value?: string;
   onClick: () => void;
 }) {
   return (
@@ -1193,9 +1541,16 @@ function TokenChip({
       title={title}
       disabled={disabled}
       onClick={onClick}
-      className="rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 font-mono text-[11px] text-zinc-600 hover:border-zinc-300 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+      className="flex max-w-full flex-col items-start rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-left font-mono text-[11px] text-zinc-600 hover:border-zinc-300 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
     >
-      {token}
+      <span>{token}</span>
+      {value !== undefined ? (
+        value ? (
+          <span className="max-w-44 truncate font-sans text-[10px] text-emerald-700">{value}</span>
+        ) : (
+          <span className="font-sans text-[10px] text-amber-600">—</span>
+        )
+      ) : null}
     </button>
   );
 }
