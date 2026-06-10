@@ -72,6 +72,27 @@ export type StyleData = {
   // "Made in [country]" in multiple languages on the back panel.
   countryOfOrigin?: string;
 
+  // Customer's own article number ("🔑 Customer Item No" column). Printed
+  // on label fronts ("Art No.: 223609", "3702/2644") by the spec-driven
+  // family templates. Empty unless the column is mapped / populated.
+  customerItemNo?: string;
+
+  // Campaign week / product-category code ("📅 Campaign Week" column),
+  // e.g. "C182813" on the Coop care label and price tag. Optional.
+  campaignWeek?: string;
+
+  // Batch number ("Batch nr" column) — printed on Rema wash care labels
+  // and info areas ("Batch no. 48835447"). Optional.
+  batchNo?: string;
+
+  // Production number ("Prod number" column) — printed on Otto's and
+  // Dollarstore labels ("Prod. Nr: GI10024", "502625"). Optional.
+  prodNumber?: string;
+
+  // Article description ("Description" column) — printed on polybag /
+  // assortment stickers ("T-Shirt Paw Patrol- Blue 98/104-122/128").
+  description?: string;
+
   // Per-customer presentation context — barcode font + (optional) logo URL.
   // Per-output mm dimensions are passed to each template variant explicitly
   // by the runner; they don't live on StyleData any more.
