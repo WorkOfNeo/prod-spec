@@ -53,6 +53,13 @@ export const LayoutBlockSchema = z.object({
   align: z.enum(["left", "center", "right"]).optional(),
   // Vertical alignment within the rect — RECT blocks only.
   valign: z.enum(["top", "middle", "bottom"]).optional(),
+  // Optional box border around the block (solid), colour as hex.
+  border: z
+    .object({
+      widthMm: z.number().min(0.1).max(5),
+      color: z.string().regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "hex colour like #000 or #1a1a1a"),
+    })
+    .optional(),
   fontPt: z.number().min(4).max(48).default(9),
   bold: z.boolean().default(false),
   lineHeight: z.number().min(1).max(3).default(1.4),

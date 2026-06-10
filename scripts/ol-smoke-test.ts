@@ -108,6 +108,7 @@ main()
   .then(() => batch5())
   .then(() => batch6())
   .then(() => batch7())
+  .then(() => batch8())
   .catch((err) => {
     console.error(err);
     process.exit(1);
@@ -408,4 +409,27 @@ async function batch7() {
 
   await closeBrowser();
   console.log(process.exitCode ? "BATCH 7 FAILED" : "BATCH 7 PASSED");
+}
+
+// ---------------------------------------------------------------------
+// Batch 8 coverage: block borders with hex colour.
+// ---------------------------------------------------------------------
+async function batch8() {
+  const style = buildSampleStyleData();
+  const B = LayoutDefSchema.parse({
+    pages: [{ id: "p1", title: "", widthMm: 60, heightMm: 30,
+      blocks: [{ id: "b1", rect: { col: 1, row: 1, colSpan: 10, rowSpan: 10 },
+        border: { widthMm: 0.5, color: "#cc0000" }, lines: ["boxed"] }] }],
+  });
+  const html = await renderLayoutHtml(B, style, { mode: "production" });
+  assert(html.includes("border: 0.5mm solid #cc0000"), "block border renders with hex colour");
+  // invalid hex rejected by the schema
+  let rejected = false;
+  try {
+    LayoutDefSchema.parse({ pages: [{ id: "p", title: "", widthMm: 60, heightMm: 30,
+      blocks: [{ id: "b", rect: { col: 0, row: 0, colSpan: 2, rowSpan: 2 }, border: { widthMm: 0.5, color: "red" }, lines: [] }] }] });
+  } catch { rejected = true; }
+  assert(rejected, "non-hex border colour rejected");
+  await closeBrowser();
+  console.log(process.exitCode ? "BATCH 8 FAILED" : "BATCH 8 PASSED");
 }
