@@ -71,7 +71,22 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   // ---- Per language (need :lang) ----
   { key: "composition", label: "Composition", group: "Per language", kind: "text", arg: "lang", example: "{{composition:da}}" },
   { key: "productName", label: "Product name", group: "Per language", kind: "text", arg: "lang", example: "{{productName:de}}" },
-  { key: "careInstructions", label: "Care instructions", group: "Per language", kind: "text", arg: "lang", example: "{{careInstructions:en}}" },
+  {
+    key: "careInstructions",
+    label: "Care instructions (standard, filtered by wash icons; Prod Spec text overrides)",
+    group: "Per language",
+    kind: "text",
+    arg: "lang",
+    example: "{{careInstructions:en}}",
+  },
+  {
+    key: "madeIn",
+    label: "Made in <country> (translated)",
+    group: "Per language",
+    kind: "text",
+    arg: "lang",
+    example: "Fremstillet i Kina",
+  },
 
   // ---- Barcodes & symbols (rendered as graphics, scaled by block font size) ----
   { key: "barcode", label: "Barcode", group: "Barcodes & symbols", kind: "barcode", arg: "source", example: "{{barcode:cartonEan}}" },

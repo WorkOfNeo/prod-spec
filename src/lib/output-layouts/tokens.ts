@@ -1,7 +1,10 @@
 import type { StyleData } from "@/lib/pdf/types";
 import type { ColumnMapping } from "@/lib/customers/config";
 import { tFor } from "@/lib/pdf/templates/base";
-import { loadTranslationDictionary, translateComposition } from "@/lib/translations/lookup";
+import { loadTranslationDictionary, translateComposition, translatePhrase } from "@/lib/translations/lookup";
+import { loadCareLabels } from "@/lib/care-labels";
+import { isCareLabelVisible, type PresentSymbol } from "@/lib/care-labels/visibility";
+import { getWashcareSymbol, loadWashcareSymbols } from "@/lib/pdf/washcare-symbols";
 import { ruleRequiredColumns } from "@/lib/pdf/spec-fields";
 import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-marking";
 import { tokenMeta, type BarcodeSource } from "./token-meta";
@@ -77,6 +80,13 @@ const RESOLVERS: Record<string, TextResolver> = {
   supplierNumber: (s) => s.carton.supplierNumber ?? "",
 
   composition: (s, arg) => tFor(s.composition, (arg ?? "en").toLowerCase()),
+  // "Made in <country>" per language — values are precomputed by
+  // augmentCareAndMadeIn (translation bank), carried on a side-channel
+  // field; unaugmented styles resolve "" (→ unresolved chip in preview).
+  madeIn: (s, arg) =>
+    (s as StyleData & { madeInByLang?: Record<string, string> }).madeInByLang?.[
+      (arg ?? "en").toLowerCase()
+    ] ?? "",
   productName: (s, arg) => tFor(s.productNameTranslations, (arg ?? "en").toLowerCase()),
   careInstructions: (s, arg) => s.careInstructionsByLang?.[(arg ?? "en").toLowerCase()] ?? "",
 
@@ -138,6 +148,7 @@ const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   klNumber: ["klNumber"],
   supplierNumber: ["supplierNumber"],
   composition: ["composition"],
+  madeIn: ["countryOfOrigin"],
   washSymbols: ["washCare"],
   // The condition field itself: resolvable at readiness time via this
   // column, but never REQUIRED (empty = DDP, a valid state).
@@ -333,4 +344,76 @@ export async function augmentCompositionTranslations(
     text: translateComposition(dict, source, lang).text,
   }));
   return { ...style, composition: [...style.composition, ...added] };
+}
+
+// ---------------------------------------------------------------------
+// Care instructions + "Made in" per language. Care instructions are the
+// standard catalogue (CareLabel rows) FILTERED BY THE STYLE'S WASH-CARE
+// SYMBOLS (isCareLabelVisible — prohibition symbols drop their action's
+// lines), each line translated via the bank, joined " / " — exactly the
+// care-label-02 derivation. A non-empty ProdSpec careInstructionsByLang
+// entry for a language overrides the derived text. "Made in" resolves
+// the full "Made in <country>" phrase from the bank per language.
+// ---------------------------------------------------------------------
+
+export function langArgsInDef(def: LayoutDef, tokenKey: string): string[] {
+  const langs = new Set<string>();
+  for (const page of def.pages) {
+    for (const block of page.blocks) {
+      for (const line of block.lines) {
+        for (const ref of tokensInLine(line)) {
+          if (ref.key === tokenKey && ref.arg) langs.add(ref.arg.toLowerCase());
+        }
+      }
+    }
+  }
+  return [...langs];
+}
+
+export async function augmentCareAndMadeIn(
+  style: StyleData,
+  careLangs: string[],
+  madeInLangs: string[],
+): Promise<StyleData> {
+  if (careLangs.length === 0 && madeInLangs.length === 0) return style;
+
+  const needsCare = careLangs.some((l) => !(style.careInstructionsByLang?.[l] ?? "").trim());
+  const carried = (style as StyleData & { madeInByLang?: Record<string, string> }).madeInByLang ?? {};
+  const needsMadeIn = madeInLangs.some((l) => !(carried[l] ?? "").trim());
+  if (!needsCare && !needsMadeIn) return style;
+
+  const [labels, dict, symbolMap] = await Promise.all([
+    needsCare ? loadCareLabels() : Promise.resolve([]),
+    loadTranslationDictionary(),
+    needsCare ? loadWashcareSymbols() : Promise.resolve(null),
+  ]);
+
+  const careByLang: Record<string, string> = { ...(style.careInstructionsByLang ?? {}) };
+  if (needsCare && symbolMap) {
+    const present: PresentSymbol[] = style.washSymbols.map((token) => {
+      const resolved = getWashcareSymbol(symbolMap, token);
+      return resolved
+        ? { code: resolved.code, action: resolved.action, restrictive: resolved.restrictive }
+        : { code: token, action: null, restrictive: false };
+    });
+    const visible = labels.filter((l) => isCareLabelVisible(l, present));
+    for (const lang of careLangs) {
+      if ((careByLang[lang] ?? "").trim()) continue; // ProdSpec override wins
+      careByLang[lang] = visible
+        .map((l) => translatePhrase(dict, l.sourceText, lang).trim())
+        .filter(Boolean)
+        .join(" / ");
+    }
+  }
+
+  const madeInByLang: Record<string, string> = { ...carried };
+  const country = (style.countryOfOrigin ?? "").trim();
+  if (country) {
+    for (const lang of madeInLangs) {
+      if ((madeInByLang[lang] ?? "").trim()) continue;
+      madeInByLang[lang] = translatePhrase(dict, `Made in ${country}`, lang);
+    }
+  }
+
+  return { ...style, careInstructionsByLang: careByLang, madeInByLang } as StyleData;
 }
