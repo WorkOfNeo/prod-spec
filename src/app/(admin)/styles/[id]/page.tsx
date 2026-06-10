@@ -11,7 +11,8 @@ import {
 import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
 import { findMissingDetailFields } from "@/lib/styles/detail-fields";
 import { computeReadiness, type Readiness, type ReadinessTone } from "@/lib/styles/readiness";
-import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
+import { outputReadinessForStyle, type OutputReadiness } from "@/lib/styles/output-readiness";
+import { RunOutputButton } from "./run-output-button";
 import { RerunButton } from "./rerun-button";
 import { ProdSpecTab } from "./prod-spec-tab";
 import { EanPanel } from "./ean-panel";
@@ -303,6 +304,7 @@ export default async function StyleDetail({
           eanView={eanView}
           requiredFieldKeys={requiredKeys}
           requiredFields={prodSpecReadiness}
+          outputReadiness={outputReadiness}
         />
       )}
 
@@ -351,6 +353,7 @@ function DetailsTab({
   eanView,
   requiredFieldKeys,
   requiredFields,
+  outputReadiness,
 }: {
   style: NonNullable<Awaited<ReturnType<typeof db.style.findUnique>>> & {
     jobs: Array<{
@@ -369,6 +372,7 @@ function DetailsTab({
   eanView: EanView;
   requiredFieldKeys: readonly string[];
   requiredFields: { filled: number; total: number; fields: Array<{ label: string; ok: boolean }> };
+  outputReadiness: OutputReadiness[];
 }) {
   const tone = READINESS_TONE[readiness.tone];
   const requiredSet = new Set(requiredFieldKeys);
@@ -467,6 +471,53 @@ function DetailsTab({
         </div>
       </section>
 
+      {outputReadiness.length > 0 && (
+        <section className="mt-8">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-zinc-700">
+              Outputs · {outputReadiness.filter((o) => o.ready).length} of {outputReadiness.length} ready
+            </h2>
+            <span className="text-xs text-zinc-400">
+              Run each output on its own — not-ready ones unlock as their fields land.
+            </span>
+          </div>
+          <div className="mt-2 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+            <ul>
+              {outputReadiness.map((o, i) => (
+                <li
+                  key={o.variantKey}
+                  className={`flex items-center justify-between gap-4 px-4 py-2.5 ${
+                    i > 0 ? "border-t border-zinc-100" : ""
+                  } ${o.ready ? "" : "opacity-50"}`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${
+                          o.ready ? "bg-emerald-500" : "bg-zinc-300"
+                        }`}
+                      />
+                      <span className="truncate text-sm text-zinc-800">{o.name}</span>
+                    </div>
+                    {!o.ready && o.missing.length > 0 && (
+                      <div className="mt-0.5 pl-4 text-xs text-amber-700">
+                        missing: {o.missing.map((m) => m.label).join(", ")}
+                      </div>
+                    )}
+                  </div>
+                  <RunOutputButton
+                    styleId={style.id}
+                    variantKey={o.variantKey}
+                    ready={o.ready}
+                    missingLabels={o.missing.map((m) => m.label)}
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
+
       <section className="mt-8">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-zinc-700">Record &amp; links</h2>
@@ -560,7 +611,24 @@ function DetailsTab({
                       f.value ? "text-zinc-800" : isMissing ? "text-amber-700" : "text-zinc-300"
                     }`}
                   >
-                    {f.value || (isMissing ? "missing" : "—")}
+                    {f.field === "ean13" && f.value.includes("=") ? (
+                      // Per-size EAN map ("S=570…,M=570…") — one line per
+                      // size instead of an unreadable comma run. Duplicate
+                      // sizes (multi-colourway POs) keep their own lines.
+                      <div className="space-y-0.5 font-mono text-xs">
+                        {f.value.split(",").map((pair, j) => {
+                          const [size, ean] = pair.split("=");
+                          return (
+                            <div key={`${pair}-${j}`}>
+                              <span className="inline-block w-14 text-zinc-500">{size?.trim()}</span>
+                              <span>{ean?.trim()}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      f.value || (isMissing ? "missing" : "—")
+                    )}
                     {f.fallback && (
                       <span
                         title={`No mapped value — falling back to the ${f.fallback}`}
