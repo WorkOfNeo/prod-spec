@@ -20,9 +20,10 @@ export default async function StylesPage() {
   // server-side pagination if the row count ever crosses ~20k.
   const [styles, autoGenerateEnabled] = await Promise.all([
     db.style.findMany({
-      // Hard-exclude the "Templates" (Pre-Order stubs) and "Done" groups —
-      // these never belong on the list, not even behind "Show archived".
-      // A null group is kept (matches neither term). See HIDDEN_STYLE_GROUP_TERMS.
+      // Hard-exclude the "Templates" (Pre-Order stubs) group — never on the
+      // list, not even behind "Show archived". "Done" styles currently DO
+      // load and sit behind the archived toggle (TEMP — see
+      // HIDDEN_STYLE_GROUP_TERMS). A null group is kept (matches no term).
       where: {
         // Archived / deleted Monday items are retained for the audit log but
         // hidden here (soft lifecycle stamped by the webhook).
