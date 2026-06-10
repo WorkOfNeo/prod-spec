@@ -32,12 +32,17 @@ export async function GET(req: NextRequest) {
 
   let pdf = pdfCache.get(variantKey);
   if (!pdf) {
-    const sample = buildSampleStyleData();
-    const html = await variant.render(sample, {
-      widthMm: variant.defaultWidthMm,
-      heightMm: variant.defaultHeightMm,
-    });
-    pdf = await renderPdf({ html });
+    if (variant.staticPdf) {
+      // Static-pdf passthrough — the "sample" PDF IS the artifact.
+      pdf = await variant.staticPdf();
+    } else {
+      const sample = buildSampleStyleData();
+      const html = await variant.render(sample, {
+        widthMm: variant.defaultWidthMm,
+        heightMm: variant.defaultHeightMm,
+      });
+      pdf = await renderPdf({ html });
+    }
     pdfCache.set(variantKey, pdf);
   }
 

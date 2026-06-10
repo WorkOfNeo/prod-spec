@@ -235,11 +235,16 @@ export async function processJob(jobId: string): Promise<void> {
       continue;
     }
     try {
-      const html = await variant.render(styleData, {
-        widthMm: output.widthMm,
-        heightMm: output.heightMm,
-      });
-      const pdf = await renderPdf({ html });
+      // Static-pdf passthrough variants emit their source artwork bytes
+      // verbatim; everything else renders HTML → PDF.
+      const pdf = variant.staticPdf
+        ? await variant.staticPdf()
+        : await renderPdf({
+            html: await variant.render(styleData, {
+              widthMm: output.widthMm,
+              heightMm: output.heightMm,
+            }),
+          });
       generated.push({
         variant,
         output,

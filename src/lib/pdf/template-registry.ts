@@ -6,6 +6,7 @@ import { renderCareLabel02Html } from "./templates/care-label-02";
 import { renderNettoWashCareLabelHtml } from "./templates/netto-dk-privatelabel/wash-care-label";
 import { renderNettoInfoAreaHtml } from "./templates/netto-dk-privatelabel/info-area";
 import { renderNettoCartonMarkingHtml } from "./templates/netto-dk-privatelabel/carton-marking";
+import { PRINT_SPEC_VARIANTS } from "./print-spec-variants";
 
 // =====================================================
 // Template variant registry — the catalogue admins pick from in the
@@ -41,6 +42,12 @@ export type TemplateVariant = {
   // is the UNION of these across the outputs its ProdSpec will print.
   requiredFields: Array<keyof ColumnMapping>;
   render: (style: StyleData, dims: OutputDims) => Promise<string>;
+  // Static-pdf passthrough (print specs with renderStrategy 'static-pdf'):
+  // the artifact is these bytes VERBATIM — graphic-heavy artwork the app
+  // must not redraw. Every artifact-emitting path (job runner, preview
+  // route) MUST check this before calling `render`; when set, `render`
+  // only produces the on-screen metadata card for /custom-outputs.
+  staticPdf?: () => Promise<Buffer>;
 };
 
 export const TEMPLATE_VARIANTS: TemplateVariant[] = [
@@ -106,6 +113,9 @@ export const TEMPLATE_VARIANTS: TemplateVariant[] = [
     ],
     render: renderNettoCartonMarkingHtml,
   },
+  // Spec-driven variants — one per wired print spec file (src/print-specs/**),
+  // rendered by per-family renderers. See src/lib/pdf/print-spec-variants.ts.
+  ...PRINT_SPEC_VARIANTS,
 ];
 
 export function getVariant(key: string): TemplateVariant | null {

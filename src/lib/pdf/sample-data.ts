@@ -18,8 +18,11 @@ import { computeEan13Checksum } from "./barcode";
 
 // Build a valid EAN-13 from a 12-digit prefix so the bwip-js path
 // (care-label-01) accepts it instead of printing an "invalid" notice.
+// computeEan13Checksum returns the FULL 13-digit code (prefix + check
+// digit) despite its name — concatenating the prefix again produced a
+// 25-digit string and every sample barcode rendered as "invalid".
 function ean13(prefix12: string): string {
-  return prefix12 + computeEan13Checksum(prefix12);
+  return computeEan13Checksum(prefix12);
 }
 
 // A tiny inline-SVG wordmark standing in for the per-ProdSpec branded
@@ -81,6 +84,15 @@ export function buildSampleStyleData(): StyleData {
     // A country the translations board covers, so the multilingual
     // "Made in …" run renders (Portugal isn't translated; China is).
     countryOfOrigin: "China",
+    // Customer article number + campaign week — rendered on label fronts
+    // by the spec-driven family templates (Coop / Europris / Runsven).
+    customerItemNo: "3702/2644",
+    campaignWeek: "C182813",
+    // Batch / prod number / description — Rema, Otto's, Dollarstore and
+    // the polybag stickers print these.
+    batchNo: "48835447",
+    prodNumber: "GI10024",
+    description: "T-Shirt Paw Patrol - Blue 98/104-122/128",
 
     prodSpecLogoSvg: SAMPLE_LOGO_SVG,
     // No per-ProdSpec care-text override here on purpose — the care
