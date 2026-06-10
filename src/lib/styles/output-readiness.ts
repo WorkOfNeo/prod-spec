@@ -27,6 +27,10 @@ export type ReadinessStyle = {
   rawData: unknown;
   poNumber?: string | null;
   supplier?: { country?: string | null } | null;
+  // Resolved PO barcodes — feed the ean13/cartonEan fallbacks so an output
+  // that needs EANs reads "ready" once the PO PDF has been scraped.
+  eans?: ReadonlyArray<{ size: string; ean13: string | null }> | null;
+  cartonEan?: string | null;
   customer: { config: unknown };
   prodSpec: { outputs: unknown; columnMapping: unknown } | null;
 };
@@ -78,7 +82,9 @@ export async function pendingOutputKeysForStyle(styleId: string): Promise<string
     select: {
       rawData: true,
       poNumber: true,
+      cartonEan: true,
       supplier: { select: { country: true } },
+      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
       customer: { select: { config: true } },
       prodSpec: { select: { outputs: true, columnMapping: true } },
     },

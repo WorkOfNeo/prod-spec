@@ -75,6 +75,9 @@ export default async function StylesPage() {
         // Threshold the completion bar is measured against + the enabled
         // outputs, whose union of required fields drives the readiness check.
         prodSpec: { select: { autoGenerateThresholdPct: true, active: true, outputs: true } },
+        // Resolved PO barcodes — the ean13/cartonEan fallback source for
+        // the readiness checks (see effectiveStyleItem).
+        eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
       },
       orderBy: { updatedAt: "desc" },
   });
@@ -134,6 +137,8 @@ export default async function StylesPage() {
                 rawData: s.rawData,
                 poNumber: s.poNumber,
                 supplier: s.supplier,
+                eans: s.eans,
+                cartonEan: s.cartonEan,
                 customer: { config: s.customer.config },
                 prodSpec: { outputs: s.prodSpec.outputs, columnMapping: {} },
               })

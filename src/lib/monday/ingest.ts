@@ -1,11 +1,12 @@
 import { db } from "@/lib/db";
 import { columnText, columnValue, getItem, type MondayItem } from "./client";
-import { evaluateCompletion } from "./completion";
+import { evaluateCompletion, withSyntheticColumns } from "./completion";
 import { resolveCustomerByBoardId, ensureNettoGermany } from "@/lib/customers/resolve";
-import { parseCustomerConfig } from "@/lib/customers/config";
+import { parseCustomerConfig, MANUAL_COLUMN_IDS } from "@/lib/customers/config";
 import { MONDAY_STYLE_COLS, MONDAY_PRE_ORDER_COLS, MONDAY_BOARDS } from "./boards";
 import { ensureProdSpecsForStyle } from "@/lib/prod-spec/ensure";
-import { parseProdSpecRequiredFields } from "@/lib/prod-spec/config";
+import { parseProdSpecRequiredFields, parseProdSpecColumnMapping } from "@/lib/prod-spec/config";
+import { formatEanMap } from "@/lib/styles/resolved-fields";
 import {
   buildCustomerTokenIndex,
   extractLeadingToken,
@@ -166,7 +167,39 @@ export async function ingestMondayItem(
     : [];
   const requiredFields = prodSpecRequired.length > 0 ? prodSpecRequired : customerConfig.requiredFields;
 
-  const { completionPct, missingFields } = evaluateCompletion(fetched, requiredFields);
+  // Snapshot the prior PO + EAN state. Detects a PO that was just filled
+  // (or changed) for the (re)queue below, AND feeds completion: barcodes
+  // already resolved from the PO PDF count as the ean13/cartonEan columns
+  // being filled, so a re-ingest on an unrelated edit doesn't knock a
+  // resolved style back below 100%.
+  const prevEan = await db.style.findUnique({
+    where: { mondayItemId: String(fetched.id) },
+    select: {
+      poNumber: true,
+      eanStatus: true,
+      cartonEan: true,
+      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
+    },
+  });
+
+  // Completion counts a required column as filled when the Monday column
+  // has a value OR the EAN runner resolved it from the PO PDF. Required
+  // fields are keyed by raw column id, so the resolved values are injected
+  // under the effective mapping's ids (ProdSpec override → customer) and
+  // the manual.* ids.
+  const psMappingRaw = prodSpec?.columnMapping;
+  const mapping =
+    psMappingRaw && typeof psMappingRaw === "object" && Object.keys(psMappingRaw).length > 0
+      ? parseProdSpecColumnMapping(psMappingRaw)
+      : customerConfig.columnMapping;
+  const eanMapText = formatEanMap(prevEan?.eans);
+  const completionItem = withSyntheticColumns(fetched, [
+    { id: mapping.ean13 ?? "", text: eanMapText },
+    { id: MANUAL_COLUMN_IDS.ean13, text: eanMapText },
+    { id: mapping.cartonEan ?? "", text: prevEan?.cartonEan ?? "" },
+    { id: MANUAL_COLUMN_IDS.cartonEan, text: prevEan?.cartonEan ?? "" },
+  ]);
+  const { completionPct, missingFields } = evaluateCompletion(completionItem, requiredFields);
   const status = completionPct === 100 ? "READY" : "PENDING";
 
   // Store the Monday snapshot, plus a synthetic "__name__" column carrying
@@ -180,13 +213,6 @@ export async function ingestMondayItem(
       { id: "__name__", type: "name", text: fetched.name, value: null },
     ],
   };
-
-  // Snapshot the prior PO + EAN state so we can detect a PO that was just
-  // filled (or changed) and (re)queue EAN resolution for it below.
-  const prevEan = await db.style.findUnique({
-    where: { mondayItemId: String(fetched.id) },
-    select: { poNumber: true, eanStatus: true },
-  });
 
   const style = await db.style.upsert({
     where: { mondayItemId: String(fetched.id) },

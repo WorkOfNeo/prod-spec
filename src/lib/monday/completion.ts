@@ -13,6 +13,26 @@ function isFilled(col: MondayColumnValue | undefined): boolean {
   return false;
 }
 
+// Inject synthetic column values (e.g. PO-PDF-resolved EANs) into an item
+// before evaluating completion. Required fields are keyed by raw column id,
+// so resolved data must appear under the very ids the requirement names —
+// the manual.* fallback that resolveMappedField consults is not enough
+// here. Only fills gaps: a column that already has a value is left alone.
+export function withSyntheticColumns(
+  item: Pick<MondayItem, "column_values">,
+  additions: ReadonlyArray<{ id: string; text: string }>,
+): Pick<MondayItem, "column_values"> {
+  let cols = item.column_values ?? [];
+  let changed = false;
+  for (const a of additions) {
+    if (!a.id || !a.text.trim()) continue;
+    if (isFilled(cols.find((c) => c.id === a.id))) continue;
+    cols = [...cols.filter((c) => c.id !== a.id), { id: a.id, type: "text", text: a.text, value: null }];
+    changed = true;
+  }
+  return changed ? { ...item, column_values: cols } : item;
+}
+
 export function evaluateCompletion(
   item: Pick<MondayItem, "column_values">,
   required: ReadonlyArray<RequiredField>,
