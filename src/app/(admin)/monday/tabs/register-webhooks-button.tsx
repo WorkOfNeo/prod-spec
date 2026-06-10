@@ -13,6 +13,7 @@ type RegisterResult = {
   error?: string;
   results?: Array<{
     boardId: string;
+    error?: string;
     created?: Array<{ event: string }>;
     skipped?: string[];
     foreign?: unknown[];
@@ -36,7 +37,13 @@ export function RegisterWebhooksButton() {
         body: JSON.stringify({ all: true }),
       });
       const j = (await res.json().catch(() => ({}))) as RegisterResult;
-      if (!res.ok) throw new Error(j.error ?? `HTTP ${res.status}`);
+      const boardErrors = (j.results ?? [])
+        .filter((r) => r.error)
+        .map((r) => `${r.boardId}: ${r.error}`);
+      if (!res.ok) {
+        // Prefer the per-board Monday reason(s) over a bare status code.
+        throw new Error(boardErrors.length ? boardErrors.join(" · ") : j.error ?? `HTTP ${res.status}`);
+      }
       const sum = (pick: (r: NonNullable<RegisterResult["results"]>[number]) => number) =>
         (j.results ?? []).reduce((n, r) => n + pick(r), 0);
       const created = sum((r) => r.created?.length ?? 0);
@@ -47,6 +54,8 @@ export function RegisterWebhooksButton() {
           foreign ? ` · ${foreign} unmanaged on Monday (left untouched)` : ""
         }.`,
       );
+      // Partial failure (HTTP 200 but some boards errored) — surface them too.
+      if (boardErrors.length) setError(boardErrors.join(" · "));
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to register");

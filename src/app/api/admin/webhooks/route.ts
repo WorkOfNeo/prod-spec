@@ -78,17 +78,35 @@ export async function POST(req: NextRequest) {
       MONDAY_BOARDS.customers,
       MONDAY_BOARDS.suppliers,
     ];
+    // Capture per-board failures instead of letting one board's error
+    // (e.g. a Monday permission problem on a single board) reject the whole
+    // run and discard the boards that DID register.
     const results = await Promise.all(
-      boards.map(async (boardId) => registerMissing(boardId, DEFAULT_EVENTS, url)),
+      boards.map(async (boardId) => {
+        try {
+          return { boardId, ...(await registerMissing(boardId, DEFAULT_EVENTS, url)) };
+        } catch (err) {
+          const error = err instanceof Error ? err.message : "register failed";
+          console.error(`[webhooks] board ${boardId} register failed — ${error}`);
+          return { boardId, error, created: [], skipped: [], foreign: [] };
+        }
+      }),
     );
-    return NextResponse.json({
-      results: boards.map((boardId, i) => ({ boardId, ...results[i] })),
-    });
+    // 502 when nothing registered at all, so the UI shows an error state;
+    // otherwise 200 with per-board `error` fields for any partial failures.
+    const allFailed = results.every((r) => "error" in r && r.error);
+    return NextResponse.json({ results }, { status: allFailed ? 502 : 200 });
   }
 
   const { boardId, events } = parsed.data;
-  const result = await registerMissing(boardId, events, url);
-  return NextResponse.json({ boardId, ...result });
+  try {
+    const result = await registerMissing(boardId, events, url);
+    return NextResponse.json({ boardId, ...result });
+  } catch (err) {
+    const error = err instanceof Error ? err.message : "register failed";
+    console.error(`[webhooks] board ${boardId} register failed — ${error}`);
+    return NextResponse.json({ boardId, error }, { status: 502 });
+  }
 }
 
 async function registerMissing(boardId: string, events: WebhookEvent[], url: string) {
