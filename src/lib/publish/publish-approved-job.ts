@@ -5,6 +5,7 @@ import { dispatchEmail, type EmailOutcome } from "@/lib/email/dispatch";
 import { supplierApprovalEmail } from "@/lib/email/templates/review-notification";
 import { getSupplierReviewCcEmails } from "@/lib/settings/app-settings";
 import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
+import { createShareForJob } from "@/lib/supplier-share/share";
 
 // =====================================================
 // "Publish" = everything that happens when a job's outputs are approved:
@@ -191,6 +192,23 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
   );
   const ccDisplay = ccList.length > 0 ? ccList.join(", ") : null;
 
+  // Mint the supplier-only share link (token + 4-digit PIN). Created even
+  // when no supplier email resolved, so the team can read the link + PIN off
+  // the prod-spec tab and forward it manually. Gated to the resolved email
+  // (the unlock form checks the typed email against this); empty when none.
+  const share = await createShareForJob({
+    jobId: job.id,
+    styleId: job.styleId,
+    email: supplierEmail ?? "",
+  });
+  await db.log.create({
+    data: {
+      jobId: job.id,
+      level: "INFO",
+      message: `supplier share link minted (${share.url}) — PIN ${share.pin}${supplierEmail ? "" : " · no recipient yet, forward manually from the prod-spec tab"}`,
+    },
+  });
+
   const notification: PublishNotificationSummary = {
     to: supplierEmail,
     cc: ccDisplay,
@@ -217,6 +235,8 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
     businessArea: job.style.businessAreaRef?.name ?? job.style.businessArea ?? null,
     poNumber: job.style.poNumber,
     files,
+    shareUrl: share.url,
+    sharePin: share.pin,
     folderUrl,
     isCorrection,
   });
