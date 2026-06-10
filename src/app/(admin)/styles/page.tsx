@@ -7,31 +7,63 @@ import { findMissingDetailFields, requiredFieldKeysFromOutputs } from "@/lib/sty
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import { effectiveStyleItem } from "@/lib/styles/resolved-fields";
 import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
-import { HIDDEN_STYLE_GROUP_TERMS } from "@/lib/import/heuristics";
+import { HIDDEN_STYLE_GROUP_TERMS, isArchivedGroup } from "@/lib/import/heuristics";
+import { getDoneGroupPoCutoff } from "@/lib/settings/app-settings";
+import { parsePoNumberValue } from "@/lib/po/po-number";
 import { StylesTable } from "./styles-table";
+import { DonePoCutoffSetting } from "./done-po-cutoff-setting";
 import { eanStatusMeta } from "@/lib/po/ean-status-meta";
 
 export const dynamic = "force-dynamic";
 
 export default async function StylesPage() {
+  const [autoGenerateEnabled, doneCutoff] = await Promise.all([
+    getAutoGenerateEnabled(),
+    getDoneGroupPoCutoff(),
+  ]);
+
+  // Done-group exception: when the cutoff is set, Done-group styles whose
+  // PO number parses ABOVE it join the list (in the MAIN view, not behind
+  // "Show archived") — the review window for backfilled orders. The PO is
+  // free text ("C-PO63145"), so the numeric compare happens here, on a
+  // cheap two-column scan, and the main query re-admits the ids.
+  const doneCutoffIds = new Set<string>();
+  if (doneCutoff !== null) {
+    const candidates = await db.style.findMany({
+      where: {
+        archivedAt: null,
+        deletedAt: null,
+        groupTitle: { contains: "done", mode: "insensitive" },
+        poNumber: { not: null },
+      },
+      select: { id: true, poNumber: true },
+    });
+    for (const c of candidates) {
+      if ((parsePoNumberValue(c.poNumber) ?? -1) > doneCutoff) doneCutoffIds.add(c.id);
+    }
+  }
+
   // Load all styles for client-side search. At ~4k rows the initial
   // HTML payload is bigger than the legacy 200-row cap, but the table
   // renders in <500 ms and the filtering UX is instant. Switch to
   // server-side pagination if the row count ever crosses ~20k.
-  const [styles, autoGenerateEnabled] = await Promise.all([
-    db.style.findMany({
-      // Hard-exclude the "Templates" (Pre-Order stubs) group — never on the
-      // list, not even behind "Show archived". "Done" styles currently DO
-      // load and sit behind the archived toggle (TEMP — see
-      // HIDDEN_STYLE_GROUP_TERMS). A null group is kept (matches no term).
+  const styles = await db.style.findMany({
+      // Hard-exclude the "Templates" + "Done" groups — except Done styles
+      // re-admitted by the PO cutoff above. A null group is kept (matches
+      // neither term). See HIDDEN_STYLE_GROUP_TERMS.
       where: {
         // Archived / deleted Monday items are retained for the audit log but
         // hidden here (soft lifecycle stamped by the webhook).
         archivedAt: null,
         deletedAt: null,
-        NOT: HIDDEN_STYLE_GROUP_TERMS.map((term) => ({
-          groupTitle: { contains: term, mode: "insensitive" as const },
-        })),
+        OR: [
+          {
+            NOT: HIDDEN_STYLE_GROUP_TERMS.map((term) => ({
+              groupTitle: { contains: term, mode: "insensitive" as const },
+            })),
+          },
+          ...(doneCutoffIds.size > 0 ? [{ id: { in: [...doneCutoffIds] } }] : []),
+        ],
       },
       include: {
         // config feeds the per-style required-field check below.
@@ -45,9 +77,7 @@ export default async function StylesPage() {
         prodSpec: { select: { autoGenerateThresholdPct: true, active: true, outputs: true } },
       },
       orderBy: { updatedAt: "desc" },
-    }),
-    getAutoGenerateEnabled(),
-  ]);
+  });
 
   // Parse each customer's column mapping once, not per style row.
   const mappingByCustomer = new Map<string, ColumnMapping>();
@@ -77,6 +107,10 @@ export default async function StylesPage() {
         >
           + New manual style
         </Link>
+      </div>
+
+      <div className="mb-6">
+        <DonePoCutoffSetting initialCutoff={doneCutoff} />
       </div>
 
       <StylesTable
@@ -140,6 +174,9 @@ export default async function StylesPage() {
             status: s.status,
             eanStatus: s.eanStatus,
             groupTitle: s.groupTitle,
+            // Soft-hidden behind "Show archived" — except Done-group styles
+            // re-admitted by the PO cutoff, which belong in the main view.
+            archived: isArchivedGroup(s.groupTitle) && !doneCutoffIds.has(s.id),
             lastSyncedAt: formatDate(s.lastSyncedAt),
             searchBlob: [
               s.name,

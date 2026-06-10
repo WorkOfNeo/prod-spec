@@ -8,7 +8,6 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { isArchivedGroup } from "@/lib/import/heuristics";
 import type { ReadinessTone } from "@/lib/styles/readiness";
 import { eanStatusMeta } from "@/lib/po/ean-status-meta";
 import type { EanView } from "@/lib/po/ean-view";
@@ -58,6 +57,10 @@ export type StyleRow = {
   // PO → EAN resolution state (StyleEanStatus). Badge via eanStatusMeta.
   eanStatus: string;
   groupTitle: string | null;
+  // Server-computed: hide behind "Show archived". Done/cancelled/archived
+  // groups — except Done-group styles re-admitted by the PO cutoff, which
+  // stay in the main view (see /styles page query).
+  archived: boolean;
   lastSyncedAt: string;
   searchBlob: string;
 };
@@ -101,9 +104,10 @@ export function StylesTable({
     }
   }
 
-  // Pre-compute archived flag once so the filter loop is cheap.
+  // Server-computed archived flags (groupTitle heuristics + PO-cutoff
+  // exception) — read once so the filter loop is cheap.
   const archivedFlags = useMemo(
-    () => rows.map((r) => isArchivedGroup(r.groupTitle)),
+    () => rows.map((r) => r.archived),
     [rows],
   );
   const archivedCount = useMemo(

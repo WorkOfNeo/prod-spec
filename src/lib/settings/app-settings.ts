@@ -62,6 +62,34 @@ export async function setPoEanAutoRunEnabled(enabled: boolean): Promise<void> {
   });
 }
 
+const DONE_GROUP_PO_CUTOFF_KEY = "doneGroupPoCutoff";
+
+// Done-group visibility cutoff for /styles.
+//
+// Styles whose Monday group is "Done" are normally hidden from the styles
+// list. When this cutoff is set (a PO number — stored as its numeric part,
+// e.g. 63144 for "C-PO63144"), Done-group styles whose PO parses ABOVE the
+// cutoff are shown in the main list — the review window for backfilled
+// orders. Unset/empty ⇒ all Done-group styles stay hidden (the default).
+export async function getDoneGroupPoCutoff(): Promise<number | null> {
+  const row = await db.appSetting.findUnique({ where: { key: DONE_GROUP_PO_CUTOFF_KEY } });
+  const value = typeof row?.value === "number" ? row.value : null;
+  return value !== null && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export async function setDoneGroupPoCutoff(cutoff: number | null): Promise<void> {
+  if (cutoff === null) {
+    // Cleared — drop the row (Prisma's Json type has no plain null write).
+    await db.appSetting.deleteMany({ where: { key: DONE_GROUP_PO_CUTOFF_KEY } });
+    return;
+  }
+  await db.appSetting.upsert({
+    where: { key: DONE_GROUP_PO_CUTOFF_KEY },
+    create: { key: DONE_GROUP_PO_CUTOFF_KEY, value: cutoff },
+    update: { value: cutoff },
+  });
+}
+
 const SUPPLIER_REVIEW_CC_KEY = "supplierReviewCcEmails";
 
 // Actual email address(es) CC'd on every supplier "ready for review" approval
