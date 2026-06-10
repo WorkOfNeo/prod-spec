@@ -150,6 +150,14 @@ export function LayoutEditor({
   }
 
   function removeBlock(anchor: LayoutAnchor) {
+    // Misclick guard: blocks with real content confirm before vanishing
+    // (there is no undo). Fresh "New text" blocks delete silently.
+    const block = page?.blocks.find((b) => b.anchor === anchor);
+    const content = (block?.lines ?? []).join(" ").trim();
+    if (content && content !== "New text") {
+      const lineCount = (block?.lines ?? []).filter((l) => l.trim()).length;
+      if (!window.confirm(`Delete this block (${lineCount} line${lineCount === 1 ? "" : "s"})?`)) return;
+    }
     setDef((d) => ({
       pages: d.pages.map((p, i) =>
         i === pageIdx ? { ...p, blocks: p.blocks.filter((b) => b.anchor !== anchor) } : p,
@@ -327,6 +335,24 @@ export function LayoutEditor({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(def), testStyle?.id, pageIdx]);
+
+  // Delete / Backspace removes the selected block — unless the user is
+  // typing in an input, textarea or select (e.g. the content editor).
+  useEffect(() => {
+    if (!sel) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+      e.preventDefault();
+      removeBlock(sel);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // removeBlock isn't memoized; re-binding per render tick is cheap.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel, pageIdx, def]);
 
   // ---- actions -----------------------------------------------------------
 
@@ -646,24 +672,45 @@ export function LayoutEditor({
           <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Pages</div>
           <div className="mt-2 flex flex-col gap-1.5">
             {def.pages.map((p, i) => (
-              <button
+              <div
                 key={p.id}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => {
                   setPageIdx(i);
                   setSel(null);
                 }}
-                className={`rounded-md border px-3 py-2 text-left ${
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setPageIdx(i);
+                    setSel(null);
+                  }
+                }}
+                className={`group relative cursor-pointer rounded-md border px-3 py-2 text-left ${
                   i === pageIdx ? "border-zinc-900 bg-white" : "border-zinc-200 bg-white hover:border-zinc-300"
                 }`}
               >
-                <div className="text-sm font-medium text-zinc-800">
+                <div className="pr-4 text-sm font-medium text-zinc-800">
                   {i + 1} · {p.title || "Untitled"}
                 </div>
                 <div className="font-mono text-[11px] text-zinc-400">
                   {p.widthMm} × {p.heightMm} mm
                 </div>
-              </button>
+                {def.pages.length > 1 ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removePage(i);
+                    }}
+                    className="absolute right-1.5 top-1.5 hidden h-4 w-4 items-center justify-center rounded-full text-[10px] leading-none text-zinc-300 hover:bg-red-50 hover:text-red-600 group-hover:flex"
+                    title={`Delete page "${p.title || "Untitled"}"`}
+                  >
+                    ✕
+                  </button>
+                ) : null}
+              </div>
             ))}
             <button
               type="button"
@@ -787,6 +834,7 @@ export function LayoutEditor({
                     scale={scale}
                     selected={sel === key}
                     onSelect={() => setSel(key)}
+                    onRemove={() => removeBlock(key)}
                   />
                 );
               })}
@@ -829,8 +877,20 @@ export function LayoutEditor({
         {/* ----- right: inspector + variables ----- */}
         <div className="space-y-5">
           <div className="rounded-lg border border-zinc-200 p-4">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-              Block{selBlock ? ` — ${selBlock.anchor.replace("-", " ")}` : ""}
+            <div className="flex items-baseline justify-between">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                Block{selBlock ? ` — ${selBlock.anchor.replace("-", " ")}` : ""}
+              </div>
+              {selBlock ? (
+                <button
+                  type="button"
+                  onClick={() => removeBlock(selBlock.anchor)}
+                  className="text-[11px] font-medium text-zinc-400 hover:text-red-600"
+                  title="Delete this block (or press Del with it selected)"
+                >
+                  Delete
+                </button>
+              ) : null}
             </div>
             {!selBlock ? (
               <p className="mt-2 text-xs text-zinc-400">Select a block on the canvas, or click an empty corner to add one.</p>
@@ -923,14 +983,6 @@ export function LayoutEditor({
                     className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-2 font-mono text-xs leading-relaxed"
                   />
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => removeBlock(selBlock.anchor)}
-                  className="text-xs text-zinc-400 hover:text-red-600"
-                >
-                  Remove block
-                </button>
               </div>
             )}
           </div>
@@ -1041,15 +1093,22 @@ function CanvasBlock({
   scale,
   selected,
   onSelect,
+  onRemove,
 }: {
   block: LayoutBlock;
   page: LayoutPage;
   scale: number;
   selected: boolean;
   onSelect: () => void;
+  onRemove: () => void;
 }) {
   const fontPx = Math.max(block.fontPt * PT_TO_MM * scale, 7);
   const widthPx = ((page.widthMm * block.cols) / LAYOUT_GRID_COLS) * scale;
+  // The delete badge sits on the block's inward-facing top corner so it
+  // never hangs outside the page edge the block is anchored to.
+  const badgePos: React.CSSProperties = block.anchor.endsWith("left")
+    ? { top: -8, right: -8 }
+    : { top: -8, left: -8 };
   return (
     <div
       onClick={onSelect}
@@ -1058,6 +1117,20 @@ function CanvasBlock({
       }`}
       style={{ ...blockPosition(block.anchor), width: widthPx, maxWidth: "96%" }}
     >
+      {selected ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          className="absolute z-10 flex h-4 w-4 items-center justify-center rounded-full border border-zinc-300 bg-white text-[9px] leading-none text-zinc-500 shadow-sm hover:border-red-300 hover:bg-red-50 hover:text-red-600"
+          style={badgePos}
+          title="Delete block (Del)"
+        >
+          ✕
+        </button>
+      ) : null}
       {block.lines.map((line, i) => (
         <div
           key={i}
