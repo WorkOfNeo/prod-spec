@@ -470,6 +470,7 @@ model Style {
   jobs             Job[]
   eans             StyleEan[]
   rejectionTickets RejectionTicket[]
+  supplierShares   SupplierShare[]
 
   @@index([customerId])
   @@index([status])
@@ -571,6 +572,7 @@ model Job {
   reviewActions    ReviewAction[]
   assets           JobAsset[]
   rejectionTickets RejectionTicket[]
+  supplierShare    SupplierShare?
 
   @@index([status])
   @@index([styleId])
@@ -801,6 +803,47 @@ model EmailLog {
   @@index([createdAt])
   @@index([jobId])
   @@map("email_logs")
+}
+
+// =====================================================
+// Supplier share — the per-approval, supplier-facing link. Created when a
+// job is published (approved); the supplier email carries its URL (/s/<token>)
+// plus a 4-digit PIN. The supplier unlocks the page with their email + PIN
+// to view the approved PDFs. "Visited" = a successful unlock — surfaced on
+// the Style's prod-spec tab so the team can see whether the supplier opened
+// it. One share per published job (jobId unique); a correction re-publish
+// creates a fresh share (new token + PIN).
+// =====================================================
+model SupplierShare {
+  id      String @id @default(cuid())
+  // Unguessable URL secret — the primary gate. /s/<token>.
+  token   String @unique
+  // 4-digit PIN, the second factor. Carried in the approval email and shown
+  // to the team on the prod-spec tab so they can re-send it. Plaintext on
+  // purpose (low-sensitivity, admin-visible); the token is the real secret.
+  pin     String
+  // Address the link is gated to (the supplier email the approval went to).
+  // The unlock form checks the typed email against this, case-insensitively.
+  email   String
+  jobId   String @unique
+  styleId String
+
+  // Visit tracking — a "visit" is a SUCCESSFUL unlock (email + PIN correct).
+  firstVisitedAt DateTime?
+  lastVisitedAt  DateTime?
+  visitCount     Int       @default(0)
+  // Wrong-PIN attempts; the unlock endpoint blocks once this gets high
+  // (defence-in-depth behind the unguessable token). Reset on success.
+  failedAttempts Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  job   Job   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
+
+  @@index([styleId])
+  @@map("supplier_shares")
 }
 
 // Track Monday webhook subscriptions we own.

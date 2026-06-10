@@ -11,6 +11,7 @@ import {
 } from "@/lib/styles/resolved-fields";
 import type { MondayItem } from "@/lib/monday/client";
 import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
+import { shareUrl } from "@/lib/supplier-share/share";
 import { findMissingDetailFields } from "@/lib/styles/detail-fields";
 import { computeReadiness, type Readiness, type ReadinessTone } from "@/lib/styles/readiness";
 import { outputReadinessForStyle, type OutputReadiness } from "@/lib/styles/output-readiness";
@@ -183,6 +184,23 @@ export default async function StyleDetail({
 
   const latestJob = style.jobs[0];
   const missing = (style.missingFields as Array<{ id: string; label: string }>) ?? [];
+
+  // Supplier share for the latest published job (if any) — drives the
+  // "Supplier link" panel on the prod-spec tab: the link + PIN to forward,
+  // and whether the supplier has opened it.
+  const supplierShare = await db.supplierShare.findFirst({
+    where: { styleId: id },
+    orderBy: { createdAt: "desc" },
+    select: {
+      token: true,
+      pin: true,
+      email: true,
+      jobId: true,
+      visitCount: true,
+      firstVisitedAt: true,
+      lastVisitedAt: true,
+    },
+  });
 
   const autoGenerateEnabled = await getAutoGenerateEnabled();
 
@@ -468,6 +486,19 @@ export default async function StyleDetail({
           poNumber={style.poNumber}
           styleStatus={style.status}
           requiredReadiness={prodSpecReadiness}
+          supplierShare={
+            supplierShare
+              ? {
+                  url: shareUrl(supplierShare.token),
+                  pin: supplierShare.pin,
+                  email: supplierShare.email,
+                  jobId: supplierShare.jobId,
+                  visitCount: supplierShare.visitCount,
+                  firstVisitedAt: supplierShare.firstVisitedAt?.toISOString() ?? null,
+                  lastVisitedAt: supplierShare.lastVisitedAt?.toISOString() ?? null,
+                }
+              : null
+          }
           jobs={style.jobs.map((j) => ({
             id: j.id,
             status: j.status,

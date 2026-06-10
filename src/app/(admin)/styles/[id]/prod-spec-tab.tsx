@@ -2,6 +2,7 @@ import Link from "next/link";
 import { DeliveredCard } from "./delivered-card";
 import { ResolvedProdSpecButton } from "./resolved-prod-spec";
 import { RelinkBusinessAreaButton } from "./relink-business-area-button";
+import { SupplierLinkCard, type SupplierShareInfo } from "./supplier-link-card";
 import { formatDate } from "@/lib/utils";
 
 type ProdSpec = {
@@ -51,6 +52,7 @@ export function ProdSpecTab({
   poNumber,
   styleStatus,
   requiredReadiness,
+  supplierShare,
   jobs,
 }: {
   styleId: string;
@@ -78,6 +80,10 @@ export function ProdSpecTab({
     total: number;
     fields: Array<{ label: string; ok: boolean }>;
   };
+  // Supplier share for the latest published job (null until a job is
+  // approved). The `jobId` lets us flag a stale link when a newer job
+  // exists than the one the link was minted for.
+  supplierShare: (SupplierShareInfo & { jobId: string }) | null;
   // ALL recent jobs, latest first. Latest renders the prominent
   // "Delivered Prod Specs" grid; the rest are tucked into a collapsible
   // accordion below so historical jobs (and their assets) stay
@@ -133,6 +139,15 @@ export function ProdSpecTab({
             </p>
           </div>
         </div>
+
+        {supplierShare ? (
+          <div className="mb-4">
+            <SupplierLinkCard
+              share={supplierShare}
+              belongsToLatestJob={latestJob?.id === supplierShare.jobId}
+            />
+          </div>
+        ) : null}
 
         {!latestJob || latestJob.assets.length === 0 ? (
           <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500">

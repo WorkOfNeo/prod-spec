@@ -143,8 +143,15 @@ export function supplierApprovalEmail(input: {
   // webUrl is null when SharePoint isn't configured — the files then only
   // travel as attachments and the list renders as plain names.
   files: Array<{ name: string; webUrl: string | null }>;
+  // The supplier-only link to view the approved PDFs, plus the 4-digit PIN
+  // they must enter (along with their email) to unlock it. The whole point
+  // of the email when SharePoint isn't live yet.
+  shareUrl: string;
+  sharePin: string;
   // SharePoint folder the files were published to. When present it's
   // surfaced as a button + plain-text link; the files are also attached.
+  // SharePoint isn't live yet ("soon"), so we always TELL the supplier the
+  // files will be in their SharePoint folder, but only link it when real.
   folderUrl?: string | null;
   isCorrection?: boolean;
 }): { subject: string; html: string; text: string } {
@@ -153,20 +160,28 @@ export function supplierApprovalEmail(input: {
   const intro = input.isCorrection
     ? "An updated set of ProdSpec files has been published for the order below and is ready to be reviewed. The previous files have been overwritten."
     : "The ProdSpec files for the order below are ready to be reviewed.";
-  const whereToFind = input.folderUrl
-    ? "You can find them in the SharePoint folder linked below; the files are also attached to this email."
-    : "The files are attached to this email.";
   const fileLinks = input.files
     .map((f) => (f.webUrl ? `<li><a href="${f.webUrl}">${escapeHtml(f.name)}</a></li>` : `<li>${escapeHtml(f.name)}</li>`))
     .join("");
+  const folderLine = input.folderUrl
+    ? `You can also find them in your SharePoint supplier folder, linked below.`
+    : `These files will also be saved to your SharePoint supplier folder.`;
   const folderButton = input.folderUrl ? ctaButton(input.folderUrl, "Open SharePoint folder") : "";
   const ctx = contextRows(input);
+
+  // The link block: button + how to unlock (their email + the PIN).
+  const linkBlock = `
+      <p style="margin: 4px 0 10px; color: #444;">Open your secure link below. You'll be asked for your email address and this PIN:</p>
+      <p style="margin: 0 0 12px; font: 600 22px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 4px; color: #111;">${escapeHtml(input.sharePin)}</p>
+      ${ctaButton(input.shareUrl, "View approved prod specs")}
+      <p style="margin: 8px 0 0; color: #888; font-size: 12px;">If the button doesn't work, paste this into your browser: ${escapeHtml(input.shareUrl)}</p>`;
 
   const html = `
     <div style="font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; max-width: 480px; padding: 20px;">
       <p>${intro}</p>
-      <p style="color: #444;">${whereToFind}</p>
       ${ctx.html}
+      ${linkBlock}
+      <p style="color: #444; margin-top: 18px;">${folderLine} The files are also attached to this email.</p>
       ${folderButton}
       <h3 style="margin: 24px 0 8px;">Files</h3>
       <ul style="padding-left: 18px;">${fileLinks}</ul>
@@ -174,10 +189,16 @@ export function supplierApprovalEmail(input: {
   `;
   const text = [
     intro,
-    whereToFind,
     "",
     ...ctx.text,
-    ...(input.folderUrl ? ["", `SharePoint folder: ${input.folderUrl}`] : []),
+    "",
+    "View the approved prod specs online (you'll need your email address and PIN):",
+    `Link: ${input.shareUrl}`,
+    `PIN: ${input.sharePin}`,
+    "",
+    folderLine,
+    ...(input.folderUrl ? [`SharePoint folder: ${input.folderUrl}`] : []),
+    "The files are also attached to this email.",
     "",
     "Files:",
     ...input.files.map((f) => (f.webUrl ? `- ${f.name}: ${f.webUrl}` : `- ${f.name}`)),
