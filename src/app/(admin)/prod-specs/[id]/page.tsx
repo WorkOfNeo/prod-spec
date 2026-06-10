@@ -7,14 +7,24 @@ import {
   parseProdSpecOutputs,
   parseProdSpecRequiredFields,
 } from "@/lib/prod-spec/config";
-import { TEMPLATE_VARIANTS } from "@/lib/pdf/template-registry";
+import { allVariants } from "@/lib/pdf/template-registry";
+import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { formatDate } from "@/lib/utils";
 import { listActiveLanguages } from "@/lib/languages/active";
+import { loadCareLabels } from "@/lib/care-labels";
+import { toLaunderingAction } from "@/lib/care-labels/actions";
+import {
+  loadTranslationDictionary,
+  normaliseTranslationKey,
+} from "@/lib/translations/lookup";
 import { ProdSpecEditor } from "./prod-spec-editor";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProdSpecDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  // Published Output Builder layouts join the variant catalogue below.
+  await ensureLayoutVariantsLoaded();
+
   const { id } = await params;
   const prodSpec = await db.prodSpec.findUnique({
     where: { id },
@@ -26,14 +36,31 @@ export default async function ProdSpecDetailPage({ params }: { params: Promise<{
   });
   if (!prodSpec) notFound();
 
-  const [allSuppliers, languages] = await Promise.all([
+  const [allSuppliers, languages, careLabels, washSymbolRows, dict] = await Promise.all([
     db.supplier.findMany({
       where: { active: true },
       orderBy: { name: "asc" },
       select: { id: true, name: true, country: true },
     }),
     listActiveLanguages(),
+    loadCareLabels(),
+    db.washSymbol.findMany({
+      where: { active: true },
+      orderBy: { code: "asc" },
+      select: { code: true, name: true, action: true, restrictive: true },
+    }),
+    loadTranslationDictionary(),
   ]);
+
+  // Per care label: its Translation-board entry ({ lang → text }) so the
+  // "generated from standard" panel can compose lines + flag coverage gaps
+  // client-side without re-querying.
+  const careTranslationsByLabel = Object.fromEntries(
+    careLabels.map((label) => [
+      label.id,
+      dict.get(normaliseTranslationKey(label.sourceText))?.translations ?? {},
+    ]),
+  );
 
   // Defensive parse — if stored JSON is malformed for any reason, fall back
   // to empty defaults so the editor still renders.
@@ -74,7 +101,7 @@ export default async function ProdSpecDetailPage({ params }: { params: Promise<{
         initialRequiredFields={requiredFields}
         attachedSupplierIds={attachedSupplierIds}
         allSuppliers={allSuppliers}
-        variantCatalogue={TEMPLATE_VARIANTS.map((v) => ({
+        variantCatalogue={allVariants().map((v) => ({
           key: v.key,
           docType: v.docType,
           name: v.name,
@@ -82,6 +109,21 @@ export default async function ProdSpecDetailPage({ params }: { params: Promise<{
           defaultWidthMm: v.defaultWidthMm,
           defaultHeightMm: v.defaultHeightMm,
         }))}
+        careLabels={careLabels.map((l) => ({
+          id: l.id,
+          sourceText: l.sourceText,
+          sortOrder: l.sortOrder,
+          action: l.action,
+          showIfSymbols: l.showIfSymbols,
+          hideIfSymbols: l.hideIfSymbols,
+        }))}
+        washSymbols={washSymbolRows.map((s) => ({
+          code: s.code,
+          name: s.name,
+          action: toLaunderingAction(s.action),
+          restrictive: s.restrictive,
+        }))}
+        careTranslationsByLabel={careTranslationsByLabel}
       />
     </div>
   );

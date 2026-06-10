@@ -1,7 +1,7 @@
 import type { StyleData } from "../../types";
 import type { OutputDims } from "../../template-registry";
 import { escapeHtml, fontBarcode, htmlDocument, tFor } from "../base";
-import { loadWashcareSymbols, type WashcareSymbolMap } from "../../washcare-symbols";
+import { loadWashcareSymbols, getWashcareSymbol, type WashcareSymbolMap } from "../../washcare-symbols";
 import { resolveOutputLangCodes } from "../../output-langs";
 import {
   loadTranslationDictionary,
@@ -93,7 +93,7 @@ function infoAreaPage(
 
   const symbols = style.washSymbols
     .map((token) => {
-      const resolved = symbolMap.get(token);
+      const resolved = getWashcareSymbol(symbolMap, token);
       if (resolved?.dataUrl) {
         return `<img src="${resolved.dataUrl}" alt="${escapeHtml(resolved.name)}" title="${escapeHtml(resolved.name)}" />`;
       }

@@ -6,7 +6,7 @@ import {
   type ColumnMapping,
   type RequiredField,
 } from "@/lib/customers/config";
-import { TEMPLATE_VARIANTS, type TemplateVariant } from "@/lib/pdf/template-registry";
+import { TEMPLATE_VARIANTS, getVariant, type TemplateVariant } from "@/lib/pdf/template-registry";
 
 // =====================================================
 // ProdSpec — config bundle for one (Customer × BusinessArea) pair.
@@ -35,6 +35,12 @@ export const ProdSpecOutputSchema = z.object({
   widthMm: z.number().positive().max(1000),
   heightMm: z.number().positive().max(1000),
   enabled: z.boolean().default(true),
+  // Per-output field pins ("customerName is ALWAYS 'Netto A/S'") — set in
+  // the ProdSpec editor, applied on top of everything at render time and
+  // counted as satisfied by readiness. Keys are validated/filtered against
+  // the pinnable vocabulary in src/lib/pdf/pins.ts at the point of use, so
+  // a stale key never breaks parsing.
+  fieldOverrides: z.record(z.string().min(1), z.string()).optional(),
 });
 export type ProdSpecOutput = z.infer<typeof ProdSpecOutputSchema>;
 
@@ -113,9 +119,11 @@ export function parseProdSpecLanguages(raw: unknown): string[] {
   return out;
 }
 
-// Resolve an output entry to its registered variant. Returns null if the
-// variantKey is stale (e.g. a variant got removed from code) — the runner
-// logs and skips in that case.
+// Resolve an output entry to its registered variant — code-registered
+// AND dynamic (Output Builder layouts, `layout:<id>` keys; loaded into
+// the registry by ensureLayoutVariantsLoaded). Returns null if the
+// variantKey is stale (variant removed from code / layout deleted or
+// unpublished) — the runner logs and skips in that case.
 export function resolveOutputVariant(output: ProdSpecOutput): TemplateVariant | null {
-  return TEMPLATE_VARIANTS.find((v) => v.key === output.variantKey) ?? null;
+  return getVariant(output.variantKey);
 }

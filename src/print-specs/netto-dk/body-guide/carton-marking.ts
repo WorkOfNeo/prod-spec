@@ -15,7 +15,7 @@ export const spec: PrintSpec = {
       fields: [
         { key: 'ean128', required: true, source: 'po', notes: '\'EAN BARCODE (see PO) — has to be generated as EAN128\'; carton EAN as Code128, number printed under the bars' },
         { key: 'qtyPerCarton', required: true, source: 'po', notes: '\'Pcs. Per master\'' },
-        { key: 'customerOrderNumber', required: false, source: 'po', notes: 'FOB orders print the customer\'s order number on the \'Order no. :\' row' },
+        { key: 'customerOrderNumber', required: false, source: 'po', notes: 'FOB orders print the customer\'s order number on the \'Order no. :\' row', value: { switch: 'deliveryTerm', cases: { FOB: { field: 'customerOrderNumber' } }, default: { field: 'poNumber' } } },
         { key: 'poNumber', required: true, source: 'po', notes: 'DDP orders print the Contrast order number (\'Order no. : C-PO…\')' },
         { key: 'description', required: false, source: 'article', notes: '\'Article: T-skjorte Grinchen\'' },
       ],

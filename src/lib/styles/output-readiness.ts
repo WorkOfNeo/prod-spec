@@ -1,7 +1,9 @@
 import { db } from "@/lib/db";
+import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
 import { parseProdSpecColumnMapping, parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { getVariant } from "@/lib/pdf/template-registry";
+import { pinnedColumnKeys } from "@/lib/pdf/pins-meta";
 import type { MondayItem } from "@/lib/monday/client";
 import { effectiveStyleItem, resolveMappedField, STYLE_FIELD_LABELS } from "./resolved-fields";
 import type { DetailFieldKey, MissingDetailField } from "./detail-fields";
@@ -48,24 +50,36 @@ function effectiveMapping(style: ReadinessStyle): ColumnMapping {
 
 // Per ENABLED output on the style's ProdSpec: is every field that output
 // needs filled? Returns [] when there's no ProdSpec or no enabled outputs.
+//
+// Two refinements on top of the static per-variant `requiredFields`:
+//   • Branch-aware gates — a variant with a `readiness` hook (declarative
+//     switch bindings, e.g. the FOB/DDP order-number rule) requires only
+//     the columns its TAKEN branch reads.
+//   • Pins — a field pinned on the output entry (`fieldOverrides`, set in
+//     the ProdSpec editor) counts as satisfied: the pinned constant renders
+//     regardless of the row.
 export function outputReadinessForStyle(style: ReadinessStyle): OutputReadiness[] {
-  const enabledKeys = parseProdSpecOutputs(style.prodSpec?.outputs ?? [])
-    .filter((o) => o.enabled !== false)
-    .map((o) => o.variantKey);
-  if (enabledKeys.length === 0) return [];
+  const enabledOutputs = parseProdSpecOutputs(style.prodSpec?.outputs ?? []).filter(
+    (o) => o.enabled !== false,
+  );
+  if (enabledOutputs.length === 0) return [];
 
   const mapping = effectiveMapping(style);
   const item = effectiveStyleItem(style) as MondayItem | null;
+  const resolve = (f: keyof ColumnMapping) => resolveMappedField(item, mapping, f);
 
-  return enabledKeys.map((variantKey) => {
-    const variant = getVariant(variantKey);
-    const keys = (variant?.requiredFields ?? []) as DetailFieldKey[];
+  return enabledOutputs.map((output) => {
+    const variant = getVariant(output.variantKey);
+    const pinned = pinnedColumnKeys(output.fieldOverrides);
+    const keys = (variant?.readiness
+      ? variant.readiness(resolve)
+      : (variant?.requiredFields ?? [])) as DetailFieldKey[];
     const missing = keys
-      .filter((f) => !resolveMappedField(item, mapping, f).trim())
+      .filter((f) => !pinned.has(f) && !resolve(f).trim())
       .map((f) => ({ field: f, label: STYLE_FIELD_LABELS[f] }));
     return {
-      variantKey,
-      name: variant?.name ?? variantKey,
+      variantKey: output.variantKey,
+      name: variant?.name ?? output.variantKey,
       ready: missing.length === 0,
       missing,
     };
@@ -77,6 +91,11 @@ export function outputReadinessForStyle(style: ReadinessStyle): OutputReadiness[
 // distinct variantKey among the style's JobAssets that isn't on a FAILED job,
 // so we don't redo work that's already awaiting review or approved.
 export async function pendingOutputKeysForStyle(styleId: string): Promise<string[]> {
+  // ProdSpec.outputs may reference Output Builder layouts (`layout:<id>`
+  // keys) — make sure they're in the registry before the sync readiness
+  // walk below resolves variants.
+  await ensureLayoutVariantsLoaded();
+
   const style = await db.style.findUnique({
     where: { id: styleId },
     select: {

@@ -5,7 +5,11 @@ import { renderCareLabel01Html } from "./templates/care-label-01";
 import { renderCareLabel02Html } from "./templates/care-label-02";
 import { renderNettoWashCareLabelHtml } from "./templates/netto-dk-privatelabel/wash-care-label";
 import { renderNettoInfoAreaHtml } from "./templates/netto-dk-privatelabel/info-area";
-import { renderNettoCartonMarkingHtml } from "./templates/netto-dk-privatelabel/carton-marking";
+import {
+  renderNettoCartonMarkingHtml,
+  ORDER_NO_RULE,
+} from "./templates/netto-dk-privatelabel/carton-marking";
+import { ruleRequiredColumns } from "./spec-fields";
 import { PRINT_SPEC_VARIANTS } from "./print-spec-variants";
 
 // =====================================================
@@ -41,6 +45,12 @@ export type TemplateVariant = {
   // ColumnMapping / STYLE_FIELD_LABELS). A style's overall required-field set
   // is the UNION of these across the outputs its ProdSpec will print.
   requiredFields: Array<keyof ColumnMapping>;
+  // Optional dynamic readiness: given a resolver over the style's current
+  // row values, return the EFFECTIVE required column keys. Used by variants
+  // with declarative switch bindings, where only the taken branch's columns
+  // are required (e.g. DDP carton markings need poNumber, not
+  // customerOrderNo). When absent, `requiredFields` is the static gate.
+  readiness?: (resolve: (field: keyof ColumnMapping) => string) => Array<keyof ColumnMapping>;
   render: (style: StyleData, dims: OutputDims) => Promise<string>;
   // Static-pdf passthrough (print specs with renderStrategy 'static-pdf'):
   // the artifact is these bytes VERBATIM — graphic-heavy artwork the app
@@ -103,13 +113,17 @@ export const TEMPLATE_VARIANTS: TemplateVariant[] = [
       "A6 master-carton label: customer + article + pcs/master + order no. (FOB = customer order, DDP = Contrast PO) + carton EAN as a Code128 (EAN128) barcode.",
     defaultWidthMm: 105,
     defaultHeightMm: 148,
-    requiredFields: [
-      "productNameTranslations",
+    // Static gate: what the template reads unconditionally. The order
+    // number is branch-dependent (FOB → customerOrderNo, else poNumber) —
+    // handled by `readiness` below so a DDP row is never blocked on a
+    // customer order number it legitimately doesn't have. deliveryTerm
+    // itself is not required: empty means DDP, a valid state.
+    requiredFields: ["cartonQty", "cartonEan", "description"],
+    readiness: (resolve) => [
       "cartonQty",
       "cartonEan",
-      "poNumber",
-      "customerOrderNo",
-      "deliveryTerm",
+      "description",
+      ...ruleRequiredColumns(ORDER_NO_RULE, resolve),
     ],
     render: renderNettoCartonMarkingHtml,
   },
@@ -118,8 +132,33 @@ export const TEMPLATE_VARIANTS: TemplateVariant[] = [
   ...PRINT_SPEC_VARIANTS,
 ];
 
+// =====================================================
+// Dynamic variants — operator-built Output Builder layouts, registered
+// at runtime under `layout:<id>` keys. This module stays client-safe
+// (no db import): the map is populated by the SERVER-ONLY loader in
+// src/lib/output-layouts/variants.ts (ensureLayoutVariantsLoaded), which
+// every async entry point that can meet a layout key awaits first.
+// Sync lookups below those entry points then resolve from the map.
+// =====================================================
+
+const DYNAMIC_VARIANTS = new Map<string, TemplateVariant>();
+
+export function setDynamicVariants(variants: TemplateVariant[]): void {
+  DYNAMIC_VARIANTS.clear();
+  for (const v of variants) DYNAMIC_VARIANTS.set(v.key, v);
+}
+
+export function dynamicVariants(): TemplateVariant[] {
+  return [...DYNAMIC_VARIANTS.values()];
+}
+
+// Full catalogue: code-registered variants + loaded dynamic layouts.
+export function allVariants(): TemplateVariant[] {
+  return [...TEMPLATE_VARIANTS, ...DYNAMIC_VARIANTS.values()];
+}
+
 export function getVariant(key: string): TemplateVariant | null {
-  return TEMPLATE_VARIANTS.find((v) => v.key === key) ?? null;
+  return TEMPLATE_VARIANTS.find((v) => v.key === key) ?? DYNAMIC_VARIANTS.get(key) ?? null;
 }
 
 // Union of the required fields across a set of variant keys — the basis for

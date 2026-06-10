@@ -1,7 +1,9 @@
 import type { StyleData } from "../../types";
 import type { OutputDims } from "../../template-registry";
+import type { PrintSpec, ValueRule } from "@/print-specs/shared/types";
 import { escapeHtml, htmlDocument, tFor } from "../base";
 import { renderBarcodeDataUrl } from "../../barcode";
+import { findFieldRule, resolveFieldValue } from "../../spec-fields";
 
 // netto-dk-privatelabel · Carton Marking — the master-carton box sticker.
 //
@@ -42,18 +44,31 @@ import { renderBarcodeDataUrl } from "../../barcode";
 // Print size: not stated on the drawing — the spec's 150×75 mm working
 // size matches the drawing's ~2:1 sticker outline. The layout is
 // dims-driven and tolerates other sticker sizes.
+// The order-number binding, as a declarative rule: FOB → customer's order
+// number; otherwise (DDP / DDU / DAP / empty) → Contrast PO. Spec files can
+// override it on their `customerOrderNumber` field; this is the fallback so
+// the hand-built registry entry behaves identically without a spec.
+export const ORDER_NO_RULE: ValueRule = {
+  switch: "deliveryTerm",
+  cases: { FOB: { field: "customerOrderNumber" } },
+  default: { field: "poNumber" },
+};
+
 export async function renderNettoCartonMarkingHtml(
   style: StyleData,
   dims: OutputDims,
+  spec?: PrintSpec,
 ): Promise<string> {
   const pageSize = { kind: "mm" as const, widthMm: dims.widthMm, heightMm: dims.heightMm };
 
   const article =
     style.description || tFor(style.productNameTranslations, "en") || style.styleName;
 
-  // FOB → customer's order number; otherwise (DDP / empty) → Contrast PO.
-  const isFob = (style.deliveryTerm ?? "").toUpperCase().includes("FOB");
-  const orderNo = (isFob ? style.customerOrderNo : style.poNumber) ?? "";
+  // Declarative order-no binding — spec rule wins, ORDER_NO_RULE otherwise.
+  const orderNo = resolveFieldValue(
+    findFieldRule(spec, "customerOrderNumber") ?? ORDER_NO_RULE,
+    style,
+  );
 
   const cartonEan = style.carton.ean13;
   const hasEan = !!cartonEan && cartonEan !== "0000000000000";

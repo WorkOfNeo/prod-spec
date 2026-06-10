@@ -1,4 +1,5 @@
-import { TEMPLATE_VARIANTS } from "@/lib/pdf/template-registry";
+import { allVariants } from "@/lib/pdf/template-registry";
+import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildSampleStyleData } from "@/lib/pdf/sample-data";
 import { STYLE_FIELD_LABELS } from "@/lib/styles/resolved-fields";
 import { CustomOutputsGrid, type OutputPreview } from "./custom-outputs-grid";
@@ -8,13 +9,17 @@ import { CustomOutputsGrid, type OutputPreview } from "./custom-outputs-grid";
 export const dynamic = "force-dynamic";
 
 export default async function CustomOutputsPage() {
+  // Published Output Builder layouts appear in the catalogue alongside
+  // code-registered variants.
+  await ensureLayoutVariantsLoaded();
+
   const sample = buildSampleStyleData();
 
   // Render every catalogue variant with the shared sample data. Each
   // render is isolated so one failing template shows an error card instead
   // of blanking the whole page.
   const previews: OutputPreview[] = await Promise.all(
-    TEMPLATE_VARIANTS.map(async (v): Promise<OutputPreview> => {
+    allVariants().map(async (v): Promise<OutputPreview> => {
       const base = {
         key: v.key,
         name: v.name,

@@ -5,6 +5,7 @@ import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
 import { computeReadiness } from "@/lib/styles/readiness";
 import { findMissingDetailFields, requiredFieldKeysFromOutputs } from "@/lib/styles/detail-fields";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
+import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { effectiveStyleItem } from "@/lib/styles/resolved-fields";
 import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
 import { HIDDEN_STYLE_GROUP_TERMS, isArchivedGroup } from "@/lib/import/heuristics";
@@ -17,6 +18,9 @@ import { eanStatusMeta } from "@/lib/po/ean-status-meta";
 export const dynamic = "force-dynamic";
 
 export default async function StylesPage() {
+  // Output Builder layouts resolve as variants in the readiness walks below.
+  await ensureLayoutVariantsLoaded();
+
   const [autoGenerateEnabled, doneCutoff] = await Promise.all([
     getAutoGenerateEnabled(),
     getDoneGroupPoCutoff(),

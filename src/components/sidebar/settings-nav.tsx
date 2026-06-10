@@ -9,6 +9,8 @@ import { useState } from "react";
 // nav (Styles / Jobs / Prod specs / Customers / Suppliers stay primary).
 const SETTINGS_ITEMS: Array<{ href: string; label: string }> = [
   { href: "/settings", label: "General" },
+  { href: "/settings/notifications", label: "Notifications" },
+  { href: "/settings/rejection-log", label: "Rejection log" },
   { href: "/monday", label: "Monday" },
   { href: "/settings/care-labels", label: "Care labels" },
   { href: "/settings/washcare-symbols", label: "Wash care symbols" },

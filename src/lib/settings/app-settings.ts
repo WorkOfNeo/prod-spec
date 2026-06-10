@@ -90,6 +90,37 @@ export async function setDoneGroupPoCutoff(cutoff: number | null): Promise<void>
   });
 }
 
+const REVIEW_NOTIFICATION_KEY = "reviewNotificationEmails";
+
+// Internal recipient(s) of the post-generation notifications: the
+// "ready for review" email sent when a job finishes rendering, and the
+// "fixed — ready for re-review" email sent from the rejection log.
+// Entered comma-separated at /settings/notifications (DB-backed); the
+// REVIEW_NOTIFICATION_EMAIL env var stays as a fallback so existing
+// deployments keep notifying until the setting is filled in.
+
+// The stored value only — what the settings page shows in its input.
+export async function getStoredReviewNotificationEmails(): Promise<string[]> {
+  const row = await db.appSetting.findUnique({ where: { key: REVIEW_NOTIFICATION_KEY } });
+  return parseEmailList(typeof row?.value === "string" ? row.value : "");
+}
+
+// The resolved recipients feature code should use: setting → env fallback.
+export async function getReviewNotificationEmails(): Promise<string[]> {
+  const stored = await getStoredReviewNotificationEmails();
+  if (stored.length > 0) return stored;
+  return parseEmailList(process.env.REVIEW_NOTIFICATION_EMAIL ?? "");
+}
+
+export async function setReviewNotificationEmails(raw: string): Promise<void> {
+  const value = parseEmailList(raw).join(", ");
+  await db.appSetting.upsert({
+    where: { key: REVIEW_NOTIFICATION_KEY },
+    create: { key: REVIEW_NOTIFICATION_KEY, value },
+    update: { value },
+  });
+}
+
 const SUPPLIER_REVIEW_CC_KEY = "supplierReviewCcEmails";
 
 // Actual email address(es) CC'd on every supplier "ready for review" approval

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerSession } from "@/lib/auth-server";
 import { getVariant } from "@/lib/pdf/template-registry";
+import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildSampleStyleData } from "@/lib/pdf/sample-data";
 import { renderPdf } from "@/lib/pdf/renderer";
 
@@ -27,10 +28,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "variantKey required" }, { status: 400 });
   }
 
+  await ensureLayoutVariantsLoaded();
   const variant = getVariant(variantKey);
   if (!variant) return NextResponse.json({ error: "Unknown variant" }, { status: 404 });
 
-  let pdf = pdfCache.get(variantKey);
+  // Output Builder layouts are editable at runtime — their definition can
+  // change under a stable variantKey, so they bypass the per-process cache.
+  const cacheable = !variantKey.startsWith("layout:");
+  let pdf = cacheable ? pdfCache.get(variantKey) : undefined;
   if (!pdf) {
     if (variant.staticPdf) {
       // Static-pdf passthrough — the "sample" PDF IS the artifact.
@@ -43,7 +48,7 @@ export async function GET(req: NextRequest) {
       });
       pdf = await renderPdf({ html });
     }
-    pdfCache.set(variantKey, pdf);
+    if (cacheable) pdfCache.set(variantKey, pdf);
   }
 
   return new NextResponse(new Uint8Array(pdf), {

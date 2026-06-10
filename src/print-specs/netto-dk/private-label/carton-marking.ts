@@ -16,7 +16,7 @@ export const spec: PrintSpec = {
         { key: 'ean128', required: true, source: 'po', notes: 'Top-right corner, two elements: carton EAN from the PO PDF as EAN-128 bars, plus the EAN number printed beneath the bars' },
         { key: 'customerName', required: true, source: 'customer-master', notes: 'First row of the bottom-left block ("Netto A/S" in the reference)' },
         { key: 'qtyPerCarton', required: true, source: 'po', notes: '\'Pcs. Per master:\' — Pre-Order Qty/Carton column' },
-        { key: 'customerOrderNumber', required: false, source: 'po', notes: 'FOB orders print the customer\'s order number on the \'Order no. :\' row' },
+        { key: 'customerOrderNumber', required: false, source: 'po', notes: 'FOB orders print the customer\'s order number on the \'Order no. :\' row', value: { switch: 'deliveryTerm', cases: { FOB: { field: 'customerOrderNumber' } }, default: { field: 'poNumber' } } },
         { key: 'poNumber', required: true, source: 'po', notes: 'DDP orders print the Contrast order number (\'Order no. : C-PO…\')' },
         { key: 'description', required: false, source: 'po', notes: '\'Article:\' — Pre-Order Description column' },
       ],

@@ -1,17 +1,19 @@
 import { db } from "@/lib/db";
 import { renderPdf } from "@/lib/pdf/renderer";
-import { mapMondayItemToStyleData } from "@/lib/pdf/mapper";
-import { effectiveStyleItem } from "@/lib/styles/resolved-fields";
+import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
+import { buildStyleData } from "@/lib/styles/render-context";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
+import { applyFieldOverrides } from "@/lib/pdf/pins";
+import { countPlaceholderMarkers } from "@/lib/pdf/placeholders";
+import type { StyleData } from "@/lib/pdf/types";
 import type { TemplateVariant } from "@/lib/pdf/template-registry";
-import type { MondayItem } from "@/lib/monday/client";
-import { sendEmail } from "@/lib/email/client";
+import { dispatchEmail } from "@/lib/email/dispatch";
 import { reviewNotificationEmail } from "@/lib/email/templates/review-notification";
-import { MANUAL_COLUMN_IDS, parseCustomerConfig } from "@/lib/customers/config";
+import { getReviewNotificationEmails } from "@/lib/settings/app-settings";
+import type { TriggerSource } from "@/generated/prisma/enums";
+import { parseCustomerConfig } from "@/lib/customers/config";
 import {
   DEFAULT_OUTPUTS,
-  parseProdSpecColumnMapping,
-  parseProdSpecLanguages,
   parseProdSpecOutputs,
   resolveOutputVariant,
   type ProdSpecOutput,
@@ -85,6 +87,11 @@ async function releaseStaleRunning(): Promise<void> {
 }
 
 export async function processJob(jobId: string): Promise<void> {
+  // Load published Output Builder layouts into the variant registry so
+  // `layout:<id>` keys resolve like any code-registered variant below
+  // (resolveOutputVariant / outputReadinessForStyle are sync lookups).
+  await ensureLayoutVariantsLoaded();
+
   const job = await db.job.findUniqueOrThrow({
     where: { id: jobId },
     include: {
@@ -93,6 +100,9 @@ export async function processJob(jobId: string): Promise<void> {
           customer: true,
           qrImage: true,
           supplier: { select: { country: true } },
+          // Display name for the review-ready email (falls back to the
+          // free-text Style.businessArea when the mirror row isn't linked).
+          businessAreaRef: { select: { name: true } },
           // Resolved PO barcodes — fall back into the ean13/cartonEan
           // fields at render time (see effectiveStyleItem).
           eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
@@ -118,53 +128,25 @@ export async function processJob(jobId: string): Promise<void> {
     ? await db.prodSpec.findUnique({ where: { id: job.style.prodSpecId } })
     : null;
 
-  let styleData: ReturnType<typeof mapMondayItemToStyleData>;
+  let styleData: StyleData;
   try {
-    // Inject the canonical Style.poNumber as the manual.* fallback so the PO
-    // renders on labels (care-label-02) even when the mapped PO column isn't
-    // the one this style's board populated — and the PO-PDF-resolved EANs /
-    // carton EAN so barcodes render from the scrape. See effectiveStyleItem.
-    const item = effectiveStyleItem({
-      rawData: job.style.rawData,
-      poNumber: job.style.poNumber,
-      supplier: job.style.supplier,
-      eans: job.style.eans,
-      cartonEan: job.style.cartonEan,
-    }) as MondayItem;
-    // Resolution order for column mapping:
-    //   1. ProdSpec.columnMapping  (when non-empty — operator override)
-    //   2. Customer.config.columnMapping (when non-empty — per-tenant default)
-    //   3. MANUAL_COLUMN_IDS  (only for `mondayBoardId === "manual"` styles —
-    //      these are produced by /api/admin/styles/manual which writes the
-    //      manual.* synthetic ids; without this fallback the mapper reads
-    //      nothing and the PDF renders blank).
-    //
-    // Real Monday styles whose Customer has no column mapping yet still
-    // render blank — that's the desired behaviour (forces the operator to
-    // configure mapping before generating PDFs they'd just throw away).
-    const prodSpecMapping =
-      prodSpec && Object.keys(prodSpec.columnMapping as object).length > 0
-        ? parseProdSpecColumnMapping(prodSpec.columnMapping)
-        : null;
-    const customerMapping =
-      Object.keys(config.columnMapping).length > 0 ? config.columnMapping : null;
-    const isManualStyle = job.style.mondayBoardId === "manual";
-    const effectiveMapping =
-      prodSpecMapping ??
-      customerMapping ??
-      (isManualStyle ? { ...MANUAL_COLUMN_IDS } : config.columnMapping);
-    styleData = mapMondayItemToStyleData(
-      item,
+    // One shared assembly for runner AND previews — fallback injection,
+    // mapping priority (ProdSpec override → Customer config → manual ids),
+    // per-ProdSpec context, wash-token repair. See
+    // src/lib/styles/render-context.ts for the full resolution rules.
+    styleData = await buildStyleData(
       {
-        customerName: job.style.customer.name,
-        customerLogoUrl: config.logoUrl,
-        barcodeFont: config.barcodeFont,
-        prodSpecLogoSvg: prodSpec?.logoSvg ?? null,
-        careInstructionsByLang: parseCareInstructions(prodSpec?.careInstructionsByLang),
-        outputLanguages: parseProdSpecLanguages(prodSpec?.outputLanguages),
-        qrImageUrl: job.style.qrImage?.image ?? null,
+        rawData: job.style.rawData,
+        poNumber: job.style.poNumber,
+        cartonEan: job.style.cartonEan,
+        mondayBoardId: job.style.mondayBoardId,
+        supplier: job.style.supplier,
+        eans: job.style.eans,
+        customer: { name: job.style.customer.name, config: job.style.customer.config },
+        qrImage: job.style.qrImage ? { image: job.style.qrImage.image } : null,
       },
-      effectiveMapping,
+      prodSpec,
+      config,
     );
   } catch (err) {
     throw new RunnerError("MAPPING_FAILED", `monday → style data mapping failed: ${(err as Error).message}`);
@@ -233,6 +215,9 @@ export async function processJob(jobId: string): Promise<void> {
     output: ProdSpecOutput;
     fileName: string;
     pdf: Buffer;
+    // Placeholder artifacts (missing artwork tiles / "No carton EAN") found
+    // in the rendered HTML — review-safe, blocks approval. 0 for static PDFs.
+    placeholderCount: number;
   };
   const generated: Generated[] = [];
   for (const output of outputs) {
@@ -251,21 +236,29 @@ export async function processJob(jobId: string): Promise<void> {
       continue;
     }
     try {
+      // Per-output pins ("customerName is ALWAYS …") applied on a copy —
+      // the base StyleData is shared across this job's outputs.
+      const renderStyle = applyFieldOverrides(styleData, output.fieldOverrides);
       // Static-pdf passthrough variants emit their source artwork bytes
       // verbatim; everything else renders HTML → PDF.
-      const pdf = variant.staticPdf
-        ? await variant.staticPdf()
-        : await renderPdf({
-            html: await variant.render(styleData, {
-              widthMm: output.widthMm,
-              heightMm: output.heightMm,
-            }),
-          });
+      let pdf: Buffer;
+      let placeholderCount = 0;
+      if (variant.staticPdf) {
+        pdf = await variant.staticPdf();
+      } else {
+        const html = await variant.render(renderStyle, {
+          widthMm: output.widthMm,
+          heightMm: output.heightMm,
+        });
+        placeholderCount = countPlaceholderMarkers(html);
+        pdf = await renderPdf({ html });
+      }
       generated.push({
         variant,
         output,
         fileName: fileNameFor(variant, styleData.styleNumber),
         pdf,
+        placeholderCount,
       });
     } catch (err) {
       const reason = (err as Error).message;
@@ -314,6 +307,7 @@ export async function processJob(jobId: string): Promise<void> {
             displayName: `${doc.variant.name} · ${doc.output.widthMm}×${doc.output.heightMm} mm`,
             fileName: doc.fileName,
             pdf: toPlainBytes(doc.pdf),
+            placeholderCount: doc.placeholderCount,
           },
         }),
       ),
@@ -337,43 +331,77 @@ export async function processJob(jobId: string): Promise<void> {
     throw new RunnerError("PERSIST_FAILED", `persisting assets failed: ${(err as Error).message}`);
   }
 
-  await notifyReviewer(
-    job.id,
-    job.styleId,
-    job.style.name,
-    styleData.styleNumber,
-    job.style.customer.name,
-    generated.length,
-  );
+  await notifyReviewer({
+    jobId: job.id,
+    styleId: job.styleId,
+    styleName: job.style.name,
+    styleNumber: styleData.styleNumber,
+    customerName: job.style.customer.name,
+    businessArea: job.style.businessAreaRef?.name ?? job.style.businessArea ?? null,
+    poNumber: job.style.poNumber ?? null,
+    triggerSource: job.triggerSource,
+    outputNames: generated.map(
+      (d) => `${d.variant.name} · ${d.output.widthMm}×${d.output.heightMm} mm`,
+    ),
+  });
 }
 
-async function notifyReviewer(
-  jobId: string,
-  styleId: string,
-  styleName: string,
-  styleNumber: string,
-  customerName: string,
-  documentCount: number,
-): Promise<void> {
-  const recipient = process.env.REVIEW_NOTIFICATION_EMAIL;
-  if (!recipient) return;
+async function notifyReviewer(input: {
+  jobId: string;
+  styleId: string;
+  styleName: string;
+  styleNumber: string;
+  customerName: string;
+  businessArea: string | null;
+  poNumber: string | null;
+  triggerSource: TriggerSource;
+  outputNames: string[];
+}): Promise<void> {
+  // Ticket-driven runs stay silent: TICKET_RERUN is the admin iterating on
+  // a fix (the reviewer must not be pinged per attempt) and TICKET_FIX
+  // sends its own dedicated "fixed — ready for re-review" email from the
+  // fix endpoint, with the rejection context the generic mail lacks.
+  if (input.triggerSource === "TICKET_RERUN" || input.triggerSource === "TICKET_FIX") return;
 
+  const recipients = await getReviewNotificationEmails();
   const base = process.env.PROD_SPEC_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
-  const reviewUrl = `${base}/styles/${styleId}/review`;
-  const email = reviewNotificationEmail({ styleName, styleNumber, customerName, reviewUrl, documentCount });
+  const reviewUrl = `${base}/styles/${input.styleId}/review`;
+  const email = reviewNotificationEmail({
+    styleName: input.styleName,
+    styleNumber: input.styleNumber,
+    customerName: input.customerName,
+    businessArea: input.businessArea,
+    poNumber: input.poNumber,
+    reviewUrl,
+    outputNames: input.outputNames,
+  });
 
   try {
-    const result = await sendEmail({ to: recipient, subject: email.subject, html: email.html, text: email.text });
+    // Empty recipients still dispatch: that records a SKIPPED email_logs
+    // row with an actionable note instead of silently notifying no one.
+    const outcome = await dispatchEmail({
+      type: "REVIEW_READY",
+      to: recipients,
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+      jobId: input.jobId,
+      styleId: input.styleId,
+    });
+    const message =
+      outcome.status === "SENT"
+        ? `review notification sent to ${outcome.to}`
+        : outcome.status === "SIMULATED"
+          ? `review notification SIMULATED (RESEND_EMAILS off) — would go to ${outcome.to}`
+          : outcome.status === "FAILED"
+            ? `review notification FAILED: ${outcome.note ?? "Resend error"}`
+            : `review notification skipped: ${outcome.note ?? "no recipient — set it at /settings/notifications"}`;
     await db.log.create({
-      data: {
-        jobId,
-        level: "INFO",
-        message: result.sent ? `review notification sent to ${recipient}` : "review notification skipped (Resend not configured)",
-      },
+      data: { jobId: input.jobId, level: outcome.status === "FAILED" ? "WARN" : "INFO", message },
     });
   } catch (err) {
     await db.log.create({
-      data: { jobId, level: "WARN", message: `review notification failed: ${(err as Error).message}` },
+      data: { jobId: input.jobId, level: "WARN", message: `review notification failed: ${(err as Error).message}` },
     });
   }
 }
@@ -399,16 +427,4 @@ export class RunnerError extends Error {
 function fileNameFor(variant: TemplateVariant, styleNumber: string): string {
   const slug = styleNumber.replace(/[^a-z0-9-]+/gi, "-").toLowerCase();
   return `${slug}-${variant.key}.pdf`;
-}
-
-// Safely coerce ProdSpec.careInstructionsByLang JSON into a flat
-// { langCode: string } map. Invalid shapes return {} so the template
-// can render with no care text rather than crash.
-function parseCareInstructions(raw: unknown): Record<string, string> {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-    if (typeof v === "string" && v.trim()) out[k.toLowerCase()] = v;
-  }
-  return out;
 }

@@ -137,6 +137,11 @@ export const DEFAULT_COLUMN_MAPPING: Partial<ColumnMapping> = {
   targetGroup: "status87__1", // 🎯 Target Group
   composition2: "text_mktbv53f", // 2nd Composition
   customerOrderNo: "customer_order_number__1", // 🔢 Customer Order Number
+  // 🌍 Shipping Terms status column (labels: FOB / DDP / DDU / DAP / –).
+  // Drives the carton-marking order-number switch: FOB → customerOrderNo,
+  // anything else (incl. empty) → poNumber (Contrast). Verified against the
+  // ghost mirror of board 7322835224 on 2026-06-10.
+  deliveryTerm: "dup__of_status__1",
   description: "long_text_mkrvd8j3", // Description
   prodNumber: "numeric_mkta1jd5", // Prod number
   campaignWeek: "text33__1", // 📅 Campaign Week
