@@ -23,7 +23,7 @@ import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
 
 export class PublishError extends Error {
   constructor(
-    public readonly httpStatus: 404 | 400,
+    public readonly httpStatus: 404 | 400 | 409,
     message: string,
   ) {
     super(message);
@@ -65,6 +65,23 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
   if (!job) throw new PublishError(404, "Job not found");
   if (job.status !== "AWAITING_REVIEW") {
     throw new PublishError(400, `Cannot approve job in status ${job.status}`);
+  }
+
+  // Ship-gate (lives here so BOTH approval paths enforce it): placeholder
+  // artifacts (dashed missing-artwork tiles, "No carton EAN configured")
+  // are review-safe but must never reach print. Rejected assets are
+  // excluded — their gaps are already being handled via tickets.
+  const placeholderAssets = job.assets.filter(
+    (a) => a.placeholderCount > 0 && a.reviewStatus !== "REJECTED",
+  );
+  if (placeholderAssets.length > 0) {
+    throw new PublishError(
+      409,
+      `Approval blocked — ${placeholderAssets.length} document(s) contain placeholder artifacts ` +
+        `(missing symbol/certificate artwork or missing EAN): ` +
+        placeholderAssets.map((a) => a.displayName ?? a.fileName).join(", ") +
+        ". Fix the data and re-run those outputs first.",
+    );
   }
 
   // Deterministic folder layout: prodspec/<customer-slug>/<supplier-slug?>/<style-id>.

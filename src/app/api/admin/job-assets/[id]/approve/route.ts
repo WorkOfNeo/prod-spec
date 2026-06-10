@@ -36,16 +36,14 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ ok: true, alreadyApproved: true });
   }
 
-  // Placeholder gate — the schema always intended this ("> 0 means the PDF
-  // is review-safe but NOT print-safe"); enforce it where approval happens.
+  // Ship-gate: placeholder artifacts (missing artwork tiles / "No carton
+  // EAN") are review-safe, never print-safe. Fix the gaps + re-run instead.
   if (asset.placeholderCount > 0) {
     return NextResponse.json(
       {
-        error:
-          `Cannot approve — ${asset.placeholderCount} placeholder(s) in this PDF ` +
-          `(missing artwork / EAN). Fix the data and re-run the output first.`,
+        error: `Approval blocked — this document contains ${asset.placeholderCount} placeholder artifact(s) (missing symbol/certificate artwork or missing EAN). Fix the gaps and re-run the output.`,
       },
-      { status: 400 },
+      { status: 409 },
     );
   }
 
