@@ -11,6 +11,7 @@ import {
   LAYOUT_GRID_ROWS,
   TOKEN_RE,
   conditionalsInLine,
+  layoutSettings,
   type LayoutAnchor,
   type LayoutBlock,
   type LayoutDef,
@@ -90,7 +91,7 @@ function defUsesToken(pages: LayoutPage[], key: string): boolean {
   return false;
 }
 
-async function buildBarcodeCache(style: StyleData, pages: LayoutPage[]): Promise<Map<string, string | null>> {
+async function buildBarcodeCache(styles: StyleData[], pages: LayoutPage[]): Promise<Map<string, string | null>> {
   const wanted = new Map<string, { source: BarcodeSource; value: string }>();
   for (const page of pages) {
     for (const block of page.blocks) {
@@ -98,8 +99,10 @@ async function buildBarcodeCache(style: StyleData, pages: LayoutPage[]): Promise
         for (const m of line.matchAll(new RegExp(TOKEN_RE.source, "g"))) {
           if (m[1] !== "barcode") continue;
           const source = (m[2] ?? "cartonEan") as BarcodeSource;
-          const value = resolveBarcodeValue(style, source);
-          if (value) wanted.set(`${source}:${value}`, { source, value });
+          for (const style of styles) {
+            const value = resolveBarcodeValue(style, source);
+            if (value) wanted.set(`${source}:${value}`, { source, value });
+          }
         }
       }
     }
@@ -288,23 +291,38 @@ export async function renderLayoutHtml(
     throw new Error(`layout has no page at index ${opts.pageIndex}`);
   }
 
+  // Repeat-per-EAN: the whole (filtered) page set renders once per size
+  // row, with style.sizes narrowed to the current row — {{size}},
+  // {{ean13}} and {{barcode:ean13}} resolve per repetition. A style with
+  // no sizes renders once (honest gaps where the EAN should be).
+  const settings = layoutSettings(def);
+  const repStyles: StyleData[] =
+    settings.repeatBy === "ean" && style.sizes.length > 0
+      ? style.sizes.map((entry) => ({ ...style, sizes: [entry] }))
+      : [style];
+
   const [barcodes, symbols] = await Promise.all([
-    buildBarcodeCache(style, pages),
+    buildBarcodeCache(repStyles, pages),
     defUsesToken(pages, "washSymbols") ? loadWashcareSymbols() : Promise.resolve(null),
   ]);
   const ctx: RenderCtx = { mode, barcodes, symbols };
 
-  const pageCss = pages
+  const emitted: Array<{ page: LayoutPage; repStyle: StyleData }> = [];
+  for (const repStyle of repStyles) {
+    for (const page of pages) emitted.push({ page, repStyle });
+  }
+
+  const pageCss = emitted
     .map(
-      (p, i) => `
+      ({ page: p }, i) => `
   @page olp${i} { size: ${p.widthMm}mm ${p.heightMm}mm; margin: 0; }
   .ol-page-${i} { page: olp${i}; width: ${p.widthMm}mm; height: ${p.heightMm}mm; }`,
     )
     .join("");
 
-  const body = pages
-    .map((page, i) => {
-      const blocks = page.blocks.map((b) => renderBlock(b, page, style, ctx)).join("");
+  const body = emitted
+    .map(({ page, repStyle }, i) => {
+      const blocks = page.blocks.map((b) => renderBlock(b, page, repStyle, ctx)).join("");
       return `<div class="ol-page ol-page-${i}">${blocks}</div>`;
     })
     .join("\n");

@@ -2,7 +2,13 @@ import { db } from "@/lib/db";
 import type { DocType } from "@/generated/prisma/enums";
 import { setDynamicVariants, type TemplateVariant } from "@/lib/pdf/template-registry";
 import { parseLayoutDef, type LayoutDef } from "./schema";
-import { layoutReadinessColumns, staticRequiredColumns, defNeedsDynamicReadiness } from "./tokens";
+import {
+  defNeedsDynamicReadiness,
+  layoutReadinessColumns,
+  resolveLayoutFileName,
+  staticRequiredColumns,
+} from "./tokens";
+import { layoutSettings } from "./schema";
 import { renderLayoutHtml } from "./render";
 
 // =====================================================
@@ -68,6 +74,10 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     // dims override that applies to coded variants is ignored here (the
     // dims param is dropped from the signature deliberately).
     render: (style) => renderLayoutHtml(def, style, { mode: "production", title: row.name }),
+    fileNameFor: (style) => {
+      const expr = layoutSettings(def).fileName;
+      return expr ? resolveLayoutFileName(expr, style) : null;
+    },
   };
 }
 

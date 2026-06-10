@@ -1,9 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth-server";
-import { LayoutDefSchema } from "@/lib/output-layouts/schema";
+import { LayoutDefSchema, layoutSettings } from "@/lib/output-layouts/schema";
 import { renderLayoutHtml } from "@/lib/output-layouts/render";
-import { resolveBarcodeValue, resolveTextToken, unresolvedTokens } from "@/lib/output-layouts/tokens";
+import {
+  resolveBarcodeValue,
+  resolveLayoutFileName,
+  resolveTextToken,
+  unresolvedTokens,
+} from "@/lib/output-layouts/tokens";
 import { LAYOUT_TOKENS } from "@/lib/output-layouts/token-meta";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import { buildSampleStyleData } from "@/lib/pdf/sample-data";
@@ -96,10 +101,27 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Settings feedback for the editor: what the repeat would iterate over
+  // on this style, and the resolved output file name.
+  const settings = layoutSettings(definition);
+  const repeatValues =
+    settings.repeatBy === "ean"
+      ? styleData.sizes.map((s) => {
+          // The PO scraper writes an all-zero sentinel when no EAN resolved.
+          const ean = s.ean13 && s.ean13 !== "0000000000000" ? s.ean13 : "no EAN";
+          return `${s.label || "?"}=${ean}`;
+        })
+      : [];
+  const resolvedFileName = settings.fileName
+    ? resolveLayoutFileName(settings.fileName, styleData)
+    : null;
+
   return NextResponse.json({
     html,
     unresolved: unresolvedTokens(definition, styleData),
     usingSampleData: !styleResolved,
+    repeatValues,
+    resolvedFileName,
     ...(tokenValues ? { tokenValues } : {}),
   });
 }

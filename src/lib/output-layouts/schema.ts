@@ -107,10 +107,27 @@ export const LayoutPageSchema = z
   });
 export type LayoutPage = z.infer<typeof LayoutPageSchema>;
 
+// Per-layout output settings (the editor's "Settings" card).
+export const LayoutSettingsSchema = z.object({
+  // "ean": the whole layout repeats once per size/EAN row of the style —
+  // within each repetition {{size}}, {{ean13}} and {{barcode:ean13}}
+  // resolve to THAT row. "none": render once (default).
+  repeatBy: z.enum(["none", "ean"]).default("none"),
+  // Output file name expression (text tokens allowed), without ".pdf".
+  // Empty → the runner's default "<styleNumber>-<variantKey>.pdf".
+  fileName: z.string().max(160).default(""),
+});
+export type LayoutSettings = z.infer<typeof LayoutSettingsSchema>;
+
 export const LayoutDefSchema = z.object({
   pages: z.array(LayoutPageSchema).min(1).max(12),
+  settings: LayoutSettingsSchema.optional(),
 });
 export type LayoutDef = z.infer<typeof LayoutDefSchema>;
+
+export function layoutSettings(def: LayoutDef): LayoutSettings {
+  return def.settings ?? { repeatBy: "none", fileName: "" };
+}
 
 // Stable block identity even for defs saved before ids existed.
 export function blockId(b: LayoutBlock): string {
@@ -247,10 +264,34 @@ export function parseLayoutDef(raw: unknown): LayoutDef {
   if (!("pages" in (raw as object))) return defaultLayoutDef();
   const def = LayoutDefSchema.parse(raw);
   for (const page of def.pages) {
-    page.blocks = page.blocks.map((b, i) => ({
-      ...b,
-      id: b.id ?? (b.anchor ? `b-${b.anchor}` : `b-r${i}`),
-    }));
+    page.blocks = page.blocks.map((b, i) => {
+      const withId = {
+        ...b,
+        id: b.id ?? (b.anchor ? `b-${b.anchor}` : `b-r${i}`),
+      };
+      // Corner-anchor blocks are legacy (the editor is grid-only now) —
+      // convert deterministically to an equivalent half-height rect:
+      // left/right edge from the anchor side + block width; top/bottom
+      // half with valign pinning content to the original edge.
+      if (withId.anchor && !withId.rect) {
+        const cols = withId.cols ?? 6;
+        const left = withId.anchor.endsWith("left");
+        const top = withId.anchor.startsWith("top");
+        return {
+          ...withId,
+          anchor: undefined,
+          rect: {
+            col: left ? 0 : LAYOUT_GRID_COLS - cols,
+            row: top ? 0 : Math.floor(LAYOUT_GRID_ROWS / 2),
+            colSpan: cols,
+            rowSpan: Math.floor(LAYOUT_GRID_ROWS / 2),
+          },
+          align: withId.align ?? (left ? "left" : "right"),
+          valign: withId.valign ?? (top ? "top" : "bottom"),
+        };
+      }
+      return withId;
+    });
   }
   return def;
 }

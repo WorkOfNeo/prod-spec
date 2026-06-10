@@ -256,7 +256,7 @@ export async function processJob(jobId: string): Promise<void> {
       generated.push({
         variant,
         output,
-        fileName: fileNameFor(variant, styleData.styleNumber),
+        fileName: variant.fileNameFor?.(renderStyle) ?? fileNameFor(variant, styleData.styleNumber),
         pdf,
         placeholderCount,
       });

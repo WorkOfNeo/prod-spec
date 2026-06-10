@@ -52,6 +52,10 @@ export type TemplateVariant = {
   // customerOrderNo). When absent, `requiredFields` is the static gate.
   readiness?: (resolve: (field: keyof ColumnMapping) => string) => Array<keyof ColumnMapping>;
   render: (style: StyleData, dims: OutputDims) => Promise<string>;
+  // Optional custom output file name (Output Builder layouts carry a
+  // fileName expression in their settings). Returns "<name>.pdf" or null
+  // to use the runner's default.
+  fileNameFor?: (style: StyleData) => string | null;
   // Static-pdf passthrough (print specs with renderStrategy 'static-pdf'):
   // the artifact is these bytes VERBATIM — graphic-heavy artwork the app
   // must not redraw. Every artifact-emitting path (job runner, preview
