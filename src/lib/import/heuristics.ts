@@ -27,19 +27,17 @@ export function isArchivedGroup(groupTitle: string | null | undefined): boolean 
 }
 
 // Groups whose styles are NEVER shown on the /styles list — not even via
-// "Show archived". Pre-Order "Templates" stubs aren't real styles.
-// Hard-excluded at query time (server-side), so these rows never load.
-// Narrower than isArchivedGroup on purpose: the softer archived set
-// (done/cancelled/archived) stays revealable via the toggle.
+// "Show archived". Pre-Order "Templates" stubs aren't real styles, and
+// "Done" work is finished. Hard-excluded at query time (server-side), so
+// these rows never load. Narrower than isArchivedGroup on purpose: the
+// softer archived set (cancelled/archived) stays revealable via the toggle.
 // Matched case-insensitively as a substring of groupTitle, same convention
-// as isArchivedGroup — so "📋 Templates" is caught too.
+// as isArchivedGroup — so "✅ Done" and "📋 Templates" are caught too.
 //
-// TEMP (2026-06-10): "done" removed from this set so the backfilled
-// Done-group styles (PO > C-PO63144, see scripts/backfill-preorder-eans.ts)
-// are reviewable on /styles behind the "Show archived" toggle. Switch back
-// (re-add "done") after the PO-EAN testing window — a couple of days,
-// per Niels.
-export const HIDDEN_STYLE_GROUP_TERMS = ["template"] as const;
+// Exception: /styles re-admits Done-group styles whose PO number parses
+// above the operator-set cutoff (Settings card on the page; AppSetting
+// `doneGroupPoCutoff`) — the review window for backfilled orders.
+export const HIDDEN_STYLE_GROUP_TERMS = ["template", "done"] as const;
 
 // Map "jysk" → all customers whose first whitespace-separated word is
 // "jysk". The matcher looks up the leading token of a ghost item name
