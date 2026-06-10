@@ -18,7 +18,13 @@ import {
   type LayoutPage,
 } from "./schema";
 import { tokenMeta, type BarcodeSource } from "./token-meta";
-import { applyConditionalsForStyle, resolveBarcodeValue, resolveTextToken } from "./tokens";
+import {
+  applyConditionalsForStyle,
+  augmentCompositionTranslations,
+  compositionLangsInDef,
+  resolveBarcodeValue,
+  resolveTextToken,
+} from "./tokens";
 
 // =====================================================
 // renderLayoutHtml — the ONE renderer for Output Builder layouts. The
@@ -227,7 +233,17 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx): string | nu
 
   // Drop token-only lines whose tokens all came up empty (production).
   if (ctx.mode === "production" && hadToken && !hadValue && !literal.trim()) return null;
-  return html;
+  return applyInlineMarkdown(html);
+}
+
+// Very small inline formatting vocabulary: **bold** and _italic_
+// (underscores only match when not embedded in a word, so values like
+// "ART_NO_22" stay untouched). Applied to the assembled line HTML —
+// literals are already escaped, so the only tags introduced are ours.
+function applyInlineMarkdown(html: string): string {
+  return html
+    .replace(/\*\*([^*]+(?:\*(?!\*)[^*]*)*)\*\*/g, "<b>$1</b>")
+    .replace(/(?<![\w])_([^_\n]+)_(?![\w])/g, "<i>$1</i>");
 }
 
 function blockTypography(block: LayoutBlock): string {
@@ -279,9 +295,10 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
 
 export async function renderLayoutHtml(
   def: LayoutDef,
-  style: StyleData,
+  styleInput: StyleData,
   opts: LayoutRenderOptions = {},
 ): Promise<string> {
+  let style = styleInput;
   const mode = opts.mode ?? "production";
   const pages =
     opts.pageIndex !== undefined
@@ -289,6 +306,13 @@ export async function renderLayoutHtml(
       : def.pages;
   if (pages.length === 0) {
     throw new Error(`layout has no page at index ${opts.pageIndex}`);
+  }
+
+  // Resolve {{composition:<lang>}} through the translation bank before
+  // anything renders (idempotent — languages already present are kept).
+  const compLangs = compositionLangsInDef(def);
+  if (compLangs.length > 0) {
+    style = await augmentCompositionTranslations(style, compLangs);
   }
 
   // Repeat-per-EAN: the whole (filtered) page set renders once per size

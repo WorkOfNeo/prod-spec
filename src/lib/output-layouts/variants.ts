@@ -78,6 +78,27 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
       const expr = layoutSettings(def).fileName;
       return expr ? resolveLayoutFileName(expr, style) : null;
     },
+    // Repeat-per-EAN produces ONE FILE PER SIZE ROW (each repetition's
+    // {{size}}/{{ean13}} bind to its row — including in the file name).
+    renderMany:
+      layoutSettings(def).repeatBy === "ean"
+        ? async (style) => {
+            const rows = style.sizes.length > 0 ? style.sizes : [null];
+            return Promise.all(
+              rows.map(async (row, i) => {
+                const repStyle = row ? { ...style, sizes: [row] } : style;
+                const suffix =
+                  (row?.label ?? "").replace(/[^\w.-]+/g, "").slice(0, 24) || String(i + 1);
+                const expr = layoutSettings(def).fileName;
+                return {
+                  suffix,
+                  fileName: expr ? resolveLayoutFileName(expr, repStyle) : null,
+                  html: await renderLayoutHtml(def, repStyle, { mode: "production", title: row ? `${row.label} — ${String(i + 1)}` : undefined }),
+                };
+              }),
+            );
+          }
+        : undefined,
   };
 }
 

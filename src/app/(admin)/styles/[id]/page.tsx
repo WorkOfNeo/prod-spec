@@ -173,6 +173,12 @@ export default async function StyleDetail({
     if (a.variantKey && !latestAssetByVariant.has(a.variantKey)) {
       latestAssetByVariant.set(a.variantKey, { id: a.id, jobId: a.jobId, createdAt: a.createdAt });
     }
+    // Multi-document assets ("layout:<id>#<size>") also register under
+    // their BASE key so the output card finds its latest asset.
+    const base = a.variantKey?.split("#")[0];
+    if (base && base !== a.variantKey && !latestAssetByVariant.has(base)) {
+      latestAssetByVariant.set(base, { id: a.id, jobId: a.jobId, createdAt: a.createdAt });
+    }
   }
 
   const latestJob = style.jobs[0];
