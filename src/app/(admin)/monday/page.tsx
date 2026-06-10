@@ -97,18 +97,88 @@ export default async function MondayPage({
 }
 
 async function WebhooksTabAsync() {
-  const webhooks = await db.mondayWebhook.findMany({ orderBy: { createdAt: "desc" } });
+  const [webhooks, logs] = await Promise.all([
+    db.mondayWebhook.findMany({ orderBy: { createdAt: "desc" } }),
+    // Webhook activity comes from the Log table: the handler writes one
+    // `monday.webhook …` line per inbound event, plus `failed to handle …`
+    // rows on error. Pull the recent ones for the activity table.
+    db.log.findMany({
+      where: {
+        OR: [
+          { message: { startsWith: "monday.webhook" } },
+          { message: { startsWith: "failed to handle event" } },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    }),
+  ]);
+
+  const boardLabelById = new Map(listKnownBoards().map((b) => [b.id, b.label]));
+
   return (
     <WebhooksTab
       webhooks={webhooks.map((w) => ({
         id: w.id,
         boardId: w.boardId,
+        boardLabel: boardLabelById.get(w.boardId) ?? "Unknown board",
         eventType: w.eventType,
         mondayWebhookId: w.mondayWebhookId,
         createdAt: w.createdAt,
       }))}
+      activity={logs.map((row) => normalizeWebhookLog(row, boardLabelById))}
     />
   );
+}
+
+// Parse a Log row into the readable shape the activity table renders.
+// Primary events look like `monday.webhook <event> board=<id> pulse=<id>`;
+// failures look like `failed to handle event for item <id>: <reason>`.
+function normalizeWebhookLog(
+  row: { id: string; message: string; level: string; payload: unknown; createdAt: Date },
+  boardLabelById: Map<string, string>,
+): {
+  id: string;
+  at: Date;
+  level: string;
+  event: string;
+  board: string;
+  item: string;
+  detail: string;
+} {
+  const base = { id: row.id, at: row.createdAt, level: String(row.level) };
+  const m = row.message;
+
+  const primary = m.match(/^monday\.webhook (\S+) board=(\S+) pulse=(\S+)/);
+  if (primary) {
+    const [, event, boardId, pulse] = primary;
+    return {
+      ...base,
+      event,
+      board: boardId === "?" ? "—" : (boardLabelById.get(boardId) ?? boardId),
+      item: pulse === "?" ? "—" : pulse,
+      detail: "",
+    };
+  }
+
+  const failure = m.match(/^failed to handle event for item (\S+): (.*)$/);
+  if (failure) {
+    const [, pulse, detail] = failure;
+    const boardId =
+      row.payload && typeof row.payload === "object" && "boardId" in row.payload
+        ? String((row.payload as { boardId: unknown }).boardId)
+        : null;
+    return {
+      ...base,
+      event: "error",
+      board: boardId ? (boardLabelById.get(boardId) ?? boardId) : "—",
+      item: pulse,
+      detail,
+    };
+  }
+
+  // Other `monday.webhook …` info lines (board-event ignored / unknown board).
+  return { ...base, event: "info", board: "—", item: "—", detail: m.replace(/^monday\.webhook /, "") };
 }
 
 // Async wrappers — `searchParams` is async-only in Next 16, so the
