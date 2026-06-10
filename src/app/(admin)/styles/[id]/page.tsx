@@ -634,10 +634,11 @@ function DetailsTab({
               goes ready.
             </span>
           </div>
-          {/* Live preview cards. Each card also keeps the LAST GENERATED
-              artifact (thumbnail + PDF link) in its footer — the two differ,
-              visibly and by design, when the row changed after the last run. */}
-          <div className="mt-2 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {/* Fold-out output rows. Each row's live preview only fetches once
+              it's opened; folded out it also keeps the LAST GENERATED artifact
+              (thumbnail + PDF link), which differs from the live preview by
+              design when the row changed after the last run. */}
+          <div className="mt-2 flex flex-col gap-2">
             {outputCards.map((card) => (
               <StyleOutputCard key={card.variantKey} {...card} />
             ))}
