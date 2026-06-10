@@ -44,6 +44,9 @@ const RESOLVERS: Record<string, TextResolver> = {
   colourCode: (s) => s.colour?.code ?? "",
   campaignWeek: (s) => s.campaignWeek ?? "",
   sizes: (s) => s.sizes.map((x) => x.label).filter(Boolean).join(", "),
+  // First size label — inside a repeat-per-EAN repetition the renderer
+  // narrows style.sizes to the current row, so this IS the current size.
+  size: (s) => s.sizes[0]?.label ?? "",
   sizeRange: (s) => {
     const labels = s.sizes.map((x) => x.label).filter(Boolean);
     if (labels.length === 0) return "";
@@ -120,6 +123,7 @@ const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   colourCode: ["colourCode"],
   campaignWeek: ["campaignWeek"],
   sizes: ["sizes"],
+  size: ["sizes"],
   sizeRange: ["sizes"],
   price: ["price"],
   poNumber: ["poNumber"],
@@ -269,4 +273,22 @@ export function unresolvedTokens(def: LayoutDef, style: StyleData): string[] {
     }
   }
   return out;
+}
+
+// Resolve a Settings fileName expression against a style: text tokens
+// substituted, then slug-sanitised. Returns null when the expression is
+// empty (caller falls back to the runner default).
+export function resolveLayoutFileName(expr: string, style: StyleData): string | null {
+  const trimmed = expr.trim();
+  if (!trimmed) return null;
+  const replaced = trimmed.replace(
+    /\{\{([a-zA-Z][a-zA-Z0-9]*)(?::([a-zA-Z0-9-]+))?\}\}/g,
+    (_m, key, arg) => resolveTextToken(style, key, arg || undefined),
+  );
+  const slug = replaced
+    .replace(/[^\w.\- ]+/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .slice(0, 120);
+  return slug ? `${slug}.pdf` : null;
 }

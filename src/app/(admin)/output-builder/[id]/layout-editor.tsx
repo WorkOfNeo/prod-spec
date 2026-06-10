@@ -5,13 +5,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   LAYOUT_GRID_COLS,
   LAYOUT_GRID_ROWS,
+  LayoutDefSchema,
   TOKEN_RE,
   blockId,
-  type LayoutAnchor,
+  layoutSettings,
   type LayoutBlock,
   type LayoutDef,
   type LayoutPage,
   type LayoutRect,
+  type LayoutSettings,
 } from "@/lib/output-layouts/schema";
 import { LAYOUT_TOKENS, tokenMeta } from "@/lib/output-layouts/token-meta";
 import { PreviewFrame } from "@/components/output-preview";
@@ -50,13 +52,6 @@ function newPageId(): string {
   blockSeq += 1;
   return `p-${Date.now().toString(36)}-${blockSeq}`;
 }
-
-const ANCHORS: Array<{ key: LayoutAnchor; label: string }> = [
-  { key: "top-left", label: "Top left" },
-  { key: "top-right", label: "Top right" },
-  { key: "bottom-left", label: "Bottom left" },
-  { key: "bottom-right", label: "Bottom right" },
-];
 
 type Customer = { id: string; name: string };
 type BusinessArea = { id: string; name: string };
@@ -132,6 +127,8 @@ export function LayoutEditor({
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [previewSample, setPreviewSample] = useState(false);
   const [unresolved, setUnresolved] = useState<string[]>([]);
+  const [repeatValues, setRepeatValues] = useState<string[]>([]);
+  const [resolvedFileName, setResolvedFileName] = useState<string | null>(null);
   const [showValues, setShowValues] = useState(false);
   const [tokenValues, setTokenValues] = useState<Record<string, string>>({});
 
@@ -140,6 +137,13 @@ export function LayoutEditor({
   const [pdfBusy, setPdfBusy] = useState(false);
 
   const [langSel, setLangSel] = useState(languages[0]?.code ?? "en");
+
+  const [jsonText, setJsonText] = useState("");
+  const [jsonOpen, setJsonOpen] = useState(false);
+  const [jsonError, setJsonError] = useState<string | null>(null);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const contentTaRef = useRef<HTMLTextAreaElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -173,21 +177,9 @@ export function LayoutEditor({
     [pageIdx],
   );
 
-  function addCornerBlock(anchor: LayoutAnchor) {
-    if (!page || page.blocks.some((b) => b.anchor === anchor && !b.rect)) return;
-    const block: LayoutBlock = {
-      id: newBlockId(),
-      anchor,
-      cols: 6,
-      fontPt: 9,
-      bold: false,
-      lineHeight: 1.4,
-      lines: ["New text"],
-    };
-    setDef((d) => ({
-      pages: d.pages.map((p, i) => (i === pageIdx ? { ...p, blocks: [...p.blocks, block] } : p)),
-    }));
-    setSel(block.id!);
+  const settings = layoutSettings(def);
+  function updateSettings(patch: Partial<LayoutSettings>) {
+    setDef((d) => ({ ...d, settings: { ...layoutSettings(d), ...patch } }));
   }
 
   function addRectBlock(rect: LayoutRect) {
@@ -223,26 +215,6 @@ export function LayoutEditor({
       ),
     }));
     setSel(null);
-  }
-
-  // Move a CORNER block to another corner; if occupied, swap.
-  function moveBlock(id: string, to: LayoutAnchor) {
-    const from = page?.blocks.find((b) => blockId(b) === id)?.anchor;
-    if (!from || from === to) return;
-    setDef((d) => ({
-      pages: d.pages.map((p, i) => {
-        if (i !== pageIdx) return p;
-        return {
-          ...p,
-          blocks: p.blocks.map((b) => {
-            if (b.rect) return b;
-            if (blockId(b) === id) return { ...b, anchor: to };
-            if (b.anchor === to) return { ...b, anchor: from };
-            return b;
-          }),
-        };
-      }),
-    }));
   }
 
   function addPage() {
@@ -453,11 +425,15 @@ export function LayoutEditor({
           unresolved: string[];
           usingSampleData: boolean;
           tokenValues?: Record<string, string>;
+          repeatValues?: string[];
+          resolvedFileName?: string | null;
         };
         if (cancelled) return;
         setPreviewHtml(body.html);
         setUnresolved(body.unresolved);
         setPreviewSample(body.usingSampleData);
+        setRepeatValues(body.repeatValues ?? []);
+        setResolvedFileName(body.resolvedFileName ?? null);
         if (body.tokenValues) setTokenValues(body.tokenValues);
       } catch {
         // network hiccup — keep the last good preview
@@ -524,6 +500,50 @@ export function LayoutEditor({
       window.open(URL.createObjectURL(blob), "_blank");
     } finally {
       setPdfBusy(false);
+    }
+  }
+
+  function openJsonPanel() {
+    setJsonText(JSON.stringify(def, null, 2));
+    setJsonError(null);
+    setJsonOpen(true);
+  }
+
+  function applyJson() {
+    setJsonError(null);
+    try {
+      const parsed = LayoutDefSchema.safeParse(JSON.parse(jsonText));
+      if (!parsed.success) {
+        setJsonError(parsed.error.issues.map((i) => i.message).slice(0, 3).join(" · "));
+        return;
+      }
+      setDef(parsed.data);
+      setSel(null);
+    } catch (err) {
+      setJsonError(`Not valid JSON: ${(err as Error).message}`);
+    }
+  }
+
+  async function applyAi() {
+    if (!aiPrompt.trim()) return;
+    setAiBusy(true);
+    setAiError(null);
+    try {
+      const res = await fetch("/api/admin/output-layouts/ai-edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ definition: def, prompt: aiPrompt.trim() }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { definition?: LayoutDef; error?: string };
+      if (!res.ok || !body.definition) {
+        setAiError(body.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setDef(body.definition);
+      setSel(null);
+      setAiPrompt("");
+    } finally {
+      setAiBusy(false);
     }
   }
 
@@ -932,6 +952,59 @@ export function LayoutEditor({
               </button>
             ) : null}
           </div>
+
+          <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Settings</div>
+          <div className="mt-2 space-y-3">
+            <div>
+              <label className="text-xs text-zinc-500">Repeat output</label>
+              <select
+                value={settings.repeatBy}
+                onChange={(e) => updateSettings({ repeatBy: e.target.value as LayoutSettings["repeatBy"] })}
+                className="mt-1 w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-sm text-zinc-700"
+              >
+                <option value="none">Don&apos;t repeat</option>
+                <option value="ean">Per size / EAN</option>
+              </select>
+              {settings.repeatBy === "ean" ? (
+                <p className="mt-1.5 break-words font-mono text-[10px] leading-relaxed text-zinc-400">
+                  {repeatValues.length > 0 ? (
+                    <>
+                      <span className="font-sans font-medium text-zinc-500">
+                        {repeatValues.length} repetition{repeatValues.length === 1 ? "" : "s"}:{" "}
+                      </span>
+                      {repeatValues.join(", ")}
+                    </>
+                  ) : (
+                    "No sizes on the selected test style — output renders once."
+                  )}
+                </p>
+              ) : null}
+            </div>
+            <div>
+              <label className="text-xs text-zinc-500">Output file name</label>
+              <input
+                type="text"
+                value={settings.fileName}
+                onChange={(e) => updateSettings({ fileName: e.target.value })}
+                placeholder="{{styleNumber}}-{{size}}-sticker"
+                className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 font-mono text-xs"
+                spellCheck={false}
+              />
+              <p className="mt-1 text-[10px] text-zinc-400">
+                {settings.fileName ? (
+                  resolvedFileName ? (
+                    <>
+                      → <span className="font-mono text-emerald-700">{resolvedFileName}</span>
+                    </>
+                  ) : (
+                    "Resolving…"
+                  )
+                ) : (
+                  "Text variables allowed · empty = default name"
+                )}
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* ----- center: canvas + preview ----- */}
@@ -958,23 +1031,6 @@ export function LayoutEditor({
                   "repeating-linear-gradient(to bottom, transparent 0, transparent calc(8.3333% - 1px), rgba(24,24,27,0.045) calc(8.3333% - 1px), rgba(24,24,27,0.045) 8.3333%)",
               }}
             >
-              {ANCHORS.map(({ key }) => {
-                const occupied = page.blocks.some((b) => !b.rect && b.anchor === key);
-                if (occupied) return null;
-                return (
-                  <button
-                    key={key}
-                    data-zone
-                    type="button"
-                    onClick={() => addCornerBlock(key)}
-                    className={`absolute flex items-center justify-center rounded border border-dashed border-zinc-200 text-[11px] font-medium text-zinc-300 transition-colors hover:border-zinc-400 hover:text-zinc-500 ${zoneClass(key)}`}
-                    style={{ width: "34%", height: "30%" }}
-                    title={`Add a corner text block ${key.replace("-", " ")}`}
-                  >
-                    + text
-                  </button>
-                );
-              })}
               {page.blocks.map((block) => (
                 <CanvasBlock
                   key={blockId(block)}
@@ -1001,7 +1057,7 @@ export function LayoutEditor({
           </div>
           <p className="mt-2 text-center text-xs text-zinc-400">
             <b className="font-medium text-zinc-500">Drag on the grid</b> to draw a block exactly where you want it ·
-            click a corner for a quick anchored block · click a block to edit
+            click a block to edit · Del removes the selected block
           </p>
 
           {/* true render preview */}
@@ -1040,7 +1096,6 @@ export function LayoutEditor({
             <div className="flex items-baseline justify-between">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                 Block
-                {selBlock ? (selBlock.rect ? " — grid" : ` — ${selBlock.anchor?.replace("-", " ")}`) : ""}
               </div>
               {selBlock ? (
                 <button
@@ -1055,7 +1110,7 @@ export function LayoutEditor({
             </div>
             {!selBlock ? (
               <p className="mt-2 text-xs text-zinc-400">
-                Select a block on the canvas, click an empty corner, or drag on the grid to draw one.
+                Select a block on the canvas, or drag on the grid to draw a new one.
               </p>
             ) : (
               <div className="mt-3 space-y-4">
@@ -1136,42 +1191,7 @@ export function LayoutEditor({
                       </div>
                     </div>
                   </>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {ANCHORS.map(({ key, label }) => (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => moveBlock(blockId(selBlock), key)}
-                          className={`rounded-md border px-2 py-1.5 text-[11px] font-medium ${
-                            selBlock.anchor === key
-                              ? "border-zinc-900 bg-zinc-900 text-white"
-                              : "border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300"
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                    <div>
-                      <div className="flex items-baseline justify-between">
-                        <label className="text-xs text-zinc-500">Width</label>
-                        <span className="font-mono text-[11px] text-zinc-400">
-                          {selBlock.cols} cols ≈ {((page.widthMm * selBlock.cols) / LAYOUT_GRID_COLS).toFixed(1)} mm
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min={1}
-                        max={LAYOUT_GRID_COLS}
-                        value={selBlock.cols}
-                        onChange={(e) => updateBlock(blockId(selBlock), { cols: Number(e.target.value) })}
-                        className="mt-1 w-full accent-zinc-900"
-                      />
-                    </div>
-                  </>
-                )}
+                ) : null}
 
                 <div>
                   <div className="flex items-baseline justify-between">
@@ -1335,6 +1355,69 @@ export function LayoutEditor({
               </p>
             </div>
           </div>
+
+          <div className="rounded-lg border border-zinc-200 p-4">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Edit as JSON / AI</div>
+            <p className="mt-1 text-[11px] text-zinc-400">
+              The whole layout is one JSON document — edit it directly, or describe a change and let AI apply it.
+            </p>
+
+            <div className="mt-3">
+              <textarea
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                rows={2}
+                placeholder="e.g. Center the title, make it 14pt, and add {{barcode:ean13}} bottom right"
+                className="w-full rounded-md border border-zinc-200 px-2.5 py-2 text-xs leading-relaxed"
+              />
+              <div className="mt-1.5 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={applyAi}
+                  disabled={aiBusy || !aiPrompt.trim()}
+                  className="rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+                >
+                  {aiBusy ? "Applying…" : "Apply with AI"}
+                </button>
+                {aiError ? <span className="text-[11px] text-amber-700">{aiError}</span> : null}
+              </div>
+            </div>
+
+            <div className="mt-3 border-t border-zinc-100 pt-3">
+              {!jsonOpen ? (
+                <button type="button" onClick={openJsonPanel} className="text-xs font-medium text-zinc-500 hover:text-zinc-800">
+                  Edit JSON directly →
+                </button>
+              ) : (
+                <>
+                  <textarea
+                    value={jsonText}
+                    onChange={(e) => setJsonText(e.target.value)}
+                    rows={14}
+                    spellCheck={false}
+                    className="w-full rounded-md border border-zinc-200 px-2.5 py-2 font-mono text-[10px] leading-relaxed"
+                  />
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={applyJson}
+                      className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                    >
+                      Apply JSON
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setJsonOpen(false)}
+                      className="text-xs text-zinc-400 hover:text-zinc-700"
+                    >
+                      Close
+                    </button>
+                    {jsonError ? <span className="text-[11px] text-red-600">{jsonError}</span> : null}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1342,32 +1425,6 @@ export function LayoutEditor({
 }
 
 // ---------------------------------------------------------------------------
-
-function zoneClass(anchor: LayoutAnchor): string {
-  switch (anchor) {
-    case "top-left":
-      return "left-[2%] top-[3%]";
-    case "top-right":
-      return "right-[2%] top-[3%]";
-    case "bottom-left":
-      return "bottom-[3%] left-[2%]";
-    case "bottom-right":
-      return "bottom-[3%] right-[2%]";
-  }
-}
-
-function anchorPosition(anchor: LayoutAnchor): React.CSSProperties {
-  switch (anchor) {
-    case "top-left":
-      return { top: "2%", left: "1.5%", textAlign: "left" };
-    case "top-right":
-      return { top: "2%", right: "1.5%", textAlign: "right" };
-    case "bottom-left":
-      return { bottom: "2%", left: "1.5%", textAlign: "left" };
-    case "bottom-right":
-      return { bottom: "2%", right: "1.5%", textAlign: "right" };
-  }
-}
 
 function RectStepper({
   label,
@@ -1416,34 +1473,25 @@ function CanvasBlock({
   onRemove: () => void;
 }) {
   const fontPx = Math.max(block.fontPt * PT_TO_MM * scale, 7);
+  void page;
+  void scale;
 
-  let positionStyle: React.CSSProperties;
-  if (block.rect) {
-    const r = block.rect;
-    positionStyle = {
-      left: `${(r.col / LAYOUT_GRID_COLS) * 100}%`,
-      top: `${(r.row / LAYOUT_GRID_ROWS) * 100}%`,
-      width: `${(r.colSpan / LAYOUT_GRID_COLS) * 100}%`,
-      height: `${(r.rowSpan / LAYOUT_GRID_ROWS) * 100}%`,
-      display: "flex",
-      flexDirection: "column",
-      justifyContent: block.valign === "middle" ? "center" : block.valign === "bottom" ? "flex-end" : "flex-start",
-      textAlign: (block.align ?? "left") as React.CSSProperties["textAlign"],
-    };
-  } else {
-    const anchor = block.anchor ?? "top-left";
-    positionStyle = {
-      ...anchorPosition(anchor),
-      width: ((page.widthMm * block.cols) / LAYOUT_GRID_COLS) * scale,
-      maxWidth: "96%",
-      ...(block.align ? { textAlign: block.align } : {}),
-    };
-  }
+  // The editor is grid-only — legacy corner blocks are converted to
+  // rects by parseLayoutDef before they reach this component.
+  if (!block.rect) return null;
+  const r = block.rect;
+  const positionStyle: React.CSSProperties = {
+    left: `${(r.col / LAYOUT_GRID_COLS) * 100}%`,
+    top: `${(r.row / LAYOUT_GRID_ROWS) * 100}%`,
+    width: `${(r.colSpan / LAYOUT_GRID_COLS) * 100}%`,
+    height: `${(r.rowSpan / LAYOUT_GRID_ROWS) * 100}%`,
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: block.valign === "middle" ? "center" : block.valign === "bottom" ? "flex-end" : "flex-start",
+    textAlign: (block.align ?? "left") as React.CSSProperties["textAlign"],
+  };
 
-  // The delete badge sits on the block's inward-facing top corner so it
-  // never hangs outside the page edge the block is anchored to.
-  const badgePos: React.CSSProperties =
-    !block.rect && block.anchor?.endsWith("left") ? { top: -8, right: -8 } : { top: -8, left: -8 };
+  const badgePos: React.CSSProperties = { top: -8, left: -8 };
 
   return (
     <div

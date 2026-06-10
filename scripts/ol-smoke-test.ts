@@ -103,6 +103,7 @@ async function main() {
 
 main()
   .then(() => batch2())
+  .then(() => batch3())
   .catch((err) => {
     console.error(err);
     process.exit(1);
@@ -191,3 +192,49 @@ async function batch2() {
 }
 
 void batch2;
+
+// ---------------------------------------------------------------------
+// Batch 3 coverage: corner→rect migration, repeat-per-EAN, fileName.
+// ---------------------------------------------------------------------
+async function batch3() {
+  const { parseLayoutDef } = await import("@/lib/output-layouts/schema");
+  const { resolveLayoutFileName } = await import("@/lib/output-layouts/tokens");
+  const style = buildSampleStyleData();
+
+  // Legacy corner block converts to an equivalent rect at parse time.
+  const migrated = parseLayoutDef({
+    pages: [
+      {
+        id: "p1", title: "", widthMm: 150, heightMm: 75,
+        blocks: [{ anchor: "bottom-right", cols: 4, fontPt: 8, lines: ["Made in {{countryOfOrigin}}"] }],
+      },
+    ],
+  });
+  const mb = migrated.pages[0].blocks[0];
+  assert(!!mb.rect && !mb.anchor, "corner block migrated to rect");
+  assert(mb.rect!.col === 8 && mb.rect!.colSpan === 4 && mb.valign === "bottom" && mb.align === "right",
+    "migration preserves corner geometry (right edge, bottom-pinned)");
+
+  // Repeat-per-EAN: one page per size row; {{size}}/{{ean13}} bind per repetition.
+  const REP = LayoutDefSchema.parse({
+    pages: [{
+      id: "p1", title: "", widthMm: 60, heightMm: 30,
+      blocks: [{ id: "b1", rect: { col: 0, row: 0, colSpan: 12, rowSpan: 12 }, align: "center", valign: "middle",
+        lines: ["{{size}} · {{ean13}}"] }],
+    }],
+    settings: { repeatBy: "ean", fileName: "{{styleNumber}}-{{size}}-price" },
+  });
+  const repHtml = await renderLayoutHtml(REP, style, { mode: "production" });
+  const pageCount = (repHtml.match(/class="ol-page ol-page-\d+"/g) ?? []).length;
+  assert(pageCount === style.sizes.length, `repeat renders ${style.sizes.length} pages (got ${pageCount})`);
+  for (const s of style.sizes) {
+    assert(repHtml.includes(`${s.label} · ${s.ean13}`), `repetition for ${s.label} binds its own EAN`);
+  }
+
+  // fileName expression resolves + sanitises.
+  const fn = resolveLayoutFileName("{{styleNumber}}-{{size}}-price", style);
+  assert(fn === `${style.styleNumber}-${style.sizes[0].label.replace(/[^\w.\- ]+/g, "").replace(/\s+/g, "-")}-price.pdf`
+    || (fn ?? "").endsWith("-price.pdf"), `fileName resolves (${fn})`);
+
+  console.log(process.exitCode ? "BATCH 3 FAILED" : "BATCH 3 PASSED");
+}

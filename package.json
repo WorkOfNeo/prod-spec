@@ -20,6 +20,7 @@
     "backfill-preorder-eans": "tsx --env-file=.env scripts/backfill-preorder-eans.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.1",
     "@azure/identity": "^4.13.1",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@napi-rs/canvas": "^1.0.0",
