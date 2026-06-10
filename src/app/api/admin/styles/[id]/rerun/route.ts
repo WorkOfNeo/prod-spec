@@ -60,10 +60,28 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   // a slow response, and the webhook should ack fast.)
   const summary = await runPendingJobs(1);
 
+  // Emails this run produced (the review-ready notification) — slim rows
+  // so the Run buttons can pop the simulation dialog while RESEND_EMAILS
+  // is off. The dialog fetches the body via /api/admin/email-logs/[id].
+  const emailRows = await db.emailLog.findMany({
+    where: { jobId },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, type: true, status: true, to: true, cc: true, subject: true, attachments: true },
+  });
+
   return NextResponse.json({
     ok: true,
     jobId,
     jobsProcessed: summary.processed,
     jobsFailed: summary.failed,
+    emails: emailRows.map((e) => ({
+      emailLogId: e.id,
+      type: e.type,
+      status: e.status,
+      to: e.to,
+      cc: e.cc,
+      subject: e.subject,
+      attachments: e.attachments,
+    })),
   });
 }

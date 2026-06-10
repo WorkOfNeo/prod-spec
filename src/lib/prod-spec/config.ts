@@ -6,7 +6,7 @@ import {
   type ColumnMapping,
   type RequiredField,
 } from "@/lib/customers/config";
-import { TEMPLATE_VARIANTS, type TemplateVariant } from "@/lib/pdf/template-registry";
+import { TEMPLATE_VARIANTS, getVariant, type TemplateVariant } from "@/lib/pdf/template-registry";
 
 // =====================================================
 // ProdSpec — config bundle for one (Customer × BusinessArea) pair.
@@ -119,9 +119,11 @@ export function parseProdSpecLanguages(raw: unknown): string[] {
   return out;
 }
 
-// Resolve an output entry to its registered variant. Returns null if the
-// variantKey is stale (e.g. a variant got removed from code) — the runner
-// logs and skips in that case.
+// Resolve an output entry to its registered variant — code-registered
+// AND dynamic (Output Builder layouts, `layout:<id>` keys; loaded into
+// the registry by ensureLayoutVariantsLoaded). Returns null if the
+// variantKey is stale (variant removed from code / layout deleted or
+// unpublished) — the runner logs and skips in that case.
 export function resolveOutputVariant(output: ProdSpecOutput): TemplateVariant | null {
-  return TEMPLATE_VARIANTS.find((v) => v.key === output.variantKey) ?? null;
+  return getVariant(output.variantKey);
 }

@@ -1,13 +1,16 @@
 import { db } from "@/lib/db";
 import { renderPdf } from "@/lib/pdf/renderer";
+import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import { applyFieldOverrides } from "@/lib/pdf/pins";
 import { countPlaceholderMarkers } from "@/lib/pdf/placeholders";
 import type { StyleData } from "@/lib/pdf/types";
 import type { TemplateVariant } from "@/lib/pdf/template-registry";
-import { sendEmail } from "@/lib/email/client";
+import { dispatchEmail } from "@/lib/email/dispatch";
 import { reviewNotificationEmail } from "@/lib/email/templates/review-notification";
+import { getReviewNotificationEmails } from "@/lib/settings/app-settings";
+import type { TriggerSource } from "@/generated/prisma/enums";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import {
   DEFAULT_OUTPUTS,
@@ -84,6 +87,11 @@ async function releaseStaleRunning(): Promise<void> {
 }
 
 export async function processJob(jobId: string): Promise<void> {
+  // Load published Output Builder layouts into the variant registry so
+  // `layout:<id>` keys resolve like any code-registered variant below
+  // (resolveOutputVariant / outputReadinessForStyle are sync lookups).
+  await ensureLayoutVariantsLoaded();
+
   const job = await db.job.findUniqueOrThrow({
     where: { id: jobId },
     include: {
@@ -92,6 +100,9 @@ export async function processJob(jobId: string): Promise<void> {
           customer: true,
           qrImage: true,
           supplier: { select: { country: true } },
+          // Display name for the review-ready email (falls back to the
+          // free-text Style.businessArea when the mirror row isn't linked).
+          businessAreaRef: { select: { name: true } },
           // Resolved PO barcodes — fall back into the ean13/cartonEan
           // fields at render time (see effectiveStyleItem).
           eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
@@ -320,43 +331,77 @@ export async function processJob(jobId: string): Promise<void> {
     throw new RunnerError("PERSIST_FAILED", `persisting assets failed: ${(err as Error).message}`);
   }
 
-  await notifyReviewer(
-    job.id,
-    job.styleId,
-    job.style.name,
-    styleData.styleNumber,
-    job.style.customer.name,
-    generated.length,
-  );
+  await notifyReviewer({
+    jobId: job.id,
+    styleId: job.styleId,
+    styleName: job.style.name,
+    styleNumber: styleData.styleNumber,
+    customerName: job.style.customer.name,
+    businessArea: job.style.businessAreaRef?.name ?? job.style.businessArea ?? null,
+    poNumber: job.style.poNumber ?? null,
+    triggerSource: job.triggerSource,
+    outputNames: generated.map(
+      (d) => `${d.variant.name} · ${d.output.widthMm}×${d.output.heightMm} mm`,
+    ),
+  });
 }
 
-async function notifyReviewer(
-  jobId: string,
-  styleId: string,
-  styleName: string,
-  styleNumber: string,
-  customerName: string,
-  documentCount: number,
-): Promise<void> {
-  const recipient = process.env.REVIEW_NOTIFICATION_EMAIL;
-  if (!recipient) return;
+async function notifyReviewer(input: {
+  jobId: string;
+  styleId: string;
+  styleName: string;
+  styleNumber: string;
+  customerName: string;
+  businessArea: string | null;
+  poNumber: string | null;
+  triggerSource: TriggerSource;
+  outputNames: string[];
+}): Promise<void> {
+  // Ticket-driven runs stay silent: TICKET_RERUN is the admin iterating on
+  // a fix (the reviewer must not be pinged per attempt) and TICKET_FIX
+  // sends its own dedicated "fixed — ready for re-review" email from the
+  // fix endpoint, with the rejection context the generic mail lacks.
+  if (input.triggerSource === "TICKET_RERUN" || input.triggerSource === "TICKET_FIX") return;
 
+  const recipients = await getReviewNotificationEmails();
   const base = process.env.PROD_SPEC_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
-  const reviewUrl = `${base}/styles/${styleId}/review`;
-  const email = reviewNotificationEmail({ styleName, styleNumber, customerName, reviewUrl, documentCount });
+  const reviewUrl = `${base}/styles/${input.styleId}/review`;
+  const email = reviewNotificationEmail({
+    styleName: input.styleName,
+    styleNumber: input.styleNumber,
+    customerName: input.customerName,
+    businessArea: input.businessArea,
+    poNumber: input.poNumber,
+    reviewUrl,
+    outputNames: input.outputNames,
+  });
 
   try {
-    const result = await sendEmail({ to: recipient, subject: email.subject, html: email.html, text: email.text });
+    // Empty recipients still dispatch: that records a SKIPPED email_logs
+    // row with an actionable note instead of silently notifying no one.
+    const outcome = await dispatchEmail({
+      type: "REVIEW_READY",
+      to: recipients,
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+      jobId: input.jobId,
+      styleId: input.styleId,
+    });
+    const message =
+      outcome.status === "SENT"
+        ? `review notification sent to ${outcome.to}`
+        : outcome.status === "SIMULATED"
+          ? `review notification SIMULATED (RESEND_EMAILS off) — would go to ${outcome.to}`
+          : outcome.status === "FAILED"
+            ? `review notification FAILED: ${outcome.note ?? "Resend error"}`
+            : `review notification skipped: ${outcome.note ?? "no recipient — set it at /settings/notifications"}`;
     await db.log.create({
-      data: {
-        jobId,
-        level: "INFO",
-        message: result.sent ? `review notification sent to ${recipient}` : "review notification skipped (Resend not configured)",
-      },
+      data: { jobId: input.jobId, level: outcome.status === "FAILED" ? "WARN" : "INFO", message },
     });
   } catch (err) {
     await db.log.create({
-      data: { jobId, level: "WARN", message: `review notification failed: ${(err as Error).message}` },
+      data: { jobId: input.jobId, level: "WARN", message: `review notification failed: ${(err as Error).message}` },
     });
   }
 }

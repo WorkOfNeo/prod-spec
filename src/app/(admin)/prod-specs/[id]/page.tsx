@@ -7,7 +7,8 @@ import {
   parseProdSpecOutputs,
   parseProdSpecRequiredFields,
 } from "@/lib/prod-spec/config";
-import { TEMPLATE_VARIANTS } from "@/lib/pdf/template-registry";
+import { allVariants } from "@/lib/pdf/template-registry";
+import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { formatDate } from "@/lib/utils";
 import { listActiveLanguages } from "@/lib/languages/active";
 import { loadCareLabels } from "@/lib/care-labels";
@@ -21,6 +22,9 @@ import { ProdSpecEditor } from "./prod-spec-editor";
 export const dynamic = "force-dynamic";
 
 export default async function ProdSpecDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  // Published Output Builder layouts join the variant catalogue below.
+  await ensureLayoutVariantsLoaded();
+
   const { id } = await params;
   const prodSpec = await db.prodSpec.findUnique({
     where: { id },
@@ -97,7 +101,7 @@ export default async function ProdSpecDetailPage({ params }: { params: Promise<{
         initialRequiredFields={requiredFields}
         attachedSupplierIds={attachedSupplierIds}
         allSuppliers={allSuppliers}
-        variantCatalogue={TEMPLATE_VARIANTS.map((v) => ({
+        variantCatalogue={allVariants().map((v) => ({
           key: v.key,
           docType: v.docType,
           name: v.name,

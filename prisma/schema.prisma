@@ -25,10 +25,11 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  sessions       Session[]
-  accounts       Account[]
-  reviewActions  ReviewAction[]
-  reviewedAssets JobAsset[]     @relation("AssetReviewer")
+  sessions         Session[]
+  accounts         Account[]
+  reviewActions    ReviewAction[]
+  reviewedAssets   JobAsset[]        @relation("AssetReviewer")
+  rejectionTickets RejectionTicket[] @relation("TicketReporter")
 
   @@map("users")
 }
@@ -116,9 +117,10 @@ model Customer {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  templates Template[]
-  styles    Style[]
-  prodSpecs ProdSpec[]
+  templates     Template[]
+  styles        Style[]
+  prodSpecs     ProdSpec[]
+  outputLayouts OutputLayout[]
 
   @@index([active])
   @@map("customers")
@@ -174,10 +176,11 @@ model BusinessArea {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  mergedInto BusinessArea?  @relation("BusinessAreaMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
-  aliases    BusinessArea[] @relation("BusinessAreaMerge")
-  styles     Style[]
-  prodSpecs  ProdSpec[]
+  mergedInto    BusinessArea?  @relation("BusinessAreaMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  aliases       BusinessArea[] @relation("BusinessAreaMerge")
+  styles        Style[]
+  prodSpecs     ProdSpec[]
+  outputLayouts OutputLayout[]
 
   @@index([active])
   @@index([mergedIntoId])
@@ -255,41 +258,41 @@ model Country {
 // the per-output PDF dimensions, the attached suppliers, the required-
 // field set, and the auto-generation threshold.
 model ProdSpec {
-  id                        String  @id @default(cuid())
-  customerId                String
-  businessAreaId            String
+  id                       String   @id @default(cuid())
+  customerId               String
+  businessAreaId           String
   // Auto-derived from "<Customer name> · <BusinessArea name>" but editable.
-  name                      String
+  name                     String
   // Per-doc-type config: { WASHCARE: { enabled: true, widthMm: 30, heightMm: 60 }, ... }
   // See ProdSpecOutputsSchema in src/lib/prod-spec/config.ts.
-  outputs                   Json    @default("{}")
+  outputs                  Json     @default("{}")
   // Optional logo (SVG markup) used by templates that render a
   // customer × business-area branded header (e.g. care-label-01). Stored
   // as text so it travels with the row and inlines into the PDF without
   // a network fetch.
-  logoSvg                   String?
+  logoSvg                  String?
   // Multilingual care-instruction strings rendered on care-label-02 back.
   // Shape: { en: "Wash with similar colours / ...", da: "vaskes med ...", ... }
   // Lang keys are lowercase ISO 639-1; empty / missing langs are skipped.
-  careInstructionsByLang    Json    @default("{}")
+  careInstructionsByLang   Json     @default("{}")
   // Languages this ProdSpec's outputs render, as an array of lowercase
   // language codes (e.g. ["en","da","de"]). Toggled per ProdSpec in the
   // editor and the /prod-specs/languages matrix. Empty array ⇒ templates
   // fall back to their built-in default language set (backward compatible).
-  outputLanguages           Json    @default("[]")
+  outputLanguages          Json     @default("[]")
   // Overrides Customer-level column mapping if present; otherwise inherits.
-  columnMapping             Json    @default("{}")
+  columnMapping            Json     @default("{}")
   // [{ id: "monday_column_id", label: "Composition" }, ...]
-  requiredFields            Json    @default("[]")
-  autoGenerateThresholdPct  Int     @default(100)
+  requiredFields           Json     @default("[]")
+  autoGenerateThresholdPct Int      @default(100)
   // Defaults to false so auto-created scaffolds (Style ingest, /import
   // Accept) land in "needs configuration" until an admin reviews them.
   // The PATCH endpoint auto-activates on any non-active field change.
   // Inactive ProdSpecs are excluded from Job auto-enqueue — a Style at
   // 100% completion still stays PENDING until its ProdSpec is active.
-  active                    Boolean @default(false)
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
+  active                   Boolean  @default(false)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 
   customer     Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
   businessArea BusinessArea       @relation(fields: [businessAreaId], references: [id], onDelete: Restrict)
@@ -334,6 +337,48 @@ model Template {
   @@map("templates")
 }
 
+// =====================================================
+// OutputLayout — an operator-built print layout from the Output Builder
+// (/output-builder). The `definition` JSON is the whole artifact: pages
+// with mm dimensions, corner-anchored text blocks, {{token}} variables.
+// Validated by LayoutDefSchema (src/lib/output-layouts/schema.ts) on
+// every write; rendered by renderLayoutHtml at preview AND job time.
+//
+// PUBLISHED layouts register as template variants under the key
+// `layout:<id>` — they appear in the ProdSpec output picker but only
+// generate once an operator explicitly adds them to a ProdSpec's
+// outputs (no auto-attach). customerId/businessAreaId are the builder's
+// default TEST-DATA binding, not a usage restriction.
+// =====================================================
+model OutputLayout {
+  id             String             @id @default(cuid())
+  name           String
+  // JobAsset.docType for assets generated from this layout, and the
+  // grouping bucket in the output pickers.
+  docType        DocType            @default(STICKER)
+  definition     Json               @default("{}")
+  status         OutputLayoutStatus @default(DRAFT)
+  // Bumped on every publish — JobAsset displayNames carry the version so
+  // an asset can be traced to the layout revision that produced it.
+  version        Int                @default(0)
+  customerId     String?
+  businessAreaId String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  customer     Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  businessArea BusinessArea? @relation(fields: [businessAreaId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([customerId])
+  @@map("output_layouts")
+}
+
+enum OutputLayoutStatus {
+  DRAFT
+  PUBLISHED
+}
+
 enum DocType {
   WASHCARE
   CARE_LABEL
@@ -359,38 +404,38 @@ model AppSetting {
 }
 
 model Style {
-  id             String      @id @default(cuid())
-  customerId     String
+  id                  String         @id @default(cuid())
+  customerId          String
   // FKs resolved from the local Monday mirrors during ingest. Nullable
   // because the linked rows may not exist yet (mirrors not yet synced).
-  businessAreaId String?
-  supplierId     String?
-  prodSpecId     String?
+  businessAreaId      String?
+  supplierId          String?
+  prodSpecId          String?
   // Optional link to a QR image from the QrImage library, rendered on
   // care-label-02 page 4. SetNull on delete so retiring a QR image
   // doesn't cascade-delete styles.
-  qrImageId      String?
-  mondayItemId   String      @unique
-  mondayBoardId  String
-  name           String
+  qrImageId           String?
+  mondayItemId        String         @unique
+  mondayBoardId       String
+  name                String
   // Free-text fallback retained so legacy data and the manual entry form
   // keep working until BusinessArea mirror is populated.
-  businessArea   String?
+  businessArea        String?
   // PO Number — visibility filter, NOT a gating trigger. Rows without one
   // are still synced but hidden from the print queue by default.
-  poNumber       String?
-  styleFolderUrl String?
+  poNumber            String?
+  styleFolderUrl      String?
   // Monday group this item lives in (e.g. "✅ Done", "⏰ Behind
   // Schedule", "Cancelled"). Captured from MondayItem.group on every
   // ingest so list views / scans can default-hide archived items
   // without re-syncing. groupId stays stable across Monday-side title
   // changes; groupTitle is the editable label operators see.
-  groupId        String?
-  groupTitle     String?
-  rawData        Json        @default("{}")
-  completionPct  Int         @default(0)
-  missingFields  Json        @default("[]")
-  status         StyleStatus @default(PENDING)
+  groupId             String?
+  groupTitle          String?
+  rawData             Json           @default("{}")
+  completionPct       Int            @default(0)
+  missingFields       Json           @default("[]")
+  status              StyleStatus    @default(PENDING)
   // -------- PO → EAN resolution (scraped from the Purchase Order PDF) --------
   // eanStatus is BOTH the durable state and the queue: rows land in PENDING
   // when a PO number is filled (Monday ingest), the EAN runner
@@ -408,22 +453,23 @@ model Style {
   // Set when a worker claims the row (PENDING→RESOLVING); used for stale
   // recovery, mirrors Job.startedAt.
   eanResolveStartedAt DateTime?
-  lastSyncedAt   DateTime?
+  lastSyncedAt        DateTime?
   // Soft lifecycle from Monday. We never hard-delete a Style: an
   // item_archived / item_deleted webhook stamps these instead, so the row
   // (and its full Log trail) survives for audit while the UI hides it.
-  archivedAt     DateTime?
-  deletedAt      DateTime?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  archivedAt          DateTime?
+  deletedAt           DateTime?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
 
-  customer         Customer      @relation(fields: [customerId], references: [id])
-  businessAreaRef  BusinessArea? @relation(fields: [businessAreaId], references: [id], onDelete: SetNull)
-  supplier         Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  prodSpec         ProdSpec?     @relation(fields: [prodSpecId], references: [id], onDelete: SetNull)
-  qrImage          QrImage?      @relation(fields: [qrImageId], references: [id], onDelete: SetNull)
+  customer         Customer          @relation(fields: [customerId], references: [id])
+  businessAreaRef  BusinessArea?     @relation(fields: [businessAreaId], references: [id], onDelete: SetNull)
+  supplier         Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  prodSpec         ProdSpec?         @relation(fields: [prodSpecId], references: [id], onDelete: SetNull)
+  qrImage          QrImage?          @relation(fields: [qrImageId], references: [id], onDelete: SetNull)
   jobs             Job[]
   eans             StyleEan[]
+  rejectionTickets RejectionTicket[]
 
   @@index([customerId])
   @@index([status])
@@ -519,11 +565,12 @@ model Job {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  style         Style          @relation(fields: [styleId], references: [id], onDelete: Cascade)
-  prodSpec      ProdSpec?      @relation(fields: [prodSpecId], references: [id], onDelete: SetNull)
-  logs          Log[]
-  reviewActions ReviewAction[]
-  assets        JobAsset[]
+  style            Style             @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  prodSpec         ProdSpec?         @relation(fields: [prodSpecId], references: [id], onDelete: SetNull)
+  logs             Log[]
+  reviewActions    ReviewAction[]
+  assets           JobAsset[]
+  rejectionTickets RejectionTicket[]
 
   @@index([status])
   @@index([styleId])
@@ -532,37 +579,38 @@ model Job {
 }
 
 model JobAsset {
-  id           String            @id @default(cuid())
-  jobId        String
-  docType      DocType
+  id               String            @id @default(cuid())
+  jobId            String
+  docType          DocType
   // Template variant that produced this asset. References a key in
   // src/lib/pdf/template-registry.ts. Multiple assets per job can share
   // a docType but each variantKey is unique within a job.
-  variantKey   String?
-  fileName     String
+  variantKey       String?
+  fileName         String
   // Human-readable label for the "Delivered Prod Specs" list. Set from
   // the variant's `name` at render time; falls back to the docType label.
-  displayName  String?
-  pdf          Bytes
+  displayName      String?
+  pdf              Bytes
   // Placeholder artifacts (dashed missing-artwork tiles, "No carton EAN
   // configured" boxes) counted in the rendered HTML at generation time.
   // > 0 means the PDF is review-safe but NOT print-safe — approval is
   // blocked until the gaps are fixed and the output is re-run.
-  placeholderCount Int            @default(0)
+  placeholderCount Int               @default(0)
   // Per-asset review state — separate from the parent Job's status so
   // we can approve some outputs and reject others with reasons.
-  reviewStatus AssetReviewStatus @default(PENDING_REVIEW)
-  rejectReason String?
-  reviewedAt   DateTime?
-  reviewedById String?
-  createdAt    DateTime          @default(now())
+  reviewStatus     AssetReviewStatus @default(PENDING_REVIEW)
+  rejectReason     String?
+  reviewedAt       DateTime?
+  reviewedById     String?
+  createdAt        DateTime          @default(now())
 
-  job        Job   @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  reviewedBy User? @relation("AssetReviewer", fields: [reviewedById], references: [id])
+  job              Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  reviewedBy       User?             @relation("AssetReviewer", fields: [reviewedById], references: [id])
+  rejectionTickets RejectionTicket[]
 
+  @@unique([jobId, variantKey])
   @@index([jobId])
   @@index([reviewStatus, docType])
-  @@unique([jobId, variantKey])
   @@map("job_assets")
 }
 
@@ -591,6 +639,15 @@ enum TriggerSource {
   // so dashboards can tell "promoted by an operator" apart from "ingest
   // fired by Monday".
   MANUAL_IMPORT
+  // Silent iteration re-run from a RejectionTicket ("Re-run output" on
+  // /settings/rejection-log). The runner suppresses the generic
+  // review-ready email for these — the admin is testing a fix and the
+  // reviewer must not be pinged on every attempt.
+  TICKET_RERUN
+  // Final re-run fired by "Mark fixed & notify" on a RejectionTicket.
+  // Generic review-ready email suppressed too — the fix endpoint sends
+  // the dedicated TICKET_FIXED email itself after the run succeeds.
+  TICKET_FIX
 }
 
 model Log {
@@ -635,6 +692,117 @@ enum ReviewActionType {
   REJECTED
 }
 
+// =====================================================
+// Rejection tickets — the admin work-log behind /settings/rejection-log.
+// One ticket per rejected output (per style × variantKey thread): created
+// when a reviewer rejects an output with a comment, worked by an admin
+// (silent re-runs), marked fixed (re-notifies the reviewer), and resolved
+// when the re-generated output is approved.
+// =====================================================
+
+enum RejectionTicketStatus {
+  OPEN // created by a reviewer rejection (or reopened by a re-rejection)
+  IN_PROGRESS // admin pressed "Start work"
+  FIXED // admin pressed "Mark fixed & notify" — awaiting re-review
+  RESOLVED // the re-generated output was approved by the reviewer
+}
+
+model RejectionTicket {
+  id     String                @id @default(cuid())
+  status RejectionTicketStatus @default(OPEN)
+
+  // Live refs. jobId/jobAssetId are SetNull because the runner DELETES all
+  // JobAssets on every re-run — the ticket must outlive the asset it was
+  // raised against. styleId cascades: no style, no meaningful ticket.
+  styleId    String
+  jobId      String?
+  jobAssetId String?
+
+  // Snapshots at rejection time — keep the log readable forever, even
+  // after re-runs replace assets or the style is renamed on Monday.
+  // variantKey may be "" for legacy assets that predate per-variant keys
+  // (ticket re-runs then regenerate the full job instead of one output).
+  variantKey   String
+  docType      String
+  outputName   String // JobAsset.displayName, e.g. "Carton marking · 150×75 mm"
+  fileName     String
+  customerName String
+  businessArea String?
+  poNumber     String?
+  styleName    String
+  styleNumber  String // Style.mondayItemId
+
+  // The reviewer's rejection comment. Re-rejections after FIXED reopen the
+  // same ticket and append here (separator + timestamp) instead of
+  // creating a duplicate thread.
+  comment       String
+  reportedById  String
+  reopenedCount Int    @default(0)
+
+  startedAt  DateTime? // → IN_PROGRESS
+  fixedAt    DateTime? // → FIXED
+  resolvedAt DateTime? // → RESOLVED
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  style      Style     @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  job        Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  jobAsset   JobAsset? @relation(fields: [jobAssetId], references: [id], onDelete: SetNull)
+  reportedBy User      @relation("TicketReporter", fields: [reportedById], references: [id])
+
+  @@index([status, createdAt])
+  // Auto-resolve lookup: approving an output resolves the open ticket for
+  // the same (style, variantKey) thread.
+  @@index([styleId, variantKey])
+  @@map("rejection_tickets")
+}
+
+// =====================================================
+// Email log — every outbound email attempt, real or simulated. Written by
+// src/lib/email/dispatch.ts. Powers the simulation popups (the UI shows
+// exactly what WOULD have been sent while RESEND_EMAILS is off) and the
+// activity table on /settings/notifications.
+// =====================================================
+
+enum EmailType {
+  REVIEW_READY // job generated → internal reviewer
+  TICKET_FIXED // rejection ticket marked fixed → internal reviewer
+  SUPPLIER_APPROVAL // job fully approved → supplier
+}
+
+enum EmailStatus {
+  SENT // Resend accepted it (id in providerId)
+  SIMULATED // RESEND_EMAILS off → recorded + surfaced instead of sending
+  SKIPPED // flag on but Resend unconfigured, or no recipient resolvable
+  FAILED // Resend errored (message in error)
+}
+
+model EmailLog {
+  id          String      @id @default(cuid())
+  type        EmailType
+  status      EmailStatus
+  to          String // comma list as resolved ("" when no recipient → SKIPPED)
+  cc          String?
+  subject     String
+  // Body snapshot — small (a few KB). Attachment BYTES are never stored
+  // here; the PDFs already live in job_assets. attachments is
+  // [{ filename, bytes }] metadata only.
+  html        String
+  text        String?
+  attachments Json        @default("[]")
+  providerId  String?
+  error       String?
+  // Loose refs (no FK) — the activity log must outlive jobs/styles/tickets.
+  jobId       String?
+  styleId     String?
+  ticketId    String?
+  createdAt   DateTime    @default(now())
+
+  @@index([createdAt])
+  @@index([jobId])
+  @@map("email_logs")
+}
+
 // Track Monday webhook subscriptions we own.
 // IMPORTANT: this table is append/refresh-only. We never call Monday's
 // delete-webhook endpoint from code (see global rule in CLAUDE.md).
@@ -666,20 +834,20 @@ model MondayColumnConfig {
 
 // Audit trail for bulk Monday → local mirror syncs. One row per sync run.
 model SyncJob {
-  id          String       @id @default(cuid())
-  kind        SyncKind
-  status      SyncStatus   @default(RUNNING)
-  itemsTotal  Int          @default(0)
-  itemsSynced Int          @default(0)
-  itemsFailed Int          @default(0)
+  id           String     @id @default(cuid())
+  kind         SyncKind
+  status       SyncStatus @default(RUNNING)
+  itemsTotal   Int        @default(0)
+  itemsSynced  Int        @default(0)
+  itemsFailed  Int        @default(0)
   // Items that didn't error but couldn't be auto-classified — e.g. a
   // Style whose customer link is unset AND whose leading-name token
   // matches multiple customers. Distinct from "failed" so dashboards
   // can show "needs operator action" separately from "actually broken".
-  itemsSkipped Int         @default(0)
-  error       String?
-  startedAt   DateTime     @default(now())
-  finishedAt  DateTime?
+  itemsSkipped Int        @default(0)
+  error        String?
+  startedAt    DateTime   @default(now())
+  finishedAt   DateTime?
 
   @@index([kind])
   @@index([startedAt])
@@ -724,34 +892,34 @@ enum LaunderingAction {
 // storage). `mondayValue` is an optional free-text key used to resolve a
 // Monday-emitted wash-care label back to one of these rows during ingest.
 model WashSymbol {
-  id          String   @id @default(cuid())
+  id           String            @id @default(cuid())
   // Stable kebab-case identifier referenced by the renderer and column
   // mapping (e.g. "wash30", "iron_low"). Unique so the renderer can do
   // O(1) lookups, and so seeding the standard set is idempotent.
-  code        String   @unique
-  name        String
+  code         String            @unique
+  name         String
   // Raw SVG markup. Optional so a row can be created as a placeholder
   // (code + name) and the admin uploads the file afterwards.
-  svg         String?
+  svg          String?
   // Value emitted by Monday (column text or option label). Optional —
   // can be filled later when the wash-care column shape is confirmed.
-  mondayValue String?
+  mondayValue  String?
   // Per-language care-text translations rendered on multilingual labels
   // (e.g. care-label-02 back). Keyed by ISO 639-1 lowercase language code
   // (matches Country.languageCode). Missing languages fall back to `name`.
   // Shape: { en: "Wash at 30°C", da: "Vask ved 30°", de: "30°C Wäsche", ... }
-  translations Json    @default("{}")
+  translations Json              @default("{}")
   // The laundering action this symbol concerns ("Iron low" / "Do not iron"
   // → IRONING). Drives action-based care-instruction suppression. Nullable:
   // a symbol that maps to no laundering action suppresses nothing.
-  action      LaunderingAction?
+  action       LaunderingAction?
   // True for a prohibition symbol ("Do not …"). A restrictive symbol removes
   // every active CareLabel tagged with the same `action` on care-label-02 —
   // the "prohibition symbols always override extra care instructions" rule.
-  restrictive Boolean  @default(false)
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  restrictive  Boolean           @default(false)
+  active       Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
 
   @@index([active])
   @@index([mondayValue])
@@ -805,17 +973,17 @@ model Certificate {
 //                    these symbols is present. Hide (manual or action) wins.
 // =====================================================
 model CareLabel {
-  id            String   @id @default(cuid())
+  id            String            @id @default(cuid())
   sourceText    String
-  sortOrder     Int      @default(0)
+  sortOrder     Int               @default(0)
   // Laundering action this line's text is about. Auto-removed by a present
   // restrictive symbol of the same action. See LaunderingAction.
   action        LaunderingAction?
-  showIfSymbols Json     @default("[]")
-  hideIfSymbols Json     @default("[]")
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  showIfSymbols Json              @default("[]")
+  hideIfSymbols Json              @default("[]")
+  active        Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
   @@index([active])
   @@map("care_labels")
@@ -837,7 +1005,7 @@ model QrImage {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  styles    Style[]
+  styles Style[]
 
   @@index([active])
   @@map("qr_images")
@@ -906,9 +1074,9 @@ model Translation {
 // =====================================================
 
 model MondayGhostBoard {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   // Monday's numeric board id — what env vars and webhooks reference.
-  mondayBoardId String   @unique
+  mondayBoardId String    @unique
   // Board name as Monday returns it. Re-synced on every sink run.
   name          String
   description   String?
@@ -916,19 +1084,19 @@ model MondayGhostBoard {
   // "Customers"). Editable separate from Monday's name so we can rename
   // for our UI without confusing the source-of-truth field.
   label         String?
-  itemCount     Int      @default(0)
+  itemCount     Int       @default(0)
   lastSyncedAt  DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  columns       MondayGhostColumn[]
-  items         MondayGhostItem[]
+  columns MondayGhostColumn[]
+  items   MondayGhostItem[]
 
   @@map("monday_ghost_boards")
 }
 
 model MondayGhostColumn {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   boardId        String
   // Column id as Monday emits it (e.g. "dropdown_mktbzd1f", "name").
   mondayColumnId String
@@ -939,13 +1107,13 @@ model MondayGhostColumn {
   description    String?
   // Parsed `settings_str` JSON — includes the labels[] array for
   // dropdowns/statuses, board_ids for board_relation, etc.
-  settings       Json     @default("null")
+  settings       Json      @default("null")
   lastSyncedAt   DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  board          MondayGhostBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  options        MondayGhostDropdownOption[]
+  board   MondayGhostBoard            @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  options MondayGhostDropdownOption[]
 
   @@unique([boardId, mondayColumnId])
   @@index([boardId])
@@ -954,23 +1122,23 @@ model MondayGhostColumn {
 }
 
 model MondayGhostItem {
-  id            String   @id @default(cuid())
-  boardId       String
+  id           String   @id @default(cuid())
+  boardId      String
   // Monday's item id — same value Style.mondayItemId, Customer.mondayItemId
   // etc. reference. Unique within a board.
-  mondayItemId  String
-  name          String
-  groupId       String?
-  groupTitle    String?
+  mondayItemId String
+  name         String
+  groupId      String?
+  groupTitle   String?
   // Full `column_values` array as Monday returns it — each entry is
   // { id, type, text, value (parsed JSON or null) }. We store this raw
   // so downstream transformers can read whatever shape they need.
-  columnValues  Json     @default("[]")
-  lastSyncedAt  DateTime
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  columnValues Json     @default("[]")
+  lastSyncedAt DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  board         MondayGhostBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  board MondayGhostBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
 
   @@unique([boardId, mondayItemId])
   @@index([boardId])
@@ -996,7 +1164,7 @@ model MondayGhostDropdownOption {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  boardColumn   MondayGhostColumn @relation(fields: [boardColumnId], references: [id], onDelete: Cascade)
+  boardColumn MondayGhostColumn @relation(fields: [boardColumnId], references: [id], onDelete: Cascade)
 
   @@unique([boardColumnId, optionId])
   @@index([boardColumnId])

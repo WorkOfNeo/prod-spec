@@ -21,6 +21,7 @@ import { EanPanel } from "./ean-panel";
 import type { EanView } from "@/lib/po/ean-view";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { requiredFieldsForVariants, getVariant } from "@/lib/pdf/template-registry";
+import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { parseFieldOverrides, PINNABLE_FIELD_LABELS, type PinnableField } from "@/lib/pdf/pins-meta";
 import { findFieldRule } from "@/lib/pdf/spec-fields";
@@ -109,6 +110,9 @@ export default async function StyleDetail({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ tab?: string }>;
 }) {
+  // Output Builder layouts resolve as variants in the readiness walks below.
+  await ensureLayoutVariantsLoaded();
+
   const { id } = await params;
   const tabParam = (await searchParams).tab;
   const tab: TabKey = tabParam === "prod-spec" ? "prod-spec" : "details";

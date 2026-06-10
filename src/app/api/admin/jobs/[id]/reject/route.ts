@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
 import { changeItemValue } from "@/lib/monday/client";
+import { createOrReopenRejectionTicket } from "@/lib/tickets/rejection-tickets";
 
 export const runtime = "nodejs";
 
@@ -27,12 +28,20 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   const job = await db.job.findUnique({
     where: { id },
-    include: { style: true },
+    include: {
+      style: { include: { customer: true, businessAreaRef: true } },
+      assets: true,
+    },
   });
   if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
   if (job.status !== "AWAITING_REVIEW") {
     return NextResponse.json({ error: `Cannot reject job in status ${job.status}` }, { status: 400 });
   }
+
+  // Snapshot which assets the cascade below is about to reject — those get
+  // rejection tickets too, so a blanket "Reject all" reaches the admin's
+  // work-log exactly like per-output rejections.
+  const cascading = job.assets.filter((a) => a.reviewStatus === "PENDING_REVIEW");
 
   await db.$transaction([
     db.job.update({
@@ -66,6 +75,27 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       },
     }),
   ]);
+
+  // One rejection ticket per cascaded output (create-or-reopen keeps a
+  // single thread per style × variantKey). Sequential on purpose — the
+  // reopen lookup must see the previous iteration's writes.
+  for (const asset of cascading) {
+    try {
+      await createOrReopenRejectionTicket({
+        asset: { ...asset, job: { styleId: job.styleId, style: job.style } },
+        comment: parsed.data.reason,
+        reportedById: session.user.id,
+      });
+    } catch (err) {
+      await db.log.create({
+        data: {
+          jobId: job.id,
+          level: "WARN",
+          message: `rejection ticket creation failed for ${asset.variantKey ?? asset.docType}: ${(err as Error).message}`,
+        },
+      });
+    }
+  }
 
   // Best-effort write-back to Monday. If the column id isn't configured
   // or the call fails we still return success — rejection is a local

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
 import { parseProdSpecColumnMapping, parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { getVariant } from "@/lib/pdf/template-registry";
@@ -90,6 +91,11 @@ export function outputReadinessForStyle(style: ReadinessStyle): OutputReadiness[
 // distinct variantKey among the style's JobAssets that isn't on a FAILED job,
 // so we don't redo work that's already awaiting review or approved.
 export async function pendingOutputKeysForStyle(styleId: string): Promise<string[]> {
+  // ProdSpec.outputs may reference Output Builder layouts (`layout:<id>`
+  // keys) — make sure they're in the registry before the sync readiness
+  // walk below resolves variants.
+  await ensureLayoutVariantsLoaded();
+
   const style = await db.style.findUnique({
     where: { id: styleId },
     select: {

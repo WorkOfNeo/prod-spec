@@ -132,8 +132,33 @@ export const TEMPLATE_VARIANTS: TemplateVariant[] = [
   ...PRINT_SPEC_VARIANTS,
 ];
 
+// =====================================================
+// Dynamic variants — operator-built Output Builder layouts, registered
+// at runtime under `layout:<id>` keys. This module stays client-safe
+// (no db import): the map is populated by the SERVER-ONLY loader in
+// src/lib/output-layouts/variants.ts (ensureLayoutVariantsLoaded), which
+// every async entry point that can meet a layout key awaits first.
+// Sync lookups below those entry points then resolve from the map.
+// =====================================================
+
+const DYNAMIC_VARIANTS = new Map<string, TemplateVariant>();
+
+export function setDynamicVariants(variants: TemplateVariant[]): void {
+  DYNAMIC_VARIANTS.clear();
+  for (const v of variants) DYNAMIC_VARIANTS.set(v.key, v);
+}
+
+export function dynamicVariants(): TemplateVariant[] {
+  return [...DYNAMIC_VARIANTS.values()];
+}
+
+// Full catalogue: code-registered variants + loaded dynamic layouts.
+export function allVariants(): TemplateVariant[] {
+  return [...TEMPLATE_VARIANTS, ...DYNAMIC_VARIANTS.values()];
+}
+
 export function getVariant(key: string): TemplateVariant | null {
-  return TEMPLATE_VARIANTS.find((v) => v.key === key) ?? null;
+  return TEMPLATE_VARIANTS.find((v) => v.key === key) ?? DYNAMIC_VARIANTS.get(key) ?? null;
 }
 
 // Union of the required fields across a set of variant keys — the basis for

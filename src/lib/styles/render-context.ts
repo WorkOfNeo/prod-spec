@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import {
   MANUAL_COLUMN_IDS,
   parseCustomerConfig,
@@ -141,6 +142,9 @@ export type StyleRenderContext = {
 };
 
 export async function loadStyleRenderContext(styleId: string): Promise<StyleRenderContext | null> {
+  // Resolve Output Builder layout keys in the readiness walk below.
+  await ensureLayoutVariantsLoaded();
+
   const style = await db.style.findUnique({
     where: { id: styleId },
     include: {

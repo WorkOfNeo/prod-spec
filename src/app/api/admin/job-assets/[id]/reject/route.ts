@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
+import { createOrReopenRejectionTicket } from "@/lib/tickets/rejection-tickets";
 
 export const runtime = "nodejs";
 
@@ -30,7 +31,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   const asset = await db.jobAsset.findUnique({
     where: { id },
-    include: { job: true },
+    include: {
+      job: {
+        include: {
+          style: { include: { customer: true, businessAreaRef: true } },
+        },
+      },
+    },
   });
   if (!asset) return NextResponse.json({ error: "Asset not found" }, { status: 404 });
 
@@ -51,27 +58,45 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     },
   });
 
-  // Roll the job up if every asset has been decided. Same logic as the
-  // approve endpoint — inlined here to keep both routes self-contained.
+  // The comment lands in the rejection log (one ticket per style ×
+  // variantKey thread — a re-rejection after a fix reopens the existing
+  // ticket). This is what the admin works from at /settings/rejection-log.
+  const ticket = await createOrReopenRejectionTicket({
+    asset,
+    comment: parsed.data.reason,
+    reportedById: session.user.id,
+  });
+  await db.log.create({
+    data: {
+      jobId: asset.jobId,
+      level: "INFO",
+      message: `rejection ticket ${ticket.reopened ? "reopened" : "created"} (${ticket.ticketId}) for ${asset.variantKey ?? asset.docType}`,
+    },
+  });
+
+  // Roll the job up if every asset has been decided. The all-approved
+  // branch can't happen from here (this asset just got rejected), so the
+  // roll-up is always to REJECTED.
   const assets = await db.jobAsset.findMany({
     where: { jobId: asset.jobId },
     select: { reviewStatus: true },
   });
   const stillPending = assets.some((a) => a.reviewStatus === "PENDING_REVIEW");
+  let settled: "REJECTED" | undefined;
   if (!stillPending && asset.job.status !== "APPROVED" && asset.job.status !== "REJECTED") {
-    const allApproved = assets.every((a) => a.reviewStatus === "APPROVED");
+    settled = "REJECTED";
     await db.job.update({
       where: { id: asset.jobId },
-      data: {
-        status: allApproved ? "APPROVED" : "REJECTED",
-        finishedAt: new Date(),
-      },
+      data: { status: "REJECTED", finishedAt: new Date() },
     });
     await db.style.update({
       where: { id: asset.job.styleId },
-      data: { status: allApproved ? "APPROVED" : "REJECTED" },
+      data: { status: "REJECTED" },
+    });
+    await db.log.create({
+      data: { jobId: asset.jobId, level: "INFO", message: "asset(s) rejected — job rolled up to REJECTED" },
     });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, ticketId: ticket.ticketId, reopened: ticket.reopened, settled });
 }
