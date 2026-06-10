@@ -29,6 +29,13 @@ export type StyleData = {
 
   sizes: SizeVariant[];
 
+  // Raw PO-resolved EAN rows (style_eans) — one per SIZE × COLOUR combo,
+  // with the colour parsed from the PO variant label. Unlike `sizes`
+  // (deduped by size via the ean map), this keeps every combo — the
+  // Output Builder's repeat-per-EAN iterates these. Absent on styles
+  // without scraped EANs.
+  eanVariants?: Array<{ size: string; ean13: string; colour: string | null }>;
+
   carton: {
     klNumber: string;
     supplierNumber: string;

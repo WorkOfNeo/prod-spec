@@ -66,9 +66,20 @@ export const LayoutPageSchema = z
     title: z.string().max(80).default(""),
     widthMm: z.number().min(5).max(1000),
     heightMm: z.number().min(5).max(1000),
-    // Standard print inset: the 12×12 grid maps to the page MINUS this
-    // margin on every side. 0 = grid spans the full page (default).
-    marginMm: z.number().min(0).max(50).default(0),
+    // Standard print inset: the 12×12 grid maps to the page MINUS these
+    // margins. Editable per side ("chained" editing — one value for all —
+    // is a UI affordance over the same four fields).
+    margins: z
+      .object({
+        topMm: z.number().min(0).max(50).default(0),
+        rightMm: z.number().min(0).max(50).default(0),
+        bottomMm: z.number().min(0).max(50).default(0),
+        leftMm: z.number().min(0).max(50).default(0),
+      })
+      .default({ topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 }),
+    // Legacy single-value margin (pre per-side) — migrated into `margins`
+    // by parseLayoutDef and ignored afterwards.
+    marginMm: z.number().min(0).max(50).optional(),
     blocks: z.array(LayoutBlockSchema).max(16).default([]),
   })
   .superRefine((page, ctx) => {
@@ -115,7 +126,10 @@ export const LayoutSettingsSchema = z.object({
   // "ean": the whole layout repeats once per size/EAN row of the style —
   // within each repetition {{size}}, {{ean13}} and {{barcode:ean13}}
   // resolve to THAT row. "none": render once (default).
-  repeatBy: z.enum(["none", "ean"]).default("none"),
+  // "size": one repetition per size row (deduped — one per size).
+  // "ean":  one repetition per PO EAN row — SIZE × COLOUR combo, with
+  //         {{size}}/{{ean13}}/{{colourName}} bound to that row.
+  repeatBy: z.enum(["none", "size", "ean"]).default("none"),
   // Output file name expression (text tokens allowed), without ".pdf".
   // Empty → the runner's default "<styleNumber>-<variantKey>.pdf".
   fileName: z.string().max(160).default(""),
@@ -253,7 +267,7 @@ export function defaultLayoutDef(): LayoutDef {
         title: "Page 1",
         widthMm: 100,
         heightMm: 75,
-        marginMm: 0,
+        margins: { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 },
         blocks: [],
       },
     ],
@@ -268,6 +282,19 @@ export function parseLayoutDef(raw: unknown): LayoutDef {
   if (!("pages" in (raw as object))) return defaultLayoutDef();
   const def = LayoutDefSchema.parse(raw);
   for (const page of def.pages) {
+    // Legacy single-value margin → per-side (only when sides are unset).
+    if (
+      page.marginMm !== undefined &&
+      page.marginMm > 0 &&
+      page.margins.topMm === 0 &&
+      page.margins.rightMm === 0 &&
+      page.margins.bottomMm === 0 &&
+      page.margins.leftMm === 0
+    ) {
+      const m = page.marginMm;
+      page.margins = { topMm: m, rightMm: m, bottomMm: m, leftMm: m };
+    }
+    page.marginMm = undefined;
     page.blocks = page.blocks.map((b, i) => {
       const withId = {
         ...b,

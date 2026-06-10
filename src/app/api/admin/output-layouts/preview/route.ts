@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth-server";
 import { LayoutDefSchema, layoutSettings } from "@/lib/output-layouts/schema";
-import { renderLayoutHtml } from "@/lib/output-layouts/render";
+import { renderLayoutHtml, repetitionStyles } from "@/lib/output-layouts/render";
 import {
   augmentCareAndMadeIn,
   augmentCompositionTranslations,
@@ -122,16 +122,25 @@ export async function POST(req: NextRequest) {
   // Settings feedback for the editor: what the repeat would iterate over
   // on this style, and the resolved output file name.
   const settings = layoutSettings(definition);
+  const cleanEan = (e: string | null | undefined) =>
+    e && e !== "0000000000000" ? e : "no EAN"; // all-zero = scraper sentinel
   const repeatValues =
-    settings.repeatBy === "ean"
-      ? styleData.sizes.map((s) => {
-          // The PO scraper writes an all-zero sentinel when no EAN resolved.
-          const ean = s.ean13 && s.ean13 !== "0000000000000" ? s.ean13 : "no EAN";
-          return `${s.label || "?"}=${ean}`;
-        })
-      : [];
+    settings.repeatBy === "size"
+      ? styleData.sizes.map((s) => `${s.label || "?"}=${cleanEan(s.ean13)}`)
+      : settings.repeatBy === "ean"
+        ? (styleData.eanVariants?.length
+            ? styleData.eanVariants.map(
+                (v) => `${v.size}${v.colour ? ` ${v.colour}` : ""}=${cleanEan(v.ean13)}`,
+              )
+            : styleData.sizes.map((s) => `${s.label || "?"}=${cleanEan(s.ean13)}`))
+        : [];
+  // Resolve the example file name against the FIRST repetition so
+  // per-repetition variables ({{size}}, {{colourName}}, {{ean13}}) show
+  // real values when a repeat mode is on.
+  const fileNameStyle =
+    settings.repeatBy !== "none" ? (repetitionStyles(styleData, settings.repeatBy)[0] ?? styleData) : styleData;
   const resolvedFileName = settings.fileName
-    ? resolveLayoutFileName(settings.fileName, styleData)
+    ? resolveLayoutFileName(settings.fileName, fileNameStyle)
     : null;
 
   return NextResponse.json({
