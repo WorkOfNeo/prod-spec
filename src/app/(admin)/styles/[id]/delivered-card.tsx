@@ -30,11 +30,9 @@ const BORDER_BY_STATUS: Record<Asset["reviewStatus"], string> = {
   REJECTED: "border-red-200",
 };
 
-// One delivered Prod Spec, rendered as a full-width accordion row. Collapsed
-// it shows just name + status so a style with many deliveries stays
-// scannable; folded out it reveals the preview and the review actions. The
-// preview iframe is mounted only on expand — with several assets per job,
-// eagerly loading every PDF preview was the page's heaviest cost.
+// One delivered Prod Spec, rendered as a grid card: the artifact preview up
+// top, then name + status, then the review actions as compact icon buttons
+// (open / approve / reject). One asset per card, laid out in a column grid.
 export function DeliveredCard({
   jobId,
   asset,
@@ -46,7 +44,6 @@ export function DeliveredCard({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showReject, setShowReject] = useState(false);
-  const [open, setOpen] = useState(false);
 
   async function approve() {
     setBusy(true);
@@ -75,86 +72,76 @@ export function DeliveredCard({
 
   return (
     <>
-      <div className={`overflow-hidden rounded-lg border bg-white ${BORDER_BY_STATUS[asset.reviewStatus]}`}>
-        {/* Header — always visible, click to fold the row open/closed. */}
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-zinc-50"
-        >
-          <ChevronIcon open={open} />
+      <div className={`flex flex-col rounded-lg border bg-white p-3 ${BORDER_BY_STATUS[asset.reviewStatus]}`}>
+        {/* Artifact preview — one PDF per card. */}
+        <div className="relative h-56 overflow-hidden rounded-md bg-zinc-50">
+          <iframe
+            src={previewUrl}
+            title={asset.displayName}
+            className="absolute inset-0 h-full w-full rounded-md bg-white shadow-sm"
+          />
+        </div>
+
+        <div className="mt-3 flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold">{asset.displayName}</div>
             <div className="truncate font-mono text-[10px] text-zinc-500">{asset.fileName}</div>
           </div>
-          {(asset.reviewedAt || asset.reviewerEmail) && (
-            <span className="hidden shrink-0 text-[10px] text-zinc-400 sm:inline">
-              {asset.reviewerEmail && <>by {asset.reviewerEmail}</>}
-            </span>
-          )}
           <span
             className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_PILL[asset.reviewStatus]}`}
           >
             {asset.reviewStatus.replace("_", " ").toLowerCase()}
           </span>
-        </button>
+        </div>
 
-        {open && (
-          <div className="border-t border-zinc-100 px-3 py-3">
-            {/* Preview. Mounted only now that the row is open, so a job with
-                many assets doesn't load every PDF up front. */}
-            <div className="relative h-72 overflow-hidden rounded-md bg-zinc-50">
-              <iframe
-                src={previewUrl}
-                title={asset.displayName}
-                className="absolute inset-0 h-full w-full rounded-md bg-white shadow-sm"
-              />
-            </div>
-
-            {asset.reviewStatus === "REJECTED" && asset.rejectReason && (
-              <div className="mt-2 rounded-md bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
-                <span className="font-semibold">Reason:</span> {asset.rejectReason}
-              </div>
-            )}
-
-            {(asset.reviewedAt || asset.reviewerEmail) && (
-              <div className="mt-2 text-[10px] text-zinc-500">
-                {asset.reviewerEmail && <>by {asset.reviewerEmail} · </>}
-                {asset.reviewedAt && new Date(asset.reviewedAt).toLocaleString("en-GB")}
-              </div>
-            )}
-
-            {err && <p className="mt-2 text-[11px] text-red-600">{err}</p>}
-
-            <div className="mt-3 flex gap-2">
-              <a
-                href={previewUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-              >
-                Open
-              </a>
-              <button
-                type="button"
-                onClick={approve}
-                disabled={busy || asset.reviewStatus === "APPROVED"}
-                className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-              >
-                {asset.reviewStatus === "APPROVED" ? "Approved" : "Approve"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowReject(true)}
-                disabled={busy}
-                className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
-              >
-                Reject
-              </button>
-            </div>
+        {asset.reviewStatus === "REJECTED" && asset.rejectReason && (
+          <div className="mt-2 rounded-md bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+            <span className="font-semibold">Reason:</span> {asset.rejectReason}
           </div>
         )}
+
+        {(asset.reviewedAt || asset.reviewerEmail) && (
+          <div className="mt-2 text-[10px] text-zinc-500">
+            {asset.reviewerEmail && <>by {asset.reviewerEmail} · </>}
+            {asset.reviewedAt && new Date(asset.reviewedAt).toLocaleString("en-GB")}
+          </div>
+        )}
+
+        {err && <p className="mt-2 text-[11px] text-red-600">{err}</p>}
+
+        {/* Review actions — icon buttons (open / approve / reject). */}
+        <div className="mt-3 flex gap-2">
+          <a
+            href={previewUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open in new tab"
+            aria-label="Open in new tab"
+            className="inline-flex items-center justify-center rounded-md border border-zinc-300 bg-white p-1.5 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+          >
+            <OpenIcon />
+          </a>
+          <button
+            type="button"
+            onClick={approve}
+            disabled={busy || asset.reviewStatus === "APPROVED"}
+            title={asset.reviewStatus === "APPROVED" ? "Approved" : "Approve"}
+            aria-label={asset.reviewStatus === "APPROVED" ? "Approved" : "Approve"}
+            className="inline-flex items-center justify-center rounded-md bg-emerald-600 p-1.5 text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            <CheckIcon />
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowReject(true)}
+            disabled={busy}
+            title="Reject"
+            aria-label="Reject"
+            className="inline-flex items-center justify-center rounded-md bg-red-600 p-1.5 text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            <XIcon />
+          </button>
+        </div>
       </div>
 
       {showReject && (
@@ -171,20 +158,44 @@ export function DeliveredCard({
   );
 }
 
-function ChevronIcon({ open }: { open: boolean }) {
+// Action icons — lucide-style line icons, sized to match the icon buttons.
+function iconProps(extra = "") {
+  return {
+    xmlns: "http://www.w3.org/2000/svg",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    className: `h-4 w-4 ${extra}`.trim(),
+    "aria-hidden": true,
+  };
+}
+
+function OpenIcon() {
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={`h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform ${open ? "rotate-90" : ""}`}
-      aria-hidden="true"
-    >
-      <polyline points="9 18 15 12 9 6" />
+    <svg {...iconProps()}>
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg {...iconProps()}>
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg {...iconProps()}>
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
     </svg>
   );
 }

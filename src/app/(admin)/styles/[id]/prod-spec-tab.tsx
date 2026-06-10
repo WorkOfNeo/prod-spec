@@ -139,7 +139,7 @@ export function ProdSpecTab({
             Nothing generated yet for this style.
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {latestJob.assets.map((asset) => (
               <DeliveredCard
                 key={asset.id}
@@ -196,7 +196,7 @@ export function ProdSpecTab({
                         No assets generated.
                       </div>
                     ) : (
-                      <div className="flex flex-col gap-2">
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
                         {job.assets.map((asset) => (
                           <DeliveredCard
                             key={asset.id}
