@@ -89,6 +89,8 @@ export function LayoutEditor({
   const [styles, setStyles] = useState<TestStyle[]>([]);
   const [styleIdx, setStyleIdx] = useState(0);
   const [stylesLoading, setStylesLoading] = useState(false);
+  const [styleQuery, setStyleQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [previewSample, setPreviewSample] = useState(false);
@@ -266,7 +268,12 @@ export function LayoutEditor({
         const res = await fetch("/api/admin/output-layouts/test-styles", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ customerId, businessAreaId, definition: def }),
+          body: JSON.stringify({
+            customerId,
+            businessAreaId,
+            definition: def,
+            query: styleQuery.trim() || undefined,
+          }),
         });
         if (cancelled) return;
         if (!res.ok) {
@@ -286,7 +293,7 @@ export function LayoutEditor({
     };
     // def changes only matter via tokenSignature — not every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerId, businessAreaId, tokenSignature]);
+  }, [customerId, businessAreaId, tokenSignature, styleQuery]);
 
   // ---- live preview (true render) ---------------------------------------
 
@@ -514,52 +521,119 @@ export function LayoutEditor({
         </select>
 
         {customerId && businessAreaId ? (
-          stylesLoading ? (
-            <span className="text-xs text-zinc-400">Finding fullest styles…</span>
-          ) : styles.length === 0 ? (
-            <span className="text-xs text-zinc-400">No styles for this pair</span>
-          ) : (
-            <>
-              <div className="flex items-center gap-1 rounded-md border border-zinc-200 px-1 py-0.5">
+          <>
+            <div className="relative">
+              <input
+                type="text"
+                value={styleQuery}
+                onChange={(e) => {
+                  setStyleQuery(e.target.value);
+                  setSearchOpen(true);
+                }}
+                onFocus={() => setSearchOpen(true)}
+                onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)}
+                placeholder="Search style / PO…"
+                className="w-44 rounded-md border border-zinc-200 bg-white py-1 pl-2 pr-6 text-sm text-zinc-700 placeholder:text-zinc-300"
+              />
+              {styleQuery ? (
                 <button
                   type="button"
-                  onClick={() => setStyleIdx((i) => (i + styles.length - 1) % styles.length)}
-                  className="rounded px-1.5 py-0.5 text-xs text-zinc-500 hover:bg-zinc-100"
-                  title="Previous style"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setStyleQuery("");
+                    setSearchOpen(false);
+                  }}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-zinc-300 hover:text-zinc-600"
+                  title="Clear search"
                 >
-                  ◀
+                  ✕
                 </button>
-                <span className="max-w-64 truncate px-1 text-sm font-medium text-zinc-800" title={testStyle?.name}>
-                  {testStyle?.name}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setStyleIdx((i) => (i + 1) % styles.length)}
-                  className="rounded px-1.5 py-0.5 text-xs text-zinc-500 hover:bg-zinc-100"
-                  title="Next style"
-                >
-                  ▶
-                </button>
-              </div>
-              {testStyle ? (
-                testStyle.total === 0 ? (
-                  <span className="text-xs text-zinc-400">no variables yet</span>
-                ) : testStyle.missing.length === 0 ? (
-                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                    {testStyle.filled}/{testStyle.total} fields
-                  </span>
-                ) : (
-                  <span
-                    className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700"
-                    title={`Missing: ${testStyle.missing.join(", ")}`}
-                  >
-                    {testStyle.filled}/{testStyle.total} fields · missing {testStyle.missing.join(", ")}
-                  </span>
-                )
               ) : null}
-              <span className="text-xs text-zinc-300">{styleIdx + 1} of {styles.length}, fullest first</span>
-            </>
-          )
+              {searchOpen && styleQuery.trim() && styles.length > 0 ? (
+                <div className="absolute left-0 top-full z-30 mt-1 w-80 overflow-hidden rounded-md border border-zinc-200 bg-white shadow-md">
+                  {styles.slice(0, 10).map((s, i) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setStyleIdx(i);
+                        setSearchOpen(false);
+                      }}
+                      className={`flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-zinc-50 ${
+                        i === styleIdx ? "bg-zinc-50" : ""
+                      }`}
+                    >
+                      <span className="truncate font-medium text-zinc-800">{s.name}</span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        {s.poNumber ? <span className="font-mono text-[11px] text-zinc-400">{s.poNumber}</span> : null}
+                        <span
+                          className={`rounded-full px-1.5 py-px text-[11px] font-medium ${
+                            s.total > 0 && s.missing.length === 0
+                              ? "bg-emerald-50 text-emerald-700"
+                              : "bg-amber-50 text-amber-700"
+                          }`}
+                        >
+                          {s.filled}/{s.total}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            {stylesLoading ? (
+              <span className="text-xs text-zinc-400">{styleQuery.trim() ? "Searching…" : "Finding fullest styles…"}</span>
+            ) : styles.length === 0 ? (
+              <span className="text-xs text-zinc-400">
+                {styleQuery.trim() ? `No styles match “${styleQuery.trim()}”` : "No styles for this pair"}
+              </span>
+            ) : (
+              <>
+                <div className="flex items-center gap-1 rounded-md border border-zinc-200 px-1 py-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setStyleIdx((i) => (i + styles.length - 1) % styles.length)}
+                    className="rounded px-1.5 py-0.5 text-xs text-zinc-500 hover:bg-zinc-100"
+                    title="Previous style"
+                  >
+                    ◀
+                  </button>
+                  <span className="max-w-64 truncate px-1 text-sm font-medium text-zinc-800" title={testStyle?.name}>
+                    {testStyle?.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setStyleIdx((i) => (i + 1) % styles.length)}
+                    className="rounded px-1.5 py-0.5 text-xs text-zinc-500 hover:bg-zinc-100"
+                    title="Next style"
+                  >
+                    ▶
+                  </button>
+                </div>
+                {testStyle ? (
+                  testStyle.total === 0 ? (
+                    <span className="text-xs text-zinc-400">no variables yet</span>
+                  ) : testStyle.missing.length === 0 ? (
+                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                      {testStyle.filled}/{testStyle.total} fields
+                    </span>
+                  ) : (
+                    <span
+                      className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700"
+                      title={`Missing: ${testStyle.missing.join(", ")}`}
+                    >
+                      {testStyle.filled}/{testStyle.total} fields · missing {testStyle.missing.join(", ")}
+                    </span>
+                  )
+                ) : null}
+                <span className="text-xs text-zinc-300">
+                  {styleIdx + 1} of {styles.length}
+                  {styleQuery.trim() ? ` match${styles.length === 1 ? "" : "es"}` : ""}, fullest first
+                </span>
+              </>
+            )}
+          </>
         ) : (
           <span className="text-xs text-zinc-400">Pick a customer and business area to preview with real styles</span>
         )}

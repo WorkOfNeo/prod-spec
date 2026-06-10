@@ -30,6 +30,11 @@ const BODY_SCHEMA = z.object({
   customerId: z.string().min(1),
   businessAreaId: z.string().min(1),
   definition: LayoutDefSchema,
+  // Optional search across the pair's styles by name (IL-code) or PO
+  // number. Without it, the most recent SCAN_LIMIT styles are ranked;
+  // with it, the MATCHES are ranked — so a search can reach styles older
+  // than the recency window.
+  query: z.string().trim().max(80).optional(),
 });
 
 const SCAN_LIMIT = 80; // most recent styles considered
@@ -49,7 +54,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid body", details: parsed.error.flatten() }, { status: 400 });
   }
-  const { customerId, businessAreaId, definition } = parsed.data;
+  const { customerId, businessAreaId, definition, query } = parsed.data;
 
   const [styles, prodSpec] = await Promise.all([
     db.style.findMany({
@@ -58,6 +63,14 @@ export async function POST(req: NextRequest) {
         businessAreaId,
         deletedAt: null,
         archivedAt: null,
+        ...(query
+          ? {
+              OR: [
+                { name: { contains: query, mode: "insensitive" } },
+                { poNumber: { contains: query, mode: "insensitive" } },
+              ],
+            }
+          : {}),
       },
       orderBy: { updatedAt: "desc" },
       take: SCAN_LIMIT,
