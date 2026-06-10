@@ -106,6 +106,7 @@ main()
   .then(() => batch3())
   .then(() => batch4())
   .then(() => batch5())
+  .then(() => batch6())
   .catch((err) => {
     console.error(err);
     process.exit(1);
@@ -325,4 +326,35 @@ async function batch5() {
 
   await closeBrowser();
   console.log(process.exitCode ? "BATCH 5 FAILED" : "BATCH 5 PASSED");
+}
+
+// ---------------------------------------------------------------------
+// Batch 6 coverage: page margin insets the grid; logo token renders an
+// honest gap when the asset is missing; settings survive schema parse.
+// ---------------------------------------------------------------------
+async function batch6() {
+  const style = buildSampleStyleData();
+
+  const M = LayoutDefSchema.parse({
+    pages: [{
+      id: "p1", title: "", widthMm: 100, heightMm: 60, marginMm: 5,
+      blocks: [{ id: "b1", rect: { col: 0, row: 0, colSpan: 6, rowSpan: 6 }, lines: ["{{logo:custom}} x"] }],
+    }],
+    settings: { repeatBy: "none", fileName: "" },
+  });
+  const html = await renderLayoutHtml(M, style, { mode: "production" });
+  // margin 5: inner width 90 → col 0 at left 5mm, width 6/12*90 = 45mm
+  assert(html.includes("left: 5.00mm; top: 5.00mm; width: 45.00mm; height: 25.00mm"),
+    "page margin insets the grid (5mm margin → 5/5/45/25)");
+  // no custom logo uploaded in CI context → honest missing chip OR an img when one IS uploaded
+  assert(html.includes("ol-logo") || html.includes("No custom logo uploaded"),
+    "logo token renders an image or the honest gap");
+
+  // settings survive a parse round-trip (regression guard for the
+  // editor-side wipe bug — mutators must spread the whole def).
+  const reparsed = LayoutDefSchema.parse(JSON.parse(JSON.stringify(M)));
+  assert(reparsed.settings?.repeatBy === "none", "settings survive serialise/parse");
+
+  await closeBrowser();
+  console.log(process.exitCode ? "BATCH 6 FAILED" : "BATCH 6 PASSED");
 }

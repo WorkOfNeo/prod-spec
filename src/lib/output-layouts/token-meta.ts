@@ -6,7 +6,7 @@
 // the same token keys — keep the two files in sync.
 // =====================================================
 
-export type LayoutTokenKind = "text" | "barcode" | "symbols";
+export type LayoutTokenKind = "text" | "barcode" | "symbols" | "image";
 
 export type LayoutTokenMeta = {
   key: string;
@@ -97,10 +97,27 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     kind: "symbols",
     example: "{{washSymbols}}",
   },
+  {
+    key: "logo",
+    label: "Logo (contrast = repo file, custom = uploaded)",
+    group: "Barcodes & symbols",
+    kind: "image",
+    arg: "source",
+    example: "{{logo:contrast}}",
+  },
 ];
 
 export const BARCODE_SOURCES = ["cartonEan", "ean13"] as const;
 export type BarcodeSource = (typeof BARCODE_SOURCES)[number];
+
+export const LOGO_SOURCES = ["contrast", "custom"] as const;
+export type LogoSource = (typeof LOGO_SOURCES)[number];
+
+// Allowed :arg values for source-typed tokens, per key.
+const SOURCES_BY_KEY: Record<string, readonly string[]> = {
+  barcode: BARCODE_SOURCES,
+  logo: LOGO_SOURCES,
+};
 
 const META_BY_KEY = new Map(LAYOUT_TOKENS.map((t) => [t.key, t]));
 
@@ -118,8 +135,11 @@ export function validateTokenRef(key: string, arg?: string): string[] {
     errs.push(`{{${key}}} needs a language, e.g. {{${key}:en}}`);
   }
   if (meta.arg === "source") {
-    if (!arg || !(BARCODE_SOURCES as readonly string[]).includes(arg)) {
-      errs.push(`{{${key}${arg ? `:${arg}` : ""}}} needs a source: ${BARCODE_SOURCES.map((s) => `{{barcode:${s}}}`).join(" or ")}`);
+    const allowed = SOURCES_BY_KEY[key] ?? [];
+    if (!arg || !allowed.includes(arg)) {
+      errs.push(
+        `{{${key}${arg ? `:${arg}` : ""}}} needs a source: ${allowed.map((s) => `{{${key}:${s}}}`).join(" or ")}`,
+      );
     }
   }
   if (!meta.arg && arg) {

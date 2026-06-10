@@ -141,9 +141,6 @@ export function LayoutEditor({
   const [jsonText, setJsonText] = useState("");
   const [jsonOpen, setJsonOpen] = useState(false);
   const [jsonError, setJsonError] = useState<string | null>(null);
-  const [aiPrompt, setAiPrompt] = useState("");
-  const [aiBusy, setAiBusy] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
 
   const contentTaRef = useRef<HTMLTextAreaElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -158,6 +155,7 @@ export function LayoutEditor({
   const updatePage = useCallback(
     (patch: Partial<LayoutPage>) => {
       setDef((d) => ({
+        ...d,
         pages: d.pages.map((p, i) => (i === pageIdx ? { ...p, ...patch } : p)),
       }));
     },
@@ -167,6 +165,7 @@ export function LayoutEditor({
   const updateBlock = useCallback(
     (id: string, patch: Partial<LayoutBlock>) => {
       setDef((d) => ({
+        ...d,
         pages: d.pages.map((p, i) =>
           i === pageIdx
             ? { ...p, blocks: p.blocks.map((b) => (blockId(b) === id ? { ...b, ...patch } : b)) }
@@ -195,6 +194,7 @@ export function LayoutEditor({
       lines: ["New text"],
     };
     setDef((d) => ({
+      ...d,
       pages: d.pages.map((p, i) => (i === pageIdx ? { ...p, blocks: [...p.blocks, block] } : p)),
     }));
     setSel(block.id!);
@@ -210,6 +210,7 @@ export function LayoutEditor({
       if (!window.confirm(`Delete this block (${lineCount} line${lineCount === 1 ? "" : "s"})?`)) return;
     }
     setDef((d) => ({
+      ...d,
       pages: d.pages.map((p, i) =>
         i === pageIdx ? { ...p, blocks: p.blocks.filter((b) => blockId(b) !== id) } : p,
       ),
@@ -221,9 +222,17 @@ export function LayoutEditor({
     const last = def.pages[def.pages.length - 1];
     const id = newPageId();
     setDef((d) => ({
+      ...d,
       pages: [
         ...d.pages,
-        { id, title: `Page ${d.pages.length + 1}`, widthMm: last.widthMm, heightMm: last.heightMm, blocks: [] },
+        {
+          id,
+          title: `Page ${d.pages.length + 1}`,
+          widthMm: last.widthMm,
+          heightMm: last.heightMm,
+          marginMm: last.marginMm ?? 0,
+          blocks: [],
+        },
       ],
     }));
     setPageIdx(def.pages.length);
@@ -236,19 +245,35 @@ export function LayoutEditor({
     if (target.blocks.length > 0 && !window.confirm(`Remove page "${target.title}" and its ${target.blocks.length} block(s)?`)) {
       return;
     }
-    setDef((d) => ({ pages: d.pages.filter((_, j) => j !== i) }));
+    setDef((d) => ({ ...d, pages: d.pages.filter((_, j) => j !== i) }));
     setPageIdx((cur) => Math.max(0, cur >= i ? cur - 1 : cur));
     setSel(null);
+  }
+
+  // ---- canvas grid geometry (margin-aware) ------------------------------
+
+  // The 12×12 grid maps to the page minus the page margin on every side.
+  function gridGeom(p: LayoutPage, s: number) {
+    const m = (p.marginMm ?? 0) * s;
+    return {
+      left: m,
+      top: m,
+      width: p.widthMm * s - 2 * m,
+      height: p.heightMm * s - 2 * m,
+    };
   }
 
   // ---- draw-to-place (rect blocks) -------------------------------------
 
   function cellFromPointer(e: { clientX: number; clientY: number }): { col: number; row: number } | null {
     const el = canvasRef.current;
-    if (!el) return null;
+    if (!el || !page) return null;
     const r = el.getBoundingClientRect();
-    const col = Math.min(LAYOUT_GRID_COLS - 1, Math.max(0, Math.floor(((e.clientX - r.left) / r.width) * LAYOUT_GRID_COLS)));
-    const row = Math.min(LAYOUT_GRID_ROWS - 1, Math.max(0, Math.floor(((e.clientY - r.top) / r.height) * LAYOUT_GRID_ROWS)));
+    const g = gridGeom(page, scale);
+    const x = e.clientX - r.left - g.left;
+    const y = e.clientY - r.top - g.top;
+    const col = Math.min(LAYOUT_GRID_COLS - 1, Math.max(0, Math.floor((x / g.width) * LAYOUT_GRID_COLS)));
+    const row = Math.min(LAYOUT_GRID_ROWS - 1, Math.max(0, Math.floor((y / g.height) * LAYOUT_GRID_ROWS)));
     return { col, row };
   }
 
@@ -559,29 +584,6 @@ export function LayoutEditor({
     }
   }
 
-  async function applyAi() {
-    if (!aiPrompt.trim()) return;
-    setAiBusy(true);
-    setAiError(null);
-    try {
-      const res = await fetch("/api/admin/output-layouts/ai-edit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ definition: def, prompt: aiPrompt.trim() }),
-      });
-      const body = (await res.json().catch(() => ({}))) as { definition?: LayoutDef; error?: string };
-      if (!res.ok || !body.definition) {
-        setAiError(body.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      setDef(body.definition);
-      setSel(null);
-      setAiPrompt("");
-    } finally {
-      setAiBusy(false);
-    }
-  }
-
   // Wrap the textarea selection with inline markers (**bold** / _italic_).
   function wrapSelection(marker: string) {
     if (!selBlock) return;
@@ -630,11 +632,8 @@ export function LayoutEditor({
 
   // ---- canvas geometry ---------------------------------------------------
 
-  const scale = useMemo(() => {
-    if (!page) return 3;
-    const s = Math.min(560 / page.widthMm, 380 / page.heightMm);
-    return Math.min(Math.max(s, 1), 6);
-  }, [page]);
+  // Cheap derived math — no memo (keeps the React Compiler happy).
+  const scale = page ? Math.min(Math.max(Math.min(560 / page.widthMm, 380 / page.heightMm), 1), 6) : 3;
 
   const orientation = page && page.heightMm > page.widthMm ? "portrait" : "landscape";
 
@@ -991,6 +990,22 @@ export function LayoutEditor({
               </div>
             </div>
             <div>
+              <label className="text-xs text-zinc-500">Margin mm</label>
+              <input
+                type="number"
+                min={0}
+                max={50}
+                step={0.5}
+                value={page.marginMm ?? 0}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (Number.isFinite(v) && v >= 0 && v <= 50) updatePage({ marginMm: v });
+                }}
+                className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm tabular-nums"
+              />
+              <p className="mt-0.5 text-[10px] text-zinc-400">The grid (and all blocks) inset from every page edge.</p>
+            </div>
+            <div>
               <label className="text-xs text-zinc-500">Orientation</label>
               <div className="mt-1 flex overflow-hidden rounded-md border border-zinc-200">
                 {(["portrait", "landscape"] as const).map((o) => (
@@ -1093,11 +1108,22 @@ export function LayoutEditor({
                 width: page.widthMm * scale,
                 height: page.heightMm * scale,
                 cursor: draw ? "crosshair" : "default",
-                backgroundImage:
-                  "repeating-linear-gradient(to right, transparent 0, transparent calc(8.3333% - 1px), rgba(24,24,27,0.045) calc(8.3333% - 1px), rgba(24,24,27,0.045) 8.3333%)," +
-                  "repeating-linear-gradient(to bottom, transparent 0, transparent calc(8.3333% - 1px), rgba(24,24,27,0.045) calc(8.3333% - 1px), rgba(24,24,27,0.045) 8.3333%)",
               }}
             >
+              {/* grid overlay — inset by the page margin */}
+              <div
+                className="pointer-events-none absolute"
+                style={{
+                  left: gridGeom(page, scale).left,
+                  top: gridGeom(page, scale).top,
+                  width: gridGeom(page, scale).width,
+                  height: gridGeom(page, scale).height,
+                  outline: (page.marginMm ?? 0) > 0 ? "1px dashed rgba(24,24,27,0.12)" : "none",
+                  backgroundImage:
+                    "repeating-linear-gradient(to right, transparent 0, transparent calc(8.3333% - 1px), rgba(24,24,27,0.045) calc(8.3333% - 1px), rgba(24,24,27,0.045) 8.3333%)," +
+                    "repeating-linear-gradient(to bottom, transparent 0, transparent calc(8.3333% - 1px), rgba(24,24,27,0.045) calc(8.3333% - 1px), rgba(24,24,27,0.045) 8.3333%)",
+                }}
+              />
               {page.blocks.map((block) => (
                 <CanvasBlock
                   key={blockId(block)}
@@ -1113,10 +1139,10 @@ export function LayoutEditor({
                 <div
                   className="pointer-events-none absolute rounded-sm border border-zinc-900/50 bg-zinc-900/5"
                   style={{
-                    left: `${(ghost.col / LAYOUT_GRID_COLS) * 100}%`,
-                    top: `${(ghost.row / LAYOUT_GRID_ROWS) * 100}%`,
-                    width: `${(ghost.colSpan / LAYOUT_GRID_COLS) * 100}%`,
-                    height: `${(ghost.rowSpan / LAYOUT_GRID_ROWS) * 100}%`,
+                    left: gridGeom(page, scale).left + (ghost.col / LAYOUT_GRID_COLS) * gridGeom(page, scale).width,
+                    top: gridGeom(page, scale).top + (ghost.row / LAYOUT_GRID_ROWS) * gridGeom(page, scale).height,
+                    width: (ghost.colSpan / LAYOUT_GRID_COLS) * gridGeom(page, scale).width,
+                    height: (ghost.rowSpan / LAYOUT_GRID_ROWS) * gridGeom(page, scale).height,
                   }}
                 />
               ) : null}
@@ -1406,7 +1432,7 @@ export function LayoutEditor({
               </div>
             </div>
             <div className="mt-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">Barcodes & symbols</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">Graphics</div>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 <TokenChip
                   token="{{barcode:cartonEan}}"
@@ -1429,6 +1455,18 @@ export function LayoutEditor({
                   value={showValues ? (tokenValues["washSymbols"] ?? "") : undefined}
                   onClick={() => insertToken("{{washSymbols}}")}
                 />
+                <TokenChip
+                  token="{{logo:contrast}}"
+                  title="The Contrast logo (public/logos/contrast.svg in the repo) — height scales with the block font size"
+                  disabled={!selBlock}
+                  onClick={() => insertToken("{{logo:contrast}}")}
+                />
+                <TokenChip
+                  token="{{logo:custom}}"
+                  title="The uploaded custom logo (Output builder → Logos) — height scales with the block font size"
+                  disabled={!selBlock}
+                  onClick={() => insertToken("{{logo:custom}}")}
+                />
               </div>
             </div>
             <div className="mt-3">
@@ -1449,33 +1487,11 @@ export function LayoutEditor({
           </div>
 
           <div className="rounded-lg border border-zinc-200 p-4">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Edit as JSON / AI</div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Edit as JSON</div>
             <p className="mt-1 text-[11px] text-zinc-400">
-              The whole layout is one JSON document — edit it directly, or describe a change and let AI apply it.
+              The whole layout is one JSON document — page sizes, margins, blocks, repeat and file-name settings.
             </p>
-
             <div className="mt-3">
-              <textarea
-                value={aiPrompt}
-                onChange={(e) => setAiPrompt(e.target.value)}
-                rows={2}
-                placeholder="e.g. Center the title, make it 14pt, and add {{barcode:ean13}} bottom right"
-                className="w-full rounded-md border border-zinc-200 px-2.5 py-2 text-xs leading-relaxed"
-              />
-              <div className="mt-1.5 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={applyAi}
-                  disabled={aiBusy || !aiPrompt.trim()}
-                  className="rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
-                >
-                  {aiBusy ? "Applying…" : "Apply with AI"}
-                </button>
-                {aiError ? <span className="text-[11px] text-amber-700">{aiError}</span> : null}
-              </div>
-            </div>
-
-            <div className="mt-3 border-t border-zinc-100 pt-3">
               {!jsonOpen ? (
                 <button type="button" onClick={openJsonPanel} className="text-xs font-medium text-zinc-500 hover:text-zinc-800">
                   Edit JSON directly →
@@ -1485,7 +1501,7 @@ export function LayoutEditor({
                   <textarea
                     value={jsonText}
                     onChange={(e) => setJsonText(e.target.value)}
-                    rows={14}
+                    rows={16}
                     spellCheck={false}
                     className="w-full rounded-md border border-zinc-200 px-2.5 py-2 font-mono text-[10px] leading-relaxed"
                   />
@@ -1565,18 +1581,19 @@ function CanvasBlock({
   onRemove: () => void;
 }) {
   const fontPx = Math.max(block.fontPt * PT_TO_MM * scale, 7);
-  void page;
-  void scale;
 
   // The editor is grid-only — legacy corner blocks are converted to
   // rects by parseLayoutDef before they reach this component.
   if (!block.rect) return null;
   const r = block.rect;
+  const mPx = (page.marginMm ?? 0) * scale;
+  const gw = page.widthMm * scale - 2 * mPx;
+  const gh = page.heightMm * scale - 2 * mPx;
   const positionStyle: React.CSSProperties = {
-    left: `${(r.col / LAYOUT_GRID_COLS) * 100}%`,
-    top: `${(r.row / LAYOUT_GRID_ROWS) * 100}%`,
-    width: `${(r.colSpan / LAYOUT_GRID_COLS) * 100}%`,
-    height: `${(r.rowSpan / LAYOUT_GRID_ROWS) * 100}%`,
+    left: mPx + (r.col / LAYOUT_GRID_COLS) * gw,
+    top: mPx + (r.row / LAYOUT_GRID_ROWS) * gh,
+    width: (r.colSpan / LAYOUT_GRID_COLS) * gw,
+    height: (r.rowSpan / LAYOUT_GRID_ROWS) * gh,
     display: "flex",
     flexDirection: "column",
     justifyContent: block.valign === "middle" ? "center" : block.valign === "bottom" ? "flex-end" : "flex-start",
