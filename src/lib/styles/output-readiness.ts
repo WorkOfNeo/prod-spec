@@ -123,7 +123,11 @@ export async function pendingOutputKeysForStyle(styleId: string): Promise<string
     select: { variantKey: true },
   });
   const generated = new Set(
-    existing.map((a) => a.variantKey).filter((k): k is string => Boolean(k)),
+    existing
+      .map((a) => a.variantKey)
+      .filter((k): k is string => Boolean(k))
+      // Multi-document assets are "<variantKey>#<suffix>" — compare bases.
+      .map((k) => k.split("#")[0]),
   );
   return ready.filter((k) => !generated.has(k));
 }

@@ -175,7 +175,10 @@ export async function processJob(jobId: string): Promise<void> {
     ? (job.variantKeys as unknown[]).filter((x): x is string => typeof x === "string")
     : [];
   if (scopedKeys.length > 0) {
-    const want = new Set(scopedKeys);
+    // Tickets reference per-document asset keys ("layout:<id>#<size>");
+    // ProdSpec outputs carry the BASE key — match on the base so a
+    // per-document rejection re-runs its whole variant.
+    const want = new Set(scopedKeys.map((k) => k.split("#")[0]));
     const readyKeys = new Set(
       (prodSpec
         ? outputReadinessForStyle({
@@ -213,6 +216,10 @@ export async function processJob(jobId: string): Promise<void> {
   type Generated = {
     variant: TemplateVariant;
     output: ProdSpecOutput;
+    // Asset variantKey — the variant key, suffixed "#<part>" for multi-
+    // document variants (Output Builder repeat-per-EAN: one file per row).
+    variantKey: string;
+    displayName: string;
     fileName: string;
     pdf: Buffer;
     // Placeholder artifacts (missing artwork tiles / "No carton EAN") found
@@ -241,6 +248,29 @@ export async function processJob(jobId: string): Promise<void> {
       const renderStyle = applyFieldOverrides(styleData, output.fieldOverrides);
       // Static-pdf passthrough variants emit their source artwork bytes
       // verbatim; everything else renders HTML → PDF.
+      if (!variant.staticPdf && variant.renderMany) {
+        // Multi-document variant: one PDF per returned doc, each its own
+        // JobAsset under "<key>#<suffix>".
+        const docs = await variant.renderMany(renderStyle);
+        for (const doc of docs) {
+          const pdf = await renderPdf({ html: doc.html });
+          const defaultName = fileNameFor(variant, styleData.styleNumber).replace(
+            /\.pdf$/,
+            `-${doc.suffix}.pdf`,
+          );
+          generated.push({
+            variant,
+            output,
+            variantKey: docs.length > 1 ? `${variant.key}#${doc.suffix}` : variant.key,
+            displayName: `${variant.name} · ${doc.suffix}`,
+            fileName: doc.fileName ?? defaultName,
+            pdf,
+            placeholderCount: countPlaceholderMarkers(doc.html),
+          });
+        }
+        continue;
+      }
+
       let pdf: Buffer;
       let placeholderCount = 0;
       if (variant.staticPdf) {
@@ -256,6 +286,8 @@ export async function processJob(jobId: string): Promise<void> {
       generated.push({
         variant,
         output,
+        variantKey: variant.key,
+        displayName: `${variant.name} · ${output.widthMm}×${output.heightMm} mm`,
         fileName: variant.fileNameFor?.(renderStyle) ?? fileNameFor(variant, styleData.styleNumber),
         pdf,
         placeholderCount,
@@ -303,8 +335,8 @@ export async function processJob(jobId: string): Promise<void> {
           data: {
             jobId: job.id,
             docType: doc.variant.docType,
-            variantKey: doc.variant.key,
-            displayName: `${doc.variant.name} · ${doc.output.widthMm}×${doc.output.heightMm} mm`,
+            variantKey: doc.variantKey,
+            displayName: doc.displayName,
             fileName: doc.fileName,
             pdf: toPlainBytes(doc.pdf),
             placeholderCount: doc.placeholderCount,

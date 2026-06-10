@@ -1,6 +1,7 @@
 import type { StyleData } from "@/lib/pdf/types";
 import type { ColumnMapping } from "@/lib/customers/config";
 import { tFor } from "@/lib/pdf/templates/base";
+import { loadTranslationDictionary, translateComposition } from "@/lib/translations/lookup";
 import { ruleRequiredColumns } from "@/lib/pdf/spec-fields";
 import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-marking";
 import { tokenMeta, type BarcodeSource } from "./token-meta";
@@ -291,4 +292,45 @@ export function resolveLayoutFileName(expr: string, style: StyleData): string | 
     .replace(/\s+/g, "-")
     .slice(0, 120);
   return slug ? `${slug}.pdf` : null;
+}
+
+// ---------------------------------------------------------------------
+// Composition translations — {{composition:da}} etc. resolve through the
+// translation bank exactly like the coded care labels do: the style's
+// ENGLISH composition is the source, fibre names are matched against the
+// Translation rows (translateComposition preserves percentages and
+// punctuation), and a missing bank entry degrades to the English fibre
+// rather than an empty line. The augmented entries are appended to
+// style.composition so the ordinary sync resolvers (render, unresolved,
+// show-values) just work.
+// ---------------------------------------------------------------------
+
+export function compositionLangsInDef(def: LayoutDef): string[] {
+  const langs = new Set<string>();
+  for (const page of def.pages) {
+    for (const block of page.blocks) {
+      for (const line of block.lines) {
+        for (const ref of tokensInLine(line)) {
+          if (ref.key === "composition" && ref.arg) langs.add(ref.arg.toLowerCase());
+        }
+      }
+    }
+  }
+  return [...langs];
+}
+
+export async function augmentCompositionTranslations(
+  style: StyleData,
+  langs: string[],
+): Promise<StyleData> {
+  const source = tFor(style.composition, "en") || style.composition[0]?.text || "";
+  if (!source) return style;
+  const missing = langs.filter((l) => l !== "en" && !tFor(style.composition, l).trim());
+  if (missing.length === 0) return style;
+  const dict = await loadTranslationDictionary();
+  const added = missing.map((lang) => ({
+    language: lang,
+    text: translateComposition(dict, source, lang).text,
+  }));
+  return { ...style, composition: [...style.composition, ...added] };
 }

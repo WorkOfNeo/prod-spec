@@ -25,13 +25,15 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const variantKey = req.nextUrl.searchParams.get("variantKey");
   if (!variantKey) return NextResponse.json({ error: "variantKey required" }, { status: 400 });
 
-  const variant = getVariant(variantKey);
+  // Multi-document assets link with "<key>#<suffix>" — resolve the base.
+  const baseKey = variantKey.split("#")[0];
+  const variant = getVariant(baseKey);
   if (!variant) return NextResponse.json({ error: "Unknown variant" }, { status: 404 });
 
   const context = await loadStyleRenderContext(id);
   if (!context) return NextResponse.json({ error: "Style not found" }, { status: 404 });
 
-  const output = context.outputs.find((o) => o.variantKey === variantKey);
+  const output = context.outputs.find((o) => o.variantKey === baseKey);
   if (!output) {
     return NextResponse.json(
       { error: "Output not configured on this style's ProdSpec" },

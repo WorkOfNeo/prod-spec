@@ -4,6 +4,8 @@ import { requireRole } from "@/lib/auth-server";
 import { LayoutDefSchema, layoutSettings } from "@/lib/output-layouts/schema";
 import { renderLayoutHtml } from "@/lib/output-layouts/render";
 import {
+  augmentCompositionTranslations,
+  compositionLangsInDef,
   resolveBarcodeValue,
   resolveLayoutFileName,
   resolveTextToken,
@@ -62,6 +64,14 @@ export async function POST(req: NextRequest) {
       styleData = ctx.styleData;
       styleResolved = true;
     }
+  }
+
+  // {{composition:<lang>}} resolves through the translation bank — apply
+  // the same augmentation the renderer does, so the unresolved badge and
+  // show-values agree with what actually prints.
+  const compLangs = [...new Set([...compositionLangsInDef(definition), valuesLang.toLowerCase()])];
+  if (compLangs.length > 0) {
+    styleData = await augmentCompositionTranslations(styleData, compLangs);
   }
 
   if (format === "pdf") {

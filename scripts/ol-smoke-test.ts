@@ -104,6 +104,7 @@ async function main() {
 main()
   .then(() => batch2())
   .then(() => batch3())
+  .then(() => batch4())
   .catch((err) => {
     console.error(err);
     process.exit(1);
@@ -237,4 +238,56 @@ async function batch3() {
     || (fn ?? "").endsWith("-price.pdf"), `fileName resolves (${fn})`);
 
   console.log(process.exitCode ? "BATCH 3 FAILED" : "BATCH 3 PASSED");
+}
+
+// ---------------------------------------------------------------------
+// Batch 4 coverage: composition via translation bank, inline markdown,
+// per-repetition documents (renderMany semantics via layoutRowToVariant).
+// ---------------------------------------------------------------------
+async function batch4() {
+  const { layoutRowToVariant } = await import("@/lib/output-layouts/variants");
+  const style = buildSampleStyleData();
+
+  // Composition lines translate through the Translation bank.
+  const COMP = LayoutDefSchema.parse({
+    pages: [{
+      id: "p1", title: "", widthMm: 60, heightMm: 90,
+      blocks: [{ id: "b1", rect: { col: 0, row: 0, colSpan: 12, rowSpan: 12 },
+        lines: ["EN: {{composition:en}}", "DA: {{composition:da}}", "**{{customerName}}** _premium_"] }],
+    }],
+  });
+  const html = await renderLayoutHtml(COMP, style, { mode: "production" });
+  const en = style.composition.find((c) => c.language === "en")?.text ?? "";
+  assert(html.includes(`EN: ${en}`), "EN composition renders from style");
+  const daLine = /DA: ([^<]+)/.exec(html)?.[1]?.trim() ?? "";
+  assert(daLine.length > 0, `DA composition resolves via translation bank (got "${daLine}")`);
+  console.log(`   DA composition: "${daLine}" (EN source: "${en}")`);
+  assert(html.includes(`<b>${style.customerName}</b>`), "**bold** renders as <b>");
+  assert(html.includes("<i>premium</i>"), "_italic_ renders as <i>");
+
+  // renderMany: one doc per size row, fileName per repetition.
+  const variant = layoutRowToVariant({
+    id: "smoke-many",
+    name: "Smoke Many",
+    docType: "STICKER",
+    version: 1,
+    definition: {
+      pages: [{ id: "p1", title: "", widthMm: 60, heightMm: 30,
+        blocks: [{ id: "b1", rect: { col: 0, row: 0, colSpan: 12, rowSpan: 12 }, lines: ["{{size}} {{ean13}}"] }] }],
+      settings: { repeatBy: "ean", fileName: "{{styleNumber}}-{{size}}" },
+    },
+  });
+  assert(!!variant?.renderMany, "repeat layout exposes renderMany");
+  const multi = { ...style, sizes: [
+    { label: "S/M", ean13: "5701234567104" },
+    { label: "L/XL", ean13: "5701234567111" },
+  ] };
+  const docs = await variant!.renderMany!(multi);
+  assert(docs.length === 2, `renderMany returns one doc per size (got ${docs.length})`);
+  assert(docs[0].fileName === `${style.styleNumber}-SM.pdf`, `per-rep fileName binds size (${docs[0].fileName})`);
+  assert(docs[1].html.includes("5701234567111") && !docs[1].html.includes("5701234567104"),
+    "each doc carries only its own EAN");
+
+  await closeBrowser();
+  console.log(process.exitCode ? "BATCH 4 FAILED" : "BATCH 4 PASSED");
 }

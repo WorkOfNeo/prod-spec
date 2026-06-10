@@ -56,6 +56,10 @@ export type TemplateVariant = {
   // fileName expression in their settings). Returns "<name>.pdf" or null
   // to use the runner's default.
   fileNameFor?: (style: StyleData) => string | null;
+  // Optional multi-document rendering (Output Builder repeat-per-EAN):
+  // one PDF per returned doc, persisted as JobAssets with variantKey
+  // "<key>#<suffix>". fileName null → runner default + suffix.
+  renderMany?: (style: StyleData) => Promise<Array<{ suffix: string; fileName: string | null; html: string }>>;
   // Static-pdf passthrough (print specs with renderStrategy 'static-pdf'):
   // the artifact is these bytes VERBATIM — graphic-heavy artwork the app
   // must not redraw. Every artifact-emitting path (job runner, preview

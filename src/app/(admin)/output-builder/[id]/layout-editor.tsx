@@ -547,6 +547,27 @@ export function LayoutEditor({
     }
   }
 
+  // Wrap the textarea selection with inline markers (**bold** / _italic_).
+  function wrapSelection(marker: string) {
+    if (!selBlock) return;
+    const ta = contentTaRef.current;
+    if (!ta) return;
+    const text = selBlock.lines.join("\n");
+    const start = ta.selectionStart ?? 0;
+    const end = ta.selectionEnd ?? 0;
+    const selected = text.slice(start, end) || "text";
+    const next = text.slice(0, start) + marker + selected + marker + text.slice(end);
+    updateBlock(blockId(selBlock), { lines: next.split("\n").slice(0, 30) });
+    const caret = start + marker.length + selected.length + marker.length;
+    window.setTimeout(() => {
+      const el = contentTaRef.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(caret, caret);
+      }
+    }, 0);
+  }
+
   function insertToken(token: string) {
     if (!selBlock || !page) return;
     const ta = contentTaRef.current;
@@ -999,6 +1020,8 @@ export function LayoutEditor({
                   ) : (
                     "Resolving…"
                   )
+                ) : settings.repeatBy === "ean" ? (
+                  "Variables allowed — {{size}}/{{ean13}} name EACH file (one per repetition)"
                 ) : (
                   "Text variables allowed · empty = default name"
                 )}
@@ -1237,7 +1260,29 @@ export function LayoutEditor({
                 </div>
 
                 <div>
-                  <label className="text-xs text-zinc-500">Content — one line per printed row</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-zinc-500">Content — one line per printed row</label>
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => wrapSelection("**")}
+                        className="rounded border border-zinc-200 px-1.5 py-0.5 text-[11px] font-bold text-zinc-600 hover:bg-zinc-50"
+                        title="Bold — wraps the selection in ** **"
+                      >
+                        B
+                      </button>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => wrapSelection("_")}
+                        className="rounded border border-zinc-200 px-1.5 py-0.5 text-[11px] italic text-zinc-600 hover:bg-zinc-50"
+                        title="Italic — wraps the selection in _ _"
+                      >
+                        I
+                      </button>
+                    </div>
+                  </div>
                   <textarea
                     ref={contentTaRef}
                     value={selBlock.lines.join("\n")}
@@ -1246,6 +1291,9 @@ export function LayoutEditor({
                     spellCheck={false}
                     className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-2 font-mono text-xs leading-relaxed"
                   />
+                  <p className="mt-0.5 text-[10px] text-zinc-400">
+                    **bold** and _italic_ render in the print; the preview below shows the result.
+                  </p>
                 </div>
               </div>
             )}
