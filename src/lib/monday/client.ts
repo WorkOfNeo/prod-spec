@@ -11,6 +11,24 @@ export class MondayError extends Error {
   }
 }
 
+// Monday returns the actionable reason nested in `errors[].message` (e.g.
+// "User unauthorized to perform action"); the top-level payload only says
+// "GraphQL errors". Lift the nested message(s) so callers, logs, and the UI
+// show something diagnosable instead of a generic string.
+function extractGqlMessage(errors: unknown): string | null {
+  if (Array.isArray(errors)) {
+    const msgs = errors
+      .map((e) =>
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message: unknown }).message)
+          : null,
+      )
+      .filter((m): m is string => !!m);
+    if (msgs.length) return Array.from(new Set(msgs)).join("; ");
+  }
+  return null;
+}
+
 type MondayConfig = {
   token: string;
   apiVersion?: string;
@@ -74,7 +92,8 @@ async function gql<T>(query: string, variables?: Record<string, unknown>): Promi
   const body = (await res.json()) as { data?: T; errors?: unknown; error_message?: string };
 
   if (body.errors || body.error_message) {
-    throw new MondayError(body.error_message ?? "GraphQL errors", body.errors ?? body.error_message);
+    const detail = extractGqlMessage(body.errors) ?? body.error_message ?? "GraphQL errors";
+    throw new MondayError(detail, body.errors ?? body.error_message);
   }
   if (!body.data) throw new MondayError("Empty response from Monday");
   return body.data;
