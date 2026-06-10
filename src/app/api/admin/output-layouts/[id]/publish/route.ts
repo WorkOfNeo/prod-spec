@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-server";
-import { LayoutDefSchema, tokensInDef } from "@/lib/output-layouts/schema";
-import { validateTokenRef } from "@/lib/output-layouts/token-meta";
+import { CONTROL_RE, IF_RE, LayoutDefSchema, tokensInDef } from "@/lib/output-layouts/schema";
+import { validateLineConditionals, validateTokenRef } from "@/lib/output-layouts/token-meta";
 import { refreshLayoutVariants } from "@/lib/output-layouts/variants";
 
 export const runtime = "nodejs";
@@ -32,6 +32,15 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
   const problems: string[] = [];
   for (const ref of tokensInDef(def)) {
     problems.push(...validateTokenRef(ref.key, ref.arg));
+  }
+  // Conditional syntax — malformed {{if}}/{{else}}/{{endif}} is a publish
+  // blocker, not just a preview oddity.
+  for (const page of def.pages) {
+    for (const block of page.blocks) {
+      for (const line of block.lines) {
+        problems.push(...validateLineConditionals(line, IF_RE, CONTROL_RE));
+      }
+    }
   }
   const blockCount = def.pages.reduce((n, p) => n + p.blocks.length, 0);
   if (blockCount === 0) problems.push("layout has no blocks — nothing would print");

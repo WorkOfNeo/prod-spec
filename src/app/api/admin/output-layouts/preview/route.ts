@@ -3,7 +3,8 @@ import { z } from "zod";
 import { requireRole } from "@/lib/auth-server";
 import { LayoutDefSchema } from "@/lib/output-layouts/schema";
 import { renderLayoutHtml } from "@/lib/output-layouts/render";
-import { unresolvedTokens } from "@/lib/output-layouts/tokens";
+import { resolveBarcodeValue, resolveTextToken, unresolvedTokens } from "@/lib/output-layouts/tokens";
+import { LAYOUT_TOKENS } from "@/lib/output-layouts/token-meta";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import { buildSampleStyleData } from "@/lib/pdf/sample-data";
 import { renderPdf } from "@/lib/pdf/renderer";
@@ -26,6 +27,10 @@ const BODY_SCHEMA = z.object({
   styleId: z.string().min(1).optional(),
   pageIndex: z.number().int().min(0).optional(),
   format: z.enum(["html", "pdf"]).default("html"),
+  // Builder "show values" toggle: resolve EVERY palette token against the
+  // selected style and return the map (lang-arg tokens use valuesLang).
+  includeTokenValues: z.boolean().default(false),
+  valuesLang: z.string().max(10).default("en"),
 });
 
 export async function POST(req: NextRequest) {
@@ -42,7 +47,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid body", details: parsed.error.flatten() }, { status: 400 });
   }
-  const { definition, styleId, pageIndex, format } = parsed.data;
+  const { definition, styleId, pageIndex, format, includeTokenValues, valuesLang } = parsed.data;
 
   let styleData = buildSampleStyleData();
   let styleResolved = false;
@@ -73,9 +78,28 @@ export async function POST(req: NextRequest) {
     pageIndex: safePageIndex,
   });
 
+  // Palette values for the "show values" toggle — every token resolved
+  // against the previewed style. Barcode/symbol tokens report their
+  // underlying value (EAN digits / symbol codes).
+  let tokenValues: Record<string, string> | undefined;
+  if (includeTokenValues) {
+    tokenValues = {};
+    for (const t of LAYOUT_TOKENS) {
+      if (t.kind === "barcode") {
+        tokenValues["barcode:cartonEan"] = resolveBarcodeValue(styleData, "cartonEan");
+        tokenValues["barcode:ean13"] = resolveBarcodeValue(styleData, "ean13");
+      } else if (t.arg === "lang") {
+        tokenValues[`${t.key}:${valuesLang}`] = resolveTextToken(styleData, t.key, valuesLang);
+      } else {
+        tokenValues[t.key] = resolveTextToken(styleData, t.key);
+      }
+    }
+  }
+
   return NextResponse.json({
     html,
     unresolved: unresolvedTokens(definition, styleData),
     usingSampleData: !styleResolved,
+    ...(tokenValues ? { tokenValues } : {}),
   });
 }

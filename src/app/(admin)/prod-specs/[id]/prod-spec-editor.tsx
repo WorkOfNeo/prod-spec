@@ -18,6 +18,7 @@ import {
   type PanelCareLabel,
   type PanelSymbol,
 } from "./care-standard-panel";
+import { AddOutputPicker, type VariantInfo } from "./add-output-picker";
 
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
 
@@ -25,15 +26,6 @@ type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
 // to coalesce rapid typing in JSON / care-instruction textareas, short
 // enough to feel automatic.
 const AUTOSAVE_DEBOUNCE_MS = 1200;
-
-type VariantInfo = {
-  key: string;
-  docType: string;
-  name: string;
-  description: string;
-  defaultWidthMm: number;
-  defaultHeightMm: number;
-};
 
 type SupplierSummary = { id: string; name: string; country: string | null };
 
@@ -488,28 +480,12 @@ export function ProdSpecEditor(props: Props) {
         )}
 
         {unaddedVariants.length > 0 && (
-          <details className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 p-3">
-            <summary className="cursor-pointer text-sm font-medium text-zinc-700">
-              + Add output ({unaddedVariants.length} available)
-            </summary>
-            <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-              {unaddedVariants.map((v) => (
-                <button
-                  key={v.key}
-                  type="button"
-                  onClick={() => addOutput(v)}
-                  className="rounded-md border border-zinc-200 bg-white p-3 text-left hover:border-zinc-400"
-                >
-                  <div className="text-sm font-medium">{v.name}</div>
-                  <div className="font-mono text-[10px] text-zinc-500">{v.key} · {v.docType}</div>
-                  <div className="mt-1 text-xs text-zinc-500">{v.description}</div>
-                  <div className="mt-1 text-[10px] text-zinc-500">
-                    default {v.defaultWidthMm}×{v.defaultHeightMm} mm
-                  </div>
-                </button>
-              ))}
-            </div>
-          </details>
+          <AddOutputPicker
+            variants={unaddedVariants}
+            prodSpecId={props.prodSpecId}
+            onAdd={addOutput}
+            previewRefreshKey={savedAt ?? undefined}
+          />
         )}
       </Section>
 

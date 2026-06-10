@@ -6,12 +6,12 @@
 // the same token keys — keep the two files in sync.
 // =====================================================
 
-export type LayoutTokenKind = "text" | "barcode";
+export type LayoutTokenKind = "text" | "barcode" | "symbols";
 
 export type LayoutTokenMeta = {
   key: string;
   label: string;
-  group: "Style" | "Order & carton" | "Per language" | "Barcodes";
+  group: "Style" | "Order & carton" | "Per language" | "Barcodes & symbols";
   kind: LayoutTokenKind;
   // "lang" → the token takes a language argument ({{composition:da}});
   // "source" → barcode source argument ({{barcode:cartonEan}}).
@@ -53,14 +53,28 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   { key: "lot", label: "Lot", group: "Order & carton", kind: "text", example: "LOT-22" },
   { key: "klNumber", label: "KL number", group: "Order & carton", kind: "text", example: "KL 1042" },
   { key: "supplierNumber", label: "Supplier number", group: "Order & carton", kind: "text", example: "60112" },
+  {
+    key: "deliveryTerm",
+    label: "Delivery term (FOB/DDP)",
+    group: "Order & carton",
+    kind: "text",
+    example: "DDP",
+  },
 
   // ---- Per language (need :lang) ----
   { key: "composition", label: "Composition", group: "Per language", kind: "text", arg: "lang", example: "{{composition:da}}" },
   { key: "productName", label: "Product name", group: "Per language", kind: "text", arg: "lang", example: "{{productName:de}}" },
   { key: "careInstructions", label: "Care instructions", group: "Per language", kind: "text", arg: "lang", example: "{{careInstructions:en}}" },
 
-  // ---- Barcodes (rendered as bars + number) ----
-  { key: "barcode", label: "Barcode", group: "Barcodes", kind: "barcode", arg: "source", example: "{{barcode:cartonEan}}" },
+  // ---- Barcodes & symbols (rendered as graphics, scaled by block font size) ----
+  { key: "barcode", label: "Barcode", group: "Barcodes & symbols", kind: "barcode", arg: "source", example: "{{barcode:cartonEan}}" },
+  {
+    key: "washSymbols",
+    label: "Wash care symbols",
+    group: "Barcodes & symbols",
+    kind: "symbols",
+    example: "{{washSymbols}}",
+  },
 ];
 
 export const BARCODE_SOURCES = ["cartonEan", "ean13"] as const;
@@ -88,6 +102,44 @@ export function validateTokenRef(key: string, arg?: string): string[] {
   }
   if (!meta.arg && arg) {
     errs.push(`{{${key}}} does not take an argument (got ":${arg}")`);
+  }
+  return errs;
+}
+
+// ---------------------------------------------------------------------
+// Conditional ({{if …}}…{{else}}…{{endif}}) validation — client-safe so
+// the builder and the publish gate share it. Checks per LINE:
+//   • every {{if is consumed by a full, well-formed conditional
+//   • no orphan {{else}} / {{endif}}
+//   • the condition field is a known TEXT token (not barcode/symbols)
+// The regexes live in schema.ts (IF_RE / CONTROL_RE).
+// ---------------------------------------------------------------------
+
+export function validateLineConditionals(
+  line: string,
+  ifRe: RegExp,
+  controlRe: RegExp,
+): string[] {
+  const errs: string[] = [];
+  let consumed = line;
+  const conds: Array<{ field: string }> = [];
+  consumed = consumed.replace(new RegExp(ifRe.source, "g"), (_m, field) => {
+    conds.push({ field });
+    return "";
+  });
+  // Anything control-shaped left over is malformed / orphaned.
+  for (const m of consumed.matchAll(new RegExp(controlRe.source, "g"))) {
+    errs.push(
+      `malformed conditional near "{{${m[1]}}}" — expected {{if field == VALUE}}…{{else}}…{{endif}} on one line`,
+    );
+  }
+  for (const c of conds) {
+    const meta = tokenMeta(c.field);
+    if (!meta) {
+      errs.push(`conditional checks unknown variable "${c.field}"`);
+    } else if (meta.kind !== "text") {
+      errs.push(`conditional can only check text variables ("${c.field}" is ${meta.kind})`);
+    }
   }
   return errs;
 }

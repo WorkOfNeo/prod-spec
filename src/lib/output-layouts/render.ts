@@ -1,28 +1,50 @@
 import type { StyleData } from "@/lib/pdf/types";
 import { escapeHtml, htmlDocument } from "@/lib/pdf/templates/base";
 import { renderBarcodeDataUrl } from "@/lib/pdf/barcode";
-import { TOKEN_RE, type LayoutAnchor, type LayoutBlock, type LayoutDef, type LayoutPage } from "./schema";
+import {
+  getWashcareSymbol,
+  loadWashcareSymbols,
+  type WashcareSymbolMap,
+} from "@/lib/pdf/washcare-symbols";
+import {
+  LAYOUT_GRID_COLS,
+  LAYOUT_GRID_ROWS,
+  TOKEN_RE,
+  conditionalsInLine,
+  type LayoutAnchor,
+  type LayoutBlock,
+  type LayoutDef,
+  type LayoutPage,
+} from "./schema";
 import { tokenMeta, type BarcodeSource } from "./token-meta";
-import { resolveBarcodeValue, resolveTextToken } from "./tokens";
+import { applyConditionalsForStyle, resolveBarcodeValue, resolveTextToken } from "./tokens";
 
 // =====================================================
 // renderLayoutHtml — the ONE renderer for Output Builder layouts. The
 // builder's live preview and the job runner both call this, so what the
 // operator sees while building is byte-for-byte what prints.
 //
+// Pipeline per line: conditionals first ({{if field == VALUE}}…
+// {{else}}…{{endif}} evaluated against StyleData — taken branch only),
+// then token resolution.
+//
 // Modes:
 //   • production — empty tokens render as nothing; a line that contained
 //     ONLY tokens (all empty) is dropped, mirroring how coded templates
 //     skip absent optional rows. Missing barcodes render the standard
-//     `barcode-missing` tile so countPlaceholderMarkers() blocks
-//     approval (src/lib/pdf/placeholders.ts).
+//     `barcode-missing` tile and missing wash-symbol artwork the standard
+//     `missing` chip, so countPlaceholderMarkers() blocks approval
+//     (src/lib/pdf/placeholders.ts).
 //   • preview — gaps stay visible: empty tokens render as amber
 //     `token?` chips, unknown tokens as red chips. Used by the builder
 //     only; preview HTML never reaches the placeholder counter.
 //
+// Graphics scale with the block's font size (9 pt = the classic sizes):
+//   barcode bars  fontPt × 16/9 mm     EAN digits  fontPt × 10/9 pt
+//   wash symbols  fontPt × 6/9 mm
+//
 // Page sizes: every page gets a CSS named page (@page olp<i>) with its
-// own mm size, so one PDF can carry differently-sized pages (e.g. a
-// carton marking's 200×60 long side + 150×75 short side). Chromium
+// own mm size, so one PDF can carry differently-sized pages. Chromium
 // honours named pages with `preferCSSPageSize: true` (renderer.ts).
 // =====================================================
 
@@ -36,20 +58,44 @@ export type LayoutRenderOptions = {
 };
 
 const ANCHOR_CSS: Record<LayoutAnchor, string> = {
-  "top-left": "top: var(--ol-pad); left: var(--ol-pad); text-align: left;",
-  "top-right": "top: var(--ol-pad); right: var(--ol-pad); text-align: right;",
-  "bottom-left": "bottom: var(--ol-pad); left: var(--ol-pad); text-align: left;",
-  "bottom-right": "bottom: var(--ol-pad); right: var(--ol-pad); text-align: right;",
+  "top-left": "top: var(--ol-pad); left: var(--ol-pad);",
+  "top-right": "top: var(--ol-pad); right: var(--ol-pad);",
+  "bottom-left": "bottom: var(--ol-pad); left: var(--ol-pad);",
+  "bottom-right": "bottom: var(--ol-pad); right: var(--ol-pad);",
 };
 
-type BarcodeCache = Map<string, string | null>; // "source:value" → data URL (null = encode failed)
+const ANCHOR_ALIGN: Record<LayoutAnchor, "left" | "right"> = {
+  "top-left": "left",
+  "top-right": "right",
+  "bottom-left": "left",
+  "bottom-right": "right",
+};
 
-async function buildBarcodeCache(def: LayoutDef, style: StyleData, pages: LayoutPage[]): Promise<BarcodeCache> {
+type RenderCtx = {
+  mode: LayoutRenderMode;
+  barcodes: Map<string, string | null>; // "source:value" → data URL (null = encode failed)
+  symbols: WashcareSymbolMap | null; // loaded only when {{washSymbols}} is used
+};
+
+function defUsesToken(pages: LayoutPage[], key: string): boolean {
+  for (const page of pages) {
+    for (const block of page.blocks) {
+      for (const line of block.lines) {
+        for (const m of line.matchAll(new RegExp(TOKEN_RE.source, "g"))) {
+          if (m[1] === key) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+async function buildBarcodeCache(style: StyleData, pages: LayoutPage[]): Promise<Map<string, string | null>> {
   const wanted = new Map<string, { source: BarcodeSource; value: string }>();
   for (const page of pages) {
     for (const block of page.blocks) {
       for (const line of block.lines) {
-        for (const m of line.matchAll(TOKEN_RE)) {
+        for (const m of line.matchAll(new RegExp(TOKEN_RE.source, "g"))) {
           if (m[1] !== "barcode") continue;
           const source = (m[2] ?? "cartonEan") as BarcodeSource;
           const value = resolveBarcodeValue(style, source);
@@ -58,7 +104,7 @@ async function buildBarcodeCache(def: LayoutDef, style: StyleData, pages: Layout
       }
     }
   }
-  const cache: BarcodeCache = new Map();
+  const cache = new Map<string, string | null>();
   await Promise.all(
     [...wanted.entries()].map(async ([cacheKey, { source, value }]) => {
       try {
@@ -78,43 +124,56 @@ async function buildBarcodeCache(def: LayoutDef, style: StyleData, pages: Layout
   return cache;
 }
 
-function renderBarcodeHtml(
-  style: StyleData,
-  source: BarcodeSource,
-  cache: BarcodeCache,
-  mode: LayoutRenderMode,
-): string {
+function renderBarcodeHtml(style: StyleData, source: BarcodeSource, ctx: RenderCtx): string {
   const value = resolveBarcodeValue(style, source);
   if (!value) {
     const label = source === "cartonEan" ? "No carton EAN configured" : "No EAN-13 on style";
     return `<div class="barcode-missing">${escapeHtml(label)}</div>`;
   }
-  const dataUrl = cache.get(`${source}:${value}`);
+  const dataUrl = ctx.barcodes.get(`${source}:${value}`);
   if (!dataUrl) {
     return `<div class="barcode-missing">EAN ${escapeHtml(value)} — could not encode</div>`;
   }
   // Code 128 carries no digits in the bars image — print the number
   // beneath; EAN-13 already includes its text (includetext: true).
   const numberRow = source === "cartonEan" ? `<div class="ol-ean-number">${escapeHtml(value)}</div>` : "";
-  return `<span class="ol-barcode${mode === "preview" ? " ol-barcode-preview" : ""}"><img src="${dataUrl}" alt="${escapeHtml(value)}" />${numberRow}</span>`;
+  return `<span class="ol-barcode${ctx.mode === "preview" ? " ol-barcode-preview" : ""}"><img src="${dataUrl}" alt="${escapeHtml(value)}" />${numberRow}</span>`;
 }
 
-// Render one content line: literal text escaped, tokens replaced.
-// Returns null when the line should be dropped (production mode, line
-// was only empty tokens / whitespace).
-function renderLine(
-  line: string,
-  style: StyleData,
-  cache: BarcodeCache,
-  mode: LayoutRenderMode,
-): string | null {
+// Wash-care symbol strip — same honest-gap rules as the coded templates
+// (netto info-area): artwork renders as an <img>; a known symbol with no
+// uploaded SVG (or an unknown token) renders the tagged `missing` chip
+// so the gap is visible on the proof and counted by the placeholder gate.
+function renderWashSymbolsHtml(style: StyleData, ctx: RenderCtx): string {
+  if (style.washSymbols.length === 0) {
+    return ctx.mode === "preview" ? `<span class="ol-miss">washSymbols?</span>` : "";
+  }
+  const map = ctx.symbols;
+  const items = style.washSymbols
+    .map((token) => {
+      const resolved = map ? getWashcareSymbol(map, token) : undefined;
+      if (resolved?.dataUrl) {
+        return `<img src="${resolved.dataUrl}" alt="${escapeHtml(resolved.name)}" title="${escapeHtml(resolved.name)}" />`;
+      }
+      const label = resolved?.name ?? token;
+      return `<span class="missing" title="No SVG uploaded for &quot;${escapeHtml(token)}&quot;">${escapeHtml(label)}</span>`;
+    })
+    .join("");
+  return `<span class="ol-symbols">${items}</span>`;
+}
+
+// Render one content line: conditionals already applied by the caller;
+// literal text escaped, tokens replaced. Returns null when the line
+// should be dropped (production mode, line was only empty tokens /
+// whitespace).
+function renderLine(line: string, style: StyleData, ctx: RenderCtx): string | null {
   let html = "";
   let lastIndex = 0;
   let hadToken = false;
   let hadValue = false;
   let literal = "";
 
-  for (const m of line.matchAll(TOKEN_RE)) {
+  for (const m of line.matchAll(new RegExp(TOKEN_RE.source, "g"))) {
     hadToken = true;
     const [raw, key, argRaw] = m;
     const arg = argRaw || undefined;
@@ -128,7 +187,7 @@ function renderLine(
       // Unknown token — publish validation rejects these; if one slips
       // through (or in the builder mid-typing), surface it.
       html +=
-        mode === "preview"
+        ctx.mode === "preview"
           ? `<span class="ol-unknown">${escapeHtml(raw)}</span>`
           : `<span class="missing">${escapeHtml(raw)}</span>`;
       hadValue = true; // keep the line visible — it's an authoring error
@@ -137,8 +196,15 @@ function renderLine(
 
     if (meta.kind === "barcode") {
       const source = (arg ?? "cartonEan") as BarcodeSource;
-      html += renderBarcodeHtml(style, source, cache, mode);
+      html += renderBarcodeHtml(style, source, ctx);
       hadValue = true; // barcode renders something in every state
+      continue;
+    }
+
+    if (meta.kind === "symbols") {
+      const rendered = renderWashSymbolsHtml(style, ctx);
+      html += rendered;
+      if (rendered) hadValue = true;
       continue;
     }
 
@@ -146,7 +212,7 @@ function renderLine(
     if (value) {
       html += escapeHtml(value);
       hadValue = true;
-    } else if (mode === "preview") {
+    } else if (ctx.mode === "preview") {
       html += `<span class="ol-miss">${escapeHtml(key + (arg ? `:${arg}` : ""))}?</span>`;
     }
     // production + empty → nothing
@@ -157,30 +223,55 @@ function renderLine(
   html += escapeHtml(rest);
 
   // Drop token-only lines whose tokens all came up empty (production).
-  if (mode === "production" && hadToken && !hadValue && !literal.trim()) return null;
+  if (ctx.mode === "production" && hadToken && !hadValue && !literal.trim()) return null;
   return html;
 }
 
-function renderBlock(
-  block: LayoutBlock,
-  page: LayoutPage,
-  style: StyleData,
-  cache: BarcodeCache,
-  mode: LayoutRenderMode,
-): string {
-  const widthMm = (page.widthMm * block.cols) / 12;
-  const lines = block.lines
-    .map((line) => renderLine(line, style, cache, mode))
-    .filter((l): l is string => l !== null)
-    .map((l) => `<div class="ol-line">${l || "&nbsp;"}</div>`)
-    .join("");
-  const styleAttr =
-    `width: ${widthMm.toFixed(2)}mm; ` +
+function blockTypography(block: LayoutBlock): string {
+  // Graphics scale with the block's font size: 9 pt is the classic size
+  // (16 mm bars / 10 pt digits / 6 mm symbols).
+  const bcH = ((block.fontPt * 16) / 9).toFixed(2);
+  const bcNum = ((block.fontPt * 10) / 9).toFixed(2);
+  const sym = ((block.fontPt * 6) / 9).toFixed(2);
+  return (
     `font-size: ${block.fontPt}pt; ` +
     `line-height: ${block.lineHeight}; ` +
     `font-weight: ${block.bold ? 700 : 400}; ` +
-    ANCHOR_CSS[block.anchor];
-  return `<div class="ol-block ol-${block.anchor}" style="${styleAttr}">${lines}</div>`;
+    `--ol-bc-h: ${bcH}mm; --ol-bc-num: ${bcNum}pt; --ol-sym: ${sym}mm; `
+  );
+}
+
+function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx: RenderCtx): string {
+  const lines = block.lines
+    .map((line) => renderLine(applyConditionalsForStyle(line, style), style, ctx))
+    .filter((l): l is string => l !== null)
+    .map((l) => `<div class="ol-line">${l || "&nbsp;"}</div>`)
+    .join("");
+
+  if (block.rect) {
+    const r = block.rect;
+    const left = ((page.widthMm * r.col) / LAYOUT_GRID_COLS).toFixed(2);
+    const top = ((page.heightMm * r.row) / LAYOUT_GRID_ROWS).toFixed(2);
+    const width = ((page.widthMm * r.colSpan) / LAYOUT_GRID_COLS).toFixed(2);
+    const height = ((page.heightMm * r.rowSpan) / LAYOUT_GRID_ROWS).toFixed(2);
+    const justify =
+      block.valign === "middle" ? "center" : block.valign === "bottom" ? "flex-end" : "flex-start";
+    const styleAttr =
+      `left: ${left}mm; top: ${top}mm; width: ${width}mm; height: ${height}mm; ` +
+      `display: flex; flex-direction: column; justify-content: ${justify}; ` +
+      `text-align: ${block.align ?? "left"}; ` +
+      blockTypography(block);
+    return `<div class="ol-block ol-rect" style="${styleAttr}">${lines}</div>`;
+  }
+
+  const anchor = block.anchor ?? "top-left";
+  const widthMm = (page.widthMm * block.cols) / LAYOUT_GRID_COLS;
+  const styleAttr =
+    `width: ${widthMm.toFixed(2)}mm; ` +
+    `text-align: ${block.align ?? ANCHOR_ALIGN[anchor]}; ` +
+    blockTypography(block) +
+    ANCHOR_CSS[anchor];
+  return `<div class="ol-block ol-${anchor}" style="${styleAttr}">${lines}</div>`;
 }
 
 export async function renderLayoutHtml(
@@ -197,7 +288,11 @@ export async function renderLayoutHtml(
     throw new Error(`layout has no page at index ${opts.pageIndex}`);
   }
 
-  const cache = await buildBarcodeCache(def, style, pages);
+  const [barcodes, symbols] = await Promise.all([
+    buildBarcodeCache(style, pages),
+    defUsesToken(pages, "washSymbols") ? loadWashcareSymbols() : Promise.resolve(null),
+  ]);
+  const ctx: RenderCtx = { mode, barcodes, symbols };
 
   const pageCss = pages
     .map(
@@ -209,7 +304,7 @@ export async function renderLayoutHtml(
 
   const body = pages
     .map((page, i) => {
-      const blocks = page.blocks.map((b) => renderBlock(b, page, style, cache, mode)).join("");
+      const blocks = page.blocks.map((b) => renderBlock(b, page, style, ctx)).join("");
       return `<div class="ol-page ol-page-${i}">${blocks}</div>`;
     })
     .join("\n");
@@ -232,8 +327,10 @@ export async function renderLayoutHtml(
   .ol-block { position: absolute; }
   .ol-line { white-space: pre-wrap; word-break: break-word; min-height: 1em; }
   .ol-barcode { display: inline-block; text-align: center; max-width: 100%; }
-  .ol-barcode img { display: block; height: 16mm; width: auto; max-width: 100%; margin-left: auto; margin-right: auto; }
-  .ol-ean-number { margin-top: 1mm; font-size: 10pt; letter-spacing: 0.08em; }
+  .ol-barcode img { display: block; height: var(--ol-bc-h, 16mm); width: auto; max-width: 100%; margin-left: auto; margin-right: auto; }
+  .ol-ean-number { margin-top: 1mm; font-size: var(--ol-bc-num, 10pt); letter-spacing: 0.08em; }
+  .ol-symbols { display: inline-flex; flex-wrap: wrap; gap: 1.5mm; align-items: center; vertical-align: middle; }
+  .ol-symbols img { width: var(--ol-sym, 6mm); height: var(--ol-sym, 6mm); object-fit: contain; }
   .barcode-missing {
     font-size: 8pt; color: #a00; text-align: center; padding: 2mm;
     border: 0.2mm dashed #a00; border-radius: 1mm; display: inline-block;
@@ -256,3 +353,6 @@ export async function renderLayoutHtml(
 `,
   });
 }
+
+// Re-export for callers that pre-validate conditionals (publish route).
+export { conditionalsInLine };

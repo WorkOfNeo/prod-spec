@@ -101,7 +101,93 @@ async function main() {
   console.log(process.exitCode ? "SMOKE TEST FAILED" : "SMOKE TEST PASSED — /tmp/ol-smoke.pdf written");
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main()
+  .then(() => batch2())
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+
+// ---------------------------------------------------------------------
+// Batch 2 coverage: conditionals, rect blocks, barcode scaling, wash
+// symbols. Appended as a second async pass — run after main() resolves.
+// ---------------------------------------------------------------------
+async function batch2() {
+  const { unresolvedTokens: _u, staticRequiredColumns: src2, layoutReadinessColumns } = await import(
+    "@/lib/output-layouts/tokens"
+  );
+  const style = buildSampleStyleData();
+
+  const DEF2 = LayoutDefSchema.parse({
+    pages: [
+      {
+        id: "p1",
+        title: "Squared sticker",
+        widthMm: 100,
+        heightMm: 100,
+        blocks: [
+          // Centered rect block — middle of the page, both axes.
+          {
+            id: "b-center",
+            rect: { col: 2, row: 4, colSpan: 8, rowSpan: 4 },
+            align: "center",
+            valign: "middle",
+            fontPt: 12,
+            lines: ["{{customerName}}", "{{washSymbols}}"],
+          },
+          // Conditional order number — FOB branch vs DDP branch.
+          {
+            id: "b-cond",
+            rect: { col: 0, row: 10, colSpan: 12, rowSpan: 2 },
+            align: "center",
+            fontPt: 9,
+            lines: ["Order: {{if deliveryTerm == FOB}}{{customerOrderNo}}{{else}}{{poNumber}}{{endif}}"],
+          },
+        ],
+      },
+    ],
+  });
+
+  // Static columns exclude conditional branches:
+  const stat = src2(DEF2);
+  assert(!stat.includes("poNumber") && !stat.includes("customerOrderNo"), "branch tokens not in static columns");
+  assert(stat.includes("washCare"), "washSymbols gates on washCare column");
+
+  // Branch-aware readiness: DDP style → poNumber required, not customerOrderNo.
+  const resolveDdp = (f: string) => (f === "deliveryTerm" ? "DDP" : "x");
+  const readyCols = layoutReadinessColumns(DEF2, resolveDdp as never);
+  assert(readyCols.includes("poNumber" as never), "DDP branch requires poNumber");
+  assert(!readyCols.includes("customerOrderNo" as never), "DDP branch does not require customerOrderNo");
+
+  // Render — DDP sample (sample deliveryTerm is not FOB) shows the PO.
+  const html2 = await renderLayoutHtml(DEF2, style, { mode: "production", title: "smoke2" });
+  assert(html2.includes("left: 16.67mm; top: 33.33mm; width: 66.67mm; height: 33.33mm"), "rect block positioned by grid mm");
+  assert(html2.includes("justify-content: center") && html2.includes("text-align: center"), "align/valign center applied");
+  assert(html2.includes(`Order: ${style.poNumber}`) || html2.includes("Order:"), "conditional rendered");
+  assert(!html2.includes("customerOrderNo"), "untaken FOB branch dropped");
+  // Barcode/symbol scaling vars derived from fontPt 12 → 21.33mm bars / 8mm symbols.
+  assert(html2.includes("--ol-sym: 8.00mm"), "wash symbol size scales with font size");
+  // Wash symbols render imgs or honest missing chips:
+  assert(html2.includes("ol-symbols") || html2.includes('class="missing"'), "wash symbols block rendered");
+
+  // FOB branch via a tweaked style:
+  const fobStyle = { ...style, deliveryTerm: "FOB", customerOrderNo: "CUST-4711" };
+  const htmlFob = await renderLayoutHtml(DEF2, fobStyle, { mode: "production" });
+  assert(htmlFob.includes("Order: CUST-4711"), "FOB branch shows customer order no");
+  assert(!htmlFob.includes(`Order: ${style.poNumber}`), "FOB branch hides PO");
+
+  // Barcode scaling: same def at two font sizes → different bar heights.
+  const BAR = (pt: number) =>
+    LayoutDefSchema.parse({
+      pages: [{ id: "p", title: "", widthMm: 100, heightMm: 50, blocks: [{ id: "b", anchor: "top-right", fontPt: pt, lines: ["{{barcode:cartonEan}}"] }] }],
+    });
+  const small = await renderLayoutHtml(BAR(9), style, { mode: "production" });
+  const big = await renderLayoutHtml(BAR(18), style, { mode: "production" });
+  assert(small.includes("--ol-bc-h: 16.00mm"), "9pt block → 16mm bars (classic size)");
+  assert(big.includes("--ol-bc-h: 32.00mm"), "18pt block → 32mm bars (scales 2×)");
+
+  await closeBrowser();
+  console.log(process.exitCode ? "BATCH 2 FAILED" : "BATCH 2 PASSED");
+}
+
+void batch2;

@@ -4,7 +4,14 @@ import { tFor } from "@/lib/pdf/templates/base";
 import { ruleRequiredColumns } from "@/lib/pdf/spec-fields";
 import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-marking";
 import { tokenMeta, type BarcodeSource } from "./token-meta";
-import { tokensInDef, type LayoutDef, type TokenRef } from "./schema";
+import {
+  applyConditionals,
+  conditionalsInDef,
+  lineWithoutConditionals,
+  tokensInLine,
+  type LayoutDef,
+  type TokenRef,
+} from "./schema";
 
 // =====================================================
 // Token resolvers — the SERVER half of the layout variable system
@@ -12,6 +19,11 @@ import { tokensInDef, type LayoutDef, type TokenRef } from "./schema";
 // the canonical StyleData (src/lib/pdf/types.ts), the same object every
 // coded template receives, so layouts can never drift from what the
 // rest of the pipeline renders.
+//
+// Conditionals ({{if field == VALUE}}…{{else}}…{{endif}}) are evaluated
+// per line BEFORE token resolution — the renderer evaluates them against
+// StyleData, readiness against the mapped columns, both through
+// schema.ts's applyConditionals so the rule semantics are shared.
 // =====================================================
 
 // The carton EAN sentinel the PO scraper writes when no EAN was found.
@@ -42,6 +54,9 @@ const RESOLVERS: Record<string, TextResolver> = {
 
   poNumber: (s) => s.poNumber ?? "",
   customerOrderNo: (s) => s.customerOrderNo ?? "",
+  // Raw delivery term off the style ("FOB", "DDP", …) — also the usual
+  // field for {{if deliveryTerm == FOB}} conditionals.
+  deliveryTerm: (s) => s.deliveryTerm ?? "",
   // FOB → customer's order number; otherwise (DDP / DDU / DAP / empty) →
   // Contrast PO. Mirrors the Netto carton-marking template exactly.
   orderNo: (s) => {
@@ -60,11 +75,15 @@ const RESOLVERS: Record<string, TextResolver> = {
   composition: (s, arg) => tFor(s.composition, (arg ?? "en").toLowerCase()),
   productName: (s, arg) => tFor(s.productNameTranslations, (arg ?? "en").toLowerCase()),
   careInstructions: (s, arg) => s.careInstructionsByLang?.[(arg ?? "en").toLowerCase()] ?? "",
+
+  // Text representation of the wash-care symbol tokens (the renderer
+  // draws the actual artwork; this backs show-values + unresolved checks).
+  washSymbols: (s) => s.washSymbols.join(", "),
 };
 
 // Resolve a TEXT token to its string value ("" when empty/unknown —
-// callers decide how to surface gaps). Barcode tokens are handled by the
-// renderer, not here.
+// callers decide how to surface gaps). Barcode/symbol tokens are drawn
+// by the renderer; their resolvers here return the underlying value.
 export function resolveTextToken(style: StyleData, key: string, arg?: string): string {
   const fn = RESOLVERS[key];
   if (!fn) return "";
@@ -77,6 +96,11 @@ export function resolveBarcodeValue(style: StyleData, source: BarcodeSource): st
   return resolveTextToken(style, "ean13");
 }
 
+// Evaluate one line's conditionals against StyleData (render-side rule).
+export function applyConditionalsForStyle(line: string, style: StyleData): string {
+  return applyConditionals(line, (field) => resolveTextToken(style, field));
+}
+
 // ---------------------------------------------------------------------
 // Readiness: which mapped columns a token needs before an output that
 // uses it counts as "ready" (template-registry requiredFields /
@@ -84,8 +108,9 @@ export function resolveBarcodeValue(style: StyleData, source: BarcodeSource): st
 // ---------------------------------------------------------------------
 
 // Static column gates per token. Tokens absent here (styleName,
-// customerName, careInstructions, …) need no mapped column — they come
-// from the Customer record, the ProdSpec, or are always present.
+// customerName, careInstructions, deliveryTerm, …) need no mapped column
+// — they come from the Customer record, the ProdSpec, or are legitimate
+// when empty (an empty delivery term means DDP).
 const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   styleNumber: ["styleNumber"],
   description: ["description"],
@@ -108,6 +133,16 @@ const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   klNumber: ["klNumber"],
   supplierNumber: ["supplierNumber"],
   composition: ["composition"],
+  washSymbols: ["washCare"],
+  // The condition field itself: resolvable at readiness time via this
+  // column, but never REQUIRED (empty = DDP, a valid state).
+  deliveryTerm: [],
+};
+
+// Column a condition field reads at readiness time (deliveryTerm →
+// "deliveryTerm" even though it isn't a required column).
+const CONDITION_COLUMN: Partial<Record<string, keyof ColumnMapping>> = {
+  deliveryTerm: "deliveryTerm",
 };
 
 function columnsForToken(ref: TokenRef): Array<keyof ColumnMapping> {
@@ -119,12 +154,30 @@ function columnsForToken(ref: TokenRef): Array<keyof ColumnMapping> {
   return REQUIRED_COLUMNS[ref.key] ?? [];
 }
 
+function conditionColumn(field: string): keyof ColumnMapping | null {
+  return CONDITION_COLUMN[field] ?? REQUIRED_COLUMNS[field]?.[0] ?? null;
+}
+
+// Token refs that render UNCONDITIONALLY (conditional branches stripped).
+function staticTokenRefs(def: LayoutDef): TokenRef[] {
+  const out: TokenRef[] = [];
+  for (const page of def.pages) {
+    for (const block of page.blocks) {
+      for (const line of block.lines) {
+        out.push(...tokensInLine(lineWithoutConditionals(line)));
+      }
+    }
+  }
+  return out;
+}
+
 // Static required columns across a whole definition — the layout
-// variant's `requiredFields`. {{orderNo}} is branch-dependent and is
-// excluded here; layoutReadinessColumns adds the taken branch.
+// variant's `requiredFields`. Branch-dependent content ({{orderNo}},
+// anything inside {{if}}…{{endif}}) is excluded here;
+// layoutReadinessColumns adds the taken branches per style.
 export function staticRequiredColumns(def: LayoutDef): Array<keyof ColumnMapping> {
   const out = new Set<keyof ColumnMapping>();
-  for (const ref of tokensInDef(def)) {
+  for (const ref of staticTokenRefs(def)) {
     if (ref.key === "orderNo") continue;
     for (const c of columnsForToken(ref)) out.add(c);
   }
@@ -132,38 +185,88 @@ export function staticRequiredColumns(def: LayoutDef): Array<keyof ColumnMapping
 }
 
 export function defUsesOrderNo(def: LayoutDef): boolean {
-  return tokensInDef(def).some((r) => r.key === "orderNo");
+  return staticTokenRefs(def).some((r) => r.key === "orderNo");
 }
 
-// Branch-aware readiness — static columns plus, when {{orderNo}} is
-// used, the columns of the FOB/DDP branch this style actually takes
-// (reuses the carton-marking ORDER_NO_RULE so builder layouts and the
-// coded template can never disagree on the rule).
+// Does readiness need per-style branch evaluation? True when the def
+// uses {{orderNo}} anywhere or contains conditionals.
+export function defNeedsDynamicReadiness(def: LayoutDef): boolean {
+  if (conditionalsInDef(def).length > 0) return true;
+  for (const page of def.pages) {
+    for (const block of page.blocks) {
+      for (const line of block.lines) {
+        if (tokensInLine(line).some((r) => r.key === "orderNo")) return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Branch-aware readiness — the columns the TAKEN content actually needs
+// on this style. Conditionals are evaluated with the mapped-column
+// resolver (the same rule semantics the renderer applies to StyleData;
+// condition fields without a mapped column resolve "" here — keep
+// conditions on column-backed fields like deliveryTerm).
 export function layoutReadinessColumns(
   def: LayoutDef,
   resolve: (field: keyof ColumnMapping) => string,
 ): Array<keyof ColumnMapping> {
-  const out = staticRequiredColumns(def);
-  if (defUsesOrderNo(def)) {
-    for (const c of ruleRequiredColumns(ORDER_NO_RULE, resolve)) {
-      if (!out.includes(c)) out.push(c);
+  const getValue = (field: string) => {
+    const col = conditionColumn(field);
+    return col ? resolve(col) : "";
+  };
+  const out = new Set<keyof ColumnMapping>();
+  let usesOrderNo = false;
+  for (const page of def.pages) {
+    for (const block of page.blocks) {
+      for (const line of block.lines) {
+        const effective = applyConditionals(line, getValue);
+        for (const ref of tokensInLine(effective)) {
+          if (ref.key === "orderNo") {
+            usesOrderNo = true;
+            continue;
+          }
+          for (const c of columnsForToken(ref)) out.add(c);
+        }
+      }
     }
   }
-  return out;
+  if (usesOrderNo) {
+    // FOB → customerOrderNo, else poNumber — reuses the carton-marking
+    // ORDER_NO_RULE so builder layouts and the coded template can never
+    // disagree on the rule.
+    for (const c of ruleRequiredColumns(ORDER_NO_RULE, resolve)) out.add(c);
+  }
+  return [...out];
 }
 
-// Tokens in the def that resolve empty on this style — the builder's
-// "missing on this style" list. Returns the printable token strings.
+// Tokens in the def's TAKEN content that resolve empty on this style —
+// the builder's "missing on this style" list (and the preview's amber
+// chips). Returns the printable token strings.
 export function unresolvedTokens(def: LayoutDef, style: StyleData): string[] {
+  const seen = new Set<string>();
   const out: string[] = [];
-  for (const ref of tokensInDef(def)) {
-    const meta = tokenMeta(ref.key);
-    if (!meta) continue;
-    const value =
-      meta.kind === "barcode"
-        ? resolveBarcodeValue(style, (ref.arg ?? "cartonEan") as BarcodeSource)
-        : resolveTextToken(style, ref.key, ref.arg);
-    if (!value) out.push(`{{${ref.key}${ref.arg ? `:${ref.arg}` : ""}}}`);
+  for (const page of def.pages) {
+    for (const block of page.blocks) {
+      for (const line of block.lines) {
+        const effective = applyConditionalsForStyle(line, style);
+        for (const ref of tokensInLine(effective)) {
+          const meta = tokenMeta(ref.key);
+          if (!meta) continue;
+          const value =
+            meta.kind === "barcode"
+              ? resolveBarcodeValue(style, (ref.arg ?? "cartonEan") as BarcodeSource)
+              : resolveTextToken(style, ref.key, ref.arg);
+          if (!value) {
+            const printable = `{{${ref.key}${ref.arg ? `:${ref.arg}` : ""}}}`;
+            if (!seen.has(printable)) {
+              seen.add(printable);
+              out.push(printable);
+            }
+          }
+        }
+      }
+    }
   }
   return out;
 }
