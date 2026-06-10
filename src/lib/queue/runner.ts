@@ -87,7 +87,18 @@ async function releaseStaleRunning(): Promise<void> {
 export async function processJob(jobId: string): Promise<void> {
   const job = await db.job.findUniqueOrThrow({
     where: { id: jobId },
-    include: { style: { include: { customer: true, qrImage: true, supplier: { select: { country: true } } } } },
+    include: {
+      style: {
+        include: {
+          customer: true,
+          qrImage: true,
+          supplier: { select: { country: true } },
+          // Resolved PO barcodes — fall back into the ean13/cartonEan
+          // fields at render time (see effectiveStyleItem).
+          eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
+        },
+      },
+    },
   });
 
   await db.log.create({ data: { jobId: job.id, level: "INFO", message: "job started" } });
@@ -111,11 +122,14 @@ export async function processJob(jobId: string): Promise<void> {
   try {
     // Inject the canonical Style.poNumber as the manual.* fallback so the PO
     // renders on labels (care-label-02) even when the mapped PO column isn't
-    // the one this style's board populated. See effectiveStyleItem.
+    // the one this style's board populated — and the PO-PDF-resolved EANs /
+    // carton EAN so barcodes render from the scrape. See effectiveStyleItem.
     const item = effectiveStyleItem({
       rawData: job.style.rawData,
       poNumber: job.style.poNumber,
       supplier: job.style.supplier,
+      eans: job.style.eans,
+      cartonEan: job.style.cartonEan,
     }) as MondayItem;
     // Resolution order for column mapping:
     //   1. ProdSpec.columnMapping  (when non-empty — operator override)
@@ -186,6 +200,8 @@ export async function processJob(jobId: string): Promise<void> {
             rawData: job.style.rawData,
             poNumber: job.style.poNumber,
             supplier: job.style.supplier,
+            eans: job.style.eans,
+            cartonEan: job.style.cartonEan,
             customer: { config: job.style.customer.config },
             prodSpec: { outputs: prodSpec.outputs, columnMapping: prodSpec.columnMapping },
           })

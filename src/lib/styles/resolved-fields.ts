@@ -35,28 +35,52 @@ export function resolveMappedField(
 // the human source shown in the UI when the fallback is in use.
 //   poNumber        → Style.poNumber (the dedicated PO column / header value)
 //   countryOfOrigin → the linked Supplier's country
+//   ean13/cartonEan → the PO-PDF barcodes resolved by the EAN runner
+//                     (style_eans rows + Style.cartonEan, see /po-eans)
 export const FALLBACK_SOURCE = {
   poNumber: "PO field",
   countryOfOrigin: "supplier",
+  ean13: "resolved PO barcodes",
+  cartonEan: "resolved PO barcodes",
 } as const satisfies Partial<Record<keyof ColumnMapping, string>>;
+
+// Resolved per-size EANs → the "size=ean,size=ean" map string the PDF
+// mapper's parseSizes/parseEanMap already understand (keys matched to the
+// sizes column case-insensitively). Rows without an EAN are skipped;
+// returns "" when nothing usable resolved (⇒ no injection).
+export function formatEanMap(
+  eans: ReadonlyArray<{ size: string; ean13: string | null }> | null | undefined,
+): string {
+  if (!eans) return "";
+  return eans
+    .filter((e) => e.size.trim() && e.ean13?.trim())
+    .map((e) => `${e.size.trim()}=${e.ean13!.trim()}`)
+    .join(",");
+}
 
 // Build the MondayItem a style resolves against, injecting the fallback
 // sources above under each field's manual.* id (the universal fallback that
 // resolveMappedField / the PDF mapper already consult). Mapping-based reads
 // look at the customer's MAPPED column, which for some boards isn't where the
 // value landed — so without this the PO would read "missing" even though the
-// header shows it, and country-of-origin would ignore the supplier. Only
+// header shows it, country-of-origin would ignore the supplier, and the
+// EANs scraped from the PO PDF would never reach the labels. Only
 // FILLS THE GAP: a populated mapped column always wins.
 export function effectiveStyleItem(style: {
   rawData: unknown;
   poNumber?: string | null;
   supplier?: { country?: string | null } | null;
+  // Resolved PO barcodes (style_eans, ordered by position) + carton EAN.
+  eans?: ReadonlyArray<{ size: string; ean13: string | null }> | null;
+  cartonEan?: string | null;
 }): MondayItem | null {
   const item = style.rawData as MondayItem | null;
   if (!item) return item;
   const fallbacks: Array<[keyof ColumnMapping, string | null | undefined]> = [
     ["poNumber", style.poNumber],
     ["countryOfOrigin", style.supplier?.country],
+    ["ean13", formatEanMap(style.eans)],
+    ["cartonEan", style.cartonEan],
   ];
   let cols = item.column_values ?? [];
   let changed = false;
@@ -129,6 +153,8 @@ export function resolveStyleSpecFields(style: {
   customer: { config: unknown };
   poNumber?: string | null;
   supplier?: { country?: string | null } | null;
+  eans?: ReadonlyArray<{ size: string; ean13: string | null }> | null;
+  cartonEan?: string | null;
 }): ResolvedSpecField[] {
   const original = style.rawData as MondayItem | null;
   const item = effectiveStyleItem(style);

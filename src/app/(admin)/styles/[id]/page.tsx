@@ -145,6 +145,8 @@ export default async function StyleDetail({
         rawData: style.rawData,
         poNumber: style.poNumber,
         supplier: style.supplier,
+        eans: style.eans,
+        cartonEan: style.cartonEan,
         customer: { config: style.customer.config },
         prodSpec: { outputs: style.prodSpec.outputs, columnMapping: {} },
       })

@@ -1,5 +1,10 @@
 import { db } from "@/lib/db";
 import type { StyleEanStatus as DbEanStatus } from "@/generated/prisma/enums";
+import type { MondayItem } from "@/lib/monday/client";
+import { evaluateCompletion, withSyntheticColumns } from "@/lib/monday/completion";
+import { parseCustomerConfig, MANUAL_COLUMN_IDS } from "@/lib/customers/config";
+import { parseProdSpecRequiredFields, parseProdSpecColumnMapping } from "@/lib/prod-spec/config";
+import { formatEanMap } from "@/lib/styles/resolved-fields";
 import { resolveStyleEans, type StyleEanStatus as ResolveStatus } from "./resolve-style-eans";
 import type { EanView } from "./ean-view";
 
@@ -171,6 +176,16 @@ export async function resolveAndPersistStyleEans(styleId: string): Promise<EanVi
     }),
   ]);
 
+  // Completion is evaluated at ingest, BEFORE the EANs resolve — recompute
+  // it now so a style whose only gap was the barcodes flips to 100%/READY
+  // the moment the scrape lands (and /styles stops reporting "EAN-13 (per
+  // size)" as missing). Failure here must not fail the resolve itself.
+  try {
+    await recomputeStyleCompletion(styleId);
+  } catch (err) {
+    console.error(`[ean] ${styleId}: completion recompute failed:`, (err as Error).message);
+  }
+
   // One-line summary in the dev/worker console with the decisive signals.
   const d = result.diagnostics;
   console.info(
@@ -225,4 +240,55 @@ function toDbStatus(s: ResolveStatus): DbEanStatus {
     default:
       return "ERROR";
   }
+}
+
+// Re-evaluate Style.completionPct / missingFields / status after an EAN
+// resolve, counting the freshly persisted barcodes as the ean13/cartonEan
+// columns being filled. Mirrors the ingest-side evaluation exactly (same
+// required-field precedence, same effective mapping, same synthetic-column
+// injection) so the two paths can never disagree.
+async function recomputeStyleCompletion(styleId: string): Promise<void> {
+  const style = await db.style.findUnique({
+    where: { id: styleId },
+    select: {
+      rawData: true,
+      cartonEan: true,
+      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
+      customer: { select: { config: true } },
+      prodSpec: { select: { requiredFields: true, columnMapping: true } },
+    },
+  });
+  const item = style?.rawData as Pick<MondayItem, "column_values"> | null;
+  if (!style || !item?.column_values) return;
+
+  const customerConfig = parseCustomerConfig(style.customer.config);
+  const prodSpecRequired = style.prodSpec
+    ? parseProdSpecRequiredFields(style.prodSpec.requiredFields)
+    : [];
+  const requiredFields =
+    prodSpecRequired.length > 0 ? prodSpecRequired : customerConfig.requiredFields;
+  if (requiredFields.length === 0) return; // completion is already 100
+
+  const psMappingRaw = style.prodSpec?.columnMapping;
+  const mapping =
+    psMappingRaw && typeof psMappingRaw === "object" && Object.keys(psMappingRaw).length > 0
+      ? parseProdSpecColumnMapping(psMappingRaw)
+      : customerConfig.columnMapping;
+  const eanMapText = formatEanMap(style.eans);
+  const completionItem = withSyntheticColumns(item, [
+    { id: mapping.ean13 ?? "", text: eanMapText },
+    { id: MANUAL_COLUMN_IDS.ean13, text: eanMapText },
+    { id: mapping.cartonEan ?? "", text: style.cartonEan ?? "" },
+    { id: MANUAL_COLUMN_IDS.cartonEan, text: style.cartonEan ?? "" },
+  ]);
+  const { completionPct, missingFields } = evaluateCompletion(completionItem, requiredFields);
+
+  await db.style.update({
+    where: { id: styleId },
+    data: {
+      completionPct,
+      missingFields: missingFields as unknown as object,
+      status: completionPct === 100 ? "READY" : "PENDING",
+    },
+  });
 }
