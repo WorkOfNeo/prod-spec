@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { parseLayoutDef } from "@/lib/output-layouts/schema";
+import { getContrastLogoDataUrl, getCustomLogoDataUrl } from "@/lib/output-layouts/logos";
 import { LayoutsList } from "./layouts-list";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,11 @@ export default async function OutputBuilderPage() {
       </div>
     );
   }
+
+  const [contrastLogo, customLogo] = await Promise.all([
+    getContrastLogoDataUrl(),
+    getCustomLogoDataUrl(),
+  ]);
 
   let rows;
   try {
@@ -70,5 +76,5 @@ export default async function OutputBuilderPage() {
     };
   });
 
-  return <LayoutsList layouts={layouts} />;
+  return <LayoutsList layouts={layouts} contrastLogoFound={contrastLogo !== null} customLogo={customLogo} />;
 }

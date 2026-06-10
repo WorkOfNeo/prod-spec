@@ -17,7 +17,8 @@ import {
   type LayoutDef,
   type LayoutPage,
 } from "./schema";
-import { tokenMeta, type BarcodeSource } from "./token-meta";
+import { tokenMeta, type BarcodeSource, type LogoSource } from "./token-meta";
+import { getContrastLogoDataUrl, getCustomLogoDataUrl } from "./logos";
 import {
   applyConditionalsForStyle,
   augmentCareAndMadeIn,
@@ -84,6 +85,7 @@ type RenderCtx = {
   mode: LayoutRenderMode;
   barcodes: Map<string, string | null>; // "source:value" → data URL (null = encode failed)
   symbols: WashcareSymbolMap | null; // loaded only when {{washSymbols}} is used
+  logos: { contrast: string | null; custom: string | null }; // loaded only when {{logo:…}} is used
 };
 
 function defUsesToken(pages: LayoutPage[], key: string): boolean {
@@ -212,6 +214,23 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx): string | nu
       continue;
     }
 
+    if (meta.kind === "image") {
+      const source = (arg ?? "contrast") as LogoSource;
+      const dataUrl = ctx.logos[source];
+      if (dataUrl) {
+        html += `<span class="ol-logo"><img src="${dataUrl}" alt="${escapeHtml(source)} logo" /></span>`;
+        hadValue = true;
+      } else {
+        const hint =
+          source === "contrast"
+            ? "Contrast logo missing — add public/logos/contrast.svg"
+            : "No custom logo uploaded (Output builder → Logos)";
+        html += `<span class="missing">${escapeHtml(hint)}</span>`;
+        hadValue = true; // visible authoring gap, counted by the ship-gate
+      }
+      continue;
+    }
+
     if (meta.kind === "symbols") {
       const rendered = renderWashSymbolsHtml(style, ctx);
       html += rendered;
@@ -254,11 +273,12 @@ function blockTypography(block: LayoutBlock): string {
   const bcH = ((block.fontPt * 16) / 9).toFixed(2);
   const bcNum = ((block.fontPt * 10) / 9).toFixed(2);
   const sym = ((block.fontPt * 6) / 9).toFixed(2);
+  const logo = ((block.fontPt * 10) / 9).toFixed(2);
   return (
     `font-size: ${block.fontPt}pt; ` +
     `line-height: ${block.lineHeight}; ` +
     `font-weight: ${block.bold ? 700 : 400}; ` +
-    `--ol-bc-h: ${bcH}mm; --ol-bc-num: ${bcNum}pt; --ol-sym: ${sym}mm; `
+    `--ol-bc-h: ${bcH}mm; --ol-bc-num: ${bcNum}pt; --ol-sym: ${sym}mm; --ol-logo: ${logo}mm; `
   );
 }
 
@@ -271,10 +291,13 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
 
   if (block.rect) {
     const r = block.rect;
-    const left = ((page.widthMm * r.col) / LAYOUT_GRID_COLS).toFixed(2);
-    const top = ((page.heightMm * r.row) / LAYOUT_GRID_ROWS).toFixed(2);
-    const width = ((page.widthMm * r.colSpan) / LAYOUT_GRID_COLS).toFixed(2);
-    const height = ((page.heightMm * r.rowSpan) / LAYOUT_GRID_ROWS).toFixed(2);
+    const m = page.marginMm ?? 0;
+    const innerW = page.widthMm - 2 * m;
+    const innerH = page.heightMm - 2 * m;
+    const left = (m + (innerW * r.col) / LAYOUT_GRID_COLS).toFixed(2);
+    const top = (m + (innerH * r.row) / LAYOUT_GRID_ROWS).toFixed(2);
+    const width = ((innerW * r.colSpan) / LAYOUT_GRID_COLS).toFixed(2);
+    const height = ((innerH * r.rowSpan) / LAYOUT_GRID_ROWS).toFixed(2);
     const justify =
       block.valign === "middle" ? "center" : block.valign === "bottom" ? "flex-end" : "flex-start";
     const styleAttr =
@@ -334,11 +357,14 @@ export async function renderLayoutHtml(
       ? style.sizes.map((entry) => ({ ...style, sizes: [entry] }))
       : [style];
 
-  const [barcodes, symbols] = await Promise.all([
+  const usesLogo = defUsesToken(pages, "logo");
+  const [barcodes, symbols, contrastLogo, customLogo] = await Promise.all([
     buildBarcodeCache(repStyles, pages),
     defUsesToken(pages, "washSymbols") ? loadWashcareSymbols() : Promise.resolve(null),
+    usesLogo ? getContrastLogoDataUrl() : Promise.resolve(null),
+    usesLogo ? getCustomLogoDataUrl() : Promise.resolve(null),
   ]);
-  const ctx: RenderCtx = { mode, barcodes, symbols };
+  const ctx: RenderCtx = { mode, barcodes, symbols, logos: { contrast: contrastLogo, custom: customLogo } };
 
   const emitted: Array<{ page: LayoutPage; repStyle: StyleData }> = [];
   for (const repStyle of repStyles) {
@@ -382,6 +408,8 @@ export async function renderLayoutHtml(
   .ol-ean-number { margin-top: 1mm; font-size: var(--ol-bc-num, 10pt); letter-spacing: 0.08em; }
   .ol-symbols { display: inline-flex; flex-wrap: wrap; gap: 1.5mm; align-items: center; vertical-align: middle; }
   .ol-symbols img { width: var(--ol-sym, 6mm); height: var(--ol-sym, 6mm); object-fit: contain; }
+  .ol-logo { display: inline-block; vertical-align: middle; max-width: 100%; }
+  .ol-logo img { display: block; height: var(--ol-logo, 10mm); width: auto; max-width: 100%; }
   .barcode-missing {
     font-size: 8pt; color: #a00; text-align: center; padding: 2mm;
     border: 0.2mm dashed #a00; border-radius: 1mm; display: inline-block;

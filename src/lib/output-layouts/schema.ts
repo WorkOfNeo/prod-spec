@@ -66,6 +66,9 @@ export const LayoutPageSchema = z
     title: z.string().max(80).default(""),
     widthMm: z.number().min(5).max(1000),
     heightMm: z.number().min(5).max(1000),
+    // Standard print inset: the 12×12 grid maps to the page MINUS this
+    // margin on every side. 0 = grid spans the full page (default).
+    marginMm: z.number().min(0).max(50).default(0),
     blocks: z.array(LayoutBlockSchema).max(16).default([]),
   })
   .superRefine((page, ctx) => {
@@ -250,6 +253,7 @@ export function defaultLayoutDef(): LayoutDef {
         title: "Page 1",
         widthMm: 100,
         heightMm: 75,
+        marginMm: 0,
         blocks: [],
       },
     ],
