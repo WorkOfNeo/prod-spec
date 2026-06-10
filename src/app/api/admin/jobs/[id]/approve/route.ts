@@ -28,6 +28,27 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ error: `Cannot approve job in status ${job.status}` }, { status: 400 });
   }
 
+  // Ship-gate: a placeholder artifact (dashed missing-artwork tile, "No
+  // carton EAN configured" box) is review-safe but must never reach print.
+  // Rejected assets are excluded — their gaps are already being handled.
+  const placeholderAssets = job.assets.filter(
+    (a) => a.placeholderCount > 0 && a.reviewStatus !== "REJECTED",
+  );
+  if (placeholderAssets.length > 0) {
+    return NextResponse.json(
+      {
+        error:
+          "Approval blocked — document(s) contain placeholder artifacts (missing symbol/certificate artwork or missing EAN). Fix the gaps and re-run the affected outputs.",
+        assets: placeholderAssets.map((a) => ({
+          fileName: a.fileName,
+          displayName: a.displayName,
+          placeholderCount: a.placeholderCount,
+        })),
+      },
+      { status: 409 },
+    );
+  }
+
   // Deterministic folder layout: prodspec/<customer-slug>/<supplier-slug?>/<style-id>.
   // Once the SharePoint folder convention is finalised, parse Supplier.sharepointUrl
   // (which is the supplier's *hyperlink* in their portal, not an upload path).

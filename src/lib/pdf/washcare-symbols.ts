@@ -29,6 +29,65 @@ const CACHE_TTL_MS = 30_000;
 
 let cached: { at: number; map: WashcareSymbolMap } | null = null;
 
+// Normalised lookup key for a Monday wash-care token: trim, collapse
+// whitespace, lowercase, strip a trailing ".", and fold the single-glyph
+// "℃" (U+2103) to "°c". The Pre-Order dropdown carries variants of the
+// same instruction ("Wash at or below 30℃" AND "Wash at or below 30℃.")
+// that must resolve to one symbol without the catalogue needing one row
+// per punctuation variant. Exact code/mondayValue matches always win —
+// this is the fallback key.
+export function normalizeWashToken(token: string): string {
+  return token
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/\.$/, "")
+    .replace(/℃/g, "°c")
+    .toLowerCase();
+}
+
+// Resolve one token: exact code/mondayValue first, normalised fallback after.
+export function getWashcareSymbol(
+  map: WashcareSymbolMap,
+  token: string,
+): ResolvedSymbol | undefined {
+  return map.get(token) ?? map.get(normalizeWashToken(token));
+}
+
+// Monday's dropdown `text` joins selected labels with ", " — but several
+// labels THEMSELVES contain ", " ("Dry Clean, Any Solvent"), so the naive
+// comma split in the mapper can shear one selection into two bogus tokens.
+// Re-join: greedily merge adjacent unresolved fragments when the joined
+// string resolves against the catalogue. Tokens that already resolve (or
+// never resolve, even joined) pass through unchanged.
+export function rejoinWashTokens(tokens: string[], map: WashcareSymbolMap): string[] {
+  const out: string[] = [];
+  let i = 0;
+  while (i < tokens.length) {
+    if (getWashcareSymbol(map, tokens[i])) {
+      out.push(tokens[i]);
+      i += 1;
+      continue;
+    }
+    // Try the longest join first so "A, B, C" labels win over "A, B".
+    let merged: { token: string; consumed: number } | null = null;
+    for (let end = tokens.length; end > i + 1; end--) {
+      const candidate = tokens.slice(i, end).join(", ");
+      if (getWashcareSymbol(map, candidate)) {
+        merged = { token: candidate, consumed: end - i };
+        break;
+      }
+    }
+    if (merged) {
+      out.push(merged.token);
+      i += merged.consumed;
+    } else {
+      out.push(tokens[i]);
+      i += 1;
+    }
+  }
+  return out;
+}
+
 export async function loadWashcareSymbols(): Promise<WashcareSymbolMap> {
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.map;
 
@@ -54,13 +113,18 @@ export async function loadWashcareSymbols(): Promise<WashcareSymbolMap> {
       action: toLaunderingAction(row.action),
       restrictive: row.restrictive,
     };
-    // Index by `code` (primary), `mondayValue` (secondary). The mapper
-    // hits the secondary path when Monday emits its own labels; the
-    // template hits the primary path when the StyleData.washSymbols
-    // array already carries our codes.
+    // Index by `code` (primary), `mondayValue` (secondary), then their
+    // normalised forms (tertiary — punctuation/glyph variants). Exact keys
+    // are set first and never clobbered by normalised ones.
     map.set(row.code, resolved);
     if (row.mondayValue && !map.has(row.mondayValue)) {
       map.set(row.mondayValue, resolved);
+    }
+    const normCode = normalizeWashToken(row.code);
+    if (!map.has(normCode)) map.set(normCode, resolved);
+    if (row.mondayValue) {
+      const normMv = normalizeWashToken(row.mondayValue);
+      if (!map.has(normMv)) map.set(normMv, resolved);
     }
   }
   cached = { at: Date.now(), map };

@@ -4,8 +4,20 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProdSpecOutput } from "@/lib/prod-spec/config";
 import type { ColumnMapping, RequiredField } from "@/lib/customers/config";
+import {
+  PINNABLE_FIELDS,
+  PINNABLE_FIELD_LABELS,
+  parseFieldOverrides,
+  type PinnableField,
+} from "@/lib/pdf/pins-meta";
 import { Toggle } from "@/components/toggle";
 import { Combobox } from "@/components/ui/combobox";
+import { LazyOutputPreview } from "@/components/output-preview";
+import {
+  CareStandardPanel,
+  type PanelCareLabel,
+  type PanelSymbol,
+} from "./care-standard-panel";
 
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
 
@@ -45,6 +57,11 @@ type Props = {
   attachedSupplierIds: string[];
   allSuppliers: SupplierSummary[];
   variantCatalogue: VariantInfo[];
+  // The standard care-label catalogue + symbol catalogue + per-label
+  // Translation-board entries — drives the "generated from standard" panel.
+  careLabels: PanelCareLabel[];
+  washSymbols: PanelSymbol[];
+  careTranslationsByLabel: Record<string, Record<string, string>>;
 };
 
 export function ProdSpecEditor(props: Props) {
@@ -440,6 +457,30 @@ export function ProdSpecEditor(props: Props) {
                       </button>
                     </div>
                   </div>
+
+                  {/* Per-output field pins — "this field is ALWAYS this string". */}
+                  <div className="mt-3 border-t border-zinc-100 pt-3">
+                    <PinControls
+                      overrides={o.fieldOverrides}
+                      onChange={(fieldOverrides) => updateOutput(i, { fieldOverrides })}
+                    />
+                  </div>
+
+                  {/* Sample preview wearing THIS spec's config (logo, languages,
+                      care override, pins, dims). Refetches after each autosave. */}
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-800">
+                      Preview · sample data + this spec&apos;s configuration
+                    </summary>
+                    <div className="mt-2 rounded-md bg-zinc-100 p-3">
+                      <LazyOutputPreview
+                        src={`/api/admin/prod-specs/${props.prodSpecId}/output-preview?variantKey=${encodeURIComponent(o.variantKey)}`}
+                        widthMm={o.widthMm}
+                        heightMm={o.heightMm}
+                        refreshKey={savedAt ?? undefined}
+                      />
+                    </div>
+                  </details>
                 </li>
               );
             })}
@@ -608,11 +649,14 @@ export function ProdSpecEditor(props: Props) {
         )}
       </Section>
 
-      <Section title="Care instructions (per language)" wide>
+      <Section title="Care instructions — generated from the standard" wide>
         <p className="mb-3 text-xs text-zinc-500">
-          Renders on the back side of <code className="font-mono">care-label-02</code>. Empty languages
-          are skipped. The set of languages here is driven by <code className="font-mono">/languages</code>{" "}
-          — add or reorder there.
+          The printed care text composes from the central catalogue at{" "}
+          <code className="font-mono">/settings/care-labels</code>: every active line, filtered per
+          product by the style&apos;s wash-care symbols (a prohibition symbol drops same-action
+          lines), translated per language from the Translation board. Nothing is typed per prod
+          spec — tune the catalogue, and every output follows. A per-language <em>override</em>{" "}
+          replaces the standard verbatim; it&apos;s available below each line, loudly badged.
         </p>
         {props.availableLanguages.length === 0 ? (
           <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
@@ -620,26 +664,17 @@ export function ProdSpecEditor(props: Props) {
             <strong>Seed standard set</strong> to populate the editor.
           </p>
         ) : (
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            {props.availableLanguages.map(({ code, name }) => (
-              <label key={code} className="text-xs font-medium text-zinc-700">
-                {name} <span className="font-mono text-zinc-400">({code})</span>
-                <textarea
-                  value={careByLang[code] ?? ""}
-                  onChange={(e) =>
-                    setCareByLang((prev) => ({ ...prev, [code]: e.target.value }))
-                  }
-                  rows={2}
-                  className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-xs"
-                  placeholder={
-                    code === "en"
-                      ? "Wash with similar colours / wash before wearing / wash and iron inside out"
-                      : ""
-                  }
-                />
-              </label>
-            ))}
-          </div>
+          <CareStandardPanel
+            careLabels={props.careLabels}
+            symbols={props.washSymbols}
+            translationsByLabel={props.careTranslationsByLabel}
+            languages={props.availableLanguages}
+            selectedLanguages={outputLanguageList}
+            careByLang={careByLang}
+            onChangeCareByLang={(code, value) =>
+              setCareByLang((prev) => ({ ...prev, [code]: value }))
+            }
+          />
         )}
       </Section>
 
@@ -698,6 +733,103 @@ export function ProdSpecEditor(props: Props) {
           sticky `SaveStatusBar` at the top reflects the latest state and
           exposes a manual "Save now" if the operator wants to flush
           before the debounce fires. */}
+    </div>
+  );
+}
+
+// Per-output pin editor: existing pins as chips with one-click unpin, plus
+// a field+value picker to add one. "📌 Customer name (printed) = Netto A/S"
+// — the constant wins over everything at render time and satisfies
+// readiness for that field.
+function PinControls({
+  overrides,
+  onChange,
+}: {
+  overrides: Record<string, string> | undefined;
+  onChange: (next: Record<string, string> | undefined) => void;
+}) {
+  const pins = parseFieldOverrides(overrides);
+  const pinnedKeys = Object.keys(pins) as PinnableField[];
+  const available = PINNABLE_FIELDS.filter((f) => !pinnedKeys.includes(f));
+  const [field, setField] = useState<PinnableField | "">("");
+  const [value, setValue] = useState("");
+
+  function add() {
+    if (!field || !value.trim()) return;
+    onChange({ ...pins, [field]: value.trim() });
+    setField("");
+    setValue("");
+  }
+  function remove(key: PinnableField) {
+    const next: Record<string, string> = { ...pins };
+    delete next[key];
+    onChange(Object.keys(next).length > 0 ? next : undefined);
+  }
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Pins</span>
+        {pinnedKeys.length === 0 && (
+          <span className="text-[11px] text-zinc-400">none — every field follows the row</span>
+        )}
+        {pinnedKeys.map((key) => (
+          <span
+            key={key}
+            className="inline-flex items-center gap-1 rounded-full border border-zinc-300 bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-700"
+            title="Pinned — always this value on this output, regardless of the Monday row"
+          >
+            📌 {PINNABLE_FIELD_LABELS[key]} = {pins[key]}
+            <button
+              type="button"
+              onClick={() => remove(key)}
+              className="ml-0.5 text-zinc-400 hover:text-red-700"
+              aria-label={`Unpin ${PINNABLE_FIELD_LABELS[key]}`}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <select
+          value={field}
+          onChange={(e) => setField(e.target.value as PinnableField | "")}
+          className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs"
+        >
+          <option value="">Pin a field…</option>
+          {available.map((f) => (
+            <option key={f} value={f}>
+              {PINNABLE_FIELD_LABELS[f]}
+            </option>
+          ))}
+        </select>
+        {field && (
+          <>
+            <input
+              type="text"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  add();
+                }
+              }}
+              placeholder="Always this value…"
+              className="w-56 rounded-md border border-zinc-300 px-2 py-1 text-xs"
+            />
+            <button
+              type="button"
+              onClick={add}
+              disabled={!value.trim()}
+              className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+            >
+              Pin
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,17 +1,16 @@
 import { db } from "@/lib/db";
 import { renderPdf } from "@/lib/pdf/renderer";
-import { mapMondayItemToStyleData } from "@/lib/pdf/mapper";
-import { effectiveStyleItem } from "@/lib/styles/resolved-fields";
+import { buildStyleData } from "@/lib/styles/render-context";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
+import { applyFieldOverrides } from "@/lib/pdf/pins";
+import { countPlaceholderMarkers } from "@/lib/pdf/placeholders";
+import type { StyleData } from "@/lib/pdf/types";
 import type { TemplateVariant } from "@/lib/pdf/template-registry";
-import type { MondayItem } from "@/lib/monday/client";
 import { sendEmail } from "@/lib/email/client";
 import { reviewNotificationEmail } from "@/lib/email/templates/review-notification";
-import { MANUAL_COLUMN_IDS, parseCustomerConfig } from "@/lib/customers/config";
+import { parseCustomerConfig } from "@/lib/customers/config";
 import {
   DEFAULT_OUTPUTS,
-  parseProdSpecColumnMapping,
-  parseProdSpecLanguages,
   parseProdSpecOutputs,
   resolveOutputVariant,
   type ProdSpecOutput,
@@ -118,53 +117,25 @@ export async function processJob(jobId: string): Promise<void> {
     ? await db.prodSpec.findUnique({ where: { id: job.style.prodSpecId } })
     : null;
 
-  let styleData: ReturnType<typeof mapMondayItemToStyleData>;
+  let styleData: StyleData;
   try {
-    // Inject the canonical Style.poNumber as the manual.* fallback so the PO
-    // renders on labels (care-label-02) even when the mapped PO column isn't
-    // the one this style's board populated — and the PO-PDF-resolved EANs /
-    // carton EAN so barcodes render from the scrape. See effectiveStyleItem.
-    const item = effectiveStyleItem({
-      rawData: job.style.rawData,
-      poNumber: job.style.poNumber,
-      supplier: job.style.supplier,
-      eans: job.style.eans,
-      cartonEan: job.style.cartonEan,
-    }) as MondayItem;
-    // Resolution order for column mapping:
-    //   1. ProdSpec.columnMapping  (when non-empty — operator override)
-    //   2. Customer.config.columnMapping (when non-empty — per-tenant default)
-    //   3. MANUAL_COLUMN_IDS  (only for `mondayBoardId === "manual"` styles —
-    //      these are produced by /api/admin/styles/manual which writes the
-    //      manual.* synthetic ids; without this fallback the mapper reads
-    //      nothing and the PDF renders blank).
-    //
-    // Real Monday styles whose Customer has no column mapping yet still
-    // render blank — that's the desired behaviour (forces the operator to
-    // configure mapping before generating PDFs they'd just throw away).
-    const prodSpecMapping =
-      prodSpec && Object.keys(prodSpec.columnMapping as object).length > 0
-        ? parseProdSpecColumnMapping(prodSpec.columnMapping)
-        : null;
-    const customerMapping =
-      Object.keys(config.columnMapping).length > 0 ? config.columnMapping : null;
-    const isManualStyle = job.style.mondayBoardId === "manual";
-    const effectiveMapping =
-      prodSpecMapping ??
-      customerMapping ??
-      (isManualStyle ? { ...MANUAL_COLUMN_IDS } : config.columnMapping);
-    styleData = mapMondayItemToStyleData(
-      item,
+    // One shared assembly for runner AND previews — fallback injection,
+    // mapping priority (ProdSpec override → Customer config → manual ids),
+    // per-ProdSpec context, wash-token repair. See
+    // src/lib/styles/render-context.ts for the full resolution rules.
+    styleData = await buildStyleData(
       {
-        customerName: job.style.customer.name,
-        customerLogoUrl: config.logoUrl,
-        barcodeFont: config.barcodeFont,
-        prodSpecLogoSvg: prodSpec?.logoSvg ?? null,
-        careInstructionsByLang: parseCareInstructions(prodSpec?.careInstructionsByLang),
-        outputLanguages: parseProdSpecLanguages(prodSpec?.outputLanguages),
-        qrImageUrl: job.style.qrImage?.image ?? null,
+        rawData: job.style.rawData,
+        poNumber: job.style.poNumber,
+        cartonEan: job.style.cartonEan,
+        mondayBoardId: job.style.mondayBoardId,
+        supplier: job.style.supplier,
+        eans: job.style.eans,
+        customer: { name: job.style.customer.name, config: job.style.customer.config },
+        qrImage: job.style.qrImage ? { image: job.style.qrImage.image } : null,
       },
-      effectiveMapping,
+      prodSpec,
+      config,
     );
   } catch (err) {
     throw new RunnerError("MAPPING_FAILED", `monday → style data mapping failed: ${(err as Error).message}`);
@@ -233,6 +204,9 @@ export async function processJob(jobId: string): Promise<void> {
     output: ProdSpecOutput;
     fileName: string;
     pdf: Buffer;
+    // Placeholder artifacts (missing artwork tiles / "No carton EAN") found
+    // in the rendered HTML — review-safe, blocks approval. 0 for static PDFs.
+    placeholderCount: number;
   };
   const generated: Generated[] = [];
   for (const output of outputs) {
@@ -251,21 +225,29 @@ export async function processJob(jobId: string): Promise<void> {
       continue;
     }
     try {
+      // Per-output pins ("customerName is ALWAYS …") applied on a copy —
+      // the base StyleData is shared across this job's outputs.
+      const renderStyle = applyFieldOverrides(styleData, output.fieldOverrides);
       // Static-pdf passthrough variants emit their source artwork bytes
       // verbatim; everything else renders HTML → PDF.
-      const pdf = variant.staticPdf
-        ? await variant.staticPdf()
-        : await renderPdf({
-            html: await variant.render(styleData, {
-              widthMm: output.widthMm,
-              heightMm: output.heightMm,
-            }),
-          });
+      let pdf: Buffer;
+      let placeholderCount = 0;
+      if (variant.staticPdf) {
+        pdf = await variant.staticPdf();
+      } else {
+        const html = await variant.render(renderStyle, {
+          widthMm: output.widthMm,
+          heightMm: output.heightMm,
+        });
+        placeholderCount = countPlaceholderMarkers(html);
+        pdf = await renderPdf({ html });
+      }
       generated.push({
         variant,
         output,
         fileName: fileNameFor(variant, styleData.styleNumber),
         pdf,
+        placeholderCount,
       });
     } catch (err) {
       const reason = (err as Error).message;
@@ -314,6 +296,7 @@ export async function processJob(jobId: string): Promise<void> {
             displayName: `${doc.variant.name} · ${doc.output.widthMm}×${doc.output.heightMm} mm`,
             fileName: doc.fileName,
             pdf: toPlainBytes(doc.pdf),
+            placeholderCount: doc.placeholderCount,
           },
         }),
       ),
@@ -399,16 +382,4 @@ export class RunnerError extends Error {
 function fileNameFor(variant: TemplateVariant, styleNumber: string): string {
   const slug = styleNumber.replace(/[^a-z0-9-]+/gi, "-").toLowerCase();
   return `${slug}-${variant.key}.pdf`;
-}
-
-// Safely coerce ProdSpec.careInstructionsByLang JSON into a flat
-// { langCode: string } map. Invalid shapes return {} so the template
-// can render with no care text rather than crash.
-function parseCareInstructions(raw: unknown): Record<string, string> {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-    if (typeof v === "string" && v.trim()) out[k.toLowerCase()] = v;
-  }
-  return out;
 }

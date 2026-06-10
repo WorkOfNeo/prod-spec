@@ -544,6 +544,11 @@ model JobAsset {
   // the variant's `name` at render time; falls back to the docType label.
   displayName  String?
   pdf          Bytes
+  // Placeholder artifacts (dashed missing-artwork tiles, "No carton EAN
+  // configured" boxes) counted in the rendered HTML at generation time.
+  // > 0 means the PDF is review-safe but NOT print-safe — approval is
+  // blocked until the gaps are fixed and the output is re-run.
+  placeholderCount Int            @default(0)
   // Per-asset review state — separate from the parent Job's status so
   // we can approve some outputs and reject others with reasons.
   reviewStatus AssetReviewStatus @default(PENDING_REVIEW)

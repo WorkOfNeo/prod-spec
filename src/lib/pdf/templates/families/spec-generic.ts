@@ -3,7 +3,7 @@ import type { StyleData } from "../../types";
 import type { OutputDims } from "../../template-registry";
 import { escapeHtml, htmlDocument, tFor } from "../base";
 import { renderBarcodeDataUrl } from "../../barcode";
-import { loadWashcareSymbols, type WashcareSymbolMap } from "../../washcare-symbols";
+import { loadWashcareSymbols, getWashcareSymbol, type WashcareSymbolMap } from "../../washcare-symbols";
 import { loadCertificates, type CertificateMap } from "../../certificates";
 import {
   loadTranslationDictionary,
@@ -125,7 +125,7 @@ export function makeGenericSpecRenderer(
     ]);
 
     const present: PresentSymbol[] = style.washSymbols.map((token) => {
-      const resolved = symbolMap.get(token);
+      const resolved = getWashcareSymbol(symbolMap, token);
       return resolved
         ? { code: resolved.code, action: resolved.action, restrictive: resolved.restrictive }
         : { code: token, action: null, restrictive: false };
@@ -524,7 +524,7 @@ function careBlock(
 function symbolsBlock(style: StyleData, symbolMap: WashcareSymbolMap): string {
   const symbols = style.washSymbols
     .map((token) => {
-      const resolved = symbolMap.get(token);
+      const resolved = getWashcareSymbol(symbolMap, token);
       if (resolved?.dataUrl) {
         return `<img src="${resolved.dataUrl}" alt="${escapeHtml(resolved.name)}" title="${escapeHtml(resolved.name)}" />`;
       }

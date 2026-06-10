@@ -24,6 +24,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
 
   const sharepointConfigured = Boolean(process.env.AZURE_CLIENT_ID && process.env.SHAREPOINT_SITE_ID);
   const job = style.jobs[0];
+  const placeholderAssets = job?.assets.filter((a) => a.placeholderCount > 0) ?? [];
   if (!job) {
     return (
       <div className="px-8 py-8">
@@ -48,6 +49,28 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         </div>
         <ReviewActions jobId={job.id} styleId={style.id} sharepointConfigured={sharepointConfigured} />
       </div>
+
+      {placeholderAssets.length > 0 && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
+          <div className="text-sm font-semibold text-red-800">
+            {placeholderAssets.length} document{placeholderAssets.length > 1 ? "s contain" : " contains"}{" "}
+            placeholder artifacts — approval is blocked
+          </div>
+          <p className="mt-1 text-xs text-red-700">
+            Dashed &ldquo;missing artwork&rdquo; tiles or &ldquo;No carton EAN&rdquo; boxes are
+            review-safe but must never ship to print. Fix the gaps (symbol artwork at
+            /settings/washcare-symbols, certificate logos, EAN resolution) and re-run the output.
+          </p>
+          <ul className="mt-2 space-y-0.5 text-xs text-red-800">
+            {placeholderAssets.map((a) => (
+              <li key={a.id}>
+                · {a.displayName ?? a.fileName} — {a.placeholderCount} placeholder
+                {a.placeholderCount > 1 ? "s" : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="mt-6 grid grid-cols-2 gap-4">
         {job.assets.map((asset) => {
