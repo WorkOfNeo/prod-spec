@@ -598,7 +598,7 @@ export function LayoutEditor({
     const end = ta.selectionEnd ?? 0;
     const selected = text.slice(start, end) || "text";
     const next = text.slice(0, start) + marker + selected + marker + text.slice(end);
-    updateBlock(blockId(selBlock), { lines: next.split("\n").slice(0, 30) });
+    updateBlock(blockId(selBlock), { lines: next.split("\n").slice(0, 100) });
     const caret = start + marker.length + selected.length + marker.length;
     window.setTimeout(() => {
       const el = contentTaRef.current;
@@ -624,7 +624,7 @@ export function LayoutEditor({
       next = text.length > 0 ? `${text}\n${token}` : token;
       caret = next.length;
     }
-    updateBlock(blockId(selBlock), { lines: next.split("\n").slice(0, 30) });
+    updateBlock(blockId(selBlock), { lines: next.split("\n").slice(0, 100) });
     window.setTimeout(() => {
       const el = contentTaRef.current;
       if (el) {
@@ -1472,7 +1472,7 @@ export function LayoutEditor({
                   <textarea
                     ref={contentTaRef}
                     value={selBlock.lines.join("\n")}
-                    onChange={(e) => updateBlock(blockId(selBlock), { lines: e.target.value.split("\n").slice(0, 30) })}
+                    onChange={(e) => updateBlock(blockId(selBlock), { lines: e.target.value.split("\n").slice(0, 100) })}
                     rows={6}
                     spellCheck={false}
                     className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-2 font-mono text-xs leading-relaxed"

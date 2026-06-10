@@ -63,7 +63,7 @@ export const LayoutBlockSchema = z.object({
   fontPt: z.number().min(4).max(48).default(9),
   bold: z.boolean().default(false),
   lineHeight: z.number().min(1).max(3).default(1.4),
-  lines: z.array(z.string().max(500)).max(30).default([]),
+  lines: z.array(z.string().max(500)).max(100).default([]),
 });
 export type LayoutBlock = z.infer<typeof LayoutBlockSchema>;
 
@@ -87,7 +87,8 @@ export const LayoutPageSchema = z
     // Legacy single-value margin (pre per-side) — migrated into `margins`
     // by parseLayoutDef and ignored afterwards.
     marginMm: z.number().min(0).max(50).optional(),
-    blocks: z.array(LayoutBlockSchema).max(16).default([]),
+    // Generous runaway protection only — not a design constraint.
+    blocks: z.array(LayoutBlockSchema).max(200).default([]),
   })
   .superRefine((page, ctx) => {
     const seenAnchors = new Set<string>();
@@ -144,7 +145,7 @@ export const LayoutSettingsSchema = z.object({
 export type LayoutSettings = z.infer<typeof LayoutSettingsSchema>;
 
 export const LayoutDefSchema = z.object({
-  pages: z.array(LayoutPageSchema).min(1).max(12),
+  pages: z.array(LayoutPageSchema).min(1).max(40),
   settings: LayoutSettingsSchema.optional(),
 });
 export type LayoutDef = z.infer<typeof LayoutDefSchema>;
