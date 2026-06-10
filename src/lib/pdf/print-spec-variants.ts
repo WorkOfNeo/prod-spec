@@ -5,6 +5,7 @@ import type { StyleData } from "./types";
 import type { TemplateVariant, OutputDims } from "./template-registry";
 import { escapeHtml } from "./templates/base";
 import { makeCareLabelSquare3LabelRenderer } from "./templates/families/care-label-square-3label";
+import { makeNettoCartonMarkingRenderer } from "./templates/families/carton-marking-netto-dk";
 import { makeGenericSpecRenderer } from "./templates/families/spec-generic";
 import { loadStaticPdf } from "./static-pdfs";
 import { ALL_PRINT_SPECS } from "./print-spec-catalog";
@@ -29,6 +30,7 @@ type RenderFn = (style: StyleData, dims: OutputDims) => Promise<string>;
 // listed here renders through the generic spec renderer.
 const FAMILY_RENDERERS: Record<string, (spec: PrintSpec) => RenderFn> = {
   "care-label-square-3label": makeCareLabelSquare3LabelRenderer,
+  "carton-marking-netto-dk": makeNettoCartonMarkingRenderer,
 };
 
 // The DocType enum predates the print-spec catalogue and only has six
@@ -97,6 +99,9 @@ const COLUMN_BY_FIELD: Record<FieldKey, keyof ColumnMapping | null> = {
   prodNumber: "prodNumber",
   supplierAddress: null,
   oekoTexLogo: null,
+  // Filled from the Customer record by the runner (StyleData.customerName),
+  // not from a mapped board column.
+  customerName: null,
 };
 
 function requiredFieldsFor(spec: PrintSpec): Array<keyof ColumnMapping> {

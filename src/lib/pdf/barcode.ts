@@ -72,12 +72,16 @@ export type BarcodeOpts = {
   textxalign?: "center" | "left" | "right";
 };
 
-const DEFAULTS: Required<Pick<BarcodeOpts, "bcid" | "scale" | "height" | "includetext" | "textxalign">> = {
+// No textxalign default: bwip-js's own EAN-13 default ("justify") produces
+// the standard retail layout — first digit to the left of the symbol, two
+// 6-digit groups sitting BETWEEN the extended guard bars. Forcing "center"
+// (the old default) lumps all 13 digits centred across the guard bars and
+// punches an unreadable white knockout through the symbol.
+const DEFAULTS: Required<Pick<BarcodeOpts, "bcid" | "scale" | "height" | "includetext">> = {
   bcid: "ean13",
   scale: 3,
   height: 10,
   includetext: true,
-  textxalign: "center",
 };
 
 export async function renderBarcodePng(text: string, opts: BarcodeOpts = {}): Promise<Buffer> {

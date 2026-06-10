@@ -20,7 +20,7 @@ export type FieldKey =
   | 'customerItemNo' | 'customerOrderNumber' | 'poNumber' | 'styleNumber'
   | 'description' | 'qtyPerCarton' | 'retailPrice' | 'campaignWeek'
   | 'lotNo' | 'batchNo' | 'articleNo' | 'prodNumber' | 'supplierAddress'
-  | 'oekoTexLogo';
+  | 'oekoTexLogo' | 'customerName';
 
 export interface Dimensions { widthMm: number; heightMm: number; }
 

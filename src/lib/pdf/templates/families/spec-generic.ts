@@ -254,7 +254,9 @@ export function makeGenericSpecRenderer(
         .price-line { margin-top: 1.2mm; font-size: 7pt; font-weight: 700; text-align: center; }
         .po-line { margin-top: 1.5mm; font-size: 6pt; font-weight: 600; }
         .barcode-block { margin-top: 1.5mm; width: 100%; }
-        .barcode-block img { display: block; width: 100%; height: auto; max-height: 12mm; }
+        /* max-width + auto dims preserve the PNG's aspect ratio; width:100%
+           with a max-height cap used to squash bars and digits together. */
+        .barcode-block img { display: block; max-width: 100%; width: auto; height: auto; margin: 0 auto; }
         .barcode-missing {
           font-size: 5pt; color: #a00; text-align: center;
           padding: 1mm; border: 0.15mm dashed #a00; border-radius: 0.5mm;
@@ -374,8 +376,9 @@ async function renderField(
         : "";
     }
 
-    // No dynamic spec carries these today (composition2 / ean128 live on
-    // static carton artwork only) — explicit no-ops for completeness.
+    // Not rendered generically: composition2 lives on static carton artwork
+    // only, and ean128 is only declared by the carton-marking-netto-dk
+    // family, whose bespoke renderer draws the whole label itself.
     case "composition2":
     case "ean128":
       return "";
@@ -435,11 +438,11 @@ async function renderEanBlock(
   // of overflowing onto an extra one.
   const maxHeightMm = Math.max(3, Math.min(12, pageHeightMm * 0.5)).toFixed(1);
   try {
+    // Default EAN-13 text placement (digits between the extended guard
+    // bars, first digit to the left) — see barcode.ts DEFAULTS.
     const url = await renderBarcodeDataUrl(size.ean13, {
       scale: 3,
       height: 10,
-      includetext: true,
-      textxalign: "center",
     });
     return `<div class="barcode-block"><img style="max-height: ${maxHeightMm}mm" src="${url}" alt="${escapeHtml(size.ean13)}" /></div>`;
   } catch {
@@ -453,11 +456,12 @@ function compositionBlock(
   langs: LangSpec[],
 ): string {
   const originalText = tFor(style.composition, "en") || style.composition[0]?.text || "";
-  const originalRow = originalText
-    ? `<div class="composition-original">${escapeHtml(originalText)}</div>`
-    : "";
-  const rows = langs
-    .filter(({ code }) => code !== "en")
+  const nonEnLangs = langs.filter(({ code }) => code !== "en");
+  const wantsEnglish = langs.length === 0 || langs.some(({ code }) => code === "en");
+  // Single-language blocks print plain, like the references do ("100%
+  // Bomuld" on the Danish-only info areas — no "DA :" flag).
+  const solo = !wantsEnglish && nonEnLangs.length === 1;
+  const rows = nonEnLangs
     .map(({ code, label }) => {
       const entered = tFor(style.composition, code);
       const translated = originalText
@@ -465,6 +469,7 @@ function compositionBlock(
         : { text: "", changed: false };
       const text = entered || translated.text;
       if (!text || (!entered && !translated.changed)) return "";
+      if (solo) return `<div class="composition-original">${escapeHtml(text)}</div>`;
       return `
       <div class="lang-row">
         <span class="lang">${label} :</span>
@@ -473,7 +478,16 @@ function compositionBlock(
     })
     .filter(Boolean)
     .join("");
+  // The bold English source line prints only when the language set includes
+  // EN (or declares no languages at all) — a Danish-only info area must not
+  // lead with English. It comes back as the fallback when no language row
+  // resolved, so the print never loses the composition entirely.
+  const originalRow =
+    originalText && (wantsEnglish || !rows)
+      ? `<div class="composition-original">${escapeHtml(originalText)}</div>`
+      : "";
   if (!originalRow && !rows) return "";
+  if (solo) return `${originalRow}${rows}`;
   return `${originalRow}${rows ? `<div class="lang-rows">${rows}</div>` : ""}`;
 }
 
@@ -484,6 +498,9 @@ function careBlock(
   langs: LangSpec[],
 ): string {
   const override = style.careInstructionsByLang ?? {};
+  // Single-language blocks print without the language flag, matching the
+  // references (the Danish-only Coop care labels carry plain Danish text).
+  const solo = langs.length === 1;
   const rows = langs
     .map(({ code, label }) => {
       const composed = labels
@@ -492,6 +509,7 @@ function careBlock(
         .join(" / ");
       const text = (override[code]?.trim() || composed).trim();
       if (!text) return "";
+      if (solo) return `<div class="text">${escapeHtml(text)}</div>`;
       return `
       <div class="lang-row">
         <span class="lang">${label} :</span>
