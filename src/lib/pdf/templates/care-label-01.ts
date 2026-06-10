@@ -45,11 +45,11 @@ export async function renderCareLabel01Html(style: StyleData, dims: OutputDims):
         barcodeHtml = `<div class="barcode-missing">No valid EAN for ${escapeHtml(size.label)}</div>`;
       } else {
         try {
+          // Default EAN-13 text placement (digits between the extended
+          // guard bars, first digit to the left) — see barcode.ts DEFAULTS.
           const barcodeDataUrl = await renderBarcodeDataUrl(size.ean13, {
             scale: 3,
             height: 10,
-            includetext: true,
-            textxalign: "center",
           });
           barcodeHtml = `<img src="${barcodeDataUrl}" alt="${escapeHtml(size.ean13)}" />`;
         } catch {
@@ -106,19 +106,21 @@ export async function renderCareLabel01Html(style: StyleData, dims: OutputDims):
         font-weight: 700;
         line-height: 1;
       }
-      /* Barcode block: anchored to the bottom of the label, fills the
-         entire usable width. PNG keeps its aspect ratio via height:auto
-         so the bars stay sharp; vertical height is bounded by the
-         remaining space (~ 14 mm after logo + size text + padding). */
+      /* Barcode block: anchored to the bottom of the label. max-width +
+         max-height with width/height auto keep the PNG's aspect ratio —
+         width:100% with a max-height cap used to squash the bars and the
+         digit line into each other. */
       .barcode {
         margin-top: auto;
         width: 100%;
       }
       .barcode img {
         display: block;
-        width: 100%;
+        max-width: 100%;
+        width: auto;
         height: auto;
         max-height: 14mm;
+        margin: 0 auto;
       }
       .barcode-missing {
         font-size: 5pt;

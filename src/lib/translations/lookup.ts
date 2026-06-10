@@ -56,14 +56,18 @@ export function translatePhrase(
 // MATERIAL term against the board while preserving the percentages and
 // structure. The board stores fibre names ("organic cotton", "recycled
 // polyester"), NOT full "NN% Material" strings — so a whole-phrase lookup
-// wouldn't match. We split on commas, peel the leading "NN%" off each
-// segment, translate the remaining fibre name (translatePhrase, which
-// degrades to the English fibre when the board lacks it), and reassemble.
+// wouldn't match. A fibre clause is "<NN%> <fibre name>"; clauses may
+// follow each other WITHOUT a comma ("92% Polyester 8% Elastane"), so
+// clauses are delimited by the next percentage token, not by punctuation.
+// Each clause's fibre name translates via translatePhrase (which degrades
+// to the English fibre when the board lacks it); everything around the
+// fibre names — percentages, spacing, slashes, prefixes — is preserved.
 //
-//   "100% Organic Cotton"      --(da)-->  "100% Økologisk Bomuld"
-//   "95% Cotton, 5% Elastane"  --(da)-->  "95% Bomuld, 5% Elastan"
+//   "100% Organic Cotton"        --(da)-->  "100% Økologisk Bomuld"
+//   "95% Cotton, 5% Elastane"    --(da)-->  "95% Bomuld, 5% Elastan"
+//   "92% Polyester 8% Elastane"  --(da)-->  "92% Polyester 8% Elastan"
 //
-// A segment without a leading percentage is translated whole. `changed`
+// A comma segment without any percentage is translated whole. `changed`
 // reports whether at least one fibre actually resolved to a non-English
 // value, so callers can skip a language row that would otherwise just
 // reprint the English composition under a foreign flag.
@@ -73,16 +77,31 @@ export function translateComposition(
   lang: string,
 ): { text: string; changed: boolean } {
   let changed = false;
+
+  // "<NN%> <fibre…>" where the fibre runs lazily up to the next percentage
+  // token (or the end of the segment).
+  const PERCENT_CLAUSE = /(\d+(?:[.,]\d+)?\s*%\s*)([^%]+?)(?=\d+(?:[.,]\d+)?\s*%|$)/g;
+
+  const translateFibreClauses = (segment: string): string =>
+    segment.replace(PERCENT_CLAUSE, (whole, pct: string, fibreRaw: string) => {
+      // Trim separators (spaces, slashes, …) off the fibre but splice the
+      // translation back between them so authored punctuation survives.
+      const fibre = fibreRaw.replace(/^[\s/;:·•-]+|[\s/;:·•-]+$/g, "");
+      if (!fibre) return whole;
+      const translated = translatePhrase(dict, fibre, lang);
+      if (translated !== fibre) changed = true;
+      return pct + fibreRaw.replace(fibre, translated);
+    });
+
   const text = composition
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
     .map((segment) => {
-      const m = segment.match(/^(\d+(?:[.,]\d+)?)\s*%\s*(.+)$/);
-      const material = m ? m[2] : segment;
-      const translated = translatePhrase(dict, material, lang);
-      if (translated !== material) changed = true;
-      return m ? `${m[1]}% ${translated}` : translated;
+      if (/\d\s*%/.test(segment)) return translateFibreClauses(segment);
+      const translated = translatePhrase(dict, segment, lang);
+      if (translated !== segment) changed = true;
+      return translated;
     })
     .join(", ");
   return { text, changed };

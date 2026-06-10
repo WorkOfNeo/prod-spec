@@ -5,11 +5,25 @@ export const spec: PrintSpec = {
   customer: 'Netto DK',
   businessArea: 'Body Guide',
   printType: 'carton-marking',
-  renderStrategy: 'static-pdf',
+  renderStrategy: 'dynamic',
   sourcePdf: 'Netto DK-Body Guide-Carton Marking.pdf',
   layoutFamily: 'carton-marking-netto-dk',
+  parts: [
+    {
+      id: 'box-label',
+      dimensions: { widthMm: 105, heightMm: 148 },
+      fields: [
+        { key: 'ean128', required: true, source: 'po', notes: '\'EAN BARCODE (see PO) — has to be generated as EAN128\'; carton EAN as Code128, number printed under the bars' },
+        { key: 'qtyPerCarton', required: true, source: 'po', notes: '\'Pcs. Per master\'' },
+        { key: 'customerOrderNumber', required: false, source: 'po', notes: 'FOB orders print the customer\'s order number on the \'Order no. :\' row' },
+        { key: 'poNumber', required: true, source: 'po', notes: 'DDP orders print the Contrast order number (\'Order no. : C-PO…\')' },
+        { key: 'description', required: false, source: 'article', notes: '\'Article: T-skjorte Grinchen\'' },
+      ],
+    },
+  ],
+  dimensions: { widthMm: 105, heightMm: 148 },
   dimensionsVerified: false,
-  notes: 'Carton/box marking emitted as static PDF. Print size per PO — no fixed dimensions. Layout carries field markers: customer order number (FOB orders) / Contrast order number (DDP orders), EAN-128 barcode (\'EAN BARCODE (see PO) — has to be generated as EAN128\'), EAN number, qty/carton, PO number, article/description, weight. Placement: centre of box, at least 30 mm from any edge.',
+  notes: 'Clean dynamic render of the box label — the source PDF is an annotated layout drawing (red field arrows, yellow FOB/DDP banners, internal comments) and must never be emitted as the print. Rows: Netto A/S, Pcs. Per master, Total no. Master Cartons (blank — warehouse fills in), Order no. (FOB → customer order number, DDP → Contrast order number), Article, Weight (blank). Print size per PO — 105×148 mm working default. Placement: centre of box, at least 30 mm from any edge.',
 };
 
 export default spec;

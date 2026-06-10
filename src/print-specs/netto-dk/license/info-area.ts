@@ -13,6 +13,7 @@ export const spec: PrintSpec = {
       id: 'print-area',
       dimensions: { widthMm: 0, heightMm: 0 },
       fields: [
+        { key: 'sizes', required: true, source: 'po', notes: 'One print per size (each size has its own EAN) — the size itself must show on the print so packers can match print to packaging' },
         { key: 'composition', languages: ['DA'], required: true, source: 'article', notes: 'Example \'100% Bomuld\'' },
         { key: 'washCareSymbols', required: true, source: 'article' },
         { key: 'ean13', required: true, source: 'po', notes: '\'BARCODE / EAN NUMBER HERE\' — EAN-13' },

@@ -3,32 +3,57 @@ import type { OutputDims } from "../../template-registry";
 import { escapeHtml, htmlDocument, tFor } from "../base";
 import { renderBarcodeDataUrl } from "../../barcode";
 
-// netto-dk-privatelabel · Carton Marking — the master-carton box label.
-// Reference: "Carton marking.pdf". Placed centred on the box, ≥30 mm from
-// any edge. Carries the customer (Netto A/S), the article name, per-carton
-// quantities, the order number, and the carton EAN as a Code128 barcode.
+// netto-dk-privatelabel · Carton Marking — the master-carton box sticker.
 //
-// FOB vs DDP — the reference shows two variants of the order-number row:
-//   FOB orders print the CUSTOMER's order number (style.customerOrderNo)
-//   DDP orders print the CONTRAST order number (style.poNumber, "C-PO…")
-// We pick by the style's delivery term (mapped from the Pre-Order board);
-// an empty/unknown term defaults to DDP, since poNumber is always present.
+// Reference: "Netto DK-*-Carton marking.pdf". That PDF is an annotated
+// layout DRAWING (red field-marker arrows, yellow FOB/DDP banners, internal
+// placement comments) — none of that may appear on the print. Field sources
+// confirmed in the 2026-06 walkthrough with Niels:
 //
-// Barcode — "(see PO) has to be generated as EAN128". The carton EAN number
-// is rendered as a Code128 (bwip-js bcid "code128") PNG. (If GS1-128 with
-// application identifiers is ever required, switch the bcid to "gs1-128".)
+//   ┌─────────────────────────────────────────────┐
+//   │                          ▐█▌█▐██▌█▐█▌        │  EAN-128 bars (carton EAN
+//   │                           5701234567890      │  from the PO PDF) + the
+//   │                                              │  EAN number beneath
+//   │ <customerName>                               │
+//   │ Pcs. Per master:        <Qty/Carton>         │
+//   │ Total no. Master Cartons:                    │  blank — penned in at the
+//   │ Order no. :             <order no>           │  warehouse
+//   │ Article:                <Description>        │
+//   │ Weight:                                      │  blank
+//   └─────────────────────────────────────────────┘
+//
+// • Brand row: StyleData.customerName (the style's Customer record —
+//   "Netto A/S" on the reference drawing).
+// • Pcs. Per master: Pre-Order Qty/Carton (carton.outerVE).
+// • Order no. — FOB orders print the CUSTOMER's order number
+//   (style.customerOrderNo); DDP orders print the CONTRAST order number
+//   (style.poNumber, "C-PO…"). Picked by the style's delivery term; an
+//   empty/unknown term defaults to DDP, since poNumber is always present.
+//   The printed row label is "Order no. :" either way, as on the artwork.
+// • Article: Pre-Order Description column (falls back to the EN product
+//   name, then the style name, rather than printing an empty row).
+//
+// Barcode — "(see PO) has to be generated as EAN128". The carton EAN is
+// rendered as Code 128 bars (bwip-js bcid "code128") with the number as a
+// separate line under the bars, matching the artwork's "EAN NUMBER"
+// placement. (If GS1-128 with application identifiers is ever required,
+// switch the bcid to "gs1-128" and prefix an AI.)
+//
+// Print size: not stated on the drawing — the spec's 150×75 mm working
+// size matches the drawing's ~2:1 sticker outline. The layout is
+// dims-driven and tolerates other sticker sizes.
 export async function renderNettoCartonMarkingHtml(
   style: StyleData,
   dims: OutputDims,
 ): Promise<string> {
   const pageSize = { kind: "mm" as const, widthMm: dims.widthMm, heightMm: dims.heightMm };
 
-  const article = tFor(style.productNameTranslations, "en") || style.styleName;
+  const article =
+    style.description || tFor(style.productNameTranslations, "en") || style.styleName;
 
   // FOB → customer's order number; otherwise (DDP / empty) → Contrast PO.
   const isFob = (style.deliveryTerm ?? "").toUpperCase().includes("FOB");
   const orderNo = (isFob ? style.customerOrderNo : style.poNumber) ?? "";
-  const orderLabel = isFob ? "Customer Order No." : "Contrast Order No.";
 
   const cartonEan = style.carton.ean13;
   const hasEan = !!cartonEan && cartonEan !== "0000000000000";
@@ -39,64 +64,69 @@ export async function renderNettoCartonMarkingHtml(
     try {
       const dataUrl = await renderBarcodeDataUrl(cartonEan, {
         bcid: "code128",
-        scale: 3,
-        height: 14,
-        includetext: true,
-        textxalign: "center",
+        scale: 4,
+        height: 16,
+        includetext: false,
       });
-      barcodeHtml = `<img src="${dataUrl}" alt="${escapeHtml(cartonEan)}" />`;
+      barcodeHtml = `
+        <div class="ean">
+          <img src="${dataUrl}" alt="${escapeHtml(cartonEan)}" />
+          <div class="ean-number">${escapeHtml(cartonEan)}</div>
+        </div>`;
     } catch {
       barcodeHtml = `<div class="barcode-missing">EAN ${escapeHtml(cartonEan)} — could not encode</div>`;
     }
   }
 
   // "Total no. Master Cartons" and "Weight" have no source in our data model
-  // — printed as blank fill-in rows for the warehouse to complete, matching
-  // the reference form.
-  const blank = `<span class="fill-in"></span>`;
-
+  // — printed as empty rows for the warehouse to complete, matching the
+  // reference form.
   const body = `
     <div class="page">
-      <div class="brand">${escapeHtml(style.customerName)}</div>
-      <h1>${escapeHtml(article)}</h1>
-
-      <table>
-        <tr><td class="label">${escapeHtml(orderLabel)}</td><td>${escapeHtml(orderNo) || blank}</td></tr>
-        <tr><td class="label">Pcs. Per Master</td><td>${escapeHtml(String(style.carton.outerVE || ""))}</td></tr>
-        <tr><td class="label">Total no. Master Cartons</td><td>${blank}</td></tr>
-        <tr><td class="label">Weight</td><td>${blank}</td></tr>
-        <tr><td class="label">Style</td><td>${escapeHtml(style.styleNumber)}</td></tr>
-      </table>
-
-      <div class="ean">
-        <div class="ean-no">EAN: ${hasEan ? escapeHtml(cartonEan) : "—"}</div>
-        <div class="barcode">${barcodeHtml}</div>
+      <div class="box">
+        <div class="barcode-area">${barcodeHtml}</div>
+        <div class="rows">
+          <div class="row brand">${escapeHtml(style.customerName)}</div>
+          <div class="row"><span class="k">Pcs. Per master:</span><span>${escapeHtml(String(style.carton.outerVE || ""))}</span></div>
+          <div class="row"><span class="k">Total no. Master Cartons:</span></div>
+          <div class="row"><span class="k">Order no. :</span><span>${escapeHtml(orderNo)}</span></div>
+          <div class="row"><span class="k">Article:</span><span>${escapeHtml(article)}</span></div>
+          <div class="row"><span class="k">Weight:</span></div>
+        </div>
       </div>
-
-      <div class="note">Box marking — centre of box, ≥30 mm from each edge.</div>
     </div>`;
 
   return htmlDocument({
-    title: `Carton — ${style.styleName}`,
+    title: `Carton Marking — ${style.styleName}`,
     pageSize,
     body,
     barcodeFont: style.barcodeFont,
     extraCss: `
-      .page { padding: 10mm; display: flex; flex-direction: column; height: 100%; }
-      .brand { font-size: 12pt; font-weight: 700; letter-spacing: 0.02em; }
-      h1 { font-size: 16pt; font-weight: 700; margin: 2mm 0 4mm; }
-      table { width: 100%; border-collapse: collapse; }
-      td { padding: 1.6mm 2mm; vertical-align: bottom; border-bottom: 0.2mm solid #ddd; font-size: 10pt; }
-      td.label { color: #555; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.04em; width: 45%; }
-      .fill-in { display: inline-block; min-width: 30mm; border-bottom: 0.2mm solid #999; height: 1em; }
-      .ean { margin-top: auto; padding-top: 6mm; text-align: center; }
-      .ean-no { font-size: 9pt; letter-spacing: 0.05em; margin-bottom: 1.5mm; }
-      .barcode img { display: block; width: 80%; max-width: 80%; height: auto; margin: 0 auto; }
+      .page { padding: 2mm; height: ${dims.heightMm}mm; display: flex; }
+      .box {
+        border: 0.5mm solid #000;
+        flex: 1;
+        padding: 3.5mm 4mm;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      /* Top-right: bars with the EAN number centred beneath them. */
+      .barcode-area { align-self: flex-end; max-width: 80%; }
+      .ean { display: inline-block; text-align: center; }
+      .ean img { display: block; height: 16mm; width: auto; max-width: 100%; }
+      .ean-number { margin-top: 1mm; font-size: 10pt; letter-spacing: 0.08em; }
+      /* Bottom-left block, pushed to the bottom edge. All rows are bold on
+         the reference; ".k" not ".label" — the htmlDocument base sheet
+         styles .label as small grey uppercase. */
+      .rows { margin-top: auto; font-weight: 700; font-size: 10.5pt; }
+      .row { padding: 0.8mm 0; }
+      .row .k { display: inline-block; min-width: 26mm; padding-right: 3mm; }
+      .row.brand { font-size: 11.5pt; }
       .barcode-missing {
         font-size: 8pt; color: #a00; text-align: center; padding: 2mm;
         border: 0.2mm dashed #a00; border-radius: 1mm;
       }
-      .note { margin-top: 4mm; font-size: 6.5pt; color: #888; text-align: center; }
     `,
   });
 }

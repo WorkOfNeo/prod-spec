@@ -50,28 +50,38 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
       </div>
 
       <div className="mt-6 grid grid-cols-2 gap-4">
-        {job.assets.map((asset) => (
-          <div key={asset.id} className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
-            <div className="flex items-center justify-between border-b border-zinc-100 bg-zinc-50 px-3 py-2">
-              <span className="text-xs font-medium uppercase tracking-wide text-zinc-600">
-                {asset.docType.toLowerCase().replace(/_/g, " ")}
-              </span>
-              <a
-                href={`/api/admin/jobs/${job.id}/preview?docType=${asset.docType}`}
-                className="text-xs text-zinc-500 underline"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Open
-              </a>
+        {job.assets.map((asset) => {
+          // Prefer variantKey — uniquely identifies the asset when multiple
+          // variants on the same job share a docType. Fall back to docType
+          // for legacy assets whose variantKey wasn't recorded.
+          const previewQuery = asset.variantKey
+            ? `variantKey=${encodeURIComponent(asset.variantKey)}`
+            : `docType=${asset.docType}`;
+          const title = asset.displayName ?? asset.docType.toLowerCase().replace(/_/g, " ");
+          return (
+            <div key={asset.id} className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+              <div className="flex items-center justify-between gap-3 border-b border-zinc-100 bg-zinc-50 px-3 py-2">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-zinc-800">{title}</div>
+                  <div className="truncate font-mono text-[10px] text-zinc-500">{asset.fileName}</div>
+                </div>
+                <a
+                  href={`/api/admin/jobs/${job.id}/preview?${previewQuery}`}
+                  className="shrink-0 text-xs text-zinc-500 underline"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open
+                </a>
+              </div>
+              <iframe
+                src={`/api/admin/jobs/${job.id}/preview?${previewQuery}`}
+                className="block h-[600px] w-full bg-white"
+                title={title}
+              />
             </div>
-            <iframe
-              src={`/api/admin/jobs/${job.id}/preview?docType=${asset.docType}`}
-              className="block h-[600px] w-full bg-white"
-              title={asset.docType}
-            />
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

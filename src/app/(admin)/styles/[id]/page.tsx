@@ -13,6 +13,7 @@ import { findMissingDetailFields } from "@/lib/styles/detail-fields";
 import { computeReadiness, type Readiness, type ReadinessTone } from "@/lib/styles/readiness";
 import { outputReadinessForStyle, type OutputReadiness } from "@/lib/styles/output-readiness";
 import { RunOutputButton } from "./run-output-button";
+import { OutputThumbnail } from "./output-thumbnail";
 import { RerunButton } from "./rerun-button";
 import { ProdSpecTab } from "./prod-spec-tab";
 import { EanPanel } from "./ean-panel";
@@ -115,6 +116,24 @@ export default async function StyleDetail({
     },
   });
   if (!style) notFound();
+
+  // Latest generated asset per output variant — powers the realistic
+  // thumbnail on each Outputs row. Queried directly instead of scanning
+  // style.jobs: that window only holds the last 10 jobs, and per-output
+  // reruns (one asset per job) push older outputs' assets out of it fast.
+  // Metadata only — the PNG bytes come from the thumbnail endpoint.
+  const recentAssets = await db.jobAsset.findMany({
+    where: { job: { styleId: id }, variantKey: { not: null } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, jobId: true, variantKey: true, createdAt: true },
+    take: 400,
+  });
+  const latestAssetByVariant = new Map<string, { id: string; jobId: string; createdAt: Date }>();
+  for (const a of recentAssets) {
+    if (a.variantKey && !latestAssetByVariant.has(a.variantKey)) {
+      latestAssetByVariant.set(a.variantKey, { id: a.id, jobId: a.jobId, createdAt: a.createdAt });
+    }
+  }
 
   const latestJob = style.jobs[0];
   const missing = (style.missingFields as Array<{ id: string; label: string }>) ?? [];
@@ -305,6 +324,7 @@ export default async function StyleDetail({
           requiredFieldKeys={requiredKeys}
           requiredFields={prodSpecReadiness}
           outputReadiness={outputReadiness}
+          latestAssetByVariant={latestAssetByVariant}
         />
       )}
 
@@ -354,6 +374,7 @@ function DetailsTab({
   requiredFieldKeys,
   requiredFields,
   outputReadiness,
+  latestAssetByVariant,
 }: {
   style: NonNullable<Awaited<ReturnType<typeof db.style.findUnique>>> & {
     jobs: Array<{
@@ -373,6 +394,7 @@ function DetailsTab({
   requiredFieldKeys: readonly string[];
   requiredFields: { filled: number; total: number; fields: Array<{ label: string; ok: boolean }> };
   outputReadiness: OutputReadiness[];
+  latestAssetByVariant: Map<string, { id: string; jobId: string; createdAt: Date }>;
 }) {
   const tone = READINESS_TONE[readiness.tone];
   const requiredSet = new Set(requiredFieldKeys);
@@ -483,36 +505,57 @@ function DetailsTab({
           </div>
           <div className="mt-2 overflow-hidden rounded-lg border border-zinc-200 bg-white">
             <ul>
-              {outputReadiness.map((o, i) => (
-                <li
-                  key={o.variantKey}
-                  className={`flex items-center justify-between gap-4 px-4 py-2.5 ${
-                    i > 0 ? "border-t border-zinc-100" : ""
-                  } ${o.ready ? "" : "opacity-50"}`}
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${
-                          o.ready ? "bg-emerald-500" : "bg-zinc-300"
-                        }`}
-                      />
-                      <span className="truncate text-sm text-zinc-800">{o.name}</span>
-                    </div>
-                    {!o.ready && o.missing.length > 0 && (
-                      <div className="mt-0.5 pl-4 text-xs text-amber-700">
-                        missing: {o.missing.map((m) => m.label).join(", ")}
+              {outputReadiness.map((o, i) => {
+                // Most recent render of this output, from ANY job — fuels the
+                // thumbnail. The opacity fade sits on the text block, not the
+                // row: the thumbnail shows what was last generated regardless
+                // of current readiness, and the hover zoom panel (fixed-pos,
+                // but still subject to ancestor opacity) must stay crisp.
+                const asset = latestAssetByVariant.get(o.variantKey);
+                const query = `variantKey=${encodeURIComponent(o.variantKey)}`;
+                return (
+                  <li
+                    key={o.variantKey}
+                    className={`flex items-center gap-4 px-4 py-2.5 ${
+                      i > 0 ? "border-t border-zinc-100" : ""
+                    }`}
+                  >
+                    <OutputThumbnail
+                      thumbSrc={
+                        asset ? `/api/admin/jobs/${asset.jobId}/thumbnail?${query}&v=${asset.id}` : null
+                      }
+                      href={
+                        asset
+                          ? `/api/admin/jobs/${asset.jobId}/preview?${query}#zoom=fit&toolbar=0&navpanes=0`
+                          : null
+                      }
+                      name={o.name}
+                      generatedAt={asset ? formatDate(asset.createdAt) : null}
+                    />
+                    <div className={`min-w-0 flex-1 ${o.ready ? "" : "opacity-50"}`}>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${
+                            o.ready ? "bg-emerald-500" : "bg-zinc-300"
+                          }`}
+                        />
+                        <span className="truncate text-sm text-zinc-800">{o.name}</span>
                       </div>
-                    )}
-                  </div>
-                  <RunOutputButton
-                    styleId={style.id}
-                    variantKey={o.variantKey}
-                    ready={o.ready}
-                    missingLabels={o.missing.map((m) => m.label)}
-                  />
-                </li>
-              ))}
+                      {!o.ready && o.missing.length > 0 && (
+                        <div className="mt-0.5 pl-4 text-xs text-amber-700">
+                          missing: {o.missing.map((m) => m.label).join(", ")}
+                        </div>
+                      )}
+                    </div>
+                    <RunOutputButton
+                      styleId={style.id}
+                      variantKey={o.variantKey}
+                      ready={o.ready}
+                      missingLabels={o.missing.map((m) => m.label)}
+                    />
+                  </li>
+                );
+              })}
             </ul>
           </div>
         </section>
