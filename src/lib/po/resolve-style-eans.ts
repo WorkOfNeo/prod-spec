@@ -229,7 +229,43 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
     };
   }
 
-  const parsed = await parsePoBarcodes(buf);
+  // A PDF we located and downloaded but pdf.js can't read — corrupt/encrypted
+  // bytes, or a pdfjs runtime fault (e.g. a worker/API version mismatch). Mirror
+  // the other failure branches: return a typed `error` result naming the file
+  // and the underlying reason, rather than letting an opaque low-level
+  // exception throw up to the runner (logged as a bare ⨯) or the re-resolve
+  // route (surfaced as a 500).
+  let parsed: Awaited<ReturnType<typeof parsePoBarcodes>>;
+  try {
+    parsed = await parsePoBarcodes(buf);
+  } catch (e) {
+    return {
+      ...base,
+      status: "error",
+      poFileName: po.name,
+      message: `Failed to parse PO PDF "${po.name}": ${(e as Error).message}`,
+      diagnostics: {
+        poNumber: style.poNumber,
+        poFileName: po.name,
+        poFileId: po.id,
+        candidateCount: search.candidates.length,
+        candidates,
+        queriesTried: search.queriesTried,
+        poFileWebUrl: po.webUrl ?? null,
+        supplierFolderUrl: style.supplier?.sharepointUrl ?? null,
+        barcodePageFound: false,
+        pdfPageCount: 0,
+        pdfTextLength: 0,
+        ean13TokensInFullText: 0,
+        parsedItemCount: 0,
+        parsedVariantCount: 0,
+        matchedByCustomerItemNo: false,
+        customerItemNoOnStyle: customerItemNo || null,
+        styleSizes: sizes,
+        textSnippet: "",
+      },
+    };
+  }
 
   // Which PO sub-items belong to this style?
   //  - Customer Item No match → that item alone (precise, single colourway).
