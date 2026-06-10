@@ -20,8 +20,10 @@ import {
 import { tokenMeta, type BarcodeSource } from "./token-meta";
 import {
   applyConditionalsForStyle,
+  augmentCareAndMadeIn,
   augmentCompositionTranslations,
   compositionLangsInDef,
+  langArgsInDef,
   resolveBarcodeValue,
   resolveTextToken,
 } from "./tokens";
@@ -308,12 +310,19 @@ export async function renderLayoutHtml(
     throw new Error(`layout has no page at index ${opts.pageIndex}`);
   }
 
-  // Resolve {{composition:<lang>}} through the translation bank before
-  // anything renders (idempotent — languages already present are kept).
+  // Resolve language-derived tokens through the translation bank before
+  // anything renders (idempotent — values already present are kept):
+  // {{composition:<lang>}}, {{careInstructions:<lang>}} (standard
+  // catalogue filtered by the style's wash icons), {{madeIn:<lang>}}.
   const compLangs = compositionLangsInDef(def);
   if (compLangs.length > 0) {
     style = await augmentCompositionTranslations(style, compLangs);
   }
+  style = await augmentCareAndMadeIn(
+    style,
+    langArgsInDef(def, "careInstructions"),
+    langArgsInDef(def, "madeIn"),
+  );
 
   // Repeat-per-EAN: the whole (filtered) page set renders once per size
   // row, with style.sizes narrowed to the current row — {{size}},

@@ -343,6 +343,41 @@ export function LayoutEditor({
     return () => window.clearTimeout(t);
   }, [payload, layout.id]);
 
+  // Manual save — same PATCH, immediately. The debounce means a quick
+  // settings change + navigation could otherwise leave before persisting.
+  async function saveNow() {
+    setSaveState("saving");
+    setSaveError(null);
+    try {
+      const res = await fetch(`/api/admin/output-layouts/${layout.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setSaveState("error");
+        setSaveError(body.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setSaveState("saved");
+      setSavedAt(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+    } catch (err) {
+      setSaveState("error");
+      setSaveError((err as Error).message);
+    }
+  }
+
+  // Warn before leaving with unsaved/in-flight changes.
+  useEffect(() => {
+    if (saveState !== "dirty" && saveState !== "saving") return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [saveState]);
+
   // ---- test styles -----------------------------------------------------
 
   // Signature of the variables in use — refetch the ranking when the
@@ -666,6 +701,15 @@ export function LayoutEditor({
                     : ""}
           </span>
           <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={saveNow}
+              disabled={saveState === "saved" || saveState === "saving"}
+              className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+              title="Save now (autosave runs 1.2s after the last change)"
+            >
+              {saveState === "saving" ? "Saving…" : "Save"}
+            </button>
             <button
               type="button"
               onClick={openPdf}

@@ -105,6 +105,7 @@ main()
   .then(() => batch2())
   .then(() => batch3())
   .then(() => batch4())
+  .then(() => batch5())
   .catch((err) => {
     console.error(err);
     process.exit(1);
@@ -290,4 +291,38 @@ async function batch4() {
 
   await closeBrowser();
   console.log(process.exitCode ? "BATCH 4 FAILED" : "BATCH 4 PASSED");
+}
+
+// ---------------------------------------------------------------------
+// Batch 5 coverage: madeIn + derived care instructions via the bank,
+// repeat × multi-page grouping, per-language augmentation idempotence.
+// ---------------------------------------------------------------------
+async function batch5() {
+  const { augmentCareAndMadeIn } = await import("@/lib/output-layouts/tokens");
+  const style = { ...buildSampleStyleData(), countryOfOrigin: "China" };
+
+  const aug = await augmentCareAndMadeIn(style, ["da"], ["en", "da"]);
+  const madeIn = (aug as typeof aug & { madeInByLang?: Record<string, string> }).madeInByLang ?? {};
+  assert((madeIn["en"] ?? "").startsWith("Made in"), `madeIn:en resolves (${madeIn["en"]})`);
+  assert((madeIn["da"] ?? "").length > 0 && madeIn["da"] !== madeIn["en"],
+    `madeIn:da translated via bank (${madeIn["da"]})`);
+  assert((aug.careInstructionsByLang?.["da"] ?? "").length > 0,
+    `careInstructions:da derived from standard catalogue (${(aug.careInstructionsByLang?.["da"] ?? "").slice(0, 50)}…)`);
+
+  // Repeat × multi-page: pages grouped per repetition.
+  const TWO = LayoutDefSchema.parse({
+    pages: [
+      { id: "p1", title: "F", widthMm: 60, heightMm: 40, blocks: [{ id: "b1", rect: { col: 0, row: 0, colSpan: 12, rowSpan: 6 }, lines: ["F {{size}}"] }] },
+      { id: "p2", title: "B", widthMm: 60, heightMm: 40, blocks: [{ id: "b2", rect: { col: 0, row: 0, colSpan: 12, rowSpan: 6 }, lines: ["B {{size}}"] }] },
+    ],
+    settings: { repeatBy: "ean", fileName: "" },
+  });
+  const multi = { ...style, sizes: [{ label: "A", ean13: "5701234567104" }, { label: "B2", ean13: "5701234567111" }] };
+  const html = await renderLayoutHtml(TWO, multi, { mode: "production" });
+  const seq = [...html.matchAll(/ol-line\">(F|B) (A|B2)</g)].map((m) => `${m[1]}${m[2]}`);
+  assert(JSON.stringify(seq) === JSON.stringify(["FA", "BA", "FB2", "BB2"]),
+    `repeat groups pages per repetition (${seq.join(",")})`);
+
+  await closeBrowser();
+  console.log(process.exitCode ? "BATCH 5 FAILED" : "BATCH 5 PASSED");
 }

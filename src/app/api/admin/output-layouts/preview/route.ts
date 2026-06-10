@@ -4,8 +4,10 @@ import { requireRole } from "@/lib/auth-server";
 import { LayoutDefSchema, layoutSettings } from "@/lib/output-layouts/schema";
 import { renderLayoutHtml } from "@/lib/output-layouts/render";
 import {
+  augmentCareAndMadeIn,
   augmentCompositionTranslations,
   compositionLangsInDef,
+  langArgsInDef,
   resolveBarcodeValue,
   resolveLayoutFileName,
   resolveTextToken,
@@ -69,10 +71,16 @@ export async function POST(req: NextRequest) {
   // {{composition:<lang>}} resolves through the translation bank — apply
   // the same augmentation the renderer does, so the unresolved badge and
   // show-values agree with what actually prints.
-  const compLangs = [...new Set([...compositionLangsInDef(definition), valuesLang.toLowerCase()])];
+  const vl = valuesLang.toLowerCase();
+  const compLangs = [...new Set([...compositionLangsInDef(definition), vl])];
   if (compLangs.length > 0) {
     styleData = await augmentCompositionTranslations(styleData, compLangs);
   }
+  styleData = await augmentCareAndMadeIn(
+    styleData,
+    [...new Set([...langArgsInDef(definition, "careInstructions"), vl])],
+    [...new Set([...langArgsInDef(definition, "madeIn"), vl])],
+  );
 
   if (format === "pdf") {
     const html = await renderLayoutHtml(definition, styleData, { mode: "production" });
