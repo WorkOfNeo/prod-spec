@@ -591,6 +591,15 @@ enum TriggerSource {
   // so dashboards can tell "promoted by an operator" apart from "ingest
   // fired by Monday".
   MANUAL_IMPORT
+  // Rejection-ticket reruns (the in-flight email-flow feature). The enum
+  // values ALREADY EXIST in the production database — its migration
+  // (20260610110000_rejection_tickets_email_logs) was applied ahead of
+  // that feature's merge, and job rows carrying TICKET_FIX broke every
+  // page that reads jobs (Prisma refuses unknown enum values on read).
+  // Declared here so the client can deserialize; the feature's own PR
+  // brings the migration file + the models that write these values.
+  TICKET_RERUN
+  TICKET_FIX
 }
 
 model Log {
