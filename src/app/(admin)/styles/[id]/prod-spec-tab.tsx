@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { DeliveredCard } from "./delivered-card";
+import { ResolvedProdSpecButton } from "./resolved-prod-spec";
 import { RelinkBusinessAreaButton } from "./relink-business-area-button";
 import { formatDate } from "@/lib/utils";
 
@@ -87,101 +88,28 @@ export function ProdSpecTab({
   const olderJobs = jobs.slice(1);
   return (
     <div className="mt-6 flex flex-col gap-8">
-      {/* Resolved ProdSpec */}
+      {/* Resolved ProdSpec — collapsed to a button; full detail lives in the
+          popup so it no longer dominates the tab. */}
       <section>
         <h2 className="mb-2 text-sm font-semibold text-zinc-700">Resolved Prod Spec</h2>
         {prodSpec ? (
-          <div className="rounded-lg border border-zinc-200 bg-white p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-xs uppercase tracking-wide text-zinc-500">Auto-resolved</div>
-                <div className="mt-1 flex flex-wrap items-center gap-2">
-                  <span className="text-lg font-semibold">{prodSpec.name}</span>
-                  <ReadyBadge
-                    styleStatus={styleStatus}
-                    filled={requiredReadiness.filled}
-                    total={requiredReadiness.total}
-                  />
-                </div>
-                <div className="mt-1 text-xs text-zinc-500">
-                  Business area: <span className="font-mono">{prodSpec.businessArea.mondayValue}</span> ·
-                  threshold {prodSpec.autoGenerateThresholdPct}% · {prodSpec.active ? "active" : "inactive"}
-                </div>
-              </div>
-              <Link
-                href={`/prod-specs/${prodSpec.id}`}
-                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-              >
-                Edit prod spec →
-              </Link>
-            </div>
-
-            <div className="mt-4 grid grid-cols-3 gap-4 text-xs">
-              <Field label="Business area">{businessAreaLabel ?? "—"}</Field>
-              <Field label="PO Number">{poNumber ?? "—"}</Field>
-              <Field label="Supplier (style)">
-                {supplier ? supplier.name : "—"}
-              </Field>
-            </div>
-
-            <div className="mt-4 border-t border-zinc-100 pt-4">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-                  Required fields (from selected outputs)
-                </div>
-                {requiredReadiness.total > 0 && (
-                  <span
-                    className={`text-xs font-semibold tabular-nums ${
-                      requiredReadiness.filled === requiredReadiness.total
-                        ? "text-emerald-600"
-                        : "text-amber-600"
-                    }`}
-                  >
-                    {requiredReadiness.filled}/{requiredReadiness.total}
-                  </span>
-                )}
-              </div>
-              {requiredReadiness.total === 0 ? (
-                <p className="mt-2 text-xs text-zinc-400">
-                  No outputs selected yet — pick outputs on the prod spec to see required fields.
-                </p>
-              ) : (
-                <ul className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
-                  {requiredReadiness.fields.map((f, i) => (
-                    <li key={i} className="flex items-center gap-1.5">
-                      <span className={f.ok ? "text-emerald-600" : "text-amber-600"}>
-                        {f.ok ? "✓" : "✗"}
-                      </span>
-                      <span className={f.ok ? "text-zinc-700" : "font-medium text-amber-700"}>
-                        {f.label}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="mt-4">
-              <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-                Suppliers attached to this ProdSpec
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {prodSpec.suppliers.length === 0 ? (
-                  <span className="text-xs text-zinc-500">— none —</span>
-                ) : (
-                  prodSpec.suppliers.map(({ supplier: s }) => (
-                    <span
-                      key={s.id}
-                      className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-3 py-1 text-xs"
-                    >
-                      <span className="font-medium">{s.name}</span>
-                      {s.country && <span className="text-zinc-500">· {s.country}</span>}
-                    </span>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
+          <ResolvedProdSpecButton
+            prodSpecId={prodSpec.id}
+            name={prodSpec.name}
+            businessAreaMondayValue={prodSpec.businessArea.mondayValue}
+            businessAreaLabel={businessAreaLabel}
+            autoGenerateThresholdPct={prodSpec.autoGenerateThresholdPct}
+            active={prodSpec.active}
+            poNumber={poNumber}
+            supplierName={supplier?.name ?? null}
+            suppliers={prodSpec.suppliers.map(({ supplier: s }) => ({
+              id: s.id,
+              name: s.name,
+              country: s.country,
+            }))}
+            styleStatus={styleStatus}
+            requiredReadiness={requiredReadiness}
+          />
         ) : (
           <NoProdSpecBlock
             styleId={styleId}
@@ -211,7 +139,7 @@ export function ProdSpecTab({
             Nothing generated yet for this style.
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="flex flex-col gap-2">
             {latestJob.assets.map((asset) => (
               <DeliveredCard
                 key={asset.id}
@@ -268,7 +196,7 @@ export function ProdSpecTab({
                         No assets generated.
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                      <div className="flex flex-col gap-2">
                         {job.assets.map((asset) => (
                           <DeliveredCard
                             key={asset.id}
@@ -315,54 +243,6 @@ function ChevronIcon() {
     >
       <polyline points="9 18 15 12 9 6" />
     </svg>
-  );
-}
-
-// Readiness badge for the ProdSpec that will run. Pre-generation it reflects
-// required-field completion ("3/5" not-ready → "✓ ready"); once a job runs it
-// follows the Style's workflow status (generating → awaiting review →
-// approved / rejected).
-function ReadyBadge({
-  styleStatus,
-  filled,
-  total,
-}: {
-  styleStatus: string;
-  filled: number;
-  total: number;
-}) {
-  const s = (() => {
-    switch (styleStatus) {
-      case "APPROVED":
-        return { label: "approved", cls: "bg-emerald-100 text-emerald-800", check: true };
-      case "REJECTED":
-        return { label: "rejected", cls: "bg-red-100 text-red-700", check: false };
-      case "AWAITING_REVIEW":
-        return { label: "awaiting review", cls: "bg-purple-100 text-purple-800", check: false };
-      case "GENERATING":
-        return { label: "generating", cls: "bg-blue-100 text-blue-800", check: false };
-      default:
-        if (total > 0 && filled < total)
-          return { label: `${filled}/${total}`, cls: "bg-amber-100 text-amber-800", check: false };
-        return { label: "ready", cls: "bg-emerald-100 text-emerald-800", check: true };
-    }
-  })();
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${s.cls}`}
-    >
-      {s.check && <span aria-hidden>✓</span>}
-      {s.label}
-    </span>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="text-zinc-500">{label}</div>
-      <div className="font-medium">{children}</div>
-    </div>
   );
 }
 
