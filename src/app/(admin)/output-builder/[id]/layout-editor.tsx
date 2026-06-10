@@ -1395,6 +1395,56 @@ export function LayoutEditor({
                   </label>
                 </div>
 
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1.5 text-xs text-zinc-600">
+                    Border
+                    <select
+                      value={selBlock.border?.widthMm ?? 0}
+                      onChange={(e) => {
+                        const w = Number(e.target.value);
+                        updateBlock(blockId(selBlock), {
+                          border: w > 0 ? { widthMm: w, color: selBlock.border?.color ?? "#000000" } : undefined,
+                        });
+                      }}
+                      className="rounded border border-zinc-200 px-1 py-0.5 text-xs"
+                    >
+                      <option value={0}>None</option>
+                      {[0.2, 0.3, 0.5, 0.75, 1, 1.5, 2].map((w) => (
+                        <option key={w} value={w}>
+                          {w} mm
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {selBlock.border ? (
+                    <label className="flex items-center gap-1.5 text-xs text-zinc-600">
+                      <input
+                        type="color"
+                        value={selBlock.border.color}
+                        onChange={(e) =>
+                          updateBlock(blockId(selBlock), {
+                            border: { ...selBlock.border!, color: e.target.value },
+                          })
+                        }
+                        className="h-6 w-8 cursor-pointer rounded border border-zinc-200 bg-white p-0.5"
+                        title="Border colour"
+                      />
+                      <input
+                        type="text"
+                        value={selBlock.border.color}
+                        onChange={(e) => {
+                          const v = e.target.value.trim();
+                          if (/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v)) {
+                            updateBlock(blockId(selBlock), { border: { ...selBlock.border!, color: v } });
+                          }
+                        }}
+                        className="w-20 rounded border border-zinc-200 px-1.5 py-0.5 font-mono text-[11px]"
+                        spellCheck={false}
+                      />
+                    </label>
+                  ) : null}
+                </div>
+
                 <div>
                   <div className="flex items-center justify-between">
                     <label className="text-xs text-zinc-500">Content — one line per printed row</label>
@@ -1664,6 +1714,9 @@ function CanvasBlock({
     flexDirection: "column",
     justifyContent: block.valign === "middle" ? "center" : block.valign === "bottom" ? "flex-end" : "flex-start",
     textAlign: (block.align ?? "left") as React.CSSProperties["textAlign"],
+    ...(block.border
+      ? { border: `${Math.max(block.border.widthMm * scale, 1)}px solid ${block.border.color}` }
+      : {}),
   };
 
   const badgePos: React.CSSProperties = { top: -8, left: -8 };

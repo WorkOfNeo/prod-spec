@@ -292,6 +292,11 @@ function applyInlineMarkdown(html: string): string {
     .replace(/(?<![\w])_([^_\n]+)_(?![\w])/g, "<i>$1</i>");
 }
 
+function blockBorder(block: LayoutBlock): string {
+  if (!block.border) return "";
+  return `border: ${block.border.widthMm}mm solid ${block.border.color}; `;
+}
+
 function blockTypography(block: LayoutBlock): string {
   // Graphics scale with the block's font size: 9 pt is the classic size
   // (16 mm bars / 10 pt digits / 6 mm symbols).
@@ -329,6 +334,7 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
       `left: ${left}mm; top: ${top}mm; width: ${width}mm; height: ${height}mm; ` +
       `display: flex; flex-direction: column; justify-content: ${justify}; ` +
       `text-align: ${block.align ?? "left"}; ` +
+      blockBorder(block) +
       blockTypography(block);
     return `<div class="ol-block ol-rect" style="${styleAttr}">${lines}</div>`;
   }
@@ -338,6 +344,7 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
   const styleAttr =
     `width: ${widthMm.toFixed(2)}mm; ` +
     `text-align: ${block.align ?? ANCHOR_ALIGN[anchor]}; ` +
+    blockBorder(block) +
     blockTypography(block) +
     ANCHOR_CSS[anchor];
   return `<div class="ol-block ol-${anchor}" style="${styleAttr}">${lines}</div>`;
