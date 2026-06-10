@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
+import { getPoEanAutoRunEnabled } from "@/lib/settings/app-settings";
 import { PoEansTable, type PoEanRow } from "./po-eans-table";
+import { PoEanAutoRunSetting } from "./po-ean-auto-run-setting";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +13,7 @@ export const dynamic = "force-dynamic";
 // and stores the per-size/colour Barcode EAN (in size order) + the carton EAN
 // on the style. "Re-resolve" forces a fresh read.
 export default async function PoEansPage() {
+  const autoRunEnabled = await getPoEanAutoRunEnabled();
   const styles = await db.style.findMany({
     where: { poNumber: { not: null } },
     select: {
@@ -67,6 +70,10 @@ export default async function PoEansPage() {
           filled (Monday sync); <em>PO has no barcodes</em> means the PO PDF has no EAN page yet
           (retried automatically). Use <em>Re-resolve</em> to force a fresh read.
         </p>
+      </div>
+
+      <div className="mb-6">
+        <PoEanAutoRunSetting initialEnabled={autoRunEnabled} />
       </div>
 
       <PoEansTable rows={rows} counts={counts} />

@@ -34,6 +34,34 @@ export async function setAutoGenerateEnabled(enabled: boolean): Promise<void> {
   });
 }
 
+const PO_EAN_AUTO_RUN_KEY = "poEanAutoRunEnabled";
+
+// Master switch for AUTOMATIC PO→EAN resolution (the barcode scrape).
+//
+// When ON: the Railway cron and the fire-and-forget trigger after a Monday
+// ingest drain PENDING styles automatically — each scrape downloads the PO
+// PDF from SharePoint and parses the barcodes.
+//
+// When OFF: queueing still happens (a filled PO flips the style to PENDING
+// and it shows on /po-eans), but nothing scrapes until a signed-in operator
+// clicks "Re-resolve" (per row or batch) on /po-eans. Manual clicks work
+// regardless of this switch.
+//
+// Defaults to FALSE when unset — same convention as autoGenerateEnabled:
+// automation is opt-in, an admin flips it on from /po-eans when ready.
+export async function getPoEanAutoRunEnabled(): Promise<boolean> {
+  const row = await db.appSetting.findUnique({ where: { key: PO_EAN_AUTO_RUN_KEY } });
+  return row?.value === true;
+}
+
+export async function setPoEanAutoRunEnabled(enabled: boolean): Promise<void> {
+  await db.appSetting.upsert({
+    where: { key: PO_EAN_AUTO_RUN_KEY },
+    create: { key: PO_EAN_AUTO_RUN_KEY, value: enabled },
+    update: { value: enabled },
+  });
+}
+
 const SUPPLIER_REVIEW_CC_KEY = "supplierReviewCcEmails";
 
 // Actual email address(es) CC'd on every supplier "ready for review" approval

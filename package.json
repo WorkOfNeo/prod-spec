@@ -16,7 +16,8 @@
     "explain-style": "tsx --env-file=.env scripts/explain-style.ts",
     "seed-column-mapping": "tsx --env-file=.env scripts/seed-default-column-mapping.ts",
     "seed-washsymbol-monday": "tsx --env-file=.env scripts/seed-washsymbol-monday-values.ts",
-    "seed-print-spec-outputs": "tsx --env-file=.env scripts/seed-print-spec-outputs.ts"
+    "seed-print-spec-outputs": "tsx --env-file=.env scripts/seed-print-spec-outputs.ts",
+    "backfill-preorder-eans": "tsx --env-file=.env scripts/backfill-preorder-eans.ts"
   },
   "dependencies": {
     "@azure/identity": "^4.13.1",
