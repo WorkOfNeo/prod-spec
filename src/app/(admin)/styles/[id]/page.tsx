@@ -4,23 +4,38 @@ import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import {
   resolveStyleSpecFields,
+  resolveMappedField,
   STYLE_FIELD_LABELS,
   effectiveStyleItem,
   type ResolvedSpecField,
 } from "@/lib/styles/resolved-fields";
+import type { MondayItem } from "@/lib/monday/client";
 import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
 import { findMissingDetailFields } from "@/lib/styles/detail-fields";
 import { computeReadiness, type Readiness, type ReadinessTone } from "@/lib/styles/readiness";
 import { outputReadinessForStyle, type OutputReadiness } from "@/lib/styles/output-readiness";
-import { RunOutputButton } from "./run-output-button";
-import { OutputThumbnail } from "./output-thumbnail";
 import { RerunButton } from "./rerun-button";
+import { StyleOutputCard, type StyleOutputCardProps } from "./style-output-card";
 import { ProdSpecTab } from "./prod-spec-tab";
 import { EanPanel } from "./ean-panel";
 import type { EanView } from "@/lib/po/ean-view";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
-import { requiredFieldsForVariants } from "@/lib/pdf/template-registry";
+import { requiredFieldsForVariants, getVariant } from "@/lib/pdf/template-registry";
 import { parseCustomerConfig } from "@/lib/customers/config";
+import { parseFieldOverrides, PINNABLE_FIELD_LABELS, type PinnableField } from "@/lib/pdf/pins-meta";
+import { findFieldRule } from "@/lib/pdf/spec-fields";
+import { ALL_PRINT_SPECS } from "@/lib/pdf/print-spec-catalog";
+import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-marking";
+import {
+  loadWashcareSymbols,
+  getWashcareSymbol,
+  rejoinWashTokens,
+} from "@/lib/pdf/washcare-symbols";
+import {
+  loadCareLabels,
+  explainCareLabelVisibility,
+  type PresentSymbol,
+} from "@/lib/care-labels";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +72,27 @@ function CompletionBar({
       )}
     </div>
   );
+}
+
+// Data notes for an output card — currently the delivery-term switch:
+// outputs whose order number branches on FOB/DDP get a chip naming the
+// branch in effect, and an explicit "defaulting to DDP" note when the row
+// carries no term yet (the default is correct, but must be conscious).
+const SPEC_BY_VARIANT_KEY = new Map(ALL_PRINT_SPECS.map((s) => [s.id, s]));
+
+function outputDataNotes(
+  variantKey: string,
+  item: MondayItem | null,
+  mapping: ReturnType<typeof parseCustomerConfig>["columnMapping"],
+): string[] {
+  const orderRule =
+    findFieldRule(SPEC_BY_VARIANT_KEY.get(variantKey), "customerOrderNumber") ??
+    (variantKey === "netto-dk-privatelabel-carton-marking" ? ORDER_NO_RULE : null);
+  if (!orderRule) return [];
+  const term = resolveMappedField(item, mapping, "deliveryTerm").trim();
+  if (!term) return ["no delivery term on row — defaulting to DDP → Contrast PO"];
+  const branch = term.toUpperCase().includes("FOB") ? "customer order no" : "Contrast PO";
+  return [`delivery term ${term} → prints ${branch}`];
 }
 
 type TabKey = "details" | "prod-spec";
@@ -145,12 +181,15 @@ export default async function StyleDetail({
   // source of truth for the readiness banner, the Resolved-fields highlight,
   // and the Prod Spec tab badge/checklist — a style needs exactly what the
   // labels it will print need.
-  const enabledVariantKeys = parseProdSpecOutputs(style.prodSpec?.outputs ?? [])
-    .filter((o) => o.enabled !== false)
-    .map((o) => o.variantKey);
+  const enabledOutputs = parseProdSpecOutputs(style.prodSpec?.outputs ?? []).filter(
+    (o) => o.enabled !== false,
+  );
+  const enabledVariantKeys = enabledOutputs.map((o) => o.variantKey);
+  const outputEntryByKey = new Map(enabledOutputs.map((o) => [o.variantKey, o]));
   const requiredKeys = requiredFieldsForVariants(enabledVariantKeys);
   const reqMapping = parseCustomerConfig(style.customer.config).columnMapping;
-  const missingDetail = findMissingDetailFields(effectiveStyleItem(style), reqMapping, requiredKeys);
+  const effItem = effectiveStyleItem(style) as MondayItem | null;
+  const missingDetail = findMissingDetailFields(effItem, reqMapping, requiredKeys);
   const reqMissing = new Set(missingDetail.map((m) => m.field));
   const prodSpecReadiness = {
     total: requiredKeys.length,
@@ -171,6 +210,84 @@ export default async function StyleDetail({
         prodSpec: { outputs: style.prodSpec.outputs, columnMapping: {} },
       })
     : [];
+
+  // Derived care instructions for THIS style — the standard catalogue
+  // filtered by the row's wash-care symbols, with per-line verdicts. The
+  // same pure rule the renderer applies; shown so the operator sees WHAT
+  // will print and WHY a line is dropped, before generating anything.
+  const careDerived = await (async () => {
+    const symbolMap = await loadWashcareSymbols();
+    const rawTokens = resolveMappedField(effItem, reqMapping, "washCare")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const tokens = rejoinWashTokens(rawTokens, symbolMap);
+    const symbols = tokens.map((token) => {
+      const resolved = getWashcareSymbol(symbolMap, token);
+      return {
+        token,
+        name: resolved?.name ?? token,
+        resolved: Boolean(resolved),
+        present: (resolved
+          ? { code: resolved.code, action: resolved.action, restrictive: resolved.restrictive }
+          : { code: token, action: null, restrictive: false }) satisfies PresentSymbol,
+      };
+    });
+    const present = symbols.map((s) => s.present);
+    const labels = await loadCareLabels();
+    const lines = labels.map((label) => {
+      const verdict = explainCareLabelVisibility(label, present);
+      const reason =
+        verdict.reason === "action-prohibited"
+          ? `removed by ${verdict.matchedCodes.join(", ")} (prohibition)`
+          : verdict.reason === "hidden-by"
+            ? `hidden by ${verdict.matchedCodes.join(", ")}`
+            : verdict.reason === "show-gate-unmet"
+              ? "show-if not met"
+              : verdict.reason === "show-gate-met"
+                ? `shown by ${verdict.matchedCodes.join(", ")}`
+                : "always shown";
+      return { text: label.sourceText, visible: verdict.visible, reason };
+    });
+    return {
+      symbols: symbols.map((s) => ({ name: s.name, resolved: s.resolved, token: s.token })),
+      lines,
+    };
+  })();
+
+  // Per-output card props — live preview src, missing/pin/note chips, last
+  // generated artifact. Computed here (not in DetailsTab) because they need
+  // the effective item + mapping + parsed output entries.
+  const outputCards: StyleOutputCardProps[] = outputReadiness.map((o) => {
+    const asset = latestAssetByVariant.get(o.variantKey);
+    const query = `variantKey=${encodeURIComponent(o.variantKey)}`;
+    const entry = outputEntryByKey.get(o.variantKey);
+    const variant = getVariant(o.variantKey);
+    const pins = Object.entries(parseFieldOverrides(entry?.fieldOverrides)).map(
+      ([field, value]) => ({
+        label: PINNABLE_FIELD_LABELS[field as PinnableField],
+        value: value as string,
+      }),
+    );
+    return {
+      styleId: style.id,
+      variantKey: o.variantKey,
+      name: o.name,
+      ready: o.ready,
+      missing: o.missing.map((m) => m.label),
+      widthMm: entry?.widthMm ?? variant?.defaultWidthMm ?? 100,
+      heightMm: entry?.heightMm ?? variant?.defaultHeightMm ?? 100,
+      pins,
+      notes: outputDataNotes(o.variantKey, effItem, reqMapping),
+      thumbSrc: asset
+        ? `/api/admin/jobs/${asset.jobId}/thumbnail?${query}&v=${asset.id}`
+        : null,
+      pdfHref: asset
+        ? `/api/admin/jobs/${asset.jobId}/preview?${query}#zoom=fit&toolbar=0&navpanes=0`
+        : null,
+      generatedAt: asset ? formatDate(asset.createdAt) : null,
+    };
+  });
 
   const readiness = computeReadiness({
     completionPct: style.completionPct,
@@ -323,8 +440,8 @@ export default async function StyleDetail({
           eanView={eanView}
           requiredFieldKeys={requiredKeys}
           requiredFields={prodSpecReadiness}
-          outputReadiness={outputReadiness}
-          latestAssetByVariant={latestAssetByVariant}
+          outputCards={outputCards}
+          careDerived={careDerived}
         />
       )}
 
@@ -373,8 +490,8 @@ function DetailsTab({
   eanView,
   requiredFieldKeys,
   requiredFields,
-  outputReadiness,
-  latestAssetByVariant,
+  outputCards,
+  careDerived,
 }: {
   style: NonNullable<Awaited<ReturnType<typeof db.style.findUnique>>> & {
     jobs: Array<{
@@ -393,8 +510,11 @@ function DetailsTab({
   eanView: EanView;
   requiredFieldKeys: readonly string[];
   requiredFields: { filled: number; total: number; fields: Array<{ label: string; ok: boolean }> };
-  outputReadiness: OutputReadiness[];
-  latestAssetByVariant: Map<string, { id: string; jobId: string; createdAt: Date }>;
+  outputCards: StyleOutputCardProps[];
+  careDerived: {
+    symbols: Array<{ name: string; resolved: boolean; token: string }>;
+    lines: Array<{ text: string; visible: boolean; reason: string }>;
+  };
 }) {
   const tone = READINESS_TONE[readiness.tone];
   const requiredSet = new Set(requiredFieldKeys);
@@ -493,69 +613,79 @@ function DetailsTab({
         </div>
       </section>
 
-      {outputReadiness.length > 0 && (
+      {outputCards.length > 0 && (
         <section className="mt-8">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-zinc-700">
-              Outputs · {outputReadiness.filter((o) => o.ready).length} of {outputReadiness.length} ready
+              Outputs · {outputCards.filter((o) => o.ready).length} of {outputCards.length} ready
             </h2>
             <span className="text-xs text-zinc-400">
-              Run each output on its own — not-ready ones unlock as their fields land.
+              Live previews render from the row&apos;s current data — run each output on its own as it
+              goes ready.
             </span>
           </div>
-          <div className="mt-2 overflow-hidden rounded-lg border border-zinc-200 bg-white">
-            <ul>
-              {outputReadiness.map((o, i) => {
-                // Most recent render of this output, from ANY job — fuels the
-                // thumbnail. The opacity fade sits on the text block, not the
-                // row: the thumbnail shows what was last generated regardless
-                // of current readiness, and the hover zoom panel (fixed-pos,
-                // but still subject to ancestor opacity) must stay crisp.
-                const asset = latestAssetByVariant.get(o.variantKey);
-                const query = `variantKey=${encodeURIComponent(o.variantKey)}`;
-                return (
-                  <li
-                    key={o.variantKey}
-                    className={`flex items-center gap-4 px-4 py-2.5 ${
-                      i > 0 ? "border-t border-zinc-100" : ""
+          {/* Live preview cards. Each card also keeps the LAST GENERATED
+              artifact (thumbnail + PDF link) in its footer — the two differ,
+              visibly and by design, when the row changed after the last run. */}
+          <div className="mt-2 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {outputCards.map((card) => (
+              <StyleOutputCard key={card.variantKey} {...card} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {careDerived.lines.length > 0 && (
+        <section className="mt-8">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-zinc-700">
+              Care instructions · derived from the standard
+            </h2>
+            <span className="text-xs text-zinc-400">
+              The catalogue at /settings/care-labels, filtered by this row&apos;s wash-care symbols.
+            </span>
+          </div>
+          <div className="mt-2 rounded-lg border border-zinc-200 bg-white p-4">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+                Symbols on row
+              </span>
+              {careDerived.symbols.length === 0 && (
+                <span className="text-xs text-zinc-400">none — only &ldquo;always&rdquo; lines print</span>
+              )}
+              {careDerived.symbols.map((s) => (
+                <span
+                  key={s.token}
+                  title={s.resolved ? s.name : `Unknown token "${s.token}" — not in the symbol catalogue (no artwork, no care-line suppression). Map it at /settings/washcare-symbols.`}
+                  className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                    s.resolved
+                      ? "border-zinc-200 bg-zinc-50 text-zinc-700"
+                      : "border-amber-300 bg-amber-50 text-amber-800"
+                  }`}
+                >
+                  {s.resolved ? s.name : `⚠ ${s.name}`}
+                </span>
+              ))}
+            </div>
+            <ul className="mt-3 space-y-1">
+              {careDerived.lines.map((line) => (
+                <li
+                  key={line.text}
+                  className={`flex items-baseline gap-2 text-xs ${
+                    line.visible ? "text-zinc-800" : "text-zinc-400"
+                  }`}
+                >
+                  <span
+                    className={`mt-0.5 inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full ${
+                      line.visible ? "bg-emerald-500" : "bg-zinc-300"
                     }`}
-                  >
-                    <OutputThumbnail
-                      thumbSrc={
-                        asset ? `/api/admin/jobs/${asset.jobId}/thumbnail?${query}&v=${asset.id}` : null
-                      }
-                      href={
-                        asset
-                          ? `/api/admin/jobs/${asset.jobId}/preview?${query}#zoom=fit&toolbar=0&navpanes=0`
-                          : null
-                      }
-                      name={o.name}
-                      generatedAt={asset ? formatDate(asset.createdAt) : null}
-                    />
-                    <div className={`min-w-0 flex-1 ${o.ready ? "" : "opacity-50"}`}>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${
-                            o.ready ? "bg-emerald-500" : "bg-zinc-300"
-                          }`}
-                        />
-                        <span className="truncate text-sm text-zinc-800">{o.name}</span>
-                      </div>
-                      {!o.ready && o.missing.length > 0 && (
-                        <div className="mt-0.5 pl-4 text-xs text-amber-700">
-                          missing: {o.missing.map((m) => m.label).join(", ")}
-                        </div>
-                      )}
-                    </div>
-                    <RunOutputButton
-                      styleId={style.id}
-                      variantKey={o.variantKey}
-                      ready={o.ready}
-                      missingLabels={o.missing.map((m) => m.label)}
-                    />
-                  </li>
-                );
-              })}
+                  />
+                  <span className={line.visible ? "" : "line-through decoration-zinc-300"}>
+                    {line.text}
+                  </span>
+                  <span className="text-[11px] text-zinc-400">· {line.reason}</span>
+                </li>
+              ))}
             </ul>
           </div>
         </section>

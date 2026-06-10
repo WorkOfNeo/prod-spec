@@ -1,8 +1,9 @@
 import type { DocType } from "@/generated/prisma/enums";
-import type { PrintSpec, PrintType, FieldKey } from "@/print-specs/shared/types";
+import type { PrintSpec, PrintType } from "@/print-specs/shared/types";
 import type { ColumnMapping } from "@/lib/customers/config";
 import type { StyleData } from "./types";
 import type { TemplateVariant, OutputDims } from "./template-registry";
+import { COLUMN_BY_FIELD, ruleFields, ruleRequiredColumns } from "./spec-fields";
 import { escapeHtml } from "./templates/base";
 import { makeCareLabelSquare3LabelRenderer } from "./templates/families/care-label-square-3label";
 import { makeNettoCartonMarkingRenderer } from "./templates/families/carton-marking-netto-dk";
@@ -71,49 +72,43 @@ const PRINT_TYPE_LABELS: Record<PrintType, string> = {
   "box-layout": "Box layout",
 };
 
-// Which mapped Monday column feeds each spec field. `null` = the field
-// needs no column (static brand content, or derived data — care
-// instructions compose from wash symbols + the DB care-label lines).
-const COLUMN_BY_FIELD: Record<FieldKey, keyof ColumnMapping | null> = {
-  composition: "composition",
-  composition2: "composition2",
-  careInstructions: "washCare",
-  washCareSymbols: "washCare",
-  countryOfOrigin: "countryOfOrigin",
-  sizes: "sizes",
-  sizeRange: "sizes",
-  ean13: "ean13",
-  ean128: "cartonEan",
-  customerItemNo: "customerItemNo",
-  customerOrderNumber: "customerOrderNo",
-  poNumber: "poNumber",
-  styleNumber: "styleNumber",
-  description: "description",
-  qtyPerCarton: "cartonQty",
-  retailPrice: "price",
-  campaignWeek: "campaignWeek",
-  lotNo: "lot",
-  batchNo: "batchNo",
-  // The customer's article number under a different label (Rema layouts).
-  articleNo: "customerItemNo",
-  prodNumber: "prodNumber",
-  supplierAddress: null,
-  oekoTexLogo: null,
-  // Filled from the Customer record by the runner (StyleData.customerName),
-  // not from a mapped board column.
-  customerName: null,
-};
+// (COLUMN_BY_FIELD — which mapped Monday column feeds each spec field —
+// lives in ./spec-fields, shared with the ValueRule evaluator so render
+// and readiness can never disagree on the wiring.)
 
+// Static required columns: required fields WITHOUT a value rule. Rule-bearing
+// fields contribute branch-dependent requirements via `specReadiness` below
+// (e.g. the FOB/DDP order-number switch requires only the taken branch).
 function requiredFieldsFor(spec: PrintSpec): Array<keyof ColumnMapping> {
   const out: Array<keyof ColumnMapping> = [];
   for (const part of spec.parts ?? []) {
     for (const field of part.fields) {
-      if (!field.required) continue;
+      if (!field.required || field.value) continue;
       const column = COLUMN_BY_FIELD[field.key];
       if (column && !out.includes(column)) out.push(column);
     }
   }
   return out;
+}
+
+// Dynamic readiness for specs that carry value rules: static columns plus
+// the taken branch of every rule field. Returns undefined when the spec has
+// no rules — the static `requiredFields` array is then the whole gate.
+function specReadiness(
+  spec: PrintSpec,
+): TemplateVariant["readiness"] {
+  const rules = ruleFields(spec);
+  if (rules.length === 0) return undefined;
+  const staticCols = requiredFieldsFor(spec);
+  return (resolve) => {
+    const out = [...staticCols];
+    for (const field of rules) {
+      for (const col of ruleRequiredColumns(field.value!, resolve)) {
+        if (!out.includes(col)) out.push(col);
+      }
+    }
+    return out;
+  };
 }
 
 // Catalogue card dims: spec-level dimensions when present, otherwise the
@@ -193,6 +188,7 @@ function toVariant(spec: PrintSpec): TemplateVariant {
     ...base,
     description: describe(spec),
     requiredFields: requiredFieldsFor(spec),
+    readiness: specReadiness(spec),
     render: factory(spec),
   };
 }

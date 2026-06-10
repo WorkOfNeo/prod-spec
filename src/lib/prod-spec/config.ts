@@ -35,6 +35,12 @@ export const ProdSpecOutputSchema = z.object({
   widthMm: z.number().positive().max(1000),
   heightMm: z.number().positive().max(1000),
   enabled: z.boolean().default(true),
+  // Per-output field pins ("customerName is ALWAYS 'Netto A/S'") — set in
+  // the ProdSpec editor, applied on top of everything at render time and
+  // counted as satisfied by readiness. Keys are validated/filtered against
+  // the pinnable vocabulary in src/lib/pdf/pins.ts at the point of use, so
+  // a stale key never breaks parsing.
+  fieldOverrides: z.record(z.string().min(1), z.string()).optional(),
 });
 export type ProdSpecOutput = z.infer<typeof ProdSpecOutputSchema>;
 

@@ -25,6 +25,17 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ ok: true, alreadyApproved: true });
   }
 
+  // Ship-gate: placeholder artifacts (missing artwork tiles / "No carton
+  // EAN") are review-safe, never print-safe. Fix the gaps + re-run instead.
+  if (asset.placeholderCount > 0) {
+    return NextResponse.json(
+      {
+        error: `Approval blocked — this document contains ${asset.placeholderCount} placeholder artifact(s) (missing symbol/certificate artwork or missing EAN). Fix the gaps and re-run the output.`,
+      },
+      { status: 409 },
+    );
+  }
+
   await db.jobAsset.update({
     where: { id },
     data: {

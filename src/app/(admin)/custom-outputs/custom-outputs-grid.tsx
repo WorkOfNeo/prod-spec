@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { PreviewFrame } from "@/components/output-preview";
 
 // One preview entry, prepared server-side in page.tsx. `html` is the full
 // rendered template document (or null if rendering threw — then `error`
@@ -17,10 +17,6 @@ export type OutputPreview = {
   html: string | null;
   error: string | null;
 };
-
-// CSS px per mm at 100% zoom (96dpi). Used to size the iframe to the
-// label's physical dimensions, then scale it down to fit the card.
-const MM_TO_PX = 96 / 25.4;
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   WASHCARE: "Washcare",
@@ -92,90 +88,6 @@ function OutputCard({ preview }: { preview: OutputPreview }) {
   );
 }
 
-// Renders one template document in an iframe sized to the label's physical
-// dimensions, then scales it down to fit the card width. The label's full
-// rectangle (including whitespace) is shown so proportions are true to the
-// printed output; multi-page templates stack their pages vertically.
-function PreviewFrame({
-  html,
-  widthMm,
-  heightMm,
-}: {
-  html: string;
-  widthMm: number;
-  heightMm: number;
-}) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-
-  const naturalW = widthMm * MM_TO_PX;
-  const [scale, setScale] = useState(0);
-  const [contentH, setContentH] = useState(heightMm * MM_TO_PX);
-
-  // Fit the natural-width iframe into the available column width.
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const update = () => {
-      const w = el.clientWidth;
-      if (w > 0) setScale(Math.min(w / naturalW, 1));
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [naturalW]);
-
-  // Measure the rendered content height so the wrapper hugs it (handles
-  // single- and multi-page templates uniformly). Re-measure after a beat
-  // to catch async webfont (barcode) reflow.
-  const measure = () => {
-    const doc = iframeRef.current?.contentDocument;
-    const body = doc?.body;
-    if (body) {
-      setContentH(Math.max(body.scrollHeight, heightMm * MM_TO_PX));
-    }
-  };
-
-  const scaledH = contentH * scale;
-
-  return (
-    <div
-      ref={containerRef}
-      className="w-full overflow-hidden"
-      style={{ height: scale > 0 ? scaledH : heightMm * MM_TO_PX }}
-    >
-      <div className="mx-auto bg-white shadow-md ring-1 ring-black/5" style={{ width: naturalW * scale, height: scaledH }}>
-        <iframe
-          ref={iframeRef}
-          srcDoc={normalize(html, widthMm, heightMm)}
-          onLoad={() => {
-            measure();
-            window.setTimeout(measure, 400);
-          }}
-          title="Output preview"
-          scrolling="no"
-          style={{
-            width: naturalW,
-            height: contentH,
-            border: "none",
-            transform: `scale(${scale})`,
-            transformOrigin: "top left",
-            background: "white",
-            display: "block",
-          }}
-        />
-      </div>
-    </div>
-  );
-}
-
-// Inject a small normalizer so the on-screen render matches the physical
-// label box: the template's @page size is print-only and ignored on
-// screen, so we pin body width to the label width and give every .page a
-// min-height equal to the label height (lets flex `margin-top:auto`
-// bottom-anchors resolve, and shows the full label rectangle).
-function normalize(html: string, widthMm: number, heightMm: number): string {
-  const css = `<style>html,body{margin:0;padding:0;background:#fff;width:${widthMm}mm;}body{min-height:${heightMm}mm;}.page{min-height:${heightMm}mm;}</style>`;
-  return html.includes("</head>") ? html.replace("</head>", `${css}</head>`) : css + html;
-}
+// PreviewFrame (and its on-screen normalizer) moved to
+// src/components/output-preview.tsx — shared with the style-page live
+// preview cards and the ProdSpec editor's per-output previews.
