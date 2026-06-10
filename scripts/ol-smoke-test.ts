@@ -107,6 +107,7 @@ main()
   .then(() => batch4())
   .then(() => batch5())
   .then(() => batch6())
+  .then(() => batch7())
   .catch((err) => {
     console.error(err);
     process.exit(1);
@@ -337,7 +338,8 @@ async function batch6() {
 
   const M = LayoutDefSchema.parse({
     pages: [{
-      id: "p1", title: "", widthMm: 100, heightMm: 60, marginMm: 5,
+      id: "p1", title: "", widthMm: 100, heightMm: 60,
+      margins: { topMm: 5, rightMm: 5, bottomMm: 5, leftMm: 5 },
       blocks: [{ id: "b1", rect: { col: 0, row: 0, colSpan: 6, rowSpan: 6 }, lines: ["{{logo:custom}} x"] }],
     }],
     settings: { repeatBy: "none", fileName: "" },
@@ -357,4 +359,53 @@ async function batch6() {
 
   await closeBrowser();
   console.log(process.exitCode ? "BATCH 6 FAILED" : "BATCH 6 PASSED");
+}
+
+// ---------------------------------------------------------------------
+// Batch 7 coverage: per-side margins; repeat "size" vs "ean" (size ×
+// colour from eanVariants); per-file suffix uniqueness.
+// ---------------------------------------------------------------------
+async function batch7() {
+  const { repetitionStyles } = await import("@/lib/output-layouts/render");
+  const { colourFromVariantLabel } = await import("@/lib/styles/render-context");
+  const base = buildSampleStyleData();
+
+  // colour parsing from real-world PO variant labels
+  assert(colourFromVariantLabel("PI-35/38 Pink, 35/38", "35/38") === "Pink", "variant label → Pink");
+  assert(colourFromVariantLabel("A-XL Black w silver lurex, XL", "XL") === "Black w silver lurex", "variant label → long colour");
+  assert(colourFromVariantLabel(null, "M") === null, "null label → null colour");
+
+  // per-side margins: 2/8/3/3 on a 60×30 page → inner 50×24 at left 2 top 3
+  const M = LayoutDefSchema.parse({
+    pages: [{ id: "p1", title: "", widthMm: 60, heightMm: 30,
+      margins: { topMm: 3, rightMm: 8, bottomMm: 3, leftMm: 2 },
+      blocks: [{ id: "b1", rect: { col: 0, row: 0, colSpan: 12, rowSpan: 12 }, lines: ["x"] }] }],
+  });
+  const mh = await renderLayoutHtml(M, base, { mode: "production" });
+  assert(mh.includes("left: 2.00mm; top: 3.00mm; width: 50.00mm; height: 24.00mm"),
+    "per-side margins inset asymmetrically");
+
+  // legacy single marginMm migrates to per-side
+  const { parseLayoutDef: pld } = await import("@/lib/output-layouts/schema");
+  const mig = pld({ pages: [{ id: "p", title: "", widthMm: 60, heightMm: 30, marginMm: 4, blocks: [] }] });
+  assert(mig.pages[0].margins.topMm === 4 && mig.pages[0].margins.leftMm === 4, "legacy marginMm → per-side");
+
+  // repeat modes: size dedupes, ean expands size × colour
+  const style = {
+    ...base,
+    sizes: [{ label: "27/30", ean13: "5706323596613" }, { label: "31/34", ean13: "5706323596620" }],
+    eanVariants: [
+      { size: "27/30", ean13: "5706323596583", colour: "Pink" },
+      { size: "27/30", ean13: "5706323596613", colour: "Blue" },
+      { size: "31/34", ean13: "5706323596590", colour: "Pink" },
+    ],
+  };
+  assert(repetitionStyles(style, "size").length === 2, "repeat=size → one per size");
+  const eanReps = repetitionStyles(style, "ean");
+  assert(eanReps.length === 3, "repeat=ean → one per EAN row (size × colour)");
+  assert(eanReps[1].colour?.name === "Blue" && eanReps[1].sizes[0].ean13 === "5706323596613",
+    "each EAN repetition binds its own colour + EAN");
+
+  await closeBrowser();
+  console.log(process.exitCode ? "BATCH 7 FAILED" : "BATCH 7 PASSED");
 }

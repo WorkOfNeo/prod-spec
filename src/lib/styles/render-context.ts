@@ -39,7 +39,7 @@ export type RenderableStyle = {
   cartonEan: string | null;
   mondayBoardId: string;
   supplier: { country: string | null } | null;
-  eans: ReadonlyArray<{ size: string; ean13: string | null }>;
+  eans: ReadonlyArray<{ size: string; ean13: string | null; variantLabel?: string | null }>;
   customer: { name: string; config: unknown };
   qrImage: { image: string } | null;
 };
@@ -115,6 +115,18 @@ export async function buildStyleData(
     effectiveMapping,
   );
 
+  // Raw EAN rows (one per size × colour combo) for the Output Builder's
+  // repeat-per-EAN — `sizes` is deduped by size via the ean-map string,
+  // which silently drops second colourways. Colour parsed from the PO
+  // variant label ("PI-35/38 Pink, 35/38" → "Pink").
+  styleData.eanVariants = style.eans
+    .filter((e) => (e.ean13 ?? "").trim())
+    .map((e) => ({
+      size: e.size,
+      ean13: e.ean13!,
+      colour: colourFromVariantLabel(e.variantLabel ?? null, e.size),
+    }));
+
   // Wash-care token repair: Monday dropdown labels can contain ", " and the
   // mapper's comma split shears them into unresolvable fragments. Re-join
   // against the catalogue so e.g. "Dry Clean, Any Solvent" stays one symbol.
@@ -151,7 +163,7 @@ export async function loadStyleRenderContext(styleId: string): Promise<StyleRend
       customer: true,
       qrImage: true,
       supplier: { select: { country: true } },
-      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
+      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, variantLabel: true } },
     },
   });
   if (!style) return null;
@@ -199,4 +211,22 @@ export async function loadStyleRenderContext(styleId: string): Promise<StyleRend
     outputs,
     readiness,
   };
+}
+
+// Parse the colour out of a PO variant label. Observed shape:
+//   "PI-35/38 Pink, 35/38"            → "Pink"
+//   "A-XL Black w silver lurex, XL"   → "Black w silver lurex"
+//   "A-S/M Colour A, S/M"             → "Colour A"
+// (<code>-<size> <colour>, <size>) — strip the trailing ", <size>" and the
+// leading "<code>-<size> ". Anything unparseable returns the label trimmed
+// (better a verbose colour than a lost one); null/empty → null.
+export function colourFromVariantLabel(label: string | null, size: string): string | null {
+  if (!label || !label.trim()) return null;
+  let s = label.trim();
+  const tail = `, ${size}`;
+  if (s.endsWith(tail)) s = s.slice(0, -tail.length).trim();
+  const marker = `-${size} `;
+  const at = s.indexOf(marker);
+  if (at > -1) s = s.slice(at + marker.length).trim();
+  return s || null;
 }

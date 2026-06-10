@@ -60,6 +60,31 @@ import {
 
 export type LayoutRenderMode = "production" | "preview";
 
+// The per-repetition style narrowings for a repeat mode:
+//   "size" — one per size row ({{size}}/{{ean13}} bind to the row)
+//   "ean"  — one per PO EAN row (SIZE × COLOUR; {{colourName}} binds the
+//            row's colour parsed from the PO variant label). Falls back
+//            to size rows when no EAN rows were scraped.
+export function repetitionStyles(style: StyleData, repeatBy: "none" | "size" | "ean"): StyleData[] {
+  if (repeatBy === "size" && style.sizes.length > 0) {
+    return style.sizes.map((entry) => ({ ...style, sizes: [entry] }));
+  }
+  if (repeatBy === "ean") {
+    const rows = style.eanVariants ?? [];
+    if (rows.length > 0) {
+      return rows.map((v) => ({
+        ...style,
+        sizes: [{ label: v.size, ean13: v.ean13 }],
+        colour: v.colour ? { name: v.colour, code: style.colour?.code ?? "" } : style.colour,
+      }));
+    }
+    if (style.sizes.length > 0) {
+      return style.sizes.map((entry) => ({ ...style, sizes: [entry] }));
+    }
+  }
+  return [style];
+}
+
 export type LayoutRenderOptions = {
   mode?: LayoutRenderMode;
   // Render just this page (builder preview shows the selected page).
@@ -291,11 +316,11 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
 
   if (block.rect) {
     const r = block.rect;
-    const m = page.marginMm ?? 0;
-    const innerW = page.widthMm - 2 * m;
-    const innerH = page.heightMm - 2 * m;
-    const left = (m + (innerW * r.col) / LAYOUT_GRID_COLS).toFixed(2);
-    const top = (m + (innerH * r.row) / LAYOUT_GRID_ROWS).toFixed(2);
+    const m = page.margins ?? { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 };
+    const innerW = page.widthMm - m.leftMm - m.rightMm;
+    const innerH = page.heightMm - m.topMm - m.bottomMm;
+    const left = (m.leftMm + (innerW * r.col) / LAYOUT_GRID_COLS).toFixed(2);
+    const top = (m.topMm + (innerH * r.row) / LAYOUT_GRID_ROWS).toFixed(2);
     const width = ((innerW * r.colSpan) / LAYOUT_GRID_COLS).toFixed(2);
     const height = ((innerH * r.rowSpan) / LAYOUT_GRID_ROWS).toFixed(2);
     const justify =
@@ -352,10 +377,7 @@ export async function renderLayoutHtml(
   // {{ean13}} and {{barcode:ean13}} resolve per repetition. A style with
   // no sizes renders once (honest gaps where the EAN should be).
   const settings = layoutSettings(def);
-  const repStyles: StyleData[] =
-    settings.repeatBy === "ean" && style.sizes.length > 0
-      ? style.sizes.map((entry) => ({ ...style, sizes: [entry] }))
-      : [style];
+  const repStyles: StyleData[] = repetitionStyles(style, settings.repeatBy);
 
   const usesLogo = defUsesToken(pages, "logo");
   const [barcodes, symbols, contrastLogo, customLogo] = await Promise.all([

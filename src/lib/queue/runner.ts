@@ -105,7 +105,7 @@ export async function processJob(jobId: string): Promise<void> {
           businessAreaRef: { select: { name: true } },
           // Resolved PO barcodes — fall back into the ean13/cartonEan
           // fields at render time (see effectiveStyleItem).
-          eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
+          eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, variantLabel: true } },
         },
       },
     },

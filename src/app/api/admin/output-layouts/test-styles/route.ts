@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
         rawData: true,
         cartonEan: true,
         supplier: { select: { country: true } },
-        eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
+        eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, variantLabel: true } },
         customer: { select: { config: true } },
       },
     }),

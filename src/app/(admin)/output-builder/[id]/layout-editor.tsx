@@ -107,6 +107,10 @@ export function LayoutEditor({
   const [version, setVersion] = useState(layout.version);
 
   const [pageIdx, setPageIdx] = useState(0);
+  const [marginsLinked, setMarginsLinked] = useState(() => {
+    const m = layout.definition.pages[0]?.margins;
+    return !m || (m.topMm === m.rightMm && m.topMm === m.bottomMm && m.topMm === m.leftMm);
+  });
   const [sel, setSel] = useState<string | null>(null);
   // Draw state lives in a ref (handlers must see updates within the same
   // tick — fast pointermoves outrun React renders) and is mirrored into
@@ -230,7 +234,7 @@ export function LayoutEditor({
           title: `Page ${d.pages.length + 1}`,
           widthMm: last.widthMm,
           heightMm: last.heightMm,
-          marginMm: last.marginMm ?? 0,
+          margins: { ...last.margins },
           blocks: [],
         },
       ],
@@ -252,14 +256,14 @@ export function LayoutEditor({
 
   // ---- canvas grid geometry (margin-aware) ------------------------------
 
-  // The 12×12 grid maps to the page minus the page margin on every side.
+  // The 12×12 grid maps to the page minus the per-side margins.
   function gridGeom(p: LayoutPage, s: number) {
-    const m = (p.marginMm ?? 0) * s;
+    const m = p.margins ?? { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 };
     return {
-      left: m,
-      top: m,
-      width: p.widthMm * s - 2 * m,
-      height: p.heightMm * s - 2 * m,
+      left: m.leftMm * s,
+      top: m.topMm * s,
+      width: (p.widthMm - m.leftMm - m.rightMm) * s,
+      height: (p.heightMm - m.topMm - m.bottomMm) * s,
     };
   }
 
@@ -990,20 +994,78 @@ export function LayoutEditor({
               </div>
             </div>
             <div>
-              <label className="text-xs text-zinc-500">Margin mm</label>
-              <input
-                type="number"
-                min={0}
-                max={50}
-                step={0.5}
-                value={page.marginMm ?? 0}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  if (Number.isFinite(v) && v >= 0 && v <= 50) updatePage({ marginMm: v });
-                }}
-                className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm tabular-nums"
-              />
-              <p className="mt-0.5 text-[10px] text-zinc-400">The grid (and all blocks) inset from every page edge.</p>
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-zinc-500">Margins mm</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (marginsLinked) {
+                      setMarginsLinked(false);
+                    } else {
+                      const v = page.margins?.topMm ?? 0;
+                      updatePage({ margins: { topMm: v, rightMm: v, bottomMm: v, leftMm: v } });
+                      setMarginsLinked(true);
+                    }
+                  }}
+                  className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${
+                    marginsLinked
+                      ? "border-zinc-900 bg-zinc-900 text-white"
+                      : "border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300"
+                  }`}
+                  title={marginsLinked ? "Linked — one value for all sides. Click to edit each side." : "Per side. Click to link all sides."}
+                >
+                  {marginsLinked ? "🔗 linked" : "per side"}
+                </button>
+              </div>
+              {marginsLinked ? (
+                <input
+                  type="number"
+                  min={0}
+                  max={50}
+                  step={0.5}
+                  value={page.margins?.topMm ?? 0}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (Number.isFinite(v) && v >= 0 && v <= 50)
+                      updatePage({ margins: { topMm: v, rightMm: v, bottomMm: v, leftMm: v } });
+                  }}
+                  className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm tabular-nums"
+                />
+              ) : (
+                <div className="mt-1 grid grid-cols-2 gap-1.5">
+                  {(
+                    [
+                      ["topMm", "Top"],
+                      ["rightMm", "Right"],
+                      ["bottomMm", "Bottom"],
+                      ["leftMm", "Left"],
+                    ] as const
+                  ).map(([k, label]) => (
+                    <div key={k}>
+                      <label className="text-[10px] text-zinc-400">{label}</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={50}
+                        step={0.5}
+                        value={page.margins?.[k] ?? 0}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          if (Number.isFinite(v) && v >= 0 && v <= 50)
+                            updatePage({
+                              margins: {
+                                ...(page.margins ?? { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 }),
+                                [k]: v,
+                              },
+                            });
+                        }}
+                        className="w-full rounded-md border border-zinc-200 px-2 py-1 text-sm tabular-nums"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="mt-0.5 text-[10px] text-zinc-400">The grid (and all blocks) inset from the page edges.</p>
             </div>
             <div>
               <label className="text-xs text-zinc-500">Orientation</label>
@@ -1043,9 +1105,10 @@ export function LayoutEditor({
                 className="mt-1 w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-sm text-zinc-700"
               >
                 <option value="none">Don&apos;t repeat</option>
-                <option value="ean">Per size / EAN</option>
+                <option value="size">Per size</option>
+                <option value="ean">Per EAN (size × colour)</option>
               </select>
-              {settings.repeatBy === "ean" ? (
+              {settings.repeatBy !== "none" ? (
                 <p className="mt-1.5 break-words font-mono text-[10px] leading-relaxed text-zinc-400">
                   {repeatValues.length > 0 ? (
                     <>
@@ -1079,8 +1142,8 @@ export function LayoutEditor({
                   ) : (
                     "Resolving…"
                   )
-                ) : settings.repeatBy === "ean" ? (
-                  "Variables allowed — {{size}}/{{ean13}} name EACH file (one per repetition)"
+                ) : settings.repeatBy !== "none" ? (
+                  "Variables allowed — {{size}}/{{ean13}}/{{colourName}} name EACH file (one per repetition)"
                 ) : (
                   "Text variables allowed · empty = default name"
                 )}
@@ -1118,7 +1181,10 @@ export function LayoutEditor({
                   top: gridGeom(page, scale).top,
                   width: gridGeom(page, scale).width,
                   height: gridGeom(page, scale).height,
-                  outline: (page.marginMm ?? 0) > 0 ? "1px dashed rgba(24,24,27,0.12)" : "none",
+                  outline:
+                    (page.margins?.topMm ?? 0) + (page.margins?.rightMm ?? 0) + (page.margins?.bottomMm ?? 0) + (page.margins?.leftMm ?? 0) > 0
+                      ? "1px dashed rgba(24,24,27,0.12)"
+                      : "none",
                   backgroundImage:
                     "repeating-linear-gradient(to right, transparent 0, transparent calc(8.3333% - 1px), rgba(24,24,27,0.045) calc(8.3333% - 1px), rgba(24,24,27,0.045) 8.3333%)," +
                     "repeating-linear-gradient(to bottom, transparent 0, transparent calc(8.3333% - 1px), rgba(24,24,27,0.045) calc(8.3333% - 1px), rgba(24,24,27,0.045) 8.3333%)",
@@ -1586,12 +1652,12 @@ function CanvasBlock({
   // rects by parseLayoutDef before they reach this component.
   if (!block.rect) return null;
   const r = block.rect;
-  const mPx = (page.marginMm ?? 0) * scale;
-  const gw = page.widthMm * scale - 2 * mPx;
-  const gh = page.heightMm * scale - 2 * mPx;
+  const m = page.margins ?? { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 };
+  const gw = (page.widthMm - m.leftMm - m.rightMm) * scale;
+  const gh = (page.heightMm - m.topMm - m.bottomMm) * scale;
   const positionStyle: React.CSSProperties = {
-    left: mPx + (r.col / LAYOUT_GRID_COLS) * gw,
-    top: mPx + (r.row / LAYOUT_GRID_ROWS) * gh,
+    left: m.leftMm * scale + (r.col / LAYOUT_GRID_COLS) * gw,
+    top: m.topMm * scale + (r.row / LAYOUT_GRID_ROWS) * gh,
     width: (r.colSpan / LAYOUT_GRID_COLS) * gw,
     height: (r.rowSpan / LAYOUT_GRID_ROWS) * gh,
     display: "flex",

@@ -9,7 +9,7 @@ import {
   staticRequiredColumns,
 } from "./tokens";
 import { layoutSettings } from "./schema";
-import { renderLayoutHtml } from "./render";
+import { renderLayoutHtml, repetitionStyles } from "./render";
 
 // =====================================================
 // Layout → TemplateVariant bridge (SERVER-ONLY — imports db).
@@ -78,22 +78,29 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
       const expr = layoutSettings(def).fileName;
       return expr ? resolveLayoutFileName(expr, style) : null;
     },
-    // Repeat-per-EAN produces ONE FILE PER SIZE ROW (each repetition's
-    // {{size}}/{{ean13}} bind to its row — including in the file name).
+    // Repeat modes produce ONE FILE PER REPETITION — "size": per size
+    // row; "ean": per PO EAN row (size × colour, {{colourName}} bound).
     renderMany:
-      layoutSettings(def).repeatBy === "ean"
+      layoutSettings(def).repeatBy !== "none"
         ? async (style) => {
-            const rows = style.sizes.length > 0 ? style.sizes : [null];
+            const reps = repetitionStyles(style, layoutSettings(def).repeatBy);
+            const seen = new Map<string, number>();
             return Promise.all(
-              rows.map(async (row, i) => {
-                const repStyle = row ? { ...style, sizes: [row] } : style;
-                const suffix =
-                  (row?.label ?? "").replace(/[^\w.-]+/g, "").slice(0, 24) || String(i + 1);
+              reps.map(async (repStyle, i) => {
+                const sizePart = (repStyle.sizes[0]?.label ?? "").replace(/[^\w.-]+/g, "");
+                const colourPart =
+                  layoutSettings(def).repeatBy === "ean"
+                    ? (repStyle.colour?.name ?? "").replace(/[^\w.-]+/g, "").slice(0, 16)
+                    : "";
+                let suffix = [sizePart, colourPart].filter(Boolean).join("-").slice(0, 40) || String(i + 1);
+                const n = (seen.get(suffix) ?? 0) + 1;
+                seen.set(suffix, n);
+                if (n > 1) suffix = `${suffix}-${n}`;
                 const expr = layoutSettings(def).fileName;
                 return {
                   suffix,
                   fileName: expr ? resolveLayoutFileName(expr, repStyle) : null,
-                  html: await renderLayoutHtml(def, repStyle, { mode: "production", title: row ? `${row.label} — ${String(i + 1)}` : undefined }),
+                  html: await renderLayoutHtml(def, repStyle, { mode: "production" }),
                 };
               }),
             );
