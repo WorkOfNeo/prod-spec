@@ -28,6 +28,13 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   { key: "description", label: "Description", group: "Style", kind: "text", example: "T-Shirt Paw Patrol – Blue" },
   { key: "customerItemNo", label: "Customer item no", group: "Style", kind: "text", example: "223609" },
   { key: "countryOfOrigin", label: "Country of origin", group: "Style", kind: "text", example: "India" },
+  {
+    key: "certificates",
+    label: "Certificates the style declares (also for {{if certificates includes FSC}})",
+    group: "Style",
+    kind: "text",
+    example: "FSC, OEKOTEX",
+  },
   { key: "colourName", label: "Colour name", group: "Style", kind: "text", example: "Navy" },
   { key: "colourCode", label: "Colour code", group: "Style", kind: "text", example: "19-3920" },
   { key: "campaignWeek", label: "Campaign week", group: "Style", kind: "text", example: "C182813" },
@@ -105,6 +112,14 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     arg: "source",
     example: "{{logo:contrast}}",
   },
+  {
+    key: "cert",
+    label: "Certification mark (artwork from Settings → Certificates)",
+    group: "Barcodes & symbols",
+    kind: "image",
+    arg: "source",
+    example: "{{cert:oekotex}}",
+  },
 ];
 
 export const BARCODE_SOURCES = ["cartonEan", "ean13"] as const;
@@ -113,10 +128,18 @@ export type BarcodeSource = (typeof BARCODE_SOURCES)[number];
 export const LOGO_SOURCES = ["contrast", "custom"] as const;
 export type LogoSource = (typeof LOGO_SOURCES)[number];
 
+// Certification marks resolvable by {{cert:…}} — each needs a row in the
+// Certificate library (Settings → Certificates) whose name normalizes to
+// the source key ("OEKO-TEX" → "oekotex", see normalizeCertKey). Adding a
+// mark = one entry here + a palette chip + a library row.
+export const CERT_SOURCES = ["oekotex", "fsc"] as const;
+export type CertSource = (typeof CERT_SOURCES)[number];
+
 // Allowed :arg values for source-typed tokens, per key.
 const SOURCES_BY_KEY: Record<string, readonly string[]> = {
   barcode: BARCODE_SOURCES,
   logo: LOGO_SOURCES,
+  cert: CERT_SOURCES,
 };
 
 const META_BY_KEY = new Map(LAYOUT_TOKENS.map((t) => [t.key, t]));
@@ -172,7 +195,7 @@ export function validateLineConditionals(
   // Anything control-shaped left over is malformed / orphaned.
   for (const m of consumed.matchAll(new RegExp(controlRe.source, "g"))) {
     errs.push(
-      `malformed conditional near "{{${m[1]}}}" — expected {{if field == VALUE}}…{{else}}…{{endif}} on one line`,
+      `malformed conditional near "{{${m[1]}}}" — expected {{if field == VALUE}} or {{if field includes VALUE}} (…{{else}}…){{endif}} on one line`,
     );
   }
   for (const c of conds) {

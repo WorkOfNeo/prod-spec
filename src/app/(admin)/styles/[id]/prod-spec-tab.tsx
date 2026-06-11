@@ -3,6 +3,7 @@ import { DeliveredCard } from "./delivered-card";
 import { ResolvedProdSpecButton } from "./resolved-prod-spec";
 import { RelinkBusinessAreaButton } from "./relink-business-area-button";
 import { SupplierLinkCard, type SupplierShareInfo } from "./supplier-link-card";
+import { groupByDocType, DocTypeAccordion } from "./doc-type-groups";
 import { formatDate } from "@/lib/utils";
 
 type ProdSpec = {
@@ -164,23 +165,29 @@ export function ProdSpecTab({
             Nothing generated yet for this style.
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {latestJob.assets.map((asset) => (
-              <DeliveredCard
-                key={asset.id}
-                jobId={latestJob.id}
-                asset={{
-                  id: asset.id,
-                  docType: asset.docType,
-                  variantKey: asset.variantKey,
-                  displayName: asset.displayName ?? defaultDisplayName(asset.docType),
-                  fileName: asset.fileName,
-                  reviewStatus: asset.reviewStatus,
-                  rejectReason: asset.rejectReason,
-                  reviewedAt: asset.reviewedAt,
-                  reviewerEmail: asset.reviewerEmail,
-                }}
-              />
+          <div className="flex flex-col gap-3">
+            {groupByDocType(latestJob.assets).map((group) => (
+              <DocTypeAccordion key={group.docType} label={group.label} count={group.items.length}>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {group.items.map((asset) => (
+                    <DeliveredCard
+                      key={asset.id}
+                      jobId={latestJob.id}
+                      asset={{
+                        id: asset.id,
+                        docType: asset.docType,
+                        variantKey: asset.variantKey,
+                        displayName: asset.displayName ?? defaultDisplayName(asset.docType),
+                        fileName: asset.fileName,
+                        reviewStatus: asset.reviewStatus,
+                        rejectReason: asset.rejectReason,
+                        reviewedAt: asset.reviewedAt,
+                        reviewerEmail: asset.reviewerEmail,
+                      }}
+                    />
+                  ))}
+                </div>
+              </DocTypeAccordion>
             ))}
           </div>
         )}

@@ -17,6 +17,7 @@
     "seed-column-mapping": "tsx --env-file=.env scripts/seed-default-column-mapping.ts",
     "seed-washsymbol-monday": "tsx --env-file=.env scripts/seed-washsymbol-monday-values.ts",
     "seed-print-spec-outputs": "tsx --env-file=.env scripts/seed-print-spec-outputs.ts",
+    "seed-certificates": "tsx --env-file=.env scripts/seed-certificates.ts",
     "backfill-preorder-eans": "tsx --env-file=.env scripts/backfill-preorder-eans.ts"
   },
   "dependencies": {

@@ -44,6 +44,10 @@ const RESOLVERS: Record<string, TextResolver> = {
   description: (s) => s.description || tFor(s.productNameTranslations, "en") || s.styleName,
   customerItemNo: (s) => s.customerItemNo ?? "",
   countryOfOrigin: (s) => s.countryOfOrigin ?? "",
+  // The style's declared certifications (Monday "certifications__1"
+  // column), joined — and the usual field for
+  // {{if certificates includes FSC}} conditionals (per-item match).
+  certificates: (s) => (s.certificates ?? []).join(", "),
   colourName: (s) => s.colour?.name ?? "",
   colourCode: (s) => s.colour?.code ?? "",
   campaignWeek: (s) => s.campaignWeek ?? "",
@@ -133,6 +137,7 @@ const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   colourName: ["colourName"],
   colourCode: ["colourCode"],
   campaignWeek: ["campaignWeek"],
+  certificates: ["certificates"],
   sizes: ["sizes"],
   size: ["sizes"],
   sizeRange: ["sizes"],
@@ -269,6 +274,12 @@ export function unresolvedTokens(def: LayoutDef, style: StyleData): string[] {
         for (const ref of tokensInLine(effective)) {
           const meta = tokenMeta(ref.key);
           if (!meta) continue;
+          // Image tokens (logos, certification marks) always render
+          // something: present → the artwork, absent → a visible chip on
+          // the proof counted by the ship gate. This sync check can't see
+          // the fs/db-backed artwork anyway, so listing them here would
+          // be permanent amber noise in the builder.
+          if (meta.kind === "image") continue;
           const value =
             meta.kind === "barcode"
               ? resolveBarcodeValue(style, (ref.arg ?? "cartonEan") as BarcodeSource)
