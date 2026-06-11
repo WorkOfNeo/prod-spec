@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { normalizeVisibleColumns, type StyleColumnKey } from "@/lib/styles/table-columns";
 
 // =====================================================
 // Global, app-wide settings — a tiny key-value store backed by the
@@ -137,6 +138,29 @@ export async function setSupplierReviewCcEmails(raw: string): Promise<void> {
   await db.appSetting.upsert({
     where: { key: SUPPLIER_REVIEW_CC_KEY },
     create: { key: SUPPLIER_REVIEW_CC_KEY, value },
+    update: { value },
+  });
+}
+
+const STYLES_TABLE_COLUMNS_KEY = "stylesTableColumns";
+
+// Which columns the /styles table shows — the GLOBAL standard view every
+// user gets, set by an ADMIN from the Columns popover on /styles (not a
+// per-user preference). Stored as { visible: [...] }; unknown keys are
+// dropped and locked columns forced on (normalizeVisibleColumns), so a
+// stale saved config can never break rendering. Unset ⇒ STANDARD_VISIBLE
+// (Completion hidden, Generation in its slot).
+export async function getStylesTableColumns(): Promise<StyleColumnKey[]> {
+  const row = await db.appSetting.findUnique({ where: { key: STYLES_TABLE_COLUMNS_KEY } });
+  const visible = (row?.value as { visible?: unknown } | null)?.visible;
+  return normalizeVisibleColumns(visible);
+}
+
+export async function setStylesTableColumns(visible: ReadonlyArray<string>): Promise<void> {
+  const value = { visible: normalizeVisibleColumns(visible) };
+  await db.appSetting.upsert({
+    where: { key: STYLES_TABLE_COLUMNS_KEY },
+    create: { key: STYLES_TABLE_COLUMNS_KEY, value },
     update: { value },
   });
 }
