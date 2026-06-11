@@ -31,13 +31,14 @@ export type ReviewTask = {
 };
 
 export type ReviewWork = {
-  // Partially decided and this user made ≥1 of the decisions.
+  // This user's responsibility: they claimed the review ("Start review")
+  // and/or made ≥1 of the decisions, with documents still pending.
   mine: ReviewTask[];
-  // Partially decided entirely by other users. Visible (muted) so a
+  // Claimed/decided by other users only. Visible (muted) so a
   // half-finished review can never hide; not counted in the badge.
   others: ReviewTask[];
-  // Documents rendered, nobody has decided anything yet. Global queue —
-  // there is no reviewer-assignment concept yet.
+  // Documents rendered, unclaimed, nothing decided. Global queue — there
+  // is no reviewer-assignment concept yet.
   untouched: ReviewTask[];
 };
 
@@ -46,6 +47,7 @@ export async function getReviewWork(userId: string): Promise<ReviewWork> {
     where: { status: "AWAITING_REVIEW" },
     include: {
       style: { include: { customer: true, businessAreaRef: true } },
+      reviewClaimedBy: { select: { email: true } },
       assets: {
         select: {
           reviewStatus: true,
@@ -79,8 +81,12 @@ export async function getReviewWork(userId: string): Promise<ReviewWork> {
     const decidedAssets = job.assets.filter((a) => a.reviewStatus !== "PENDING_REVIEW");
     const pendingAssets = job.assets.filter((a) => a.reviewStatus === "PENDING_REVIEW");
 
-    const lastDecision = decidedAssets
-      .map((a) => a.reviewedAt)
+    // Activity = the newest of: a decision, or the claim itself ("Start
+    // review" with no clicks yet is still activity worth surfacing).
+    const lastActivity = [
+      ...decidedAssets.map((a) => a.reviewedAt),
+      job.reviewClaimedAt,
+    ]
       .filter((d): d is Date => d != null)
       .sort((a, b) => b.getTime() - a.getTime())[0];
 
@@ -95,15 +101,23 @@ export async function getReviewWork(userId: string): Promise<ReviewWork> {
       decided: decidedAssets.length,
       blocked: pendingAssets.length > 0 && pendingAssets.every((a) => a.placeholderCount > 0),
       needsPublishRetry: pendingAssets.length === 0,
-      lastActivityAt: lastDecision ?? job.createdAt,
+      lastActivityAt: lastActivity ?? job.createdAt,
       reviewerEmails: Array.from(
-        new Set(decidedAssets.map((a) => a.reviewedBy?.email).filter((e): e is string => !!e)),
+        new Set(
+          [...decidedAssets.map((a) => a.reviewedBy?.email), job.reviewClaimedBy?.email].filter(
+            (e): e is string => !!e,
+          ),
+        ),
       ),
     };
 
-    if (decidedAssets.length === 0) {
+    const touched = decidedAssets.length > 0 || job.reviewClaimedById != null;
+    if (!touched) {
       untouched.push(task);
-    } else if (decidedAssets.some((a) => a.reviewedById === userId)) {
+    } else if (
+      job.reviewClaimedById === userId ||
+      decidedAssets.some((a) => a.reviewedById === userId)
+    ) {
       mine.push(task);
     } else {
       others.push(task);
@@ -120,18 +134,6 @@ export async function getReviewWork(userId: string): Promise<ReviewWork> {
   return { mine, others, untouched };
 }
 
-// Server-rendered relative times. Coarse on purpose — the page is
-// force-dynamic and refreshes on window focus, so minute-precision drift
-// is invisible in practice.
-export function timeAgo(date: Date): string {
-  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 14) return `${days} day${days === 1 ? "" : "s"} ago`;
-  const weeks = Math.floor(days / 7);
-  return `${weeks} weeks ago`;
-}
+// Relative-time formatting moved to lib/time so client components (the
+// review claim chip) can share it without pulling in the db import above.
+export { timeAgo } from "@/lib/time";

@@ -23,11 +23,15 @@ export function ReviewLeaveGuard({
   jobId,
   decided,
   pending,
+  claimedByMe,
   styleContext,
 }: {
   jobId: string;
   decided: number;
   pending: number;
+  // Claiming via the "Start review" popup is taking responsibility too —
+  // it arms the guard even before the first approve/reject click.
+  claimedByMe: boolean;
   styleContext: string;
 }) {
   // One read at mount. During SSR there is no sessionStorage — default to
@@ -40,7 +44,7 @@ export function ReviewLeaveGuard({
   );
 
   const { prompting, confirmLeave, cancelLeave } = useLeaveGuard({
-    when: !suppressed && decided > 0 && pending > 0,
+    when: !suppressed && pending > 0 && (decided > 0 || claimedByMe),
   });
 
   if (!prompting) return null;
@@ -86,7 +90,15 @@ function FinishReviewModal({
         <h3 className="text-sm font-semibold text-zinc-900">Finish this review before you go?</h3>
         <p className="mt-0.5 text-xs text-zinc-500">{styleContext}</p>
         <p className="mt-3 text-sm text-zinc-700">
-          You&rsquo;ve decided <b>{decided} of {total}</b> documents.{" "}
+          {decided > 0 ? (
+            <>
+              You&rsquo;ve decided <b>{decided} of {total}</b> documents.
+            </>
+          ) : (
+            <>
+              You started this review — <b>none of the {total}</b> documents are decided yet.
+            </>
+          )}{" "}
           <b>Nothing is sent to the supplier until every document is approved or rejected</b> — if
           you leave now, this review stays open and lands on your <b>My tasks</b> page.
         </p>

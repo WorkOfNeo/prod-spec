@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
 import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
 import { publishApprovedJob, PublishError } from "@/lib/publish/publish-approved-job";
+import { claimReviewIfUnclaimed } from "@/lib/review-flow/claim";
 import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
 
 export const runtime = "nodejs";
@@ -57,6 +58,9 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       reviewedById: session.user.id,
     },
   });
+  // Deciding IS taking responsibility — implicit claim when nobody pressed
+  // the "Start review" popup first (first writer wins, no-op otherwise).
+  await claimReviewIfUnclaimed(asset.jobId, session.user.id);
   await db.log.create({
     data: {
       jobId: asset.jobId,

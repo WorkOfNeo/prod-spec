@@ -1,16 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { getServerSession } from "@/lib/auth-server";
 import { ReviewActions } from "./review-actions";
 import { AssetActions } from "./asset-actions";
+import { ReviewClaim } from "./claim-review";
 import { ReviewLeaveGuard } from "./leave-guard";
 import { groupByDocType, DocTypeAccordion } from "../doc-type-groups";
 import { isSharepointConfigured } from "@/lib/publish/publish-approved-job";
+import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const session = await getServerSession();
 
   const style = await db.style.findUnique({
     where: { id },
@@ -22,7 +26,10 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         // Assets by fileName, not insertion: rows land in one transaction
         // (tied timestamps) and the 00-cover / 01-general-information
         // prefixes are designed to open the bundle.
-        include: { assets: { orderBy: { fileName: "asc" } } },
+        include: {
+          assets: { orderBy: { fileName: "asc" } },
+          reviewClaimedBy: { select: { id: true, name: true, email: true } },
+        },
         orderBy: { createdAt: "desc" },
         take: 1,
       },
@@ -65,16 +72,25 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     .filter(Boolean)
     .join(" · ");
 
+  // Test-phase follow-through machinery (kill switch:
+  // REVIEW_FOLLOW_THROUGH_DISABLED=true) — claim popup/chip + leave guard.
+  const followThrough = reviewFollowThroughEnabled();
+  const claimedByMe = job.reviewClaimedById != null && job.reviewClaimedById === session?.user.id;
+
   return (
     <div className="px-8 py-8">
-      {/* Holds navigation while the review is partially decided — a partial
-          review settles nothing and the supplier hears nothing. */}
-      <ReviewLeaveGuard
-        jobId={job.id}
-        decided={approved + rejected}
-        pending={pendingCount}
-        styleContext={styleContext}
-      />
+      {followThrough ? (
+        // Holds navigation while this review is the user's responsibility
+        // (claimed and/or partially decided) — leaving settles nothing and
+        // the supplier hears nothing.
+        <ReviewLeaveGuard
+          jobId={job.id}
+          decided={approved + rejected}
+          pending={pendingCount}
+          claimedByMe={claimedByMe}
+          styleContext={styleContext}
+        />
+      ) : null}
       <Link href={`/styles/${id}`} className="text-xs text-zinc-500 underline">← Back to style</Link>
       <div className="mt-2 flex items-end justify-between gap-4">
         <div>
@@ -86,6 +102,20 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             {" · "}
             {job.assets.length} documents{decidedSummary ? <> — {decidedSummary}</> : null}
           </p>
+          {followThrough ? (
+            // "Start review" popup (after ~10s on an unclaimed review) +
+            // the in-review-by chip in the header once claimed.
+            <ReviewClaim
+              jobId={job.id}
+              pendingCount={pendingCount}
+              claimedByName={
+                job.reviewClaimedBy ? job.reviewClaimedBy.name || job.reviewClaimedBy.email : null
+              }
+              claimedByMe={claimedByMe}
+              claimedAtIso={job.reviewClaimedAt?.toISOString() ?? null}
+              styleContext={styleContext}
+            />
+          ) : null}
         </div>
         <ReviewActions
           jobId={job.id}

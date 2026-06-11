@@ -33,6 +33,7 @@ model User {
   notifications    UserNotification[]
   invitesSent      Invite[]          @relation("InvitesSent")
   acceptedInvite   Invite?           @relation("InviteAccepted")
+  claimedReviews   Job[]             @relation("ReviewClaimer")
 
   @@map("users")
 }
@@ -606,8 +607,17 @@ model Job {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
+  // Test-phase review machinery (see lib/review-flow/flags.ts): the user
+  // who pressed "Start review" on the review screen — or made the first
+  // decision — and thereby owns seeing this review through. Drives the
+  // leave guard + My tasks attribution. Re-runs reset it naturally (each
+  // run is a new Job row). SetNull keeps historical jobs if a user goes.
+  reviewClaimedById String?
+  reviewClaimedAt   DateTime?
+
   style            Style             @relation(fields: [styleId], references: [id], onDelete: Cascade)
   prodSpec         ProdSpec?         @relation(fields: [prodSpecId], references: [id], onDelete: SetNull)
+  reviewClaimedBy  User?             @relation("ReviewClaimer", fields: [reviewClaimedById], references: [id], onDelete: SetNull)
   logs             Log[]
   reviewActions    ReviewAction[]
   assets           JobAsset[]
@@ -616,6 +626,7 @@ model Job {
   @@index([status])
   @@index([styleId])
   @@index([prodSpecId])
+  @@index([reviewClaimedById])
   @@map("jobs")
 }
 
