@@ -269,6 +269,12 @@ export function unresolvedTokens(def: LayoutDef, style: StyleData): string[] {
         for (const ref of tokensInLine(effective)) {
           const meta = tokenMeta(ref.key);
           if (!meta) continue;
+          // Image tokens (logos, certification marks) always render
+          // something: present → the artwork, absent → a visible chip on
+          // the proof counted by the ship gate. This sync check can't see
+          // the fs/db-backed artwork anyway, so listing them here would
+          // be permanent amber noise in the builder.
+          if (meta.kind === "image") continue;
           const value =
             meta.kind === "barcode"
               ? resolveBarcodeValue(style, (ref.arg ?? "cartonEan") as BarcodeSource)
