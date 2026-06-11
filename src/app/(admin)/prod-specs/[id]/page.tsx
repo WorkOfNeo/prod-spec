@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import {
+  parseBundlePageSettings,
   parseProdSpecColumnMapping,
   parseProdSpecLanguages,
   parseProdSpecOutputs,
@@ -97,13 +98,14 @@ export default async function ProdSpecDetailPage({
 
       <ProdSpecEditor
         prodSpecId={prodSpec.id}
-        initialTab={tab === "outputs" ? "outputs" : "general"}
+        initialTab={tab === "outputs" ? "outputs" : tab === "cover" ? "cover" : "general"}
         initialName={prodSpec.name}
         initialActive={prodSpec.active}
         initialThreshold={prodSpec.autoGenerateThresholdPct}
         initialOutputs={outputs}
         initialLogoSvg={prodSpec.logoSvg}
         initialGeneralInfoMd={prodSpec.generalInfoMd ?? ""}
+        initialBundlePageSettings={parseBundlePageSettings(prodSpec.bundlePageSettings)}
         initialCareInstructionsByLang={careInstructionsByLang}
         initialOutputLanguages={outputLanguages}
         availableLanguages={languages}

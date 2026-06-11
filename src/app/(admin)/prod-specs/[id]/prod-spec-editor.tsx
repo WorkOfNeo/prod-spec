@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ProdSpecOutput } from "@/lib/prod-spec/config";
+import type { BundlePageSettings, PageSettings, ProdSpecOutput } from "@/lib/prod-spec/config";
 import {
   PINNABLE_FIELDS,
   PINNABLE_FIELD_LABELS,
@@ -12,6 +12,8 @@ import {
 import { Toggle } from "@/components/toggle";
 import { Combobox } from "@/components/ui/combobox";
 import { LazyOutputPreview } from "@/components/output-preview";
+import { MarkdownEditor } from "@/components/markdown-editor";
+import { PageSettingsFields } from "./page-settings-fields";
 import {
   CareStandardPanel,
   type PanelCareLabel,
@@ -20,7 +22,7 @@ import {
 import { AddOutputPicker, type VariantInfo } from "./add-output-picker";
 
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
-type Tab = "general" | "outputs";
+type Tab = "general" | "cover" | "outputs";
 
 // Debounce window before the auto-saver flushes a payload. Long enough
 // to coalesce rapid typing in the markdown / care-instruction textareas,
@@ -38,6 +40,9 @@ type Props = {
   // Markdown for the "General information" A4 page shipped with every
   // generated bundle. Empty string ⇒ no page emitted by the runner.
   initialGeneralInfoMd: string;
+  // Print tuning (margins / base font / line height / footer) for the
+  // two framing pages — parsed server-side with defaults filled in.
+  initialBundlePageSettings: BundlePageSettings;
   initialCareInstructionsByLang: Record<string, string>;
   // Lowercase language codes this prod spec's outputs render. Empty ⇒
   // templates use their built-in default set.
@@ -70,6 +75,9 @@ export function ProdSpecEditor(props: Props) {
   const [outputs, setOutputs] = useState<ProdSpecOutput[]>(props.initialOutputs);
   const [logoSvg, setLogoSvg] = useState<string>(props.initialLogoSvg ?? "");
   const [generalInfoMd, setGeneralInfoMd] = useState<string>(props.initialGeneralInfoMd);
+  const [pageSettings, setPageSettings] = useState<BundlePageSettings>(
+    props.initialBundlePageSettings,
+  );
   const [careByLang, setCareByLang] = useState<Record<string, string>>(
     props.initialCareInstructionsByLang ?? {},
   );
@@ -210,10 +218,21 @@ export function ProdSpecEditor(props: Props) {
       outputs,
       logoSvg: logoSvg.trim() ? logoSvg : null,
       generalInfoMd: generalInfoMd.trim() ? generalInfoMd : null,
+      bundlePageSettings: pageSettings,
       careInstructionsByLang: careByLang,
       outputLanguages: outputLanguageList,
     }),
-    [name, active, threshold, outputs, logoSvg, generalInfoMd, careByLang, outputLanguageList],
+    [
+      name,
+      active,
+      threshold,
+      outputs,
+      logoSvg,
+      generalInfoMd,
+      pageSettings,
+      careByLang,
+      outputLanguageList,
+    ],
   );
 
   // Snapshot of the last *successfully saved* payload, serialised. The
@@ -320,6 +339,7 @@ export function ProdSpecEditor(props: Props) {
           {(
             [
               { key: "general" as const, label: "General information" },
+              { key: "cover" as const, label: "Cover page" },
               { key: "outputs" as const, label: "Outputs", count: enabledCount },
             ] satisfies Array<{ key: Tab; label: string; count?: number }>
           ).map((t) => (
@@ -345,55 +365,73 @@ export function ProdSpecEditor(props: Props) {
 
       {tab === "general" ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <Section title="General information page · markdown">
-            <p className="mb-3 text-xs text-zinc-500">
-              GitHub-flavoured markdown — headings, lists and <strong>tables</strong> all render.
-              When non-empty, this page joins <strong>every bundle</strong> generated under this
-              prod spec as <code className="font-mono">01-…-general-information.pdf</code>. Write
-              it once: general requirements, inspection standards, packing rules.
-            </p>
-            <textarea
-              value={generalInfoMd}
-              onChange={(e) => setGeneralInfoMd(e.target.value)}
-              rows={24}
-              spellCheck={false}
-              placeholder={GENERAL_INFO_PLACEHOLDER}
-              className="w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-xs leading-relaxed"
-            />
-            <p className="mt-1 text-[11px] text-zinc-400">
-              Long content flows onto further A4 pages automatically. Preview refreshes after each
-              autosave.
-            </p>
-          </Section>
+          <div className="flex flex-col gap-4">
+            <Section title="General information page">
+              <p className="mb-3 text-xs text-zinc-500">
+                Write it once — general requirements, inspection standards, packing rules. When
+                non-empty, this page joins <strong>every bundle</strong> generated under this prod
+                spec as <code className="font-mono">01-…-general-information.pdf</code>. Type{" "}
+                <code className="font-mono">#</code> + space for a heading,{" "}
+                <code className="font-mono">-</code> + space for a list; tables insert from the
+                toolbar. Markdown under the hood — flip to the Markdown view to paste raw source.
+              </p>
+              <MarkdownEditor value={generalInfoMd} onChange={setGeneralInfoMd} />
+              <p className="mt-1 text-[11px] text-zinc-400">
+                Long content flows onto further A4 pages automatically. Preview refreshes after
+                each autosave.
+              </p>
+            </Section>
 
+            <Section title="Page settings · general information">
+              <PageSettingsFields
+                value={pageSettings.generalInfo}
+                onChange={(generalInfo: PageSettings) =>
+                  setPageSettings((prev) => ({ ...prev, generalInfo }))
+                }
+              />
+            </Section>
+          </div>
+
+          <Section title="A4 preview">
+            <div className="rounded-md bg-zinc-100 p-3">
+              <LazyOutputPreview
+                src={`/api/admin/prod-specs/${props.prodSpecId}/general-info-preview`}
+                widthMm={210}
+                heightMm={297}
+                refreshKey={savedAt ?? undefined}
+              />
+            </div>
+          </Section>
+        </div>
+      ) : tab === "cover" ? (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div className="flex flex-col gap-4">
             <Section title="Cover page · auto-generated">
               <p className="mb-3 text-xs text-zinc-500">
                 First page of every bundle: each enabled output&apos;s title and dimensions, once.
-                Read-only — it follows the Outputs tab; the runner builds the real one from the
-                documents a job actually generated.
+                The content is read-only — it follows the Outputs tab; the runner builds the real
+                one from the documents a job actually generated. Tune how it prints below.
               </p>
-              <div className="rounded-md bg-zinc-100 p-3">
-                <LazyOutputPreview
-                  src={`/api/admin/prod-specs/${props.prodSpecId}/cover-preview`}
-                  widthMm={210}
-                  heightMm={297}
-                  refreshKey={savedAt ?? undefined}
-                />
-              </div>
             </Section>
 
-            <Section title="General information page · preview">
-              <div className="rounded-md bg-zinc-100 p-3">
-                <LazyOutputPreview
-                  src={`/api/admin/prod-specs/${props.prodSpecId}/general-info-preview`}
-                  widthMm={210}
-                  heightMm={297}
-                  refreshKey={savedAt ?? undefined}
-                />
-              </div>
+            <Section title="Page settings · cover page">
+              <PageSettingsFields
+                value={pageSettings.cover}
+                onChange={(cover: PageSettings) => setPageSettings((prev) => ({ ...prev, cover }))}
+              />
             </Section>
           </div>
+
+          <Section title="A4 preview">
+            <div className="rounded-md bg-zinc-100 p-3">
+              <LazyOutputPreview
+                src={`/api/admin/prod-specs/${props.prodSpecId}/cover-preview`}
+                widthMm={210}
+                heightMm={297}
+                refreshKey={savedAt ?? undefined}
+              />
+            </div>
+          </Section>
         </div>
       ) : (
         <div className="flex flex-col gap-4">
@@ -962,19 +1000,3 @@ function SummaryChip({
     </span>
   );
 }
-
-const GENERAL_INFO_PLACEHOLDER = `# General requirements
-
-All deliveries must comply with the agreed production specification…
-
-## Inspection standards
-
-| Check | Standard | AQL |
-|-------|----------|-----|
-| Visual inspection | ISO 2859-1, level II | 2.5 |
-| Measurements | ±5% tolerance vs. spec | 1.0 |
-
-## Packing
-
-- One style per carton
-- Carton sticker on two short sides`;
