@@ -8,17 +8,23 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import type { ReadinessTone } from "@/lib/styles/readiness";
+import {
+  EFFECTIVE_STATUS_TONE_CLASSES,
+  type EffectiveStatus,
+} from "@/lib/styles/effective-status";
+import { STYLE_TABLE_COLUMNS, type StyleColumnKey } from "@/lib/styles/table-columns";
 import { eanStatusMeta } from "@/lib/po/ean-status-meta";
 import type { EanView } from "@/lib/po/ean-view";
+import { ColumnsPopover } from "./columns-popover";
 
-const STATUS_STYLES: Record<string, string> = {
-  PENDING: "bg-amber-100 text-amber-800",
-  READY: "bg-emerald-100 text-emerald-800",
-  GENERATING: "bg-blue-100 text-blue-800",
-  AWAITING_REVIEW: "bg-purple-100 text-purple-800",
-  APPROVED: "bg-emerald-100 text-emerald-800",
-  REJECTED: "bg-red-100 text-red-800",
+// Hover hints on column headers.
+const HEADER_HINTS: Partial<Record<StyleColumnKey, string>> = {
+  completion:
+    "% of required columns filled. The tick marks the threshold a style must reach before it can generate.",
+  generation: "Required fields filled / total (Settings ▸ Required fields).",
+  status:
+    "Review flow once PDFs exist (queued → ready for review → approved / rejected); before that, field readiness (awaiting data → partially ready → ready to generate).",
+  ean: "PO → EAN resolution: auto-queued when a PO is filled, then the PO PDF is scraped for the per-size barcodes. Click Resolve to run it now.",
 };
 
 // Attribute presence filters shown as chips next to the search box. Each is
@@ -51,9 +57,9 @@ export type StyleRow = {
   // requiredTotal 0 = none configured.
   requiredFilled: number;
   requiredTotal: number;
-  // "Will it generate?" verdict — tone + chip label + hover hint.
-  readiness: { tone: ReadinessTone; label: string; hint: string };
-  status: string;
+  // The Status pill — computed: review flow when PDFs/jobs exist, otherwise
+  // the field-readiness ladder. See computeEffectiveStatus().
+  statusView: EffectiveStatus;
   // PO → EAN resolution state (StyleEanStatus). Badge via eanStatusMeta.
   eanStatus: string;
   groupTitle: string | null;
@@ -68,11 +74,20 @@ export type StyleRow = {
 export function StylesTable({
   rows,
   autoGenerateEnabled,
+  visibleColumns,
+  canConfigureColumns,
 }: {
   rows: StyleRow[];
   autoGenerateEnabled: boolean;
+  // The admin-defined standard view (AppSetting), already normalized.
+  visibleColumns: StyleColumnKey[];
+  // ADMIN gets the Columns popover; saves apply to everyone.
+  canConfigureColumns: boolean;
 }) {
   const [q, setQ] = useState("");
+  // Live column set — seeded from the server-read setting, updated
+  // optimistically by the Columns popover.
+  const [visible, setVisible] = useState<StyleColumnKey[]>(visibleColumns);
   const [showArchived, setShowArchived] = useState(false);
   // Per-attribute tri-state presence filters (keyed by ATTR_FILTERS.key).
   const [attrFilters, setAttrFilters] = useState<Record<string, TriState>>({});
@@ -131,6 +146,133 @@ export function StylesTable({
     });
   }, [rows, q, showArchived, archivedFlags, attrFilters, activeAttrFilters]);
 
+  // Render order = registry order filtered by the visible set, so the
+  // column layout always matches table-columns.ts.
+  const columns = useMemo(() => {
+    const set = new Set(visible);
+    return STYLE_TABLE_COLUMNS.filter((c) => set.has(c.key));
+  }, [visible]);
+
+  // One cell per column key — keyed <td>s so a row can map over the
+  // visible registry columns directly.
+  function cellFor(key: StyleColumnKey, s: StyleRow) {
+    switch (key) {
+      case "style":
+        return (
+          <td key={key} className="px-4 py-3 font-medium">
+            <Link
+              href={`/styles/${s.id}`}
+              title={s.name}
+              className="block max-w-[220px] truncate hover:underline"
+            >
+              {s.name}
+            </Link>
+          </td>
+        );
+      case "po":
+        return (
+          <td key={key} className="px-4 py-3 tabular-nums text-zinc-600">
+            {s.poNumber ?? "—"}
+          </td>
+        );
+      case "customer":
+        return (
+          <td key={key} className="px-4 py-3 text-zinc-600">
+            {s.customerName}
+          </td>
+        );
+      case "businessArea":
+        return (
+          <td key={key} className="px-4 py-3 text-zinc-600">
+            {s.businessArea ?? "—"}
+          </td>
+        );
+      case "group":
+        return (
+          <td key={key} className="px-4 py-3 text-xs text-zinc-500">
+            {s.groupTitle ?? "—"}
+          </td>
+        );
+      case "completion": {
+        const ready = s.hasProdSpec && s.threshold != null && s.completionPct >= s.threshold;
+        return (
+          <td key={key} className="px-4 py-3">
+            <div
+              className="flex items-center gap-2"
+              title={
+                s.hasProdSpec
+                  ? `${s.completionPct}% of required columns filled · threshold ${s.threshold}%`
+                  : "No Prod Spec linked — can't generate yet"
+              }
+            >
+              <div className="relative h-2 w-24 overflow-hidden rounded-full bg-zinc-100">
+                <div
+                  className={`h-full ${ready ? "bg-emerald-500" : "bg-zinc-900"}`}
+                  style={{ width: `${s.completionPct}%` }}
+                />
+                {s.threshold != null && s.threshold < 100 && (
+                  <div
+                    className="absolute top-0 h-full w-0.5 bg-zinc-500"
+                    style={{ left: `${s.threshold}%` }}
+                  />
+                )}
+              </div>
+              <span
+                className={`text-xs tabular-nums ${ready ? "text-emerald-600" : "text-zinc-600"}`}
+              >
+                {s.completionPct}%
+              </span>
+            </div>
+          </td>
+        );
+      }
+      case "generation":
+        return (
+          <td key={key} className="px-4 py-3">
+            {s.requiredTotal > 0 ? (
+              <span
+                title={`${s.requiredFilled} of ${s.requiredTotal} required fields have a value`}
+                className={`text-sm font-semibold tabular-nums ${
+                  s.requiredFilled === s.requiredTotal ? "text-emerald-600" : "text-amber-600"
+                }`}
+              >
+                {s.requiredFilled}/{s.requiredTotal}
+              </span>
+            ) : (
+              <span className="text-zinc-300">—</span>
+            )}
+          </td>
+        );
+      case "status":
+        return (
+          <td key={key} className="px-4 py-3">
+            <span
+              title={s.statusView.hint}
+              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${EFFECTIVE_STATUS_TONE_CLASSES[s.statusView.tone]}`}
+            >
+              {s.statusView.label}
+            </span>
+          </td>
+        );
+      case "ean":
+        return (
+          <td key={key} className="px-4 py-3">
+            <EanCell
+              stored={s.eanStatus}
+              result={eanResults[s.id]}
+              onResolve={() => resolveEans(s.id)}
+            />
+          </td>
+        );
+      case "lastSynced":
+        return (
+          <td key={key} className="px-4 py-3 text-zinc-500">
+            {s.lastSyncedAt}
+          </td>
+        );
+    }
+  }
+
   return (
     <div>
       {!autoGenerateEnabled && (
@@ -168,6 +310,7 @@ export function StylesTable({
         <span className="text-xs tabular-nums text-zinc-500">
           {filtered.length} of {rows.length}
         </span>
+        {canConfigureColumns && <ColumnsPopover visible={visible} onChange={setVisible} />}
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -195,37 +338,17 @@ export function StylesTable({
         <table className="w-full text-sm">
           <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
             <tr>
-              <th className="px-4 py-3">Style</th>
-              <th className="px-4 py-3">PO</th>
-              <th className="px-4 py-3">Customer</th>
-              <th className="px-4 py-3">Business area</th>
-              <th className="px-4 py-3">Group</th>
-              <th
-                className="px-4 py-3"
-                title="% of required columns filled. The tick marks the threshold a style must reach before it can generate."
-              >
-                Completion
-              </th>
-              <th
-                className="px-4 py-3"
-                title="Required fields filled / total (Settings ▸ Required fields)."
-              >
-                Generation
-              </th>
-              <th className="px-4 py-3">Status</th>
-              <th
-                className="px-4 py-3"
-                title="PO → EAN resolution: auto-queued when a PO is filled, then the PO PDF is scraped for the per-size barcodes. Click Resolve to run it now."
-              >
-                EAN
-              </th>
-              <th className="px-4 py-3">Last synced</th>
+              {columns.map((c) => (
+                <th key={c.key} className="px-4 py-3" title={HEADER_HINTS[c.key]}>
+                  {c.label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-4 py-12 text-center text-zinc-500">
+                <td colSpan={columns.length} className="px-4 py-12 text-center text-zinc-500">
                   {rows.length === 0
                     ? "No styles yet. Run a Fill (or trigger a Monday webhook) to ingest."
                     : "No styles match the current search."}
@@ -234,84 +357,7 @@ export function StylesTable({
             ) : (
               filtered.map((s) => (
                 <tr key={s.id} className="border-t border-zinc-100 hover:bg-zinc-50">
-                  <td className="px-4 py-3 font-medium">
-                    <Link
-                      href={`/styles/${s.id}`}
-                      title={s.name}
-                      className="block max-w-[220px] truncate hover:underline"
-                    >
-                      {s.name}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 tabular-nums text-zinc-600">{s.poNumber ?? "—"}</td>
-                  <td className="px-4 py-3 text-zinc-600">{s.customerName}</td>
-                  <td className="px-4 py-3 text-zinc-600">{s.businessArea ?? "—"}</td>
-                  <td className="px-4 py-3 text-xs text-zinc-500">{s.groupTitle ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    {(() => {
-                      const ready =
-                        s.hasProdSpec && s.threshold != null && s.completionPct >= s.threshold;
-                      return (
-                        <div
-                          className="flex items-center gap-2"
-                          title={
-                            s.hasProdSpec
-                              ? `${s.completionPct}% of required columns filled · threshold ${s.threshold}%`
-                              : "No Prod Spec linked — can't generate yet"
-                          }
-                        >
-                          <div className="relative h-2 w-24 overflow-hidden rounded-full bg-zinc-100">
-                            <div
-                              className={`h-full ${ready ? "bg-emerald-500" : "bg-zinc-900"}`}
-                              style={{ width: `${s.completionPct}%` }}
-                            />
-                            {s.threshold != null && s.threshold < 100 && (
-                              <div
-                                className="absolute top-0 h-full w-0.5 bg-zinc-500"
-                                style={{ left: `${s.threshold}%` }}
-                              />
-                            )}
-                          </div>
-                          <span
-                            className={`text-xs tabular-nums ${ready ? "text-emerald-600" : "text-zinc-600"}`}
-                          >
-                            {s.completionPct}%
-                          </span>
-                        </div>
-                      );
-                    })()}
-                  </td>
-                  <td className="px-4 py-3">
-                    {s.requiredTotal > 0 ? (
-                      <span
-                        title={`${s.requiredFilled} of ${s.requiredTotal} required fields have a value`}
-                        className={`text-sm font-semibold tabular-nums ${
-                          s.requiredFilled === s.requiredTotal ? "text-emerald-600" : "text-amber-600"
-                        }`}
-                      >
-                        {s.requiredFilled}/{s.requiredTotal}
-                      </span>
-                    ) : (
-                      <span className="text-zinc-300">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                        STATUS_STYLES[s.status] ?? "bg-zinc-100 text-zinc-700"
-                      }`}
-                    >
-                      {s.status.toLowerCase().replace(/_/g, " ")}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <EanCell
-                      stored={s.eanStatus}
-                      result={eanResults[s.id]}
-                      onResolve={() => resolveEans(s.id)}
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-zinc-500">{s.lastSyncedAt}</td>
+                  {columns.map((c) => cellFor(c.key, s))}
                 </tr>
               ))
             )}

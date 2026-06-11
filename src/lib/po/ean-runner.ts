@@ -253,6 +253,9 @@ async function recomputeStyleCompletion(styleId: string): Promise<void> {
     select: {
       rawData: true,
       cartonEan: true,
+      // Current workflow status — guards the update below from downgrading
+      // post-generation states back to READY/PENDING.
+      status: true,
       eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
       customer: { select: { config: true } },
       prodSpec: { select: { requiredFields: true, columnMapping: true } },
@@ -282,13 +285,17 @@ async function recomputeStyleCompletion(styleId: string): Promise<void> {
     { id: MANUAL_COLUMN_IDS.cartonEan, text: style.cartonEan ?? "" },
   ]);
   const { completionPct, missingFields } = evaluateCompletion(completionItem, requiredFields);
+  const nextStatus = completionPct === 100 ? ("READY" as const) : ("PENDING" as const);
 
   await db.style.update({
     where: { id: styleId },
     data: {
       completionPct,
       missingFields: missingFields as unknown as object,
-      status: completionPct === 100 ? "READY" : "PENDING",
+      // Completion only moves a style between the two PRE-generation states
+      // — the jobs pipeline owns GENERATING / AWAITING_REVIEW / APPROVED /
+      // REJECTED (same guard as ingest.ts).
+      ...(["PENDING", "READY"].includes(style.status) ? { status: nextStatus } : {}),
     },
   });
 }

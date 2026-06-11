@@ -178,6 +178,9 @@ export async function ingestMondayItem(
       poNumber: true,
       eanStatus: true,
       cartonEan: true,
+      // Current workflow status — guards the upsert below from downgrading
+      // post-generation states back to READY/PENDING on re-sync.
+      status: true,
       eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
     },
   });
@@ -201,6 +204,12 @@ export async function ingestMondayItem(
   ]);
   const { completionPct, missingFields } = evaluateCompletion(completionItem, requiredFields);
   const status = completionPct === 100 ? "READY" : "PENDING";
+  // Completion only ever moves a style between the two PRE-generation
+  // states. Once the jobs pipeline owns the status (GENERATING /
+  // AWAITING_REVIEW / APPROVED / REJECTED) a re-sync must not downgrade it
+  // — this clobbered review states on every Monday edit. Same guard as the
+  // manual-edit route (src/app/api/admin/styles/[id]/route.ts).
+  const keepWorkflowStatus = prevEan != null && !["PENDING", "READY"].includes(prevEan.status);
 
   // Store the Monday snapshot, plus a synthetic "__name__" column carrying
   // the row name (the Contrast IL-code) so the styleNumber field can map to
@@ -250,7 +259,7 @@ export async function ingestMondayItem(
       rawData: mergedRawData as object,
       completionPct,
       missingFields: missingFields as unknown as object,
-      status,
+      ...(keepWorkflowStatus ? {} : { status }),
       lastSyncedAt: new Date(),
     },
   });
