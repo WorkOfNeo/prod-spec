@@ -193,8 +193,13 @@ export async function promoteGhostToStyle(input: PromoteInput): Promise<PromoteR
   // ---------- Detect "did this Style already exist?" before upsert ----------
   const preExisting = await db.style.findUnique({
     where: { mondayItemId: ghost.mondayItemId },
-    select: { id: true },
+    select: { id: true, status: true },
   });
+  // Completion only moves a style between the two PRE-generation states —
+  // a re-promote must not downgrade GENERATING / AWAITING_REVIEW / APPROVED /
+  // REJECTED back to READY/PENDING (same guard as ingest.ts).
+  const keepWorkflowStatus =
+    preExisting != null && !["PENDING", "READY"].includes(preExisting.status);
 
   // ---------- Upsert Style ----------
   const style = await db.style.upsert({
@@ -227,7 +232,7 @@ export async function promoteGhostToStyle(input: PromoteInput): Promise<PromoteR
       rawData: synthetic as unknown as object,
       completionPct,
       missingFields: missingFields as unknown as object,
-      status,
+      ...(keepWorkflowStatus ? {} : { status }),
       lastSyncedAt: new Date(),
       // supplierId / styleFolderUrl deliberately omitted from update so
       // operator edits on Style detail aren't clobbered on re-promote.

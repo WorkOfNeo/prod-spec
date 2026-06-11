@@ -8,22 +8,14 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import type { EffectiveStatus } from "@/lib/styles/effective-status";
+import {
+  EFFECTIVE_STATUS_TONE_CLASSES,
+  type EffectiveStatus,
+} from "@/lib/styles/effective-status";
 import { STYLE_TABLE_COLUMNS, type StyleColumnKey } from "@/lib/styles/table-columns";
 import { eanStatusMeta } from "@/lib/po/ean-status-meta";
 import type { EanView } from "@/lib/po/ean-view";
 import { ColumnsPopover } from "./columns-popover";
-
-// Status pill colour per EffectiveStatus tone (see effective-status.ts —
-// review flow once PDFs exist, field-readiness ladder before).
-const TONE_STYLES: Record<EffectiveStatus["tone"], string> = {
-  zinc: "bg-zinc-100 text-zinc-600",
-  amber: "bg-amber-100 text-amber-800",
-  green: "bg-emerald-100 text-emerald-800",
-  blue: "bg-blue-100 text-blue-800",
-  purple: "bg-purple-100 text-purple-800",
-  red: "bg-red-100 text-red-800",
-};
 
 // Hover hints on column headers.
 const HEADER_HINTS: Partial<Record<StyleColumnKey, string>> = {
@@ -256,7 +248,7 @@ export function StylesTable({
           <td key={key} className="px-4 py-3">
             <span
               title={s.statusView.hint}
-              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${TONE_STYLES[s.statusView.tone]}`}
+              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${EFFECTIVE_STATUS_TONE_CLASSES[s.statusView.tone]}`}
             >
               {s.statusView.label}
             </span>

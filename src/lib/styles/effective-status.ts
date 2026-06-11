@@ -31,6 +31,17 @@ export type EffectiveStatus = {
   hint: string;
 };
 
+// Pill classes per tone — shared by the styles list and the style detail
+// page so the two renders can never drift apart.
+export const EFFECTIVE_STATUS_TONE_CLASSES: Record<EffectiveStatusTone, string> = {
+  zinc: "bg-zinc-100 text-zinc-600",
+  amber: "bg-amber-100 text-amber-800",
+  green: "bg-emerald-100 text-emerald-800",
+  blue: "bg-blue-100 text-blue-800",
+  purple: "bg-purple-100 text-purple-800",
+  red: "bg-red-100 text-red-800",
+};
+
 export function computeEffectiveStatus(opts: {
   readiness: Readiness;
   // ≥1 JobAsset on a non-FAILED job for this style.
