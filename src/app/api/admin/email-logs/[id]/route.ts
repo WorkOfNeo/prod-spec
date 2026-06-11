@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
+import { emailFromAddress } from "@/lib/email/client";
 
 export const runtime = "nodejs";
 
@@ -29,5 +30,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     styleId: row.styleId,
     ticketId: row.ticketId,
     createdAt: row.createdAt.toISOString(),
+    // Pre-fill for the dialog's "Send for real" From field.
+    defaultFrom: emailFromAddress(),
   });
 }

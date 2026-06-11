@@ -10,6 +10,7 @@ export type EmailOutcomeView = {
   type: string;
   to: string;
   cc?: string | null;
+  from?: string | null;
   subject: string;
   attachments?: Array<{ filename: string; bytes: number }>;
   htmlPreview?: string | null;
@@ -53,6 +54,12 @@ export function EmailSimulationDialog({
   const [html, setHtml] = useState<string | null>(outcome.htmlPreview ?? null);
   const [bodyError, setBodyError] = useState<string | null>(null);
 
+  // "Send for real" override form (one-off send while RESEND_EMAILS is off).
+  const [sendTo, setSendTo] = useState(outcome.to);
+  const [sendFrom, setSendFrom] = useState(outcome.from ?? "");
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState<{ ok: boolean; message: string } | null>(null);
+
   // Slim payloads (activity table rows) carry only the log id — pull the
   // body on open so the list view never ships 50 HTML documents.
   useEffect(() => {
@@ -62,8 +69,11 @@ export function EmailSimulationDialog({
       try {
         const res = await fetch(`/api/admin/email-logs/${outcome.emailLogId}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const body = (await res.json()) as { html?: string };
-        if (!cancelled) setHtml(body.html ?? "");
+        const body = (await res.json()) as { html?: string; defaultFrom?: string };
+        if (!cancelled) {
+          setHtml(body.html ?? "");
+          if (body.defaultFrom) setSendFrom((f) => f || body.defaultFrom!);
+        }
       } catch (e) {
         if (!cancelled) setBodyError(e instanceof Error ? e.message : "Failed to load body");
       }
@@ -73,8 +83,43 @@ export function EmailSimulationDialog({
     };
   }, [html, outcome.emailLogId]);
 
+  async function sendForReal() {
+    if (!outcome.emailLogId) return;
+    setSending(true);
+    setSendResult(null);
+    try {
+      const res = await fetch(`/api/admin/email-logs/${outcome.emailLogId}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: sendTo, from: sendFrom || undefined }),
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { error?: string; email?: { status: string; to: string; note?: string | null } }
+        | null;
+      if (!res.ok) {
+        setSendResult({ ok: false, message: data?.error ?? `HTTP ${res.status}` });
+      } else if (data?.email?.status === "SENT") {
+        setSendResult({ ok: true, message: `Sent to ${data.email.to} — check the inbox.` });
+      } else {
+        setSendResult({
+          ok: false,
+          message: data?.email?.note ?? `Not sent (${data?.email?.status ?? "unknown"}).`,
+        });
+      }
+    } catch (e) {
+      setSendResult({ ok: false, message: e instanceof Error ? e.message : "Send failed" });
+    } finally {
+      setSending(false);
+    }
+  }
+
   const heading = HEADINGS[outcome.status];
   const attachments = outcome.attachments ?? [];
+  // Manual one-off send: anything that didn't actually go out can be pushed
+  // through Resend with an overridden To/From — except emails that carried
+  // attachments (bytes aren't stored, a partial re-send would mislead).
+  const canSendForReal =
+    Boolean(outcome.emailLogId) && outcome.status !== "SENT" && attachments.length === 0;
 
   return (
     <div
@@ -123,6 +168,51 @@ export function EmailSimulationDialog({
             />
           )}
         </div>
+
+        {canSendForReal && (
+          <div className="border-t border-zinc-100 px-5 py-3">
+            <div className="mb-1 text-[10px] font-semibold tracking-wide text-zinc-400 uppercase">
+              Send for real — one-off, the flag stays off
+            </div>
+            <p className="mb-2 text-[11px] text-zinc-500">
+              Would have gone to <span className="font-medium text-zinc-700">{outcome.to || "—"}</span>.
+              Override the recipient (e.g. your own inbox) to test the full delivery path.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="email"
+                value={sendTo}
+                disabled={sending}
+                onChange={(e) => setSendTo(e.target.value)}
+                placeholder="recipient@…"
+                className="min-w-44 flex-1 rounded-md border border-zinc-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-50"
+              />
+              <input
+                type="text"
+                value={sendFrom}
+                disabled={sending}
+                onChange={(e) => setSendFrom(e.target.value)}
+                placeholder="From (default sender)"
+                title="Sender — must be on a Resend-verified domain"
+                className="min-w-44 flex-1 rounded-md border border-zinc-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-50"
+              />
+              <button
+                type="button"
+                disabled={sending || !sendTo}
+                onClick={sendForReal}
+                className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+              >
+                {sending ? "Sending…" : "Send now"}
+              </button>
+            </div>
+            {sendResult && (
+              <p className={`mt-2 text-xs ${sendResult.ok ? "text-emerald-700" : "text-red-600"}`}>
+                {sendResult.ok ? "✓ " : "✗ "}
+                {sendResult.message}
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="flex justify-end gap-2 border-t border-zinc-100 px-5 py-3">
           <button
