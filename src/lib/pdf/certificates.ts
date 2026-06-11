@@ -51,3 +51,23 @@ export async function loadCertificates(): Promise<CertificateMap> {
 export function invalidateCertificateCache(): void {
   cached = null;
 }
+
+// ---------------------------------------------------------------------
+// Normalized lookup — used by the Output Builder's {{cert:<source>}}
+// tokens. Library names are free text ("OEKO-TEX", "OEKOTEX", "F.S.C.")
+// while token args are limited to [a-z0-9-], so both sides reduce to
+// bare lowercase alphanumerics before comparing.
+// ---------------------------------------------------------------------
+
+export function normalizeCertKey(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+export function findCertificate(map: CertificateMap, source: string): ResolvedCertificate | null {
+  const want = normalizeCertKey(source);
+  if (!want) return null;
+  for (const entry of map.values()) {
+    if (normalizeCertKey(entry.name) === want) return entry;
+  }
+  return null;
+}

@@ -1603,6 +1603,18 @@ export function LayoutEditor({
                   disabled={!selBlock}
                   onClick={() => insertToken("{{logo:custom}}")}
                 />
+                <TokenChip
+                  token="{{cert:oekotex}}"
+                  title="OEKO-TEX certification mark from the Certificate library (Settings → Certificates) — placeholder artwork until the licensed mark is uploaded; height scales with the block font size"
+                  disabled={!selBlock}
+                  onClick={() => insertToken("{{cert:oekotex}}")}
+                />
+                <TokenChip
+                  token="{{cert:fsc}}"
+                  title="FSC certification mark from the Certificate library (Settings → Certificates) — placeholder artwork until the licensed mark is uploaded; height scales with the block font size"
+                  disabled={!selBlock}
+                  onClick={() => insertToken("{{cert:fsc}}")}
+                />
               </div>
             </div>
             <div className="mt-3">
