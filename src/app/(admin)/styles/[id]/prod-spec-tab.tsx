@@ -85,10 +85,10 @@ export function ProdSpecTab({
   // would emit (count + resolved names, repeat/split aware). Shown in
   // the popup so the operator can verify split settings before running.
   outputsFilesPreview: Array<{ variantKey: string; name: string; known: boolean; files: string[] }>;
-  // Supplier share for the latest published job (null until a job is
-  // approved). The `jobId` lets us flag a stale link when a newer job
-  // exists than the one the link was minted for.
-  supplierShare: (SupplierShareInfo & { jobId: string }) | null;
+  // The style's durable supplier share (null until approved at least once).
+  // The link always serves the latest approved version, so there's no
+  // staleness to flag — just show it and the visit status.
+  supplierShare: SupplierShareInfo | null;
   // ALL recent jobs, latest first. Latest renders the prominent
   // "Delivered Prod Specs" grid; the rest are tucked into a collapsible
   // accordion below so historical jobs (and their assets) stay
@@ -155,10 +155,7 @@ export function ProdSpecTab({
 
         {supplierShare ? (
           <div className="mb-4">
-            <SupplierLinkCard
-              share={supplierShare}
-              belongsToLatestJob={latestJob?.id === supplierShare.jobId}
-            />
+            <SupplierLinkCard share={supplierShare} />
           </div>
         ) : null}
 

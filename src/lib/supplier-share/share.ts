@@ -65,31 +65,34 @@ export function shareUrl(token: string): string {
 
 export type CreatedShare = { token: string; pin: string; email: string; url: string };
 
-// Create (or refresh) the share for a published job. Idempotent per job:
-// re-publishing the same job rotates the token + PIN. `email` is the
-// recipient the approval went to — the address the unlock form checks
-// against. Pass "" when no supplier email resolved (the share still exists
-// so the team can read the link + PIN off the prod-spec tab and forward it).
-export async function createShareForJob(input: {
-  jobId: string;
+// Create or refresh the ONE durable share for a style. The link is stable:
+// on re-approval we KEEP the existing token + PIN (so the supplier's
+// bookmark and the previously-sent email keep working) and only refresh the
+// gated `email`. The portal always serves the style's latest approved
+// version, so a correction "pushes through" to this same link. `email` is
+// the recipient the latest approval went to — the address the unlock form
+// checks against; pass "" when no supplier email resolved (the share still
+// exists so the team can read the link + PIN off the prod-spec tab).
+export async function upsertShareForStyle(input: {
   styleId: string;
   email: string;
 }): Promise<CreatedShare> {
+  const existing = await db.supplierShare.findUnique({
+    where: { styleId: input.styleId },
+    select: { token: true, pin: true },
+  });
+  if (existing) {
+    // Keep token + PIN + visit history; just refresh the gated email.
+    await db.supplierShare.update({
+      where: { styleId: input.styleId },
+      data: { email: input.email },
+    });
+    return { token: existing.token, pin: existing.pin, email: input.email, url: shareUrl(existing.token) };
+  }
   const token = generateToken();
   const pin = generatePin();
-  await db.supplierShare.upsert({
-    where: { jobId: input.jobId },
-    create: { jobId: input.jobId, styleId: input.styleId, token, pin, email: input.email },
-    update: {
-      token,
-      pin,
-      email: input.email,
-      // Rotating the link invalidates any prior unlock state.
-      firstVisitedAt: null,
-      lastVisitedAt: null,
-      visitCount: 0,
-      failedAttempts: 0,
-    },
+  await db.supplierShare.create({
+    data: { styleId: input.styleId, token, pin, email: input.email },
   });
   return { token, pin, email: input.email, url: shareUrl(token) };
 }

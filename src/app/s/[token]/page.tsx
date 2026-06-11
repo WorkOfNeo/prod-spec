@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { shareCookieName, verifyShareAccess } from "@/lib/supplier-share/share";
 import { UnlockForm } from "./unlock-form";
+import { ShareDocuments } from "./share-documents";
 
 export const dynamic = "force-dynamic";
 
@@ -19,23 +20,27 @@ export default async function SupplierSharePage({
 
   const share = await db.supplierShare.findUnique({
     where: { token },
-    include: {
-      style: { include: { customer: true, businessAreaRef: true } },
-      job: {
-        include: {
-          assets: {
-            where: { reviewStatus: "APPROVED" },
-            // fileName, not createdAt: assets land in one transaction so
-            // their timestamps tie. The 00-cover / 01-general-information
-            // prefixes sort the bundle framing pages first by design.
-            orderBy: { fileName: "asc" },
-            select: { id: true, displayName: true, docType: true, fileName: true },
-          },
-        },
-      },
-    },
+    include: { style: { include: { customer: true, businessAreaRef: true } } },
   });
   if (!share) notFound();
+
+  // The link always shows the style's LATEST APPROVED version of each
+  // output. Pull every approved asset for the style, newest first, and keep
+  // the first (newest) per variant — so a re-approved correction supersedes
+  // the version a supplier saw before, on the same link.
+  const approvedAssets = await db.jobAsset.findMany({
+    where: { reviewStatus: "APPROVED", job: { styleId: share.styleId } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, variantKey: true, docType: true, displayName: true, fileName: true },
+  });
+  const latestByVariant = new Map<string, (typeof approvedAssets)[number]>();
+  for (const a of approvedAssets) {
+    const key = a.variantKey ?? `doc:${a.docType}`;
+    if (!latestByVariant.has(key)) latestByVariant.set(key, a);
+  }
+  // fileName order for display: the 00-cover / 01-general-information
+  // prefixes are designed to front the bundle.
+  const documents = [...latestByVariant.values()].sort((a, b) => a.fileName.localeCompare(b.fileName));
 
   const cookieStore = await cookies();
   const unlocked = verifyShareAccess(token, cookieStore.get(shareCookieName(token))?.value);
@@ -62,40 +67,18 @@ export default async function SupplierSharePage({
         ) : (
           <div>
             <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-              These {share.job.assets.length} document{share.job.assets.length === 1 ? "" : "s"} have been
-              approved and are ready for production. They will also be saved to your SharePoint supplier
-              folder.
+              These {documents.length} document{documents.length === 1 ? "" : "s"} have been approved and
+              are ready for production. Open one to view the full PDF, or download it. They will also be
+              saved to your SharePoint supplier folder.
             </div>
-            {share.job.assets.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-400">
-                No approved documents on this link.
-              </p>
-            ) : (
-              <div className="space-y-5">
-                {share.job.assets.map((asset) => {
-                  const src = `/api/s/${token}/asset/${asset.id}`;
-                  const title = asset.displayName ?? asset.docType.toLowerCase().replace(/_/g, " ");
-                  return (
-                    <div key={asset.id} className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
-                      <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-2.5">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-zinc-800">{title}</div>
-                          <div className="truncate font-mono text-[10px] text-zinc-400">{asset.fileName}</div>
-                        </div>
-                        <a
-                          href={src}
-                          download={asset.fileName}
-                          className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
-                        >
-                          Download
-                        </a>
-                      </div>
-                      <iframe src={src} title={title} className="block h-[560px] w-full bg-white" />
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <ShareDocuments
+              documents={documents.map((asset) => ({
+                id: asset.id,
+                title: asset.displayName ?? asset.docType.toLowerCase().replace(/_/g, " "),
+                fileName: asset.fileName,
+                src: `/api/s/${token}/asset/${asset.id}`,
+              }))}
+            />
           </div>
         )}
 

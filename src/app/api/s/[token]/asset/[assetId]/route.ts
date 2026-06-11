@@ -22,12 +22,15 @@ export async function GET(
 
   const share = await db.supplierShare.findUnique({
     where: { token },
-    select: { jobId: true },
+    select: { styleId: true },
   });
   if (!share) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  // Serve any APPROVED asset belonging to the share's style — covers the
+  // latest-approved set the portal lists, and never leaks another style's
+  // documents.
   const asset = await db.jobAsset.findFirst({
-    where: { id: assetId, jobId: share.jobId, reviewStatus: "APPROVED" },
+    where: { id: assetId, reviewStatus: "APPROVED", job: { styleId: share.styleId } },
     select: { pdf: true, fileName: true },
   });
   if (!asset) return NextResponse.json({ error: "Not found" }, { status: 404 });
