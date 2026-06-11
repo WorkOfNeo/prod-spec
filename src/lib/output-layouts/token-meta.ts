@@ -28,6 +28,13 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   { key: "description", label: "Description", group: "Style", kind: "text", example: "T-Shirt Paw Patrol – Blue" },
   { key: "customerItemNo", label: "Customer item no", group: "Style", kind: "text", example: "223609" },
   { key: "countryOfOrigin", label: "Country of origin", group: "Style", kind: "text", example: "India" },
+  {
+    key: "certificates",
+    label: "Certificates the style declares (also for {{if certificates includes FSC}})",
+    group: "Style",
+    kind: "text",
+    example: "FSC, OEKOTEX",
+  },
   { key: "colourName", label: "Colour name", group: "Style", kind: "text", example: "Navy" },
   { key: "colourCode", label: "Colour code", group: "Style", kind: "text", example: "19-3920" },
   { key: "campaignWeek", label: "Campaign week", group: "Style", kind: "text", example: "C182813" },
@@ -188,7 +195,7 @@ export function validateLineConditionals(
   // Anything control-shaped left over is malformed / orphaned.
   for (const m of consumed.matchAll(new RegExp(controlRe.source, "g"))) {
     errs.push(
-      `malformed conditional near "{{${m[1]}}}" — expected {{if field == VALUE}}…{{else}}…{{endif}} on one line`,
+      `malformed conditional near "{{${m[1]}}}" — expected {{if field == VALUE}} or {{if field includes VALUE}} (…{{else}}…){{endif}} on one line`,
     );
   }
   for (const c of conds) {

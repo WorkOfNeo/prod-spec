@@ -1626,10 +1626,16 @@ export function LayoutEditor({
                   disabled={!selBlock}
                   onClick={() => insertToken("{{if deliveryTerm == FOB}}{{customerOrderNo}}{{else}}{{poNumber}}{{endif}}")}
                 />
+                <TokenChip
+                  token="{{if … includes …}}"
+                  title='List condition — e.g. {{if certificates includes FSC}}{{cert:fsc}}{{endif}}: true when one of the comma-separated values matches, ignoring case and punctuation (OEKO-TEX = OEKOTEX). Also supports !includes. Not a substring check.'
+                  disabled={!selBlock}
+                  onClick={() => insertToken("{{if certificates includes FSC}}{{cert:fsc}}{{endif}}")}
+                />
               </div>
               <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
-                One condition per line, no nesting. Example: show the customer&apos;s order number on FOB orders,
-                the Contrast PO otherwise.
+                One condition per line, no nesting. ==/!= compare the whole value; includes/!includes check a
+                comma-separated list — e.g. show the FSC mark only on styles that declare the certificate.
               </p>
             </div>
           </div>

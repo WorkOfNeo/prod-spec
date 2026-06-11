@@ -44,6 +44,10 @@ const RESOLVERS: Record<string, TextResolver> = {
   description: (s) => s.description || tFor(s.productNameTranslations, "en") || s.styleName,
   customerItemNo: (s) => s.customerItemNo ?? "",
   countryOfOrigin: (s) => s.countryOfOrigin ?? "",
+  // The style's declared certifications (Monday "certifications__1"
+  // column), joined — and the usual field for
+  // {{if certificates includes FSC}} conditionals (per-item match).
+  certificates: (s) => (s.certificates ?? []).join(", "),
   colourName: (s) => s.colour?.name ?? "",
   colourCode: (s) => s.colour?.code ?? "",
   campaignWeek: (s) => s.campaignWeek ?? "",
@@ -133,6 +137,7 @@ const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   colourName: ["colourName"],
   colourCode: ["colourCode"],
   campaignWeek: ["campaignWeek"],
+  certificates: ["certificates"],
   sizes: ["sizes"],
   size: ["sizes"],
   sizeRange: ["sizes"],
