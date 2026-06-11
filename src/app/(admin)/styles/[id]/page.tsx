@@ -193,17 +193,15 @@ export default async function StyleDetail({
   const latestJob = style.jobs[0];
   const missing = (style.missingFields as Array<{ id: string; label: string }>) ?? [];
 
-  // Supplier share for the latest published job (if any) — drives the
-  // "Supplier link" panel on the prod-spec tab: the link + PIN to forward,
-  // and whether the supplier has opened it.
-  const supplierShare = await db.supplierShare.findFirst({
+  // The style's durable supplier share (if approved at least once) — drives
+  // the "Supplier link" panel on the prod-spec tab: the stable link + PIN to
+  // forward, and whether the supplier has opened it.
+  const supplierShare = await db.supplierShare.findUnique({
     where: { styleId: id },
-    orderBy: { createdAt: "desc" },
     select: {
       token: true,
       pin: true,
       email: true,
-      jobId: true,
       visitCount: true,
       firstVisitedAt: true,
       lastVisitedAt: true,
@@ -564,7 +562,6 @@ export default async function StyleDetail({
                   url: shareUrl(supplierShare.token),
                   pin: supplierShare.pin,
                   email: supplierShare.email,
-                  jobId: supplierShare.jobId,
                   visitCount: supplierShare.visitCount,
                   firstVisitedAt: supplierShare.firstVisitedAt?.toISOString() ?? null,
                   lastVisitedAt: supplierShare.lastVisitedAt?.toISOString() ?? null,

@@ -509,7 +509,7 @@ model Style {
   jobs             Job[]
   eans             StyleEan[]
   rejectionTickets RejectionTicket[]
-  supplierShares   SupplierShare[]
+  supplierShare    SupplierShare?
 
   @@index([customerId])
   @@index([status])
@@ -611,7 +611,6 @@ model Job {
   reviewActions    ReviewAction[]
   assets           JobAsset[]
   rejectionTickets RejectionTicket[]
-  supplierShare    SupplierShare?
 
   @@index([status])
   @@index([styleId])
@@ -862,13 +861,18 @@ model SupplierShare {
   // to the team on the prod-spec tab so they can re-send it. Plaintext on
   // purpose (low-sensitivity, admin-visible); the token is the real secret.
   pin     String
-  // Address the link is gated to (the supplier email the approval went to).
-  // The unlock form checks the typed email against this, case-insensitively.
+  // Address the link is gated to (the supplier email the latest approval
+  // went to). The unlock form checks the typed email against this,
+  // case-insensitively.
   email   String
-  jobId   String @unique
-  styleId String
+  // ONE durable share per style — the token + PIN stay stable across
+  // approvals. The portal always serves the style's LATEST APPROVED version
+  // of each output, so re-approving a correction "pushes through" to the
+  // same link without re-issuing it. (Earlier this was a per-job snapshot.)
+  styleId String @unique
 
   // Visit tracking — a "visit" is a SUCCESSFUL unlock (email + PIN correct).
+  // Cumulative across approvals (durable link, not reset on re-approve).
   firstVisitedAt DateTime?
   lastVisitedAt  DateTime?
   visitCount     Int       @default(0)
@@ -879,10 +883,8 @@ model SupplierShare {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  job   Job   @relation(fields: [jobId], references: [id], onDelete: Cascade)
   style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
 
-  @@index([styleId])
   @@map("supplier_shares")
 }
 
