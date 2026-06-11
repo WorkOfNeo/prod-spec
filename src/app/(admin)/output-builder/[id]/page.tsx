@@ -4,10 +4,13 @@ import { getSessionWithRole } from "@/lib/auth-server";
 import { listActiveLanguages } from "@/lib/languages/active";
 import { parseLayoutDef } from "@/lib/output-layouts/schema";
 import { LayoutEditor } from "./layout-editor";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 export default async function OutputLayoutEditorPage(props: { params: Promise<{ id: string }> }) {
+  await requireAdminPage();
+
   const { role } = await getSessionWithRole();
   if (role !== "ADMIN") {
     return (

@@ -1,10 +1,13 @@
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import { ResyncSupplierButton } from "./resync-button";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 export default async function SuppliersPage() {
+  await requireAdminPage();
+
   const suppliers = await db.supplier.findMany({
     orderBy: [{ active: "desc" }, { name: "asc" }],
     include: { _count: { select: { styles: true, prodSpecSuppliers: true } } },

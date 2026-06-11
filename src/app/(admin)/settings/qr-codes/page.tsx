@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { QrImageList } from "./qr-image-list";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 export default async function QrCodesPage() {
+  await requireAdminPage();
+
   const qrImages = await db.qrImage.findMany({
     orderBy: [{ active: "desc" }, { name: "asc" }],
   });

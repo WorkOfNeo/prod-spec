@@ -6,7 +6,6 @@ export type SupplierShareInfo = {
   url: string;
   pin: string;
   email: string;
-  jobId: string;
   visitCount: number;
   firstVisitedAt: string | null;
   lastVisitedAt: string | null;
@@ -22,17 +21,10 @@ function fmt(iso: string | null): string {
   });
 }
 
-// Supplier-link panel on the prod-spec tab: the link + PIN to (re)send, and
-// whether the supplier has opened it. `belongsToLatestJob` is false when a
-// newer job has been generated since this link was minted — the link then
-// points at the previous approval, so we flag it.
-export function SupplierLinkCard({
-  share,
-  belongsToLatestJob,
-}: {
-  share: SupplierShareInfo;
-  belongsToLatestJob: boolean;
-}) {
+// Supplier-link panel on the prod-spec tab: the durable link + PIN to
+// (re)send, and whether the supplier has opened it. The link always serves
+// the latest approved version, so there's no staleness to warn about.
+export function SupplierLinkCard({ share }: { share: SupplierShareInfo }) {
   const opened = share.visitCount > 0;
 
   return (
@@ -73,11 +65,9 @@ export function SupplierLinkCard({
         </p>
       ) : null}
 
-      {!belongsToLatestJob ? (
-        <p className="mt-1 text-xs text-amber-700">
-          A newer set has been generated since this link was sent — re-approve to issue an updated link.
-        </p>
-      ) : null}
+      <p className="mt-1 text-xs text-zinc-400">
+        Durable link — always shows the latest approved version of each output.
+      </p>
 
       <div className="mt-3 flex flex-col gap-2">
         <CopyRow label="Link" value={share.url} mono href={share.url} />

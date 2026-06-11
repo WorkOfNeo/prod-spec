@@ -3,10 +3,13 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { CustomerForm } from "./customer-form";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 export default async function EditCustomerPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireAdminPage();
+
   const { id } = await params;
   const customer = await db.customer.findUnique({ where: { id } });
   if (!customer) notFound();

@@ -4,8 +4,9 @@ import { getFile } from "@/lib/sharepoint/client";
 import { dispatchEmail, type EmailOutcome } from "@/lib/email/dispatch";
 import { supplierApprovalEmail } from "@/lib/email/templates/review-notification";
 import { getSupplierReviewCcEmails } from "@/lib/settings/app-settings";
+import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
 import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
-import { createShareForJob } from "@/lib/supplier-share/share";
+import { upsertShareForStyle } from "@/lib/supplier-share/share";
 
 // =====================================================
 // "Publish" = everything that happens when a job's outputs are approved:
@@ -148,6 +149,10 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
     }),
   ]);
 
+  // The job just left AWAITING_REVIEW — stamp every user's open dashboard
+  // notifications pointing at it so nobody is summoned to a settled review.
+  await resolveNotificationsForJob(job.id);
+
   // Close the rejection-ticket threads of every output that is approved
   // after the cascade (individually rejected assets keep their tickets).
   const approvedKeys = job.assets
@@ -192,12 +197,12 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
   );
   const ccDisplay = ccList.length > 0 ? ccList.join(", ") : null;
 
-  // Mint the supplier-only share link (token + 4-digit PIN). Created even
-  // when no supplier email resolved, so the team can read the link + PIN off
-  // the prod-spec tab and forward it manually. Gated to the resolved email
-  // (the unlock form checks the typed email against this); empty when none.
-  const share = await createShareForJob({
-    jobId: job.id,
+  // The supplier-only share link (one durable link per style: stable token
+  // + 4-digit PIN). Refreshed on every approval — the portal always serves
+  // the style's LATEST APPROVED version, so a correction pushes through to
+  // this same link. Created even when no supplier email resolved, so the
+  // team can read the link + PIN off the prod-spec tab and forward it.
+  const share = await upsertShareForStyle({
     styleId: job.styleId,
     email: supplierEmail ?? "",
   });
@@ -205,7 +210,7 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
     data: {
       jobId: job.id,
       level: "INFO",
-      message: `supplier share link minted (${share.url}) — PIN ${share.pin}${supplierEmail ? "" : " · no recipient yet, forward manually from the prod-spec tab"}`,
+      message: `supplier share link ${share.url} — PIN ${share.pin}${supplierEmail ? "" : " · no recipient yet, forward manually from the prod-spec tab"}`,
     },
   });
 

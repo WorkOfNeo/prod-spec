@@ -1,14 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { getServerSession } from "@/lib/auth-server";
 import { ReviewActions } from "./review-actions";
 import { AssetActions } from "./asset-actions";
+import { ReviewClaim } from "./claim-review";
+import { ReviewLeaveGuard } from "./leave-guard";
+import { groupByDocType, DocTypeAccordion } from "../doc-type-groups";
 import { isSharepointConfigured } from "@/lib/publish/publish-approved-job";
+import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const session = await getServerSession();
 
   const style = await db.style.findUnique({
     where: { id },
@@ -17,7 +23,13 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
       businessAreaRef: true,
       jobs: {
         where: { status: "AWAITING_REVIEW" },
-        include: { assets: true },
+        // Assets by fileName, not insertion: rows land in one transaction
+        // (tied timestamps) and the 00-cover / 01-general-information
+        // prefixes are designed to open the bundle.
+        include: {
+          assets: { orderBy: { fileName: "asc" } },
+          reviewClaimedBy: { select: { id: true, name: true, email: true } },
+        },
         orderBy: { createdAt: "desc" },
         take: 1,
       },
@@ -60,8 +72,25 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     .filter(Boolean)
     .join(" · ");
 
+  // Test-phase follow-through machinery (kill switch:
+  // REVIEW_FOLLOW_THROUGH_DISABLED=true) — claim popup/chip + leave guard.
+  const followThrough = reviewFollowThroughEnabled();
+  const claimedByMe = job.reviewClaimedById != null && job.reviewClaimedById === session?.user.id;
+
   return (
     <div className="px-8 py-8">
+      {followThrough ? (
+        // Holds navigation while this review is the user's responsibility
+        // (claimed and/or partially decided) — leaving settles nothing and
+        // the supplier hears nothing.
+        <ReviewLeaveGuard
+          jobId={job.id}
+          decided={approved + rejected}
+          pending={pendingCount}
+          claimedByMe={claimedByMe}
+          styleContext={styleContext}
+        />
+      ) : null}
       <Link href={`/styles/${id}`} className="text-xs text-zinc-500 underline">← Back to style</Link>
       <div className="mt-2 flex items-end justify-between gap-4">
         <div>
@@ -73,6 +102,20 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             {" · "}
             {job.assets.length} documents{decidedSummary ? <> — {decidedSummary}</> : null}
           </p>
+          {followThrough ? (
+            // "Start review" popup (after ~10s on an unclaimed review) +
+            // the in-review-by chip in the header once claimed.
+            <ReviewClaim
+              jobId={job.id}
+              pendingCount={pendingCount}
+              claimedByName={
+                job.reviewClaimedBy ? job.reviewClaimedBy.name || job.reviewClaimedBy.email : null
+              }
+              claimedByMe={claimedByMe}
+              claimedAtIso={job.reviewClaimedAt?.toISOString() ?? null}
+              styleContext={styleContext}
+            />
+          ) : null}
         </div>
         <ReviewActions
           jobId={job.id}
@@ -104,62 +147,86 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         </div>
       )}
 
-      <div className="mt-6 grid grid-cols-2 gap-4">
-        {job.assets.map((asset) => {
-          // Prefer variantKey — uniquely identifies the asset when multiple
-          // variants on the same job share a docType. Fall back to docType
-          // for legacy assets whose variantKey wasn't recorded.
-          const previewQuery = asset.variantKey
-            ? `variantKey=${encodeURIComponent(asset.variantKey)}`
-            : `docType=${asset.docType}`;
-          const title = asset.displayName ?? asset.docType.toLowerCase().replace(/_/g, " ");
+      {/* Grouped per document type — each type a collapsible accordion. */}
+      <div className="mt-6 flex flex-col gap-3">
+        {groupByDocType(job.assets).map((group) => {
+          const gApproved = group.items.filter((a) => a.reviewStatus === "APPROVED").length;
+          const gRejected = group.items.filter((a) => a.reviewStatus === "REJECTED").length;
+          const gPending = group.items.length - gApproved - gRejected;
+          const hint = [
+            gApproved > 0 ? `${gApproved} approved` : null,
+            gRejected > 0 ? `${gRejected} rejected` : null,
+            gPending > 0 ? `${gPending} pending` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ");
           return (
-            <div key={asset.id} className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
-              <div className="flex items-center justify-between gap-3 border-b border-zinc-100 bg-zinc-50 px-3 py-2">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold text-zinc-800">{title}</div>
-                  <div className="truncate font-mono text-[10px] text-zinc-500">{asset.fileName}</div>
-                </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <a
-                    href={`/api/admin/jobs/${job.id}/preview?${previewQuery}`}
-                    className="text-xs text-zinc-500 underline"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Open
-                  </a>
-                  <AssetActions
-                    assetId={asset.id}
-                    styleId={style.id}
-                    reviewStatus={asset.reviewStatus}
-                    rejectReason={asset.rejectReason}
-                    placeholderCount={asset.placeholderCount}
-                    outputTitle={title}
-                    styleContext={styleContext}
-                  />
-                </div>
+            <DocTypeAccordion
+              key={group.docType}
+              label={group.label}
+              count={group.items.length}
+              rightHint={hint}
+            >
+              <div className="grid grid-cols-2 gap-4">
+                {group.items.map((asset) => {
+                  // Prefer variantKey — uniquely identifies the asset when multiple
+                  // variants on the same job share a docType. Fall back to docType
+                  // for legacy assets whose variantKey wasn't recorded.
+                  const previewQuery = asset.variantKey
+                    ? `variantKey=${encodeURIComponent(asset.variantKey)}`
+                    : `docType=${asset.docType}`;
+                  const title = asset.displayName ?? asset.docType.toLowerCase().replace(/_/g, " ");
+                  return (
+                    <div key={asset.id} className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+                      <div className="flex items-center justify-between gap-3 border-b border-zinc-100 bg-zinc-50 px-3 py-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-zinc-800">{title}</div>
+                          <div className="truncate font-mono text-[10px] text-zinc-500">{asset.fileName}</div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-3">
+                          <a
+                            href={`/api/admin/jobs/${job.id}/preview?${previewQuery}`}
+                            className="text-xs text-zinc-500 underline"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Open
+                          </a>
+                          <AssetActions
+                            assetId={asset.id}
+                            styleId={style.id}
+                            reviewStatus={asset.reviewStatus}
+                            rejectReason={asset.rejectReason}
+                            placeholderCount={asset.placeholderCount}
+                            outputTitle={title}
+                            styleContext={styleContext}
+                          />
+                        </div>
+                      </div>
+                      {asset.reviewStatus === "REJECTED" && asset.rejectReason ? (
+                        <div className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs text-red-800">
+                          <span className="font-semibold">Rejected:</span> {asset.rejectReason}{" "}
+                          <Link href="/settings/rejection-log" className="text-red-700 underline">
+                            view ticket →
+                          </Link>
+                        </div>
+                      ) : null}
+                      {asset.placeholderCount > 0 ? (
+                        <div className="border-b border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                          ⚠ {asset.placeholderCount} placeholder{asset.placeholderCount === 1 ? "" : "s"} in
+                          this PDF — approval is blocked until the data is fixed and the output re-run.
+                        </div>
+                      ) : null}
+                      <iframe
+                        src={`/api/admin/jobs/${job.id}/preview?${previewQuery}`}
+                        className="block h-[600px] w-full bg-white"
+                        title={title}
+                      />
+                    </div>
+                  );
+                })}
               </div>
-              {asset.reviewStatus === "REJECTED" && asset.rejectReason ? (
-                <div className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs text-red-800">
-                  <span className="font-semibold">Rejected:</span> {asset.rejectReason}{" "}
-                  <Link href="/settings/rejection-log" className="text-red-700 underline">
-                    view ticket →
-                  </Link>
-                </div>
-              ) : null}
-              {asset.placeholderCount > 0 ? (
-                <div className="border-b border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  ⚠ {asset.placeholderCount} placeholder{asset.placeholderCount === 1 ? "" : "s"} in this
-                  PDF — approval is blocked until the data is fixed and the output re-run.
-                </div>
-              ) : null}
-              <iframe
-                src={`/api/admin/jobs/${job.id}/preview?${previewQuery}`}
-                className="block h-[600px] w-full bg-white"
-                title={title}
-              />
-            </div>
+            </DocTypeAccordion>
           );
         })}
       </div>

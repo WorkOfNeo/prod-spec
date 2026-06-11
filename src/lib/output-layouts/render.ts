@@ -6,6 +6,7 @@ import {
   loadWashcareSymbols,
   type WashcareSymbolMap,
 } from "@/lib/pdf/washcare-symbols";
+import { findCertificate, loadCertificates, type CertificateMap } from "@/lib/pdf/certificates";
 import {
   LAYOUT_GRID_COLS,
   LAYOUT_GRID_ROWS,
@@ -116,6 +117,7 @@ type RenderCtx = {
   barcodes: Map<string, string | null>; // "symbology:value" → data URL (null = encode failed)
   symbols: WashcareSymbolMap | null; // loaded only when {{washSymbols}} is used
   logos: { contrast: string | null; custom: string | null }; // loaded only when {{logo:…}} is used
+  certs: CertificateMap | null; // loaded only when {{cert:…}} is used
 };
 
 function defUsesToken(pages: LayoutPage[], key: string): boolean {
@@ -263,6 +265,24 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx): string | nu
       continue;
     }
 
+    if (meta.kind === "image" && key === "cert") {
+      // Certification mark from the Certificate library (Settings →
+      // Certificates) — the same artwork pool care-label-02 prints, so
+      // builder layouts and coded templates can never show different art.
+      const resolved = arg && ctx.certs ? findCertificate(ctx.certs, arg) : null;
+      if (resolved?.dataUrl) {
+        html += `<span class="ol-cert"><img src="${resolved.dataUrl}" alt="${escapeHtml(resolved.name)}" title="${escapeHtml(resolved.name)}" /></span>`;
+      } else {
+        // No library row / no artwork / row deactivated / bad source —
+        // the established cert chip: visible on the proof in both modes
+        // and counted by countPlaceholderMarkers(), so approval stays
+        // blocked while the mark is missing.
+        html += `<span class="cert-missing">${escapeHtml(arg ?? "cert")} — no artwork in Settings → Certificates</span>`;
+      }
+      hadValue = true;
+      continue;
+    }
+
     if (meta.kind === "image") {
       const source = (arg ?? "contrast") as LogoSource;
       const dataUrl = ctx.logos[source];
@@ -332,7 +352,7 @@ function blockTypography(block: LayoutBlock): string {
     `font-size: ${block.fontPt}pt; ` +
     `line-height: ${block.lineHeight}; ` +
     `font-weight: ${block.bold ? 700 : 400}; ` +
-    `--ol-bc-h: ${bcH}mm; --ol-bc-num: ${bcNum}pt; --ol-sym: ${sym}mm; --ol-logo: ${logo}mm; `
+    `--ol-bc-h: ${bcH}mm; --ol-bc-num: ${bcNum}pt; --ol-sym: ${sym}mm; --ol-logo: ${logo}mm; --ol-cert: ${logo}mm; `
   );
 }
 
@@ -411,13 +431,14 @@ export async function renderLayoutHtml(
   const repStyles: StyleData[] = repetitionStyles(style, settings.repeatBy);
 
   const usesLogo = defUsesToken(pages, "logo");
-  const [barcodes, symbols, contrastLogo, customLogo] = await Promise.all([
+  const [barcodes, symbols, contrastLogo, customLogo, certs] = await Promise.all([
     buildBarcodeCache(repStyles, pages),
     defUsesToken(pages, "washSymbols") ? loadWashcareSymbols() : Promise.resolve(null),
     usesLogo ? getContrastLogoDataUrl() : Promise.resolve(null),
     usesLogo ? getCustomLogoDataUrl() : Promise.resolve(null),
+    defUsesToken(pages, "cert") ? loadCertificates() : Promise.resolve(null),
   ]);
-  const ctx: RenderCtx = { mode, barcodes, symbols, logos: { contrast: contrastLogo, custom: customLogo } };
+  const ctx: RenderCtx = { mode, barcodes, symbols, logos: { contrast: contrastLogo, custom: customLogo }, certs };
 
   const emitted: Array<{ page: LayoutPage; repStyle: StyleData }> = [];
   for (const repStyle of repStyles) {
@@ -463,6 +484,13 @@ export async function renderLayoutHtml(
   .ol-symbols img { width: var(--ol-sym, 6mm); height: var(--ol-sym, 6mm); object-fit: contain; }
   .ol-logo { display: inline-block; vertical-align: middle; max-width: 100%; }
   .ol-logo img { display: block; height: var(--ol-logo, 10mm); width: auto; max-width: 100%; }
+  .ol-cert { display: inline-block; vertical-align: middle; max-width: 100%; }
+  .ol-cert img { display: block; height: var(--ol-cert, 10mm); width: auto; max-width: 100%; }
+  .cert-missing {
+    font-family: ui-monospace, monospace; font-size: 0.85em;
+    background: #fef2f2; color: #b91c1c; border: 0.2mm dashed #ef4444;
+    border-radius: 0.8mm; padding: 0 0.8mm;
+  }
   .barcode-missing {
     font-size: 8pt; color: #a00; text-align: center; padding: 2mm;
     border: 0.2mm dashed #a00; border-radius: 1mm; display: inline-block;

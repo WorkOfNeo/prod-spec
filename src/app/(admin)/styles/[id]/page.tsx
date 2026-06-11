@@ -14,16 +14,24 @@ import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
 import { shareUrl } from "@/lib/supplier-share/share";
 import { findMissingDetailFields } from "@/lib/styles/detail-fields";
 import { computeReadiness, type Readiness, type ReadinessTone } from "@/lib/styles/readiness";
+import {
+  computeEffectiveStatus,
+  EFFECTIVE_STATUS_TONE_CLASSES,
+  type EffectiveStatus,
+} from "@/lib/styles/effective-status";
 import { outputReadinessForStyle, type OutputReadiness } from "@/lib/styles/output-readiness";
 import { RerunButton } from "./rerun-button";
 import { StyleOutputCard, type StyleOutputCardProps } from "./style-output-card";
 import { ProdSpecTab } from "./prod-spec-tab";
 import { EanPanel } from "./ean-panel";
 import type { EanView } from "@/lib/po/ean-view";
+import { colorFromVariantLabel } from "@/lib/po/ean-format";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
-import { requiredFieldsForVariants, getVariant } from "@/lib/pdf/template-registry";
+import { requiredFieldsForVariants, getVariant, defaultArtifactFileName } from "@/lib/pdf/template-registry";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
+import { buildStyleData } from "@/lib/styles/render-context";
 import { parseCustomerConfig } from "@/lib/customers/config";
+import { applyFieldOverrides } from "@/lib/pdf/pins";
 import { parseFieldOverrides, PINNABLE_FIELD_LABELS, type PinnableField } from "@/lib/pdf/pins-meta";
 import { findFieldRule } from "@/lib/pdf/spec-fields";
 import { ALL_PRINT_SPECS } from "@/lib/pdf/print-spec-catalog";
@@ -185,17 +193,15 @@ export default async function StyleDetail({
   const latestJob = style.jobs[0];
   const missing = (style.missingFields as Array<{ id: string; label: string }>) ?? [];
 
-  // Supplier share for the latest published job (if any) — drives the
-  // "Supplier link" panel on the prod-spec tab: the link + PIN to forward,
-  // and whether the supplier has opened it.
-  const supplierShare = await db.supplierShare.findFirst({
+  // The style's durable supplier share (if approved at least once) — drives
+  // the "Supplier link" panel on the prod-spec tab: the stable link + PIN to
+  // forward, and whether the supplier has opened it.
+  const supplierShare = await db.supplierShare.findUnique({
     where: { styleId: id },
-    orderBy: { createdAt: "desc" },
     select: {
       token: true,
       pin: true,
       email: true,
-      jobId: true,
       visitCount: true,
       firstVisitedAt: true,
       lastVisitedAt: true,
@@ -238,6 +244,53 @@ export default async function StyleDetail({
         prodSpec: { outputs: style.prodSpec.outputs, columnMapping: {} },
       })
     : [];
+
+  // Pre-run files preview for the Prod Spec popover: per enabled output,
+  // the PDFs the NEXT run would emit (count + resolved names). Assembled
+  // from the SAME StyleData builder, pins and naming rules the runner
+  // uses — repeat/split-aware for Output Builder layouts — so the
+  // operator can verify the split settings against this style's actual
+  // size/EAN rows before generating anything. qrImage is deliberately
+  // null: the page only selects its name (the image is heavy) and file
+  // naming never reads it.
+  const outputsFilesPreview: Array<{
+    variantKey: string;
+    name: string;
+    known: boolean;
+    files: string[];
+  }> = await (async () => {
+    if (!style.prodSpec || enabledOutputs.length === 0) return [];
+    const base = await buildStyleData(
+      {
+        rawData: style.rawData,
+        poNumber: style.poNumber,
+        cartonEan: style.cartonEan,
+        mondayBoardId: style.mondayBoardId,
+        supplier: style.supplier,
+        eans: style.eans,
+        customer: { name: style.customer.name, config: style.customer.config },
+        qrImage: null,
+      },
+      style.prodSpec,
+      parseCustomerConfig(style.customer.config),
+    );
+    return enabledOutputs.map((o) => {
+      const variant = getVariant(o.variantKey);
+      if (!variant) return { variantKey: o.variantKey, name: o.variantKey, known: false, files: [] };
+      const renderStyle = applyFieldOverrides(base, o.fieldOverrides);
+      const plan = variant.filesPreview?.(renderStyle) ?? [
+        { suffix: null, fileName: variant.fileNameFor?.(renderStyle) ?? null },
+      ];
+      return {
+        variantKey: o.variantKey,
+        name: variant.name,
+        known: true,
+        files: plan.map(
+          (p) => p.fileName ?? defaultArtifactFileName(variant, renderStyle.styleNumber, p.suffix),
+        ),
+      };
+    });
+  })();
 
   // Derived care instructions for THIS style — the standard catalogue
   // filtered by the row's wash-care symbols, with per-line verdicts. The
@@ -333,6 +386,21 @@ export default async function StyleDetail({
       blocking: outputReadiness
         .filter((o) => !o.ready)
         .map((o) => ({ name: o.name, missing: o.missing.map((m) => m.label) })),
+    },
+  });
+
+  // Same computed status as the /styles list (effective-status.ts) so the
+  // two can never disagree. PDFs gate the review states: jobs window first,
+  // recentAssets as the fallback for assets older than the 10-job window.
+  const statusView = computeEffectiveStatus({
+    readiness,
+    hasPdfs:
+      style.jobs.some((j) => j.status !== "FAILED" && j.assets.length > 0) ||
+      recentAssets.length > 0,
+    latestJobStatus: latestJob?.status ?? null,
+    outputs: {
+      ready: outputReadiness.filter((o) => o.ready).length,
+      total: outputReadiness.length,
     },
   });
 
@@ -465,6 +533,7 @@ export default async function StyleDetail({
           resolvedFields={resolvedFields}
           recordFields={recordFields}
           readiness={readiness}
+          statusView={statusView}
           eanView={eanView}
           requiredFieldKeys={requiredKeys}
           requiredFields={prodSpecReadiness}
@@ -486,13 +555,13 @@ export default async function StyleDetail({
           poNumber={style.poNumber}
           styleStatus={style.status}
           requiredReadiness={prodSpecReadiness}
+          outputsFilesPreview={outputsFilesPreview}
           supplierShare={
             supplierShare
               ? {
                   url: shareUrl(supplierShare.token),
                   pin: supplierShare.pin,
                   email: supplierShare.email,
-                  jobId: supplierShare.jobId,
                   visitCount: supplierShare.visitCount,
                   firstVisitedAt: supplierShare.firstVisitedAt?.toISOString() ?? null,
                   lastVisitedAt: supplierShare.lastVisitedAt?.toISOString() ?? null,
@@ -528,6 +597,7 @@ function DetailsTab({
   resolvedFields,
   recordFields,
   readiness,
+  statusView,
   eanView,
   requiredFieldKeys,
   requiredFields,
@@ -548,6 +618,7 @@ function DetailsTab({
   resolvedFields: ResolvedSpecField[];
   recordFields: Array<{ label: string; value: string | null; href?: string }>;
   readiness: Readiness;
+  statusView: EffectiveStatus;
   eanView: EanView;
   requiredFieldKeys: readonly string[];
   requiredFields: { filled: number; total: number; fields: Array<{ label: string; ok: boolean }> };
@@ -559,6 +630,15 @@ function DetailsTab({
 }) {
   const tone = READINESS_TONE[readiness.tone];
   const requiredSet = new Set(requiredFieldKeys);
+  // Colour per resolved EAN (read off the PO variant label) so the per-size
+  // EAN-13 lines under Resolved fields can name the colourway — duplicate
+  // sizes on multi-colour POs are ambiguous without it. Keyed by EAN because
+  // the rendered value is the size=ean map string, which drops the colour.
+  const eanColor = new Map<string, string>();
+  for (const e of eanView.sizeEans) {
+    const color = colorFromVariantLabel(e.variantLabel);
+    if (e.ean13 && color) eanColor.set(e.ean13, color);
+  }
   // Output fields the enabled outputs need but that are empty — the real
   // "can it generate" gate, distinct from the required-columns completion %.
   const missingOutput = requiredFields.fields.filter((f) => !f.ok).map((f) => f.label);
@@ -646,10 +726,20 @@ function DetailsTab({
           )}
         </div>
 
-        {/* 3 — Workflow status + last sync. */}
+        {/* 3 — Workflow status + last sync. Same computed pill as the
+            /styles list (effective-status.ts) so the two never disagree —
+            NOT the stored Style.status, which completion re-evaluation
+            used to reset. */}
         <div className="rounded-lg border border-zinc-200 bg-white p-4">
           <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">Status</div>
-          <div className="mt-2 text-lg">{style.status.toLowerCase().replace(/_/g, " ")}</div>
+          <div className="mt-2">
+            <span
+              className={`inline-flex rounded-full px-2.5 py-1 text-sm font-medium ${EFFECTIVE_STATUS_TONE_CLASSES[statusView.tone]}`}
+            >
+              {statusView.label}
+            </span>
+          </div>
+          <div className="mt-1.5 text-xs text-zinc-500">{statusView.hint}</div>
           <div className="mt-2 text-xs text-zinc-400">Last synced {formatDate(style.lastSyncedAt)}</div>
         </div>
       </section>
@@ -829,14 +919,18 @@ function DetailsTab({
                     {f.field === "ean13" && f.value.includes("=") ? (
                       // Per-size EAN map ("S=570…,M=570…") — one line per
                       // size instead of an unreadable comma run. Duplicate
-                      // sizes (multi-colourway POs) keep their own lines.
+                      // sizes (multi-colourway POs) keep their own lines,
+                      // with the colourway named when the resolved PO rows
+                      // know it.
                       <div className="space-y-0.5 font-mono text-xs">
                         {f.value.split(",").map((pair, j) => {
                           const [size, ean] = pair.split("=");
+                          const color = eanColor.get(ean?.trim() ?? "");
                           return (
                             <div key={`${pair}-${j}`}>
                               <span className="inline-block w-14 text-zinc-500">{size?.trim()}</span>
                               <span>{ean?.trim()}</span>
+                              {color && <span className="ml-2 text-zinc-400">{color}</span>}
                             </div>
                           );
                         })}

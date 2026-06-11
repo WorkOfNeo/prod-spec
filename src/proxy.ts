@@ -38,6 +38,7 @@ export const config = {
     "/prod-specs/:path*",
     "/sync/:path*",
     "/monday-inspect/:path*",
+    "/users/:path*",
     "/login",
     "/signup",
   ],

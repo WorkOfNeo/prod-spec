@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
+import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
+import { claimReviewIfUnclaimed } from "@/lib/review-flow/claim";
 import { createOrReopenRejectionTicket } from "@/lib/tickets/rejection-tickets";
 
 export const runtime = "nodejs";
@@ -50,6 +52,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       reviewedById: session.user.id,
     },
   });
+  // Deciding IS taking responsibility — implicit claim when nobody pressed
+  // the "Start review" popup first (first writer wins, no-op otherwise).
+  await claimReviewIfUnclaimed(asset.jobId, session.user.id);
   await db.log.create({
     data: {
       jobId: asset.jobId,
@@ -96,6 +101,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     await db.log.create({
       data: { jobId: asset.jobId, level: "INFO", message: "asset(s) rejected — job rolled up to REJECTED" },
     });
+    // Settled — open dashboard notifications for this job are done.
+    await resolveNotificationsForJob(asset.jobId);
   }
 
   return NextResponse.json({ ok: true, ticketId: ticket.ticketId, reopened: ticket.reopened, settled });

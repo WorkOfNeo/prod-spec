@@ -5,6 +5,7 @@ import { listActiveLanguages } from "@/lib/languages/active";
 import { MONDAY_BOARDS } from "@/lib/monday/boards";
 import { DEFAULT_COLUMN_MAPPING } from "@/lib/customers/config";
 import { normalizeWashToken } from "@/lib/pdf/washcare-symbols";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +57,8 @@ async function washCoverage(symbols: Array<{ code: string; mondayValue: string |
 }
 
 export default async function WashSymbolsPage() {
+  await requireAdminPage();
+
   const [symbols, languages] = await Promise.all([
     db.washSymbol.findMany({ orderBy: [{ active: "desc" }, { code: "asc" }] }),
     listActiveLanguages(),

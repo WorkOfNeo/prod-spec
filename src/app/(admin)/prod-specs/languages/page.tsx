@@ -3,10 +3,13 @@ import { db } from "@/lib/db";
 import { parseProdSpecLanguages } from "@/lib/prod-spec/config";
 import { listActiveLanguages } from "@/lib/languages/active";
 import { ProdSpecLanguageMatrix, type MatrixRow } from "./prod-spec-language-matrix";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProdSpecLanguagesPage() {
+  await requireAdminPage();
+
   const [prodSpecs, languages] = await Promise.all([
     db.prodSpec.findMany({
       orderBy: [{ active: "desc" }, { name: "asc" }],

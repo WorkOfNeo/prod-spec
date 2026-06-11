@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-server";
 import {
+  BundlePageSettingsSchema,
   ProdSpecOutputsSchema,
   parseProdSpecLanguages,
 } from "@/lib/prod-spec/config";
@@ -20,6 +21,15 @@ const PATCH_SCHEMA = z.object({
   // PNG/JPG. Cap accommodates a ~2 MB raster, which base64-encodes to
   // ~2.7 MB of string.
   logoSvg: z.string().max(4_000_000).nullable().optional(),
+  // Markdown for the "General information" A4 page included in every
+  // generated bundle. 100k chars is many pages — a generous ceiling that
+  // still stops accidental paste bombs.
+  generalInfoMd: z.string().max(100_000).nullable().optional(),
+  // Print tuning for the two bundle framing pages — margins (mm), base
+  // font (pt), line height, footer toggle; one block per page. Validated
+  // against the canonical schema so out-of-range values 400 instead of
+  // landing in the column.
+  bundlePageSettings: BundlePageSettingsSchema.optional(),
   // Free-text per-language map. Lang keys are coerced to lowercase server-side.
   careInstructionsByLang: z.record(z.string().min(1), z.string().max(2000)).optional(),
   columnMapping: ColumnMappingSchema.optional(),
@@ -62,6 +72,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     d.autoGenerateThresholdPct !== undefined ||
     d.outputs !== undefined ||
     d.logoSvg !== undefined ||
+    d.generalInfoMd !== undefined ||
+    d.bundlePageSettings !== undefined ||
     d.careInstructionsByLang !== undefined ||
     d.columnMapping !== undefined ||
     d.requiredFields !== undefined ||
@@ -80,6 +92,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         ...(d.autoGenerateThresholdPct !== undefined ? { autoGenerateThresholdPct: d.autoGenerateThresholdPct } : {}),
         ...(d.outputs !== undefined ? { outputs: d.outputs as unknown as object } : {}),
         ...(d.logoSvg !== undefined ? { logoSvg: d.logoSvg } : {}),
+        ...(d.generalInfoMd !== undefined
+          ? { generalInfoMd: d.generalInfoMd?.trim() ? d.generalInfoMd : null }
+          : {}),
+        ...(d.bundlePageSettings !== undefined
+          ? { bundlePageSettings: d.bundlePageSettings as unknown as object }
+          : {}),
         ...(d.careInstructionsByLang !== undefined
           ? {
               careInstructionsByLang: Object.fromEntries(

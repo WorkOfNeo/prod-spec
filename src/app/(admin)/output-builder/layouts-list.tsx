@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 type LayoutRow = {
   id: string;
@@ -11,11 +11,34 @@ type LayoutRow = {
   status: "DRAFT" | "PUBLISHED";
   version: number;
   pageCount: number;
-  dims: string;
+  defInvalid: boolean;
   customerName: string | null;
   businessAreaName: string | null;
   updatedAt: string;
+  // Usage joins (computed server-side): the Prod Specs that carry this
+  // layout as an enabled output (+ their customer), and the styles
+  // currently resolved to those specs. `styles` is capped — `styleCount`
+  // is the exact total.
+  prodSpecs: Array<{ id: string; name: string; customerName: string }>;
+  styleCount: number;
+  styles: Array<{ id: string; name: string }>;
 };
+
+// Hover popover dropping DOWN from its trigger cell. Pure CSS
+// (group-hover + focus-within keeps it keyboard-reachable); needs every
+// ancestor between trigger and table wrapper to stay overflow-visible.
+function HoverPopover({ trigger, children }: { trigger: ReactNode; children: ReactNode }) {
+  return (
+    <div className="group relative inline-block" tabIndex={0}>
+      <span className="cursor-default underline decoration-dotted decoration-zinc-300 underline-offset-2">
+        {trigger}
+      </span>
+      <div className="invisible absolute left-0 top-full z-20 mt-1 max-h-72 w-72 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-3 opacity-0 shadow-lg transition group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100">
+        {children}
+      </div>
+    </div>
+  );
+}
 
 export function LayoutsList({
   layouts,
@@ -30,6 +53,28 @@ export function LayoutsList({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [logoError, setLogoError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+
+  // Search across everything a row shows or links to: layout name/type,
+  // test-data customer, the prod specs (+ their customers) using the
+  // layout, and the (capped) style list — so "which layout prints style
+  // X / customer Y" is findable from here.
+  const q = query.trim().toLowerCase();
+  const visibleLayouts = q
+    ? layouts.filter((l) =>
+        [
+          l.name,
+          l.docType,
+          l.customerName ?? "",
+          l.businessAreaName ?? "",
+          ...l.prodSpecs.flatMap((s) => [s.name, s.customerName]),
+          ...l.styles.map((s) => s.name),
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(q),
+      )
+    : layouts;
 
   async function uploadLogo(file: File) {
     setLogoError(null);
@@ -204,42 +249,54 @@ export function LayoutsList({
           </p>
         </div>
       ) : (
-        <div className="mt-6 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+        <>
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search layouts — name, customer, prod spec, style…"
+            className="mt-6 w-full max-w-md rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"
+            spellCheck={false}
+          />
+          {visibleLayouts.length === 0 ? (
+            <div className="mt-4 rounded-lg border border-dashed border-zinc-300 bg-white px-8 py-12 text-center text-sm text-zinc-500">
+              No layouts match “{query}”.
+            </div>
+          ) : (
+        <div className="mt-4 rounded-lg border border-zinc-200 bg-white">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
-                <th className="px-4 py-3 font-medium">Layout</th>
-                <th className="px-4 py-3 font-medium">Pages</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Test data</th>
-                <th className="px-4 py-3 font-medium">Updated</th>
-                <th className="px-4 py-3" />
+              <tr className="border-b border-zinc-200 text-left text-xs uppercase tracking-wide text-zinc-500">
+                <th className="rounded-tl-lg bg-zinc-50 px-4 py-3 font-medium">Layout</th>
+                <th className="bg-zinc-50 px-4 py-3 font-medium">Pages</th>
+                <th className="bg-zinc-50 px-4 py-3 font-medium">Test data</th>
+                <th className="bg-zinc-50 px-4 py-3 font-medium">Prod specs</th>
+                <th className="bg-zinc-50 px-4 py-3 font-medium">Styles</th>
+                <th className="bg-zinc-50 px-4 py-3 font-medium">Updated</th>
+                <th className="rounded-tr-lg bg-zinc-50 px-4 py-3" />
               </tr>
             </thead>
             <tbody>
-              {layouts.map((l) => (
+              {visibleLayouts.map((l) => (
                 <tr key={l.id} className="border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50/60">
                   <td className="px-4 py-3">
-                    <Link href={`/output-builder/${l.id}`} className="text-sm font-medium text-zinc-900 hover:underline">
-                      {l.name}
-                    </Link>
-                    <div className="mt-0.5 font-mono text-xs text-zinc-400">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                          l.status === "PUBLISHED" ? "bg-emerald-500" : "bg-zinc-300"
+                        }`}
+                        title={l.status === "PUBLISHED" ? `Published · v${l.version}` : "Draft"}
+                      />
+                      <Link href={`/output-builder/${l.id}`} className="text-sm font-medium text-zinc-900 hover:underline">
+                        {l.name}
+                      </Link>
+                    </div>
+                    <div className="ml-4 mt-0.5 font-mono text-xs text-zinc-400">
                       layout:{l.id.slice(0, 10)}… · {l.docType}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-zinc-600">
-                    {l.pageCount} · <span className="font-mono text-xs">{l.dims} mm</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    {l.status === "PUBLISHED" ? (
-                      <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                        Published · v{l.version}
-                      </span>
-                    ) : (
-                      <span className="inline-flex rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-xs font-medium text-zinc-500">
-                        Draft
-                      </span>
-                    )}
+                    {l.defInvalid ? <span className="text-amber-600">invalid</span> : l.pageCount}
                   </td>
                   <td className="px-4 py-3 text-sm text-zinc-600">
                     {l.customerName ? (
@@ -249,6 +306,51 @@ export function LayoutsList({
                       </>
                     ) : (
                       <span className="text-zinc-400">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-zinc-600">
+                    {l.prodSpecs.length === 0 ? (
+                      <span className="text-zinc-400">—</span>
+                    ) : (
+                      <HoverPopover
+                        trigger={`${l.prodSpecs.length} prod spec${l.prodSpecs.length === 1 ? "" : "s"}`}
+                      >
+                        <ul className="space-y-1.5 text-xs">
+                          {l.prodSpecs.map((s) => (
+                            <li key={s.id}>
+                              <Link href={`/prod-specs/${s.id}`} className="font-medium text-zinc-800 hover:underline">
+                                {s.name}
+                              </Link>
+                              <div className="text-zinc-500">{s.customerName}</div>
+                            </li>
+                          ))}
+                        </ul>
+                      </HoverPopover>
+                    )}
+                    {l.prodSpecs.length > 0 ? (
+                      <div className="mt-0.5 max-w-56 truncate text-xs text-zinc-400">
+                        {[...new Set(l.prodSpecs.map((s) => s.customerName))].join(", ")}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-zinc-600">
+                    {l.styleCount === 0 ? (
+                      <span className="text-zinc-400">—</span>
+                    ) : (
+                      <HoverPopover trigger={`${l.styleCount} style${l.styleCount === 1 ? "" : "s"}`}>
+                        <ul className="space-y-1 text-xs">
+                          {l.styles.map((s) => (
+                            <li key={s.id}>
+                              <Link href={`/styles/${s.id}`} className="text-zinc-700 hover:underline">
+                                {s.name}
+                              </Link>
+                            </li>
+                          ))}
+                          {l.styleCount > l.styles.length ? (
+                            <li className="pt-0.5 text-zinc-400">+{l.styleCount - l.styles.length} more</li>
+                          ) : null}
+                        </ul>
+                      </HoverPopover>
                     )}
                   </td>
                   <td className="px-4 py-3 text-sm text-zinc-500">{new Date(l.updatedAt).toLocaleDateString()}</td>
@@ -277,6 +379,8 @@ export function LayoutsList({
             </tbody>
           </table>
         </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -106,6 +106,41 @@ export function parseProdSpecColumnMapping(raw: unknown): ColumnMapping {
   return ColumnMappingSchema.parse(raw ?? {});
 }
 
+// =====================================================
+// Bundle framing page settings — print tuning for the cover page and the
+// general information page, stored per ProdSpec in
+// `ProdSpec.bundlePageSettings` as { cover: {...}, generalInfo: {...} }.
+// Margins are mm from the page edge to the content (real @page margins,
+// applied to every sheet of a multi-page document). Defaults mirror the
+// values that used to be hard-coded in src/lib/pdf/bundle-pages.ts.
+// =====================================================
+
+export const PageSettingsSchema = z.object({
+  marginTopMm: z.number().min(0).max(80).default(18),
+  marginRightMm: z.number().min(0).max(80).default(18),
+  marginBottomMm: z.number().min(0).max(80).default(22),
+  marginLeftMm: z.number().min(0).max(80).default(18),
+  baseFontPt: z.number().min(6).max(24).default(10),
+  lineHeight: z.number().min(1).max(2.5).default(1.55),
+  showFooter: z.boolean().default(true),
+});
+export type PageSettings = z.infer<typeof PageSettingsSchema>;
+
+export const DEFAULT_PAGE_SETTINGS: PageSettings = PageSettingsSchema.parse({});
+
+export const BundlePageSettingsSchema = z.object({
+  cover: PageSettingsSchema.default(DEFAULT_PAGE_SETTINGS),
+  generalInfo: PageSettingsSchema.default(DEFAULT_PAGE_SETTINGS),
+});
+export type BundlePageSettings = z.infer<typeof BundlePageSettingsSchema>;
+
+// Defensive: malformed JSON (or partial objects from older saves) falls
+// back to defaults rather than breaking render/editor paths.
+export function parseBundlePageSettings(raw: unknown): BundlePageSettings {
+  const parsed = BundlePageSettingsSchema.safeParse(raw ?? {});
+  return parsed.success ? parsed.data : BundlePageSettingsSchema.parse({});
+}
+
 export function parseProdSpecRequiredFields(raw: unknown): RequiredField[] {
   return z.array(RequiredFieldSchema).parse(raw ?? []);
 }

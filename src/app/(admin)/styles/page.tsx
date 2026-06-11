@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
-import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
+import { getAutoGenerateEnabled, getStylesTableColumns } from "@/lib/settings/app-settings";
+import { getSessionWithRole } from "@/lib/auth-server";
 import { computeReadiness } from "@/lib/styles/readiness";
+import { computeEffectiveStatus } from "@/lib/styles/effective-status";
 import { findMissingDetailFields, requiredFieldKeysFromOutputs } from "@/lib/styles/detail-fields";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
@@ -21,10 +23,21 @@ export default async function StylesPage() {
   // Output Builder layouts resolve as variants in the readiness walks below.
   await ensureLayoutVariantsLoaded();
 
-  const [autoGenerateEnabled, doneCutoff] = await Promise.all([
+  const [autoGenerateEnabled, doneCutoff, visibleColumns, { role }, withPdfs] = await Promise.all([
     getAutoGenerateEnabled(),
     getDoneGroupPoCutoff(),
+    getStylesTableColumns(),
+    getSessionWithRole(),
+    // Which styles have at least one generated PDF — the gate for the
+    // review-flow statuses ("Ready for review" must mean real outputs).
+    // Indexed, never touches the JobAsset Bytes column.
+    db.job.findMany({
+      where: { status: { not: "FAILED" }, assets: { some: {} } },
+      select: { styleId: true },
+      distinct: ["styleId"],
+    }),
   ]);
+  const stylesWithPdfs = new Set(withPdfs.map((j) => j.styleId));
 
   // Done-group exception: when the cutoff is set, Done-group styles whose
   // PO number parses ABOVE it join the list (in the MAIN view, not behind
@@ -82,6 +95,10 @@ export default async function StylesPage() {
         // Resolved PO barcodes — the ean13/cartonEan fallback source for
         // the readiness checks (see effectiveStyleItem).
         eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
+        // Latest job → drives the post-generation half of the Status pill
+        // (queued / generating / review states), independent of the stored
+        // Style.status, which Monday re-syncs reset (see ingest.ts).
+        jobs: { orderBy: { createdAt: "desc" }, take: 1, select: { status: true } },
       },
       orderBy: { updatedAt: "desc" },
   });
@@ -122,6 +139,8 @@ export default async function StylesPage() {
 
       <StylesTable
         autoGenerateEnabled={autoGenerateEnabled}
+        visibleColumns={visibleColumns}
+        canConfigureColumns={role === "ADMIN"}
         rows={styles.map((s) => {
           const ba = s.businessAreaRef?.name ?? s.businessArea ?? null;
           const requiredKeys = requiredFieldKeysFromOutputs(s.prodSpec?.outputs);
@@ -147,6 +166,7 @@ export default async function StylesPage() {
                 prodSpec: { outputs: s.prodSpec.outputs, columnMapping: {} },
               })
             : [];
+          const outputsReady = outputReadiness.filter((o) => o.ready).length;
           const r = computeReadiness({
             completionPct: s.completionPct,
             prodSpec: s.prodSpec
@@ -159,11 +179,19 @@ export default async function StylesPage() {
             missingDetailFields: missingDetailFields.map((f) => f.label),
             outputs: {
               total: outputReadiness.length,
-              ready: outputReadiness.filter((o) => o.ready).length,
+              ready: outputsReady,
               blocking: outputReadiness
                 .filter((o) => !o.ready)
                 .map((o) => ({ name: o.name, missing: o.missing.map((m) => m.label) })),
             },
+          });
+          // The Status pill: review flow when PDFs/jobs exist, otherwise the
+          // field-readiness ladder. Never the raw stored Style.status.
+          const statusView = computeEffectiveStatus({
+            readiness: r,
+            hasPdfs: stylesWithPdfs.has(s.id),
+            latestJobStatus: s.jobs[0]?.status ?? null,
+            outputs: { ready: outputsReady, total: outputReadiness.length },
           });
           return {
             id: s.id,
@@ -179,8 +207,7 @@ export default async function StylesPage() {
             // (filled / total). 0 total = its outputs need nothing / none set.
             requiredTotal: requiredKeys.length,
             requiredFilled: requiredKeys.length - missingDetailFields.length,
-            readiness: { tone: r.tone, label: r.shortLabel, hint: r.title },
-            status: s.status,
+            statusView,
             eanStatus: s.eanStatus,
             groupTitle: s.groupTitle,
             // Soft-hidden behind "Show archived" — except Done-group styles
@@ -192,10 +219,8 @@ export default async function StylesPage() {
               s.customer.name,
               ba ?? "",
               s.poNumber ?? "",
-              s.status,
-              s.status.toLowerCase().replace(/_/g, " "),
+              statusView.label,
               s.groupTitle ?? "",
-              r.shortLabel,
               eanStatusMeta(s.eanStatus).label,
             ]
               .join(" ")

@@ -1,14 +1,19 @@
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { parseLayoutDef } from "@/lib/output-layouts/schema";
+import { LAYOUT_VARIANT_PREFIX } from "@/lib/output-layouts/variants";
+import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { getContrastLogoDataUrl, getCustomLogoDataUrl } from "@/lib/output-layouts/logos";
 import { LayoutsList } from "./layouts-list";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 // Output Builder — list of operator-built layouts. Admin-only: the
 // builder writes print-affecting config.
 export default async function OutputBuilderPage() {
+  await requireAdminPage();
+
   const { role } = await getSessionWithRole();
   if (role !== "ADMIN") {
     return (
@@ -51,17 +56,57 @@ export default async function OutputBuilderPage() {
     );
   }
 
+  // Usage joins for the list: which Prod Specs carry each layout as an
+  // ENABLED output (matched on the "layout:<id>" variant key inside the
+  // outputs JSON — not relational, so joined in JS), the customer each
+  // spec belongs to, and the styles currently resolved to those specs.
+  // Style lists are capped per layout — the popover shows the first
+  // STYLE_CAP plus a "+N more" tail, the count is always exact.
+  const STYLE_CAP = 30;
+  const specs = await db.prodSpec.findMany({
+    select: { id: true, name: true, outputs: true, customer: { select: { name: true } } },
+  });
+  const specsByLayout = new Map<string, Array<{ id: string; name: string; customerName: string }>>();
+  for (const s of specs) {
+    for (const o of parseProdSpecOutputs(s.outputs)) {
+      if (o.enabled === false || !o.variantKey.startsWith(LAYOUT_VARIANT_PREFIX)) continue;
+      const layoutId = o.variantKey.slice(LAYOUT_VARIANT_PREFIX.length);
+      const list = specsByLayout.get(layoutId) ?? [];
+      if (!list.some((x) => x.id === s.id)) {
+        list.push({ id: s.id, name: s.name, customerName: s.customer.name });
+      }
+      specsByLayout.set(layoutId, list);
+    }
+  }
+  const usedSpecIds = [...new Set([...specsByLayout.values()].flat().map((s) => s.id))];
+  const usageStyles = usedSpecIds.length
+    ? await db.style.findMany({
+        where: { prodSpecId: { in: usedSpecIds } },
+        select: { id: true, name: true, prodSpecId: true },
+        orderBy: { updatedAt: "desc" },
+      })
+    : [];
+  const stylesBySpec = new Map<string, Array<{ id: string; name: string }>>();
+  for (const st of usageStyles) {
+    if (!st.prodSpecId) continue;
+    const list = stylesBySpec.get(st.prodSpecId) ?? [];
+    list.push({ id: st.id, name: st.name });
+    stylesBySpec.set(st.prodSpecId, list);
+  }
+
   const layouts = rows.map((l) => {
     let pageCount = 0;
-    let dims = "—";
+    let defInvalid = false;
     try {
-      const def = parseLayoutDef(l.definition);
-      pageCount = def.pages.length;
-      dims = def.pages.map((p) => `${p.widthMm}×${p.heightMm}`).join(" · ");
+      pageCount = parseLayoutDef(l.definition).pages.length;
     } catch {
       // invalid definition — editable, but show as such
-      dims = "invalid definition";
+      defInvalid = true;
     }
+    const usedBy = specsByLayout.get(l.id) ?? [];
+    // A style belongs to exactly one ProdSpec, so the union across this
+    // layout's specs is duplicate-free by construction.
+    const styles = usedBy.flatMap((s) => stylesBySpec.get(s.id) ?? []);
     return {
       id: l.id,
       name: l.name,
@@ -69,10 +114,13 @@ export default async function OutputBuilderPage() {
       status: l.status,
       version: l.version,
       pageCount,
-      dims,
+      defInvalid,
       customerName: l.customer?.name ?? null,
       businessAreaName: l.businessArea?.name ?? null,
       updatedAt: l.updatedAt.toISOString(),
+      prodSpecs: usedBy,
+      styleCount: styles.length,
+      styles: styles.slice(0, STYLE_CAP),
     };
   });
 

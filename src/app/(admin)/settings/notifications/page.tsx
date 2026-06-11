@@ -1,11 +1,13 @@
 import { db } from "@/lib/db";
 import { emailSendingEnabled } from "@/lib/email/dispatch";
+import { emailFromAddress } from "@/lib/email/client";
 import {
   getReviewNotificationEmails,
   getStoredReviewNotificationEmails,
 } from "@/lib/settings/app-settings";
 import { ReviewNotificationEmailSetting } from "./review-notification-email-setting";
 import { EmailActivityTable, type EmailActivityRow } from "./email-activity-table";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +23,8 @@ const WHEN_FORMAT = new Intl.DateTimeFormat("en-GB", {
 // attempt. Background generations (webhook / cron) have no UI to pop a
 // simulation dialog in; this table is where those sends surface.
 export default async function NotificationsSettingsPage() {
+  await requireAdminPage();
+
   const [storedEmails, resolvedEmails, logs] = await Promise.all([
     getStoredReviewNotificationEmails(),
     getReviewNotificationEmails(),
@@ -41,7 +45,8 @@ export default async function NotificationsSettingsPage() {
   ]);
 
   const sendingLive = emailSendingEnabled();
-  const resendConfigured = Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
+  const resendConfigured = Boolean(process.env.RESEND_API_KEY);
+  const fromAddress = emailFromAddress();
   const envFallback = (process.env.REVIEW_NOTIFICATION_EMAIL ?? "").trim();
 
   const rows: EmailActivityRow[] = logs.map((l) => ({
@@ -66,13 +71,13 @@ export default async function NotificationsSettingsPage() {
         {sendingLive && resendConfigured ? (
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
             <strong>✓ Live mode</strong> — <code className="text-xs">RESEND_EMAILS=true</code>; emails are
-            really sent via Resend.
+            really sent via Resend from <code className="text-xs">{fromAddress}</code>.
           </div>
         ) : sendingLive ? (
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
             <strong>⚠ Sending is on but Resend is not configured</strong> — set{" "}
-            <code className="text-xs">RESEND_API_KEY</code> and <code className="text-xs">EMAIL_FROM</code>.
-            Emails are currently recorded as SKIPPED, not sent.
+            <code className="text-xs">RESEND_API_KEY</code>. Emails are currently recorded as SKIPPED,
+            not sent.
           </div>
         ) : (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">

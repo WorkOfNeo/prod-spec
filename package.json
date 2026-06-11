@@ -17,6 +17,7 @@
     "seed-column-mapping": "tsx --env-file=.env scripts/seed-default-column-mapping.ts",
     "seed-washsymbol-monday": "tsx --env-file=.env scripts/seed-washsymbol-monday-values.ts",
     "seed-print-spec-outputs": "tsx --env-file=.env scripts/seed-print-spec-outputs.ts",
+    "seed-certificates": "tsx --env-file=.env scripts/seed-certificates.ts",
     "backfill-preorder-eans": "tsx --env-file=.env scripts/backfill-preorder-eans.ts"
   },
   "dependencies": {
@@ -25,6 +26,12 @@
     "@napi-rs/canvas": "^1.0.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "@tiptap/core": "^3.26.1",
+    "@tiptap/extension-table": "^3.26.1",
+    "@tiptap/markdown": "^3.26.1",
+    "@tiptap/pm": "^3.26.1",
+    "@tiptap/react": "^3.26.1",
+    "@tiptap/starter-kit": "^3.26.1",
     "better-auth": "^1.6.11",
     "bwip-js": "^4.10.1",
     "class-variance-authority": "^0.7.1",
@@ -32,6 +39,7 @@
     "dotenv": "^17.4.2",
     "isomorphic-fetch": "^3.0.0",
     "lucide-react": "^1.16.0",
+    "marked": "^18.0.5",
     "next": "16.2.6",
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "5.4.296",

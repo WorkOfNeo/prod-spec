@@ -1,9 +1,12 @@
 import { db } from "@/lib/db";
 import { LanguageList } from "./language-list";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 export default async function LanguagesPage() {
+  await requireAdminPage();
+
   const rows = await db.language.findMany({
     orderBy: [{ active: "desc" }, { sortOrder: "asc" }, { name: "asc" }],
   });

@@ -25,6 +25,12 @@ export type ResolvedProdSpecProps = {
     total: number;
     fields: Array<{ label: string; ok: boolean }>;
   };
+  // Pre-run files preview — per enabled output, the PDFs the NEXT run
+  // would emit for this style (count + resolved names). Computed with the
+  // runner's own StyleData assembly + naming, repeat/split aware, so the
+  // operator can verify the output split before generating. `known` false
+  // = the stored variant key is no longer in the registry.
+  outputsFilesPreview: Array<{ variantKey: string; name: string; known: boolean; files: string[] }>;
 };
 
 // Collapsed entry point for the resolved ProdSpec: a compact button showing
@@ -70,8 +76,10 @@ function ResolvedProdSpecModal({
   suppliers,
   styleStatus,
   requiredReadiness,
+  outputsFilesPreview,
   onClose,
 }: ResolvedProdSpecProps & { onClose: () => void }) {
+  const totalFiles = outputsFilesPreview.reduce((sum, o) => sum + o.files.length, 0);
   // Escape to close + lock body scroll while open — matches the picker
   // modal convention elsewhere in the admin.
   useEffect(() => {
@@ -173,6 +181,56 @@ function ResolvedProdSpecModal({
               ))}
             </ul>
           )}
+        </div>
+
+        <div className="mt-4 border-t border-zinc-100 pt-4">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+              Files the next run will generate
+            </div>
+            {totalFiles > 0 && (
+              <span className="text-xs font-semibold tabular-nums text-zinc-600">
+                {totalFiles} PDF{totalFiles === 1 ? "" : "s"} total
+              </span>
+            )}
+          </div>
+          {outputsFilesPreview.length === 0 ? (
+            <p className="mt-2 text-xs text-zinc-400">
+              No outputs selected yet — pick outputs on the prod spec to see what a run produces.
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-3">
+              {outputsFilesPreview.map((o) => (
+                <li key={o.variantKey} className="text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate font-medium text-zinc-700">{o.name}</span>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${
+                        o.known ? "bg-zinc-100 text-zinc-700" : "bg-red-100 text-red-700"
+                      }`}
+                    >
+                      {o.known ? `${o.files.length} PDF${o.files.length === 1 ? "" : "s"}` : "unknown variant"}
+                    </span>
+                  </div>
+                  {o.known && (
+                    <ul className="mt-1 space-y-0.5 font-mono text-[11px] leading-relaxed text-zinc-500">
+                      {o.files.slice(0, 12).map((f, i) => (
+                        <li key={i} className="truncate" title={f}>
+                          {f}
+                        </li>
+                      ))}
+                      {o.files.length > 12 && (
+                        <li className="font-sans text-zinc-400">+{o.files.length - 12} more</li>
+                      )}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-2 text-[10px] text-zinc-400">
+            Counts use the style&apos;s current size/EAN rows — a new PO scrape can change them.
+          </p>
         </div>
 
         <div className="mt-4">

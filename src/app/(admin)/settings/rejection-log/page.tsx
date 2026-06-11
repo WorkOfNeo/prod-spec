@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { TicketList, type TicketRow } from "./ticket-list";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,8 @@ const STAMP_FORMAT = new Intl.DateTimeFormat("en-GB", {
 // the page enriches each ticket with the LATEST generated asset for its
 // (style × variantKey) to show where the output stands now.
 export default async function RejectionLogPage() {
+  await requireAdminPage();
+
   const tickets = await db.rejectionTicket.findMany({
     orderBy: { createdAt: "desc" },
     take: 200,

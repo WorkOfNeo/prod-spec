@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import {
+  parseBundlePageSettings,
   parseProdSpecColumnMapping,
   parseProdSpecLanguages,
   parseProdSpecOutputs,
@@ -18,30 +19,33 @@ import {
   normaliseTranslationKey,
 } from "@/lib/translations/lookup";
 import { ProdSpecEditor } from "./prod-spec-editor";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
-export default async function ProdSpecDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ProdSpecDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  await requireAdminPage();
   // Published Output Builder layouts join the variant catalogue below.
   await ensureLayoutVariantsLoaded();
 
-  const { id } = await params;
+  const [{ id }, { tab }] = await Promise.all([params, searchParams]);
   const prodSpec = await db.prodSpec.findUnique({
     where: { id },
     include: {
       customer: true,
       businessArea: true,
-      suppliers: { include: { supplier: true } },
+      suppliers: { select: { id: true } },
     },
   });
   if (!prodSpec) notFound();
 
-  const [allSuppliers, languages, careLabels, washSymbolRows, dict] = await Promise.all([
-    db.supplier.findMany({
-      where: { active: true },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, country: true },
-    }),
+  const [languages, careLabels, washSymbolRows, dict] = await Promise.all([
     listActiveLanguages(),
     loadCareLabels(),
     db.washSymbol.findMany({
@@ -65,12 +69,17 @@ export default async function ProdSpecDetailPage({ params }: { params: Promise<{
   // Defensive parse — if stored JSON is malformed for any reason, fall back
   // to empty defaults so the editor still renders.
   const outputs = safeParse(() => parseProdSpecOutputs(prodSpec.outputs), []);
-  const columnMapping = safeParse(() => parseProdSpecColumnMapping(prodSpec.columnMapping), {});
-  const requiredFields = safeParse(() => parseProdSpecRequiredFields(prodSpec.requiredFields), []);
   const careInstructionsByLang = parseLangMap(prodSpec.careInstructionsByLang);
   const outputLanguages = safeParse(() => parseProdSpecLanguages(prodSpec.outputLanguages), []);
 
-  const attachedSupplierIds = prodSpec.suppliers.map((s) => s.supplierId);
+  // Column mapping / required fields / suppliers left the editor (they're
+  // managed at Customer level and via the supplier-link flow) — but the DB
+  // values still apply at render time, so hidden overrides surface as
+  // read-only notice chips instead of silent state.
+  const hasColumnMappingOverride =
+    Object.keys(safeParse(() => parseProdSpecColumnMapping(prodSpec.columnMapping), {})).length > 0;
+  const hasRequiredFieldsOverride =
+    safeParse(() => parseProdSpecRequiredFields(prodSpec.requiredFields), []).length > 0;
 
   return (
     <div className="px-8 py-8">
@@ -89,18 +98,20 @@ export default async function ProdSpecDetailPage({ params }: { params: Promise<{
 
       <ProdSpecEditor
         prodSpecId={prodSpec.id}
+        initialTab={tab === "outputs" ? "outputs" : tab === "cover" ? "cover" : "general"}
         initialName={prodSpec.name}
         initialActive={prodSpec.active}
         initialThreshold={prodSpec.autoGenerateThresholdPct}
         initialOutputs={outputs}
         initialLogoSvg={prodSpec.logoSvg}
+        initialGeneralInfoMd={prodSpec.generalInfoMd ?? ""}
+        initialBundlePageSettings={parseBundlePageSettings(prodSpec.bundlePageSettings)}
         initialCareInstructionsByLang={careInstructionsByLang}
         initialOutputLanguages={outputLanguages}
         availableLanguages={languages}
-        initialColumnMapping={columnMapping}
-        initialRequiredFields={requiredFields}
-        attachedSupplierIds={attachedSupplierIds}
-        allSuppliers={allSuppliers}
+        hasColumnMappingOverride={hasColumnMappingOverride}
+        hasRequiredFieldsOverride={hasRequiredFieldsOverride}
+        attachedSupplierCount={prodSpec.suppliers.length}
         variantCatalogue={allVariants().map((v) => ({
           key: v.key,
           docType: v.docType,

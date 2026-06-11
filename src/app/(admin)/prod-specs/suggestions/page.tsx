@@ -9,10 +9,13 @@
 import Link from "next/link";
 import { computeSuggestions } from "@/lib/prod-spec/suggestions";
 import { SuggestionsWizard } from "./wizard";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 export default async function SuggestionsPage() {
+  await requireAdminPage();
+
   const suggestions = await computeSuggestions();
 
   return (

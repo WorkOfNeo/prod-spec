@@ -5,6 +5,7 @@ import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { getVariant } from "@/lib/pdf/template-registry";
 import { NewProdSpecButton } from "./new-prod-spec-button";
 import { ProdSpecsTable } from "./prod-specs-table";
+import { requireAdminPage } from "@/lib/auth-server";
 
 // Resolve a ProdSpec.outputs JSON blob into display chips for the list.
 // Defensive: malformed JSON yields [] rather than crashing the whole page.
@@ -23,6 +24,8 @@ function summariseOutputs(raw: unknown): Array<{ key: string; name: string; enab
 export const dynamic = "force-dynamic";
 
 export default async function ProdSpecsPage() {
+  await requireAdminPage();
+
   const [prodSpecs, customers, businessAreas, existingPairs] = await Promise.all([
     db.prodSpec.findMany({
       orderBy: [{ active: "desc" }, { name: "asc" }],

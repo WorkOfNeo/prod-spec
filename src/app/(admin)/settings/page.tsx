@@ -1,6 +1,7 @@
 import { getAutoGenerateEnabled, getSupplierReviewCcEmails } from "@/lib/settings/app-settings";
 import { AutoGenerateSetting } from "./auto-generate-setting";
 import { SupplierContactEmailSetting } from "./supplier-contact-email-setting";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 // entries; global, app-wide flags that don't belong to a catalogue land
 // here — starting with the auto-generate master switch.
 export default async function SettingsPage() {
+  await requireAdminPage();
+
   const [autoGenerateEnabled, supplierReviewCcEmails] = await Promise.all([
     getAutoGenerateEnabled(),
     getSupplierReviewCcEmails(),
