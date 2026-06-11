@@ -16,6 +16,7 @@ import { InspectorTab } from "./tabs/inspector-tab";
 import { SyncTab } from "./tabs/sync-tab";
 import { DataTab, ROW_PAGE_STEP, ROW_PAGE_MAX } from "./tabs/data-tab";
 import { WebhooksTab } from "./tabs/webhooks-tab";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,7 @@ export default async function MondayPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireAdminPage();
   const params = await searchParams;
   const tab = parseTab(typeof params.tab === "string" ? params.tab : undefined);
 

@@ -18,6 +18,7 @@ import {
   normaliseTranslationKey,
 } from "@/lib/translations/lookup";
 import { ProdSpecEditor } from "./prod-spec-editor";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,7 @@ export default async function ProdSpecDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ tab?: string }>;
 }) {
+  await requireAdminPage();
   // Published Output Builder layouts join the variant catalogue below.
   await ensureLayoutVariantsLoaded();
 

@@ -3,6 +3,7 @@ import { formatDate } from "@/lib/utils";
 import { getPoEanAutoRunEnabled } from "@/lib/settings/app-settings";
 import { PoEansTable, type PoEanRow } from "./po-eans-table";
 import { PoEanAutoRunSetting } from "./po-ean-auto-run-setting";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,8 @@ export const dynamic = "force-dynamic";
 // and stores the per-size/colour Barcode EAN (in size order) + the carton EAN
 // on the style. "Re-resolve" forces a fresh read.
 export default async function PoEansPage() {
+  await requireAdminPage();
+
   const autoRunEnabled = await getPoEanAutoRunEnabled();
   const styles = await db.style.findMany({
     where: { poNumber: { not: null } },

@@ -4,10 +4,13 @@ import { db } from "@/lib/db";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { formatDate } from "@/lib/utils";
 import { CustomerConfigForm } from "./customer-config-form";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 export default async function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireAdminPage();
+
   const { id } = await params;
   const customer = await db.customer.findUnique({
     where: { id },

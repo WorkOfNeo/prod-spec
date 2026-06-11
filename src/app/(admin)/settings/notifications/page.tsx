@@ -7,6 +7,7 @@ import {
 } from "@/lib/settings/app-settings";
 import { ReviewNotificationEmailSetting } from "./review-notification-email-setting";
 import { EmailActivityTable, type EmailActivityRow } from "./email-activity-table";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,8 @@ const WHEN_FORMAT = new Intl.DateTimeFormat("en-GB", {
 // attempt. Background generations (webhook / cron) have no UI to pop a
 // simulation dialog in; this table is where those sends surface.
 export default async function NotificationsSettingsPage() {
+  await requireAdminPage();
+
   const [storedEmails, resolvedEmails, logs] = await Promise.all([
     getStoredReviewNotificationEmails(),
     getReviewNotificationEmails(),

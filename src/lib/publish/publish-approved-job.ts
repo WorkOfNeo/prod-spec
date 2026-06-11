@@ -4,6 +4,7 @@ import { getFile } from "@/lib/sharepoint/client";
 import { dispatchEmail, type EmailOutcome } from "@/lib/email/dispatch";
 import { supplierApprovalEmail } from "@/lib/email/templates/review-notification";
 import { getSupplierReviewCcEmails } from "@/lib/settings/app-settings";
+import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
 import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
 import { upsertShareForStyle } from "@/lib/supplier-share/share";
 
@@ -147,6 +148,10 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
       },
     }),
   ]);
+
+  // The job just left AWAITING_REVIEW — stamp every user's open dashboard
+  // notifications pointing at it so nobody is summoned to a settled review.
+  await resolveNotificationsForJob(job.id);
 
   // Close the rejection-ticket threads of every output that is approved
   // after the cascade (individually rejected assets keep their tickets).

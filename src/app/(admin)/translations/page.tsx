@@ -1,10 +1,13 @@
 import { db } from "@/lib/db";
 import { MONDAY_BOARDS } from "@/lib/monday/boards";
 import { TranslationList } from "./translation-list";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 export default async function TranslationsPage() {
+  await requireAdminPage();
+
   const [rows, languages] = await Promise.all([
     db.translation.findMany({
       orderBy: [{ active: "desc" }, { sourceText: "asc" }],

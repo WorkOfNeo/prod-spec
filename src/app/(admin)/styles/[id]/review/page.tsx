@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { ReviewActions } from "./review-actions";
 import { AssetActions } from "./asset-actions";
+import { ReviewLeaveGuard } from "./leave-guard";
 import { groupByDocType, DocTypeAccordion } from "../doc-type-groups";
 import { isSharepointConfigured } from "@/lib/publish/publish-approved-job";
 
@@ -66,6 +67,14 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
 
   return (
     <div className="px-8 py-8">
+      {/* Holds navigation while the review is partially decided — a partial
+          review settles nothing and the supplier hears nothing. */}
+      <ReviewLeaveGuard
+        jobId={job.id}
+        decided={approved + rejected}
+        pending={pendingCount}
+        styleContext={styleContext}
+      />
       <Link href={`/styles/${id}`} className="text-xs text-zinc-500 underline">← Back to style</Link>
       <div className="mt-2 flex items-end justify-between gap-4">
         <div>
