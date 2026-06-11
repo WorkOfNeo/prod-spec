@@ -1,9 +1,8 @@
 import Link from "next/link";
-import { DeliveredCard } from "./delivered-card";
 import { ResolvedProdSpecButton } from "./resolved-prod-spec";
 import { RelinkBusinessAreaButton } from "./relink-business-area-button";
 import { SupplierLinkCard, type SupplierShareInfo } from "./supplier-link-card";
-import { groupByDocType, DocTypeAccordion } from "./doc-type-groups";
+import { UserAvatar } from "@/components/user-avatar";
 import { formatDate } from "@/lib/utils";
 
 type ProdSpec = {
@@ -21,24 +20,20 @@ type Supplier = {
   country: string | null;
 } | null;
 
-type DeliveredAsset = {
+type RunAsset = {
   id: string;
-  docType: string;
-  variantKey: string | null;
-  displayName: string | null;
-  fileName: string;
   reviewStatus: "PENDING_REVIEW" | "APPROVED" | "REJECTED";
-  rejectReason: string | null;
-  reviewedAt: string | null;
-  reviewerEmail: string | null;
 };
 
-type DeliveredJob = {
+export type ProdSpecRun = {
   id: string;
   status: string;
   triggerSource: string;
   createdAt: string;
-  assets: DeliveredAsset[];
+  // The review owner — who pressed "Start review" (or decided first).
+  claimedByName: string | null;
+  claimedAtLabel: string | null;
+  assets: RunAsset[];
 };
 
 export function ProdSpecTab({
@@ -90,21 +85,11 @@ export function ProdSpecTab({
   // The link always serves the latest approved version, so there's no
   // staleness to flag — just show it and the visit status.
   supplierShare: SupplierShareInfo | null;
-  // ALL recent jobs, latest first. Latest renders the prominent
-  // "Delivered Prod Specs" grid; the rest are tucked into a collapsible
-  // accordion below so historical jobs (and their assets) stay
-  // reachable without crowding the page.
-  jobs: DeliveredJob[];
+  // ALL recent runs, latest first. This tab shows the LIST only —
+  // timestamps, file counts, review progress, owner. The files themselves
+  // live in the Review tab.
+  jobs: ProdSpecRun[];
 }) {
-  // Assets sorted by fileName, not query order: rows land in one
-  // transaction (tied timestamps), and the runner's 00-cover / 01-general-
-  // information prefixes are designed to open every bundle listing.
-  const sortedJobs = jobs.map((j) => ({
-    ...j,
-    assets: [...j.assets].sort((a, b) => a.fileName.localeCompare(b.fileName)),
-  }));
-  const latestJob = sortedJobs[0] ?? null;
-  const olderJobs = sortedJobs.slice(1);
   return (
     <div className="mt-6 flex flex-col gap-8">
       {/* Resolved ProdSpec — collapsed to a button; full detail lives in the
@@ -141,149 +126,132 @@ export function ProdSpecTab({
         )}
       </section>
 
-      {/* Delivered Prod Specs (the generated PDFs from the latest job) */}
+      {supplierShare ? (
+        <section>
+          <h2 className="mb-2 text-sm font-semibold text-zinc-700">Supplier link</h2>
+          <SupplierLinkCard share={supplierShare} />
+        </section>
+      ) : null}
+
+      {/* Prod Spec runs — the list only. Every generation run for this
+          style, newest first: when, what triggered it, status, how many
+          files, how far the review got and who owns it. The documents
+          themselves render in the Review tab next door. */}
       <section>
-        <div className="mb-2 flex items-end justify-between">
+        <div className="mb-2 flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-700">Delivered Prod Specs</h2>
+            <h2 className="text-sm font-semibold text-zinc-700">Prod Spec runs</h2>
             <p className="text-xs text-zinc-500">
-              {latestJob
-                ? `From job ${latestJob.id.slice(-8)} · ${formatDate(latestJob.createdAt)}`
-                : "No job yet — Re-run to generate."}
+              Newest first. Open the files themselves in the Review tab.
             </p>
           </div>
+          <Link
+            href={`/styles/${styleId}?tab=review`}
+            className="text-xs font-medium text-zinc-700 underline hover:text-zinc-900"
+          >
+            Open files →
+          </Link>
         </div>
 
-        {supplierShare ? (
-          <div className="mb-4">
-            <SupplierLinkCard share={supplierShare} />
-          </div>
-        ) : null}
-
-        {!latestJob || latestJob.assets.length === 0 ? (
+        {jobs.length === 0 ? (
           <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500">
-            Nothing generated yet for this style.
+            No runs yet for this style — Re-run to generate.
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
-            {groupByDocType(latestJob.assets).map((group) => (
-              <DocTypeAccordion key={group.docType} label={group.label} count={group.items.length}>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {group.items.map((asset) => (
-                    <DeliveredCard
-                      key={asset.id}
-                      jobId={latestJob.id}
-                      asset={{
-                        id: asset.id,
-                        docType: asset.docType,
-                        variantKey: asset.variantKey,
-                        displayName: asset.displayName ?? defaultDisplayName(asset.docType),
-                        fileName: asset.fileName,
-                        reviewStatus: asset.reviewStatus,
-                        rejectReason: asset.rejectReason,
-                        reviewedAt: asset.reviewedAt,
-                        reviewerEmail: asset.reviewerEmail,
-                      }}
-                    />
-                  ))}
-                </div>
-              </DocTypeAccordion>
-            ))}
+          <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-200 text-left text-[11px] uppercase tracking-wide text-zinc-500">
+                  <th className="px-4 py-2 font-semibold">When</th>
+                  <th className="px-4 py-2 font-semibold">Run</th>
+                  <th className="px-4 py-2 font-semibold">Trigger</th>
+                  <th className="px-4 py-2 font-semibold">Status</th>
+                  <th className="px-4 py-2 text-right font-semibold">Files</th>
+                  <th className="px-4 py-2 font-semibold">Review</th>
+                  <th className="px-4 py-2 font-semibold">Owner</th>
+                  <th className="px-4 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.map((job) => {
+                  const total = job.assets.length;
+                  const decided = job.assets.filter(
+                    (a) => a.reviewStatus !== "PENDING_REVIEW",
+                  ).length;
+                  return (
+                    <tr key={job.id} className="border-b border-zinc-100 last:border-b-0">
+                      <td className="px-4 py-2.5 text-zinc-700">{formatDate(job.createdAt)}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-zinc-500">
+                        {job.id.slice(-8)}
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-zinc-500">
+                        {job.triggerSource.toLowerCase().replace(/_/g, " ")}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <RunStatusPill status={job.status} />
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums text-zinc-700">{total}</td>
+                      <td className="px-4 py-2.5 text-xs text-zinc-500">
+                        {total === 0 ? "—" : `${decided}/${total} decided`}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {job.claimedByName ? (
+                          <span
+                            className="inline-flex items-center"
+                            title={
+                              job.claimedAtLabel
+                                ? `${job.claimedByName} · since ${job.claimedAtLabel}`
+                                : job.claimedByName
+                            }
+                          >
+                            <UserAvatar name={job.claimedByName} />
+                          </span>
+                        ) : (
+                          <span className="text-xs text-zinc-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        {job.status === "AWAITING_REVIEW" ? (
+                          <Link
+                            href={`/styles/${styleId}/review`}
+                            className="inline-block rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-800"
+                          >
+                            Review
+                          </Link>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </section>
-
-      {/* Older jobs — historical generations are kept (each Re-run
-          creates a new Job row, not in-place replacement). Tucked into
-          an accordion so the page doesn't grow unbounded but the data
-          is one click away. Each block shows the same DeliveredCard
-          grid as the latest section. */}
-      {olderJobs.length > 0 && (
-        <section>
-          <details className="group rounded-lg border border-zinc-200 bg-white">
-            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
-              <span className="inline-flex items-center gap-2">
-                <ChevronIcon />
-                Previous Prod Specs ({olderJobs.length})
-              </span>
-              <span className="ml-2 text-xs font-normal text-zinc-500">
-                Earlier Re-runs are kept in full — open to browse.
-              </span>
-            </summary>
-            <div className="border-t border-zinc-100 px-4 py-4">
-              <div className="flex flex-col gap-6">
-                {olderJobs.map((job) => (
-                  <div key={job.id}>
-                    <div className="mb-2 flex items-baseline justify-between gap-3 text-xs text-zinc-500">
-                      <span>
-                        <span className="font-mono">job {job.id.slice(-8)}</span> ·{" "}
-                        {formatDate(job.createdAt)} · {job.triggerSource.toLowerCase().replace(/_/g, " ")}
-                      </span>
-                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-700">
-                        {job.status.toLowerCase().replace(/_/g, " ")}
-                      </span>
-                    </div>
-                    {job.assets.length === 0 ? (
-                      <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-4 py-3 text-xs text-zinc-500">
-                        No assets generated.
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {job.assets.map((asset) => (
-                          <DeliveredCard
-                            key={asset.id}
-                            jobId={job.id}
-                            asset={{
-                              id: asset.id,
-                              docType: asset.docType,
-                              variantKey: asset.variantKey,
-                              displayName:
-                                asset.displayName ?? defaultDisplayName(asset.docType),
-                              fileName: asset.fileName,
-                              reviewStatus: asset.reviewStatus,
-                              rejectReason: asset.rejectReason,
-                              reviewedAt: asset.reviewedAt,
-                              reviewerEmail: asset.reviewerEmail,
-                            }}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </details>
-        </section>
-      )}
     </div>
   );
 }
 
-function ChevronIcon() {
+// Status pill, coloured by where the run is in its lifecycle.
+function RunStatusPill({ status }: { status: string }) {
+  const label = status.toLowerCase().replace(/_/g, " ");
+  const tone =
+    status === "APPROVED"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : status === "REJECTED" || status === "FAILED"
+        ? "border-red-200 bg-red-50 text-red-700"
+        : status === "AWAITING_REVIEW"
+          ? "border-amber-200 bg-amber-50 text-amber-800"
+          : status === "RUNNING" || status === "QUEUED"
+            ? "border-blue-200 bg-blue-50 text-blue-700"
+            : "border-zinc-200 bg-zinc-100 text-zinc-700";
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="h-3.5 w-3.5 text-zinc-500 transition-transform group-open:rotate-90"
-      aria-hidden="true"
+    <span
+      className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium ${tone}`}
     >
-      <polyline points="9 18 15 12 9 6" />
-    </svg>
+      {label}
+    </span>
   );
-}
-
-function defaultDisplayName(docType: string): string {
-  return docType
-    .toLowerCase()
-    .split("_")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
 }
 
 // "No Prod Spec resolved" amber panel. Two flavours:

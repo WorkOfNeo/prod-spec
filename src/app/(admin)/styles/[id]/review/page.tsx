@@ -167,7 +167,8 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
               count={group.items.length}
               rightHint={hint}
             >
-              <div className="grid grid-cols-2 gap-4">
+              {/* Up to 4 documents per row on wide screens. */}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {group.items.map((asset) => {
                   // Prefer variantKey — uniquely identifies the asset when multiple
                   // variants on the same job share a docType. Fall back to docType

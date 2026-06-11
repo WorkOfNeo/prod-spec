@@ -15,6 +15,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { UserAvatar } from "@/components/user-avatar";
 import { timeAgo } from "@/lib/time";
 
 const CLAIM_PROMPT_DELAY_MS = 10_000;
@@ -69,8 +70,8 @@ export function ReviewClaim({
   return (
     <>
       {claimedByName !== null ? (
-        <span className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
+        <span className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 py-0.5 pl-1 pr-2.5 text-[11px] font-semibold text-amber-800">
+          <UserAvatar name={claimedByName} size="xs" />
           In review · {claimedByMe ? "you" : claimedByName}
           {claimedAtIso ? <> · {timeAgo(new Date(claimedAtIso))}</> : null}
         </span>
@@ -91,8 +92,9 @@ export function ReviewClaim({
             <p className="mt-0.5 text-xs text-zinc-500">{styleContext}</p>
             <p className="mt-3 text-sm text-zinc-700">
               Pressing yes marks this review as <b>in review by you</b> — it stays on your{" "}
-              <b>My tasks</b> until every document is approved or rejected, so a half-finished
-              check can&rsquo;t be forgotten.
+              <b>My tasks</b>{" "}
+              until every document is approved or rejected, so a half-finished check
+              can&rsquo;t be forgotten.
             </p>
             {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
             <div className="mt-4 flex justify-end gap-2">
