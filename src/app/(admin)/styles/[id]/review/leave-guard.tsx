@@ -12,7 +12,7 @@
 // owns those), and a dismissal suppresses the modal for this job for the
 // rest of the browser session — after that, nagging is the badge's job.
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useLeaveGuard } from "@/components/navigation-guard";
 
 function storageKey(jobId: string) {
@@ -30,30 +30,33 @@ export function ReviewLeaveGuard({
   pending: number;
   styleContext: string;
 }) {
-  // Default suppressed until sessionStorage is readable — avoids arming
-  // during SSR/hydration and flashing a guard the user already dismissed.
-  const [suppressed, setSuppressed] = useState(true);
-  useEffect(() => {
-    setSuppressed(window.sessionStorage.getItem(storageKey(jobId)) === "1");
-  }, [jobId]);
+  // One read at mount. During SSR there is no sessionStorage — default to
+  // suppressed; arming only ever happens client-side (inside an effect), so
+  // hydration output is identical either way.
+  const [suppressed, setSuppressed] = useState(() =>
+    typeof window === "undefined"
+      ? true
+      : window.sessionStorage.getItem(storageKey(jobId)) === "1",
+  );
 
-  useLeaveGuard({
+  const { prompting, confirmLeave, cancelLeave } = useLeaveGuard({
     when: !suppressed && decided > 0 && pending > 0,
-    render: (leave, stay) => (
-      <FinishReviewModal
-        decided={decided}
-        total={decided + pending}
-        styleContext={styleContext}
-        onLeave={() => {
-          window.sessionStorage.setItem(storageKey(jobId), "1");
-          leave();
-        }}
-        onStay={stay}
-      />
-    ),
   });
 
-  return null;
+  if (!prompting) return null;
+  return (
+    <FinishReviewModal
+      decided={decided}
+      total={decided + pending}
+      styleContext={styleContext}
+      onLeave={() => {
+        window.sessionStorage.setItem(storageKey(jobId), "1");
+        setSuppressed(true);
+        confirmLeave();
+      }}
+      onStay={cancelLeave}
+    />
+  );
 }
 
 function FinishReviewModal({
