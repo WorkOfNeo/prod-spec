@@ -177,16 +177,21 @@ export const TOKEN_RE = /\{\{([a-zA-Z][a-zA-Z0-9]*)(?::([a-zA-Z0-9-]+))?\}\}/g;
 
 // Single-level conditional inside one line:
 //   {{if deliveryTerm == FOB}}{{customerOrderNo}}{{else}}{{poNumber}}{{endif}}
-// Value may be quoted; comparison is trimmed + case-insensitive. No nesting.
+//   {{if certificates includes FSC}}{{cert:fsc}}{{endif}}
+// Value may be quoted. ==/!= compare the whole value, trimmed +
+// case-insensitive; includes/!includes check the comma-separated list
+// (per-item, punctuation-insensitive — see conditionMatches). No nesting.
 export const IF_RE =
-  /\{\{if\s+([a-zA-Z][a-zA-Z0-9]*)\s*(==|!=)\s*"?([^"{}]*?)"?\s*\}\}([\s\S]*?)(?:\{\{else\}\}([\s\S]*?))?\{\{endif\}\}/g;
+  /\{\{if\s+([a-zA-Z][a-zA-Z0-9]*)\s*(==|!=|!includes|includes)\s*"?([^"{}]*?)"?\s*\}\}([\s\S]*?)(?:\{\{else\}\}([\s\S]*?))?\{\{endif\}\}/g;
 
 // Control tags for canvas highlighting / orphan detection.
 export const CONTROL_RE = /\{\{(if\b[^{}]*|else|endif)\}\}/g;
 
+export type ConditionOp = "==" | "!=" | "includes" | "!includes";
+
 export type LineConditional = {
   field: string;
-  op: "==" | "!=";
+  op: ConditionOp;
   value: string;
   ifBody: string;
   elseBody: string;
@@ -197,7 +202,7 @@ export function conditionalsInLine(line: string): LineConditional[] {
   for (const m of line.matchAll(new RegExp(IF_RE.source, "g"))) {
     out.push({
       field: m[1],
-      op: m[2] as "==" | "!=",
+      op: m[2] as ConditionOp,
       value: (m[3] ?? "").trim(),
       ifBody: m[4] ?? "",
       elseBody: m[5] ?? "",
@@ -206,7 +211,25 @@ export function conditionalsInLine(line: string): LineConditional[] {
   return out;
 }
 
-export function conditionMatches(actual: string, op: "==" | "!=", value: string): boolean {
+// Bare comparison key: lowercase alphanumerics only, so "OEKO-TEX",
+// "OEKOTEX" and "oekotex" all agree. Mirrors normalizeCertKey in
+// src/lib/pdf/certificates.ts (kept local — this file must stay
+// client-safe, certificates.ts is server-only).
+function bareToken(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+export function conditionMatches(actual: string, op: ConditionOp, value: string): boolean {
+  if (op === "includes" || op === "!includes") {
+    // List membership: true when one of the actual value's comma-separated
+    // items equals VALUE (punctuation/case-insensitive). Built for list
+    // fields ({{certificates}}: "FSC, OEKOTEX"); on a single-value field it
+    // degrades to fuzzy whole-value equality — NOT substring matching, so
+    // "GOT" never matches "GOTS".
+    const want = bareToken(value);
+    const has = want !== "" && actual.split(",").some((item) => bareToken(item) === want);
+    return op === "includes" ? has : !has;
+  }
   const a = actual.trim().toUpperCase();
   const v = value.trim().toUpperCase();
   return op === "==" ? a === v : a !== v;
@@ -220,7 +243,7 @@ export function applyConditionals(line: string, getValue: (field: string) => str
     const [, field, op, value, ifBody, elseBody] = m as unknown as [
       string,
       string,
-      "==" | "!=",
+      ConditionOp,
       string | undefined,
       string | undefined,
       string | undefined,
