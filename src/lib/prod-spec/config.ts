@@ -21,14 +21,9 @@ import { TEMPLATE_VARIANTS, getVariant, type TemplateVariant } from "@/lib/pdf/t
 // upgraded — see `parseProdSpecOutputs` below.
 // =====================================================
 
-export const ALL_DOC_TYPES = [
-  "WASHCARE",
-  "CARE_LABEL",
-  "STICKER",
-  "HANGTAG",
-  "CARTON_MARKING",
-  "COLOUR_STICKER",
-] as const satisfies readonly DocType[];
+// Pickable doc types + labels live in the doc-type catalogue; re-export
+// keeps the existing import sites (zod enum in the layout PATCH route).
+export { ALL_DOC_TYPES } from "@/lib/pdf/doc-types";
 
 export const ProdSpecOutputSchema = z.object({
   variantKey: z.string().min(1),

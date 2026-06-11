@@ -4,6 +4,7 @@ import { ResolvedProdSpecButton } from "./resolved-prod-spec";
 import { RelinkBusinessAreaButton } from "./relink-business-area-button";
 import { SupplierLinkCard, type SupplierShareInfo } from "./supplier-link-card";
 import { groupByDocType, DocTypeAccordion } from "./doc-type-groups";
+import { docTypeLabel } from "@/lib/pdf/doc-types";
 import { formatDate } from "@/lib/utils";
 
 type ProdSpec = {
@@ -177,7 +178,7 @@ export function ProdSpecTab({
                         id: asset.id,
                         docType: asset.docType,
                         variantKey: asset.variantKey,
-                        displayName: asset.displayName ?? defaultDisplayName(asset.docType),
+                        displayName: asset.displayName ?? docTypeLabel(asset.docType),
                         fileName: asset.fileName,
                         reviewStatus: asset.reviewStatus,
                         rejectReason: asset.rejectReason,
@@ -238,7 +239,7 @@ export function ProdSpecTab({
                               docType: asset.docType,
                               variantKey: asset.variantKey,
                               displayName:
-                                asset.displayName ?? defaultDisplayName(asset.docType),
+                                asset.displayName ?? docTypeLabel(asset.docType),
                               fileName: asset.fileName,
                               reviewStatus: asset.reviewStatus,
                               rejectReason: asset.rejectReason,
@@ -276,14 +277,6 @@ function ChevronIcon() {
       <polyline points="9 18 15 12 9 6" />
     </svg>
   );
-}
-
-function defaultDisplayName(docType: string): string {
-  return docType
-    .toLowerCase()
-    .split("_")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
 }
 
 // "No Prod Spec resolved" amber panel. Two flavours:

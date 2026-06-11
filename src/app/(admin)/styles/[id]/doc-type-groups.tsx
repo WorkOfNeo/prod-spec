@@ -1,27 +1,5 @@
 import type { ReactNode } from "react";
-
-// Friendly headings for the document-type groups on the review screen and
-// the Delivered Prod Specs panel. Falls back to a title-cased docType for
-// any value not listed (keeps working if the DocType enum grows).
-const DOC_TYPE_LABELS: Record<string, string> = {
-  WASHCARE: "Wash care",
-  CARE_LABEL: "Care label",
-  STICKER: "Sticker",
-  HANGTAG: "Hangtag",
-  CARTON_MARKING: "Carton marking",
-  COLOUR_STICKER: "Colour sticker",
-};
-
-export function docTypeLabel(docType: string): string {
-  return (
-    DOC_TYPE_LABELS[docType] ??
-    docType
-      .toLowerCase()
-      .split("_")
-      .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
-      .join(" ")
-  );
-}
+import { docTypeLabel } from "@/lib/pdf/doc-types";
 
 // Group items by docType, preserving the order each type first appears
 // (callers pass already-sorted assets, so the bundle framing stays first).
