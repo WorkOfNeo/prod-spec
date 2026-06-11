@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { requireSession } from "@/lib/auth-server";
+import { redirect } from "next/navigation";
+import { getSessionWithRole } from "@/lib/auth-server";
 import { SignOutButton } from "@/components/sign-out-button";
 import { NotificationBell } from "@/components/sidebar/notification-bell";
 import { SettingsNav } from "@/components/sidebar/settings-nav";
@@ -20,7 +21,8 @@ const NAV: Array<{ href?: string; label?: string; divider?: true }> = [
 ];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const session = await requireSession();
+  const { session, role } = await getSessionWithRole();
+  if (!session) redirect("/login");
 
   return (
     <div className="flex min-h-screen bg-zinc-50">
@@ -44,6 +46,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                 {item.label}
               </Link>
             ),
+          )}
+          {role === "ADMIN" && (
+            <Link
+              href="/users"
+              className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+            >
+              Users
+            </Link>
           )}
           <div className="my-2 border-t border-zinc-100" />
           <SettingsNav />

@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProdSpecOutput } from "@/lib/prod-spec/config";
-import type { ColumnMapping, RequiredField } from "@/lib/customers/config";
 import {
   PINNABLE_FIELDS,
   PINNABLE_FIELD_LABELS,
@@ -21,33 +20,39 @@ import {
 import { AddOutputPicker, type VariantInfo } from "./add-output-picker";
 
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
+type Tab = "general" | "outputs";
 
 // Debounce window before the auto-saver flushes a payload. Long enough
-// to coalesce rapid typing in JSON / care-instruction textareas, short
-// enough to feel automatic.
+// to coalesce rapid typing in the markdown / care-instruction textareas,
+// short enough to feel automatic.
 const AUTOSAVE_DEBOUNCE_MS = 1200;
-
-type SupplierSummary = { id: string; name: string; country: string | null };
 
 type Props = {
   prodSpecId: string;
+  initialTab: Tab;
   initialName: string;
   initialActive: boolean;
   initialThreshold: number;
   initialOutputs: ProdSpecOutput[];
   initialLogoSvg: string | null;
+  // Markdown for the "General information" A4 page shipped with every
+  // generated bundle. Empty string ⇒ no page emitted by the runner.
+  initialGeneralInfoMd: string;
   initialCareInstructionsByLang: Record<string, string>;
   // Lowercase language codes this prod spec's outputs render. Empty ⇒
   // templates use their built-in default set.
   initialOutputLanguages: string[];
-  // Active Language rows from the DB — drives the column set in the
-  // Care instructions editor and the Output languages toggles. Adding a
-  // row to /languages adds an input here automatically.
+  // Active Language rows from the DB — drives the language picker and the
+  // Care instructions editor columns. Adding a row to /languages adds an
+  // option here automatically.
   availableLanguages: Array<{ code: string; name: string }>;
-  initialColumnMapping: ColumnMapping;
-  initialRequiredFields: RequiredField[];
-  attachedSupplierIds: string[];
-  allSuppliers: SupplierSummary[];
+  // Suppliers / column mapping / required fields left this editor — they
+  // are managed at Customer level (and via the supplier-link flow). The
+  // DB values still apply at render time, so when a spec carries hidden
+  // overrides we surface a read-only notice instead of silent state.
+  hasColumnMappingOverride: boolean;
+  hasRequiredFieldsOverride: boolean;
+  attachedSupplierCount: number;
   variantCatalogue: VariantInfo[];
   // The standard care-label catalogue + symbol catalogue + per-label
   // Translation-board entries — drives the "generated from standard" panel.
@@ -58,11 +63,13 @@ type Props = {
 
 export function ProdSpecEditor(props: Props) {
   const router = useRouter();
+  const [tab, setTab] = useState<Tab>(props.initialTab);
   const [name, setName] = useState(props.initialName);
   const [active, setActive] = useState(props.initialActive);
   const [threshold, setThreshold] = useState(props.initialThreshold);
   const [outputs, setOutputs] = useState<ProdSpecOutput[]>(props.initialOutputs);
   const [logoSvg, setLogoSvg] = useState<string>(props.initialLogoSvg ?? "");
+  const [generalInfoMd, setGeneralInfoMd] = useState<string>(props.initialGeneralInfoMd);
   const [careByLang, setCareByLang] = useState<Record<string, string>>(
     props.initialCareInstructionsByLang ?? {},
   );
@@ -74,13 +81,6 @@ export function ProdSpecEditor(props: Props) {
   const [logoErr, setLogoErr] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [dragDepth, setDragDepth] = useState(0);
-  const [supplierIds, setSupplierIds] = useState<Set<string>>(new Set(props.attachedSupplierIds));
-  const [columnMappingText, setColumnMappingText] = useState(
-    JSON.stringify(props.initialColumnMapping, null, 2),
-  );
-  const [requiredFieldsText, setRequiredFieldsText] = useState(
-    JSON.stringify(props.initialRequiredFields, null, 2),
-  );
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -88,6 +88,16 @@ export function ProdSpecEditor(props: Props) {
   const variantByKey = new Map(props.variantCatalogue.map((v) => [v.key, v]));
   const addedKeys = new Set(outputs.map((o) => o.variantKey));
   const unaddedVariants = props.variantCatalogue.filter((v) => !addedKeys.has(v.key));
+  const enabledCount = outputs.filter((o) => o.enabled !== false).length;
+
+  function switchTab(next: Tab) {
+    setTab(next);
+    // Shallow URL sync — a router navigation would re-mount the editor and
+    // drop in-flight (debounced, unsaved) state.
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", next);
+    window.history.replaceState(null, "", url);
+  }
 
   function updateOutput(index: number, patch: Partial<ProdSpecOutput>) {
     setOutputs((prev) =>
@@ -109,15 +119,6 @@ export function ProdSpecEditor(props: Props) {
         enabled: true,
       },
     ]);
-  }
-
-  function toggleLang(code: string, next: boolean) {
-    setOutputLangs((prev) => {
-      const s = new Set(prev);
-      if (next) s.add(code);
-      else s.delete(code);
-      return s;
-    });
   }
 
   // Accept SVG (stored as raw markup) or PNG/JPG (stored as a base64
@@ -186,9 +187,6 @@ export function ProdSpecEditor(props: Props) {
     if (file) void readLogoFile(file);
   }
 
-  // Serialised supplier list — Combobox wants a string[], not a Set.
-  const supplierIdList = useMemo(() => Array.from(supplierIds), [supplierIds]);
-
   // Selected output languages, ordered by /languages sortOrder (the order of
   // props.availableLanguages). Any selected code no longer in the active set
   // (e.g. a language got deactivated) is appended at the end rather than
@@ -202,77 +200,37 @@ export function ProdSpecEditor(props: Props) {
 
   // The current form payload, derived. Used for dirty-detection: when its
   // serialisation differs from `lastSavedPayloadRef`, auto-save kicks in.
-  // JSON textareas can be invalid — in that case we *don't* short-circuit
-  // dirty detection, but `save()` itself catches and surfaces the error.
-  const payload = useMemo(() => {
-    let columnMapping: unknown;
-    let columnMappingError: string | null = null;
-    try {
-      columnMapping = JSON.parse(columnMappingText);
-    } catch (err) {
-      columnMappingError = `columnMapping JSON: ${(err as Error).message}`;
-    }
-    let requiredFields: unknown;
-    let requiredFieldsError: string | null = null;
-    try {
-      requiredFields = JSON.parse(requiredFieldsText);
-    } catch (err) {
-      requiredFieldsError = `requiredFields JSON: ${(err as Error).message}`;
-    }
-    return {
-      data: {
-        name,
-        active,
-        autoGenerateThresholdPct: threshold,
-        outputs,
-        logoSvg: logoSvg.trim() ? logoSvg : null,
-        careInstructionsByLang: careByLang,
-        outputLanguages: outputLanguageList,
-        columnMapping,
-        requiredFields,
-        supplierIds: supplierIdList,
-      },
-      columnMappingError,
-      requiredFieldsError,
-    };
-  }, [
-    name,
-    active,
-    threshold,
-    outputs,
-    logoSvg,
-    careByLang,
-    outputLanguageList,
-    columnMappingText,
-    requiredFieldsText,
-    supplierIdList,
-  ]);
+  // Suppliers / column mapping / required fields are deliberately absent —
+  // this editor no longer touches them, so existing DB values persist.
+  const payload = useMemo(
+    () => ({
+      name,
+      active,
+      autoGenerateThresholdPct: threshold,
+      outputs,
+      logoSvg: logoSvg.trim() ? logoSvg : null,
+      generalInfoMd: generalInfoMd.trim() ? generalInfoMd : null,
+      careInstructionsByLang: careByLang,
+      outputLanguages: outputLanguageList,
+    }),
+    [name, active, threshold, outputs, logoSvg, generalInfoMd, careByLang, outputLanguageList],
+  );
 
   // Snapshot of the last *successfully saved* payload, serialised. The
-  // auto-save effect compares JSON.stringify(payload.data) against this
-  // ref to decide whether a flush is needed.
-  const lastSavedPayloadRef = useRef<string>(JSON.stringify(payload.data));
+  // auto-save effect compares JSON.stringify(payload) against this ref
+  // to decide whether a flush is needed.
+  const lastSavedPayloadRef = useRef<string>(JSON.stringify(payload));
   const saveTimeoutRef = useRef<number | null>(null);
   // Bumped on each `save` call so a late response from a stale request
   // can't overwrite the status set by a newer request.
   const saveSeqRef = useRef(0);
 
   async function save(): Promise<void> {
-    if (payload.columnMappingError) {
-      setError(payload.columnMappingError);
-      setStatus("error");
-      return;
-    }
-    if (payload.requiredFieldsError) {
-      setError(payload.requiredFieldsError);
-      setStatus("error");
-      return;
-    }
     const mySeq = ++saveSeqRef.current;
     setError(null);
     setStatus("saving");
     try {
-      const body = JSON.stringify(payload.data);
+      const body = JSON.stringify(payload);
       const res = await fetch(`/api/admin/prod-specs/${props.prodSpecId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -302,25 +260,13 @@ export function ProdSpecEditor(props: Props) {
 
   // Debounced auto-save. Watches the *serialised* payload; if it differs
   // from the last-saved snapshot, marks the form dirty and schedules a
-  // save AUTOSAVE_DEBOUNCE_MS after the most recent change.
-  //
-  // Skips saving while a JSON textarea is in an invalid state — the
-  // status pill shows "error" instead, so the user knows why nothing's
-  // landing. Once they fix it, the next render re-runs this effect and
-  // the save fires.
-  // Debounced auto-save. setState calls in this effect are intentional —
-  // they reflect transient UI status ("dirty"/"error") derived from
-  // user-typed JSON validity, not from props. The react-hooks lint
-  // would prefer pure derivation, but a debounced async save needs
-  // schedule + cancel semantics that only an effect can give us.
+  // save AUTOSAVE_DEBOUNCE_MS after the most recent change. setState
+  // calls in this effect are intentional — they reflect transient UI
+  // status ("dirty"), and a debounced async save needs schedule + cancel
+  // semantics that only an effect can give us.
   useEffect(() => {
-    const serialised = JSON.stringify(payload.data);
+    const serialised = JSON.stringify(payload);
     if (serialised === lastSavedPayloadRef.current) return;
-    if (payload.columnMappingError || payload.requiredFieldsError) {
-      setStatus("error");
-      setError(payload.columnMappingError ?? payload.requiredFieldsError);
-      return;
-    }
     setStatus("dirty");
     setError(null);
     if (saveTimeoutRef.current) window.clearTimeout(saveTimeoutRef.current);
@@ -346,369 +292,426 @@ export function ProdSpecEditor(props: Props) {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [status]);
 
+  const careOverrideCount = Object.values(careByLang).filter((v) => v.trim().length > 0).length;
+  const hasHiddenOverrides =
+    props.hasColumnMappingOverride ||
+    props.hasRequiredFieldsOverride ||
+    props.attachedSupplierCount > 0;
+
   return (
-    <div className="mt-6 flex flex-col gap-8">
-      <SaveStatusBar status={status} savedAt={savedAt} error={error} onSaveNow={() => void save()} />
-      <Section title="Basics">
-        <Field label="Name">
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
-            required
-          />
-        </Field>
-        <Field label="Auto-generate threshold (%)" hint="Completion % at which a Style auto-enqueues a generation job.">
-          <input
-            type="number"
-            min={0}
-            max={100}
-            value={threshold}
-            onChange={(e) => setThreshold(Math.max(0, Math.min(100, Number(e.target.value))))}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm tabular-nums"
-          />
-        </Field>
-        <Field label="Active?">
-          <div className="mt-2">
-            <Toggle checked={active} onChange={setActive} label={active ? "Active" : "Disabled"} size="md" />
-          </div>
-        </Field>
-      </Section>
+    <div className="mt-6 flex flex-col gap-4">
+      {/* Basics melted into one sticky row: identity + workflow knobs on
+          the left, save state on the right. */}
+      <HeaderBar
+        status={status}
+        savedAt={savedAt}
+        error={error}
+        onSaveNow={() => void save()}
+        name={name}
+        onName={setName}
+        threshold={threshold}
+        onThreshold={setThreshold}
+        active={active}
+        onActive={setActive}
+      />
 
-      <Section title="Outputs" wide>
-        <p className="mb-3 text-xs text-zinc-500">
-          Pick from the template catalogue. Each entry generates one PDF when the style runs through
-          the runner. Width and height are in mm and override the variant's defaults.
-        </p>
-
-        {outputs.length === 0 ? (
-          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-            No outputs selected — saving will leave this ProdSpec rendering nothing. Add at least
-            one variant below.
-          </div>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {outputs.map((o, i) => {
-              const v = variantByKey.get(o.variantKey);
-              return (
-                <li
-                  key={`${o.variantKey}-${i}`}
-                  className={`rounded-lg border bg-white p-3 ${
-                    o.enabled ? "border-zinc-200" : "border-amber-300 bg-amber-50/60"
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="pt-0.5">
-                      <Toggle
-                        checked={o.enabled}
-                        onChange={(next) => updateOutput(i, { enabled: next })}
-                        ariaLabel={`${v?.name ?? o.variantKey} enabled`}
-                        size="sm"
-                      />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium">{v?.name ?? o.variantKey}</div>
-                      <div className="font-mono text-[10px] text-zinc-500">
-                        {o.variantKey}
-                        {v ? <> · {v.docType}</> : <> · <span className="text-red-700">unknown variant</span></>}
-                      </div>
-                      {v?.description && (
-                        <div className="mt-1 text-xs text-zinc-500">{v.description}</div>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <label className="text-[10px] uppercase text-zinc-500">
-                        W mm
-                        <input
-                          type="number"
-                          step={0.1}
-                          min={1}
-                          value={o.widthMm}
-                          onChange={(e) => updateOutput(i, { widthMm: Number(e.target.value) })}
-                          className="ml-1 w-20 rounded-md border border-zinc-300 px-2 py-1 text-sm tabular-nums"
-                        />
-                      </label>
-                      <label className="text-[10px] uppercase text-zinc-500">
-                        H mm
-                        <input
-                          type="number"
-                          step={0.1}
-                          min={1}
-                          value={o.heightMm}
-                          onChange={(e) => updateOutput(i, { heightMm: Number(e.target.value) })}
-                          className="ml-1 w-20 rounded-md border border-zinc-300 px-2 py-1 text-sm tabular-nums"
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => removeOutput(i)}
-                        className="text-xs text-red-700 underline"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Per-output field pins — "this field is ALWAYS this string". */}
-                  <div className="mt-3 border-t border-zinc-100 pt-3">
-                    <PinControls
-                      overrides={o.fieldOverrides}
-                      onChange={(fieldOverrides) => updateOutput(i, { fieldOverrides })}
-                    />
-                  </div>
-
-                  {/* Sample preview wearing THIS spec's config (logo, languages,
-                      care override, pins, dims). Refetches after each autosave. */}
-                  <details className="mt-3">
-                    <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-800">
-                      Preview · sample data + this spec&apos;s configuration
-                    </summary>
-                    <div className="mt-2 rounded-md bg-zinc-100 p-3">
-                      <LazyOutputPreview
-                        src={`/api/admin/prod-specs/${props.prodSpecId}/output-preview?variantKey=${encodeURIComponent(o.variantKey)}`}
-                        widthMm={o.widthMm}
-                        heightMm={o.heightMm}
-                        refreshKey={savedAt ?? undefined}
-                      />
-                    </div>
-                  </details>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-
-        {unaddedVariants.length > 0 && (
-          <AddOutputPicker
-            variants={unaddedVariants}
-            prodSpecId={props.prodSpecId}
-            onAdd={addOutput}
-            previewRefreshKey={savedAt ?? undefined}
-          />
-        )}
-      </Section>
-
-      <Section title="Logo (Customer × Business Area)" wide>
-        <p className="mb-3 text-xs text-zinc-500">
-          Logo used by templates that render a branded header — currently{" "}
-          <code className="font-mono">care-label-01</code>. Upload an{" "}
-          <strong>SVG, PNG, or JPG</strong> (drop a file anywhere in this section), or paste SVG
-          markup directly. Stored per ProdSpec so the same Customer can have different logos per
-          Business Area.
-        </p>
-        <div
-          onDragEnter={onLogoDragEnter}
-          onDragLeave={onLogoDragLeave}
-          onDragOver={onLogoDragOver}
-          onDrop={onLogoDrop}
-          className={`relative grid grid-cols-2 gap-4 rounded-md p-3 transition ${
-            dragOver ? "ring-4 ring-zinc-900 ring-offset-2" : ""
-          }`}
-        >
-          {dragOver && (
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-zinc-900/5">
-              <div className="rounded-md border-2 border-dashed border-zinc-900 bg-white/95 px-6 py-3 text-sm font-medium text-zinc-900">
-                Drop SVG, PNG, or JPG to attach
-              </div>
-            </div>
-          )}
-          <div>
-            <label className="text-xs font-medium text-zinc-700">
-              Logo file (SVG, PNG, JPG)
-              <input
-                type="file"
-                accept="image/svg+xml,image/png,image/jpeg,.svg,.png,.jpg,.jpeg"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void readLogoFile(f);
-                }}
-                className="mt-1 block w-full text-xs"
-              />
-            </label>
-            <label className="mt-3 block text-xs font-medium text-zinc-700">
-              Or paste SVG markup
-              <textarea
-                value={logoSvg}
-                onChange={(e) => setLogoSvg(e.target.value)}
-                rows={8}
-                spellCheck={false}
-                className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-[10px]"
-                placeholder={"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 30\">…</svg>"}
-              />
-            </label>
-            {logoSvg && (
+      <nav className="border-b border-zinc-200">
+        <ul className="-mb-px flex gap-1">
+          {(
+            [
+              { key: "general" as const, label: "General information" },
+              { key: "outputs" as const, label: "Outputs", count: enabledCount },
+            ] satisfies Array<{ key: Tab; label: string; count?: number }>
+          ).map((t) => (
+            <li key={t.key}>
               <button
                 type="button"
-                onClick={() => setLogoSvg("")}
-                className="mt-2 text-xs text-red-700 underline"
+                onClick={() => switchTab(t.key)}
+                className={`inline-block border-b-2 px-3.5 py-2 text-sm font-medium transition-colors ${
+                  tab === t.key
+                    ? "border-zinc-900 text-zinc-900"
+                    : "border-transparent text-zinc-500 hover:text-zinc-800"
+                }`}
               >
-                Clear logo
+                {t.label}
+                {t.count !== undefined && (
+                  <span className="ml-1.5 text-[11px] text-zinc-400">{t.count}</span>
+                )}
               </button>
-            )}
-            {logoErr && <p className="mt-2 text-xs text-red-600">{logoErr}</p>}
-          </div>
-          <div>
-            <div className="text-xs font-medium text-zinc-700">Preview</div>
-            <div className="mt-1 flex h-32 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50">
-              {logoSvg ? (
-                logoSvg.trim().startsWith("data:") ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={logoSvg.trim()}
-                    alt="logo preview"
-                    className="max-h-24 max-w-[12rem] object-contain"
-                  />
-                ) : (
-                  <div
-                    className="max-h-24 max-w-[12rem] [&_svg]:h-full [&_svg]:w-full"
-                    dangerouslySetInnerHTML={{ __html: logoSvg }}
-                  />
-                )
-              ) : (
-                <span className="text-xs text-zinc-500">no logo set</span>
-              )}
-            </div>
-            <p className="mt-2 text-[10px] text-zinc-500">
-              In <code>care-label-01</code> the logo renders at <strong>~16×7 mm</strong> at the top
-              of each label. For a crisp print, upload <strong>SVG</strong> (vector, preferred) or a
-              transparent <strong>PNG at ~400×175 px</strong> (≈16:7 aspect). JPG works but can&apos;t
-              be transparent. Max 256&nbsp;KB for SVG, 2&nbsp;MB for PNG/JPG.
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      {tab === "general" ? (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Section title="General information page · markdown">
+            <p className="mb-3 text-xs text-zinc-500">
+              GitHub-flavoured markdown — headings, lists and <strong>tables</strong> all render.
+              When non-empty, this page joins <strong>every bundle</strong> generated under this
+              prod spec as <code className="font-mono">01-…-general-information.pdf</code>. Write
+              it once: general requirements, inspection standards, packing rules.
             </p>
+            <textarea
+              value={generalInfoMd}
+              onChange={(e) => setGeneralInfoMd(e.target.value)}
+              rows={24}
+              spellCheck={false}
+              placeholder={GENERAL_INFO_PLACEHOLDER}
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-xs leading-relaxed"
+            />
+            <p className="mt-1 text-[11px] text-zinc-400">
+              Long content flows onto further A4 pages automatically. Preview refreshes after each
+              autosave.
+            </p>
+          </Section>
+
+          <div className="flex flex-col gap-4">
+            <Section title="Cover page · auto-generated">
+              <p className="mb-3 text-xs text-zinc-500">
+                First page of every bundle: each enabled output&apos;s title and dimensions, once.
+                Read-only — it follows the Outputs tab; the runner builds the real one from the
+                documents a job actually generated.
+              </p>
+              <div className="rounded-md bg-zinc-100 p-3">
+                <LazyOutputPreview
+                  src={`/api/admin/prod-specs/${props.prodSpecId}/cover-preview`}
+                  widthMm={210}
+                  heightMm={297}
+                  refreshKey={savedAt ?? undefined}
+                />
+              </div>
+            </Section>
+
+            <Section title="General information page · preview">
+              <div className="rounded-md bg-zinc-100 p-3">
+                <LazyOutputPreview
+                  src={`/api/admin/prod-specs/${props.prodSpecId}/general-info-preview`}
+                  widthMm={210}
+                  heightMm={297}
+                  refreshKey={savedAt ?? undefined}
+                />
+              </div>
+            </Section>
           </div>
         </div>
-      </Section>
-
-      <Section title="Output languages" wide>
-        <p className="mb-3 text-xs text-zinc-500">
-          Languages this prod spec&apos;s outputs render (care labels, info area, …).
-          Each language&apos;s text is pulled from the synced Translation board. Leave
-          all off to fall back to the template&apos;s built-in default set. Manage the
-          list at <code className="font-mono">/languages</code>, or toggle across all
-          prod specs on the <code className="font-mono">/prod-specs/languages</code> matrix.
-        </p>
-        {props.availableLanguages.length === 0 ? (
-          <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-            No active languages — visit <code className="font-mono">/languages</code> and click{" "}
-            <strong>Seed standard set</strong>.
-          </p>
-        ) : (
-          <>
-            <div className="mb-3 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setOutputLangs(new Set(props.availableLanguages.map((l) => l.code)))}
-                className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-              >
-                Select all
-              </button>
-              <button
-                type="button"
-                onClick={() => setOutputLangs(new Set())}
-                className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-              >
-                Clear
-              </button>
-              <span className="text-xs text-zinc-500">{outputLanguageList.length} selected</span>
-            </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
-              {props.availableLanguages.map(({ code, name }) => (
-                <Toggle
-                  key={code}
-                  checked={outputLangs.has(code)}
-                  onChange={(next) => toggleLang(code, next)}
-                  label={`${name} (${code})`}
-                />
-              ))}
-            </div>
-          </>
-        )}
-      </Section>
-
-      <Section title="Care instructions — generated from the standard" wide>
-        <p className="mb-3 text-xs text-zinc-500">
-          The printed care text composes from the central catalogue at{" "}
-          <code className="font-mono">/settings/care-labels</code>: every active line, filtered per
-          product by the style&apos;s wash-care symbols (a prohibition symbol drops same-action
-          lines), translated per language from the Translation board. Nothing is typed per prod
-          spec — tune the catalogue, and every output follows. A per-language <em>override</em>{" "}
-          replaces the standard verbatim; it&apos;s available below each line, loudly badged.
-        </p>
-        {props.availableLanguages.length === 0 ? (
-          <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-            No active languages — visit <code className="font-mono">/languages</code> and click{" "}
-            <strong>Seed standard set</strong> to populate the editor.
-          </p>
-        ) : (
-          <CareStandardPanel
-            careLabels={props.careLabels}
-            symbols={props.washSymbols}
-            translationsByLabel={props.careTranslationsByLabel}
-            languages={props.availableLanguages}
-            selectedLanguages={outputLanguageList}
-            careByLang={careByLang}
-            onChangeCareByLang={(code, value) =>
-              setCareByLang((prev) => ({ ...prev, [code]: value }))
-            }
-          />
-        )}
-      </Section>
-
-      <Section title="Suppliers attached" wide>
-        {props.allSuppliers.length === 0 ? (
-          <p className="text-xs text-zinc-500">
-            No active suppliers yet. Sync the Supplier mirror from /monday?tab=sync first.
-          </p>
-        ) : (
-          <>
-            <Combobox
-              mode="multi"
-              options={props.allSuppliers.map((s) => ({
-                value: s.id,
-                label: s.name,
-                hint: s.country ?? undefined,
-              }))}
-              value={supplierIdList}
-              onChange={(ids) => setSupplierIds(new Set(ids))}
-              placeholder="Search suppliers…"
-              emptyLabel="No matching suppliers"
-            />
-            <p className="mt-1 text-xs text-zinc-500">
-              {supplierIdList.length === 0
-                ? "No suppliers attached yet — pick one or more from the list."
-                : `${supplierIdList.length} attached.`}
+      ) : (
+        <div className="flex flex-col gap-4">
+          <Section title="Outputs">
+            <p className="mb-3 text-xs text-zinc-500">
+              Each enabled entry generates one PDF when the style runs through the runner. Width
+              and height are in mm and override the variant&apos;s defaults. Pins and a live
+              preview sit behind each row&apos;s expander.
             </p>
-          </>
-        )}
-      </Section>
 
-      <Section title="Column mapping (overrides Customer)" wide>
-        <textarea
-          value={columnMappingText}
-          onChange={(e) => setColumnMappingText(e.target.value)}
-          rows={10}
-          spellCheck={false}
-          className="w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-xs"
-        />
-      </Section>
+            {outputs.length === 0 ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                No outputs selected — saving will leave this ProdSpec rendering nothing. Add at
+                least one variant below.
+              </div>
+            ) : (
+              <ul className="flex flex-col gap-1.5">
+                {outputs.map((o, i) => {
+                  const v = variantByKey.get(o.variantKey);
+                  const pinCount = Object.keys(parseFieldOverrides(o.fieldOverrides)).length;
+                  return (
+                    <li
+                      key={`${o.variantKey}-${i}`}
+                      className={`rounded-md border bg-white px-3 py-2 ${
+                        o.enabled ? "border-zinc-200" : "border-amber-300 bg-amber-50/60"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Toggle
+                          checked={o.enabled}
+                          onChange={(next) => updateOutput(i, { enabled: next })}
+                          ariaLabel={`${v?.name ?? o.variantKey} enabled`}
+                          size="sm"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium" title={v?.description}>
+                            {v?.name ?? o.variantKey}
+                          </span>
+                          <span className="block truncate font-mono text-[10px] text-zinc-400">
+                            {o.variantKey}
+                            {v ? <> · {v.docType}</> : <> · <span className="text-red-700">unknown variant</span></>}
+                          </span>
+                        </div>
+                        <label className="flex shrink-0 items-center gap-1 text-[10px] uppercase text-zinc-500">
+                          <input
+                            type="number"
+                            step={0.1}
+                            min={1}
+                            value={o.widthMm}
+                            onChange={(e) => updateOutput(i, { widthMm: Number(e.target.value) })}
+                            className="w-16 rounded-md border border-zinc-300 px-2 py-1 text-sm tabular-nums"
+                            aria-label="Width mm"
+                          />
+                          ×
+                          <input
+                            type="number"
+                            step={0.1}
+                            min={1}
+                            value={o.heightMm}
+                            onChange={(e) => updateOutput(i, { heightMm: Number(e.target.value) })}
+                            className="w-16 rounded-md border border-zinc-300 px-2 py-1 text-sm tabular-nums"
+                            aria-label="Height mm"
+                          />
+                          mm
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => removeOutput(i)}
+                          className="shrink-0 text-sm text-zinc-400 hover:text-red-700"
+                          aria-label={`Remove ${v?.name ?? o.variantKey}`}
+                          title="Remove output"
+                        >
+                          ✕
+                        </button>
+                      </div>
 
-      <Section title="Required fields (overrides Customer)" wide>
-        <textarea
-          value={requiredFieldsText}
-          onChange={(e) => setRequiredFieldsText(e.target.value)}
-          rows={6}
-          spellCheck={false}
-          className="w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-xs"
-        />
-        <p className="mt-1 text-xs text-zinc-500">
-          Leave as <code>[]</code> to inherit the Customer-level required fields.
-        </p>
-      </Section>
+                      <details className="mt-1.5">
+                        <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-800">
+                          📌 {pinCount === 0 ? "no pins" : `${pinCount} pin${pinCount === 1 ? "" : "s"}`} ·
+                          preview
+                        </summary>
+                        <div className="mt-2 border-t border-zinc-100 pt-2">
+                          <PinControls
+                            overrides={o.fieldOverrides}
+                            onChange={(fieldOverrides) => updateOutput(i, { fieldOverrides })}
+                          />
+                          {/* Sample preview wearing THIS spec's config (logo,
+                              languages, care override, pins, dims). Refetches
+                              after each autosave. */}
+                          <div className="mt-3 rounded-md bg-zinc-100 p-3">
+                            <LazyOutputPreview
+                              src={`/api/admin/prod-specs/${props.prodSpecId}/output-preview?variantKey=${encodeURIComponent(o.variantKey)}`}
+                              widthMm={o.widthMm}
+                              heightMm={o.heightMm}
+                              refreshKey={savedAt ?? undefined}
+                            />
+                          </div>
+                        </div>
+                      </details>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            {unaddedVariants.length > 0 && (
+              <AddOutputPicker
+                variants={unaddedVariants}
+                prodSpecId={props.prodSpecId}
+                onAdd={addOutput}
+                previewRefreshKey={savedAt ?? undefined}
+              />
+            )}
+          </Section>
+
+          {/* Everything below feeds rendering, so it stays reachable — it
+              just stops occupying three screens. Collapsed by default with
+              a state summary in the header. */}
+          <details className="group rounded-lg border border-zinc-200 bg-zinc-50">
+            <summary className="flex cursor-pointer select-none flex-wrap items-center gap-2 px-4 py-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100/60">
+              <span>Advanced print configuration</span>
+              <span className="flex flex-wrap items-center gap-1.5 text-[11px] font-normal">
+                <SummaryChip>{logoSvg.trim() ? "Logo: set ✓" : "Logo: none"}</SummaryChip>
+                <SummaryChip>
+                  {outputLanguageList.length === 0
+                    ? "Languages: template default"
+                    : `Languages: ${outputLanguageList.join(", ")}`}
+                </SummaryChip>
+                <SummaryChip>
+                  {careOverrideCount === 0
+                    ? "Care overrides: none"
+                    : `Care overrides: ${careOverrideCount}`}
+                </SummaryChip>
+              </span>
+            </summary>
+
+            <div className="flex flex-col gap-4 border-t border-zinc-200 bg-white p-4">
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  Logo (Customer × Business Area)
+                </h3>
+                <p className="mt-1 mb-2 text-xs text-zinc-500">
+                  Used by templates that render a branded header — currently{" "}
+                  <code className="font-mono">care-label-01</code> (~16×7 mm at the top of each
+                  label). Upload an <strong>SVG, PNG, or JPG</strong> (drop a file anywhere in this
+                  block), or paste SVG markup. SVG preferred; PNG at ~400×175 px works; max
+                  256&nbsp;KB SVG / 2&nbsp;MB raster.
+                </p>
+                <div
+                  onDragEnter={onLogoDragEnter}
+                  onDragLeave={onLogoDragLeave}
+                  onDragOver={onLogoDragOver}
+                  onDrop={onLogoDrop}
+                  className={`relative grid grid-cols-1 gap-4 rounded-md p-2 transition sm:grid-cols-2 ${
+                    dragOver ? "ring-4 ring-zinc-900 ring-offset-2" : ""
+                  }`}
+                >
+                  {dragOver && (
+                    <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-zinc-900/5">
+                      <div className="rounded-md border-2 border-dashed border-zinc-900 bg-white/95 px-6 py-3 text-sm font-medium text-zinc-900">
+                        Drop SVG, PNG, or JPG to attach
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <label className="text-xs font-medium text-zinc-700">
+                      Logo file (SVG, PNG, JPG)
+                      <input
+                        type="file"
+                        accept="image/svg+xml,image/png,image/jpeg,.svg,.png,.jpg,.jpeg"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) void readLogoFile(f);
+                        }}
+                        className="mt-1 block w-full text-xs"
+                      />
+                    </label>
+                    <label className="mt-3 block text-xs font-medium text-zinc-700">
+                      Or paste SVG markup
+                      <textarea
+                        value={logoSvg}
+                        onChange={(e) => setLogoSvg(e.target.value)}
+                        rows={5}
+                        spellCheck={false}
+                        className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-[10px]"
+                        placeholder={'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 30">…</svg>'}
+                      />
+                    </label>
+                    {logoSvg && (
+                      <button
+                        type="button"
+                        onClick={() => setLogoSvg("")}
+                        className="mt-2 text-xs text-red-700 underline"
+                      >
+                        Clear logo
+                      </button>
+                    )}
+                    {logoErr && <p className="mt-2 text-xs text-red-600">{logoErr}</p>}
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium text-zinc-700">Preview</div>
+                    <div className="mt-1 flex h-24 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50">
+                      {logoSvg ? (
+                        logoSvg.trim().startsWith("data:") ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={logoSvg.trim()}
+                            alt="logo preview"
+                            className="max-h-20 max-w-[12rem] object-contain"
+                          />
+                        ) : (
+                          <div
+                            className="max-h-20 max-w-[12rem] [&_svg]:h-full [&_svg]:w-full"
+                            dangerouslySetInnerHTML={{ __html: logoSvg }}
+                          />
+                        )
+                      ) : (
+                        <span className="text-xs text-zinc-500">no logo set</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-zinc-100 pt-4">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  Output languages
+                </h3>
+                <p className="mt-1 mb-2 text-xs text-zinc-500">
+                  Languages this prod spec&apos;s outputs render (care labels, info area, …), pulled
+                  from the synced Translation board. Leave empty to fall back to each
+                  template&apos;s built-in default set. Manage the list at{" "}
+                  <code className="font-mono">/languages</code>, or toggle across all prod specs on
+                  the <code className="font-mono">/prod-specs/languages</code> matrix.
+                </p>
+                {props.availableLanguages.length === 0 ? (
+                  <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                    No active languages — visit <code className="font-mono">/languages</code> and
+                    click <strong>Seed standard set</strong>.
+                  </p>
+                ) : (
+                  <div className="max-w-md">
+                    <Combobox
+                      mode="multi"
+                      options={props.availableLanguages.map((l) => ({
+                        value: l.code,
+                        label: `${l.name} (${l.code})`,
+                      }))}
+                      value={outputLanguageList}
+                      onChange={(codes) => setOutputLangs(new Set(codes))}
+                      placeholder="Search languages…"
+                      emptyLabel="No matching languages"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-zinc-100 pt-4">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  Care instructions — generated from the standard
+                </h3>
+                <p className="mt-1 mb-2 text-xs text-zinc-500">
+                  The printed care text composes from the central catalogue at{" "}
+                  <code className="font-mono">/settings/care-labels</code>: every active line,
+                  filtered per product by the style&apos;s wash-care symbols, translated per
+                  language from the Translation board. Nothing is typed per prod spec — tune the
+                  catalogue, and every output follows. A per-language <em>override</em> replaces
+                  the standard verbatim; it&apos;s available below each line, loudly badged.
+                </p>
+                {props.availableLanguages.length === 0 ? (
+                  <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                    No active languages — visit <code className="font-mono">/languages</code> and
+                    click <strong>Seed standard set</strong> to populate the editor.
+                  </p>
+                ) : (
+                  <CareStandardPanel
+                    careLabels={props.careLabels}
+                    symbols={props.washSymbols}
+                    translationsByLabel={props.careTranslationsByLabel}
+                    languages={props.availableLanguages}
+                    selectedLanguages={outputLanguageList}
+                    careByLang={careByLang}
+                    onChangeCareByLang={(code, value) =>
+                      setCareByLang((prev) => ({ ...prev, [code]: value }))
+                    }
+                  />
+                )}
+              </div>
+            </div>
+          </details>
+
+          {hasHiddenOverrides && (
+            <div className="rounded-lg border border-dashed border-zinc-300 bg-zinc-50 px-4 py-3 text-xs text-zinc-500">
+              <span className="font-medium text-zinc-600">
+                Managed outside this editor now:
+              </span>{" "}
+              suppliers, column mapping and required fields.{" "}
+              <span className="inline-flex flex-wrap gap-1.5 align-middle">
+                {props.attachedSupplierCount > 0 && (
+                  <SummaryChip>{props.attachedSupplierCount} supplier(s) attached</SummaryChip>
+                )}
+                {props.hasColumnMappingOverride && (
+                  <SummaryChip tone="warn">⚠ carries column-mapping override</SummaryChip>
+                )}
+                {props.hasRequiredFieldsOverride && (
+                  <SummaryChip tone="warn">⚠ carries required-fields override</SummaryChip>
+                )}
+              </span>{" "}
+              Stored values still apply at render time.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Auto-save handles persistence — there's no submit button. The
-          sticky `SaveStatusBar` at the top reflects the latest state and
-          exposes a manual "Save now" if the operator wants to flush
-          before the debounce fires. */}
+          sticky header bar reflects the latest state and exposes a manual
+          "Save now" if the operator wants to flush before the debounce
+          fires. */}
     </div>
   );
 }
@@ -819,16 +822,30 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-function SaveStatusBar({
+// Basics + save state in one sticky row. Name, threshold and Active used
+// to be a full-height "Basics" card — three values don't need a screen.
+function HeaderBar({
   status,
   savedAt,
   error,
   onSaveNow,
+  name,
+  onName,
+  threshold,
+  onThreshold,
+  active,
+  onActive,
 }: {
   status: SaveStatus;
   savedAt: string | null;
   error: string | null;
   onSaveNow: () => void;
+  name: string;
+  onName: (v: string) => void;
+  threshold: number;
+  onThreshold: (v: number) => void;
+  active: boolean;
+  onActive: (v: boolean) => void;
 }) {
   const label = (() => {
     switch (status) {
@@ -849,22 +866,46 @@ function SaveStatusBar({
   const tone = (() => {
     switch (status) {
       case "saving":
-        return "border-zinc-200 bg-zinc-50 text-zinc-700";
+        return "border-zinc-200 bg-zinc-50";
       case "saved":
       case "idle":
-        return "border-emerald-200 bg-emerald-50 text-emerald-800";
+        return "border-emerald-200 bg-emerald-50/70";
       case "dirty":
-        return "border-amber-200 bg-amber-50 text-amber-900";
+        return "border-amber-200 bg-amber-50/70";
       case "error":
-        return "border-red-200 bg-red-50 text-red-800";
+        return "border-red-200 bg-red-50/70";
     }
   })();
 
   return (
     <div
-      className={`sticky top-0 z-10 -mx-1 flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-xs ${tone}`}
+      className={`sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border px-3 py-2 ${tone}`}
     >
-      <div className="flex items-center gap-2 min-w-0">
+      <input
+        type="text"
+        value={name}
+        onChange={(e) => onName(e.target.value)}
+        required
+        aria-label="Prod spec name"
+        className="min-w-48 flex-1 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium"
+      />
+      <label
+        className="flex shrink-0 items-center gap-1 text-[10px] uppercase text-zinc-500"
+        title="Completion % at which a Style auto-enqueues a generation job"
+      >
+        Auto-gen
+        <input
+          type="number"
+          min={0}
+          max={100}
+          value={threshold}
+          onChange={(e) => onThreshold(Math.max(0, Math.min(100, Number(e.target.value))))}
+          className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums"
+        />
+        %
+      </label>
+      <Toggle checked={active} onChange={onActive} label={active ? "Active" : "Disabled"} size="sm" />
+      <div className="ml-auto flex shrink-0 items-center gap-2 text-xs">
         <span
           aria-hidden="true"
           className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${
@@ -877,51 +918,63 @@ function SaveStatusBar({
                   : "bg-emerald-500"
           }`}
         />
-        <span className="truncate">{label}</span>
+        <span className="max-w-72 truncate text-zinc-700" title={label}>
+          {label}
+        </span>
+        <button
+          type="button"
+          onClick={onSaveNow}
+          disabled={status === "saving"}
+          className="flex-shrink-0 rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+        >
+          Save now
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={onSaveNow}
-        disabled={status === "saving"}
-        className="flex-shrink-0 rounded border border-current/30 px-2 py-1 text-xs font-medium hover:bg-white/40 disabled:opacity-50"
-      >
-        Save now
-      </button>
     </div>
   );
 }
 
-function Section({
-  title,
-  wide,
-  children,
-}: {
-  title: string;
-  wide?: boolean;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="rounded-lg border border-zinc-200 bg-white p-5">
       <h2 className="mb-3 text-sm font-semibold text-zinc-700">{title}</h2>
-      <div className={wide ? "" : "grid grid-cols-3 gap-4"}>{children}</div>
+      {children}
     </section>
   );
 }
 
-function Field({
-  label,
-  hint,
+function SummaryChip({
   children,
+  tone = "default",
 }: {
-  label: string;
-  hint?: string;
   children: React.ReactNode;
+  tone?: "default" | "warn";
 }) {
   return (
-    <label className="text-xs font-medium text-zinc-700">
-      {label}
+    <span
+      className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+        tone === "warn"
+          ? "border-amber-300 bg-amber-50 text-amber-800"
+          : "border-zinc-200 bg-white text-zinc-600"
+      }`}
+    >
       {children}
-      {hint && <span className="mt-1 block font-normal text-zinc-500">{hint}</span>}
-    </label>
+    </span>
   );
 }
+
+const GENERAL_INFO_PLACEHOLDER = `# General requirements
+
+All deliveries must comply with the agreed production specification…
+
+## Inspection standards
+
+| Check | Standard | AQL |
+|-------|----------|-----|
+| Visual inspection | ISO 2859-1, level II | 2.5 |
+| Measurements | ±5% tolerance vs. spec | 1.0 |
+
+## Packing
+
+- One style per carton
+- Carton sticker on two short sides`;

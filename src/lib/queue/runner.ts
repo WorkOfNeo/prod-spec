@@ -10,7 +10,14 @@ import { defaultArtifactFileName, type TemplateVariant } from "@/lib/pdf/templat
 import { dispatchEmail } from "@/lib/email/dispatch";
 import { reviewNotificationEmail } from "@/lib/email/templates/review-notification";
 import { getReviewNotificationEmails } from "@/lib/settings/app-settings";
-import type { TriggerSource } from "@/generated/prisma/enums";
+import {
+  COVER_VARIANT_KEY,
+  GENERAL_INFO_VARIANT_KEY,
+  renderCoverPageHtml,
+  renderGeneralInfoHtml,
+  type BundleDocSummary,
+} from "@/lib/pdf/bundle-pages";
+import type { DocType, TriggerSource } from "@/generated/prisma/enums";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import {
   DEFAULT_OUTPUTS,
@@ -99,7 +106,8 @@ export async function processJob(jobId: string): Promise<void> {
         include: {
           customer: true,
           qrImage: true,
-          supplier: { select: { country: true } },
+          // Country feeds render fallbacks; name prints on the cover page.
+          supplier: { select: { country: true, name: true } },
           // Display name for the review-ready email (falls back to the
           // free-text Style.businessArea when the mirror row isn't linked).
           businessAreaRef: { select: { name: true } },
@@ -171,9 +179,16 @@ export async function processJob(jobId: string): Promise<void> {
   // legacy rows). When scoped, re-check each output's required fields at run
   // time so a field that regressed since enqueue doesn't ship an incomplete
   // output — not-ready ones are skipped (logged), not failed.
-  const scopedKeys: string[] = Array.isArray(job.variantKeys)
-    ? (job.variantKeys as unknown[]).filter((x): x is string => typeof x === "string")
-    : [];
+  // Framing pages (__cover__ / __general_info__) derive from the outputs
+  // and re-render on EVERY run — they can't be generated in isolation. A
+  // rejection-ticket re-run scoped to one falls through to a full regen
+  // (empty scope = all enabled outputs), which refreshes the framing
+  // pages along the way; mixed scopes just drop the framing key.
+  const scopedKeys: string[] = (
+    Array.isArray(job.variantKeys)
+      ? (job.variantKeys as unknown[]).filter((x): x is string => typeof x === "string")
+      : []
+  ).filter((k) => k !== COVER_VARIANT_KEY && k !== GENERAL_INFO_VARIANT_KEY);
   if (scopedKeys.length > 0) {
     // Tickets reference per-document asset keys ("layout:<id>#<size>");
     // ProdSpec outputs carry the BASE key — match on the base so a
@@ -227,6 +242,9 @@ export async function processJob(jobId: string): Promise<void> {
     placeholderCount: number;
   };
   const generated: Generated[] = [];
+  // One row per OUTPUT (not per file) for the cover page's documents
+  // table — title + dims once, with a file count for multi-doc variants.
+  const docSummaries: BundleDocSummary[] = [];
   for (const output of outputs) {
     const variant = resolveOutputVariant(output);
     if (!variant) {
@@ -268,6 +286,12 @@ export async function processJob(jobId: string): Promise<void> {
             placeholderCount: countPlaceholderMarkers(doc.html),
           });
         }
+        docSummaries.push({
+          displayName: variant.name,
+          widthMm: output.widthMm,
+          heightMm: output.heightMm,
+          fileCount: docs.length,
+        });
         continue;
       }
 
@@ -291,6 +315,12 @@ export async function processJob(jobId: string): Promise<void> {
         fileName: variant.fileNameFor?.(renderStyle) ?? fileNameFor(variant, styleData.styleNumber),
         pdf,
         placeholderCount,
+      });
+      docSummaries.push({
+        displayName: variant.name,
+        widthMm: output.widthMm,
+        heightMm: output.heightMm,
+        fileCount: 1,
       });
     } catch (err) {
       const reason = (err as Error).message;
@@ -327,9 +357,78 @@ export async function processJob(jobId: string): Promise<void> {
     throw new RunnerError("NO_OUTPUTS", reason);
   }
 
+  // Bundle framing pages — cover (always) + general information (when the
+  // ProdSpec carries markdown). Rendered AFTER the outputs so the cover
+  // reflects the final generated list, persisted FIRST (with 00-/01- file
+  // prefixes) so they open the bundle everywhere assets are listed. Both
+  // are placeholder-free by construction and reviewed like any other asset.
+  type BundlePage = {
+    docType: DocType;
+    variantKey: string;
+    displayName: string;
+    fileName: string;
+    pdf: Buffer;
+  };
+  const businessAreaName = job.style.businessAreaRef?.name ?? job.style.businessArea ?? null;
+  const slug = styleSlug(styleData.styleNumber);
+  const bundlePages: BundlePage[] = [];
+  try {
+    const coverHtml = renderCoverPageHtml({
+      customerName: job.style.customer.name,
+      businessArea: businessAreaName,
+      styleName: job.style.name,
+      styleNumber: styleData.styleNumber,
+      poNumber: job.style.poNumber ?? null,
+      supplierName: job.style.supplier?.name ?? null,
+      generatedAt: new Date(),
+      docs: docSummaries,
+    });
+    bundlePages.push({
+      docType: "COVER",
+      variantKey: COVER_VARIANT_KEY,
+      displayName: "Cover page",
+      fileName: `00-${slug}-cover-page.pdf`,
+      pdf: await renderPdf({ html: coverHtml }),
+    });
+
+    const generalInfoMd = prodSpec?.generalInfoMd?.trim();
+    if (generalInfoMd) {
+      const infoHtml = renderGeneralInfoHtml({
+        markdown: generalInfoMd,
+        customerName: job.style.customer.name,
+        businessArea: businessAreaName,
+      });
+      bundlePages.push({
+        docType: "GENERAL_INFO",
+        variantKey: GENERAL_INFO_VARIANT_KEY,
+        displayName: "General information",
+        fileName: `01-${slug}-general-information.pdf`,
+        pdf: await renderPdf({ html: infoHtml }),
+      });
+    }
+  } catch (err) {
+    throw new RunnerError(
+      "BUNDLE_PAGES_FAILED",
+      `cover/general-info page render failed: ${(err as Error).message}`,
+    );
+  }
+
   try {
     await db.$transaction([
       db.jobAsset.deleteMany({ where: { jobId: job.id } }),
+      ...bundlePages.map((p) =>
+        db.jobAsset.create({
+          data: {
+            jobId: job.id,
+            docType: p.docType,
+            variantKey: p.variantKey,
+            displayName: p.displayName,
+            fileName: p.fileName,
+            pdf: toPlainBytes(p.pdf),
+            placeholderCount: 0,
+          },
+        }),
+      ),
       ...generated.map((doc) =>
         db.jobAsset.create({
           data: {
@@ -454,6 +553,12 @@ export class RunnerError extends Error {
     super(`[${tag}] ${message}`);
     this.name = "RunnerError";
   }
+}
+
+// Still used by the bundle-page naming below; per-variant artifact names
+// come from the registry so the pre-run files preview can't drift.
+function styleSlug(styleNumber: string): string {
+  return styleNumber.replace(/[^a-z0-9-]+/gi, "-").toLowerCase();
 }
 
 function fileNameFor(variant: TemplateVariant, styleNumber: string): string {

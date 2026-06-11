@@ -17,7 +17,10 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
       businessAreaRef: true,
       jobs: {
         where: { status: "AWAITING_REVIEW" },
-        include: { assets: true },
+        // Assets by fileName, not insertion: rows land in one transaction
+        // (tied timestamps) and the 00-cover / 01-general-information
+        // prefixes are designed to open the bundle.
+        include: { assets: { orderBy: { fileName: "asc" } } },
         orderBy: { createdAt: "desc" },
         take: 1,
       },

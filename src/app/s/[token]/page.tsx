@@ -25,7 +25,10 @@ export default async function SupplierSharePage({
         include: {
           assets: {
             where: { reviewStatus: "APPROVED" },
-            orderBy: { createdAt: "asc" },
+            // fileName, not createdAt: assets land in one transaction so
+            // their timestamps tie. The 00-cover / 01-general-information
+            // prefixes sort the bundle framing pages first by design.
+            orderBy: { fileName: "asc" },
             select: { id: true, displayName: true, docType: true, fileName: true },
           },
         },
