@@ -27,6 +27,9 @@ export type SendOpts = {
   cc?: string | string[];
   // File attachments. `content` is the raw bytes; Resend base64-encodes it.
   attachments?: Array<{ filename: string; content: Buffer }>;
+  // Per-send sender override (manual real-sends from the email dialog).
+  // Defaults to emailFromAddress(); the domain must be verified in Resend.
+  from?: string;
 };
 
 export async function sendEmail(opts: SendOpts): Promise<{ id?: string; sent: boolean }> {
@@ -35,7 +38,10 @@ export async function sendEmail(opts: SendOpts): Promise<{ id?: string; sent: bo
     console.warn("[email] skipping send — RESEND_API_KEY not set");
     return { sent: false };
   }
-  const { data, error } = await resend.emails.send({ from: emailFromAddress(), ...opts });
+  const { data, error } = await resend.emails.send({
+    ...opts,
+    from: opts.from?.trim() || emailFromAddress(),
+  });
   if (error) throw new Error(`Resend error: ${error.message}`);
   return { id: data?.id, sent: true };
 }

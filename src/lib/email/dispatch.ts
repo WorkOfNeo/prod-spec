@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { sendEmail, type SendOpts } from "@/lib/email/client";
+import { emailFromAddress, sendEmail, type SendOpts } from "@/lib/email/client";
 import type { EmailStatus, EmailType } from "@/generated/prisma/enums";
 
 // =====================================================
@@ -32,6 +32,7 @@ export type EmailOutcome = {
   type: EmailType;
   to: string;
   cc: string | null;
+  from: string; // resolved sender (override or the prodspec@ default)
   subject: string;
   attachments: EmailAttachmentMeta[];
   htmlPreview: string;
@@ -44,6 +45,10 @@ export type DispatchInput = SendOpts & {
   jobId?: string | null;
   styleId?: string | null;
   ticketId?: string | null;
+  // Manual real-send: skip the RESEND_EMAILS gate for THIS email only
+  // (the "Send for real" action in the email dialog). Everything else —
+  // logging, SKIPPED-when-unconfigured, failure capture — works the same.
+  force?: boolean;
 };
 
 export async function dispatchEmail(input: DispatchInput): Promise<EmailOutcome> {
@@ -62,7 +67,7 @@ export async function dispatchEmail(input: DispatchInput): Promise<EmailOutcome>
   if (!to) {
     status = "SKIPPED";
     note = "No recipient resolved — nothing to send.";
-  } else if (!emailSendingEnabled()) {
+  } else if (!emailSendingEnabled() && !input.force) {
     status = "SIMULATED";
     note = "RESEND_EMAILS is off — nothing was sent. This is what would have gone out.";
   } else if (!process.env.RESEND_API_KEY) {
@@ -71,7 +76,7 @@ export async function dispatchEmail(input: DispatchInput): Promise<EmailOutcome>
     // can't actually deliver. (The from-address always resolves — it
     // defaults to prodspec@contrast.dk, see emailFromAddress().)
     status = "SKIPPED";
-    note = "RESEND_EMAILS=true but RESEND_API_KEY is not configured — email NOT sent.";
+    note = `${input.force ? "Manual send attempted" : "RESEND_EMAILS=true"} but RESEND_API_KEY is not configured — email NOT sent.`;
   } else {
     try {
       const result = await sendEmail({
@@ -81,9 +86,13 @@ export async function dispatchEmail(input: DispatchInput): Promise<EmailOutcome>
         html: input.html,
         text: input.text,
         attachments: input.attachments,
+        from: input.from,
       });
       status = "SENT";
       providerId = result.id ?? null;
+      if (input.force && !emailSendingEnabled()) {
+        note = "Sent manually while RESEND_EMAILS is off.";
+      }
     } catch (err) {
       status = "FAILED";
       error = (err as Error).message;
@@ -123,6 +132,7 @@ export async function dispatchEmail(input: DispatchInput): Promise<EmailOutcome>
     type: input.type,
     to,
     cc,
+    from: input.from?.trim() || emailFromAddress(),
     subject: input.subject,
     attachments,
     htmlPreview: input.html,
