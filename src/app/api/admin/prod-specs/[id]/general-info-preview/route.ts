@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
 import { renderGeneralInfoHtml } from "@/lib/pdf/bundle-pages";
+import { parseBundlePageSettings } from "@/lib/prod-spec/config";
 
 export const runtime = "nodejs";
 
@@ -33,6 +34,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
           markdown,
           customerName: prodSpec.customer.name,
           businessArea: prodSpec.businessArea.name,
+          settings: parseBundlePageSettings(prodSpec.bundlePageSettings).generalInfo,
         })
       : emptyStateHtml();
 

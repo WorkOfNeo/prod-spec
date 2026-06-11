@@ -305,6 +305,13 @@ model ProdSpec {
   // via marked → renderPdf, and included in every generated bundle as
   // 01-…-general-information.pdf. Null/empty ⇒ no page emitted.
   generalInfoMd            String?
+  // Per-page print settings for the bundle framing pages: margins (mm,
+  // page edge → content), base font size (pt), line height and footer
+  // toggle — one block each for the cover page and the general
+  // information page. Shape { cover: {...}, generalInfo: {...} }; see
+  // BundlePageSettingsSchema in src/lib/prod-spec/config.ts. Empty
+  // object ⇒ defaults.
+  bundlePageSettings       Json     @default("{}")
   // Multilingual care-instruction strings rendered on care-label-02 back.
   // Shape: { en: "Wash with similar colours / ...", da: "vaskes med ...", ... }
   // Lang keys are lowercase ISO 639-1; empty / missing langs are skipped.

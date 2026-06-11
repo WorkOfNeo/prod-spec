@@ -22,6 +22,7 @@ import type { DocType, TriggerSource } from "@/generated/prisma/enums";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import {
   DEFAULT_OUTPUTS,
+  parseBundlePageSettings,
   parseProdSpecOutputs,
   resolveOutputVariant,
   type ProdSpecOutput,
@@ -372,6 +373,7 @@ export async function processJob(jobId: string): Promise<void> {
   };
   const businessAreaName = job.style.businessAreaRef?.name ?? job.style.businessArea ?? null;
   const slug = styleSlug(styleData.styleNumber);
+  const pageSettings = parseBundlePageSettings(prodSpec?.bundlePageSettings);
   const bundlePages: BundlePage[] = [];
   try {
     const coverHtml = renderCoverPageHtml({
@@ -383,6 +385,7 @@ export async function processJob(jobId: string): Promise<void> {
       supplierName: job.style.supplier?.name ?? null,
       generatedAt: new Date(),
       docs: docSummaries,
+      settings: pageSettings.cover,
     });
     bundlePages.push({
       docType: "COVER",
@@ -398,6 +401,7 @@ export async function processJob(jobId: string): Promise<void> {
         markdown: generalInfoMd,
         customerName: job.style.customer.name,
         businessArea: businessAreaName,
+        settings: pageSettings.generalInfo,
       });
       bundlePages.push({
         docType: "GENERAL_INFO",

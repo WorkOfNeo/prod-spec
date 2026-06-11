@@ -4,7 +4,7 @@ import { getServerSession } from "@/lib/auth-server";
 import { getVariant } from "@/lib/pdf/template-registry";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildSampleStyleData } from "@/lib/pdf/sample-data";
-import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
+import { parseBundlePageSettings, parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { renderCoverPageHtml, type BundleDocSummary } from "@/lib/pdf/bundle-pages";
 
 export const runtime = "nodejs";
@@ -57,6 +57,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       supplierName: null,
       generatedAt: new Date(),
       docs,
+      settings: parseBundlePageSettings(prodSpec.bundlePageSettings).cover,
     });
 
     return new NextResponse(html, {
