@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LazyOutputPreview } from "@/components/output-preview";
+import { docTypeLabel } from "@/lib/pdf/doc-types";
 
 // =====================================================
 // Add-output picker — the catalogue browser the ProdSpec editor expands
@@ -23,16 +24,6 @@ export type VariantInfo = {
 
 type Source = "builtin" | "layout";
 
-// Human label per DocType (the enum values are SHOUTY_SNAKE).
-const DOC_TYPE_LABEL: Record<string, string> = {
-  WASHCARE: "Wash care",
-  CARE_LABEL: "Care label",
-  STICKER: "Sticker",
-  HANGTAG: "Hang tag",
-  CARTON_MARKING: "Carton marking",
-  COLOUR_STICKER: "Colour sticker",
-};
-
 // Subtle per-type badge colours. Literal class strings (not constructed)
 // so Tailwind's scanner keeps them.
 const DOC_TYPE_BADGE: Record<string, string> = {
@@ -45,10 +36,6 @@ const DOC_TYPE_BADGE: Record<string, string> = {
 };
 
 const FALLBACK_BADGE = "border-zinc-200 bg-zinc-100 text-zinc-600";
-
-function docLabel(docType: string): string {
-  return DOC_TYPE_LABEL[docType] ?? docType;
-}
 
 function sourceOf(key: string): Source {
   return key.startsWith("layout:") ? "layout" : "builtin";
@@ -89,7 +76,7 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
   const docTypesPresent = useMemo(() => {
     const set = new Set<string>();
     for (const v of variants) set.add(v.docType);
-    return [...set].sort((a, b) => docLabel(a).localeCompare(docLabel(b)));
+    return [...set].sort((a, b) => docTypeLabel(a).localeCompare(docTypeLabel(b)));
   }, [variants]);
 
   const sourcesPresent = useMemo(() => {
@@ -105,7 +92,7 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
       variants.map((v) => ({
         v,
         source: sourceOf(v.key),
-        blob: `${v.name} ${v.key} ${v.docType} ${docLabel(v.docType)} ${v.description}`.toLowerCase(),
+        blob: `${v.name} ${v.key} ${v.docType} ${docTypeLabel(v.docType)} ${v.description}`.toLowerCase(),
       })),
     [variants],
   );
@@ -210,7 +197,7 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
                   </FilterChip>
                   {docTypesPresent.map((dt) => (
                     <FilterChip key={dt} active={docFilter === dt} onClick={() => setDocFilter(dt)}>
-                      {docLabel(dt)}
+                      {docTypeLabel(dt)}
                     </FilterChip>
                   ))}
                 </>
@@ -283,7 +270,7 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
                             DOC_TYPE_BADGE[v.docType] ?? FALLBACK_BADGE
                           }`}
                         >
-                          {docLabel(v.docType)}
+                          {docTypeLabel(v.docType)}
                         </span>
                       </div>
                       <div className="mt-0.5 truncate font-mono text-[10px] text-zinc-400">
