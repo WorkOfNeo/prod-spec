@@ -56,16 +56,25 @@ export async function getReviewWork(userId: string): Promise<ReviewWork> {
         },
       },
     },
-    // Oldest first — the longest-stuck review is the most at risk of being
-    // forgotten, so it tops the list.
-    orderBy: { createdAt: "asc" },
+    orderBy: { createdAt: "desc" },
   });
+
+  // One task per STYLE: the review screen always shows the NEWEST awaiting
+  // job (take 1, newest first), so that is the only actionable unit — a
+  // style re-run can leave older jobs stranded in AWAITING_REVIEW, and
+  // listing those would produce duplicate rows whose CTA opens a different
+  // job than the row described. Newest job per style wins; superseded jobs
+  // (and any partial decisions on them) are deliberately invisible here.
+  const latestPerStyle = new Map<string, (typeof jobs)[number]>();
+  for (const job of jobs) {
+    if (!latestPerStyle.has(job.styleId)) latestPerStyle.set(job.styleId, job);
+  }
 
   const mine: ReviewTask[] = [];
   const others: ReviewTask[] = [];
   const untouched: ReviewTask[] = [];
 
-  for (const job of jobs) {
+  for (const job of latestPerStyle.values()) {
     if (job.assets.length === 0) continue;
     const decidedAssets = job.assets.filter((a) => a.reviewStatus !== "PENDING_REVIEW");
     const pendingAssets = job.assets.filter((a) => a.reviewStatus === "PENDING_REVIEW");
@@ -100,6 +109,13 @@ export async function getReviewWork(userId: string): Promise<ReviewWork> {
       others.push(task);
     }
   }
+
+  // Oldest first — the longest-stuck review is the most at risk of being
+  // forgotten, so it tops each list.
+  const byAge = (a: ReviewTask, b: ReviewTask) => a.lastActivityAt.getTime() - b.lastActivityAt.getTime();
+  mine.sort(byAge);
+  others.sort(byAge);
+  untouched.sort(byAge);
 
   return { mine, others, untouched };
 }

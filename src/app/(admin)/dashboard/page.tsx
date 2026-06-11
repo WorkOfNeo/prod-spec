@@ -22,11 +22,16 @@ export default async function DashboardPage() {
     }),
     // Open feed only — dismissed rows are hidden by the user, resolved rows
     // point at work that already settled (stamped by the job settle paths).
-    db.userNotification.findMany({
-      where: { userId: session.user.id, dismissedAt: null, resolvedAt: null },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-    }),
+    // Fail-soft: the user_notifications table ships with this release
+    // (Railway runs `prisma migrate deploy` on start), so a dev DB that
+    // hasn't migrated yet must degrade to an empty feed, not a 500.
+    db.userNotification
+      .findMany({
+        where: { userId: session.user.id, dismissedAt: null, resolvedAt: null },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      })
+      .catch(() => []),
   ]);
 
   const feedRows: FeedRow[] = notifications.map((n) => ({

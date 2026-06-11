@@ -157,10 +157,15 @@ export function useLeaveGuard({ when }: { when: boolean }): {
     throw new Error("useLeaveGuard requires <NavigationGuardProvider> (mounted in the admin layout)");
   }
 
+  // Depend on the stable arm fn, NOT the whole context value — the value's
+  // identity changes with every pending update, and re-running this effect
+  // then would disarm (clearing the just-held navigation) and re-arm,
+  // closing the prompt before it ever renders.
+  const { arm } = ctx;
   useEffect(() => {
     if (!when) return;
-    return ctx.arm();
-  }, [when, ctx]);
+    return arm();
+  }, [when, arm]);
 
   return {
     prompting: when && ctx.pending !== null,
