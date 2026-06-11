@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import type { DocType } from "@/generated/prisma/enums";
 import { setDynamicVariants, type TemplateVariant } from "@/lib/pdf/template-registry";
+import type { StyleData } from "@/lib/pdf/types";
 import { parseLayoutDef, type LayoutDef } from "./schema";
 import {
   defNeedsDynamicReadiness,
@@ -8,7 +9,7 @@ import {
   resolveLayoutFileName,
   staticRequiredColumns,
 } from "./tokens";
-import { layoutSettings } from "./schema";
+import { layoutSettings, type LayoutSettings } from "./schema";
 import { renderLayoutHtml, repetitionStyles } from "./render";
 
 // =====================================================
@@ -46,6 +47,35 @@ type LayoutRow = {
   definition: unknown;
   version: number;
 };
+
+// The per-file plan when a repeat layout splits per EAN: one entry per
+// repetition row — the JobAsset suffix plus the resolved custom file
+// name (null → runner default + suffix). renderMany AND filesPreview
+// both build on this, so the pre-run preview on the style page can
+// never drift from the files a real run emits.
+function splitFilePlan(
+  settings: LayoutSettings,
+  style: StyleData,
+): Array<{ suffix: string; fileName: string | null; repStyle: StyleData }> {
+  const reps = repetitionStyles(style, settings.repeatBy);
+  const seen = new Map<string, number>();
+  return reps.map((repStyle, i) => {
+    const sizePart = (repStyle.sizes[0]?.label ?? "").replace(/[^\w.-]+/g, "");
+    const colourPart =
+      settings.repeatBy === "ean"
+        ? (repStyle.colour?.name ?? "").replace(/[^\w.-]+/g, "").slice(0, 16)
+        : "";
+    let suffix = [sizePart, colourPart].filter(Boolean).join("-").slice(0, 40) || String(i + 1);
+    const n = (seen.get(suffix) ?? 0) + 1;
+    seen.set(suffix, n);
+    if (n > 1) suffix = `${suffix}-${n}`;
+    return {
+      suffix,
+      fileName: settings.fileName ? resolveLayoutFileName(settings.fileName, repStyle) : null,
+      repStyle,
+    };
+  });
+}
 
 export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
   let def: LayoutDef;
@@ -87,29 +117,26 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     // {{colourName}} bound). Either way each file carries one EAN.
     renderMany:
       settings.repeatBy !== "none" && settings.splitBy === "ean"
-        ? async (style) => {
-            const reps = repetitionStyles(style, settings.repeatBy);
-            const seen = new Map<string, number>();
-            return Promise.all(
-              reps.map(async (repStyle, i) => {
-                const sizePart = (repStyle.sizes[0]?.label ?? "").replace(/[^\w.-]+/g, "");
-                const colourPart =
-                  settings.repeatBy === "ean"
-                    ? (repStyle.colour?.name ?? "").replace(/[^\w.-]+/g, "").slice(0, 16)
-                    : "";
-                let suffix = [sizePart, colourPart].filter(Boolean).join("-").slice(0, 40) || String(i + 1);
-                const n = (seen.get(suffix) ?? 0) + 1;
-                seen.set(suffix, n);
-                if (n > 1) suffix = `${suffix}-${n}`;
-                return {
-                  suffix,
-                  fileName: settings.fileName ? resolveLayoutFileName(settings.fileName, repStyle) : null,
-                  html: await renderLayoutHtml(def, repStyle, { mode: "production" }),
-                };
-              }),
-            );
-          }
+        ? (style) =>
+            Promise.all(
+              splitFilePlan(settings, style).map(async ({ suffix, fileName, repStyle }) => ({
+                suffix,
+                fileName,
+                html: await renderLayoutHtml(def, repStyle, { mode: "production" }),
+              })),
+            )
         : undefined,
+    // Pre-run preview: the same plan WITHOUT rendering — what the style
+    // page shows as "files the next run will generate".
+    filesPreview: (style) =>
+      settings.repeatBy !== "none" && settings.splitBy === "ean"
+        ? splitFilePlan(settings, style).map(({ suffix, fileName }) => ({ suffix, fileName }))
+        : [
+            {
+              suffix: null,
+              fileName: settings.fileName ? resolveLayoutFileName(settings.fileName, style) : null,
+            },
+          ],
   };
 }
 

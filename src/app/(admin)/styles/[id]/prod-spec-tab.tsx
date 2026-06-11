@@ -52,6 +52,7 @@ export function ProdSpecTab({
   poNumber,
   styleStatus,
   requiredReadiness,
+  outputsFilesPreview,
   supplierShare,
   jobs,
 }: {
@@ -80,6 +81,10 @@ export function ProdSpecTab({
     total: number;
     fields: Array<{ label: string; ok: boolean }>;
   };
+  // Pre-run files preview — per enabled output, the PDFs the NEXT run
+  // would emit (count + resolved names, repeat/split aware). Shown in
+  // the popup so the operator can verify split settings before running.
+  outputsFilesPreview: Array<{ variantKey: string; name: string; known: boolean; files: string[] }>;
   // Supplier share for the latest published job (null until a job is
   // approved). The `jobId` lets us flag a stale link when a newer job
   // exists than the one the link was minted for.
@@ -115,6 +120,7 @@ export function ProdSpecTab({
             }))}
             styleStatus={styleStatus}
             requiredReadiness={requiredReadiness}
+            outputsFilesPreview={outputsFilesPreview}
           />
         ) : (
           <NoProdSpecBlock
