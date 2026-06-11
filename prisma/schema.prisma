@@ -30,6 +30,7 @@ model User {
   reviewActions    ReviewAction[]
   reviewedAssets   JobAsset[]        @relation("AssetReviewer")
   rejectionTickets RejectionTicket[] @relation("TicketReporter")
+  notifications    UserNotification[]
 
   @@map("users")
 }
@@ -844,6 +845,50 @@ model SupplierShare {
 
   @@index([styleId])
   @@map("supplier_shares")
+}
+
+// =====================================================
+// Per-user notifications — the /dashboard feed. Event-shaped messages
+// addressed to ONE user: in-app mirrors of the REVIEW_READY and
+// TICKET_FIXED emails first, anything user-addressed later. The dashboard's
+// "unfinished review" rows are NOT stored here — those are derived live
+// from Job/JobAsset state (lib/dashboard/review-tasks.ts), which is strictly
+// more reliable than event rows (a killed tab can't POST an event).
+// resolvedAt is stamped by the job settle paths so a stale "go review this"
+// row can't outlive the work it points at.
+// =====================================================
+
+enum UserNotificationType {
+  REVIEW_READY // documents rendered → go review (mirror of the email)
+  TICKET_FIXED // your rejection was fixed → re-review (mirror of the email)
+  GENERIC // future: anything addressed to a single user
+}
+
+model UserNotification {
+  id    String               @id @default(cuid())
+  userId String
+  type  UserNotificationType
+  title String
+  body  String?
+  // In-app destination, e.g. /styles/<id>/review. Snapshot — kept even if
+  // the target is later deleted (the row just stops being clickable).
+  href  String?
+  // Loose refs (no FK) — the feed must outlive jobs/styles/tickets, same
+  // policy as EmailLog. jobId powers the settle-time auto-resolve.
+  jobId    String?
+  styleId  String?
+  ticketId String?
+
+  createdAt   DateTime  @default(now())
+  readAt      DateTime?
+  dismissedAt DateTime?
+  resolvedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, dismissedAt, resolvedAt, createdAt])
+  @@index([jobId])
+  @@map("user_notifications")
 }
 
 // Track Monday webhook subscriptions we own.

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
+import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
 import { publishApprovedJob, PublishError } from "@/lib/publish/publish-approved-job";
 import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
 
@@ -146,5 +147,8 @@ async function maybeSettleJob(jobId: string, userId: string): Promise<SettleResu
   await db.log.create({
     data: { jobId, level: "INFO", message: "asset(s) rejected — job rolled up to REJECTED" },
   });
+  // Settled — open dashboard notifications for this job are done. (The
+  // approved branch resolves inside publishApprovedJob.)
+  await resolveNotificationsForJob(jobId);
   return { ok: true, settled: "REJECTED" };
 }

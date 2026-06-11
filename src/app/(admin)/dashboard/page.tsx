@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireSession } from "@/lib/auth-server";
 import { db } from "@/lib/db";
 import { getReviewWork, timeAgo, type ReviewTask } from "@/lib/dashboard/review-tasks";
+import { NotificationsFeed, type FeedRow } from "./notifications-feed";
 import { RefreshOnFocus } from "./refresh-on-focus";
 
 export const dynamic = "force-dynamic";
@@ -14,12 +15,29 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const session = await requireSession();
 
-  const [work, openTickets] = await Promise.all([
+  const [work, openTickets, notifications] = await Promise.all([
     getReviewWork(session.user.id),
     db.rejectionTicket.count({
       where: { reportedById: session.user.id, status: { not: "RESOLVED" } },
     }),
+    // Open feed only — dismissed rows are hidden by the user, resolved rows
+    // point at work that already settled (stamped by the job settle paths).
+    db.userNotification.findMany({
+      where: { userId: session.user.id, dismissedAt: null, resolvedAt: null },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
   ]);
+
+  const feedRows: FeedRow[] = notifications.map((n) => ({
+    id: n.id,
+    type: n.type,
+    title: n.title,
+    body: n.body,
+    href: n.href,
+    createdAgo: timeAgo(n.createdAt),
+    unread: n.readAt === null,
+  }));
 
   const waitingOnYou = work.mine.length + work.untouched.length;
   const allQuiet = waitingOnYou === 0 && work.others.length === 0 && openTickets === 0;
@@ -135,9 +153,13 @@ export default async function DashboardPage() {
         </>
       )}
 
+      <section className="mt-6">
+        <NotificationsFeed rows={feedRows} />
+      </section>
+
       <p className="mt-6 text-xs text-zinc-400">
         Unfinished reviews clear automatically the moment every document on the job is approved or
-        rejected.
+        rejected; notifications resolve themselves when the review they point at settles.
       </p>
     </div>
   );

@@ -4,6 +4,7 @@ import { getServerSession } from "@/lib/auth-server";
 import { runTicketJob, TicketRunError } from "@/lib/tickets/run-ticket-job";
 import { dispatchEmail } from "@/lib/email/dispatch";
 import { ticketFixedEmail } from "@/lib/email/templates/review-notification";
+import { notifyUser } from "@/lib/notifications/user-notifications";
 import { getReviewNotificationEmails } from "@/lib/settings/app-settings";
 
 export const runtime = "nodejs";
@@ -84,6 +85,21 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       level: outcome.status === "FAILED" ? "WARN" : "INFO",
       message: `ticket ${ticket.id} marked FIXED by ${session.user.email} · re-review notification ${outcome.status} → ${outcome.to || "(no recipient)"}`,
     },
+  });
+
+  // In-app mirror for the reporter — they raised the rejection, the fix
+  // lands back on their /dashboard regardless of who the email recipients
+  // are. Fail-soft; auto-resolved when the re-review settles the job.
+  await notifyUser(ticket.reportedById, {
+    type: "TICKET_FIXED",
+    title: "Fixed — ready for re-review",
+    body: [ticket.outputName, ticket.styleName, ticket.customerName, ticket.poNumber ? `PO ${ticket.poNumber}` : null]
+      .filter(Boolean)
+      .join(" · "),
+    href: `/styles/${ticket.styleId}/review`,
+    jobId: run.jobId,
+    styleId: ticket.styleId,
+    ticketId: ticket.id,
   });
 
   return NextResponse.json({ ok: true, jobId: run.jobId, latestAsset: run.latestAsset, email: outcome });

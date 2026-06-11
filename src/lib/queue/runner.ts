@@ -9,6 +9,7 @@ import type { StyleData } from "@/lib/pdf/types";
 import type { TemplateVariant } from "@/lib/pdf/template-registry";
 import { dispatchEmail } from "@/lib/email/dispatch";
 import { reviewNotificationEmail } from "@/lib/email/templates/review-notification";
+import { notifyUsersByEmail } from "@/lib/notifications/user-notifications";
 import { getReviewNotificationEmails } from "@/lib/settings/app-settings";
 import type { TriggerSource } from "@/generated/prisma/enums";
 import { parseCustomerConfig } from "@/lib/customers/config";
@@ -436,6 +437,25 @@ async function notifyReviewer(input: {
       data: { jobId: input.jobId, level: "WARN", message: `review notification failed: ${(err as Error).message}` },
     });
   }
+
+  // In-app mirror on /dashboard for recipients with an account — fires even
+  // when the email was SIMULATED/SKIPPED (the work exists either way).
+  // Fail-soft inside the helper; auto-resolved when the job settles.
+  await notifyUsersByEmail(recipients, {
+    type: "REVIEW_READY",
+    title: "Documents ready for review",
+    body: [
+      input.styleName,
+      input.customerName,
+      input.poNumber ? `PO ${input.poNumber}` : null,
+      `${input.outputNames.length} document${input.outputNames.length === 1 ? "" : "s"}`,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    href: `/styles/${input.styleId}/review`,
+    jobId: input.jobId,
+    styleId: input.styleId,
+  });
 }
 
 async function markFailed(jobId: string, error: string): Promise<void> {

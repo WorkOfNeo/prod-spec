@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
 import { changeItemValue } from "@/lib/monday/client";
+import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
 import { createOrReopenRejectionTicket } from "@/lib/tickets/rejection-tickets";
 
 export const runtime = "nodejs";
@@ -75,6 +76,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       },
     }),
   ]);
+
+  // Settled — open dashboard notifications for this job are done.
+  await resolveNotificationsForJob(job.id);
 
   // One rejection ticket per cascaded output (create-or-reopen keeps a
   // single thread per style × variantKey). Sequential on purpose — the
