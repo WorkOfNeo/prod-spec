@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireSession } from "@/lib/auth-server";
 import { NavigationGuardProvider } from "@/components/navigation-guard";
 import { SignOutButton } from "@/components/sign-out-button";
+import { MyTasksLink } from "@/components/sidebar/my-tasks-link";
 import { NotificationBell } from "@/components/sidebar/notification-bell";
 import { SettingsNav } from "@/components/sidebar/settings-nav";
 
@@ -9,8 +10,6 @@ import { SettingsNav } from "@/components/sidebar/settings-nav";
 // (Monday, catalogues, reference data) live under the Settings dropdown
 // rendered after this list — see SettingsNav.
 const NAV: Array<{ href?: string; label?: string; divider?: true }> = [
-  { href: "/dashboard", label: "My tasks" },
-  { divider: true },
   { href: "/styles", label: "Styles" },
   { href: "/jobs", label: "Jobs" },
   { divider: true },
@@ -38,6 +37,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <NotificationBell />
           </div>
           <nav className="mt-8 flex flex-col gap-1">
+            {/* Badge-carrying client link — kept out of NAV so the static
+                entries stay a plain server-rendered map. */}
+            <MyTasksLink />
+            <div className="my-2 border-t border-zinc-100" />
             {NAV.map((item, i) =>
               item.divider ? (
                 <div key={`div-${i}`} className="my-2 border-t border-zinc-100" />
