@@ -65,12 +65,13 @@ export async function dispatchEmail(input: DispatchInput): Promise<EmailOutcome>
   } else if (!emailSendingEnabled()) {
     status = "SIMULATED";
     note = "RESEND_EMAILS is off — nothing was sent. This is what would have gone out.";
-  } else if (!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) {
+  } else if (!process.env.RESEND_API_KEY) {
     // Distinct from SIMULATED so misconfiguration can't masquerade as
     // intentional dry-run: the operator turned sending ON but Resend
-    // can't actually deliver.
+    // can't actually deliver. (The from-address always resolves — it
+    // defaults to prodspec@contrast.dk, see emailFromAddress().)
     status = "SKIPPED";
-    note = "RESEND_EMAILS=true but RESEND_API_KEY / EMAIL_FROM are not configured — email NOT sent.";
+    note = "RESEND_EMAILS=true but RESEND_API_KEY is not configured — email NOT sent.";
   } else {
     try {
       const result = await sendEmail({
