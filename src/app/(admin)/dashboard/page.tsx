@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { db } from "@/lib/db";
 import { getReviewWork, timeAgo, type ReviewTask } from "@/lib/dashboard/review-tasks";
+import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
 import { NotificationsFeed, type FeedRow } from "./notifications-feed";
 import { RefreshOnFocus } from "./refresh-on-focus";
 
@@ -14,6 +15,10 @@ export const dynamic = "force-dynamic";
 // a review is left unfinished — even via a killed tab — and vanish on their
 // own the moment the job settles.
 export default async function DashboardPage() {
+  // Test-phase machinery — with the kill switch thrown the dashboard
+  // doesn't exist; old links land on the styles list like before.
+  if (!reviewFollowThroughEnabled()) redirect("/styles");
+
   const { session, role } = await getSessionWithRole();
   if (!session) redirect("/login");
   const isAdmin = role === "ADMIN";

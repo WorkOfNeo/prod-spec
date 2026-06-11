@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
+import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
 import { NavigationGuardProvider } from "@/components/navigation-guard";
 import { SignOutButton } from "@/components/sign-out-button";
 import { MyTasksLink } from "@/components/sidebar/my-tasks-link";
@@ -30,6 +31,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const { session, role } = await getSessionWithRole();
   if (!session) redirect("/login");
   const isAdmin = role === "ADMIN";
+  // Kill switch for the test-phase review machinery (My tasks + badge).
+  const followThrough = reviewFollowThroughEnabled();
 
   return (
     // The guard provider lives at the layout so pages can intercept exits
@@ -39,7 +42,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <aside className="w-56 border-r border-zinc-200 bg-white px-4 py-6">
           <div className="flex items-center justify-between px-2">
             <Link
-              href={isAdmin ? "/styles" : "/dashboard"}
+              href={isAdmin || !followThrough ? "/styles" : "/dashboard"}
               className="text-lg font-semibold tracking-tight"
             >
               Prod Spec
@@ -50,8 +53,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <nav className="mt-8 flex flex-col gap-1">
             {/* Badge-carrying client link — kept out of NAV so the static
                 entries stay a plain server-rendered map. */}
-            <MyTasksLink />
-            <div className="my-2 border-t border-zinc-100" />
+            {followThrough && (
+              <>
+                <MyTasksLink />
+                <div className="my-2 border-t border-zinc-100" />
+              </>
+            )}
             {isAdmin ? (
               <>
                 {NAV.map((item, i) =>
