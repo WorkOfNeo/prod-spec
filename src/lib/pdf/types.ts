@@ -104,6 +104,16 @@ export type StyleData = {
   // Per-output mm dimensions are passed to each template variant explicitly
   // by the runner; they don't live on StyleData any more.
   barcodeFont?: BarcodeFontConfig;
+  // Per-output carton barcode preference, copied from the ProdSpec output
+  // row by the runner / preview route (applyCartonBarcodePrefs). Affects
+  // ONLY the carton EAN — the coded carton-marking templates and
+  // {{barcode:cartonEan}} in Output Builder layouts — never the per-size
+  // {{barcode:ean13}} symbols. "ean128" (the default when absent) = Code
+  // 128 bars with the number printed beneath; "ean13" = true EAN-13 with
+  // its digits inside the symbol. heightMm overrides the printed bar
+  // height (coded template default 16 mm; builder layouts otherwise scale
+  // with block fontPt).
+  cartonBarcode?: { type: "ean128" | "ean13"; heightMm?: number };
   // SVG markup attached to the ProdSpec (Customer × BusinessArea) — used
   // by templates that render a branded header (care-label-01, etc.).
   // Falls back to customerLogoUrl when the template supports both.

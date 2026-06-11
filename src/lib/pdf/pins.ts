@@ -100,3 +100,23 @@ export function applyFieldOverrides(style: StyleData, rawOverrides: unknown): St
   }
   return next;
 }
+
+// Apply the output row's carton-barcode preference (symbology / bar
+// height) onto a StyleData copy — same copy-on-write contract as
+// applyFieldOverrides (the per-job StyleData is shared across outputs).
+// No-op when the row carries no preference, so non-carton outputs and
+// legacy rows pass through untouched. The param is typed structurally to
+// keep this module decoupled from prod-spec/config.ts.
+export function applyCartonBarcodePrefs(
+  style: StyleData,
+  output: { cartonBarcodeType?: "ean128" | "ean13"; cartonBarcodeHeightMm?: number },
+): StyleData {
+  if (!output.cartonBarcodeType && !output.cartonBarcodeHeightMm) return style;
+  return {
+    ...style,
+    cartonBarcode: {
+      type: output.cartonBarcodeType ?? "ean128",
+      heightMm: output.cartonBarcodeHeightMm,
+    },
+  };
+}

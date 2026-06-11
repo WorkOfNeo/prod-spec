@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
 import { getVariant } from "@/lib/pdf/template-registry";
 import { buildSampleStyleData } from "@/lib/pdf/sample-data";
-import { applyFieldOverrides } from "@/lib/pdf/pins";
+import { applyCartonBarcodePrefs, applyFieldOverrides } from "@/lib/pdf/pins";
 import { parseProdSpecOutputs, parseProdSpecLanguages } from "@/lib/prod-spec/config";
 import { parseCareInstructions } from "@/lib/styles/render-context";
 
@@ -59,7 +59,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     sample.prodSpecLogoSvg = prodSpec.logoSvg ?? null;
     sample.outputLanguages = parseProdSpecLanguages(prodSpec.outputLanguages);
     sample.careInstructionsByLang = parseCareInstructions(prodSpec.careInstructionsByLang);
-    const renderStyle = applyFieldOverrides(sample, output?.fieldOverrides);
+    const renderStyle = applyCartonBarcodePrefs(
+      applyFieldOverrides(sample, output?.fieldOverrides),
+      output ?? {},
+    );
 
     const html = await variant.render(renderStyle, dims);
     return new NextResponse(html, {

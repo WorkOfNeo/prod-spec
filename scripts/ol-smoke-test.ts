@@ -109,6 +109,7 @@ main()
   .then(() => batch6())
   .then(() => batch7())
   .then(() => batch8())
+  .then(() => batch9())
   .catch((err) => {
     console.error(err);
     process.exit(1);
@@ -432,4 +433,65 @@ async function batch8() {
   assert(rejected, "non-hex border colour rejected");
   await closeBrowser();
   console.log(process.exitCode ? "BATCH 8 FAILED" : "BATCH 8 PASSED");
+}
+
+// ---------------------------------------------------------------------
+// Batch 9 coverage: per-spec carton barcode preference (StyleData
+// .cartonBarcode, set from the ProdSpec output row) — symbology switch,
+// number-row rules, bar-height override, the coded Netto template, and
+// the applyCartonBarcodePrefs copy-on-write contract.
+// ---------------------------------------------------------------------
+async function batch9() {
+  const base = buildSampleStyleData();
+  const CARTON = LayoutDefSchema.parse({
+    pages: [{ id: "p1", title: "", widthMm: 100, heightMm: 50,
+      blocks: [{ id: "b1", anchor: "top-right", cols: 6, lines: ["{{barcode:cartonEan}}"] }] }],
+  });
+
+  // Default (no pref): Code 128 bars + the separate number row.
+  const def = await renderLayoutHtml(CARTON, base, { mode: "production" });
+  assert(def.includes('<div class="ol-ean-number">'), "no pref → EAN-128 prints the number row");
+
+  // EAN-13 pref: digits inside the symbol — image renders, number row gone.
+  const e13 = { ...base, cartonBarcode: { type: "ean13" as const } };
+  const h13 = await renderLayoutHtml(CARTON, e13, { mode: "production" });
+  assert(/data:image\/png;base64/.test(h13), "ean13 pref encodes the carton EAN as EAN-13");
+  assert(!h13.includes('<div class="ol-ean-number">'), "ean13 pref drops the separate number row");
+
+  // Bar-height override: inline style beats the font-scaled CSS var.
+  const tall = { ...base, cartonBarcode: { type: "ean128" as const, heightMm: 22 } };
+  const hTall = await renderLayoutHtml(CARTON, tall, { mode: "production" });
+  assert(hTall.includes('style="height: 22mm"'), "heightMm renders as inline img height");
+  assert(hTall.includes('<div class="ol-ean-number">'), "ean128 with height keeps the number row");
+
+  // Per-size {{barcode:ean13}} ignores the carton pref entirely.
+  const SIZES = LayoutDefSchema.parse({
+    pages: [{ id: "p1", title: "", widthMm: 100, heightMm: 50,
+      blocks: [{ id: "b1", anchor: "top-left", cols: 6, lines: ["{{barcode:ean13}}"] }] }],
+  });
+  const hSizes = await renderLayoutHtml(SIZES, { ...base, cartonBarcode: { type: "ean128" as const, heightMm: 30 } }, { mode: "production" });
+  assert(!hSizes.includes('<div class="ol-ean-number">') && !hSizes.includes("height: 30mm"),
+    "per-size ean13 barcode unaffected by carton pref");
+
+  // Coded Netto carton marking honours the same prefs.
+  const { renderNettoCartonMarkingHtml } = await import("@/lib/pdf/templates/netto-dk-privatelabel/carton-marking");
+  const dims = { widthMm: 150, heightMm: 75 };
+  const nettoDef = await renderNettoCartonMarkingHtml(base, dims);
+  assert(nettoDef.includes('<div class="ean-number">'), "netto default → number row under Code 128");
+  assert(nettoDef.includes("height: 16mm"), "netto default bars 16mm");
+  const netto13 = await renderNettoCartonMarkingHtml(
+    { ...base, cartonBarcode: { type: "ean13", heightMm: 20 } }, dims);
+  assert(!netto13.includes('<div class="ean-number">'), "netto ean13 pref drops the number row");
+  assert(netto13.includes("height: 20mm"), "netto heightMm flows into the CSS");
+
+  // applyCartonBarcodePrefs: no-op without prefs, copy-on-write with.
+  const { applyCartonBarcodePrefs } = await import("@/lib/pdf/pins");
+  assert(applyCartonBarcodePrefs(base, {}) === base, "no prefs → same StyleData reference");
+  const applied = applyCartonBarcodePrefs(base, { cartonBarcodeType: "ean13", cartonBarcodeHeightMm: 18 });
+  assert(applied !== base && applied.cartonBarcode?.type === "ean13" && applied.cartonBarcode?.heightMm === 18,
+    "prefs applied on a copy");
+  assert(base.cartonBarcode === undefined, "base style untouched");
+
+  await closeBrowser();
+  console.log(process.exitCode ? "BATCH 9 FAILED" : "BATCH 9 PASSED");
 }

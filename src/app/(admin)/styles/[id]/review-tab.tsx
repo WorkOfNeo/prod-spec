@@ -2,6 +2,7 @@ import Link from "next/link";
 import { DeliveredCard } from "./delivered-card";
 import { groupByDocType, DocTypeAccordion } from "./doc-type-groups";
 import { UserAvatar } from "@/components/user-avatar";
+import { docTypeLabel } from "@/lib/pdf/doc-types";
 import { formatDate } from "@/lib/utils";
 
 // The style page's Review tab — the ONE place to look at generated files.
@@ -96,7 +97,7 @@ export function ReviewTab({ styleId, jobs }: { styleId: string; jobs: ReviewTabJ
                         id: asset.id,
                         docType: asset.docType,
                         variantKey: asset.variantKey,
-                        displayName: asset.displayName ?? defaultDisplayName(asset.docType),
+                        displayName: asset.displayName ?? docTypeLabel(asset.docType),
                         fileName: asset.fileName,
                         reviewStatus: asset.reviewStatus,
                         rejectReason: asset.rejectReason,
@@ -155,7 +156,7 @@ export function ReviewTab({ styleId, jobs }: { styleId: string; jobs: ReviewTabJ
                               id: asset.id,
                               docType: asset.docType,
                               variantKey: asset.variantKey,
-                              displayName: asset.displayName ?? defaultDisplayName(asset.docType),
+                              displayName: asset.displayName ?? docTypeLabel(asset.docType),
                               fileName: asset.fileName,
                               reviewStatus: asset.reviewStatus,
                               rejectReason: asset.rejectReason,
@@ -193,12 +194,4 @@ function ChevronIcon() {
       <polyline points="9 18 15 12 9 6" />
     </svg>
   );
-}
-
-function defaultDisplayName(docType: string): string {
-  return docType
-    .toLowerCase()
-    .split("_")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
 }

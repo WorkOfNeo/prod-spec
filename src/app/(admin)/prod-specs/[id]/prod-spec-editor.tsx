@@ -514,6 +514,47 @@ export function ProdSpecEditor(props: Props) {
                           preview
                         </summary>
                         <div className="mt-2 border-t border-zinc-100 pt-2">
+                          {/* Carton barcode preference — CARTON_MARKING outputs
+                              only. EAN-128 = Code 128 bars + number beneath (the
+                              default); EAN-13 = digits inside the symbol. Height
+                              overrides the renderer default (16 mm coded template
+                              / font-scaled in builder layouts). */}
+                          {v?.docType === "CARTON_MARKING" && (
+                            <div className="mb-3 flex flex-wrap items-center gap-3">
+                              <label className="text-[10px] uppercase text-zinc-500">
+                                Carton barcode
+                                <select
+                                  value={o.cartonBarcodeType ?? "ean128"}
+                                  onChange={(e) =>
+                                    updateOutput(i, {
+                                      cartonBarcodeType: e.target.value === "ean13" ? "ean13" : undefined,
+                                    })
+                                  }
+                                  className="ml-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm normal-case text-zinc-800"
+                                >
+                                  <option value="ean128">EAN-128 (Code 128) — default</option>
+                                  <option value="ean13">EAN-13</option>
+                                </select>
+                              </label>
+                              <label className="text-[10px] uppercase text-zinc-500">
+                                Bar height mm
+                                <input
+                                  type="number"
+                                  step={0.5}
+                                  min={4}
+                                  max={60}
+                                  placeholder="auto"
+                                  value={o.cartonBarcodeHeightMm ?? ""}
+                                  onChange={(e) =>
+                                    updateOutput(i, {
+                                      cartonBarcodeHeightMm: e.target.value ? Number(e.target.value) : undefined,
+                                    })
+                                  }
+                                  className="ml-1 w-20 rounded-md border border-zinc-300 px-2 py-1 text-sm tabular-nums"
+                                />
+                              </label>
+                            </div>
+                          )}
                           <PinControls
                             overrides={o.fieldOverrides}
                             onChange={(fieldOverrides) => updateOutput(i, { fieldOverrides })}

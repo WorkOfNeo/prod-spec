@@ -38,8 +38,12 @@ import { findFieldRule, resolveFieldValue } from "../../spec-fields";
 // Barcode — "(see PO) has to be generated as EAN128". The carton EAN is
 // rendered as Code 128 bars (bwip-js bcid "code128") with the number as a
 // separate line under the bars, matching the artwork's "EAN NUMBER"
-// placement. (If GS1-128 with application identifiers is ever required,
-// switch the bcid to "gs1-128" and prefix an AI.)
+// placement. Some customers want a true EAN-13 instead — the ProdSpec
+// output row's carton-barcode preference (style.cartonBarcode, applied by
+// applyCartonBarcodePrefs) switches the symbology and/or bar height per
+// spec; absent preference keeps the EAN-128 default. (If GS1-128 with
+// application identifiers is ever required, switch the bcid to "gs1-128"
+// and prefix an AI.)
 //
 // Print size: not stated on the drawing — the spec's 150×75 mm working
 // size matches the drawing's ~2:1 sticker outline. The layout is
@@ -72,21 +76,30 @@ export async function renderNettoCartonMarkingHtml(
 
   const cartonEan = style.carton.ean13;
   const hasEan = !!cartonEan && cartonEan !== "0000000000000";
+  // Per-spec barcode preference (ProdSpec output row, applied via
+  // applyCartonBarcodePrefs): EAN-128 = Code 128 bars + the number printed
+  // beneath (the default); EAN-13 = true EAN-13 with its digits inside the
+  // symbol — no separate number row, it would print the digits twice.
+  // heightMm overrides the classic 16 mm bars.
+  const barcodeType = style.cartonBarcode?.type ?? "ean128";
+  const barHeightMm = style.cartonBarcode?.heightMm ?? 16;
   let barcodeHtml: string;
   if (!hasEan) {
     barcodeHtml = `<div class="barcode-missing">No carton EAN configured</div>`;
   } else {
     try {
-      const dataUrl = await renderBarcodeDataUrl(cartonEan, {
-        bcid: "code128",
-        scale: 4,
-        height: 16,
-        includetext: false,
-      });
+      const dataUrl =
+        barcodeType === "ean13"
+          ? await renderBarcodeDataUrl(cartonEan, { bcid: "ean13", scale: 3, height: barHeightMm, includetext: true })
+          : await renderBarcodeDataUrl(cartonEan, { bcid: "code128", scale: 4, height: barHeightMm, includetext: false });
+      const numberRow =
+        barcodeType === "ean128"
+          ? `
+          <div class="ean-number">${escapeHtml(cartonEan)}</div>`
+          : "";
       barcodeHtml = `
         <div class="ean">
-          <img src="${dataUrl}" alt="${escapeHtml(cartonEan)}" />
-          <div class="ean-number">${escapeHtml(cartonEan)}</div>
+          <img src="${dataUrl}" alt="${escapeHtml(cartonEan)}" />${numberRow}
         </div>`;
     } catch {
       barcodeHtml = `<div class="barcode-missing">EAN ${escapeHtml(cartonEan)} — could not encode</div>`;
@@ -129,7 +142,7 @@ export async function renderNettoCartonMarkingHtml(
       /* Top-right: bars with the EAN number centred beneath them. */
       .barcode-area { align-self: flex-end; max-width: 80%; }
       .ean { display: inline-block; text-align: center; }
-      .ean img { display: block; height: 16mm; width: auto; max-width: 100%; }
+      .ean img { display: block; height: ${barHeightMm}mm; width: auto; max-width: 100%; }
       .ean-number { margin-top: 1mm; font-size: 10pt; letter-spacing: 0.08em; }
       /* Bottom-left block, pushed to the bottom edge. All rows are bold on
          the reference; ".k" not ".label" — the htmlDocument base sheet
