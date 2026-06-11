@@ -113,7 +113,7 @@ const ANCHOR_ALIGN: Record<LayoutAnchor, "left" | "right"> = {
 
 type RenderCtx = {
   mode: LayoutRenderMode;
-  barcodes: Map<string, string | null>; // "source:value" → data URL (null = encode failed)
+  barcodes: Map<string, string | null>; // "symbology:value" → data URL (null = encode failed)
   symbols: WashcareSymbolMap | null; // loaded only when {{washSymbols}} is used
   logos: { contrast: string | null; custom: string | null }; // loaded only when {{logo:…}} is used
 };
@@ -131,8 +131,20 @@ function defUsesToken(pages: LayoutPage[], key: string): boolean {
   return false;
 }
 
+// Effective symbology for a barcode token: per-size EANs are always true
+// EAN-13; the carton EAN follows the per-spec preference carried on
+// StyleData.cartonBarcode (set from the ProdSpec output row by
+// applyCartonBarcodePrefs) — EAN-128 / Code 128 when absent, the
+// historic default.
+type BarcodeSymbology = "ean128" | "ean13";
+
+function barcodeSymbology(style: StyleData, source: BarcodeSource): BarcodeSymbology {
+  if (source !== "cartonEan") return "ean13";
+  return style.cartonBarcode?.type ?? "ean128";
+}
+
 async function buildBarcodeCache(styles: StyleData[], pages: LayoutPage[]): Promise<Map<string, string | null>> {
-  const wanted = new Map<string, { source: BarcodeSource; value: string }>();
+  const wanted = new Map<string, { symbology: BarcodeSymbology; value: string }>();
   for (const page of pages) {
     for (const block of page.blocks) {
       for (const line of block.lines) {
@@ -141,7 +153,9 @@ async function buildBarcodeCache(styles: StyleData[], pages: LayoutPage[]): Prom
           const source = (m[2] ?? "cartonEan") as BarcodeSource;
           for (const style of styles) {
             const value = resolveBarcodeValue(style, source);
-            if (value) wanted.set(`${source}:${value}`, { source, value });
+            if (!value) continue;
+            const symbology = barcodeSymbology(style, source);
+            wanted.set(`${symbology}:${value}`, { symbology, value });
           }
         }
       }
@@ -149,13 +163,13 @@ async function buildBarcodeCache(styles: StyleData[], pages: LayoutPage[]): Prom
   }
   const cache = new Map<string, string | null>();
   await Promise.all(
-    [...wanted.entries()].map(async ([cacheKey, { source, value }]) => {
+    [...wanted.entries()].map(async ([cacheKey, { symbology, value }]) => {
       try {
-        // Carton EANs print as Code 128 (EAN-128 family, matching the
-        // carton-marking templates); per-size EANs as true EAN-13 with
-        // the human-readable digits under the bars.
+        // EAN-128 (the carton default) prints as Code 128 bars with the
+        // number as a separate HTML row beneath; true EAN-13 carries the
+        // human-readable digits inside the symbol (includetext).
         const dataUrl =
-          source === "cartonEan"
+          symbology === "ean128"
             ? await renderBarcodeDataUrl(value, { bcid: "code128", scale: 4, height: 16, includetext: false })
             : await renderBarcodeDataUrl(value, { bcid: "ean13", scale: 3, height: 14, includetext: true });
         cache.set(cacheKey, dataUrl);
@@ -173,14 +187,19 @@ function renderBarcodeHtml(style: StyleData, source: BarcodeSource, ctx: RenderC
     const label = source === "cartonEan" ? "No carton EAN configured" : "No EAN-13 on style";
     return `<div class="barcode-missing">${escapeHtml(label)}</div>`;
   }
-  const dataUrl = ctx.barcodes.get(`${source}:${value}`);
+  const symbology = barcodeSymbology(style, source);
+  const dataUrl = ctx.barcodes.get(`${symbology}:${value}`);
   if (!dataUrl) {
     return `<div class="barcode-missing">EAN ${escapeHtml(value)} — could not encode</div>`;
   }
   // Code 128 carries no digits in the bars image — print the number
-  // beneath; EAN-13 already includes its text (includetext: true).
-  const numberRow = source === "cartonEan" ? `<div class="ol-ean-number">${escapeHtml(value)}</div>` : "";
-  return `<span class="ol-barcode${ctx.mode === "preview" ? " ol-barcode-preview" : ""}"><img src="${dataUrl}" alt="${escapeHtml(value)}" />${numberRow}</span>`;
+  // beneath; EAN-13 includes its text in the symbol (includetext: true).
+  const numberRow = symbology === "ean128" ? `<div class="ol-ean-number">${escapeHtml(value)}</div>` : "";
+  // Per-spec bar height (ProdSpec output row) beats the block's
+  // font-scaled default — for the carton barcode only.
+  const heightMm = source === "cartonEan" ? style.cartonBarcode?.heightMm : undefined;
+  const imgStyle = heightMm ? ` style="height: ${heightMm}mm"` : "";
+  return `<span class="ol-barcode${ctx.mode === "preview" ? " ol-barcode-preview" : ""}"><img src="${dataUrl}"${imgStyle} alt="${escapeHtml(value)}" />${numberRow}</span>`;
 }
 
 // Wash-care symbol strip — same honest-gap rules as the coded templates

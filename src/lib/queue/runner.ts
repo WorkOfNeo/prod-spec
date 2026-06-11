@@ -3,7 +3,7 @@ import { renderPdf } from "@/lib/pdf/renderer";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
-import { applyFieldOverrides } from "@/lib/pdf/pins";
+import { applyCartonBarcodePrefs, applyFieldOverrides } from "@/lib/pdf/pins";
 import { countPlaceholderMarkers } from "@/lib/pdf/placeholders";
 import type { StyleData } from "@/lib/pdf/types";
 import type { TemplateVariant } from "@/lib/pdf/template-registry";
@@ -243,9 +243,13 @@ export async function processJob(jobId: string): Promise<void> {
       continue;
     }
     try {
-      // Per-output pins ("customerName is ALWAYS …") applied on a copy —
-      // the base StyleData is shared across this job's outputs.
-      const renderStyle = applyFieldOverrides(styleData, output.fieldOverrides);
+      // Per-output pins ("customerName is ALWAYS …") and the carton
+      // barcode preference applied on a copy — the base StyleData is
+      // shared across this job's outputs.
+      const renderStyle = applyCartonBarcodePrefs(
+        applyFieldOverrides(styleData, output.fieldOverrides),
+        output,
+      );
       // Static-pdf passthrough variants emit their source artwork bytes
       // verbatim; everything else renders HTML → PDF.
       if (!variant.staticPdf && variant.renderMany) {
