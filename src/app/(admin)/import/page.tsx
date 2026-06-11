@@ -17,6 +17,7 @@
 
 import Link from "next/link";
 import { Suspense } from "react";
+import { requireAdminPage } from "@/lib/auth-server";
 import { scanForImport } from "@/lib/import/scan";
 import { findUnconfiguredProdSpecs } from "@/lib/import/prod-specs";
 import { CombinationsTable } from "./combinations-table";
@@ -24,7 +25,8 @@ import { ManualImportTables } from "./manual-import-tables";
 
 export const dynamic = "force-dynamic";
 
-export default function ImportPage() {
+export default async function ImportPage() {
+  await requireAdminPage();
   return (
     <div className="px-8 py-8">
       <div className="mb-6">

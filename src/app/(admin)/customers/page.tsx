@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 export default async function CustomersPage() {
+  await requireAdminPage();
+
   const customers = await db.customer.findMany({
     orderBy: [{ active: "desc" }, { name: "asc" }],
     include: { _count: { select: { styles: true, prodSpecs: true } } },

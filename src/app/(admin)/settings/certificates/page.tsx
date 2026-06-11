@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { CertificateList } from "./certificate-list";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 export default async function CertificatesPage() {
+  await requireAdminPage();
+
   const certificates = await db.certificate.findMany({
     orderBy: [{ active: "desc" }, { name: "asc" }],
   });

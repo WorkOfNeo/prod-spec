@@ -3,12 +3,15 @@ import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildSampleStyleData } from "@/lib/pdf/sample-data";
 import { STYLE_FIELD_LABELS } from "@/lib/styles/resolved-fields";
 import { CustomOutputsGrid, type OutputPreview } from "./custom-outputs-grid";
+import { requireAdminPage } from "@/lib/auth-server";
 
 // Templates read DB-managed reference data (wash symbols, certificates,
 // translations) at render time, so this can't be statically prerendered.
 export const dynamic = "force-dynamic";
 
 export default async function CustomOutputsPage() {
+  await requireAdminPage();
+
   // Published Output Builder layouts appear in the catalogue alongside
   // code-registered variants.
   await ensureLayoutVariantsLoaded();

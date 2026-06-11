@@ -74,6 +74,17 @@ export async function getSessionWithRole(): Promise<{
   return { session, role: user?.role ?? null };
 }
 
+// Server-side gate for admin-only PAGES. REVIEWERs are scoped to My tasks
+// + the styles pages for now — a deep link anywhere else bounces to their
+// dashboard. (API routes use requireRole; pages redirect instead of 403ing
+// so a reviewer following an old link lands somewhere useful.)
+export async function requireAdminPage() {
+  const { session, role } = await getSessionWithRole();
+  if (!session) redirect("/login");
+  if (role !== "ADMIN") redirect("/dashboard");
+  return session;
+}
+
 export type AuthCheck =
   | { ok: true; userId: string; role: UserRole }
   | { ok: false; status: 401 | 403; error: string };

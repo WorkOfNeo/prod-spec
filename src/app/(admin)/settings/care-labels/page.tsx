@@ -4,10 +4,13 @@ import { MONDAY_BOARDS } from "@/lib/monday/boards";
 import { toSymbolCodeArray } from "@/lib/care-labels";
 import { listActiveLanguages } from "@/lib/languages/active";
 import { CareLabelList } from "./care-label-list";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 export default async function CareLabelsPage() {
+  await requireAdminPage();
+
   const [careLabels, symbols, languages] = await Promise.all([
     db.careLabel.findMany({
       orderBy: [{ active: "desc" }, { sortOrder: "asc" }, { createdAt: "asc" }],

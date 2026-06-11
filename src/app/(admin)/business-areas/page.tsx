@@ -1,10 +1,13 @@
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import { BusinessAreaList } from "./business-area-list";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 export default async function BusinessAreasPage() {
+  await requireAdminPage();
+
   const areas = await db.businessArea.findMany({
     orderBy: [{ active: "desc" }, { name: "asc" }],
     include: {

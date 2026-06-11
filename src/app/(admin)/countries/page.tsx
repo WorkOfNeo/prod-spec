@@ -1,10 +1,13 @@
 import { db } from "@/lib/db";
 import { CountryList } from "./country-list";
 import { listActiveLanguages } from "@/lib/languages/active";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 export default async function CountriesPage() {
+  await requireAdminPage();
+
   const [rows, languages] = await Promise.all([
     db.country.findMany({ orderBy: [{ active: "desc" }, { nameEn: "asc" }] }),
     listActiveLanguages(),

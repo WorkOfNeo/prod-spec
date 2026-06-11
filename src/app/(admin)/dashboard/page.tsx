@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { requireSession } from "@/lib/auth-server";
+import { redirect } from "next/navigation";
+import { getSessionWithRole } from "@/lib/auth-server";
 import { db } from "@/lib/db";
 import { getReviewWork, timeAgo, type ReviewTask } from "@/lib/dashboard/review-tasks";
 import { NotificationsFeed, type FeedRow } from "./notifications-feed";
@@ -13,7 +14,9 @@ export const dynamic = "force-dynamic";
 // a review is left unfinished — even via a killed tab — and vanish on their
 // own the moment the job settles.
 export default async function DashboardPage() {
-  const session = await requireSession();
+  const { session, role } = await getSessionWithRole();
+  if (!session) redirect("/login");
+  const isAdmin = role === "ADMIN";
 
   const [work, openTickets, notifications] = await Promise.all([
     getReviewWork(session.user.id),
@@ -144,13 +147,20 @@ export default async function DashboardPage() {
                 </h2>
                 <p className="mt-0.5 text-xs text-zinc-500">
                   Tickets you reported that aren&rsquo;t resolved — fixes land back here as a
-                  re-review when the admin marks them fixed.{" "}
-                  <Link
-                    href="/settings/rejection-log"
-                    className="font-medium text-zinc-700 underline hover:text-zinc-900"
-                  >
-                    Open rejection log →
-                  </Link>
+                  re-review when the admin marks them fixed.
+                  {/* The rejection log is the admin workbench — reviewers only
+                      need the count; their re-reviews arrive via this page. */}
+                  {isAdmin && (
+                    <>
+                      {" "}
+                      <Link
+                        href="/settings/rejection-log"
+                        className="font-medium text-zinc-700 underline hover:text-zinc-900"
+                      >
+                        Open rejection log →
+                      </Link>
+                    </>
+                  )}
                 </p>
               </div>
             </section>

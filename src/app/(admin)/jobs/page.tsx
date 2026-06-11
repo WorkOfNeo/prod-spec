@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import { RunNowButton } from "./run-now-button";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,8 @@ const LEVEL_STYLES: Record<string, string> = {
 };
 
 export default async function JobsPage() {
+  await requireAdminPage();
+
   const [jobs, recentLogs] = await Promise.all([
     db.job.findMany({
       include: { style: true },

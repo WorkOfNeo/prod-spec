@@ -52,6 +52,7 @@ export function ProdSpecTab({
   poNumber,
   styleStatus,
   requiredReadiness,
+  outputsFilesPreview,
   supplierShare,
   jobs,
 }: {
@@ -80,18 +81,29 @@ export function ProdSpecTab({
     total: number;
     fields: Array<{ label: string; ok: boolean }>;
   };
-  // Supplier share for the latest published job (null until a job is
-  // approved). The `jobId` lets us flag a stale link when a newer job
-  // exists than the one the link was minted for.
-  supplierShare: (SupplierShareInfo & { jobId: string }) | null;
+  // Pre-run files preview — per enabled output, the PDFs the NEXT run
+  // would emit (count + resolved names, repeat/split aware). Shown in
+  // the popup so the operator can verify split settings before running.
+  outputsFilesPreview: Array<{ variantKey: string; name: string; known: boolean; files: string[] }>;
+  // The style's durable supplier share (null until approved at least once).
+  // The link always serves the latest approved version, so there's no
+  // staleness to flag — just show it and the visit status.
+  supplierShare: SupplierShareInfo | null;
   // ALL recent jobs, latest first. Latest renders the prominent
   // "Delivered Prod Specs" grid; the rest are tucked into a collapsible
   // accordion below so historical jobs (and their assets) stay
   // reachable without crowding the page.
   jobs: DeliveredJob[];
 }) {
-  const latestJob = jobs[0] ?? null;
-  const olderJobs = jobs.slice(1);
+  // Assets sorted by fileName, not query order: rows land in one
+  // transaction (tied timestamps), and the runner's 00-cover / 01-general-
+  // information prefixes are designed to open every bundle listing.
+  const sortedJobs = jobs.map((j) => ({
+    ...j,
+    assets: [...j.assets].sort((a, b) => a.fileName.localeCompare(b.fileName)),
+  }));
+  const latestJob = sortedJobs[0] ?? null;
+  const olderJobs = sortedJobs.slice(1);
   return (
     <div className="mt-6 flex flex-col gap-8">
       {/* Resolved ProdSpec — collapsed to a button; full detail lives in the
@@ -115,6 +127,7 @@ export function ProdSpecTab({
             }))}
             styleStatus={styleStatus}
             requiredReadiness={requiredReadiness}
+            outputsFilesPreview={outputsFilesPreview}
           />
         ) : (
           <NoProdSpecBlock
@@ -142,10 +155,7 @@ export function ProdSpecTab({
 
         {supplierShare ? (
           <div className="mb-4">
-            <SupplierLinkCard
-              share={supplierShare}
-              belongsToLatestJob={latestJob?.id === supplierShare.jobId}
-            />
+            <SupplierLinkCard share={supplierShare} />
           </div>
         ) : null}
 

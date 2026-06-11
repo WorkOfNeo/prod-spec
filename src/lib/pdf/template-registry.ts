@@ -60,6 +60,11 @@ export type TemplateVariant = {
   // one PDF per returned doc, persisted as JobAssets with variantKey
   // "<key>#<suffix>". fileName null → runner default + suffix.
   renderMany?: (style: StyleData) => Promise<Array<{ suffix: string; fileName: string | null; html: string }>>;
+  // Optional pre-run files preview: the per-file plan (suffix + custom
+  // name, null = runner default) the NEXT run would emit for a style,
+  // WITHOUT rendering anything. Output Builder layouts implement it
+  // repeat/split-aware; variants without it emit exactly one file.
+  filesPreview?: (style: StyleData) => Array<{ suffix: string | null; fileName: string | null }>;
   // Static-pdf passthrough (print specs with renderStrategy 'static-pdf'):
   // the artifact is these bytes VERBATIM — graphic-heavy artwork the app
   // must not redraw. Every artifact-emitting path (job runner, preview
@@ -167,6 +172,20 @@ export function allVariants(): TemplateVariant[] {
 
 export function getVariant(key: string): TemplateVariant | null {
   return TEMPLATE_VARIANTS.find((v) => v.key === key) ?? DYNAMIC_VARIANTS.get(key) ?? null;
+}
+
+// Default artifact file name — "<style-slug>-<variant-key>.pdf", with
+// "-<suffix>" before the extension for multi-document files. ONE source
+// of truth shared by the runner (actual asset naming) and the style
+// page's pre-run files preview, so the preview can never drift from
+// what a job really emits.
+export function defaultArtifactFileName(
+  variant: TemplateVariant,
+  styleNumber: string,
+  suffix?: string | null,
+): string {
+  const slug = styleNumber.replace(/[^a-z0-9-]+/gi, "-").toLowerCase();
+  return `${slug}-${variant.key}${suffix ? `-${suffix}` : ""}.pdf`;
 }
 
 // Union of the required fields across a set of variant keys — the basis for

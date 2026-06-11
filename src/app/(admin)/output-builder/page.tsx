@@ -3,12 +3,15 @@ import { getSessionWithRole } from "@/lib/auth-server";
 import { parseLayoutDef } from "@/lib/output-layouts/schema";
 import { getContrastLogoDataUrl, getCustomLogoDataUrl } from "@/lib/output-layouts/logos";
 import { LayoutsList } from "./layouts-list";
+import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
 // Output Builder — list of operator-built layouts. Admin-only: the
 // builder writes print-affecting config.
 export default async function OutputBuilderPage() {
+  await requireAdminPage();
+
   const { role } = await getSessionWithRole();
   if (role !== "ADMIN") {
     return (
