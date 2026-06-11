@@ -90,8 +90,15 @@ export function ProdSpecTab({
   // reachable without crowding the page.
   jobs: DeliveredJob[];
 }) {
-  const latestJob = jobs[0] ?? null;
-  const olderJobs = jobs.slice(1);
+  // Assets sorted by fileName, not query order: rows land in one
+  // transaction (tied timestamps), and the runner's 00-cover / 01-general-
+  // information prefixes are designed to open every bundle listing.
+  const sortedJobs = jobs.map((j) => ({
+    ...j,
+    assets: [...j.assets].sort((a, b) => a.fileName.localeCompare(b.fileName)),
+  }));
+  const latestJob = sortedJobs[0] ?? null;
+  const olderJobs = sortedJobs.slice(1);
   return (
     <div className="mt-6 flex flex-col gap-8">
       {/* Resolved ProdSpec — collapsed to a button; full detail lives in the
