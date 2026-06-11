@@ -6,7 +6,7 @@ import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import { applyFieldOverrides } from "@/lib/pdf/pins";
 import { countPlaceholderMarkers } from "@/lib/pdf/placeholders";
 import type { StyleData } from "@/lib/pdf/types";
-import type { TemplateVariant } from "@/lib/pdf/template-registry";
+import { defaultArtifactFileName, type TemplateVariant } from "@/lib/pdf/template-registry";
 import { dispatchEmail } from "@/lib/email/dispatch";
 import { reviewNotificationEmail } from "@/lib/email/templates/review-notification";
 import { getReviewNotificationEmails } from "@/lib/settings/app-settings";
@@ -457,6 +457,5 @@ export class RunnerError extends Error {
 }
 
 function fileNameFor(variant: TemplateVariant, styleNumber: string): string {
-  const slug = styleNumber.replace(/[^a-z0-9-]+/gi, "-").toLowerCase();
-  return `${slug}-${variant.key}.pdf`;
+  return defaultArtifactFileName(variant, styleNumber);
 }

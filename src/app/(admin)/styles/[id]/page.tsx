@@ -27,9 +27,11 @@ import { EanPanel } from "./ean-panel";
 import type { EanView } from "@/lib/po/ean-view";
 import { colorFromVariantLabel } from "@/lib/po/ean-format";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
-import { requiredFieldsForVariants, getVariant } from "@/lib/pdf/template-registry";
+import { requiredFieldsForVariants, getVariant, defaultArtifactFileName } from "@/lib/pdf/template-registry";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
+import { buildStyleData } from "@/lib/styles/render-context";
 import { parseCustomerConfig } from "@/lib/customers/config";
+import { applyFieldOverrides } from "@/lib/pdf/pins";
 import { parseFieldOverrides, PINNABLE_FIELD_LABELS, type PinnableField } from "@/lib/pdf/pins-meta";
 import { findFieldRule } from "@/lib/pdf/spec-fields";
 import { ALL_PRINT_SPECS } from "@/lib/pdf/print-spec-catalog";
@@ -244,6 +246,53 @@ export default async function StyleDetail({
         prodSpec: { outputs: style.prodSpec.outputs, columnMapping: {} },
       })
     : [];
+
+  // Pre-run files preview for the Prod Spec popover: per enabled output,
+  // the PDFs the NEXT run would emit (count + resolved names). Assembled
+  // from the SAME StyleData builder, pins and naming rules the runner
+  // uses — repeat/split-aware for Output Builder layouts — so the
+  // operator can verify the split settings against this style's actual
+  // size/EAN rows before generating anything. qrImage is deliberately
+  // null: the page only selects its name (the image is heavy) and file
+  // naming never reads it.
+  const outputsFilesPreview: Array<{
+    variantKey: string;
+    name: string;
+    known: boolean;
+    files: string[];
+  }> = await (async () => {
+    if (!style.prodSpec || enabledOutputs.length === 0) return [];
+    const base = await buildStyleData(
+      {
+        rawData: style.rawData,
+        poNumber: style.poNumber,
+        cartonEan: style.cartonEan,
+        mondayBoardId: style.mondayBoardId,
+        supplier: style.supplier,
+        eans: style.eans,
+        customer: { name: style.customer.name, config: style.customer.config },
+        qrImage: null,
+      },
+      style.prodSpec,
+      parseCustomerConfig(style.customer.config),
+    );
+    return enabledOutputs.map((o) => {
+      const variant = getVariant(o.variantKey);
+      if (!variant) return { variantKey: o.variantKey, name: o.variantKey, known: false, files: [] };
+      const renderStyle = applyFieldOverrides(base, o.fieldOverrides);
+      const plan = variant.filesPreview?.(renderStyle) ?? [
+        { suffix: null, fileName: variant.fileNameFor?.(renderStyle) ?? null },
+      ];
+      return {
+        variantKey: o.variantKey,
+        name: variant.name,
+        known: true,
+        files: plan.map(
+          (p) => p.fileName ?? defaultArtifactFileName(variant, renderStyle.styleNumber, p.suffix),
+        ),
+      };
+    });
+  })();
 
   // Derived care instructions for THIS style — the standard catalogue
   // filtered by the row's wash-care symbols, with per-line verdicts. The
@@ -508,6 +557,7 @@ export default async function StyleDetail({
           poNumber={style.poNumber}
           styleStatus={style.status}
           requiredReadiness={prodSpecReadiness}
+          outputsFilesPreview={outputsFilesPreview}
           supplierShare={
             supplierShare
               ? {
