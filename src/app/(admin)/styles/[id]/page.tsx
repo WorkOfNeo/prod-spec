@@ -20,6 +20,7 @@ import { StyleOutputCard, type StyleOutputCardProps } from "./style-output-card"
 import { ProdSpecTab } from "./prod-spec-tab";
 import { EanPanel } from "./ean-panel";
 import type { EanView } from "@/lib/po/ean-view";
+import { colorFromVariantLabel } from "@/lib/po/ean-format";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { requiredFieldsForVariants, getVariant } from "@/lib/pdf/template-registry";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
@@ -559,6 +560,15 @@ function DetailsTab({
 }) {
   const tone = READINESS_TONE[readiness.tone];
   const requiredSet = new Set(requiredFieldKeys);
+  // Colour per resolved EAN (read off the PO variant label) so the per-size
+  // EAN-13 lines under Resolved fields can name the colourway — duplicate
+  // sizes on multi-colour POs are ambiguous without it. Keyed by EAN because
+  // the rendered value is the size=ean map string, which drops the colour.
+  const eanColor = new Map<string, string>();
+  for (const e of eanView.sizeEans) {
+    const color = colorFromVariantLabel(e.variantLabel);
+    if (e.ean13 && color) eanColor.set(e.ean13, color);
+  }
   // Output fields the enabled outputs need but that are empty — the real
   // "can it generate" gate, distinct from the required-columns completion %.
   const missingOutput = requiredFields.fields.filter((f) => !f.ok).map((f) => f.label);
@@ -829,14 +839,18 @@ function DetailsTab({
                     {f.field === "ean13" && f.value.includes("=") ? (
                       // Per-size EAN map ("S=570…,M=570…") — one line per
                       // size instead of an unreadable comma run. Duplicate
-                      // sizes (multi-colourway POs) keep their own lines.
+                      // sizes (multi-colourway POs) keep their own lines,
+                      // with the colourway named when the resolved PO rows
+                      // know it.
                       <div className="space-y-0.5 font-mono text-xs">
                         {f.value.split(",").map((pair, j) => {
                           const [size, ean] = pair.split("=");
+                          const color = eanColor.get(ean?.trim() ?? "");
                           return (
                             <div key={`${pair}-${j}`}>
                               <span className="inline-block w-14 text-zinc-500">{size?.trim()}</span>
                               <span>{ean?.trim()}</span>
+                              {color && <span className="ml-2 text-zinc-400">{color}</span>}
                             </div>
                           );
                         })}
