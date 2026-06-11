@@ -9,6 +9,8 @@ import { SettingsNav } from "@/components/sidebar/settings-nav";
 // (Monday, catalogues, reference data) live under the Settings dropdown
 // rendered after this list — see SettingsNav.
 const NAV: Array<{ href?: string; label?: string; divider?: true }> = [
+  { href: "/dashboard", label: "My tasks" },
+  { divider: true },
   { href: "/styles", label: "Styles" },
   { href: "/jobs", label: "Jobs" },
   { divider: true },
