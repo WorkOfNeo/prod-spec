@@ -30,6 +30,8 @@ model User {
   reviewActions    ReviewAction[]
   reviewedAssets   JobAsset[]        @relation("AssetReviewer")
   rejectionTickets RejectionTicket[] @relation("TicketReporter")
+  invitesSent      Invite[]          @relation("InvitesSent")
+  acceptedInvite   Invite?           @relation("InviteAccepted")
 
   @@map("users")
 }
@@ -86,6 +88,31 @@ model Verification {
 
   @@index([identifier])
   @@map("verifications")
+}
+
+// Single-use signup invitations — the only door into the app once the
+// first admin exists (see databaseHooks in src/lib/auth.ts). Status is
+// derived, never stored: usedAt → Used, revokedAt → Revoked,
+// expiresAt < now → Expired, else Pending (the only state a link works in).
+// Rows are kept after use as an audit trail of who invited whom.
+model Invite {
+  id          String    @id @default(cuid())
+  token       String    @unique // random, rides in the /signup?invite= link
+  email       String // invitee, stored lower-cased
+  role        UserRole  @default(REVIEWER) // role the new user gets
+  expiresAt   DateTime
+  usedAt      DateTime? // set on first successful signup
+  usedById    String?   @unique
+  revokedAt   DateTime? // admin cancelled it
+  invitedById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  invitedBy User  @relation("InvitesSent", fields: [invitedById], references: [id], onDelete: Cascade)
+  usedBy    User? @relation("InviteAccepted", fields: [usedById], references: [id], onDelete: SetNull)
+
+  @@index([email])
+  @@map("invites")
 }
 
 // =====================================================
@@ -782,6 +809,7 @@ enum EmailType {
   REVIEW_READY // job generated → internal reviewer
   TICKET_FIXED // rejection ticket marked fixed → internal reviewer
   SUPPLIER_APPROVAL // job fully approved → supplier
+  INVITE // signup invitation link → invitee
 }
 
 enum EmailStatus {
