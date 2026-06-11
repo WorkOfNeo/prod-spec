@@ -57,6 +57,7 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
   }
   const first = def.pages[0];
   const requiredFields = staticRequiredColumns(def);
+  const settings = layoutSettings(def);
   return {
     key: layoutVariantKey(row.id),
     docType: row.docType,
@@ -73,33 +74,36 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     // Page dimensions live IN the layout (per page) — the ProdSpec-level
     // dims override that applies to coded variants is ignored here (the
     // dims param is dropped from the signature deliberately).
+    // Single-file path — also taken when a REPEATING layout has
+    // splitBy "none": renderLayoutHtml expands every repetition into one
+    // document, so the whole run still ships as exactly one PDF.
     render: (style) => renderLayoutHtml(def, style, { mode: "production", title: row.name }),
     fileNameFor: (style) => {
-      const expr = layoutSettings(def).fileName;
+      const expr = settings.fileName;
       return expr ? resolveLayoutFileName(expr, style) : null;
     },
-    // Repeat modes produce ONE FILE PER REPETITION — "size": per size
-    // row; "ean": per PO EAN row (size × colour, {{colourName}} bound).
+    // Split per EAN: ONE FILE PER REPETITION ROW — repeat "size": per
+    // size row; repeat "ean": per PO EAN row (size × colour,
+    // {{colourName}} bound). Either way each file carries one EAN.
     renderMany:
-      layoutSettings(def).repeatBy !== "none"
+      settings.repeatBy !== "none" && settings.splitBy === "ean"
         ? async (style) => {
-            const reps = repetitionStyles(style, layoutSettings(def).repeatBy);
+            const reps = repetitionStyles(style, settings.repeatBy);
             const seen = new Map<string, number>();
             return Promise.all(
               reps.map(async (repStyle, i) => {
                 const sizePart = (repStyle.sizes[0]?.label ?? "").replace(/[^\w.-]+/g, "");
                 const colourPart =
-                  layoutSettings(def).repeatBy === "ean"
+                  settings.repeatBy === "ean"
                     ? (repStyle.colour?.name ?? "").replace(/[^\w.-]+/g, "").slice(0, 16)
                     : "";
                 let suffix = [sizePart, colourPart].filter(Boolean).join("-").slice(0, 40) || String(i + 1);
                 const n = (seen.get(suffix) ?? 0) + 1;
                 seen.set(suffix, n);
                 if (n > 1) suffix = `${suffix}-${n}`;
-                const expr = layoutSettings(def).fileName;
                 return {
                   suffix,
-                  fileName: expr ? resolveLayoutFileName(expr, repStyle) : null,
+                  fileName: settings.fileName ? resolveLayoutFileName(settings.fileName, repStyle) : null,
                   html: await renderLayoutHtml(def, repStyle, { mode: "production" }),
                 };
               }),

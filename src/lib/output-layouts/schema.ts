@@ -138,6 +138,15 @@ export const LayoutSettingsSchema = z.object({
   // "ean":  one repetition per PO EAN row — SIZE × COLOUR combo, with
   //         {{size}}/{{ean13}}/{{colourName}} bound to that row.
   repeatBy: z.enum(["none", "size", "ean"]).default("none"),
+  // How repetitions land in output FILES — independent of repeatBy, which
+  // only controls how the content iterates. Meaningful when repeatBy ≠
+  // "none" (a non-repeating layout is always one file):
+  //   "ean":  one PDF per repetition row, each containing ONLY that row
+  //           (every repetition row carries exactly one EAN, so this is
+  //           the only per-something split that makes sense). Default —
+  //           matches how repeat layouts have always shipped.
+  //   "none": don't split — ONE PDF with every repetition back-to-back.
+  splitBy: z.enum(["none", "ean"]).default("ean"),
   // Output file name expression (text tokens allowed), without ".pdf".
   // Empty → the runner's default "<styleNumber>-<variantKey>.pdf".
   fileName: z.string().max(160).default(""),
@@ -151,7 +160,7 @@ export const LayoutDefSchema = z.object({
 export type LayoutDef = z.infer<typeof LayoutDefSchema>;
 
 export function layoutSettings(def: LayoutDef): LayoutSettings {
-  return def.settings ?? { repeatBy: "none", fileName: "" };
+  return def.settings ?? { repeatBy: "none", splitBy: "ean", fileName: "" };
 }
 
 // Stable block identity even for defs saved before ids existed.

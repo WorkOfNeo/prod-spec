@@ -72,9 +72,14 @@ export function repetitionStyles(style: StyleData, repeatBy: "none" | "size" | "
   if (repeatBy === "ean") {
     const rows = style.eanVariants ?? [];
     if (rows.length > 0) {
+      // eanVariants is narrowed along with sizes so the narrowing is
+      // idempotent — renderLayoutHtml re-applies repetitionStyles to the
+      // styles renderMany already narrowed, and a full eanVariants list
+      // would re-expand every per-EAN file back to ALL EAN rows.
       return rows.map((v) => ({
         ...style,
         sizes: [{ label: v.size, ean13: v.ean13 }],
+        eanVariants: [v],
         colour: v.colour ? { name: v.colour, code: style.colour?.code ?? "" } : style.colour,
       }));
     }

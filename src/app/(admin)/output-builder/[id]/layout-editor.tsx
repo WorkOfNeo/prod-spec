@@ -1123,6 +1123,26 @@ export function LayoutEditor({
                 </p>
               ) : null}
             </div>
+            {settings.repeatBy !== "none" ? (
+              <div>
+                <label className="text-xs text-zinc-500">Output files</label>
+                <select
+                  value={settings.splitBy}
+                  onChange={(e) => updateSettings({ splitBy: e.target.value as LayoutSettings["splitBy"] })}
+                  className="mt-1 w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-sm text-zinc-700"
+                >
+                  <option value="ean">One PDF per EAN</option>
+                  <option value="none">One single PDF (all repetitions inside)</option>
+                </select>
+                {repeatValues.length > 0 ? (
+                  <p className="mt-1 text-[10px] text-zinc-400">
+                    {settings.splitBy === "ean"
+                      ? `→ ${repeatValues.length} file${repeatValues.length === 1 ? "" : "s"}, each containing only its own EAN`
+                      : `→ 1 file containing all ${repeatValues.length} repetition${repeatValues.length === 1 ? "" : "s"}`}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <div>
               <label className="text-xs text-zinc-500">Output file name</label>
               <input
@@ -1142,8 +1162,8 @@ export function LayoutEditor({
                   ) : (
                     "Resolving…"
                   )
-                ) : settings.repeatBy !== "none" ? (
-                  "Variables allowed — {{size}}/{{ean13}}/{{colourName}} name EACH file (one per repetition)"
+                ) : settings.repeatBy !== "none" && settings.splitBy === "ean" ? (
+                  "Variables allowed — {{size}}/{{ean13}}/{{colourName}} name EACH file (one per EAN)"
                 ) : (
                   "Text variables allowed · empty = default name"
                 )}

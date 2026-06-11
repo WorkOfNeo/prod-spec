@@ -136,9 +136,13 @@ export async function POST(req: NextRequest) {
         : [];
   // Resolve the example file name against the FIRST repetition so
   // per-repetition variables ({{size}}, {{colourName}}, {{ean13}}) show
-  // real values when a repeat mode is on.
+  // real values when files are split per EAN. A single-file output names
+  // ONE file, so it resolves against the full style — exactly what the
+  // runner's fileNameFor does on that path.
   const fileNameStyle =
-    settings.repeatBy !== "none" ? (repetitionStyles(styleData, settings.repeatBy)[0] ?? styleData) : styleData;
+    settings.repeatBy !== "none" && settings.splitBy === "ean"
+      ? (repetitionStyles(styleData, settings.repeatBy)[0] ?? styleData)
+      : styleData;
   const resolvedFileName = settings.fileName
     ? resolveLayoutFileName(settings.fileName, fileNameStyle)
     : null;
