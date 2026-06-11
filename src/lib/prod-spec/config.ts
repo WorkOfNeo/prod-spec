@@ -41,6 +41,15 @@ export const ProdSpecOutputSchema = z.object({
   // the pinnable vocabulary in src/lib/pdf/pins.ts at the point of use, so
   // a stale key never breaks parsing.
   fieldOverrides: z.record(z.string().min(1), z.string()).optional(),
+  // Carton barcode preference — how the carton EAN prints on
+  // CARTON_MARKING outputs (the coded carton-marking templates and Output
+  // Builder layouts alike; ignored by other doc types). Absent type =
+  // EAN-128 (Code 128 bars with the number printed beneath — the historic
+  // behaviour); "ean13" = true EAN-13 with the digits inside the symbol.
+  // heightMm overrides the renderer's default bar height for the carton
+  // barcode only. Applied via applyCartonBarcodePrefs (src/lib/pdf/pins.ts).
+  cartonBarcodeType: z.enum(["ean128", "ean13"]).optional(),
+  cartonBarcodeHeightMm: z.number().min(4).max(60).optional(),
 });
 export type ProdSpecOutput = z.infer<typeof ProdSpecOutputSchema>;
 
