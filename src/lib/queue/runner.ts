@@ -179,9 +179,16 @@ export async function processJob(jobId: string): Promise<void> {
   // legacy rows). When scoped, re-check each output's required fields at run
   // time so a field that regressed since enqueue doesn't ship an incomplete
   // output — not-ready ones are skipped (logged), not failed.
-  const scopedKeys: string[] = Array.isArray(job.variantKeys)
-    ? (job.variantKeys as unknown[]).filter((x): x is string => typeof x === "string")
-    : [];
+  // Framing pages (__cover__ / __general_info__) derive from the outputs
+  // and re-render on EVERY run — they can't be generated in isolation. A
+  // rejection-ticket re-run scoped to one falls through to a full regen
+  // (empty scope = all enabled outputs), which refreshes the framing
+  // pages along the way; mixed scopes just drop the framing key.
+  const scopedKeys: string[] = (
+    Array.isArray(job.variantKeys)
+      ? (job.variantKeys as unknown[]).filter((x): x is string => typeof x === "string")
+      : []
+  ).filter((k) => k !== COVER_VARIANT_KEY && k !== GENERAL_INFO_VARIANT_KEY);
   if (scopedKeys.length > 0) {
     // Tickets reference per-document asset keys ("layout:<id>#<size>");
     // ProdSpec outputs carry the BASE key — match on the base so a
