@@ -1,58 +1,59 @@
-import type { DocType } from "@/generated/prisma/enums";
-
 // =====================================================
-// THE doc-type catalogue — single source for every place a document
-// type is picked or shown: the Output Builder type select + list
-// column, the prod-spec output picker (labels, filter chips, sort),
-// custom outputs grid badges, and asset display-name fallbacks.
+// Doc types — categorisation for outputs (picker grouping, JobAsset
+// labelling, SharePoint metadata; no render behaviour hangs off them).
 //
-// docType is categorisation + storage only (picker grouping, JobAsset
-// labelling, SharePoint metadata) — no render behaviour hangs off it.
-// It IS a Postgres enum though, so ADDING A TYPE is a small code+
-// migration change, not a UI action:
+// The catalogue lives in the doc_types TABLE and is managed in the UI
+// (Custom outputs → Document types card): operators add types and edit
+// labels there, no migration needed. Server code loads it via
+// loadDocTypes() in ./doc-types-db; client components receive entries/
+// labels as props.
 //
-//   1. prisma/schema.prisma — add the value to `enum DocType`.
-//   2. prisma/migrations/<timestamp>_add_doctype_<x>/migration.sql —
-//      one idempotent line:
-//        ALTER TYPE "DocType" ADD VALUE IF NOT EXISTS 'MY_TYPE';
-//      then `npx prisma generate`, and Niels runs `npm run db:deploy`.
-//   3. Add the value + human label to ALL_DOC_TYPES / DOC_TYPE_LABELS
-//      below. Every select, badge and filter picks it up from here.
-//
-// COVER and GENERAL_INFO exist in the enum but are deliberately NOT
-// listed: they're runner-generated bundle framing pages, not pickable
-// template variants. docTypeLabel() still prettifies them (and any
-// future unlisted value) via the fallback.
+// This module is CLIENT-SAFE (no db import): the seed list mirrors the
+// migration's six rows and doubles as the fallback while the doc_types
+// migration hasn't been applied yet, and docTypeLabel() resolves labels
+// with a title-case fallback for values missing from a provided map
+// (runner-internal COVER/GENERAL_INFO framing pages, fresh values).
 // =====================================================
 
-export const ALL_DOC_TYPES = [
-  "WASHCARE",
-  "CARE_LABEL",
-  "STICKER",
-  "HANGTAG",
-  "CARTON_MARKING",
-  "COLOUR_STICKER",
-] as const satisfies readonly DocType[];
+export type DocTypeEntry = { value: string; label: string };
 
-export const DOC_TYPE_LABELS: Record<(typeof ALL_DOC_TYPES)[number], string> = {
-  WASHCARE: "Wash care",
-  CARE_LABEL: "Care label",
-  STICKER: "Sticker",
-  HANGTAG: "Hang tag",
-  CARTON_MARKING: "Carton marking",
-  COLOUR_STICKER: "Colour sticker",
-};
+export const DEFAULT_DOC_TYPES: DocTypeEntry[] = [
+  { value: "WASHCARE", label: "Wash care" },
+  { value: "CARE_LABEL", label: "Care label" },
+  { value: "STICKER", label: "Sticker" },
+  { value: "HANGTAG", label: "Hang tag" },
+  { value: "CARTON_MARKING", label: "Carton marking" },
+  { value: "COLOUR_STICKER", label: "Colour sticker" },
+];
 
-// Human label for ANY docType value — catalogue label when listed,
-// title-cased SCREAMING_SNAKE otherwise (COVER → "Cover", and new enum
-// values keep working before a label lands here).
-export function docTypeLabel(docType: string): string {
+const DEFAULT_LABELS: Record<string, string> = Object.fromEntries(
+  DEFAULT_DOC_TYPES.map((t) => [t.value, t.label]),
+);
+
+// Human label for ANY docType value: the provided catalogue map first
+// (DB labels, passed down from a server component), then the seed
+// labels, then title-cased SCREAMING_SNAKE (COVER → "Cover", and brand-
+// new values keep working everywhere before a label reaches a given
+// view).
+export function docTypeLabel(docType: string, labels?: Record<string, string>): string {
   return (
-    (DOC_TYPE_LABELS as Record<string, string>)[docType] ??
+    labels?.[docType] ??
+    DEFAULT_LABELS[docType] ??
     docType
       .toLowerCase()
       .split("_")
       .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
       .join(" ")
   );
+}
+
+// Derive the immutable storage value from a human name typed in the UI:
+// "Insert card" → "INSERT_CARD". Mirrors the API route's validation.
+export function deriveDocTypeValue(label: string): string {
+  return label
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
 }

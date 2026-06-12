@@ -7,6 +7,7 @@ import { AssetActions } from "./asset-actions";
 import { ReviewClaim } from "./claim-review";
 import { ReviewLeaveGuard } from "./leave-guard";
 import { groupByDocType, DocTypeAccordion } from "../doc-type-groups";
+import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { isSharepointConfigured } from "@/lib/publish/publish-approved-job";
 import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
 
@@ -38,6 +39,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   if (!style) notFound();
 
   const job = style.jobs[0];
+  const docTypeLabels = await loadDocTypeLabels();
   const placeholderAssets = job?.assets.filter((a) => a.placeholderCount > 0) ?? [];
   if (!job) {
     return (
@@ -149,7 +151,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
 
       {/* Grouped per document type — each type a collapsible accordion. */}
       <div className="mt-6 flex flex-col gap-3">
-        {groupByDocType(job.assets).map((group) => {
+        {groupByDocType(job.assets, docTypeLabels).map((group) => {
           const gApproved = group.items.filter((a) => a.reviewStatus === "APPROVED").length;
           const gRejected = group.items.filter((a) => a.reviewStatus === "REJECTED").length;
           const gPending = group.items.length - gApproved - gRejected;

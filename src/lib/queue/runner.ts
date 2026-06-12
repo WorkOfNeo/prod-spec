@@ -18,7 +18,7 @@ import {
   renderGeneralInfoHtml,
   type BundleDocSummary,
 } from "@/lib/pdf/bundle-pages";
-import type { DocType, TriggerSource } from "@/generated/prisma/enums";
+import type { TriggerSource } from "@/generated/prisma/enums";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import {
   DEFAULT_OUTPUTS,
@@ -369,7 +369,7 @@ export async function processJob(jobId: string): Promise<void> {
   // prefixes) so they open the bundle everywhere assets are listed. Both
   // are placeholder-free by construction and reviewed like any other asset.
   type BundlePage = {
-    docType: DocType;
+    docType: string;
     variantKey: string;
     displayName: string;
     fileName: string;

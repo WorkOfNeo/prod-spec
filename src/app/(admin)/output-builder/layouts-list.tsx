@@ -3,12 +3,12 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
-import { docTypeLabel } from "@/lib/pdf/doc-types";
 
 type LayoutRow = {
   id: string;
   name: string;
   docType: string;
+  docTypeLabel: string;
   status: "DRAFT" | "PUBLISHED";
   version: number;
   pageCount: number;
@@ -66,7 +66,7 @@ export function LayoutsList({
         [
           l.name,
           l.docType,
-          docTypeLabel(l.docType),
+          l.docTypeLabel,
           l.customerName ?? "",
           l.businessAreaName ?? "",
           ...l.prodSpecs.flatMap((s) => [s.name, s.customerName]),
@@ -300,7 +300,7 @@ export function LayoutsList({
                   </td>
                   <td className="px-4 py-3">
                     <span className="inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600">
-                      {docTypeLabel(l.docType)}
+                      {l.docTypeLabel}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm text-zinc-600">

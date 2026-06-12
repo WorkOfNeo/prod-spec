@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { parseLayoutDef } from "@/lib/output-layouts/schema";
+import { docTypeLabel } from "@/lib/pdf/doc-types";
+import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { LAYOUT_VARIANT_PREFIX } from "@/lib/output-layouts/variants";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { getContrastLogoDataUrl, getCustomLogoDataUrl } from "@/lib/output-layouts/logos";
@@ -94,6 +96,8 @@ export default async function OutputBuilderPage() {
     stylesBySpec.set(st.prodSpecId, list);
   }
 
+  const docTypeLabels = await loadDocTypeLabels();
+
   const layouts = rows.map((l) => {
     let pageCount = 0;
     let defInvalid = false;
@@ -111,6 +115,7 @@ export default async function OutputBuilderPage() {
       id: l.id,
       name: l.name,
       docType: l.docType,
+      docTypeLabel: docTypeLabel(l.docType, docTypeLabels),
       status: l.status,
       version: l.version,
       pageCount,

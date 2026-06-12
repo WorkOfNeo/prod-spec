@@ -1,7 +1,6 @@
 "use client";
 
 import { PreviewFrame } from "@/components/output-preview";
-import { docTypeLabel } from "@/lib/pdf/doc-types";
 
 // One preview entry, prepared server-side in page.tsx. `html` is the full
 // rendered template document (or null if rendering threw — then `error`
@@ -11,6 +10,7 @@ export type OutputPreview = {
   name: string;
   description: string;
   docType: string;
+  docTypeLabel: string;
   widthMm: number;
   heightMm: number;
   // Human labels of the resolved-spec fields this output needs to render.
@@ -36,7 +36,7 @@ function OutputCard({ preview }: { preview: OutputPreview }) {
         <div className="flex items-start justify-between gap-2">
           <h3 className="text-sm font-semibold text-zinc-900">{preview.name}</h3>
           <span className="flex-shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
-            {docTypeLabel(preview.docType)}
+            {preview.docTypeLabel}
           </span>
         </div>
         <p className="mt-1 text-xs leading-relaxed text-zinc-500">{preview.description}</p>

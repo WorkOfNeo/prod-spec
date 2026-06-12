@@ -5,6 +5,8 @@ import { docTypeLabel } from "@/lib/pdf/doc-types";
 // (callers pass already-sorted assets, so the bundle framing stays first).
 export function groupByDocType<T extends { docType: string }>(
   items: T[],
+  // DB catalogue labels (loadDocTypeLabels) — falls back to seed/title-case.
+  labels?: Record<string, string>,
 ): Array<{ docType: string; label: string; items: T[] }> {
   const map = new Map<string, T[]>();
   for (const item of items) {
@@ -12,7 +14,7 @@ export function groupByDocType<T extends { docType: string }>(
     if (arr) arr.push(item);
     else map.set(item.docType, [item]);
   }
-  return [...map.entries()].map(([docType, items]) => ({ docType, label: docTypeLabel(docType), items }));
+  return [...map.entries()].map(([docType, items]) => ({ docType, label: docTypeLabel(docType, labels), items }));
 }
 
 // One collapsible group, grouped per document type. Native <details> so it

@@ -1,4 +1,3 @@
-import type { DocType } from "@/generated/prisma/enums";
 import type { PrintSpec, PrintType } from "@/print-specs/shared/types";
 import type { ColumnMapping } from "@/lib/customers/config";
 import type { StyleData } from "./types";
@@ -38,7 +37,7 @@ const FAMILY_RENDERERS: Record<string, (spec: PrintSpec) => RenderFn> = {
 // values; several spec print types have no exact match and map to their
 // closest category. Revisit with a schema migration when finer grouping
 // is needed in the UI.
-const DOC_TYPE_BY_PRINT_TYPE: Record<PrintType, DocType> = {
+const DOC_TYPE_BY_PRINT_TYPE: Record<PrintType, string> = {
   "wash-care-label": "WASHCARE",
   "care-label": "CARE_LABEL",
   "price-sticker": "STICKER",
