@@ -145,12 +145,24 @@ export function ProdSpecTab({
               Newest first. Open the files themselves in the Review tab.
             </p>
           </div>
-          <Link
-            href={`/styles/${styleId}?tab=review`}
-            className="text-xs font-medium text-zinc-700 underline hover:text-zinc-900"
-          >
-            Open files →
-          </Link>
+          <div className="flex shrink-0 items-center gap-3">
+            <Link
+              href={`/styles/${styleId}?tab=review`}
+              className="text-xs font-medium text-zinc-700 underline hover:text-zinc-900"
+            >
+              Open files →
+            </Link>
+            {jobs.length > 0 && jobs[0].assets.length > 0 && (
+              <a
+                href={`/api/admin/jobs/${jobs[0].id}/download-zip`}
+                className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
+                title="Download every PDF of the latest run as one zip, under their print file names"
+              >
+                <DownloadIcon />
+                Download all (.zip)
+              </a>
+            )}
+          </div>
         </div>
 
         {jobs.length === 0 ? (
@@ -211,14 +223,26 @@ export function ProdSpecTab({
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        {job.status === "AWAITING_REVIEW" ? (
-                          <Link
-                            href={`/styles/${styleId}/review`}
-                            className="inline-block rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-800"
-                          >
-                            Review
-                          </Link>
-                        ) : null}
+                        <span className="inline-flex items-center gap-2.5">
+                          {total > 0 && (
+                            <a
+                              href={`/api/admin/jobs/${job.id}/download-zip`}
+                              className="inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-900"
+                              title="Download this run's PDFs as one zip, under their print file names"
+                            >
+                              <DownloadIcon />
+                              zip
+                            </a>
+                          )}
+                          {job.status === "AWAITING_REVIEW" ? (
+                            <Link
+                              href={`/styles/${styleId}/review`}
+                              className="inline-block rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-800"
+                            >
+                              Review
+                            </Link>
+                          ) : null}
+                        </span>
                       </td>
                     </tr>
                   );
@@ -229,6 +253,26 @@ export function ProdSpecTab({
         )}
       </section>
     </div>
+  );
+}
+
+function DownloadIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-3.5 w-3.5"
+      aria-hidden="true"
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
   );
 }
 

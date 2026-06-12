@@ -380,6 +380,7 @@ export async function processJob(jobId: string): Promise<void> {
   const pageSettings = parseBundlePageSettings(prodSpec?.bundlePageSettings);
   const bundlePages: BundlePage[] = [];
   try {
+    const generalInfoMd = prodSpec?.generalInfoMd?.trim();
     const coverHtml = renderCoverPageHtml({
       customerName: job.style.customer.name,
       businessArea: businessAreaName,
@@ -390,6 +391,12 @@ export async function processJob(jobId: string): Promise<void> {
       generatedAt: new Date(),
       docs: docSummaries,
       settings: pageSettings.cover,
+      // General info rides inside the cover document too — own pages,
+      // own margins — so the requirements are seen even by someone who
+      // only opens/prints the cover. The standalone 01 doc still ships.
+      generalInfo: generalInfoMd
+        ? { markdown: generalInfoMd, settings: pageSettings.generalInfo }
+        : null,
     });
     bundlePages.push({
       docType: "COVER",
@@ -399,7 +406,6 @@ export async function processJob(jobId: string): Promise<void> {
       pdf: await renderPdf({ html: coverHtml }),
     });
 
-    const generalInfoMd = prodSpec?.generalInfoMd?.trim();
     if (generalInfoMd) {
       const infoHtml = renderGeneralInfoHtml({
         markdown: generalInfoMd,

@@ -4,7 +4,8 @@ import { useState } from "react";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "@tiptap/markdown";
-import { TableKit } from "@tiptap/extension-table";
+import { Table, TableKit, renderTableToMarkdown } from "@tiptap/extension-table";
+import HardBreak from "@tiptap/extension-hard-break";
 
 // =====================================================
 // WYSIWYG markdown editor — TipTap wearing a plain-markdown costume.
@@ -29,13 +30,29 @@ type Props = {
   onChange: (markdown: string) => void;
 };
 
+// Multi-line table cells serialize through `<br>`, NOT markdown's
+// two-space newline: the table serializer whitespace-collapses cell
+// content, so a plain newline hard break flattens to a space and the
+// round-trip silently loses the line break (found against the live
+// packing document). `<br>` survives the collapse, marked re-parses it
+// to a hardBreak in the editor, and the print CSS renders it — the one
+// HTML-ism this editor emits, same as the hand-written docs used.
+const MarkdownHardBreak = HardBreak.extend({
+  renderMarkdown: () => "<br>",
+});
+const MarkdownTable = Table.extend({
+  renderMarkdown: (node, h) => renderTableToMarkdown(node, h, { cellLineSeparator: "<br>" }),
+});
+
 export function MarkdownEditor({ value, onChange }: Props) {
   const [mode, setMode] = useState<"visual" | "source">("visual");
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
-      TableKit.configure({ table: { resizable: false } }),
+      StarterKit.configure({ hardBreak: false }),
+      MarkdownHardBreak,
+      TableKit.configure({ table: false }),
+      MarkdownTable.configure({ resizable: false }),
       Markdown,
     ],
     content: value,
