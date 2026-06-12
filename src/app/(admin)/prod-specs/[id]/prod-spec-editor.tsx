@@ -409,8 +409,11 @@ export function ProdSpecEditor(props: Props) {
             <Section title="Cover page · auto-generated">
               <p className="mb-3 text-xs text-zinc-500">
                 First page of every bundle: each enabled output&apos;s title and dimensions, once.
-                The content is read-only — it follows the Outputs tab; the runner builds the real
-                one from the documents a job actually generated. Tune how it prints below.
+                The General information pages are appended into this same document (with their
+                own page settings), so the requirements always travel with the cover. The content
+                is read-only — it follows the Outputs and General information tabs; the runner
+                builds the real one from the documents a job actually generated. Tune how the
+                cover sheet prints below.
               </p>
             </Section>
 

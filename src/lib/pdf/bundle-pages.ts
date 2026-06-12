@@ -10,6 +10,9 @@ import { DEFAULT_PAGE_SETTINGS, type PageSettings } from "@/lib/prod-spec/config
 //     filtering), so a skipped output never appears on it. Each output
 //     is listed once — title + W×H mm — even when a multi-document
 //     variant emitted several files (the Files column carries the count).
+//     When the prod spec has general info, those pages are ALSO appended
+//     into this document (own @page margins via named pages), so the
+//     requirements can't be missed by someone who only opens the cover.
 //
 //   • General information page — ProdSpec.generalInfoMd (GitHub-
 //     flavoured markdown, tables included) rendered to A4. Written once
@@ -63,6 +66,12 @@ export type CoverPageInput = {
   generatedAt: Date;
   docs: BundleDocSummary[];
   settings?: PageSettings;
+  // When set (non-empty markdown), the general-information pages are
+  // appended INTO the cover document after the cover sheet — named @page
+  // rules keep each section's own margins and type scale. The standalone
+  // 01 document still ships alongside; the cover carries the requirements
+  // so they can't be missed by someone who only opens/prints the cover.
+  generalInfo?: { markdown: string; settings?: PageSettings } | null;
 };
 
 export type GeneralInfoInput = {
@@ -118,64 +127,140 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
       no bleed unless stated on the document itself.
     </p>`;
 
-  return a4Document({
-    title: "Cover page",
-    mode: "page",
-    body,
-    extraCss: COVER_CSS,
-    settings,
-    footerLeft: `Prod Spec · ${esc(input.customerName)}${
-      input.businessArea ? ` · ${esc(input.businessArea)}` : ""
-    }`,
-    footerRight: `Generated ${esc(fmtDate(input.generatedAt))}`,
-  });
+  const sections: A4Section[] = [
+    {
+      pageName: null, // default @page — the cover's own margins
+      mode: "page",
+      body: `<div class="cov">${body}</div>`,
+      extraCss: COVER_CSS,
+      settings,
+      footerLeft: `Prod Spec · ${esc(input.customerName)}${
+        input.businessArea ? ` · ${esc(input.businessArea)}` : ""
+      }`,
+      footerRight: `Generated ${esc(fmtDate(input.generatedAt))}`,
+    },
+  ];
+
+  // Requirements ride along in the cover document itself, on their own
+  // sheets with the general-info section's margins and type scale.
+  const giMd = input.generalInfo?.markdown.trim();
+  if (giMd) {
+    sections.push(
+      generalInfoSection(giMd, input.generalInfo?.settings ?? DEFAULT_PAGE_SETTINGS, {
+        customerName: input.customerName,
+        businessArea: input.businessArea,
+      }),
+    );
+  }
+
+  return a4Document({ title: "Cover page", sections });
 }
 
 export function renderGeneralInfoHtml(input: GeneralInfoInput): string {
   const settings = input.settings ?? DEFAULT_PAGE_SETTINGS;
+  return a4Document({
+    title: "General information",
+    sections: [
+      generalInfoSection(input.markdown, settings, {
+        customerName: input.customerName,
+        businessArea: input.businessArea,
+      }),
+    ],
+  });
+}
+
+// The general-info content as a section — identical whether it ships as
+// the standalone 01 document or appended inside the cover document.
+function generalInfoSection(
+  markdown: string,
+  settings: PageSettings,
+  ctx: { customerName: string; businessArea: string | null },
+): A4Section {
   // gfm (tables, strikethrough, autolinks) is marked's default profile;
   // async:false guarantees a string return and would throw loudly if an
   // async extension ever sneaks into the marked config.
-  const rendered = marked.parse(input.markdown, { async: false });
-
-  return a4Document({
-    title: "General information",
+  const rendered = marked.parse(markdown, { async: false });
+  return {
+    pageName: "gi",
     mode: "flow",
     body: `<div class="md">${rendered}</div>`,
     extraCss: MARKDOWN_CSS,
     settings,
     footerLeft: "General information · applies to all styles under this prod spec",
-    footerRight: `${esc(input.customerName)}${
-      input.businessArea ? ` · ${esc(input.businessArea)}` : ""
+    footerRight: `${esc(ctx.customerName)}${
+      ctx.businessArea ? ` · ${esc(ctx.businessArea)}` : ""
     }`,
-  });
+  };
 }
 
 // ---------------------------------------------------------------------
-// Shared A4 shell.
-//   mode "page" — single-page document (cover): footer pinned to the
+// Shared A4 shell — one document, one or more SECTIONS.
+//
+// Each section owns its margins + type scale. Sections after the first
+// start on a fresh sheet, and a NAMED `@page` rule (CSS `page:` property,
+// same pattern as the Output Builder's `@page olp<i>` rules) carries that
+// section's margins onto every sheet it flows across.
+//
+//   mode "page" — single-sheet section (cover): footer pinned to the
 //   bottom of the page box via absolute positioning.
-//   mode "flow" — multi-page document (general info): footer once at the
+//   mode "flow" — multi-sheet section (general info): footer once at the
 //   end of the content flow.
 // ---------------------------------------------------------------------
 
-function a4Document(opts: {
-  title: string;
+type A4Section = {
+  // null → styled via the default (unnamed) @page rule. Named sections
+  // get `page: <name>` so their margins apply on every sheet they span.
+  pageName: string | null;
   mode: "page" | "flow";
   body: string;
   extraCss: string;
   settings: PageSettings;
   footerLeft: string;
   footerRight: string;
-}): string {
-  const s = opts.settings;
-  const margins = `${mm(s.marginTopMm)} ${mm(s.marginRightMm)} ${mm(s.marginBottomMm)} ${mm(s.marginLeftMm)}`;
-  // Content-area height of one A4 page — the cover pins its footer to it.
-  const pageInnerMm = Math.max(60, 297 - s.marginTopMm - s.marginBottomMm);
+};
 
-  const footer = s.showFooter
-    ? `<div class="a4-footer"><span>${opts.footerLeft}</span><span>${opts.footerRight}</span></div>`
-    : "";
+function a4Document(opts: { title: string; sections: A4Section[] }): string {
+  const pageRules = opts.sections
+    .map(
+      (s) =>
+        `@page ${s.pageName ?? ""} { size: 210mm 297mm; margin: ${marginsCss(s.settings)}; }`,
+    )
+    .join("\n  ");
+
+  const sectionCss = opts.sections
+    .map((s, i) => {
+      // Content-area height of one A4 sheet — "page" sections pin their
+      // footer to it.
+      const pageInnerMm = Math.max(60, 297 - s.settings.marginTopMm - s.settings.marginBottomMm);
+      return `
+  .sec${i} {
+    ${s.pageName ? `page: ${s.pageName};` : ""}
+    ${i > 0 ? "break-before: page;" : ""}
+    font-size: ${s.settings.baseFontPt}pt;
+    line-height: ${s.settings.lineHeight};
+  }
+  .sec${i} .a4-page { min-height: ${mm(pageInnerMm)}; }
+  /* On screen @page is ignored — the editor preview shows the same
+     margins as section padding instead. (Print keeps padding at 0 so
+     @page margins are the single source of truth on paper.) */
+  @media screen {
+    .sec${i} { padding: ${marginsCss(s.settings)}; }
+    ${i > 0 ? `.sec${i} { border-top: 1px dashed #d4d4d8; }` : ""}
+  }`;
+    })
+    .join("\n");
+
+  const bodies = opts.sections
+    .map((s, i) => {
+      const footer = s.settings.showFooter
+        ? `<div class="a4-footer"><span>${s.footerLeft}</span><span>${s.footerRight}</span></div>`
+        : "";
+      return `<div class="sec${i}"><div class="${s.mode === "page" ? "a4-page" : "a4-flow"}">
+${s.body}
+${footer}
+</div></div>`;
+    })
+    .join("\n");
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -184,18 +269,16 @@ function a4Document(opts: {
 <title>${esc(opts.title)}</title>
 <style>
   /* Real per-page margins — applied to every sheet when printing. */
-  @page { size: 210mm 297mm; margin: ${margins}; }
+  ${pageRules}
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
     font-family: Arial, Helvetica, sans-serif;
-    font-size: ${s.baseFontPt}pt;
-    line-height: ${s.lineHeight};
     color: #1c1c1e;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
-  .a4-page { position: relative; min-height: ${mm(pageInnerMm)}; }
+  .a4-page { position: relative; }
   .a4-page .a4-footer { position: absolute; left: 0; right: 0; bottom: 0; }
   .a4-flow .a4-footer { margin-top: 8mm; }
   .a4-footer {
@@ -208,40 +291,36 @@ function a4Document(opts: {
     color: #a1a1aa;
     background: #fff;
   }
-  /* On screen @page is ignored — the editor preview shows the same
-     margins as shell padding instead. (Print keeps the shell at 0 so
-     @page margins are the single source of truth on paper.) */
   @media screen {
     body { width: 210mm; background: #fff; }
-    .a4-shell { padding: ${margins}; }
   }
-${opts.extraCss}
+${sectionCss}
+${opts.sections.map((s) => s.extraCss).join("\n")}
 </style>
 </head>
 <body>
-<div class="a4-shell"><div class="${opts.mode === "page" ? "a4-page" : "a4-flow"}">
-${opts.body}
-${footer}
-</div></div>
+${bodies}
 </body>
 </html>`;
 }
 
 // Type scales from the base font: everything in em so PageSettings.
-// baseFontPt resizes the whole document coherently.
+// baseFontPt resizes the whole document coherently. Scoped under .cov —
+// the cover can share a document with the markdown section, and an
+// unscoped h1/table rule would leak into it.
 const COVER_CSS = `
-  h1 {
+  .cov h1 {
     margin: 0;
     font-size: 1.7em;
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
-  .subtitle { margin: 1mm 0 0; font-size: 0.9em; color: #71717a; }
-  .rule { border-top: 0.6mm solid #1c1c1e; margin: 6mm 0 5mm; }
-  table { width: 100%; border-collapse: collapse; }
-  table.meta td { padding: 1.2mm 0; vertical-align: top; }
-  table.meta td.k { width: 38mm; color: #71717a; }
-  .caption {
+  .cov .subtitle { margin: 1mm 0 0; font-size: 0.9em; color: #71717a; }
+  .cov .rule { border-top: 0.6mm solid #1c1c1e; margin: 6mm 0 5mm; }
+  .cov table { width: 100%; border-collapse: collapse; }
+  .cov table.meta td { padding: 1.2mm 0; vertical-align: top; }
+  .cov table.meta td.k { width: 38mm; color: #71717a; }
+  .cov .caption {
     margin: 9mm 0 0;
     font-size: 0.8em;
     font-weight: bold;
@@ -249,8 +328,8 @@ const COVER_CSS = `
     text-transform: uppercase;
     color: #71717a;
   }
-  table.docs { margin-top: 2mm; }
-  table.docs th {
+  .cov table.docs { margin-top: 2mm; }
+  .cov table.docs th {
     text-align: left;
     font-size: 0.75em;
     text-transform: uppercase;
@@ -259,17 +338,17 @@ const COVER_CSS = `
     border-bottom: 0.3mm solid #d4d4d8;
     padding: 1.6mm 2mm;
   }
-  table.docs td {
+  .cov table.docs td {
     padding: 2mm;
     border-bottom: 0.2mm solid #ececee;
     font-size: 0.95em;
     vertical-align: top;
   }
-  table.docs td.num { width: 8mm; color: #a1a1aa; }
-  table.docs td.doc { font-weight: bold; }
-  table.docs td.size { width: 38mm; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  table.docs td.files { width: 16mm; text-align: right; font-variant-numeric: tabular-nums; }
-  .note { margin-top: 5mm; font-size: 0.8em; color: #71717a; }
+  .cov table.docs td.num { width: 8mm; color: #a1a1aa; }
+  .cov table.docs td.doc { font-weight: bold; }
+  .cov table.docs td.size { width: 38mm; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .cov table.docs td.files { width: 16mm; text-align: right; font-variant-numeric: tabular-nums; }
+  .cov .note { margin-top: 5mm; font-size: 0.8em; color: #71717a; }
 `;
 
 const MARKDOWN_CSS = `
@@ -340,6 +419,11 @@ function fmtMm(n: number): string {
 
 function mm(n: number): string {
   return `${fmtMm(n)}mm`;
+}
+
+// "12mm 10mm 14mm 10mm" — TRBL margin shorthand from PageSettings.
+function marginsCss(s: PageSettings): string {
+  return `${mm(s.marginTopMm)} ${mm(s.marginRightMm)} ${mm(s.marginBottomMm)} ${mm(s.marginLeftMm)}`;
 }
 
 function fmtDate(d: Date): string {

@@ -48,6 +48,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     });
 
     const sample = buildSampleStyleData();
+    const pageSettings = parseBundlePageSettings(prodSpec.bundlePageSettings);
+    const generalInfoMd = prodSpec.generalInfoMd?.trim();
     const html = renderCoverPageHtml({
       customerName: prodSpec.customer.name,
       businessArea: prodSpec.businessArea.name,
@@ -57,7 +59,12 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       supplierName: null,
       generatedAt: new Date(),
       docs,
-      settings: parseBundlePageSettings(prodSpec.bundlePageSettings).cover,
+      settings: pageSettings.cover,
+      // Mirror the runner: the general-info pages ship inside the cover
+      // document, so the preview shows the full document.
+      generalInfo: generalInfoMd
+        ? { markdown: generalInfoMd, settings: pageSettings.generalInfo }
+        : null,
     });
 
     return new NextResponse(html, {
