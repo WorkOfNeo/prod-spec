@@ -9,6 +9,8 @@ import {
   parseProdSpecRequiredFields,
 } from "@/lib/prod-spec/config";
 import { allVariants } from "@/lib/pdf/template-registry";
+import { docTypeLabel } from "@/lib/pdf/doc-types";
+import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { formatDate } from "@/lib/utils";
 import { listActiveLanguages } from "@/lib/languages/active";
@@ -45,7 +47,7 @@ export default async function ProdSpecDetailPage({
   });
   if (!prodSpec) notFound();
 
-  const [languages, careLabels, washSymbolRows, dict] = await Promise.all([
+  const [languages, careLabels, washSymbolRows, dict, docTypeLabels] = await Promise.all([
     listActiveLanguages(),
     loadCareLabels(),
     db.washSymbol.findMany({
@@ -54,6 +56,7 @@ export default async function ProdSpecDetailPage({
       select: { code: true, name: true, action: true, restrictive: true },
     }),
     loadTranslationDictionary(),
+    loadDocTypeLabels(),
   ]);
 
   // Per care label: its Translation-board entry ({ lang → text }) so the
@@ -115,6 +118,7 @@ export default async function ProdSpecDetailPage({
         variantCatalogue={allVariants().map((v) => ({
           key: v.key,
           docType: v.docType,
+          docTypeLabel: docTypeLabel(v.docType, docTypeLabels),
           name: v.name,
           description: v.description,
           defaultWidthMm: v.defaultWidthMm,

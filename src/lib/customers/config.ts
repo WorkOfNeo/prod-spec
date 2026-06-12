@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { DocType } from "@/generated/prisma/enums";
 
 // =====================================================
 // Customer.config schema — single source of truth
@@ -15,7 +14,7 @@ export const DOC_TYPES = [
   "HANGTAG",
   "CARTON_MARKING",
   "COLOUR_STICKER",
-] as const satisfies readonly DocType[];
+] as const;
 
 export const ColumnMappingSchema = z.object({
   styleNumber: z.string().optional(),

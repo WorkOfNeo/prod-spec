@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ALL_DOC_TYPES, docTypeLabel } from "@/lib/pdf/doc-types";
+import type { DocTypeEntry } from "@/lib/pdf/doc-types";
 import {
   LAYOUT_GRID_COLS,
   LAYOUT_GRID_ROWS,
@@ -92,11 +92,14 @@ export function LayoutEditor({
   customers,
   businessAreas,
   languages,
+  docTypes,
 }: {
   layout: LayoutProps;
   customers: Customer[];
   businessAreas: BusinessArea[];
   languages: Language[];
+  // The doc-type catalogue (DB-managed) — options for the type select.
+  docTypes: DocTypeEntry[];
 }) {
   const [name, setName] = useState(layout.name);
   const [docType, setDocType] = useState(layout.docType);
@@ -677,12 +680,22 @@ export function LayoutEditor({
             className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-600"
             title="Asset doc type — grouping in pickers and on JobAssets"
           >
-            {ALL_DOC_TYPES.map((d) => (
-              <option key={d} value={d}>
-                {docTypeLabel(d)}
+            {docTypes.map((d) => (
+              <option key={d.value} value={d.value}>
+                {d.label}
               </option>
             ))}
+            {docTypes.some((d) => d.value === docType) ? null : (
+              <option value={docType}>{docType}</option>
+            )}
           </select>
+          <Link
+            href="/custom-outputs#doc-types"
+            className="text-[11px] text-zinc-400 underline-offset-2 hover:text-zinc-600 hover:underline"
+            title="Add or rename document types (Custom outputs page)"
+          >
+            Manage types
+          </Link>
           {status === "PUBLISHED" ? (
             <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
               Published · v{version} — edits go live on save

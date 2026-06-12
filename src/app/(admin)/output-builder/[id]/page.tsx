@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { listActiveLanguages } from "@/lib/languages/active";
 import { parseLayoutDef } from "@/lib/output-layouts/schema";
+import { loadDocTypes } from "@/lib/pdf/doc-types-db";
 import { LayoutEditor } from "./layout-editor";
 import { requireAdminPage } from "@/lib/auth-server";
 
@@ -58,6 +59,7 @@ export default async function OutputLayoutEditorPage(props: { params: Promise<{ 
         definition,
       }}
       customers={customers}
+      docTypes={await loadDocTypes()}
       businessAreas={businessAreas}
       languages={languages}
     />

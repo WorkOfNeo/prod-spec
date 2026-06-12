@@ -1,5 +1,4 @@
 import { db } from "@/lib/db";
-import type { DocType } from "@/generated/prisma/enums";
 import { setDynamicVariants, type TemplateVariant } from "@/lib/pdf/template-registry";
 import type { StyleData } from "@/lib/pdf/types";
 import { parseLayoutDef, type LayoutDef } from "./schema";
@@ -43,7 +42,7 @@ export function isLayoutVariantKey(key: string): boolean {
 type LayoutRow = {
   id: string;
   name: string;
-  docType: DocType;
+  docType: string;
   definition: unknown;
   version: number;
 };

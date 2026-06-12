@@ -1,8 +1,11 @@
-import { allVariants } from "@/lib/pdf/template-registry";
+import { allVariants, TEMPLATE_VARIANTS } from "@/lib/pdf/template-registry";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildSampleStyleData } from "@/lib/pdf/sample-data";
 import { STYLE_FIELD_LABELS } from "@/lib/styles/resolved-fields";
+import { docTypeLabel } from "@/lib/pdf/doc-types";
+import { loadDocTypesWithUsage } from "@/lib/pdf/doc-types-db";
 import { CustomOutputsGrid, type OutputPreview } from "./custom-outputs-grid";
+import { DocTypesManager } from "./doc-types-manager";
 import { requireAdminPage } from "@/lib/auth-server";
 
 // Templates read DB-managed reference data (wash symbols, certificates,
@@ -16,6 +19,11 @@ export default async function CustomOutputsPage() {
   // code-registered variants.
   await ensureLayoutVariantsLoaded();
 
+  // The doc-type catalogue (with usage counts for the management card);
+  // labels feed the type badges on the preview cards.
+  const docTypes = await loadDocTypesWithUsage(new Set(TEMPLATE_VARIANTS.map((v) => v.docType)));
+  const labels = Object.fromEntries(docTypes.map((t) => [t.value, t.label]));
+
   const sample = buildSampleStyleData();
 
   // Render every catalogue variant with the shared sample data. Each
@@ -28,6 +36,7 @@ export default async function CustomOutputsPage() {
         name: v.name,
         description: v.description,
         docType: v.docType,
+        docTypeLabel: docTypeLabel(v.docType, labels),
         widthMm: v.defaultWidthMm,
         heightMm: v.defaultHeightMm,
         requiredFields: v.requiredFields.map((f) => STYLE_FIELD_LABELS[f]),
@@ -55,6 +64,8 @@ export default async function CustomOutputsPage() {
           any card renders the true print output.
         </p>
       </div>
+
+      <DocTypesManager initialTypes={docTypes} />
 
       <CustomOutputsGrid previews={previews} />
     </div>

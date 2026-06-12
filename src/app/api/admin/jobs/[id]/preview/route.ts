@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
-import type { DocType } from "@/generated/prisma/enums";
 
 export const runtime = "nodejs";
 
@@ -17,7 +16,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
   const { id } = await ctx.params;
   const variantKey = req.nextUrl.searchParams.get("variantKey");
-  const docType = req.nextUrl.searchParams.get("docType") as DocType | null;
+  const docType = req.nextUrl.searchParams.get("docType");
 
   if (!variantKey && !docType) {
     return NextResponse.json({ error: "variantKey or docType required" }, { status: 400 });

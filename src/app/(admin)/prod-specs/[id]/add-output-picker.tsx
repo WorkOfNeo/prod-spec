@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LazyOutputPreview } from "@/components/output-preview";
-import { docTypeLabel } from "@/lib/pdf/doc-types";
 
 // =====================================================
 // Add-output picker — the catalogue browser the ProdSpec editor expands
@@ -16,6 +15,7 @@ import { docTypeLabel } from "@/lib/pdf/doc-types";
 export type VariantInfo = {
   key: string;
   docType: string;
+  docTypeLabel: string;
   name: string;
   description: string;
   defaultWidthMm: number;
@@ -73,11 +73,17 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
 
   // Which docTypes / sources actually exist in the current catalogue, so
   // we only render filters that can match something.
-  const docTypesPresent = useMemo(() => {
-    const set = new Set<string>();
-    for (const v of variants) set.add(v.docType);
-    return [...set].sort((a, b) => docTypeLabel(a).localeCompare(docTypeLabel(b)));
+  // value → label for the filter chips, from the variants themselves
+  // (the server resolved labels against the doc-type catalogue).
+  const docLabels = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const v of variants) m.set(v.docType, v.docTypeLabel);
+    return m;
   }, [variants]);
+  const docTypesPresent = useMemo(
+    () => [...docLabels.keys()].sort((a, b) => (docLabels.get(a) ?? a).localeCompare(docLabels.get(b) ?? b)),
+    [docLabels],
+  );
 
   const sourcesPresent = useMemo(() => {
     const set = new Set<Source>();
@@ -92,7 +98,7 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
       variants.map((v) => ({
         v,
         source: sourceOf(v.key),
-        blob: `${v.name} ${v.key} ${v.docType} ${docTypeLabel(v.docType)} ${v.description}`.toLowerCase(),
+        blob: `${v.name} ${v.key} ${v.docType} ${v.docTypeLabel} ${v.description}`.toLowerCase(),
       })),
     [variants],
   );
@@ -197,7 +203,7 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
                   </FilterChip>
                   {docTypesPresent.map((dt) => (
                     <FilterChip key={dt} active={docFilter === dt} onClick={() => setDocFilter(dt)}>
-                      {docTypeLabel(dt)}
+                      {docLabels.get(dt) ?? dt}
                     </FilterChip>
                   ))}
                 </>
@@ -270,7 +276,7 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
                             DOC_TYPE_BADGE[v.docType] ?? FALLBACK_BADGE
                           }`}
                         >
-                          {docTypeLabel(v.docType)}
+                          {v.docTypeLabel}
                         </span>
                       </div>
                       <div className="mt-0.5 truncate font-mono text-[10px] text-zinc-400">

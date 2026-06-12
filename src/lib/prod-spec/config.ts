@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { DocType } from "@/generated/prisma/enums";
 import {
   ColumnMappingSchema,
   RequiredFieldSchema,
@@ -20,10 +19,6 @@ import { TEMPLATE_VARIANTS, getVariant, type TemplateVariant } from "@/lib/pdf/t
 // Legacy shape (object keyed by DocType) is still parsed and silently
 // upgraded — see `parseProdSpecOutputs` below.
 // =====================================================
-
-// Pickable doc types + labels live in the doc-type catalogue; re-export
-// keeps the existing import sites (zod enum in the layout PATCH route).
-export { ALL_DOC_TYPES } from "@/lib/pdf/doc-types";
 
 export const ProdSpecOutputSchema = z.object({
   variantKey: z.string().min(1),
@@ -82,7 +77,7 @@ export function parseProdSpecOutputs(raw: unknown): ProdSpecOutputs {
         if (!val || typeof val !== "object") return null;
         const v = val as { enabled?: boolean; widthMm?: number; heightMm?: number };
         const variant = TEMPLATE_VARIANTS.find(
-          (t) => t.docType === (docType as DocType),
+          (t) => t.docType === docType,
         );
         if (!variant) return null;
         return {

@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-server";
 import { LayoutDefSchema } from "@/lib/output-layouts/schema";
 import { refreshLayoutVariants } from "@/lib/output-layouts/variants";
-import { ALL_DOC_TYPES } from "@/lib/prod-spec/config";
+import { loadDocTypes } from "@/lib/pdf/doc-types-db";
 
 export const runtime = "nodejs";
 
@@ -26,7 +26,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 
 const PATCH_SCHEMA = z.object({
   name: z.string().min(1).max(120).optional(),
-  docType: z.enum(ALL_DOC_TYPES).optional(),
+  // Shape-validated here; membership is checked against the doc_types
+  // catalogue in the handler (the list is DB-managed, not a static enum).
+  docType: z.string().regex(/^[A-Z][A-Z0-9_]{0,39}$/).optional(),
   definition: LayoutDefSchema.optional(),
   // Test-data binding (which customer × BA the builder previews with) —
   // null clears it.
@@ -50,6 +52,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ error: "Invalid body", details: parsed.error.flatten() }, { status: 400 });
   }
   const d = parsed.data;
+  if (d.docType !== undefined) {
+    const known = await loadDocTypes();
+    if (!known.some((t) => t.value === d.docType)) {
+      return NextResponse.json(
+        { error: `Unknown doc type "${d.docType}" — add it under Custom outputs → Document types first` },
+        { status: 400 },
+      );
+    }
+  }
 
   try {
     const layout = await db.outputLayout.update({

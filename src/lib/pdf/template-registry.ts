@@ -1,4 +1,3 @@
-import type { DocType } from "@/generated/prisma/enums";
 import type { ColumnMapping } from "@/lib/customers/config";
 import type { StyleData } from "./types";
 import { renderCareLabel01Html } from "./templates/care-label-01";
@@ -36,7 +35,7 @@ export type OutputDims = {
 
 export type TemplateVariant = {
   key: string;
-  docType: DocType;
+  docType: string;
   name: string;
   description: string;
   defaultWidthMm: number;
@@ -196,8 +195,8 @@ export function requiredFieldsForVariants(keys: string[]): Array<keyof ColumnMap
   return [...set];
 }
 
-export function variantsByDocType(): Map<DocType, TemplateVariant[]> {
-  const map = new Map<DocType, TemplateVariant[]>();
+export function variantsByDocType(): Map<string, TemplateVariant[]> {
+  const map = new Map<string, TemplateVariant[]>();
   for (const v of TEMPLATE_VARIANTS) {
     const arr = map.get(v.docType) ?? [];
     arr.push(v);
