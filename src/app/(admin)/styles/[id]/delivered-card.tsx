@@ -109,7 +109,7 @@ export function DeliveredCard({
 
         {err && <p className="mt-2 text-[11px] text-red-600">{err}</p>}
 
-        {/* Review actions — icon buttons (open / approve / reject). */}
+        {/* Review actions — icon buttons (open / download / approve / reject). */}
         <div className="mt-3 flex gap-2">
           <a
             href={previewUrl}
@@ -120,6 +120,15 @@ export function DeliveredCard({
             className="inline-flex items-center justify-center rounded-md border border-zinc-300 bg-white p-1.5 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
           >
             <OpenIcon />
+          </a>
+          <a
+            href={`/api/admin/job-assets/${asset.id}/download`}
+            download={asset.fileName}
+            title={`Download ${asset.fileName}`}
+            aria-label={`Download ${asset.fileName}`}
+            className="inline-flex items-center justify-center rounded-md border border-zinc-300 bg-white p-1.5 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+          >
+            <DownloadIcon />
           </a>
           <button
             type="button"
@@ -179,6 +188,16 @@ function OpenIcon() {
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
       <polyline points="15 3 21 3 21 9" />
       <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
+  );
+}
+
+function DownloadIcon() {
+  return (
+    <svg {...iconProps()}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
     </svg>
   );
 }

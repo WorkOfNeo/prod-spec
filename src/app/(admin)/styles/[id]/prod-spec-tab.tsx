@@ -143,7 +143,7 @@ export function ProdSpecTab({
 
       {/* Delivered Prod Specs (the generated PDFs from the latest job) */}
       <section>
-        <div className="mb-2 flex items-end justify-between">
+        <div className="mb-2 flex items-end justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-zinc-700">Delivered Prod Specs</h2>
             <p className="text-xs text-zinc-500">
@@ -152,6 +152,16 @@ export function ProdSpecTab({
                 : "No job yet — Re-run to generate."}
             </p>
           </div>
+          {latestJob && latestJob.assets.length > 0 && (
+            <a
+              href={`/api/admin/jobs/${latestJob.id}/download-zip`}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
+              title="Download every PDF in this bundle as one zip, under their print file names"
+            >
+              <DownloadIcon />
+              Download all (.zip)
+            </a>
+          )}
         </div>
 
         {supplierShare ? (
@@ -219,8 +229,19 @@ export function ProdSpecTab({
                         <span className="font-mono">job {job.id.slice(-8)}</span> ·{" "}
                         {formatDate(job.createdAt)} · {job.triggerSource.toLowerCase().replace(/_/g, " ")}
                       </span>
-                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-700">
-                        {job.status.toLowerCase().replace(/_/g, " ")}
+                      <span className="inline-flex items-center gap-2">
+                        {job.assets.length > 0 && (
+                          <a
+                            href={`/api/admin/jobs/${job.id}/download-zip`}
+                            className="text-[11px] font-medium text-zinc-600 underline hover:text-zinc-900"
+                            title="Download this job's PDFs as one zip"
+                          >
+                            download all (.zip)
+                          </a>
+                        )}
+                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-700">
+                          {job.status.toLowerCase().replace(/_/g, " ")}
+                        </span>
                       </span>
                     </div>
                     {job.assets.length === 0 ? (
@@ -257,6 +278,26 @@ export function ProdSpecTab({
         </section>
       )}
     </div>
+  );
+}
+
+function DownloadIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-3.5 w-3.5"
+      aria-hidden="true"
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
   );
 }
 

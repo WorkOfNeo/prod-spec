@@ -38,6 +38,7 @@
     "clsx": "^2.1.1",
     "dotenv": "^17.4.2",
     "isomorphic-fetch": "^3.0.0",
+    "jszip": "^3.10.1",
     "lucide-react": "^1.16.0",
     "marked": "^18.0.5",
     "next": "16.2.6",
