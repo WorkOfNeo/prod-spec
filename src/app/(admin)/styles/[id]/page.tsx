@@ -256,9 +256,9 @@ export default async function StyleDetail({
   // from the SAME StyleData builder, pins and naming rules the runner
   // uses — repeat/split-aware for Output Builder layouts — so the
   // operator can verify the split settings against this style's actual
-  // size/EAN rows before generating anything. qrImage is deliberately
-  // null: the page only selects its name (the image is heavy) and file
-  // naming never reads it.
+  // size/EAN rows before generating anything. qrImage/logoImage are
+  // deliberately null: the page only computes file names (the images are
+  // heavy) and file naming never reads either.
   const outputsFilesPreview: Array<{
     variantKey: string;
     name: string;
@@ -276,6 +276,7 @@ export default async function StyleDetail({
         eans: style.eans,
         customer: { name: style.customer.name, config: style.customer.config },
         qrImage: null,
+        logoImage: null,
       },
       style.prodSpec,
       parseCustomerConfig(style.customer.config),

@@ -39,6 +39,7 @@ const BODY_SCHEMA = z.object({
   supplierEmail: z.string().default(""),
   countryOfOrigin: z.string().default(""),
   qrImageId: z.string().min(1).nullable().optional(),
+  logoImageId: z.string().min(1).nullable().optional(),
 });
 
 type ManualBody = z.infer<typeof BODY_SCHEMA>;
@@ -127,6 +128,7 @@ export async function POST(req: NextRequest) {
       supplierId: body.supplierId ?? null,
       businessAreaId: body.businessAreaId ?? null,
       qrImageId: body.qrImageId ?? null,
+      logoImageId: body.logoImageId ?? null,
       prodSpecId,
       mondayItemId: syntheticId,
       mondayBoardId: "manual",

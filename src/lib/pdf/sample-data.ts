@@ -102,5 +102,8 @@ export function buildSampleStyleData(): StyleData {
     careInstructionsByLang: {},
     certificates: ["FSC", "OEKOTEX", "GOTS"],
     qrImageUrl: null,
+    // Sample per-style logo so {{logo:custom}} previews (builder canvas,
+    // custom-outputs samples) render artwork instead of a missing chip.
+    styleLogo: SAMPLE_LOGO_SVG,
   };
 }

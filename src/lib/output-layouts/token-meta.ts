@@ -106,7 +106,7 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   },
   {
     key: "logo",
-    label: "Logo (contrast = repo file, custom = uploaded)",
+    label: "Logo (contrast = repo file, custom = the style's linked logo)",
     group: "Barcodes & symbols",
     kind: "image",
     arg: "source",

@@ -110,6 +110,7 @@ main()
   .then(() => batch7())
   .then(() => batch8())
   .then(() => batch9())
+  .then(() => batch10())
   .catch((err) => {
     console.error(err);
     process.exit(1);
@@ -494,4 +495,44 @@ async function batch9() {
 
   await closeBrowser();
   console.log(process.exitCode ? "BATCH 9 FAILED" : "BATCH 9 PASSED");
+}
+
+// ---------------------------------------------------------------------
+// Batch 10 coverage: per-style {{logo:custom}} (StyleData.styleLogo from
+// the Style's linked LogoImage row) — raw-SVG inlining, data-URL
+// passthrough, and the honest missing chip feeding the ship-gate.
+// ---------------------------------------------------------------------
+async function batch10() {
+  const base = buildSampleStyleData();
+  const LOGO = LayoutDefSchema.parse({
+    pages: [{ id: "p1", title: "", widthMm: 100, heightMm: 50,
+      blocks: [{ id: "b1", anchor: "top-left", cols: 6, lines: ["{{logo:custom}}"] }] }],
+  });
+
+  // Sample data carries styleLogo as raw SVG markup → inlined data URL.
+  const h1 = await renderLayoutHtml(LOGO, base, { mode: "production" });
+  assert(h1.includes('class="ol-logo"') && h1.includes("data:image/svg+xml;base64,"),
+    "styleLogo SVG markup inlines as a data URL");
+
+  // A data-URL styleLogo passes through verbatim (PNG/JPG uploads).
+  const PNG = "data:image/png;base64,iVBORw0KGgo=";
+  const h2 = await renderLayoutHtml(LOGO, { ...base, styleLogo: PNG }, { mode: "production" });
+  assert(h2.includes(`src="${PNG}"`), "data-URL styleLogo passes through verbatim");
+
+  // No linked logo → honest missing chip, counted by the approval gate.
+  const h3 = await renderLayoutHtml(LOGO, { ...base, styleLogo: null }, { mode: "production" });
+  assert(h3.includes("No logo linked on this style"), "missing styleLogo renders the missing chip");
+  assert(countPlaceholderMarkers(h3) >= 1, "missing logo counts as a placeholder (blocks approval)");
+
+  // {{logo:contrast}} is untouched by the per-style resolution.
+  const CONTRAST = LayoutDefSchema.parse({
+    pages: [{ id: "p1", title: "", widthMm: 100, heightMm: 50,
+      blocks: [{ id: "b1", anchor: "top-left", cols: 6, lines: ["{{logo:contrast}}"] }] }],
+  });
+  const h4 = await renderLayoutHtml(CONTRAST, { ...base, styleLogo: null }, { mode: "production" });
+  assert(!h4.includes("No logo linked on this style"),
+    "contrast logo never reports the per-style hint");
+
+  await closeBrowser();
+  console.log(process.exitCode ? "BATCH 10 FAILED" : "BATCH 10 PASSED");
 }
