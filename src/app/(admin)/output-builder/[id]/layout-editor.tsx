@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ALL_DOC_TYPES, docTypeLabel } from "@/lib/pdf/doc-types";
 import {
   LAYOUT_GRID_COLS,
   LAYOUT_GRID_ROWS,
@@ -39,7 +40,6 @@ const AUTOSAVE_MS = 1200;
 const PREVIEW_DEBOUNCE_MS = 600;
 const PT_TO_MM = 25.4 / 72;
 
-const DOC_TYPES = ["WASHCARE", "CARE_LABEL", "STICKER", "HANGTAG", "CARTON_MARKING", "COLOUR_STICKER"] as const;
 
 // Id generators — module scope, called from event handlers only (the
 // react-hooks/purity rule forbids impure calls reachable from render).
@@ -677,9 +677,9 @@ export function LayoutEditor({
             className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-600"
             title="Asset doc type — grouping in pickers and on JobAssets"
           >
-            {DOC_TYPES.map((d) => (
+            {ALL_DOC_TYPES.map((d) => (
               <option key={d} value={d}>
-                {d}
+                {docTypeLabel(d)}
               </option>
             ))}
           </select>

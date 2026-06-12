@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
+import { docTypeLabel } from "@/lib/pdf/doc-types";
 
 type LayoutRow = {
   id: string;
@@ -65,6 +66,7 @@ export function LayoutsList({
         [
           l.name,
           l.docType,
+          docTypeLabel(l.docType),
           l.customerName ?? "",
           l.businessAreaName ?? "",
           ...l.prodSpecs.flatMap((s) => [s.name, s.customerName]),
@@ -268,6 +270,7 @@ export function LayoutsList({
             <thead>
               <tr className="border-b border-zinc-200 text-left text-xs uppercase tracking-wide text-zinc-500">
                 <th className="rounded-tl-lg bg-zinc-50 px-4 py-3 font-medium">Layout</th>
+                <th className="bg-zinc-50 px-4 py-3 font-medium">Type</th>
                 <th className="bg-zinc-50 px-4 py-3 font-medium">Pages</th>
                 <th className="bg-zinc-50 px-4 py-3 font-medium">Test data</th>
                 <th className="bg-zinc-50 px-4 py-3 font-medium">Prod specs</th>
@@ -292,8 +295,13 @@ export function LayoutsList({
                       </Link>
                     </div>
                     <div className="ml-4 mt-0.5 font-mono text-xs text-zinc-400">
-                      layout:{l.id.slice(0, 10)}… · {l.docType}
+                      layout:{l.id.slice(0, 10)}…
                     </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600">
+                      {docTypeLabel(l.docType)}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-sm text-zinc-600">
                     {l.defInvalid ? <span className="text-amber-600">invalid</span> : l.pageCount}

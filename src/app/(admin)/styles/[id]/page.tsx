@@ -23,6 +23,7 @@ import { outputReadinessForStyle, type OutputReadiness } from "@/lib/styles/outp
 import { RerunButton } from "./rerun-button";
 import { StyleOutputCard, type StyleOutputCardProps } from "./style-output-card";
 import { ProdSpecTab } from "./prod-spec-tab";
+import { ReviewTab } from "./review-tab";
 import { EanPanel } from "./ean-panel";
 import type { EanView } from "@/lib/po/ean-view";
 import { colorFromVariantLabel } from "@/lib/po/ean-format";
@@ -105,11 +106,14 @@ function outputDataNotes(
   return [`delivery term ${term} → prints ${branch}`];
 }
 
-type TabKey = "details" | "prod-spec";
+type TabKey = "details" | "prod-spec" | "review";
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "details", label: "Details" },
+  // Prod Spec = config + the RUNS LIST (timestamps, counts, owner).
+  // Review = the files themselves (grids up to 4 across).
   { key: "prod-spec", label: "Prod Spec" },
+  { key: "review", label: "Review" },
 ];
 
 export default async function StyleDetail({
@@ -124,7 +128,8 @@ export default async function StyleDetail({
 
   const { id } = await params;
   const tabParam = (await searchParams).tab;
-  const tab: TabKey = tabParam === "prod-spec" ? "prod-spec" : "details";
+  const tab: TabKey =
+    tabParam === "prod-spec" ? "prod-spec" : tabParam === "review" ? "review" : "details";
 
   const style = await db.style.findUnique({
     where: { id },
@@ -158,6 +163,7 @@ export default async function StyleDetail({
             },
           },
           reviewActions: { include: { user: true } },
+          reviewClaimedBy: { select: { name: true, email: true } },
         },
         orderBy: { createdAt: "desc" },
         take: 10,
@@ -471,6 +477,30 @@ export default async function StyleDetail({
     return match ? { id: match.id, name: match.name, mondayValue: match.mondayValue } : null;
   })();
 
+  // One serialised job list feeds BOTH tabs: the Prod Spec tab renders it
+  // as the runs table (counts + owner only), the Review tab renders the
+  // documents themselves. claimedBy* = the review owner ("Start review" /
+  // first decision) so the team can follow along.
+  const reviewJobs = style.jobs.map((j) => ({
+    id: j.id,
+    status: j.status,
+    triggerSource: j.triggerSource,
+    createdAt: j.createdAt.toISOString(),
+    claimedByName: j.reviewClaimedBy ? j.reviewClaimedBy.name || j.reviewClaimedBy.email : null,
+    claimedAtLabel: j.reviewClaimedAt ? formatDate(j.reviewClaimedAt) : null,
+    assets: j.assets.map((a) => ({
+      id: a.id,
+      docType: a.docType,
+      variantKey: a.variantKey,
+      displayName: a.displayName,
+      fileName: a.fileName,
+      reviewStatus: a.reviewStatus,
+      rejectReason: a.rejectReason,
+      reviewedAt: a.reviewedAt?.toISOString() ?? null,
+      reviewerEmail: a.reviewedBy?.email ?? null,
+    })),
+  }));
+
   return (
     <div className="px-8 py-8">
       <Link href="/styles" className="text-xs text-zinc-500 underline">
@@ -568,25 +598,11 @@ export default async function StyleDetail({
                 }
               : null
           }
-          jobs={style.jobs.map((j) => ({
-            id: j.id,
-            status: j.status,
-            triggerSource: j.triggerSource,
-            createdAt: j.createdAt.toISOString(),
-            assets: j.assets.map((a) => ({
-              id: a.id,
-              docType: a.docType,
-              variantKey: a.variantKey,
-              displayName: a.displayName,
-              fileName: a.fileName,
-              reviewStatus: a.reviewStatus,
-              rejectReason: a.rejectReason,
-              reviewedAt: a.reviewedAt?.toISOString() ?? null,
-              reviewerEmail: a.reviewedBy?.email ?? null,
-            })),
-          }))}
+          jobs={reviewJobs}
         />
       )}
+
+      {tab === "review" && <ReviewTab styleId={style.id} jobs={reviewJobs} />}
     </div>
   );
 }
