@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export default async function NewManualStylePage() {
   // Make sure at least one customer exists so the form has a target.
   await ensureNettoGermany();
-  const [customers, suppliers, businessAreas, washSymbols, qrImages, prodSpecs] = await Promise.all([
+  const [customers, suppliers, businessAreas, washSymbols, qrImages, logoImages, prodSpecs] = await Promise.all([
     db.customer.findMany({
       where: { active: true },
       orderBy: { name: "asc" },
@@ -30,6 +30,11 @@ export default async function NewManualStylePage() {
       select: { id: true, code: true, name: true, svg: true },
     }),
     db.qrImage.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, image: true },
+    }),
+    db.logoImage.findMany({
       where: { active: true },
       orderBy: { name: "asc" },
       select: { id: true, name: true, image: true },
@@ -77,6 +82,7 @@ export default async function NewManualStylePage() {
         businessAreas={businessAreas}
         washSymbols={washSymbols}
         qrImages={qrImages}
+        logoImages={logoImages}
         prodSpecs={prodSpecLookup}
       />
     </div>

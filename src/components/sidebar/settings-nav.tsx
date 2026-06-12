@@ -16,6 +16,7 @@ const SETTINGS_ITEMS: Array<{ href: string; label: string }> = [
   { href: "/settings/washcare-symbols", label: "Wash care symbols" },
   { href: "/settings/certificates", label: "Certificates" },
   { href: "/settings/qr-codes", label: "QR codes" },
+  { href: "/settings/logos", label: "Logos" },
   { href: "/translations", label: "Translations" },
   { href: "/countries", label: "Countries" },
   { href: "/languages", label: "Languages" },

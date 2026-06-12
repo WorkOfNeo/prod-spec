@@ -108,6 +108,7 @@ export async function processJob(jobId: string): Promise<void> {
         include: {
           customer: true,
           qrImage: true,
+          logoImage: true,
           // Country feeds render fallbacks; name prints on the cover page.
           supplier: { select: { country: true, name: true } },
           // Display name for the review-ready email (falls back to the
@@ -154,6 +155,7 @@ export async function processJob(jobId: string): Promise<void> {
         eans: job.style.eans,
         customer: { name: job.style.customer.name, config: job.style.customer.config },
         qrImage: job.style.qrImage ? { image: job.style.qrImage.image } : null,
+        logoImage: job.style.logoImage ? { image: job.style.logoImage.image } : null,
       },
       prodSpec,
       config,

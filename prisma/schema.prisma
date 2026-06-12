@@ -465,6 +465,10 @@ model Style {
   // care-label-02 page 4. SetNull on delete so retiring a QR image
   // doesn't cascade-delete styles.
   qrImageId           String?
+  // Optional link to a logo from the LogoImage library — {{logo:custom}}
+  // on Output Builder layouts renders THIS style's linked logo (chosen
+  // per style, not globally). SetNull like qrImageId.
+  logoImageId         String?
   mondayItemId        String         @unique
   mondayBoardId       String
   name                String
@@ -517,6 +521,7 @@ model Style {
   supplier         Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   prodSpec         ProdSpec?         @relation(fields: [prodSpecId], references: [id], onDelete: SetNull)
   qrImage          QrImage?          @relation(fields: [qrImageId], references: [id], onDelete: SetNull)
+  logoImage        LogoImage?        @relation(fields: [logoImageId], references: [id], onDelete: SetNull)
   jobs             Job[]
   eans             StyleEan[]
   rejectionTickets RejectionTicket[]
@@ -528,6 +533,7 @@ model Style {
   @@index([supplierId])
   @@index([prodSpecId])
   @@index([qrImageId])
+  @@index([logoImageId])
   @@index([poNumber])
   @@index([groupTitle])
   @@index([eanStatus])
@@ -1159,6 +1165,31 @@ model QrImage {
 
   @@index([active])
   @@map("qr_images")
+}
+
+// =====================================================
+// Logo images — DB-managed via /settings/logos.
+// A Style links to at most one (Style.logoImageId); Output Builder
+// layouts render it via {{logo:custom}}. The logo is chosen PER STYLE —
+// upload artwork once here, link it from each style's edit page. This
+// replaced the old global Output Builder logo (AppSetting
+// "outputBuilderCustomLogo"), whose value the migration copies in as the
+// first gallery entry.
+// =====================================================
+model LogoImage {
+  id        String   @id @default(cuid())
+  name      String
+  // Image data URL ("data:image/png;base64,…") or raw SVG markup —
+  // same dual encoding as QrImage.image / ProdSpec.logoSvg.
+  image     String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  styles Style[]
+
+  @@index([active])
+  @@map("logo_images")
 }
 
 // =====================================================

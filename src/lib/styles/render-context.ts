@@ -42,6 +42,7 @@ export type RenderableStyle = {
   eans: ReadonlyArray<{ size: string; ean13: string | null; variantLabel?: string | null }>;
   customer: { name: string; config: unknown };
   qrImage: { image: string } | null;
+  logoImage: { image: string } | null;
 };
 
 export type RenderableProdSpec = {
@@ -111,6 +112,7 @@ export async function buildStyleData(
       careInstructionsByLang: parseCareInstructions(prodSpec?.careInstructionsByLang),
       outputLanguages: parseProdSpecLanguages(prodSpec?.outputLanguages),
       qrImageUrl: style.qrImage?.image ?? null,
+      styleLogo: style.logoImage?.image ?? null,
     },
     effectiveMapping,
   );
@@ -162,6 +164,7 @@ export async function loadStyleRenderContext(styleId: string): Promise<StyleRend
     include: {
       customer: true,
       qrImage: true,
+      logoImage: true,
       supplier: { select: { country: true } },
       eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, variantLabel: true } },
     },
@@ -183,6 +186,7 @@ export async function loadStyleRenderContext(styleId: string): Promise<StyleRend
       eans: style.eans,
       customer: { name: style.customer.name, config: style.customer.config },
       qrImage: style.qrImage ? { image: style.qrImage.image } : null,
+      logoImage: style.logoImage ? { image: style.logoImage.image } : null,
     },
     prodSpec,
     config,

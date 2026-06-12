@@ -5,7 +5,7 @@ import { docTypeLabel } from "@/lib/pdf/doc-types";
 import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { LAYOUT_VARIANT_PREFIX } from "@/lib/output-layouts/variants";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
-import { getContrastLogoDataUrl, getCustomLogoDataUrl } from "@/lib/output-layouts/logos";
+import { getContrastLogoDataUrl } from "@/lib/output-layouts/logos";
 import { LayoutsList } from "./layouts-list";
 import { requireAdminPage } from "@/lib/auth-server";
 
@@ -26,10 +26,16 @@ export default async function OutputBuilderPage() {
     );
   }
 
-  const [contrastLogo, customLogo] = await Promise.all([
-    getContrastLogoDataUrl(),
-    getCustomLogoDataUrl(),
-  ]);
+  const contrastLogo = await getContrastLogoDataUrl();
+  // {{logo:custom}} is per style now — the card links to the LogoImage
+  // library instead of hosting a global upload. Count defensively: the
+  // logo_images migration may not be applied yet.
+  let logoImageCount = 0;
+  try {
+    logoImageCount = await db.logoImage.count({ where: { active: true } });
+  } catch {
+    // table missing — card shows 0 and the library page explains itself
+  }
 
   let rows;
   try {
@@ -129,5 +135,5 @@ export default async function OutputBuilderPage() {
     };
   });
 
-  return <LayoutsList layouts={layouts} contrastLogoFound={contrastLogo !== null} customLogo={customLogo} />;
+  return <LayoutsList layouts={layouts} contrastLogoFound={contrastLogo !== null} logoImageCount={logoImageCount} />;
 }

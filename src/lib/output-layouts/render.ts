@@ -19,7 +19,7 @@ import {
   type LayoutPage,
 } from "./schema";
 import { tokenMeta, type BarcodeSource, type LogoSource } from "./token-meta";
-import { getContrastLogoDataUrl, getCustomLogoDataUrl } from "./logos";
+import { getContrastLogoDataUrl } from "./logos";
 import {
   applyConditionalsForStyle,
   augmentCareAndMadeIn,
@@ -293,7 +293,7 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx): string | nu
         const hint =
           source === "contrast"
             ? "Contrast logo missing — add public/logos/contrast.svg"
-            : "No custom logo uploaded (Output builder → Logos)";
+            : "No logo linked on this style — Edit style → Logo image (library: Settings → Logos)";
         html += `<span class="missing">${escapeHtml(hint)}</span>`;
         hadValue = true; // visible authoring gap, counted by the ship-gate
       }
@@ -431,13 +431,21 @@ export async function renderLayoutHtml(
   const repStyles: StyleData[] = repetitionStyles(style, settings.repeatBy);
 
   const usesLogo = defUsesToken(pages, "logo");
-  const [barcodes, symbols, contrastLogo, customLogo, certs] = await Promise.all([
+  const [barcodes, symbols, contrastLogo, certs] = await Promise.all([
     buildBarcodeCache(repStyles, pages),
     defUsesToken(pages, "washSymbols") ? loadWashcareSymbols() : Promise.resolve(null),
     usesLogo ? getContrastLogoDataUrl() : Promise.resolve(null),
-    usesLogo ? getCustomLogoDataUrl() : Promise.resolve(null),
     defUsesToken(pages, "cert") ? loadCertificates() : Promise.resolve(null),
   ]);
+  // {{logo:custom}} is PER STYLE: the LogoImage linked on the style
+  // (Style.logoImageId, picked on the style edit page; library at
+  // Settings → Logos). The column holds a data URL or raw SVG markup —
+  // markup is inlined as a data URL so the PDF needs no network fetch.
+  const customLogo = style.styleLogo
+    ? style.styleLogo.startsWith("data:")
+      ? style.styleLogo
+      : `data:image/svg+xml;base64,${Buffer.from(style.styleLogo, "utf-8").toString("base64")}`
+    : null;
   const ctx: RenderCtx = { mode, barcodes, symbols, logos: { contrast: contrastLogo, custom: customLogo }, certs };
 
   const emitted: Array<{ page: LayoutPage; repStyle: StyleData }> = [];

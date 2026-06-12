@@ -16,6 +16,9 @@ export type MapperOptions = {
   // through here (rather than read from a Monday column) because it's a
   // per-style DB link, not synced board data.
   qrImageUrl?: string | null;
+  // The Style's linked LogoImage (same per-style DB-link reasoning as
+  // qrImageUrl) — data URL or raw SVG markup; {{logo:custom}} renders it.
+  styleLogo?: string | null;
 };
 
 // Customer-config-driven mapper. The `columnMapping` argument comes from
@@ -94,6 +97,7 @@ export function mapMondayItemToStyleData(
     outputLanguages: opts.outputLanguages ?? [],
     certificates: parseCertificates(readField("certificates")),
     qrImageUrl: opts.qrImageUrl ?? null,
+    styleLogo: opts.styleLogo ?? null,
   };
 }
 

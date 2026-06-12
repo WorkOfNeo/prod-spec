@@ -140,4 +140,10 @@ export type StyleData = {
   // resolved by the runner from the linked QrImage library row. Rendered
   // as-is on care-label-02 page 4. Null / undefined when no QR is linked.
   qrImageUrl?: string | null;
+
+  // Per-style logo from the LogoImage library (Style.logoImageId) — data
+  // URL or raw SVG markup. {{logo:custom}} on Output Builder layouts
+  // renders THIS, so the logo is decided per style, not globally. Null /
+  // undefined when no logo is linked (renders the honest missing chip).
+  styleLogo?: string | null;
 };

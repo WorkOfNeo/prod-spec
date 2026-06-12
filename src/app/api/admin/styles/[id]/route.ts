@@ -37,6 +37,7 @@ const PATCH_SCHEMA = z.object({
   supplierEmail: z.string().optional(),
   countryOfOrigin: z.string().optional(),
   qrImageId: z.string().min(1).nullable().optional(),
+  logoImageId: z.string().min(1).nullable().optional(),
   regenerate: z.boolean().default(true),
 });
 
@@ -184,6 +185,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       businessAreaId: businessAreaIdResolved,
       supplierId: patch.supplierId !== undefined ? patch.supplierId : style.supplierId,
       qrImageId: patch.qrImageId !== undefined ? patch.qrImageId : style.qrImageId,
+      logoImageId: patch.logoImageId !== undefined ? patch.logoImageId : style.logoImageId,
       prodSpecId,
       rawData: newItem as unknown as object,
       completionPct,

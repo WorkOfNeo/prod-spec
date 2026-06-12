@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export default async function EditStylePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
-  const [style, customers, suppliers, businessAreas, washSymbols, qrImages, prodSpecs] = await Promise.all([
+  const [style, customers, suppliers, businessAreas, washSymbols, qrImages, logoImages, prodSpecs] = await Promise.all([
     db.style.findUnique({ where: { id }, include: { customer: true } }),
     db.customer.findMany({
       where: { active: true },
@@ -40,6 +40,11 @@ export default async function EditStylePage({ params }: { params: Promise<{ id: 
       select: { id: true, code: true, name: true, svg: true, mondayValue: true },
     }),
     db.qrImage.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, image: true },
+    }),
+    db.logoImage.findMany({
       where: { active: true },
       orderBy: { name: "asc" },
       select: { id: true, name: true, image: true },
@@ -73,6 +78,7 @@ export default async function EditStylePage({ params }: { params: Promise<{ id: 
         businessAreas={businessAreas}
         washSymbols={washSymbols}
         qrImages={qrImages}
+        logoImages={logoImages}
         prodSpecs={prodSpecs.map((p) => ({
           id: p.id,
           name: p.name,
@@ -176,6 +182,7 @@ function formStateFromStyle(
     supplierEmail: readField("supplierEmail"),
     countryOfOrigin: readField("countryOfOrigin"),
     qrImageId: style.qrImageId ?? "",
+    logoImageId: style.logoImageId ?? "",
   };
 }
 

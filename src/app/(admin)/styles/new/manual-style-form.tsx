@@ -8,6 +8,8 @@ type Supplier = { id: string; name: string; country: string | null };
 type BusinessArea = { id: string; mondayValue: string; name: string };
 type WashSymbol = { id: string; code: string; name: string; svg: string | null };
 type QrImage = { id: string; name: string; image: string };
+// Same shape as QrImage — the LogoImage library rows ({{logo:custom}}).
+type LogoImage = { id: string; name: string; image: string };
 
 // Form state aligned 1:1 with /api/admin/styles/manual (POST) and
 // /api/admin/styles/[id] (PATCH). `washSymbolCodes` is an array on the
@@ -38,9 +40,10 @@ type FormState = {
   // when blank; a Monday sync / webhook overwrites a hand-typed value.
   countryOfOrigin: string;
   qrImageId: string;            // "" = none; links Style.qrImageId for Care Label 02 page 4
+  logoImageId: string;          // "" = none; links Style.logoImageId for {{logo:custom}}
 };
 
-const SAMPLE: Omit<FormState, "customerId" | "supplierId" | "businessAreaId" | "businessArea" | "washSymbolCodes" | "qrImageId"> = {
+const SAMPLE: Omit<FormState, "customerId" | "supplierId" | "businessAreaId" | "businessArea" | "washSymbolCodes" | "qrImageId" | "logoImageId"> = {
   styleName: "Classic Crew Tee",
   styleNumber: "12345",
   composition: "EN: 100% Cotton | DE: 100% Baumwolle | FR: 100% Coton",
@@ -83,6 +86,7 @@ function makeInitial(customers: Customer[], businessAreas: BusinessArea[]): Form
     supplierEmail: "",
     countryOfOrigin: "",
     qrImageId: "",
+    logoImageId: "",
   };
 }
 
@@ -107,12 +111,13 @@ export type ManualStyleFormProps = {
   businessAreas: BusinessArea[];
   washSymbols: WashSymbol[];
   qrImages: QrImage[];
+  logoImages: LogoImage[];
   prodSpecs: ProdSpecSummary[];
   initial?: FormState;
 };
 
 export function ManualStyleForm(props: ManualStyleFormProps) {
-  const { mode, styleId, customers, suppliers, businessAreas, washSymbols, qrImages, prodSpecs } = props;
+  const { mode, styleId, customers, suppliers, businessAreas, washSymbols, qrImages, logoImages, prodSpecs } = props;
   const router = useRouter();
   const [state, setState] = useState<FormState>(
     props.initial ?? makeInitial(customers, businessAreas),
@@ -197,6 +202,7 @@ export function ManualStyleForm(props: ManualStyleFormProps) {
         supplierId: state.supplierId || null,
         businessAreaId: state.businessAreaId || null,
         qrImageId: state.qrImageId || null,
+        logoImageId: state.logoImageId || null,
       };
       const url = mode === "create" ? "/api/admin/styles/manual" : `/api/admin/styles/${styleId}`;
       const method = mode === "create" ? "POST" : "PATCH";
@@ -420,6 +426,34 @@ export function ManualStyleForm(props: ManualStyleFormProps) {
         <QrPreview qrImages={qrImages} selectedId={state.qrImageId} />
       </Section>
 
+      <Section title="Logo">
+        <Field
+          label="Linked logo"
+          hint="Optional. Printed by {{logo:custom}} on Output Builder layouts. Upload artwork at Settings → Logos."
+        >
+          {logoImages.length === 0 ? (
+            <div className="mt-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              No logos yet — add one at{" "}
+              <a href="/settings/logos" className="underline">Settings → Logos</a>.
+            </div>
+          ) : (
+            <select
+              value={state.logoImageId}
+              onChange={(e) => update("logoImageId", e.target.value)}
+              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            >
+              <option value="">— none —</option>
+              {logoImages.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
+        <LogoPreview logoImages={logoImages} selectedId={state.logoImageId} />
+      </Section>
+
       {error && <p className="mt-4 text-xs text-red-600">{error}</p>}
 
       <div className="mt-6 flex gap-3">
@@ -524,6 +558,35 @@ function QrPreview({ qrImages, selectedId }: { qrImages: QrImage[]; selectedId: 
       <div className="text-xs text-zinc-500">
         <div className="font-medium text-zinc-700">{selected.name}</div>
         Prints on Care Label 02, page 4.
+      </div>
+    </div>
+  );
+}
+
+// Preview of the logo currently selected — same dual encoding rules as
+// QrPreview (raw SVG markup or a data URL, both render via <img>).
+function LogoPreview({ logoImages, selectedId }: { logoImages: LogoImage[]; selectedId: string }) {
+  const selected = logoImages.find((l) => l.id === selectedId);
+  if (!selected) return null;
+  const img = selected.image;
+  const dataUrl = !img
+    ? null
+    : img.startsWith("data:")
+      ? img
+      : `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(img)))}`;
+  return (
+    <div className="mt-3 flex items-center gap-3">
+      <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50">
+        {dataUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={dataUrl} alt={selected.name} className="h-16 w-16 object-contain" />
+        ) : (
+          <span className="text-[10px] text-zinc-400">no image</span>
+        )}
+      </div>
+      <div className="text-xs text-zinc-500">
+        <div className="font-medium text-zinc-700">{selected.name}</div>
+        Prints via {"{{logo:custom}}"} on Output Builder layouts.
       </div>
     </div>
   );
