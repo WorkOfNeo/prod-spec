@@ -129,6 +129,11 @@ type RenderCtx = {
   symbols: WashcareSymbolMap | null; // loaded only when {{washSymbols}} is used
   logos: { contrast: string | null; custom: string | null }; // loaded only when {{logo:…}} is used
   certs: CertificateMap | null; // loaded only when {{cert:…}} is used
+  // Uniform shrink applied to font-derived sizes (font pt, barcode/symbol/
+  // logo dimensions, borders, padding) so the whole design scales — not just
+  // the grid-relative positions — when an info-area size override resizes the
+  // page. 1 = no scaling (normal render / builder). See prepareLayoutRender.
+  fontScale: number;
 };
 
 function defUsesToken(pages: LayoutPage[], key: string): boolean {
@@ -358,20 +363,22 @@ function applyInlineMarkdown(html: string): string {
     .replace(/(?<![\w])_([^_\n]+)_(?![\w])/g, "<i>$1</i>");
 }
 
-function blockBorder(block: LayoutBlock): string {
+function blockBorder(block: LayoutBlock, fontScale: number): string {
   if (!block.border) return "";
-  return `border: ${block.border.widthMm}mm solid ${block.border.color}; `;
+  return `border: ${(block.border.widthMm * fontScale).toFixed(3)}mm solid ${block.border.color}; `;
 }
 
-function blockTypography(block: LayoutBlock): string {
+function blockTypography(block: LayoutBlock, fontScale: number): string {
   // Graphics scale with the block's font size: 9 pt is the classic size
-  // (16 mm bars / 10 pt digits / 6 mm symbols).
-  const bcH = ((block.fontPt * 16) / 9).toFixed(2);
-  const bcNum = ((block.fontPt * 10) / 9).toFixed(2);
-  const sym = ((block.fontPt * 6) / 9).toFixed(2);
-  const logo = ((block.fontPt * 10) / 9).toFixed(2);
+  // (16 mm bars / 10 pt digits / 6 mm symbols). fontScale shrinks the whole
+  // lot together when an info-area size override resizes the page.
+  const pt = block.fontPt * fontScale;
+  const bcH = ((pt * 16) / 9).toFixed(2);
+  const bcNum = ((pt * 10) / 9).toFixed(2);
+  const sym = ((pt * 6) / 9).toFixed(2);
+  const logo = ((pt * 10) / 9).toFixed(2);
   return (
-    `font-size: ${block.fontPt}pt; ` +
+    `font-size: ${pt.toFixed(2)}pt; ` +
     `line-height: ${block.lineHeight}; ` +
     `font-weight: ${block.bold ? 700 : 400}; ` +
     `--ol-bc-h: ${bcH}mm; --ol-bc-num: ${bcNum}pt; --ol-sym: ${sym}mm; --ol-logo: ${logo}mm; --ol-cert: ${logo}mm; `
@@ -401,8 +408,8 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
       `left: ${left}mm; top: ${top}mm; width: ${width}mm; height: ${height}mm; ` +
       `display: flex; flex-direction: column; justify-content: ${justify}; ` +
       `text-align: ${block.align ?? "left"}; ` +
-      blockBorder(block) +
-      blockTypography(block);
+      blockBorder(block, ctx.fontScale) +
+      blockTypography(block, ctx.fontScale);
     return `<div class="ol-block ol-rect" style="${styleAttr}">${lines}</div>`;
   }
 
@@ -411,8 +418,8 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
   const styleAttr =
     `width: ${widthMm.toFixed(2)}mm; ` +
     `text-align: ${block.align ?? ANCHOR_ALIGN[anchor]}; ` +
-    blockBorder(block) +
-    blockTypography(block) +
+    blockBorder(block, ctx.fontScale) +
+    blockTypography(block, ctx.fontScale) +
     ANCHOR_CSS[anchor];
   return `<div class="ol-block ol-${anchor}" style="${styleAttr}">${lines}</div>`;
 }
@@ -455,6 +462,23 @@ async function prepareLayoutRender(
       }))
     : selectedPages;
 
+  // Uniform font/graphic scale: grid-relative positions already follow the
+  // new page size, but font pt, barcode/symbol/logo sizes, borders and pad
+  // are absolute — without this they'd stay full-size on a shrunk sticker and
+  // overflow (clipped by .ol-page's overflow:hidden). Scale by the SMALLER of
+  // the width/height ratios (authored size → chosen size) so the design fits
+  // the more-constrained axis rather than spilling over. Proportional resizes
+  // (the common case) have equal ratios, so it's a clean uniform zoom.
+  let fontScale = 1;
+  if (opts.sizeOverrideMm) {
+    const ref = selectedPages[0];
+    const sx = clampMm(opts.sizeOverrideMm.widthMm) / ref.widthMm;
+    const sy = clampMm(opts.sizeOverrideMm.heightMm) / ref.heightMm;
+    if (Number.isFinite(sx) && Number.isFinite(sy) && sx > 0 && sy > 0) {
+      fontScale = Math.min(sx, sy);
+    }
+  }
+
   // Resolve language-derived tokens through the translation bank before
   // anything renders (idempotent — values already present are kept):
   // {{composition:<lang>}}, {{careInstructions:<lang>}} (standard
@@ -484,7 +508,7 @@ async function prepareLayoutRender(
     usesLogo ? getCustomLogoDataUrl() : Promise.resolve(null),
     defUsesToken(pages, "cert") ? loadCertificates() : Promise.resolve(null),
   ]);
-  const ctx: RenderCtx = { mode, barcodes, symbols, logos: { contrast: contrastLogo, custom: customLogo }, certs };
+  const ctx: RenderCtx = { mode, barcodes, symbols, logos: { contrast: contrastLogo, custom: customLogo }, certs, fontScale };
 
   return { pages, repStyles, ctx, barcodeFont: style.barcodeFont };
 }
@@ -542,7 +566,7 @@ function emitLayoutDocument(
     body,
     barcodeFont: prep.barcodeFont,
     extraCss: `
-  :root { --ol-pad: 2mm; }
+  :root { --ol-pad: ${(2 * ctx.fontScale).toFixed(3)}mm; }
   .ol-page {
     position: relative;
     overflow: hidden;
@@ -559,8 +583,8 @@ function emitLayoutDocument(
   .ol-line { white-space: pre-wrap; word-break: break-word; min-height: 1em; }
   .ol-barcode { display: inline-block; text-align: center; max-width: 100%; }
   .ol-barcode img { display: block; height: var(--ol-bc-h, 16mm); width: auto; max-width: 100%; margin-left: auto; margin-right: auto; }
-  .ol-ean-number { margin-top: 1mm; font-size: var(--ol-bc-num, 10pt); letter-spacing: 0.08em; }
-  .ol-symbols { display: inline-flex; flex-wrap: wrap; gap: 1.5mm; align-items: center; vertical-align: middle; }
+  .ol-ean-number { margin-top: ${(1 * ctx.fontScale).toFixed(3)}mm; font-size: var(--ol-bc-num, 10pt); letter-spacing: 0.08em; }
+  .ol-symbols { display: inline-flex; flex-wrap: wrap; gap: ${(1.5 * ctx.fontScale).toFixed(3)}mm; align-items: center; vertical-align: middle; }
   .ol-symbols img { width: var(--ol-sym, 6mm); height: var(--ol-sym, 6mm); object-fit: contain; }
   .ol-logo { display: inline-block; vertical-align: middle; max-width: 100%; }
   .ol-logo img { display: block; height: var(--ol-logo, 10mm); width: auto; max-width: 100%; }
