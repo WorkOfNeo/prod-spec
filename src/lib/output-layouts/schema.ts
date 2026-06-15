@@ -67,12 +67,31 @@ export const LayoutBlockSchema = z.object({
 });
 export type LayoutBlock = z.infer<typeof LayoutBlockSchema>;
 
+// A printed sewing-line guide: a full-width horizontal rule a fixed
+// distance from the top or bottom edge (the seam allowance). Fractional mm
+// allowed (e.g. 7.5). Multiple per page.
+export const SewingLineSchema = z.object({
+  edge: z.enum(["top", "bottom"]).default("top"),
+  offsetMm: z.number().min(0).max(1000).default(5),
+});
+export type SewingLine = z.infer<typeof SewingLineSchema>;
+
+// Folding-line guide — always centred. "horizontal" = a rule across the
+// vertical centre; "vertical" = a rule down the horizontal centre; "none"
+// = off. Dashed at print time.
+export const FoldLineSchema = z.enum(["none", "horizontal", "vertical"]);
+export type FoldLine = z.infer<typeof FoldLineSchema>;
+
 export const LayoutPageSchema = z
   .object({
     id: z.string().min(1).max(40),
     title: z.string().max(80).default(""),
     widthMm: z.number().min(5).max(1000),
     heightMm: z.number().min(5).max(1000),
+    // Print guides — non-content rules drawn over the page (do not consume
+    // grid cells, carry no tokens). See renderLayoutHtml's guide layer.
+    sewingLines: z.array(SewingLineSchema).max(20).default([]),
+    foldLine: FoldLineSchema.default("none"),
     // Standard print inset: the 12×12 grid maps to the page MINUS these
     // margins. Editable per side ("chained" editing — one value for all —
     // is a UI affordance over the same four fields).
@@ -315,6 +334,8 @@ export function defaultLayoutDef(): LayoutDef {
         widthMm: 100,
         heightMm: 75,
         margins: { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 },
+        sewingLines: [],
+        foldLine: "none",
         blocks: [],
       },
     ],

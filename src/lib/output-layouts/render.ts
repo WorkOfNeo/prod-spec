@@ -489,6 +489,27 @@ async function prepareLayoutRender(
   return { pages, repStyles, ctx, barcodeFont: style.barcodeFont };
 }
 
+// Print guides — non-content rules overlaid on the page (drawn after the
+// blocks so they sit on top). Sewing lines are full-width solid rules a
+// fixed mm from the named edge (the seam allowance); the fold line is a
+// dashed rule through the centre — horizontal (across) or vertical (down).
+// Guides carry no tokens and never count as placeholders, so they never
+// block approval. The fold uses 50%, so it stays centred under the
+// info-area size override; sewing offsets are absolute mm by design.
+function renderGuides(page: LayoutPage): string {
+  const parts: string[] = [];
+  for (const s of page.sewingLines ?? []) {
+    const pos = s.edge === "bottom" ? `bottom: ${s.offsetMm}mm;` : `top: ${s.offsetMm}mm;`;
+    parts.push(`<div class="ol-guide ol-sew" style="${pos}"></div>`);
+  }
+  if (page.foldLine === "horizontal") {
+    parts.push(`<div class="ol-guide ol-fold ol-fold-h"></div>`);
+  } else if (page.foldLine === "vertical") {
+    parts.push(`<div class="ol-guide ol-fold ol-fold-v"></div>`);
+  }
+  return parts.join("");
+}
+
 // Lay a flat list of (page × style) units into the final HTML document.
 // Each unit becomes one physical page with its own @page rule, so one
 // document can carry differently-sized pages AND many numbered carton
@@ -511,7 +532,7 @@ function emitLayoutDocument(
   const body = emitted
     .map(({ page, repStyle }, i) => {
       const blocks = page.blocks.map((b) => renderBlock(b, page, repStyle, ctx)).join("");
-      return `<div class="ol-page ol-page-${i}">${blocks}</div>`;
+      return `<div class="ol-page ol-page-${i}">${blocks}${renderGuides(page)}</div>`;
     })
     .join("\n");
 
@@ -531,6 +552,10 @@ function emitLayoutDocument(
   .ol-page:last-child { page-break-after: auto; }
   ${pageCss}
   .ol-block { position: absolute; }
+  .ol-guide { position: absolute; pointer-events: none; z-index: 5; }
+  .ol-sew { left: 0; right: 0; height: 0; border-top: 0.25mm solid #111; }
+  .ol-fold-h { left: 0; right: 0; top: 50%; height: 0; border-top: 0.25mm dashed #555; }
+  .ol-fold-v { top: 0; bottom: 0; left: 50%; width: 0; border-left: 0.25mm dashed #555; }
   .ol-line { white-space: pre-wrap; word-break: break-word; min-height: 1em; }
   .ol-barcode { display: inline-block; text-align: center; max-width: 100%; }
   .ol-barcode img { display: block; height: var(--ol-bc-h, 16mm); width: auto; max-width: 100%; margin-left: auto; margin-right: auto; }

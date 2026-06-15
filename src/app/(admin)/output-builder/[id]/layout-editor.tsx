@@ -11,11 +11,13 @@ import {
   blockId,
   layoutSettings,
   tokensInDef,
+  type FoldLine,
   type LayoutBlock,
   type LayoutDef,
   type LayoutPage,
   type LayoutRect,
   type LayoutSettings,
+  type SewingLine,
 } from "@/lib/output-layouts/schema";
 import { LAYOUT_TOKENS, tokenMeta } from "@/lib/output-layouts/token-meta";
 import { PreviewFrame } from "@/components/output-preview";
@@ -40,6 +42,11 @@ import { PreviewFrame } from "@/components/output-preview";
 const AUTOSAVE_MS = 1200;
 const PREVIEW_DEBOUNCE_MS = 600;
 const PT_TO_MM = 25.4 / 72;
+
+// mm input accepts a comma OR dot decimal ("7,5" → 7.5).
+function parseMm(raw: string): number {
+  return Number(String(raw).replace(",", ".").trim());
+}
 
 
 // Id generators — module scope, called from event handlers only (the
@@ -177,6 +184,22 @@ export function LayoutEditor({
     [pageIdx],
   );
 
+  // Print-guide mutators (current page). Sewing lines append/edit/remove;
+  // the fold line is a single per-page setting.
+  const sewingLines = page?.sewingLines ?? [];
+  function addSewingLine() {
+    updatePage({ sewingLines: [...sewingLines, { edge: "top", offsetMm: 5 }] });
+  }
+  function updateSewingLine(i: number, patch: Partial<SewingLine>) {
+    updatePage({ sewingLines: sewingLines.map((s, idx) => (idx === i ? { ...s, ...patch } : s)) });
+  }
+  function removeSewingLine(i: number) {
+    updatePage({ sewingLines: sewingLines.filter((_, idx) => idx !== i) });
+  }
+  function setFoldLine(v: FoldLine) {
+    updatePage({ foldLine: v });
+  }
+
   const updateBlock = useCallback(
     (id: string, patch: Partial<LayoutBlock>) => {
       setDef((d) => ({
@@ -256,6 +279,8 @@ export function LayoutEditor({
           widthMm: last.widthMm,
           heightMm: last.heightMm,
           margins: { ...last.margins },
+          sewingLines: [],
+          foldLine: "none",
           blocks: [],
         },
       ],
@@ -1152,6 +1177,79 @@ export function LayoutEditor({
             ) : null}
           </div>
 
+          <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Print guides</div>
+          <div className="mt-2 space-y-3">
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-zinc-500">Sewing lines</label>
+                <button
+                  type="button"
+                  onClick={addSewingLine}
+                  className="text-xs font-medium text-zinc-700 hover:text-zinc-900"
+                >
+                  + Add
+                </button>
+              </div>
+              {sewingLines.length === 0 ? (
+                <p className="mt-1 text-[10px] text-zinc-400">
+                  A solid rule a fixed distance from the top or bottom edge (the seam allowance).
+                </p>
+              ) : (
+                <div className="mt-1.5 space-y-1.5">
+                  {sewingLines.map((s, i) => (
+                    // Inputs remount when the list length changes (key carries it),
+                    // so an uncontrolled offset field re-reads the right value after
+                    // add/remove while still letting you type a "7,5" decimal freely.
+                    <div key={`sew-${sewingLines.length}-${i}`} className="flex items-center gap-1.5">
+                      <select
+                        value={s.edge}
+                        onChange={(e) => updateSewingLine(i, { edge: e.target.value as SewingLine["edge"] })}
+                        className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700"
+                      >
+                        <option value="top">From top</option>
+                        <option value="bottom">From bottom</option>
+                      </select>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        defaultValue={String(s.offsetMm).replace(".", ",")}
+                        onChange={(e) => {
+                          const v = parseMm(e.target.value);
+                          if (Number.isFinite(v) && v >= 0 && v <= 1000) updateSewingLine(i, { offsetMm: v });
+                        }}
+                        className="w-16 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                        aria-label="Offset from edge (mm)"
+                      />
+                      <span className="text-[10px] text-zinc-400">mm</span>
+                      <button
+                        type="button"
+                        onClick={() => removeSewingLine(i)}
+                        className="ml-auto text-zinc-300 hover:text-red-600"
+                        aria-label="Remove sewing line"
+                        title="Remove"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="text-xs text-zinc-500">Folding line</label>
+              <select
+                value={page?.foldLine ?? "none"}
+                onChange={(e) => setFoldLine(e.target.value as FoldLine)}
+                className="mt-1 w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-sm text-zinc-700"
+              >
+                <option value="none">Off</option>
+                <option value="horizontal">Horizontal — across centre</option>
+                <option value="vertical">Vertical — down centre</option>
+              </select>
+              <p className="mt-0.5 text-[10px] text-zinc-400">A dashed rule through the page centre.</p>
+            </div>
+          </div>
+
           <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Settings</div>
           <div className="mt-2 space-y-3">
             <div>
@@ -1305,6 +1403,46 @@ export function LayoutEditor({
                   onRemove={() => removeBlock(blockId(block))}
                 />
               ))}
+              {/* Print-guide overlays — full page width/height, matching the
+                  true render. Sewing solid, fold dashed. */}
+              {sewingLines.map((s, i) => (
+                <div
+                  // eslint-disable-next-line react/no-array-index-key
+                  key={`csew-${i}`}
+                  className="pointer-events-none absolute"
+                  style={{
+                    left: 0,
+                    width: page.widthMm * scale,
+                    top: (s.edge === "bottom" ? page.heightMm - s.offsetMm : s.offsetMm) * scale,
+                    borderTop: "1px solid rgba(24,24,27,0.7)",
+                  }}
+                  title={`Sewing line — ${String(s.offsetMm).replace(".", ",")} mm from ${s.edge}`}
+                />
+              ))}
+              {page.foldLine === "horizontal" ? (
+                <div
+                  className="pointer-events-none absolute"
+                  style={{
+                    left: 0,
+                    width: page.widthMm * scale,
+                    top: (page.heightMm / 2) * scale,
+                    borderTop: "1px dashed rgba(82,82,91,0.9)",
+                  }}
+                  title="Folding line — horizontal centre"
+                />
+              ) : null}
+              {page.foldLine === "vertical" ? (
+                <div
+                  className="pointer-events-none absolute"
+                  style={{
+                    top: 0,
+                    height: page.heightMm * scale,
+                    left: (page.widthMm / 2) * scale,
+                    borderLeft: "1px dashed rgba(82,82,91,0.9)",
+                  }}
+                  title="Folding line — vertical centre"
+                />
+              ) : null}
               {ghost ? (
                 <div
                   className="pointer-events-none absolute rounded-sm border border-zinc-900/50 bg-zinc-900/5"
