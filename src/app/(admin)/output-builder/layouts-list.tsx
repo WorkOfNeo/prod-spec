@@ -44,16 +44,15 @@ function HoverPopover({ trigger, children }: { trigger: ReactNode; children: Rea
 export function LayoutsList({
   layouts,
   contrastLogoFound,
-  customLogo,
+  contrastAddressLogoFound,
 }: {
   layouts: LayoutRow[];
   contrastLogoFound: boolean;
-  customLogo: string | null;
+  contrastAddressLogoFound: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [logoError, setLogoError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
   // Search across everything a row shows or links to: layout name/type,
@@ -77,37 +76,6 @@ export function LayoutsList({
           .includes(q),
       )
     : layouts;
-
-  async function uploadLogo(file: File) {
-    setLogoError(null);
-    if (file.size > 450_000) {
-      setLogoError("Keep the logo under ~450 KB.");
-      return;
-    }
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(String(r.result));
-      r.onerror = () => reject(new Error("could not read file"));
-      r.readAsDataURL(file);
-    });
-    const res = await fetch("/api/admin/output-layouts/logo", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dataUrl }),
-    });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      setLogoError(body.error ?? `HTTP ${res.status}`);
-      return;
-    }
-    router.refresh();
-  }
-
-  async function removeLogo() {
-    setLogoError(null);
-    await fetch("/api/admin/output-layouts/logo", { method: "DELETE" });
-    router.refresh();
-  }
 
   async function createLayout() {
     setBusy("new");
@@ -211,35 +179,24 @@ export function LayoutsList({
           )}
         </div>
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-zinc-600">Custom</span>
-          {customLogo ? (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={customLogo} alt="Custom logo" className="h-6 w-auto rounded border border-zinc-100" />
-              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                {"{{logo:custom}}"}
-              </span>
-              <button type="button" onClick={removeLogo} className="text-xs text-zinc-400 hover:text-red-600">
-                Remove
-              </button>
-            </>
+          <span className="text-zinc-600">Contrast (address)</span>
+          {contrastAddressLogoFound ? (
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+              found · {"{{logo:contrastAddress}}"}
+            </span>
           ) : (
-            <label className="cursor-pointer rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
-              Upload (SVG/PNG/JPG)
-              <input
-                type="file"
-                accept="image/svg+xml,image/png,image/jpeg"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void uploadLogo(f);
-                  e.target.value = "";
-                }}
-              />
-            </label>
+            <span
+              className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700"
+              title="Commit the logo file to the repo — no code change needed"
+            >
+              add <code className="font-mono">public/logos/contrast-address.svg</code> to the repo
+            </span>
           )}
         </div>
-        {logoError ? <span className="text-xs text-red-600">{logoError}</span> : null}
+        <div className="text-xs text-zinc-500">
+          <span className="text-zinc-600">{"{{logo:custom}}"}</span> is now uploaded per layout — open a
+          layout and use it where the token appears.
+        </div>
       </div>
 
       {layouts.length === 0 ? (

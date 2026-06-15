@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { CustomerConfig } from "@/lib/customers/config";
+import { Toggle } from "@/components/toggle";
 
 export function CustomerConfigForm({
   customerId,
@@ -12,6 +13,9 @@ export function CustomerConfigForm({
   initial: CustomerConfig;
 }) {
   const router = useRouter();
+  const [skipSupplierDelivery, setSkipSupplierDelivery] = useState(
+    initial.skipSupplierDelivery ?? false,
+  );
   const [logoUrl, setLogoUrl] = useState(initial.logoUrl ?? "");
   const [barcodeFontFamily, setBarcodeFontFamily] = useState(initial.barcodeFont?.family ?? "");
   const [barcodeFontSrc, setBarcodeFontSrc] = useState(initial.barcodeFont?.src ?? "");
@@ -48,6 +52,7 @@ export function CustomerConfigForm({
         ...initial,
         columnMapping,
         requiredFields,
+        skipSupplierDelivery,
         logoUrl: logoUrl || undefined,
       };
       if (barcodeFontFamily && barcodeFontSrc) {
@@ -74,6 +79,25 @@ export function CustomerConfigForm({
 
   return (
     <form onSubmit={onSubmit} className="mt-3 flex flex-col gap-4">
+      <div className="flex items-start justify-between gap-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4">
+        <div>
+          <div className="text-xs font-medium text-zinc-700">Customer delivers their own goods</div>
+          <p className="mt-1 text-xs font-normal text-zinc-500">
+            Turn on for customers like Woolworth who handle delivery themselves. The app will not
+            send supplier delivery for this customer&rsquo;s styles. Generation, review and auto-run
+            are unaffected — only delivery.
+          </p>
+        </div>
+        <Toggle
+          checked={skipSupplierDelivery}
+          onChange={setSkipSupplierDelivery}
+          size="md"
+          ariaLabel="Skip supplier delivery for this customer"
+          onLabel="Skip"
+          offLabel="Send"
+        />
+      </div>
+
       <div className="grid grid-cols-2 gap-4">
         <Field label="Logo URL" hint="Used by the Hangtag template's branded header.">
           <input

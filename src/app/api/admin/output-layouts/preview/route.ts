@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth-server";
-import { LayoutDefSchema, layoutSettings } from "@/lib/output-layouts/schema";
+import { db } from "@/lib/db";
+import { LayoutDefSchema, layoutSettings, tokensInDef } from "@/lib/output-layouts/schema";
 import { renderLayoutHtml, repetitionStyles } from "@/lib/output-layouts/render";
 import {
   augmentCareAndMadeIn,
@@ -33,6 +34,9 @@ export const runtime = "nodejs";
 
 const BODY_SCHEMA = z.object({
   definition: LayoutDefSchema,
+  // Which layout this is — used to load its per-layout {{logo:custom}} image
+  // (the def alone doesn't carry it). Absent ⇒ no custom logo in the preview.
+  layoutId: z.string().min(1).optional(),
   styleId: z.string().min(1).optional(),
   pageIndex: z.number().int().min(0).optional(),
   format: z.enum(["html", "pdf"]).default("html"),
@@ -63,8 +67,19 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid body", details: parsed.error.flatten() }, { status: 400 });
   }
-  const { definition, styleId, pageIndex, format, includeTokenValues, valuesLang, cartonSerial } =
+  const { definition, layoutId, styleId, pageIndex, format, includeTokenValues, valuesLang, cartonSerial } =
     parsed.data;
+
+  // Per-layout {{logo:custom}} image — loaded by id only when the design
+  // actually uses it (avoids fetching the data-URL column on every preview).
+  let customLogo: string | null = null;
+  if (layoutId && tokensInDef(definition).some((t) => t.key === "logo" && t.arg === "custom")) {
+    const row = await db.outputLayout.findUnique({
+      where: { id: layoutId },
+      select: { customLogo: true },
+    });
+    customLogo = row?.customLogo ?? null;
+  }
 
   let styleData = buildSampleStyleData();
   let styleResolved = false;
@@ -97,7 +112,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (format === "pdf") {
-    const html = await renderLayoutHtml(definition, styleData, { mode: "production" });
+    const html = await renderLayoutHtml(definition, styleData, { mode: "production", customLogo });
     const pdf = await renderPdf({ html });
     return new NextResponse(new Uint8Array(pdf), {
       status: 200,
@@ -113,6 +128,7 @@ export async function POST(req: NextRequest) {
   const html = await renderLayoutHtml(definition, styleData, {
     mode: "preview",
     pageIndex: safePageIndex,
+    customLogo,
   });
 
   // Palette values for the "show values" toggle — every token resolved

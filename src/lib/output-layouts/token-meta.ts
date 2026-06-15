@@ -14,8 +14,9 @@ export type LayoutTokenMeta = {
   group: "Style" | "Order & carton" | "Per language" | "Barcodes & symbols" | "Sibling styles";
   kind: LayoutTokenKind;
   // "lang" → the token takes a language argument ({{composition:da}});
-  // "source" → barcode source argument ({{barcode:cartonEan}}).
-  arg?: "lang" | "source";
+  // "source" → barcode/logo source argument ({{barcode:cartonEan}});
+  // "gap" → optional numeric mm gap, e.g. {{washSymbols:0}} (0 mm gap).
+  arg?: "lang" | "source" | "gap";
   // Example value shown in the palette tooltip.
   example?: string;
 };
@@ -111,14 +112,15 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   { key: "barcode", label: "Barcode", group: "Barcodes & symbols", kind: "barcode", arg: "source", example: "{{barcode:cartonEan}}" },
   {
     key: "washSymbols",
-    label: "Wash care symbols",
+    label: "Wash care symbols (optional gap in mm, e.g. {{washSymbols:0}})",
     group: "Barcodes & symbols",
     kind: "symbols",
+    arg: "gap",
     example: "{{washSymbols}}",
   },
   {
     key: "logo",
-    label: "Logo (contrast = repo file, custom = uploaded)",
+    label: "Logo (contrast / contrastAddress = repo files, custom = uploaded)",
     group: "Barcodes & symbols",
     kind: "image",
     arg: "source",
@@ -137,7 +139,7 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
 export const BARCODE_SOURCES = ["cartonEan", "ean13"] as const;
 export type BarcodeSource = (typeof BARCODE_SOURCES)[number];
 
-export const LOGO_SOURCES = ["contrast", "custom"] as const;
+export const LOGO_SOURCES = ["contrast", "contrastAddress", "custom"] as const;
 export type LogoSource = (typeof LOGO_SOURCES)[number];
 
 // Certification marks resolvable by {{cert:…}} — each needs a row in the
@@ -247,6 +249,14 @@ export function validateTokenRef(key: string, arg?: string): string[] {
       errs.push(
         `{{${key}${arg ? `:${arg}` : ""}}} needs a source: ${allowed.map((s) => `{{${key}:${s}}}`).join(" or ")}`,
       );
+    }
+  }
+  // "gap" arg is optional; when present it must be a non-negative mm number
+  // (≤ 20 mm — a sane ceiling for a symbol strip gap).
+  if (meta.arg === "gap" && arg !== undefined) {
+    const n = Number(arg);
+    if (!Number.isFinite(n) || n < 0 || n > 20) {
+      errs.push(`{{${key}:${arg}}} gap must be a number of mm between 0 and 20`);
     }
   }
   if (!meta.arg && arg) {

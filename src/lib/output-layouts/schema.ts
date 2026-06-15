@@ -17,8 +17,31 @@ import { z } from "zod";
 // (src/lib/pdf/templates/**), not here.
 // =====================================================
 
+// Legacy default grid — used for any page that doesn't carry an explicit
+// gridCols/gridRows (every layout authored before the grid became
+// configurable), so they keep rendering exactly as before.
 export const LAYOUT_GRID_COLS = 12;
 export const LAYOUT_GRID_ROWS = 12;
+
+// Upper bound for a configurable per-page grid (a 4 mm cell on a ~480 mm page
+// ≈ 120). Rect/anchor bounds use this; the live grid is gridCols/gridRows.
+export const LAYOUT_GRID_MAX = 120;
+
+// Default print-grid cell when generating a grid from the page size — the
+// builder offers this as the starting cell and recomputes cols×rows from it.
+export const DEFAULT_GRID_CELL_MM = 4;
+
+// cols×rows for a page of these mm dimensions at the given square cell size,
+// clamped to a sane range. round() so a 100 mm page at 4 mm ⇒ 25 columns.
+export function gridFromCellMm(
+  widthMm: number,
+  heightMm: number,
+  cellMm: number,
+): { cols: number; rows: number } {
+  const cell = cellMm > 0 ? cellMm : DEFAULT_GRID_CELL_MM;
+  const clamp = (n: number) => Math.min(LAYOUT_GRID_MAX, Math.max(1, Math.round(n)));
+  return { cols: clamp(widthMm / cell), rows: clamp(heightMm / cell) };
+}
 
 export const LAYOUT_ANCHORS = [
   "top-left",
@@ -30,11 +53,14 @@ export const LAYOUT_ANCHORS = [
 export const LayoutAnchorSchema = z.enum(LAYOUT_ANCHORS);
 export type LayoutAnchor = z.infer<typeof LayoutAnchorSchema>;
 
+// Bounds are the generous max grid; the real per-page limit (gridCols/
+// gridRows) is enforced in LayoutPageSchema's superRefine, which has the
+// page in scope.
 export const LayoutRectSchema = z.object({
-  col: z.number().int().min(0).max(LAYOUT_GRID_COLS - 1),
-  row: z.number().int().min(0).max(LAYOUT_GRID_ROWS - 1),
-  colSpan: z.number().int().min(1).max(LAYOUT_GRID_COLS),
-  rowSpan: z.number().int().min(1).max(LAYOUT_GRID_ROWS),
+  col: z.number().int().min(0).max(LAYOUT_GRID_MAX - 1),
+  row: z.number().int().min(0).max(LAYOUT_GRID_MAX - 1),
+  colSpan: z.number().int().min(1).max(LAYOUT_GRID_MAX),
+  rowSpan: z.number().int().min(1).max(LAYOUT_GRID_MAX),
 });
 export type LayoutRect = z.infer<typeof LayoutRectSchema>;
 
@@ -47,7 +73,7 @@ export const LayoutBlockSchema = z.object({
   // Grid-rect placement (drawn on the canvas).
   rect: LayoutRectSchema.optional(),
   // Width in grid columns — CORNER blocks only (rect blocks size by span).
-  cols: z.number().int().min(1).max(LAYOUT_GRID_COLS).default(6),
+  cols: z.number().int().min(1).max(LAYOUT_GRID_MAX).default(6),
   // Text alignment. Default: by anchor side for corner blocks; left for
   // rect blocks.
   align: z.enum(["left", "center", "right"]).optional(),
@@ -67,15 +93,39 @@ export const LayoutBlockSchema = z.object({
 });
 export type LayoutBlock = z.infer<typeof LayoutBlockSchema>;
 
+// A printed sewing-line guide: a full-width horizontal rule a fixed
+// distance from the top or bottom edge (the seam allowance). Fractional mm
+// allowed (e.g. 7.5). Multiple per page.
+export const SewingLineSchema = z.object({
+  edge: z.enum(["top", "bottom"]).default("top"),
+  offsetMm: z.number().min(0).max(1000).default(5),
+});
+export type SewingLine = z.infer<typeof SewingLineSchema>;
+
+// Folding-line guide — always centred. "horizontal" = a rule across the
+// vertical centre; "vertical" = a rule down the horizontal centre; "none"
+// = off. Dashed at print time.
+export const FoldLineSchema = z.enum(["none", "horizontal", "vertical"]);
+export type FoldLine = z.infer<typeof FoldLineSchema>;
+
 export const LayoutPageSchema = z
   .object({
     id: z.string().min(1).max(40),
     title: z.string().max(80).default(""),
     widthMm: z.number().min(5).max(1000),
     heightMm: z.number().min(5).max(1000),
-    // Standard print inset: the 12×12 grid maps to the page MINUS these
-    // margins. Editable per side ("chained" editing — one value for all —
-    // is a UI affordance over the same four fields).
+    // Print guides — non-content rules drawn over the page (do not consume
+    // grid cells, carry no tokens). See renderLayoutHtml's guide layer.
+    sewingLines: z.array(SewingLineSchema).max(20).default([]),
+    foldLine: FoldLineSchema.default("none"),
+    // Per-page placement grid. Absent ⇒ the legacy 12×12 (see pageGrid),
+    // so existing layouts are untouched. The builder generates these from a
+    // cell size (e.g. 4 mm → 25×19 on a 100×75 page) and can regenerate.
+    gridCols: z.number().int().min(1).max(LAYOUT_GRID_MAX).optional(),
+    gridRows: z.number().int().min(1).max(LAYOUT_GRID_MAX).optional(),
+    // Standard print inset: the grid maps to the page MINUS these margins.
+    // Editable per side ("chained" editing — one value for all — is a UI
+    // affordance over the same four fields).
     margins: z
       .object({
         topMm: z.number().min(0).max(50).default(0),
@@ -91,6 +141,8 @@ export const LayoutPageSchema = z
     blocks: z.array(LayoutBlockSchema).max(200).default([]),
   })
   .superRefine((page, ctx) => {
+    const gridCols = page.gridCols ?? LAYOUT_GRID_COLS;
+    const gridRows = page.gridRows ?? LAYOUT_GRID_ROWS;
     const seenAnchors = new Set<string>();
     for (const b of page.blocks) {
       if (!b.anchor && !b.rect) {
@@ -118,16 +170,26 @@ export const LayoutPageSchema = z
         seenAnchors.add(b.anchor);
       }
       if (b.rect) {
-        if (b.rect.col + b.rect.colSpan > LAYOUT_GRID_COLS) {
+        if (b.rect.col + b.rect.colSpan > gridCols) {
           ctx.addIssue({ code: "custom", message: "rect overflows the grid horizontally", path: ["blocks"] });
         }
-        if (b.rect.row + b.rect.rowSpan > LAYOUT_GRID_ROWS) {
+        if (b.rect.row + b.rect.rowSpan > gridRows) {
           ctx.addIssue({ code: "custom", message: "rect overflows the grid vertically", path: ["blocks"] });
         }
       }
     }
   });
 export type LayoutPage = z.infer<typeof LayoutPageSchema>;
+
+// The effective placement grid for a page — the stored gridCols/gridRows, or
+// the legacy 12×12 when unset (back-compat). The ONE place this default is
+// resolved, shared by the renderer and the builder so they never disagree.
+export function pageGrid(page: { gridCols?: number; gridRows?: number }): { cols: number; rows: number } {
+  return {
+    cols: page.gridCols ?? LAYOUT_GRID_COLS,
+    rows: page.gridRows ?? LAYOUT_GRID_ROWS,
+  };
+}
 
 // Per-layout output settings (the editor's "Settings" card).
 export const LayoutSettingsSchema = z.object({
@@ -157,6 +219,10 @@ export const LayoutSettingsSchema = z.object({
   // count is typed at print time; the carton-prints endpoint loops the
   // layout once per carton with StyleData.cartonSerial set.
   cartonNumbering: z.boolean().default(false),
+  // Print width of the {{logo:custom}} image as a % of its block's width;
+  // height auto-scales to preserve aspect. The image itself is stored per
+  // layout on OutputLayout.customLogo (uploaded in the builder).
+  customLogoWidthPct: z.number().min(1).max(100).default(100),
 });
 export type LayoutSettings = z.infer<typeof LayoutSettingsSchema>;
 
@@ -167,7 +233,15 @@ export const LayoutDefSchema = z.object({
 export type LayoutDef = z.infer<typeof LayoutDefSchema>;
 
 export function layoutSettings(def: LayoutDef): LayoutSettings {
-  return def.settings ?? { repeatBy: "none", splitBy: "ean", fileName: "", cartonNumbering: false };
+  return (
+    def.settings ?? {
+      repeatBy: "none",
+      splitBy: "ean",
+      fileName: "",
+      cartonNumbering: false,
+      customLogoWidthPct: 100,
+    }
+  );
 }
 
 // Stable block identity even for defs saved before ids existed.
@@ -305,8 +379,10 @@ export function conditionalsInDef(def: LayoutDef): LineConditional[] {
   return out;
 }
 
-// Fresh single-page starter definition for a new layout.
+// Fresh single-page starter definition for a new layout. The grid is
+// generated from the default 4 mm cell (100×75 mm ⇒ 25×19).
 export function defaultLayoutDef(): LayoutDef {
+  const grid = gridFromCellMm(100, 75, DEFAULT_GRID_CELL_MM);
   return {
     pages: [
       {
@@ -315,6 +391,10 @@ export function defaultLayoutDef(): LayoutDef {
         widthMm: 100,
         heightMm: 75,
         margins: { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 },
+        sewingLines: [],
+        foldLine: "none",
+        gridCols: grid.cols,
+        gridRows: grid.rows,
         blocks: [],
       },
     ],

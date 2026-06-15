@@ -3,6 +3,7 @@ import { getServerSession } from "@/lib/auth-server";
 import { getVariant } from "@/lib/pdf/template-registry";
 import { applyCustomCartonMarking, applyFieldOverrides, withSelectedSiblings } from "@/lib/pdf/pins";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
+import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 
 export const runtime = "nodejs";
 
@@ -67,15 +68,17 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
   try {
     let renderStyle = applyFieldOverrides(context.styleData, output.fieldOverrides);
+    // Custom Carton Marking: explicit one-off pick (param present, even
+    // empty) wins; otherwise this output's permanent slot policy.
     renderStyle =
       siblingIdsParam === null
         ? applyCustomCartonMarking(renderStyle, output)
         : withSelectedSiblings(renderStyle, siblingIdsParam.split(",").filter(Boolean));
     if (cartonSerial) renderStyle = { ...renderStyle, cartonSerial };
-    const html = await variant.render(renderStyle, {
-      widthMm: output.widthMm,
-      heightMm: output.heightMm,
-    });
+    // Resolve the printed size the same way the runner does, so the live
+    // preview matches the real render at the chosen info-area size.
+    const dims = effectiveOutputDims(output, variant.isInfoArea ?? false, await loadInfoAreaSizeMap());
+    const html = await variant.render(renderStyle, dims);
     return new NextResponse(html, {
       status: 200,
       headers: {
