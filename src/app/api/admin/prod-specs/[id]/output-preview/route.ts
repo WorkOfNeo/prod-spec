@@ -6,6 +6,8 @@ import { buildSampleStyleData } from "@/lib/pdf/sample-data";
 import { applyCartonBarcodePrefs, applyFieldOverrides } from "@/lib/pdf/pins";
 import { parseProdSpecOutputs, parseProdSpecLanguages } from "@/lib/prod-spec/config";
 import { parseCareInstructions } from "@/lib/styles/render-context";
+import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
+import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 
 export const runtime = "nodejs";
 
@@ -24,6 +26,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const variantKey = req.nextUrl.searchParams.get("variantKey");
   if (!variantKey) return NextResponse.json({ error: "variantKey required" }, { status: 400 });
 
+  // Resolve Output Builder layout keys (layout:<id>) too.
+  await ensureLayoutVariantsLoaded();
   const variant = getVariant(variantKey);
   if (!variant) return NextResponse.json({ error: "Unknown variant" }, { status: 404 });
 
@@ -35,8 +39,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
   const outputs = parseProdSpecOutputs(prodSpec.outputs);
   const output = outputs.find((o) => o.variantKey === variantKey);
+  // Honour the info-area size pick (admin size or custom) so the editor
+  // preview matches a real render; default dims when the variant isn't on
+  // this spec yet.
   const dims = output
-    ? { widthMm: output.widthMm, heightMm: output.heightMm }
+    ? effectiveOutputDims(output, variant.isInfoArea ?? false, await loadInfoAreaSizeMap())
     : { widthMm: variant.defaultWidthMm, heightMm: variant.defaultHeightMm };
 
   if (variant.staticPdf) {

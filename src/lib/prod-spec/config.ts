@@ -40,6 +40,14 @@ export const ProdSpecOutputSchema = z.object({
   // barcode only. Applied via applyCartonBarcodePrefs (src/lib/pdf/pins.ts).
   cartonBarcodeType: z.enum(["ean128", "ean13"]).optional(),
   cartonBarcodeHeightMm: z.number().min(4).max(60).optional(),
+  // Per-style info-area size pick — only meaningful when the output's
+  // variant is an info area (OutputLayout.isInfoArea). When set, names an
+  // admin InfoAreaSize whose dimensions override the layout's page size at
+  // render time; absent/null = use this output's own widthMm/heightMm as a
+  // one-time custom size. Resolved live by effectiveOutputDims (so an admin
+  // edit to the size propagates), falling back to widthMm/heightMm if the
+  // referenced size was deactivated or deleted. See src/lib/prod-spec/info-area.ts.
+  infoAreaSizeId: z.string().min(1).nullable().optional(),
 });
 export type ProdSpecOutput = z.infer<typeof ProdSpecOutputSchema>;
 

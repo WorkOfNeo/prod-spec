@@ -96,7 +96,19 @@ export type LayoutRenderOptions = {
   // Render just this page (builder preview shows the selected page).
   pageIndex?: number;
   title?: string;
+  // Info-area size override: when set, EVERY page renders at these mm
+  // dimensions instead of its own. Blocks are grid-positioned (proportional
+  // to page size), so the whole design simply scales to the chosen size.
+  // Passed by the runner / preview routes for outputs whose variant is an
+  // info area (TemplateVariant.isInfoArea). Margins are absolute and kept.
+  sizeOverrideMm?: { widthMm: number; heightMm: number };
 };
+
+// Keep an overridden page size inside the LayoutPage schema's mm bounds.
+function clampMm(mm: number): number {
+  if (!Number.isFinite(mm)) return 5;
+  return Math.min(1000, Math.max(5, mm));
+}
 
 const ANCHOR_CSS: Record<LayoutAnchor, string> = {
   "top-left": "top: var(--ol-pad); left: var(--ol-pad);",
@@ -424,13 +436,24 @@ async function prepareLayoutRender(
 ): Promise<PreparedLayoutRender> {
   let style = styleInput;
   const mode = opts.mode ?? "production";
-  const pages =
+  const selectedPages =
     opts.pageIndex !== undefined
       ? def.pages.slice(opts.pageIndex, opts.pageIndex + 1)
       : def.pages;
-  if (pages.length === 0) {
+  if (selectedPages.length === 0) {
     throw new Error(`layout has no page at index ${opts.pageIndex}`);
   }
+
+  // Info-area size override — rewrite every page to the chosen mm size.
+  // Clamped to the LayoutPage bounds (5–1000 mm) so a stray value can't
+  // produce an invalid @page rule; grid blocks rescale automatically.
+  const pages = opts.sizeOverrideMm
+    ? selectedPages.map((p) => ({
+        ...p,
+        widthMm: clampMm(opts.sizeOverrideMm!.widthMm),
+        heightMm: clampMm(opts.sizeOverrideMm!.heightMm),
+      }))
+    : selectedPages;
 
   // Resolve language-derived tokens through the translation bank before
   // anything renders (idempotent — values already present are kept):
