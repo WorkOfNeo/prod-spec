@@ -37,6 +37,7 @@ import { requiredFieldsForVariants, getVariant, defaultArtifactFileName } from "
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { parseCustomerConfig } from "@/lib/customers/config";
+import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
 import { applyFieldOverrides } from "@/lib/pdf/pins";
 import { parseFieldOverrides, PINNABLE_FIELD_LABELS, type PinnableField } from "@/lib/pdf/pins-meta";
 import { findFieldRule } from "@/lib/pdf/spec-fields";
@@ -232,7 +233,8 @@ export default async function StyleDetail({
   const enabledVariantKeys = enabledOutputs.map((o) => o.variantKey);
   const outputEntryByKey = new Map(enabledOutputs.map((o) => [o.variantKey, o]));
   const requiredKeys = requiredFieldsForVariants(enabledVariantKeys);
-  const reqMapping = parseCustomerConfig(style.customer.config).columnMapping;
+  const customerConfig = parseCustomerConfig(style.customer.config);
+  const reqMapping = customerConfig.columnMapping;
   const effItem = effectiveStyleItem(style) as MondayItem | null;
   const missingDetail = findMissingDetailFields(effItem, reqMapping, requiredKeys);
   const reqMissing = new Set(missingDetail.map((m) => m.field));
@@ -567,6 +569,8 @@ export default async function StyleDetail({
           />
         </div>
       </div>
+
+      {customerConfig.skipSupplierDelivery && <SkipSupplierDeliveryBadge className="mt-4" />}
 
       <nav className="mt-6 border-b border-zinc-200">
         <ul className="flex gap-1">
