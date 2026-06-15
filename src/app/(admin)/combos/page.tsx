@@ -14,13 +14,20 @@ export const dynamic = "force-dynamic";
 export default async function CombosPage() {
   await requireAdminPage();
 
-  const combos = await db.customerBusinessAreaCombo.findMany({
-    orderBy: [
-      { status: "asc" }, // NEW before REVIEWED (Postgres enum declaration order)
-      { activeStyleCount: "desc" },
-      { firstSeenAt: "desc" },
-    ],
-  });
+  const [combos, specPairs] = await Promise.all([
+    db.customerBusinessAreaCombo.findMany({
+      orderBy: [
+        { status: "asc" }, // NEW before REVIEWED (Postgres enum declaration order)
+        { activeStyleCount: "desc" },
+        { firstSeenAt: "desc" },
+      ],
+    }),
+    // Existing ProdSpecs keyed by their (customer, business area) pair — a
+    // combo with a match shows "Open spec" instead of "Create", so we never
+    // attempt a duplicate (the pair is unique) or rename an existing one.
+    db.prodSpec.findMany({ select: { id: true, customerId: true, businessAreaId: true } }),
+  ]);
+  const specByPair = new Map(specPairs.map((s) => [`${s.customerId}:${s.businessAreaId}`, s.id]));
 
   const newCount = combos.filter((c) => c.status === "NEW").length;
   const activeCount = combos.filter((c) => c.activeStyleCount > 0).length;
@@ -88,7 +95,16 @@ export default async function CombosPage() {
                     </td>
                     <td className="px-4 py-3 text-xs text-zinc-500">{formatDate(c.firstSeenAt)}</td>
                     <td className="px-4 py-3 text-right">
-                      <ComboRowActions id={c.id} status={c.status} />
+                      <ComboRowActions
+                        id={c.id}
+                        status={c.status}
+                        hasBusinessArea={c.businessAreaId !== null}
+                        existingSpecId={
+                          c.businessAreaId
+                            ? specByPair.get(`${c.customerId}:${c.businessAreaId}`) ?? null
+                            : null
+                        }
+                      />
                     </td>
                   </tr>
                 );

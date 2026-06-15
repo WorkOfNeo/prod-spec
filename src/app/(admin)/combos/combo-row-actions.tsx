@@ -1,13 +1,26 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-// Per-row review toggle on /combos. PATCHes the status and refreshes the
-// server component so the pill + ordering update. Mirrors the fetch/loading
-// shape of review-notification-email-setting.tsx (the app uses API routes +
-// fetch, not server actions).
-export function ComboRowActions({ id, status }: { id: string; status: "NEW" | "REVIEWED" }) {
+// Per-row actions on /combos. "Create" builds the ProdSpec for this combo
+// (pre-named "<Customer> - <Business area> - ") and drops you into the editor;
+// once a spec exists the button becomes "Open spec". A combo with no business
+// area can't have a spec, so Create is disabled there. Plus the review toggle.
+// Mirrors the fetch/loading shape of review-notification-email-setting.tsx
+// (the app uses API routes + fetch, not server actions).
+export function ComboRowActions({
+  id,
+  status,
+  hasBusinessArea,
+  existingSpecId,
+}: {
+  id: string;
+  status: "NEW" | "REVIEWED";
+  hasBusinessArea: boolean;
+  existingSpecId: string | null;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,9 +45,49 @@ export function ComboRowActions({ id, status }: { id: string; status: "NEW" | "R
     }
   }
 
+  async function createSpec() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/combos/${id}/prod-spec`, { method: "POST" });
+      const j = (await res.json().catch(() => ({}))) as { error?: string; prodSpecId?: string };
+      if (!res.ok || !j.prodSpecId) throw new Error(j.error ?? `Failed (${res.status})`);
+      // Land in the editor with the name prefix filled. No setBusy(false) —
+      // we're navigating away.
+      router.push(`/prod-specs/${j.prodSpecId}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed");
+      setBusy(false);
+    }
+  }
+
   return (
     <span className="inline-flex items-center gap-2">
       {error ? <span className="text-xs text-red-600">{error}</span> : null}
+
+      {existingSpecId ? (
+        <Link
+          href={`/prod-specs/${existingSpecId}`}
+          className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+        >
+          Open spec
+        </Link>
+      ) : (
+        <button
+          type="button"
+          onClick={createSpec}
+          disabled={busy || !hasBusinessArea}
+          title={
+            hasBusinessArea
+              ? "Create a ProdSpec named “Customer - Business area - ” and open it"
+              : "No business area to base a ProdSpec on"
+          }
+          className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+        >
+          {busy ? "Creating…" : "Create"}
+        </button>
+      )}
+
       <button
         type="button"
         onClick={flip}
