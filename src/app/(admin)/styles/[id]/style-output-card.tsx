@@ -14,6 +14,15 @@ export type InfoAreaSizeOption = {
   heightMm: number;
 };
 
+// mm values accept a comma OR dot decimal ("27,5" → 27.5); display shows a
+// comma back. Info-area sizes can be fractional (e.g. 27.5 mm).
+function parseMm(raw: string): number {
+  return Number(String(raw).replace(",", ".").trim());
+}
+function fmtMm(n: number): string {
+  return String(n).replace(".", ",");
+}
+
 // One output of one style, as a fold-out row. Collapsed it shows just the
 // ready dot + name + a missing-fields hint, with the per-output Run button
 // alongside, so a style with many outputs stays scannable. Folded out it
@@ -99,7 +108,7 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
         </button>
         <span className="hidden flex-shrink-0 text-[11px] tabular-nums text-zinc-400 sm:inline">
           {sizeLabel ? `${sizeLabel} · ` : ""}
-          {p.widthMm} × {p.heightMm} mm
+          {fmtMm(p.widthMm)} × {fmtMm(p.heightMm)} mm
         </span>
         {p.cartonNumbering && (
           <CartonPrintsButton
@@ -191,7 +200,7 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
               </div>
             </div>
             <span className="flex-shrink-0 text-[11px] tabular-nums text-zinc-400">
-              {p.widthMm} × {p.heightMm} mm
+              {fmtMm(p.widthMm)} × {fmtMm(p.heightMm)} mm
             </span>
           </div>
         </div>
@@ -228,8 +237,8 @@ function InfoAreaSizeControl({
   // Local "editing a custom size" flag — true while the user is on the
   // Custom option before saving. Derived default: custom when no admin pick.
   const [pendingCustom, setPendingCustom] = useState(currentSizeId === null);
-  const [customW, setCustomW] = useState(String(widthMm));
-  const [customH, setCustomH] = useState(String(heightMm));
+  const [customW, setCustomW] = useState(fmtMm(widthMm));
+  const [customH, setCustomH] = useState(fmtMm(heightMm));
 
   const showCustom = pendingCustom || currentSizeId === null;
   const selectValue = showCustom ? "custom" : `size:${currentSizeId}`;
@@ -267,18 +276,18 @@ function InfoAreaSizeControl({
   function onSelect(value: string) {
     if (value === "custom") {
       setPendingCustom(true);
-      setCustomW(String(widthMm));
-      setCustomH(String(heightMm));
+      setCustomW(fmtMm(widthMm));
+      setCustomH(fmtMm(heightMm));
       return;
     }
     setPendingCustom(false);
     void patch({ infoAreaSizeId: value.slice("size:".length) });
   }
 
-  const cw = Number(customW);
-  const ch = Number(customH);
+  const cw = parseMm(customW);
+  const ch = parseMm(customH);
   const customValid =
-    Number.isInteger(cw) && cw > 0 && cw <= 1000 && Number.isInteger(ch) && ch > 0 && ch <= 1000;
+    Number.isFinite(cw) && cw > 0 && cw <= 1000 && Number.isFinite(ch) && ch > 0 && ch <= 1000;
   const customDirty = cw !== widthMm || ch !== heightMm;
 
   return (
@@ -295,7 +304,7 @@ function InfoAreaSizeControl({
         >
           {sizes.map((s) => (
             <option key={s.id} value={`size:${s.id}`}>
-              {s.name} · {s.widthMm} × {s.heightMm} mm
+              {s.name} · {fmtMm(s.widthMm)} × {fmtMm(s.heightMm)} mm
             </option>
           ))}
           {currentMissing && (
@@ -309,9 +318,8 @@ function InfoAreaSizeControl({
         {showCustom && (
           <div className="flex items-center gap-1.5">
             <input
-              type="number"
-              min={1}
-              max={1000}
+              type="text"
+              inputMode="decimal"
               value={customW}
               disabled={busy}
               onChange={(e) => setCustomW(e.target.value)}
@@ -320,9 +328,8 @@ function InfoAreaSizeControl({
             />
             <span className="text-xs text-zinc-400">×</span>
             <input
-              type="number"
-              min={1}
-              max={1000}
+              type="text"
+              inputMode="decimal"
               value={customH}
               disabled={busy}
               onChange={(e) => setCustomH(e.target.value)}
