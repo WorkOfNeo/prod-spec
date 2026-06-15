@@ -8,11 +8,10 @@ import {
 } from "@/lib/pdf/washcare-symbols";
 import { findCertificate, loadCertificates, type CertificateMap } from "@/lib/pdf/certificates";
 import {
-  LAYOUT_GRID_COLS,
-  LAYOUT_GRID_ROWS,
   TOKEN_RE,
   conditionalsInLine,
   layoutSettings,
+  pageGrid,
   type LayoutAnchor,
   type LayoutBlock,
   type LayoutDef,
@@ -130,6 +129,11 @@ type RenderCtx = {
   symbols: WashcareSymbolMap | null; // loaded only when {{washSymbols}} is used
   logos: { contrast: string | null; custom: string | null }; // loaded only when {{logo:…}} is used
   certs: CertificateMap | null; // loaded only when {{cert:…}} is used
+  // Uniform shrink applied to font-derived sizes (font pt, barcode/symbol/
+  // logo dimensions, borders, padding) so the whole design scales — not just
+  // the grid-relative positions — when an info-area size override resizes the
+  // page. 1 = no scaling (normal render / builder). See prepareLayoutRender.
+  fontScale: number;
 };
 
 function defUsesToken(pages: LayoutPage[], key: string): boolean {
@@ -359,20 +363,22 @@ function applyInlineMarkdown(html: string): string {
     .replace(/(?<![\w])_([^_\n]+)_(?![\w])/g, "<i>$1</i>");
 }
 
-function blockBorder(block: LayoutBlock): string {
+function blockBorder(block: LayoutBlock, fontScale: number): string {
   if (!block.border) return "";
-  return `border: ${block.border.widthMm}mm solid ${block.border.color}; `;
+  return `border: ${(block.border.widthMm * fontScale).toFixed(3)}mm solid ${block.border.color}; `;
 }
 
-function blockTypography(block: LayoutBlock): string {
+function blockTypography(block: LayoutBlock, fontScale: number): string {
   // Graphics scale with the block's font size: 9 pt is the classic size
-  // (16 mm bars / 10 pt digits / 6 mm symbols).
-  const bcH = ((block.fontPt * 16) / 9).toFixed(2);
-  const bcNum = ((block.fontPt * 10) / 9).toFixed(2);
-  const sym = ((block.fontPt * 6) / 9).toFixed(2);
-  const logo = ((block.fontPt * 10) / 9).toFixed(2);
+  // (16 mm bars / 10 pt digits / 6 mm symbols). fontScale shrinks the whole
+  // lot together when an info-area size override resizes the page.
+  const pt = block.fontPt * fontScale;
+  const bcH = ((pt * 16) / 9).toFixed(2);
+  const bcNum = ((pt * 10) / 9).toFixed(2);
+  const sym = ((pt * 6) / 9).toFixed(2);
+  const logo = ((pt * 10) / 9).toFixed(2);
   return (
-    `font-size: ${block.fontPt}pt; ` +
+    `font-size: ${pt.toFixed(2)}pt; ` +
     `line-height: ${block.lineHeight}; ` +
     `font-weight: ${block.bold ? 700 : 400}; ` +
     `--ol-bc-h: ${bcH}mm; --ol-bc-num: ${bcNum}pt; --ol-sym: ${sym}mm; --ol-logo: ${logo}mm; --ol-cert: ${logo}mm; `
@@ -386,33 +392,34 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
     .map((l) => `<div class="ol-line">${l || "&nbsp;"}</div>`)
     .join("");
 
+  const { cols: gridCols, rows: gridRows } = pageGrid(page);
   if (block.rect) {
     const r = block.rect;
     const m = page.margins ?? { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 };
     const innerW = page.widthMm - m.leftMm - m.rightMm;
     const innerH = page.heightMm - m.topMm - m.bottomMm;
-    const left = (m.leftMm + (innerW * r.col) / LAYOUT_GRID_COLS).toFixed(2);
-    const top = (m.topMm + (innerH * r.row) / LAYOUT_GRID_ROWS).toFixed(2);
-    const width = ((innerW * r.colSpan) / LAYOUT_GRID_COLS).toFixed(2);
-    const height = ((innerH * r.rowSpan) / LAYOUT_GRID_ROWS).toFixed(2);
+    const left = (m.leftMm + (innerW * r.col) / gridCols).toFixed(2);
+    const top = (m.topMm + (innerH * r.row) / gridRows).toFixed(2);
+    const width = ((innerW * r.colSpan) / gridCols).toFixed(2);
+    const height = ((innerH * r.rowSpan) / gridRows).toFixed(2);
     const justify =
       block.valign === "middle" ? "center" : block.valign === "bottom" ? "flex-end" : "flex-start";
     const styleAttr =
       `left: ${left}mm; top: ${top}mm; width: ${width}mm; height: ${height}mm; ` +
       `display: flex; flex-direction: column; justify-content: ${justify}; ` +
       `text-align: ${block.align ?? "left"}; ` +
-      blockBorder(block) +
-      blockTypography(block);
+      blockBorder(block, ctx.fontScale) +
+      blockTypography(block, ctx.fontScale);
     return `<div class="ol-block ol-rect" style="${styleAttr}">${lines}</div>`;
   }
 
   const anchor = block.anchor ?? "top-left";
-  const widthMm = (page.widthMm * block.cols) / LAYOUT_GRID_COLS;
+  const widthMm = (page.widthMm * block.cols) / gridCols;
   const styleAttr =
     `width: ${widthMm.toFixed(2)}mm; ` +
     `text-align: ${block.align ?? ANCHOR_ALIGN[anchor]}; ` +
-    blockBorder(block) +
-    blockTypography(block) +
+    blockBorder(block, ctx.fontScale) +
+    blockTypography(block, ctx.fontScale) +
     ANCHOR_CSS[anchor];
   return `<div class="ol-block ol-${anchor}" style="${styleAttr}">${lines}</div>`;
 }
@@ -455,6 +462,23 @@ async function prepareLayoutRender(
       }))
     : selectedPages;
 
+  // Uniform font/graphic scale: grid-relative positions already follow the
+  // new page size, but font pt, barcode/symbol/logo sizes, borders and pad
+  // are absolute — without this they'd stay full-size on a shrunk sticker and
+  // overflow (clipped by .ol-page's overflow:hidden). Scale by the SMALLER of
+  // the width/height ratios (authored size → chosen size) so the design fits
+  // the more-constrained axis rather than spilling over. Proportional resizes
+  // (the common case) have equal ratios, so it's a clean uniform zoom.
+  let fontScale = 1;
+  if (opts.sizeOverrideMm) {
+    const ref = selectedPages[0];
+    const sx = clampMm(opts.sizeOverrideMm.widthMm) / ref.widthMm;
+    const sy = clampMm(opts.sizeOverrideMm.heightMm) / ref.heightMm;
+    if (Number.isFinite(sx) && Number.isFinite(sy) && sx > 0 && sy > 0) {
+      fontScale = Math.min(sx, sy);
+    }
+  }
+
   // Resolve language-derived tokens through the translation bank before
   // anything renders (idempotent — values already present are kept):
   // {{composition:<lang>}}, {{careInstructions:<lang>}} (standard
@@ -484,9 +508,30 @@ async function prepareLayoutRender(
     usesLogo ? getCustomLogoDataUrl() : Promise.resolve(null),
     defUsesToken(pages, "cert") ? loadCertificates() : Promise.resolve(null),
   ]);
-  const ctx: RenderCtx = { mode, barcodes, symbols, logos: { contrast: contrastLogo, custom: customLogo }, certs };
+  const ctx: RenderCtx = { mode, barcodes, symbols, logos: { contrast: contrastLogo, custom: customLogo }, certs, fontScale };
 
   return { pages, repStyles, ctx, barcodeFont: style.barcodeFont };
+}
+
+// Print guides — non-content rules overlaid on the page (drawn after the
+// blocks so they sit on top). Sewing lines are full-width solid rules a
+// fixed mm from the named edge (the seam allowance); the fold line is a
+// dashed rule through the centre — horizontal (across) or vertical (down).
+// Guides carry no tokens and never count as placeholders, so they never
+// block approval. The fold uses 50%, so it stays centred under the
+// info-area size override; sewing offsets are absolute mm by design.
+function renderGuides(page: LayoutPage): string {
+  const parts: string[] = [];
+  for (const s of page.sewingLines ?? []) {
+    const pos = s.edge === "bottom" ? `bottom: ${s.offsetMm}mm;` : `top: ${s.offsetMm}mm;`;
+    parts.push(`<div class="ol-guide ol-sew" style="${pos}"></div>`);
+  }
+  if (page.foldLine === "horizontal") {
+    parts.push(`<div class="ol-guide ol-fold ol-fold-h"></div>`);
+  } else if (page.foldLine === "vertical") {
+    parts.push(`<div class="ol-guide ol-fold ol-fold-v"></div>`);
+  }
+  return parts.join("");
 }
 
 // Lay a flat list of (page × style) units into the final HTML document.
@@ -511,7 +556,7 @@ function emitLayoutDocument(
   const body = emitted
     .map(({ page, repStyle }, i) => {
       const blocks = page.blocks.map((b) => renderBlock(b, page, repStyle, ctx)).join("");
-      return `<div class="ol-page ol-page-${i}">${blocks}</div>`;
+      return `<div class="ol-page ol-page-${i}">${blocks}${renderGuides(page)}</div>`;
     })
     .join("\n");
 
@@ -521,7 +566,7 @@ function emitLayoutDocument(
     body,
     barcodeFont: prep.barcodeFont,
     extraCss: `
-  :root { --ol-pad: 2mm; }
+  :root { --ol-pad: ${(2 * ctx.fontScale).toFixed(3)}mm; }
   .ol-page {
     position: relative;
     overflow: hidden;
@@ -531,11 +576,15 @@ function emitLayoutDocument(
   .ol-page:last-child { page-break-after: auto; }
   ${pageCss}
   .ol-block { position: absolute; }
+  .ol-guide { position: absolute; pointer-events: none; z-index: 5; }
+  .ol-sew { left: 0; right: 0; height: 0; border-top: 0.25mm solid #111; }
+  .ol-fold-h { left: 0; right: 0; top: 50%; height: 0; border-top: 0.25mm dashed #555; }
+  .ol-fold-v { top: 0; bottom: 0; left: 50%; width: 0; border-left: 0.25mm dashed #555; }
   .ol-line { white-space: pre-wrap; word-break: break-word; min-height: 1em; }
   .ol-barcode { display: inline-block; text-align: center; max-width: 100%; }
   .ol-barcode img { display: block; height: var(--ol-bc-h, 16mm); width: auto; max-width: 100%; margin-left: auto; margin-right: auto; }
-  .ol-ean-number { margin-top: 1mm; font-size: var(--ol-bc-num, 10pt); letter-spacing: 0.08em; }
-  .ol-symbols { display: inline-flex; flex-wrap: wrap; gap: 1.5mm; align-items: center; vertical-align: middle; }
+  .ol-ean-number { margin-top: ${(1 * ctx.fontScale).toFixed(3)}mm; font-size: var(--ol-bc-num, 10pt); letter-spacing: 0.08em; }
+  .ol-symbols { display: inline-flex; flex-wrap: wrap; gap: ${(1.5 * ctx.fontScale).toFixed(3)}mm; align-items: center; vertical-align: middle; }
   .ol-symbols img { width: var(--ol-sym, 6mm); height: var(--ol-sym, 6mm); object-fit: contain; }
   .ol-logo { display: inline-block; vertical-align: middle; max-width: 100%; }
   .ol-logo img { display: block; height: var(--ol-logo, 10mm); width: auto; max-width: 100%; }
