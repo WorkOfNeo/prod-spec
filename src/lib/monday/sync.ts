@@ -14,6 +14,7 @@ import {
 import { ingestMondayItem, IngestSkip } from "./ingest";
 import { ghostItemToMondayItem } from "./sink";
 import { ensureProdSpecsForStyle } from "@/lib/prod-spec/ensure";
+import { reconcileCustomerBusinessAreaCombos } from "@/lib/combos/reconcile";
 import { slog, serr, errorSampler } from "./sync-log";
 import {
   extractLinkedItemId,
@@ -444,6 +445,18 @@ export async function syncStyles(): Promise<SyncResult> {
       }
     }
     errs.done();
+
+    // Reconcile the Customer × Business-Area combo registry off the freshly
+    // upserted styles — new combos get flagged + alerted. Guarded so a combo
+    // failure (e.g. the table not yet migrated on the live DB) can never fail
+    // the style sync. Runs here so it covers BOTH the standalone sync-styles
+    // cron and syncAll (which calls syncStyles).
+    try {
+      const combos = await reconcileCustomerBusinessAreaCombos();
+      slog("fill:styles", "combos reconciled", combos);
+    } catch (err) {
+      serr("fill:styles", "combo reconcile failed (sync unaffected)", err);
+    }
 
     return {
       itemsTotal: ghostItems.length,

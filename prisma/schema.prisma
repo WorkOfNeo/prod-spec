@@ -151,6 +151,8 @@ model Customer {
   prodSpecs     ProdSpec[]
   outputLayouts OutputLayout[]
 
+  customerBusinessAreaCombos CustomerBusinessAreaCombo[]
+
   @@index([active])
   @@map("customers")
 }
@@ -211,9 +213,64 @@ model BusinessArea {
   prodSpecs     ProdSpec[]
   outputLayouts OutputLayout[]
 
+  customerBusinessAreaCombos CustomerBusinessAreaCombo[]
+
   @@index([active])
   @@index([mergedIntoId])
   @@map("business_areas")
+}
+
+// =====================================================
+// Customer × Business-Area combo registry. One row per distinct
+// (customer, business area) pair ever seen among ACTIVE styles — the same
+// active set the /styles list shows (see src/lib/styles/active-filter.ts).
+// A newly-appearing combo is flagged NEW and stages a heads-up email so the
+// admin can give it a first look and build a ProdSpec / make PDFs from spec.
+//
+// Rows are kept as history even after a combo's last active style is gone
+// (activeStyleCount → 0, row retained). notifiedAt is stamped once and never
+// reset, so a combo that reappears later is not re-emailed. The very first
+// reconcile (empty registry) seeds the current landscape as REVIEWED with
+// notifiedAt set — a baseline, not a flood of alerts.
+//   - baKey: non-null unique discriminator (NULL-in-unique-index trap):
+//       resolved BA → the businessAreaId
+//       free-text-only → "freetext:<lowercased, whitespace-collapsed>"
+//       no business area → "none"
+//   - baLabel / customerName: display snapshots refreshed each reconcile.
+//   - exampleStyleId: loose ref (no FK) for a dashboard deep link, like
+//     EmailLog.styleId — the registry must outlive any single style.
+// =====================================================
+model CustomerBusinessAreaCombo {
+  id               String      @id @default(cuid())
+  customerId       String
+  businessAreaId   String?
+  baKey            String
+  baLabel          String
+  customerName     String
+  status           ComboStatus @default(NEW)
+  firstSeenAt      DateTime    @default(now())
+  lastSeenAt       DateTime    @default(now())
+  notifiedAt       DateTime?
+  reviewedAt       DateTime?
+  activeStyleCount Int         @default(0)
+  exampleStyleId   String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  customer     Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  businessArea BusinessArea? @relation(fields: [businessAreaId], references: [id], onDelete: SetNull)
+
+  @@unique([customerId, baKey])
+  @@index([status])
+  @@index([notifiedAt])
+  @@index([customerId])
+  @@index([businessAreaId])
+  @@map("customer_business_area_combos")
+}
+
+enum ComboStatus {
+  NEW // detected after baseline, awaiting the admin's first look
+  REVIEWED // admin acknowledged / built the ProdSpec (or seeded at baseline)
 }
 
 // Language is the canonical translation namespace. Every JSON translation
@@ -842,6 +899,7 @@ enum EmailType {
   TICKET_FIXED // rejection ticket marked fixed → internal reviewer
   SUPPLIER_APPROVAL // job fully approved → supplier
   INVITE // signup invitation link → invitee
+  NEW_COMBO // new (customer × business area) combo detected → admin heads-up
 }
 
 enum EmailStatus {
