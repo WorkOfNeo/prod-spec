@@ -2031,7 +2031,7 @@ export function LayoutEditor({
                 />
                 <TokenChip
                   token="{{washSymbols}}"
-                  title="The style's wash care symbols as a row of icons — scales with the block font size"
+                  title="The style's wash care symbols as a row of icons — scales with the block font size. Add a mm gap with {{washSymbols:0}} (0 = flush together)."
                   disabled={!selBlock}
                   value={showValues ? (tokenValues["washSymbols"] ?? "") : undefined}
                   onClick={() => insertToken("{{washSymbols}}")}
@@ -2043,8 +2043,14 @@ export function LayoutEditor({
                   onClick={() => insertToken("{{logo:contrast}}")}
                 />
                 <TokenChip
+                  token="{{logo:contrastAddress}}"
+                  title="The Contrast logo with address (public/logos/contrast-address.svg in the repo) — height scales with the block font size"
+                  disabled={!selBlock}
+                  onClick={() => insertToken("{{logo:contrastAddress}}")}
+                />
+                <TokenChip
                   token="{{logo:custom}}"
-                  title="The uploaded custom logo (Output builder → Logos) — height scales with the block font size"
+                  title="This layout's own uploaded logo (upload it under Settings → Custom logo when this token is used) — width set as a % of its block"
                   disabled={!selBlock}
                   onClick={() => insertToken("{{logo:custom}}")}
                 />

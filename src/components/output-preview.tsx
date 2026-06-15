@@ -103,8 +103,16 @@ export function PreviewFrame({
 // screen, so we pin body width to the label width and give every .page a
 // min-height equal to the label height (lets flex `margin-top:auto`
 // bottom-anchors resolve, and shows the full label rectangle).
+//
+// For ON-SCREEN overview only (never the PDF — Puppeteer renders the raw
+// html without this), separate stacked Output Builder pages with a gap +
+// hairline ring so a multi-page / repeat layout reads as distinct cards.
 function normalize(html: string, widthMm: number, heightMm: number): string {
-  const css = `<style>html,body{margin:0;padding:0;background:#fff;width:${widthMm}mm;}body{min-height:${heightMm}mm;}.page{min-height:${heightMm}mm;}</style>`;
+  const css =
+    `<style>html,body{margin:0;padding:0;background:#fff;width:${widthMm}mm;}` +
+    `body{min-height:${heightMm}mm;}.page{min-height:${heightMm}mm;}` +
+    `.ol-page{box-shadow:0 0 0 0.2mm #e4e4e7;}` +
+    `.ol-page + .ol-page{margin-top:4mm;}</style>`;
   return html.includes("</head>") ? html.replace("</head>", `${css}</head>`) : css + html;
 }
 
