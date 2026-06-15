@@ -13,6 +13,7 @@ const SETTINGS_ITEMS: Array<{ href: string; label: string }> = [
   { href: "/settings/rejection-log", label: "Rejection log" },
   { href: "/monday", label: "Monday" },
   { href: "/settings/care-labels", label: "Care labels" },
+  { href: "/settings/info-area-sizes", label: "Info area sizes" },
   { href: "/settings/washcare-symbols", label: "Wash care symbols" },
   { href: "/settings/certificates", label: "Certificates" },
   { href: "/settings/qr-codes", label: "QR codes" },

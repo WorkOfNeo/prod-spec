@@ -27,6 +27,7 @@ import {
   resolveOutputVariant,
   type ProdSpecOutput,
 } from "@/lib/prod-spec/config";
+import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 
 const STALE_RUNNING_MS = 15 * 60 * 1000;
 
@@ -247,6 +248,10 @@ export async function processJob(jobId: string): Promise<void> {
   // One row per OUTPUT (not per file) for the cover page's documents
   // table — title + dims once, with a file count for multi-doc variants.
   const docSummaries: BundleDocSummary[] = [];
+  // Info-area size catalogue, loaded once — resolves each info-area
+  // output's per-style size pick to printed mm. Empty if the migration
+  // isn't applied yet; outputs then fall back to their stored dims.
+  const infoAreaSizes = await loadInfoAreaSizeMap();
   for (const output of outputs) {
     const variant = resolveOutputVariant(output);
     if (!variant) {
@@ -270,12 +275,15 @@ export async function processJob(jobId: string): Promise<void> {
         applyFieldOverrides(styleData, output.fieldOverrides),
         output,
       );
+      // Printed size — the info-area size override (admin pick or custom)
+      // when the variant is an info area, else the output's own dims.
+      const dims = effectiveOutputDims(output, variant.isInfoArea ?? false, infoAreaSizes);
       // Static-pdf passthrough variants emit their source artwork bytes
       // verbatim; everything else renders HTML → PDF.
       if (!variant.staticPdf && variant.renderMany) {
         // Multi-document variant: one PDF per returned doc, each its own
         // JobAsset under "<key>#<suffix>".
-        const docs = await variant.renderMany(renderStyle);
+        const docs = await variant.renderMany(renderStyle, dims);
         for (const doc of docs) {
           const pdf = await renderPdf({ html: doc.html });
           const defaultName = fileNameFor(variant, styleData.styleNumber).replace(
@@ -294,8 +302,8 @@ export async function processJob(jobId: string): Promise<void> {
         }
         docSummaries.push({
           displayName: variant.name,
-          widthMm: output.widthMm,
-          heightMm: output.heightMm,
+          widthMm: dims.widthMm,
+          heightMm: dims.heightMm,
           fileCount: docs.length,
         });
         continue;
@@ -306,10 +314,7 @@ export async function processJob(jobId: string): Promise<void> {
       if (variant.staticPdf) {
         pdf = await variant.staticPdf();
       } else {
-        const html = await variant.render(renderStyle, {
-          widthMm: output.widthMm,
-          heightMm: output.heightMm,
-        });
+        const html = await variant.render(renderStyle, dims);
         placeholderCount = countPlaceholderMarkers(html);
         pdf = await renderPdf({ html });
       }
@@ -317,15 +322,15 @@ export async function processJob(jobId: string): Promise<void> {
         variant,
         output,
         variantKey: variant.key,
-        displayName: `${variant.name} · ${output.widthMm}×${output.heightMm} mm`,
+        displayName: `${variant.name} · ${dims.widthMm}×${dims.heightMm} mm`,
         fileName: variant.fileNameFor?.(renderStyle) ?? fileNameFor(variant, styleData.styleNumber),
         pdf,
         placeholderCount,
       });
       docSummaries.push({
         displayName: variant.name,
-        widthMm: output.widthMm,
-        heightMm: output.heightMm,
+        widthMm: dims.widthMm,
+        heightMm: dims.heightMm,
         fileCount: 1,
       });
     } catch (err) {

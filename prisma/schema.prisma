@@ -403,6 +403,13 @@ model OutputLayout {
   // Bumped on every publish — JobAsset displayNames carry the version so
   // an asset can be traced to the layout revision that produced it.
   version        Int                @default(0)
+  // Marks this layout as an "info area" — a direct-print packaging block
+  // whose physical print size is switchable PER STYLE (admin InfoAreaSize
+  // or a one-time custom size, stored on ProdSpecOutput.infoAreaSizeId).
+  // When set, the renderer overrides the layout's page dimensions with the
+  // chosen size; see effectiveOutputDims in src/lib/prod-spec/info-area.ts
+  // and renderLayoutHtml's sizeOverrideMm option.
+  isInfoArea     Boolean            @default(false)
   customerId     String?
   businessAreaId String?
   createdAt      DateTime           @default(now())
@@ -1137,6 +1144,26 @@ model CareLabel {
 
   @@index([active])
   @@map("care_labels")
+}
+
+// =====================================================
+// Info Area Sizes — admin-managed catalogue of named print sizes (mm) for
+// "info area" outputs (OutputLayout.isInfoArea). On a style's info-area
+// output the operator picks one of these (or a one-time custom size); the
+// renderer prints the layout at the chosen dimensions. DB-managed via
+// /settings/info-area-sizes, mirroring the CareLabel / QrImage CRUD.
+// =====================================================
+model InfoAreaSize {
+  id        String   @id @default(cuid())
+  name      String
+  widthMm   Int
+  heightMm  Int
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active])
+  @@map("info_area_sizes")
 }
 
 // =====================================================

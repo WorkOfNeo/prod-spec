@@ -277,6 +277,7 @@ async function batch4() {
     name: "Smoke Many",
     docType: "STICKER",
     version: 1,
+    isInfoArea: false,
     definition: {
       pages: [{ id: "p1", title: "", widthMm: 60, heightMm: 30,
         blocks: [{ id: "b1", rect: { col: 0, row: 0, colSpan: 12, rowSpan: 12 }, lines: ["{{size}} {{ean13}}"] }] }],
@@ -288,7 +289,7 @@ async function batch4() {
     { label: "S/M", ean13: "5701234567104" },
     { label: "L/XL", ean13: "5701234567111" },
   ] };
-  const docs = await variant!.renderMany!(multi);
+  const docs = await variant!.renderMany!(multi, { widthMm: 60, heightMm: 30 });
   assert(docs.length === 2, `renderMany returns one doc per size (got ${docs.length})`);
   assert(docs[0].fileName === `${style.styleNumber}-SM.pdf`, `per-rep fileName binds size (${docs[0].fileName})`);
   assert(docs[1].html.includes("5701234567111") && !docs[1].html.includes("5701234567104"),

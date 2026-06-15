@@ -73,6 +73,7 @@ type LayoutProps = {
   docType: string;
   status: "DRAFT" | "PUBLISHED";
   version: number;
+  isInfoArea: boolean;
   customerId: string | null;
   businessAreaId: string | null;
   definition: LayoutDef;
@@ -104,6 +105,7 @@ export function LayoutEditor({
 }) {
   const [name, setName] = useState(layout.name);
   const [docType, setDocType] = useState(layout.docType);
+  const [isInfoArea, setIsInfoArea] = useState(layout.isInfoArea);
   const [def, setDef] = useState<LayoutDef>(layout.definition);
   const [customerId, setCustomerId] = useState<string | null>(layout.customerId);
   const [businessAreaId, setBusinessAreaId] = useState<string | null>(layout.businessAreaId);
@@ -356,8 +358,8 @@ export function LayoutEditor({
   // ---- autosave --------------------------------------------------------
 
   const payload = useMemo(
-    () => JSON.stringify({ name, docType, definition: def, customerId, businessAreaId }),
-    [name, docType, def, customerId, businessAreaId],
+    () => JSON.stringify({ name, docType, isInfoArea, definition: def, customerId, businessAreaId }),
+    [name, docType, isInfoArea, def, customerId, businessAreaId],
   );
 
   useEffect(() => {
@@ -726,6 +728,18 @@ export function LayoutEditor({
           >
             Manage types
           </Link>
+          <label
+            className="flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-600"
+            title="Info area: this layout's print size becomes switchable per style (admin size or custom) on the Style page — see Settings → Info area sizes"
+          >
+            <input
+              type="checkbox"
+              checked={isInfoArea}
+              onChange={(e) => setIsInfoArea(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+            />
+            Info area
+          </label>
           {status === "PUBLISHED" ? (
             <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
               Published · v{version} — edits go live on save

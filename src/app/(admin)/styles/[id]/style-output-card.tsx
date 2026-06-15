@@ -1,10 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { LazyOutputPreview } from "@/components/output-preview";
 import { OutputThumbnail } from "./output-thumbnail";
 import { RunOutputButton } from "./run-output-button";
 import { CartonPrintsButton } from "./carton-prints-dialog";
+
+export type InfoAreaSizeOption = {
+  id: string;
+  name: string;
+  widthMm: number;
+  heightMm: number;
+};
 
 // One output of one style, as a fold-out row. Collapsed it shows just the
 // ready dot + name + a missing-fields hint, with the per-output Run button
@@ -32,11 +40,27 @@ export type StyleOutputCardProps = {
   // Layout opted into manual "X of Y" carton-numbered prints — shows the
   // badge + the "Carton numbers…" action alongside Run.
   cartonNumbering: boolean;
+  // Info-area sizing: when isInfoArea, the output's print size is switchable
+  // here (admin size or one-time custom). The pick is stored on the
+  // ProdSpec output, so prodSpecId is needed to PATCH it.
+  isInfoArea: boolean;
+  prodSpecId: string | null;
+  infoAreaSizeId: string | null;
+  // Resolved name of the current pick (resolved server-side against ALL
+  // sizes, so a deactivated pick still reads its name). null = custom.
+  infoAreaSizeName: string | null;
+  // Active admin sizes offered in the dropdown.
+  infoAreaSizes: InfoAreaSizeOption[];
 };
 
 export function StyleOutputCard(p: StyleOutputCardProps) {
   const [open, setOpen] = useState(false);
   const hasChips = p.missing.length > 0 || p.pins.length > 0 || p.notes.length > 0;
+  const showSizeControl = p.isInfoArea && p.prodSpecId !== null;
+  // A label for the header dims readout: "<size name> · W × H mm".
+  const sizeLabel = p.isInfoArea ? (p.infoAreaSizeName ?? "Custom") : null;
+  // Re-fetch the live preview whenever the resolved size changes.
+  const previewKey = `${p.infoAreaSizeId ?? "custom"}-${p.widthMm}x${p.heightMm}`;
 
   return (
     <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
@@ -74,6 +98,7 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           )}
         </button>
         <span className="hidden flex-shrink-0 text-[11px] tabular-nums text-zinc-400 sm:inline">
+          {sizeLabel ? `${sizeLabel} · ` : ""}
           {p.widthMm} × {p.heightMm} mm
         </span>
         {p.cartonNumbering && (
@@ -126,6 +151,20 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
             </div>
           )}
 
+          {showSizeControl && (
+            <div className="border-b border-zinc-100 px-4 py-3">
+              <InfoAreaSizeControl
+                prodSpecId={p.prodSpecId!}
+                variantKey={p.variantKey}
+                sizes={p.infoAreaSizes}
+                currentSizeId={p.infoAreaSizeId}
+                currentSizeName={p.infoAreaSizeName}
+                widthMm={p.widthMm}
+                heightMm={p.heightMm}
+              />
+            </div>
+          )}
+
           <div className="bg-zinc-100 p-4">
             <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
               Live preview · current data
@@ -134,6 +173,7 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
               src={`/api/admin/styles/${p.styleId}/output-preview?variantKey=${encodeURIComponent(p.variantKey)}`}
               widthMm={p.widthMm}
               heightMm={p.heightMm}
+              refreshKey={previewKey}
             />
           </div>
 
@@ -156,6 +196,155 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Per-style size switcher for an info-area output. A dropdown of the admin
+// sizes plus "Custom…"; picking an admin size saves immediately, "Custom"
+// reveals width/height inputs for a one-time size. The pick persists on the
+// ProdSpec output (shared by every style under the spec) and a router
+// refresh re-renders the card + live preview at the new dimensions.
+function InfoAreaSizeControl({
+  prodSpecId,
+  variantKey,
+  sizes,
+  currentSizeId,
+  currentSizeName,
+  widthMm,
+  heightMm,
+}: {
+  prodSpecId: string;
+  variantKey: string;
+  sizes: InfoAreaSizeOption[];
+  currentSizeId: string | null;
+  currentSizeName: string | null;
+  widthMm: number;
+  heightMm: number;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  // Local "editing a custom size" flag — true while the user is on the
+  // Custom option before saving. Derived default: custom when no admin pick.
+  const [pendingCustom, setPendingCustom] = useState(currentSizeId === null);
+  const [customW, setCustomW] = useState(String(widthMm));
+  const [customH, setCustomH] = useState(String(heightMm));
+
+  const showCustom = pendingCustom || currentSizeId === null;
+  const selectValue = showCustom ? "custom" : `size:${currentSizeId}`;
+  // The current pick may reference a now-deactivated size (absent from the
+  // active list) — keep it selectable with a labelled synthetic option.
+  const currentMissing =
+    currentSizeId !== null && !sizes.some((s) => s.id === currentSizeId);
+
+  async function patch(body: {
+    infoAreaSizeId: string | null;
+    widthMm?: number;
+    heightMm?: number;
+  }) {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/admin/prod-specs/${prodSpecId}/output-info-area-size`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ variantKey, ...body }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErr(data.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      router.refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function onSelect(value: string) {
+    if (value === "custom") {
+      setPendingCustom(true);
+      setCustomW(String(widthMm));
+      setCustomH(String(heightMm));
+      return;
+    }
+    setPendingCustom(false);
+    void patch({ infoAreaSizeId: value.slice("size:".length) });
+  }
+
+  const cw = Number(customW);
+  const ch = Number(customH);
+  const customValid =
+    Number.isInteger(cw) && cw > 0 && cw <= 1000 && Number.isInteger(ch) && ch > 0 && ch <= 1000;
+  const customDirty = cw !== widthMm || ch !== heightMm;
+
+  return (
+    <div>
+      <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+        Info area size
+      </div>
+      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+        <select
+          value={selectValue}
+          disabled={busy}
+          onChange={(e) => onSelect(e.target.value)}
+          className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-700 disabled:opacity-50"
+        >
+          {sizes.map((s) => (
+            <option key={s.id} value={`size:${s.id}`}>
+              {s.name} · {s.widthMm} × {s.heightMm} mm
+            </option>
+          ))}
+          {currentMissing && (
+            <option value={`size:${currentSizeId}`}>
+              {(currentSizeName ?? "Selected size") + " (disabled)"}
+            </option>
+          )}
+          <option value="custom">Custom…</option>
+        </select>
+
+        {showCustom && (
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              min={1}
+              max={1000}
+              value={customW}
+              disabled={busy}
+              onChange={(e) => setCustomW(e.target.value)}
+              className="w-16 rounded-md border border-zinc-300 px-2 py-1.5 text-sm tabular-nums"
+              aria-label="Custom width (mm)"
+            />
+            <span className="text-xs text-zinc-400">×</span>
+            <input
+              type="number"
+              min={1}
+              max={1000}
+              value={customH}
+              disabled={busy}
+              onChange={(e) => setCustomH(e.target.value)}
+              className="w-16 rounded-md border border-zinc-300 px-2 py-1.5 text-sm tabular-nums"
+              aria-label="Custom height (mm)"
+            />
+            <span className="text-xs text-zinc-400">mm</span>
+            <button
+              type="button"
+              disabled={busy || !customValid || (!customDirty && currentSizeId === null)}
+              onClick={() => void patch({ infoAreaSizeId: null, widthMm: cw, heightMm: ch })}
+              className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+            >
+              {busy ? "Saving…" : "Apply"}
+            </button>
+          </div>
+        )}
+      </div>
+      <p className="mt-1.5 text-[11px] text-zinc-500">
+        Sets the printed size for this info-area output. Applies wherever this Prod Spec prints it.
+      </p>
+      {err && <p className="mt-1 text-[11px] text-red-600">{err}</p>}
     </div>
   );
 }
