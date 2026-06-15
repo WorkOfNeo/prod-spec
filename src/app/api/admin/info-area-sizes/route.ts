@@ -11,8 +11,10 @@ export const runtime = "nodejs";
 
 const CREATE_SCHEMA = z.object({
   name: z.string().min(1).max(120),
-  widthMm: z.number().int().positive().max(1000),
-  heightMm: z.number().int().positive().max(1000),
+  // Millimetres — fractional allowed (e.g. 27.5). The client normalises a
+  // comma decimal to a dot before sending.
+  widthMm: z.number().positive().max(1000),
+  heightMm: z.number().positive().max(1000),
   active: z.boolean().optional(),
 });
 

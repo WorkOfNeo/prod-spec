@@ -4,6 +4,15 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Toggle } from "@/components/toggle";
 
+// mm values accept a comma OR dot decimal (Danish keyboards type "27,5").
+// Parse normalises to a JS number; format shows a comma back to the user.
+function parseMm(raw: string): number {
+  return Number(String(raw).replace(",", ".").trim());
+}
+function fmtMm(n: number): string {
+  return String(n).replace(".", ",");
+}
+
 type InfoAreaSizeRow = {
   id: string;
   name: string;
@@ -55,7 +64,7 @@ export function InfoAreaList({ initialSizes }: { initialSizes: InfoAreaSizeRow[]
                 <tr key={s.id} className="border-t border-zinc-100">
                   <td className="px-4 py-2 font-medium text-zinc-900">{s.name}</td>
                   <td className="px-4 py-2 tabular-nums text-zinc-700">
-                    {s.widthMm} × {s.heightMm} mm
+                    {fmtMm(s.widthMm)} × {fmtMm(s.heightMm)} mm
                   </td>
                   <td className="px-4 py-2">
                     <span
@@ -129,14 +138,14 @@ function SizeDialog({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const w = Number(widthMm);
-  const h = Number(heightMm);
+  const w = parseMm(widthMm);
+  const h = parseMm(heightMm);
   const valid =
     name.trim().length > 0 &&
-    Number.isInteger(w) &&
+    Number.isFinite(w) &&
     w > 0 &&
     w <= 1000 &&
-    Number.isInteger(h) &&
+    Number.isFinite(h) &&
     h > 0 &&
     h <= 1000;
 
@@ -213,24 +222,22 @@ function SizeDialog({
           <label className="text-xs font-medium text-zinc-700">
             Width (mm)
             <input
-              type="number"
-              min={1}
-              max={1000}
+              type="text"
+              inputMode="decimal"
               value={widthMm}
               onChange={(e) => setWidthMm(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
-              placeholder="40"
+              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm tabular-nums"
+              placeholder="27,5"
             />
           </label>
           <label className="text-xs font-medium text-zinc-700">
             Height (mm)
             <input
-              type="number"
-              min={1}
-              max={1000}
+              type="text"
+              inputMode="decimal"
               value={heightMm}
               onChange={(e) => setHeightMm(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm tabular-nums"
               placeholder="60"
             />
           </label>

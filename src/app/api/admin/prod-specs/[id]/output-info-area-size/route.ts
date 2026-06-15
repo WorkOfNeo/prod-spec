@@ -25,8 +25,9 @@ export const runtime = "nodejs";
 const BODY_SCHEMA = z.object({
   variantKey: z.string().min(1),
   infoAreaSizeId: z.string().min(1).nullable(),
-  widthMm: z.number().int().positive().max(1000).optional(),
-  heightMm: z.number().int().positive().max(1000).optional(),
+  // Fractional mm allowed (e.g. 27.5) for a one-time custom size.
+  widthMm: z.number().positive().max(1000).optional(),
+  heightMm: z.number().positive().max(1000).optional(),
 });
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {

@@ -7,8 +7,9 @@ export const runtime = "nodejs";
 
 const PATCH_SCHEMA = z.object({
   name: z.string().min(1).max(120).optional(),
-  widthMm: z.number().int().positive().max(1000).optional(),
-  heightMm: z.number().int().positive().max(1000).optional(),
+  // Fractional mm allowed (e.g. 27.5) — see route.ts.
+  widthMm: z.number().positive().max(1000).optional(),
+  heightMm: z.number().positive().max(1000).optional(),
   active: z.boolean().optional(),
 });
 

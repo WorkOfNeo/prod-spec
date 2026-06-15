@@ -1156,8 +1156,10 @@ model CareLabel {
 model InfoAreaSize {
   id        String   @id @default(cuid())
   name      String
-  widthMm   Int
-  heightMm  Int
+  // Millimetres — fractional allowed (e.g. 27.5). Float, not Int, so sizes
+  // like 27,5 mm round-trip. The UI accepts a comma or dot decimal.
+  widthMm   Float
+  heightMm  Float
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
