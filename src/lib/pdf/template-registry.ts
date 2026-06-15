@@ -55,6 +55,10 @@ export type TemplateVariant = {
   // fileName expression in their settings). Returns "<name>.pdf" or null
   // to use the runner's default.
   fileNameFor?: (style: StyleData) => string | null;
+  // Eligible for MANUAL "X of Y" carton-numbered prints — Output Builder
+  // layouts whose settings.cartonNumbering is on. Surfaces the Style-page
+  // "Carton numbers…" action; coded variants leave it undefined (= false).
+  cartonNumbering?: boolean;
   // Optional multi-document rendering (Output Builder repeat-per-EAN):
   // one PDF per returned doc, persisted as JobAssets with variantKey
   // "<key>#<suffix>". fileName null → runner default + suffix.

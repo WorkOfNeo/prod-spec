@@ -150,6 +150,13 @@ export const LayoutSettingsSchema = z.object({
   // Output file name expression (text tokens allowed), without ".pdf".
   // Empty → the runner's default "<styleNumber>-<variantKey>.pdf".
   fileName: z.string().max(160).default(""),
+  // Eligible for MANUAL "X of Y" carton-numbered prints. Does NOT touch
+  // standard generation (render/renderMany) — it only (a) reveals the
+  // {{cartonNo}}/{{cartonTotal}} tokens in the builder, and (b) lets the
+  // Style page offer the "Carton numbers…" action for this output. The
+  // count is typed at print time; the carton-prints endpoint loops the
+  // layout once per carton with StyleData.cartonSerial set.
+  cartonNumbering: z.boolean().default(false),
 });
 export type LayoutSettings = z.infer<typeof LayoutSettingsSchema>;
 
@@ -160,7 +167,7 @@ export const LayoutDefSchema = z.object({
 export type LayoutDef = z.infer<typeof LayoutDefSchema>;
 
 export function layoutSettings(def: LayoutDef): LayoutSettings {
-  return def.settings ?? { repeatBy: "none", splitBy: "ean", fileName: "" };
+  return def.settings ?? { repeatBy: "none", splitBy: "ean", fileName: "", cartonNumbering: false };
 }
 
 // Stable block identity even for defs saved before ids existed.

@@ -74,6 +74,18 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     kind: "text",
     example: "DDP",
   },
+  // Carton numbering (X of Y) — only resolve on a MANUAL numbered-print
+  // run (StyleData.cartonSerial); empty on standard generation. Enable
+  // "Carton numbering" in the layout's Settings to use these.
+  { key: "cartonNo", label: "Carton no (this print)", group: "Order & carton", kind: "text", example: "7" },
+  { key: "cartonTotal", label: "Carton total", group: "Order & carton", kind: "text", example: "200" },
+  {
+    key: "cartonNoPadded",
+    label: "Carton no (zero-padded to total)",
+    group: "Order & carton",
+    kind: "text",
+    example: "007",
+  },
 
   // ---- Per language (need :lang) ----
   { key: "composition", label: "Composition", group: "Per language", kind: "text", arg: "lang", example: "{{composition:da}}" },

@@ -110,6 +110,7 @@ main()
   .then(() => batch7())
   .then(() => batch8())
   .then(() => batch9())
+  .then(() => batch10())
   .catch((err) => {
     console.error(err);
     process.exit(1);
@@ -494,4 +495,81 @@ async function batch9() {
 
   await closeBrowser();
   console.log(process.exitCode ? "BATCH 9 FAILED" : "BATCH 9 PASSED");
+}
+
+// ---------------------------------------------------------------------
+// Batch 10 coverage: MANUAL carton numbering (X/Y). Carton tokens resolve
+// only with a cartonSerial; the standard render drops the line; the
+// serial renderer produces one numbered page per carton in ONE document;
+// carton tokens add no required columns; eligibility survives parse.
+// ---------------------------------------------------------------------
+async function batch10() {
+  const { renderLayoutHtmlSerial } = await import("@/lib/output-layouts/render");
+  const { staticRequiredColumns: src10 } = await import("@/lib/output-layouts/tokens");
+  const { layoutSettings, parseLayoutDef } = await import("@/lib/output-layouts/schema");
+  const style = buildSampleStyleData();
+
+  const DEF10 = LayoutDefSchema.parse({
+    pages: [
+      {
+        id: "p1",
+        title: "",
+        widthMm: 100,
+        heightMm: 60,
+        blocks: [
+          {
+            id: "b1",
+            rect: { col: 0, row: 0, colSpan: 12, rowSpan: 12 },
+            align: "center",
+            valign: "middle",
+            lines: ["{{customerName}}", "Carton {{cartonNo}} of {{cartonTotal}}", "no {{cartonNoPadded}}"],
+          },
+        ],
+      },
+    ],
+    settings: { repeatBy: "none", splitBy: "ean", fileName: "", cartonNumbering: true },
+  });
+
+  // (1) carton tokens add NO required columns — standard readiness intact.
+  assert(src10(DEF10).length === 0, "carton tokens gate no mapped columns (readiness unaffected)");
+
+  // (2) STANDARD render (no serial) → carton lines dropped entirely, so no
+  //     stray "Carton  of " text; the static line stays.
+  const std = await renderLayoutHtml(DEF10, style, { mode: "production" });
+  assert(std.includes(style.customerName), "standard render keeps the static line");
+  assert(!std.includes("Carton "), "standard render drops the carton-number line (no stray text)");
+  assert(!std.includes("no 0"), "standard render drops the padded carton line too");
+
+  // (3) numbered render (serial injected) → running number + padded 007.
+  const one = await renderLayoutHtml(
+    DEF10,
+    { ...style, cartonSerial: { no: 7, total: 200 } },
+    { mode: "production" },
+  );
+  assert(one.includes("Carton 7 of 200"), "cartonNo/cartonTotal resolve to the running number");
+  assert(one.includes("no 007"), "cartonNoPadded zero-pads to total width (007)");
+
+  // (4) serial renderer → one numbered page per carton in ONE document.
+  const serial = await renderLayoutHtmlSerial(DEF10, style, 3, { mode: "production" });
+  const pageCount = (serial.match(/class="ol-page ol-page-\d+"/g) ?? []).length;
+  assert(pageCount === 3, `serial renders one page per carton (got ${pageCount})`);
+  assert(
+    serial.includes("Carton 1 of 3") &&
+      serial.includes("Carton 2 of 3") &&
+      serial.includes("Carton 3 of 3"),
+    "serial pages count 1/3 … 3/3",
+  );
+
+  // (5) eligibility survives a serialise/parse round-trip.
+  const reparsed = parseLayoutDef(JSON.parse(JSON.stringify(DEF10)));
+  assert(layoutSettings(reparsed).cartonNumbering === true, "cartonNumbering survives parse");
+
+  // (6) the numbered set is ONE multi-page PDF (single render).
+  const pdf = await renderPdf({ html: serial });
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(pdf) }).promise;
+  assert(doc.numPages === 3, `carton PDF is one 3-page document (got ${doc.numPages})`);
+
+  await closeBrowser();
+  console.log(process.exitCode ? "BATCH 10 FAILED" : "BATCH 10 PASSED");
 }

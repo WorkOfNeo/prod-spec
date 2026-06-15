@@ -40,6 +40,13 @@ const BODY_SCHEMA = z.object({
   // selected style and return the map (lang-arg tokens use valuesLang).
   includeTokenValues: z.boolean().default(false),
   valuesLang: z.string().max(10).default("en"),
+  // "Preview as carton N of M" — injects StyleData.cartonSerial so
+  // {{cartonNo}}/{{cartonTotal}} resolve in the live preview the same way
+  // a real numbered print would. Absent ⇒ standard preview (the tokens
+  // show as amber "token?" chips, which is honest).
+  cartonSerial: z
+    .object({ no: z.number().int().min(1), total: z.number().int().min(1) })
+    .optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -56,7 +63,8 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid body", details: parsed.error.flatten() }, { status: 400 });
   }
-  const { definition, styleId, pageIndex, format, includeTokenValues, valuesLang } = parsed.data;
+  const { definition, styleId, pageIndex, format, includeTokenValues, valuesLang, cartonSerial } =
+    parsed.data;
 
   let styleData = buildSampleStyleData();
   let styleResolved = false;
@@ -81,6 +89,12 @@ export async function POST(req: NextRequest) {
     [...new Set([...langArgsInDef(definition, "careInstructions"), vl])],
     [...new Set([...langArgsInDef(definition, "madeIn"), vl])],
   );
+
+  // "Preview as carton N of M" — bind the running number so {{cartonNo}} /
+  // {{cartonTotal}} resolve in both the rendered HTML and the show-values map.
+  if (cartonSerial) {
+    styleData = { ...styleData, cartonSerial };
+  }
 
   if (format === "pdf") {
     const html = await renderLayoutHtml(definition, styleData, { mode: "production" });

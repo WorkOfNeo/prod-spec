@@ -231,6 +231,17 @@ function renderWashSymbolsHtml(style: StyleData, ctx: RenderCtx): string {
 // should be dropped (production mode, line was only empty tokens /
 // whitespace).
 function renderLine(line: string, style: StyleData, ctx: RenderCtx): string | null {
+  // Carton-number lines belong ONLY on a numbered print. A line like
+  // "Carton {{cartonNo}} of {{cartonTotal}}" carries literal text, so the
+  // token-only drop below would NOT fire — it would print "Carton  of ".
+  // In production without a carton serial (i.e. standard generation), drop
+  // the whole line so a carton-numbering layout's standard output is clean.
+  if (ctx.mode === "production" && !style.cartonSerial) {
+    for (const m of line.matchAll(new RegExp(TOKEN_RE.source, "g"))) {
+      if (m[1] === "cartonNo" || m[1] === "cartonTotal" || m[1] === "cartonNoPadded") return null;
+    }
+  }
+
   let html = "";
   let lastIndex = 0;
   let hadToken = false;
@@ -394,11 +405,23 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
   return `<div class="ol-block ol-${anchor}" style="${styleAttr}">${lines}</div>`;
 }
 
-export async function renderLayoutHtml(
+type PreparedLayoutRender = {
+  pages: LayoutPage[];
+  repStyles: StyleData[];
+  ctx: RenderCtx;
+  barcodeFont: StyleData["barcodeFont"];
+};
+
+// Shared setup for the single-document and serial (carton-numbered)
+// renderers: page selection, language-token augmentation, repeat
+// narrowing, and the async asset caches. The barcode cache is keyed by
+// source:value and a carton serial never changes a barcode value, so it
+// is built ONCE here and reused across every numbered copy.
+async function prepareLayoutRender(
   def: LayoutDef,
   styleInput: StyleData,
-  opts: LayoutRenderOptions = {},
-): Promise<string> {
+  opts: LayoutRenderOptions,
+): Promise<PreparedLayoutRender> {
   let style = styleInput;
   const mode = opts.mode ?? "production";
   const pages =
@@ -440,10 +463,19 @@ export async function renderLayoutHtml(
   ]);
   const ctx: RenderCtx = { mode, barcodes, symbols, logos: { contrast: contrastLogo, custom: customLogo }, certs };
 
-  const emitted: Array<{ page: LayoutPage; repStyle: StyleData }> = [];
-  for (const repStyle of repStyles) {
-    for (const page of pages) emitted.push({ page, repStyle });
-  }
+  return { pages, repStyles, ctx, barcodeFont: style.barcodeFont };
+}
+
+// Lay a flat list of (page × style) units into the final HTML document.
+// Each unit becomes one physical page with its own @page rule, so one
+// document can carry differently-sized pages AND many numbered carton
+// copies — Chromium renders the whole thing in a single pass.
+function emitLayoutDocument(
+  prep: PreparedLayoutRender,
+  emitted: Array<{ page: LayoutPage; repStyle: StyleData }>,
+  title: string,
+): string {
+  const { ctx } = prep;
 
   const pageCss = emitted
     .map(
@@ -461,10 +493,10 @@ export async function renderLayoutHtml(
     .join("\n");
 
   return htmlDocument({
-    title: opts.title ?? "Output layout",
-    pageSize: { kind: "mm", widthMm: pages[0].widthMm, heightMm: pages[0].heightMm },
+    title,
+    pageSize: { kind: "mm", widthMm: prep.pages[0].widthMm, heightMm: prep.pages[0].heightMm },
     body,
-    barcodeFont: style.barcodeFont,
+    barcodeFont: prep.barcodeFont,
     extraCss: `
   :root { --ol-pad: 2mm; }
   .ol-page {
@@ -512,6 +544,42 @@ export async function renderLayoutHtml(
   }
 `,
   });
+}
+
+export async function renderLayoutHtml(
+  def: LayoutDef,
+  styleInput: StyleData,
+  opts: LayoutRenderOptions = {},
+): Promise<string> {
+  const prep = await prepareLayoutRender(def, styleInput, opts);
+  const emitted: Array<{ page: LayoutPage; repStyle: StyleData }> = [];
+  for (const repStyle of prep.repStyles) {
+    for (const page of prep.pages) emitted.push({ page, repStyle });
+  }
+  return emitLayoutDocument(prep, emitted, opts.title ?? "Output layout");
+}
+
+// MANUAL "X of Y" carton numbering: render the layout once per carton
+// (no = 1…total) into a SINGLE document — total × (repeat × pages)
+// physical pages — so the whole numbered set is produced by ONE Puppeteer
+// render, not N. Each copy carries StyleData.cartonSerial so {{cartonNo}}
+// / {{cartonTotal}} resolve to the running number. Standard generation
+// never calls this; only the carton-prints endpoint does.
+export async function renderLayoutHtmlSerial(
+  def: LayoutDef,
+  styleInput: StyleData,
+  total: number,
+  opts: LayoutRenderOptions = {},
+): Promise<string> {
+  const prep = await prepareLayoutRender(def, styleInput, opts);
+  const emitted: Array<{ page: LayoutPage; repStyle: StyleData }> = [];
+  for (let no = 1; no <= total; no++) {
+    for (const base of prep.repStyles) {
+      const repStyle: StyleData = { ...base, cartonSerial: { no, total } };
+      for (const page of prep.pages) emitted.push({ page, repStyle });
+    }
+  }
+  return emitLayoutDocument(prep, emitted, opts.title ?? "Output layout");
 }
 
 // Re-export for callers that pre-validate conditionals (publish route).
