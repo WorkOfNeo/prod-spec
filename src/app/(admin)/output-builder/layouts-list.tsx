@@ -44,9 +44,11 @@ function HoverPopover({ trigger, children }: { trigger: ReactNode; children: Rea
 export function LayoutsList({
   layouts,
   contrastLogoFound,
+  contrastAddressLogoFound,
 }: {
   layouts: LayoutRow[];
   contrastLogoFound: boolean;
+  contrastAddressLogoFound: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -173,6 +175,21 @@ export function LayoutsList({
               title="Commit the logo file to the repo — no code change needed"
             >
               add <code className="font-mono">public/logos/contrast.svg</code> to the repo
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-zinc-600">Contrast (address)</span>
+          {contrastAddressLogoFound ? (
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+              found · {"{{logo:contrastAddress}}"}
+            </span>
+          ) : (
+            <span
+              className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700"
+              title="Commit the logo file to the repo — no code change needed"
+            >
+              add <code className="font-mono">public/logos/contrast-address.svg</code> to the repo
             </span>
           )}
         </div>

@@ -18,7 +18,7 @@ import {
   type LayoutPage,
 } from "./schema";
 import { tokenMeta, type BarcodeSource, type LogoSource } from "./token-meta";
-import { getContrastLogoDataUrl } from "./logos";
+import { getContrastAddressLogoDataUrl, getContrastLogoDataUrl } from "./logos";
 import {
   applyConditionalsForStyle,
   augmentCareAndMadeIn,
@@ -131,7 +131,7 @@ type RenderCtx = {
   mode: LayoutRenderMode;
   barcodes: Map<string, string | null>; // "symbology:value" → data URL (null = encode failed)
   symbols: WashcareSymbolMap | null; // loaded only when {{washSymbols}} is used
-  logos: { contrast: string | null; custom: string | null }; // loaded only when {{logo:…}} is used
+  logos: { contrast: string | null; contrastAddress: string | null; custom: string | null }; // loaded only when {{logo:…}} is used
   certs: CertificateMap | null; // loaded only when {{cert:…}} is used
   // Uniform shrink applied to font-derived sizes (font pt, barcode/symbol/
   // logo dimensions, borders, padding) so the whole design scales — not just
@@ -231,7 +231,10 @@ function renderBarcodeHtml(style: StyleData, source: BarcodeSource, ctx: RenderC
 // (netto info-area): artwork renders as an <img>; a known symbol with no
 // uploaded SVG (or an unknown token) renders the tagged `missing` chip
 // so the gap is visible on the proof and counted by the placeholder gate.
-function renderWashSymbolsHtml(style: StyleData, ctx: RenderCtx): string {
+// `gapArg` is the optional {{washSymbols:N}} value — the strip's gap in mm
+// (0 = symbols flush together). Absent/invalid ⇒ the default 1.5 mm CSS gap.
+// A set gap is scaled with the rest of the design (fontScale), so 0 stays 0.
+function renderWashSymbolsHtml(style: StyleData, ctx: RenderCtx, gapArg?: string): string {
   if (style.washSymbols.length === 0) {
     return ctx.mode === "preview" ? `<span class="ol-miss">washSymbols?</span>` : "";
   }
@@ -246,7 +249,12 @@ function renderWashSymbolsHtml(style: StyleData, ctx: RenderCtx): string {
       return `<span class="missing" title="No SVG uploaded for &quot;${escapeHtml(token)}&quot;">${escapeHtml(label)}</span>`;
     })
     .join("");
-  return `<span class="ol-symbols">${items}</span>`;
+  const gapMm = gapArg !== undefined ? Number(gapArg) : NaN;
+  const gapStyle =
+    Number.isFinite(gapMm) && gapMm >= 0
+      ? ` style="gap: ${(gapMm * ctx.fontScale).toFixed(3)}mm"`
+      : "";
+  return `<span class="ol-symbols"${gapStyle}>${items}</span>`;
 }
 
 // Render one content line: conditionals already applied by the caller;
@@ -332,9 +340,11 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx): string | nu
         hadValue = true;
       } else {
         const hint =
-          source === "contrast"
-            ? "Contrast logo missing — add public/logos/contrast.svg"
-            : "No custom logo — upload one for this layout in the Output Builder";
+          source === "custom"
+            ? "No custom logo — upload one for this layout in the Output Builder"
+            : source === "contrastAddress"
+              ? "Contrast (address) logo missing — add public/logos/contrast-address.svg"
+              : "Contrast logo missing — add public/logos/contrast.svg";
         html += `<span class="missing">${escapeHtml(hint)}</span>`;
         hadValue = true; // visible authoring gap, counted by the ship-gate
       }
@@ -342,7 +352,7 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx): string | nu
     }
 
     if (meta.kind === "symbols") {
-      const rendered = renderWashSymbolsHtml(style, ctx);
+      const rendered = renderWashSymbolsHtml(style, ctx, arg);
       html += rendered;
       if (rendered) hadValue = true;
       continue;
@@ -515,10 +525,11 @@ async function prepareLayoutRender(
   const repStyles: StyleData[] = repetitionStyles(style, settings.repeatBy);
 
   const usesLogo = defUsesToken(pages, "logo");
-  const [barcodes, symbols, contrastLogo, certs] = await Promise.all([
+  const [barcodes, symbols, contrastLogo, contrastAddressLogo, certs] = await Promise.all([
     buildBarcodeCache(repStyles, pages),
     defUsesToken(pages, "washSymbols") ? loadWashcareSymbols() : Promise.resolve(null),
     usesLogo ? getContrastLogoDataUrl() : Promise.resolve(null),
+    usesLogo ? getContrastAddressLogoDataUrl() : Promise.resolve(null),
     defUsesToken(pages, "cert") ? loadCertificates() : Promise.resolve(null),
   ]);
   // The custom logo is per layout — supplied by the caller, not loaded here.
@@ -527,7 +538,7 @@ async function prepareLayoutRender(
     mode,
     barcodes,
     symbols,
-    logos: { contrast: contrastLogo, custom: customLogo },
+    logos: { contrast: contrastLogo, contrastAddress: contrastAddressLogo, custom: customLogo },
     certs,
     fontScale,
     customLogoWidthPct: settings.customLogoWidthPct,
@@ -537,9 +548,10 @@ async function prepareLayoutRender(
 }
 
 // Print guides — non-content rules overlaid on the page (drawn after the
-// blocks so they sit on top). Sewing lines are full-width solid rules a
-// fixed mm from the named edge (the seam allowance); the fold line is a
-// dashed rule through the centre — horizontal (across) or vertical (down).
+// blocks so they sit on top). Sewing lines are full-width long-dashed rules
+// a fixed mm from the named edge (the seam allowance); the fold line is a
+// fine-dashed rule through the centre — horizontal (across) or vertical
+// (down). The two dash patterns differ so the lines are tellable apart.
 // Guides carry no tokens and never count as placeholders, so they never
 // block approval. The fold uses 50%, so it stays centred under the
 // info-area size override; sewing offsets are absolute mm by design.
@@ -600,9 +612,11 @@ function emitLayoutDocument(
   ${pageCss}
   .ol-block { position: absolute; }
   .ol-guide { position: absolute; pointer-events: none; z-index: 5; }
-  .ol-sew { left: 0; right: 0; height: 0; border-top: 0.25mm solid #111; }
-  .ol-fold-h { left: 0; right: 0; top: 50%; height: 0; border-top: 0.25mm dashed #555; }
-  .ol-fold-v { top: 0; bottom: 0; left: 50%; width: 0; border-left: 0.25mm dashed #555; }
+  /* Dash patterns via gradients so sewing and fold read as distinct lines:
+     sewing = long dashes (2.5/1.5 mm), fold = fine dashes (1/1 mm). */
+  .ol-sew { left: 0; right: 0; height: 0.3mm; background: repeating-linear-gradient(to right, #111 0 2.5mm, transparent 2.5mm 4mm); }
+  .ol-fold-h { left: 0; right: 0; top: 50%; height: 0.3mm; transform: translateY(-50%); background: repeating-linear-gradient(to right, #555 0 1mm, transparent 1mm 2mm); }
+  .ol-fold-v { top: 0; bottom: 0; left: 50%; width: 0.3mm; transform: translateX(-50%); background: repeating-linear-gradient(to bottom, #555 0 1mm, transparent 1mm 2mm); }
   .ol-line { white-space: pre-wrap; word-break: break-word; min-height: 1em; }
   .ol-barcode { display: inline-block; text-align: center; max-width: 100%; }
   .ol-barcode img { display: block; height: var(--ol-bc-h, 16mm); width: auto; max-width: 100%; margin-left: auto; margin-right: auto; }
