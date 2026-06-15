@@ -10,6 +10,7 @@ import {
   TOKEN_RE,
   blockId,
   layoutSettings,
+  tokensInDef,
   type LayoutBlock,
   type LayoutDef,
   type LayoutPage,
@@ -139,6 +140,11 @@ export function LayoutEditor({
   const [showValues, setShowValues] = useState(false);
   const [tokenValues, setTokenValues] = useState<Record<string, string>>({});
 
+  // "Preview as carton N of M" — drives the live preview's cartonSerial
+  // when this layout is carton-numbering-eligible.
+  const [cartonPreviewNo, setCartonPreviewNo] = useState(1);
+  const [cartonPreviewTotal, setCartonPreviewTotal] = useState(10);
+
   const [publishing, setPublishing] = useState(false);
   const [publishErrors, setPublishErrors] = useState<string[]>([]);
   const [pdfBusy, setPdfBusy] = useState(false);
@@ -187,6 +193,16 @@ export function LayoutEditor({
   function updateSettings(patch: Partial<LayoutSettings>) {
     setDef((d) => ({ ...d, settings: { ...layoutSettings(d), ...patch } }));
   }
+
+  // Does the definition actually place a carton-number token? Drives the
+  // "tokens not used yet" warning when carton numbering is enabled.
+  const usesCartonTokens = useMemo(
+    () =>
+      tokensInDef(def).some(
+        (t) => t.key === "cartonNo" || t.key === "cartonTotal" || t.key === "cartonNoPadded",
+      ),
+    [def],
+  );
 
   function addRectBlock(rect: LayoutRect) {
     const block: LayoutBlock = {
@@ -484,6 +500,11 @@ export function LayoutEditor({
             pageIndex: pageIdx,
             includeTokenValues: showValues,
             valuesLang: langSel,
+            // Only when eligible — otherwise the carton tokens stay
+            // unresolved in the preview, which is the honest default.
+            cartonSerial: settings.cartonNumbering
+              ? { no: cartonPreviewNo, total: cartonPreviewTotal }
+              : undefined,
           }),
         });
         if (cancelled || !res.ok) return;
@@ -511,7 +532,16 @@ export function LayoutEditor({
       window.clearTimeout(t);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(def), testStyle?.id, pageIdx, showValues, langSel]);
+  }, [
+    JSON.stringify(def),
+    testStyle?.id,
+    pageIdx,
+    showValues,
+    langSel,
+    settings.cartonNumbering,
+    cartonPreviewNo,
+    cartonPreviewTotal,
+  ]);
 
   // Delete / Backspace removes the selected block — unless the user is
   // typing in an input, textarea or select (e.g. the content editor).
@@ -1182,6 +1212,33 @@ export function LayoutEditor({
                 )}
               </p>
             </div>
+
+            {/* Carton numbering (X/Y) — eligibility only; standard
+                generation is untouched. Surfaces the {{cartonNo}} /
+                {{cartonTotal}} tokens and the Style-page "Carton numbers…"
+                action. */}
+            <div className="border-t border-zinc-100 pt-3">
+              <label className="flex items-center gap-2 text-sm text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={settings.cartonNumbering}
+                  onChange={(e) => updateSettings({ cartonNumbering: e.target.checked })}
+                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                />
+                Carton numbering (X/Y)
+              </label>
+              <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
+                Lets operators print a numbered set (1/N … N/N) from the Style page. Place{" "}
+                <code className="rounded bg-zinc-100 px-1">{"{{cartonNo}}"}</code> /{" "}
+                <code className="rounded bg-zinc-100 px-1">{"{{cartonTotal}}"}</code> on the label.
+              </p>
+              {settings.cartonNumbering && !usesCartonTokens ? (
+                <p className="mt-1.5 rounded-md bg-amber-50 px-2 py-1 text-[10px] leading-relaxed text-amber-700">
+                  ⚠ This layout doesn’t use {"{{cartonNo}}"}/{"{{cartonTotal}}"} yet — numbered prints
+                  would show no number.
+                </p>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -1266,6 +1323,34 @@ export function LayoutEditor({
                 <span className="text-xs text-emerald-700">all variables resolved</span>
               ) : null}
             </div>
+            {settings.cartonNumbering ? (
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2 text-xs text-amber-800">
+                <span className="font-medium">Preview as carton</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={cartonPreviewTotal}
+                  value={cartonPreviewNo}
+                  onChange={(e) =>
+                    setCartonPreviewNo(Math.min(cartonPreviewTotal, Math.max(1, Number(e.target.value) || 1)))
+                  }
+                  className="w-16 rounded border border-amber-300 bg-white px-2 py-1 text-center tabular-nums text-amber-900"
+                />
+                <span>of</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={cartonPreviewTotal}
+                  onChange={(e) => {
+                    const total = Math.max(1, Number(e.target.value) || 1);
+                    setCartonPreviewTotal(total);
+                    if (cartonPreviewNo > total) setCartonPreviewNo(total);
+                  }}
+                  className="w-20 rounded border border-amber-300 bg-white px-2 py-1 text-center tabular-nums text-amber-900"
+                />
+                <span className="text-amber-700/80">— injects the running number into the preview.</span>
+              </div>
+            ) : null}
             <div className="mt-2 rounded-lg border border-zinc-200 bg-zinc-50/60 p-6">
               {previewHtml ? (
                 <div className="mx-auto" style={{ maxWidth: Math.max(page.widthMm * 3.78, 280) }}>

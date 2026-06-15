@@ -140,4 +140,11 @@ export type StyleData = {
   // resolved by the runner from the linked QrImage library row. Rendered
   // as-is on care-label-02 page 4. Null / undefined when no QR is linked.
   qrImageUrl?: string | null;
+
+  // Per-PRINT carton serial — the running "X of Y" on a numbered carton
+  // set. Set ONLY by the carton-prints endpoint, once per carton
+  // (no = 1…total); absent on every standard render, so {{cartonNo}} /
+  // {{cartonTotal}} resolve empty and the standard output is unchanged.
+  // Rides the `...style` spread in repetitionStyles for free.
+  cartonSerial?: { no: number; total: number };
 };

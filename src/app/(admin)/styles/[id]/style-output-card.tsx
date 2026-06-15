@@ -4,6 +4,7 @@ import { useState } from "react";
 import { LazyOutputPreview } from "@/components/output-preview";
 import { OutputThumbnail } from "./output-thumbnail";
 import { RunOutputButton } from "./run-output-button";
+import { CartonPrintsButton } from "./carton-prints-dialog";
 
 // One output of one style, as a fold-out row. Collapsed it shows just the
 // ready dot + name + a missing-fields hint, with the per-output Run button
@@ -28,6 +29,9 @@ export type StyleOutputCardProps = {
   thumbSrc: string | null;
   pdfHref: string | null;
   generatedAt: string | null;
+  // Layout opted into manual "X of Y" carton-numbered prints — shows the
+  // badge + the "Carton numbers…" action alongside Run.
+  cartonNumbering: boolean;
 };
 
 export function StyleOutputCard(p: StyleOutputCardProps) {
@@ -55,6 +59,14 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           <span className="truncate text-sm font-semibold text-zinc-900" title={p.name}>
             {p.name}
           </span>
+          {p.cartonNumbering && (
+            <span
+              title="This output can be printed as a numbered carton set (X of Y)"
+              className="shrink-0 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700"
+            >
+              Carton X/Y
+            </span>
+          )}
           {!open && p.missing.length > 0 && (
             <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800">
               {p.missing.length} missing
@@ -64,6 +76,16 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
         <span className="hidden flex-shrink-0 text-[11px] tabular-nums text-zinc-400 sm:inline">
           {p.widthMm} × {p.heightMm} mm
         </span>
+        {p.cartonNumbering && (
+          <CartonPrintsButton
+            styleId={p.styleId}
+            variantKey={p.variantKey}
+            name={p.name}
+            ready={p.ready}
+            widthMm={p.widthMm}
+            heightMm={p.heightMm}
+          />
+        )}
         <RunOutputButton
           styleId={p.styleId}
           variantKey={p.variantKey}

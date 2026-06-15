@@ -51,8 +51,18 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     );
   }
 
+  // Optional "preview as carton N of M" — binds StyleData.cartonSerial so
+  // {{cartonNo}}/{{cartonTotal}} resolve, used by the Carton-numbers dialog.
+  const cartonNo = Number(req.nextUrl.searchParams.get("cartonNo"));
+  const cartonTotal = Number(req.nextUrl.searchParams.get("cartonTotal"));
+  const cartonSerial =
+    Number.isInteger(cartonNo) && cartonNo > 0 && Number.isInteger(cartonTotal) && cartonTotal > 0
+      ? { no: cartonNo, total: cartonTotal }
+      : undefined;
+
   try {
-    const renderStyle = applyFieldOverrides(context.styleData, output.fieldOverrides);
+    const base = applyFieldOverrides(context.styleData, output.fieldOverrides);
+    const renderStyle = cartonSerial ? { ...base, cartonSerial } : base;
     const html = await variant.render(renderStyle, {
       widthMm: output.widthMm,
       heightMm: output.heightMm,

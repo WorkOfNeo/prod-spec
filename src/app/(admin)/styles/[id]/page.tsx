@@ -373,6 +373,7 @@ export default async function StyleDetail({
         ? `/api/admin/jobs/${asset.jobId}/preview?${query}#zoom=fit&toolbar=0&navpanes=0`
         : null,
       generatedAt: asset ? formatDate(asset.createdAt) : null,
+      cartonNumbering: variant?.cartonNumbering ?? false,
     };
   });
 

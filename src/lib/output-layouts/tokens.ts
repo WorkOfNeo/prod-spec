@@ -83,6 +83,15 @@ const RESOLVERS: Record<string, TextResolver> = {
   klNumber: (s) => s.carton.klNumber ?? "",
   supplierNumber: (s) => s.carton.supplierNumber ?? "",
 
+  // Carton serial — set per carton by the carton-prints endpoint; empty
+  // on standard renders so the line drops out (production mode). Not in
+  // REQUIRED_COLUMNS by design: they depend on no mapped column, so an
+  // eligible layout's STANDARD output never gates on them.
+  cartonNo: (s) => (s.cartonSerial ? String(s.cartonSerial.no) : ""),
+  cartonTotal: (s) => (s.cartonSerial ? String(s.cartonSerial.total) : ""),
+  cartonNoPadded: (s) =>
+    s.cartonSerial ? String(s.cartonSerial.no).padStart(String(s.cartonSerial.total).length, "0") : "",
+
   composition: (s, arg) => tFor(s.composition, (arg ?? "en").toLowerCase()),
   // "Made in <country>" per language — values are precomputed by
   // augmentCareAndMadeIn (translation bank), carried on a side-channel
