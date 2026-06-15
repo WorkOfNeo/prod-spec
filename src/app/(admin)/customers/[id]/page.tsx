@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { formatDate } from "@/lib/utils";
 import { CustomerConfigForm } from "./customer-config-form";
+import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
 import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +42,8 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           </p>
         </div>
       </div>
+
+      {config.skipSupplierDelivery && <SkipSupplierDeliveryBadge className="mt-4" />}
 
       <section className="mt-6 grid grid-cols-4 gap-4">
         <Stat label="Styles" value={customer._count.styles} />

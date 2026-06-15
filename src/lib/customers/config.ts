@@ -95,6 +95,13 @@ export const CustomerConfigSchema = z
     sharepointPath: z.string().optional(),
     barcodeFont: BarcodeFontSchema.optional(),
     logoUrl: z.string().optional(),
+    // Customer handles their own delivery (e.g. Woolworth): when true, the
+    // app must NOT send supplier delivery for this customer's styles. This
+    // flag only DEFINES + SURFACES the intent (admin toggle + badges); the
+    // actual delivery skip is enforced in the approval-chain-reaction track,
+    // which reads `config.skipSupplierDelivery` by this exact name. Generation,
+    // review and auto-run are unaffected — only delivery.
+    skipSupplierDelivery: z.boolean().default(false),
   })
   .strict();
 
@@ -235,4 +242,5 @@ export const NETTO_GERMANY_DEFAULT_CONFIG: CustomerConfig = {
     { id: MANUAL_COLUMN_IDS.lot, label: "Lot" },
   ],
   enabledDocTypes: [...DOC_TYPES],
+  skipSupplierDelivery: false,
 };
