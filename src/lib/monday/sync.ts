@@ -14,6 +14,9 @@ import {
 import { ingestMondayItem, IngestSkip } from "./ingest";
 import { ghostItemToMondayItem } from "./sink";
 import { ensureProdSpecsForStyle } from "@/lib/prod-spec/ensure";
+import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
+import { autoEnqueueReadyOutputs } from "@/lib/queue/auto-enqueue";
+import { triggerRunner } from "@/lib/queue/trigger";
 import { slog, serr, errorSampler } from "./sync-log";
 import {
   extractLinkedItemId,
@@ -413,6 +416,11 @@ export async function syncStyles(): Promise<SyncResult> {
     let synced = 0;
     let failed = 0;
     let skipped = 0;
+    // Read the auto-generate master switch ONCE for the whole batch — a
+    // 4k-item sync must not hit AppSetting per row — and kick the runner
+    // ONCE at the end (mirrors the /import bulk path) rather than per item.
+    const autoGenerateEnabled = await getAutoGenerateEnabled();
+    let enqueuedAny = false;
     const errs = errorSampler("fill:styles");
     slog("fill:styles", "items", { total: ghostItems.length });
     await recordProgress(0, 0, ghostItems.length, 0);
@@ -420,8 +428,19 @@ export async function syncStyles(): Promise<SyncResult> {
     for (const ghost of ghostItems) {
       try {
         const item = ghostItemToMondayItem(ghost, MONDAY_BOARDS.preOrder);
-        await ingestMondayItem(ghost.mondayItemId, item);
+        const ingest = await ingestMondayItem(ghost.mondayItemId, item);
         synced++;
+        // T6 auto-run-when-ready: when this sync just completed an output's
+        // required fields, generate it — no manual click. Same shared gate
+        // as the webhook; idempotent (in-flight guard + per-output dedup),
+        // so repeat full syncs never stack duplicate jobs.
+        const enqueue = await autoEnqueueReadyOutputs({
+          styleId: ingest.styleId,
+          prodSpecActive: ingest.prodSpecActive,
+          triggerSource: "WEBHOOK",
+          autoGenerateEnabled,
+        });
+        if (enqueue.enqueued) enqueuedAny = true;
       } catch (err) {
         // IngestSkip = "needs operator action" (ambiguous / unmatched
         // customer). Track separately from real errors so dashboards
@@ -444,6 +463,10 @@ export async function syncStyles(): Promise<SyncResult> {
       }
     }
     errs.done();
+
+    // One fire-and-forget kick drains every job this batch queued; the
+    // Railway job cron is the backstop if the POST is dropped.
+    if (enqueuedAny) await triggerRunner();
 
     return {
       itemsTotal: ghostItems.length,
