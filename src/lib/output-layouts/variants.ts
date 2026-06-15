@@ -46,6 +46,7 @@ type LayoutRow = {
   definition: unknown;
   version: number;
   isInfoArea: boolean;
+  customLogo: string | null;
 };
 
 // The per-file plan when a repeat layout splits per EAN: one entry per
@@ -116,6 +117,7 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
         mode: "production",
         title: row.name,
         sizeOverrideMm: row.isInfoArea ? dims : undefined,
+        customLogo: row.customLogo,
       }),
     fileNameFor: (style) => {
       const expr = settings.fileName;
@@ -136,6 +138,7 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
                 html: await renderLayoutHtml(def, repStyle, {
                   mode: "production",
                   sizeOverrideMm: row.isInfoArea ? dims : undefined,
+                  customLogo: row.customLogo,
                 }),
               })),
             )
@@ -176,7 +179,7 @@ export async function ensureLayoutVariantsLoaded(force = false): Promise<void> {
     try {
       const rows = await db.outputLayout.findMany({
         where: { status: "PUBLISHED" },
-        select: { id: true, name: true, docType: true, definition: true, version: true, isInfoArea: true },
+        select: { id: true, name: true, docType: true, definition: true, version: true, isInfoArea: true, customLogo: true },
       });
       setDynamicVariants(
         rows

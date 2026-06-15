@@ -219,6 +219,10 @@ export const LayoutSettingsSchema = z.object({
   // count is typed at print time; the carton-prints endpoint loops the
   // layout once per carton with StyleData.cartonSerial set.
   cartonNumbering: z.boolean().default(false),
+  // Print width of the {{logo:custom}} image as a % of its block's width;
+  // height auto-scales to preserve aspect. The image itself is stored per
+  // layout on OutputLayout.customLogo (uploaded in the builder).
+  customLogoWidthPct: z.number().min(1).max(100).default(100),
 });
 export type LayoutSettings = z.infer<typeof LayoutSettingsSchema>;
 
@@ -229,7 +233,15 @@ export const LayoutDefSchema = z.object({
 export type LayoutDef = z.infer<typeof LayoutDefSchema>;
 
 export function layoutSettings(def: LayoutDef): LayoutSettings {
-  return def.settings ?? { repeatBy: "none", splitBy: "ean", fileName: "", cartonNumbering: false };
+  return (
+    def.settings ?? {
+      repeatBy: "none",
+      splitBy: "ean",
+      fileName: "",
+      cartonNumbering: false,
+      customLogoWidthPct: 100,
+    }
+  );
 }
 
 // Stable block identity even for defs saved before ids existed.

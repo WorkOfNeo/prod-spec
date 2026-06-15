@@ -278,6 +278,7 @@ async function batch4() {
     docType: "STICKER",
     version: 1,
     isInfoArea: false,
+    customLogo: null,
     definition: {
       pages: [{ id: "p1", title: "", widthMm: 60, heightMm: 30,
         blocks: [{ id: "b1", rect: { col: 0, row: 0, colSpan: 12, rowSpan: 12 }, lines: ["{{size}} {{ean13}}"] }] }],

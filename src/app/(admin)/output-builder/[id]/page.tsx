@@ -55,6 +55,7 @@ export default async function OutputLayoutEditorPage(props: { params: Promise<{ 
         status: layout.status,
         version: layout.version,
         isInfoArea: layout.isInfoArea,
+        customLogo: layout.customLogo,
         customerId: layout.customerId,
         businessAreaId: layout.businessAreaId,
         definition,
