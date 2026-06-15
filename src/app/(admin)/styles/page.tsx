@@ -103,16 +103,20 @@ export default async function StylesPage() {
       orderBy: { updatedAt: "desc" },
   });
 
-  // Parse each customer's column mapping once, not per style row.
-  const mappingByCustomer = new Map<string, ColumnMapping>();
-  const mappingFor = (customerId: string, config: unknown): ColumnMapping => {
-    let m = mappingByCustomer.get(customerId);
-    if (!m) {
-      m = parseCustomerConfig(config).columnMapping;
-      mappingByCustomer.set(customerId, m);
+  // Parse each customer's config once, not per style row. Yields both the
+  // column mapping (required-field check) and the skipSupplierDelivery flag
+  // (the "Delivers own" row indicator).
+  const configByCustomer = new Map<string, ReturnType<typeof parseCustomerConfig>>();
+  const configFor = (customerId: string, config: unknown) => {
+    let c = configByCustomer.get(customerId);
+    if (!c) {
+      c = parseCustomerConfig(config);
+      configByCustomer.set(customerId, c);
     }
-    return m;
+    return c;
   };
+  const mappingFor = (customerId: string, config: unknown): ColumnMapping =>
+    configFor(customerId, config).columnMapping;
 
   return (
     <div className="px-8 py-8">
@@ -198,6 +202,9 @@ export default async function StylesPage() {
             name: s.name,
             poNumber: s.poNumber,
             customerName: s.customer.name,
+            // Customer delivers their own goods — surfaced as a row chip so a
+            // style isn't mistaken for one the app sends supplier delivery for.
+            customerDeliversOwn: configFor(s.customerId, s.customer.config).skipSupplierDelivery,
             businessArea: ba,
             completionPct: s.completionPct,
             threshold: s.prodSpec?.autoGenerateThresholdPct ?? null,
