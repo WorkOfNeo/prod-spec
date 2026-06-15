@@ -4,12 +4,15 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DocTypeEntry } from "@/lib/pdf/doc-types";
 import {
+  DEFAULT_GRID_CELL_MM,
   LAYOUT_GRID_COLS,
   LAYOUT_GRID_ROWS,
   LayoutDefSchema,
   TOKEN_RE,
   blockId,
+  gridFromCellMm,
   layoutSettings,
+  pageGrid,
   tokensInDef,
   type FoldLine,
   type LayoutBlock,
@@ -124,6 +127,8 @@ export function LayoutEditor({
     const m = layout.definition.pages[0]?.margins;
     return !m || (m.topMm === m.rightMm && m.topMm === m.bottomMm && m.topMm === m.leftMm);
   });
+  // The cell size (mm) the "Regenerate grid" button uses. Defaults to 4 mm.
+  const [gridCellMm, setGridCellMm] = useState(String(DEFAULT_GRID_CELL_MM));
   const [sel, setSel] = useState<string | null>(null);
   // Draw state lives in a ref (handlers must see updates within the same
   // tick — fast pointermoves outrun React renders) and is mirrored into
@@ -171,6 +176,9 @@ export function LayoutEditor({
   const page: LayoutPage | undefined = def.pages[pageIdx];
   const selBlock = page?.blocks.find((b) => blockId(b) === sel) ?? null;
   const testStyle = styles[styleIdx] ?? null;
+  // The current page's placement grid (cols×rows) — stored, or the legacy
+  // 12×12 default. Drives the canvas overlay, drawing and block geometry.
+  const grid = page ? pageGrid(page) : { cols: LAYOUT_GRID_COLS, rows: LAYOUT_GRID_ROWS };
 
   // ---- definition mutators (immutably rewrite def) --------------------
 
@@ -198,6 +206,27 @@ export function LayoutEditor({
   }
   function setFoldLine(v: FoldLine) {
     updatePage({ foldLine: v });
+  }
+
+  // Recompute the grid from a square cell size and remap existing blocks
+  // proportionally into the new grid (clamped to fit) — keep what we can;
+  // the user can then nudge anything the resize shifted.
+  function regenerateGrid() {
+    if (!page) return;
+    const cell = parseMm(gridCellMm);
+    if (!Number.isFinite(cell) || cell <= 0) return;
+    const next = gridFromCellMm(page.widthMm, page.heightMm, cell);
+    const old = pageGrid(page);
+    const blocks = page.blocks.map((b) => {
+      if (!b.rect) return b;
+      const r = b.rect;
+      const col = Math.min(next.cols - 1, Math.round((r.col / old.cols) * next.cols));
+      const row = Math.min(next.rows - 1, Math.round((r.row / old.rows) * next.rows));
+      const colSpan = Math.max(1, Math.min(next.cols - col, Math.round((r.colSpan / old.cols) * next.cols)));
+      const rowSpan = Math.max(1, Math.min(next.rows - row, Math.round((r.rowSpan / old.rows) * next.rows)));
+      return { ...b, rect: { col, row, colSpan, rowSpan } };
+    });
+    updatePage({ gridCols: next.cols, gridRows: next.rows, blocks });
   }
 
   const updateBlock = useCallback(
@@ -322,8 +351,8 @@ export function LayoutEditor({
     const g = gridGeom(page, scale);
     const x = e.clientX - r.left - g.left;
     const y = e.clientY - r.top - g.top;
-    const col = Math.min(LAYOUT_GRID_COLS - 1, Math.max(0, Math.floor((x / g.width) * LAYOUT_GRID_COLS)));
-    const row = Math.min(LAYOUT_GRID_ROWS - 1, Math.max(0, Math.floor((y / g.height) * LAYOUT_GRID_ROWS)));
+    const col = Math.min(grid.cols - 1, Math.max(0, Math.floor((x / g.width) * grid.cols)));
+    const row = Math.min(grid.rows - 1, Math.max(0, Math.floor((y / g.height) * grid.rows)));
     return { col, row };
   }
 
@@ -1177,6 +1206,41 @@ export function LayoutEditor({
             ) : null}
           </div>
 
+          <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Grid</div>
+          <div className="mt-2 space-y-2">
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <label className="text-xs text-zinc-500">Cell size (mm)</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={gridCellMm}
+                  onChange={(e) => setGridCellMm(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-zinc-200 px-2 py-1.5 text-sm tabular-nums"
+                  placeholder={String(DEFAULT_GRID_CELL_MM)}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={regenerateGrid}
+                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                title="Recompute cols × rows from this cell size and remap existing blocks"
+              >
+                Regenerate
+              </button>
+            </div>
+            <p className="text-[10px] leading-relaxed text-zinc-400">
+              Current grid <span className="font-mono text-zinc-500">{grid.cols} × {grid.rows}</span>
+              {page ? (
+                <>
+                  {" "}
+                  · ≈ {(page.widthMm / grid.cols).toFixed(1)} × {(page.heightMm / grid.rows).toFixed(1)} mm per cell
+                </>
+              ) : null}
+              . Regenerate keeps existing blocks, adjusting any that no longer fit.
+            </p>
+          </div>
+
           <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Print guides</div>
           <div className="mt-2 space-y-3">
             <div>
@@ -1359,7 +1423,7 @@ export function LayoutEditor({
           <div className="flex items-baseline justify-between">
             <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Canvas</div>
             <div className="font-mono text-[11px] text-zinc-400">
-              {page.widthMm} × {page.heightMm} mm · {orientation} · grid {LAYOUT_GRID_COLS} × {LAYOUT_GRID_ROWS}
+              {page.widthMm} × {page.heightMm} mm · {orientation} · grid {grid.cols} × {grid.rows}
             </div>
           </div>
           <div className="mt-2 flex justify-center rounded-lg border border-zinc-200 bg-zinc-50/60 px-6 py-10">
@@ -1388,8 +1452,8 @@ export function LayoutEditor({
                       ? "1px dashed rgba(24,24,27,0.12)"
                       : "none",
                   backgroundImage:
-                    "repeating-linear-gradient(to right, transparent 0, transparent calc(8.3333% - 1px), rgba(24,24,27,0.045) calc(8.3333% - 1px), rgba(24,24,27,0.045) 8.3333%)," +
-                    "repeating-linear-gradient(to bottom, transparent 0, transparent calc(8.3333% - 1px), rgba(24,24,27,0.045) calc(8.3333% - 1px), rgba(24,24,27,0.045) 8.3333%)",
+                    `repeating-linear-gradient(to right, transparent 0, transparent calc(${100 / grid.cols}% - 1px), rgba(24,24,27,0.045) calc(${100 / grid.cols}% - 1px), rgba(24,24,27,0.045) ${100 / grid.cols}%),` +
+                    `repeating-linear-gradient(to bottom, transparent 0, transparent calc(${100 / grid.rows}% - 1px), rgba(24,24,27,0.045) calc(${100 / grid.rows}% - 1px), rgba(24,24,27,0.045) ${100 / grid.rows}%)`,
                 }}
               />
               {page.blocks.map((block) => (
@@ -1447,10 +1511,10 @@ export function LayoutEditor({
                 <div
                   className="pointer-events-none absolute rounded-sm border border-zinc-900/50 bg-zinc-900/5"
                   style={{
-                    left: gridGeom(page, scale).left + (ghost.col / LAYOUT_GRID_COLS) * gridGeom(page, scale).width,
-                    top: gridGeom(page, scale).top + (ghost.row / LAYOUT_GRID_ROWS) * gridGeom(page, scale).height,
-                    width: (ghost.colSpan / LAYOUT_GRID_COLS) * gridGeom(page, scale).width,
-                    height: (ghost.rowSpan / LAYOUT_GRID_ROWS) * gridGeom(page, scale).height,
+                    left: gridGeom(page, scale).left + (ghost.col / grid.cols) * gridGeom(page, scale).width,
+                    top: gridGeom(page, scale).top + (ghost.row / grid.rows) * gridGeom(page, scale).height,
+                    width: (ghost.colSpan / grid.cols) * gridGeom(page, scale).width,
+                    height: (ghost.rowSpan / grid.rows) * gridGeom(page, scale).height,
                   }}
                 />
               ) : null}
@@ -1550,34 +1614,34 @@ export function LayoutEditor({
                         label="Column"
                         value={selBlock.rect.col + 1}
                         min={1}
-                        max={LAYOUT_GRID_COLS - selBlock.rect.colSpan + 1}
+                        max={grid.cols - selBlock.rect.colSpan + 1}
                         onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, col: v - 1 } })}
                       />
                       <RectStepper
                         label="Row"
                         value={selBlock.rect.row + 1}
                         min={1}
-                        max={LAYOUT_GRID_ROWS - selBlock.rect.rowSpan + 1}
+                        max={grid.rows - selBlock.rect.rowSpan + 1}
                         onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, row: v - 1 } })}
                       />
                       <RectStepper
                         label="Width (cols)"
                         value={selBlock.rect.colSpan}
                         min={1}
-                        max={LAYOUT_GRID_COLS - selBlock.rect.col}
+                        max={grid.cols - selBlock.rect.col}
                         onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, colSpan: v } })}
                       />
                       <RectStepper
                         label="Height (rows)"
                         value={selBlock.rect.rowSpan}
                         min={1}
-                        max={LAYOUT_GRID_ROWS - selBlock.rect.row}
+                        max={grid.rows - selBlock.rect.row}
                         onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, rowSpan: v } })}
                       />
                     </div>
                     <div className="font-mono text-[11px] text-zinc-400">
-                      ≈ {((page.widthMm * selBlock.rect.colSpan) / LAYOUT_GRID_COLS).toFixed(1)} ×{" "}
-                      {((page.heightMm * selBlock.rect.rowSpan) / LAYOUT_GRID_ROWS).toFixed(1)} mm
+                      ≈ {((page.widthMm * selBlock.rect.colSpan) / grid.cols).toFixed(1)} ×{" "}
+                      {((page.heightMm * selBlock.rect.rowSpan) / grid.rows).toFixed(1)} mm
                     </div>
                     <div className="flex items-center gap-3">
                       <div>
@@ -1623,19 +1687,17 @@ export function LayoutEditor({
                 ) : null}
 
                 <div>
-                  <div className="flex items-baseline justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <label className="text-xs text-zinc-500">Font size</label>
-                    <span className="font-mono text-[11px] text-zinc-400">{selBlock.fontPt} pt</span>
+                    <NumberStepper
+                      value={selBlock.fontPt}
+                      min={4}
+                      max={48}
+                      step={0.5}
+                      suffix="pt"
+                      onChange={(v) => updateBlock(blockId(selBlock), { fontPt: v })}
+                    />
                   </div>
-                  <input
-                    type="range"
-                    min={5}
-                    max={24}
-                    step={0.5}
-                    value={selBlock.fontPt}
-                    onChange={(e) => updateBlock(blockId(selBlock), { fontPt: Number(e.target.value) })}
-                    className="mt-1 w-full accent-zinc-900"
-                  />
                   <p className="mt-0.5 text-[10px] text-zinc-400">Barcodes and wash symbols scale with the font size.</p>
                 </div>
 
@@ -1938,6 +2000,71 @@ export function LayoutEditor({
 
 // ---------------------------------------------------------------------------
 
+// Compact −/value/+ stepper for a (possibly fractional) number — saves the
+// vertical space a slider takes. The middle field accepts a comma or dot and
+// commits on blur/Enter (so a "9,5" decimal can be typed without the value
+// resetting mid-keystroke); the buttons step immediately.
+function NumberStepper({
+  value,
+  min,
+  max,
+  step,
+  onChange,
+  suffix,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (v: number) => void;
+  suffix?: string;
+}) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => {
+    setText(String(value));
+  }, [value]);
+  const clamp = (v: number) => Math.min(max, Math.max(min, v));
+  const round = (v: number) => Math.round(v * 100) / 100;
+  const commit = () => {
+    const v = parseMm(text);
+    if (Number.isFinite(v)) onChange(clamp(v));
+    else setText(String(value));
+  };
+  return (
+    <div className="inline-flex items-stretch overflow-hidden rounded-md border border-zinc-200 bg-white">
+      <button
+        type="button"
+        onClick={() => onChange(clamp(round(value - step)))}
+        className="px-2 text-zinc-500 hover:bg-zinc-50"
+        aria-label="Decrease"
+      >
+        −
+      </button>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        }}
+        className="w-12 border-x border-zinc-200 px-1 py-1 text-center text-sm tabular-nums focus:outline-none"
+        aria-label="Value"
+      />
+      <button
+        type="button"
+        onClick={() => onChange(clamp(round(value + step)))}
+        className="px-2 text-zinc-500 hover:bg-zinc-50"
+        aria-label="Increase"
+      >
+        +
+      </button>
+      {suffix ? <span className="flex items-center px-1.5 text-[10px] text-zinc-400">{suffix}</span> : null}
+    </div>
+  );
+}
+
 function RectStepper({
   label,
   value,
@@ -1990,14 +2117,15 @@ function CanvasBlock({
   // rects by parseLayoutDef before they reach this component.
   if (!block.rect) return null;
   const r = block.rect;
+  const { cols: gridCols, rows: gridRows } = pageGrid(page);
   const m = page.margins ?? { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 };
   const gw = (page.widthMm - m.leftMm - m.rightMm) * scale;
   const gh = (page.heightMm - m.topMm - m.bottomMm) * scale;
   const positionStyle: React.CSSProperties = {
-    left: m.leftMm * scale + (r.col / LAYOUT_GRID_COLS) * gw,
-    top: m.topMm * scale + (r.row / LAYOUT_GRID_ROWS) * gh,
-    width: (r.colSpan / LAYOUT_GRID_COLS) * gw,
-    height: (r.rowSpan / LAYOUT_GRID_ROWS) * gh,
+    left: m.leftMm * scale + (r.col / gridCols) * gw,
+    top: m.topMm * scale + (r.row / gridRows) * gh,
+    width: (r.colSpan / gridCols) * gw,
+    height: (r.rowSpan / gridRows) * gh,
     display: "flex",
     flexDirection: "column",
     justifyContent: block.valign === "middle" ? "center" : block.valign === "bottom" ? "flex-end" : "flex-start",

@@ -8,11 +8,10 @@ import {
 } from "@/lib/pdf/washcare-symbols";
 import { findCertificate, loadCertificates, type CertificateMap } from "@/lib/pdf/certificates";
 import {
-  LAYOUT_GRID_COLS,
-  LAYOUT_GRID_ROWS,
   TOKEN_RE,
   conditionalsInLine,
   layoutSettings,
+  pageGrid,
   type LayoutAnchor,
   type LayoutBlock,
   type LayoutDef,
@@ -386,15 +385,16 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
     .map((l) => `<div class="ol-line">${l || "&nbsp;"}</div>`)
     .join("");
 
+  const { cols: gridCols, rows: gridRows } = pageGrid(page);
   if (block.rect) {
     const r = block.rect;
     const m = page.margins ?? { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 };
     const innerW = page.widthMm - m.leftMm - m.rightMm;
     const innerH = page.heightMm - m.topMm - m.bottomMm;
-    const left = (m.leftMm + (innerW * r.col) / LAYOUT_GRID_COLS).toFixed(2);
-    const top = (m.topMm + (innerH * r.row) / LAYOUT_GRID_ROWS).toFixed(2);
-    const width = ((innerW * r.colSpan) / LAYOUT_GRID_COLS).toFixed(2);
-    const height = ((innerH * r.rowSpan) / LAYOUT_GRID_ROWS).toFixed(2);
+    const left = (m.leftMm + (innerW * r.col) / gridCols).toFixed(2);
+    const top = (m.topMm + (innerH * r.row) / gridRows).toFixed(2);
+    const width = ((innerW * r.colSpan) / gridCols).toFixed(2);
+    const height = ((innerH * r.rowSpan) / gridRows).toFixed(2);
     const justify =
       block.valign === "middle" ? "center" : block.valign === "bottom" ? "flex-end" : "flex-start";
     const styleAttr =
@@ -407,7 +407,7 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
   }
 
   const anchor = block.anchor ?? "top-left";
-  const widthMm = (page.widthMm * block.cols) / LAYOUT_GRID_COLS;
+  const widthMm = (page.widthMm * block.cols) / gridCols;
   const styleAttr =
     `width: ${widthMm.toFixed(2)}mm; ` +
     `text-align: ${block.align ?? ANCHOR_ALIGN[anchor]}; ` +
