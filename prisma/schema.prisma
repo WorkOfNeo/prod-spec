@@ -403,6 +403,13 @@ model OutputLayout {
   // Bumped on every publish — JobAsset displayNames carry the version so
   // an asset can be traced to the layout revision that produced it.
   version        Int                @default(0)
+  // When true, assets generated from this layout skip the manual per-asset
+  // review queue — the runner marks them APPROVED at generation, BUT only
+  // when print-safe (placeholderCount == 0); a doc with placeholder
+  // artifacts always falls back to manual review. Delivery to the supplier
+  // still requires the explicit job-level "Approve all & publish" action —
+  // auto-approve removes the review click, not the human send checkpoint.
+  autoApprove    Boolean            @default(false)
   customerId     String?
   businessAreaId String?
   createdAt      DateTime           @default(now())

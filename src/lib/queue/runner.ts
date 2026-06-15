@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { renderPdf } from "@/lib/pdf/renderer";
-import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
+import { ensureLayoutVariantsLoaded, layoutIdFromVariantKey } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import { applyCartonBarcodePrefs, applyFieldOverrides } from "@/lib/pdf/pins";
@@ -428,6 +428,35 @@ export async function processJob(jobId: string): Promise<void> {
     );
   }
 
+  // Auto-approve resolution. A generated doc skips the manual review queue
+  // (reviewStatus APPROVED at creation) when its OutputLayout has
+  // autoApprove = true — BUT only when print-safe: a doc carrying
+  // placeholder artifacts always falls back to manual review (mirrors the
+  // ship-gate in the approve route + publishApprovedJob). Bundle pages
+  // (cover / general info) are never auto-approved — they're cascaded by the
+  // human "Approve all & publish" send, which is the manual checkpoint we
+  // deliberately keep. Delivery (SharePoint + supplier email) is NOT
+  // triggered here; auto-approve removes the review click, not the send.
+  const generatedLayoutIds = [
+    ...new Set(generated.map((d) => layoutIdFromVariantKey(d.variantKey)).filter((x): x is string => x !== null)),
+  ];
+  const autoApproveLayoutIds = new Set(
+    generatedLayoutIds.length > 0
+      ? (
+          await db.outputLayout.findMany({
+            where: { id: { in: generatedLayoutIds }, autoApprove: true },
+            select: { id: true },
+          })
+        ).map((l) => l.id)
+      : [],
+  );
+  const isAutoApproved = (doc: (typeof generated)[number]): boolean => {
+    const layoutId = layoutIdFromVariantKey(doc.variantKey);
+    return layoutId !== null && autoApproveLayoutIds.has(layoutId) && doc.placeholderCount === 0;
+  };
+  const autoApprovedAt = new Date();
+  const autoApprovedDocs = generated.filter(isAutoApproved);
+
   try {
     await db.$transaction([
       db.jobAsset.deleteMany({ where: { jobId: job.id } }),
@@ -454,6 +483,11 @@ export async function processJob(jobId: string): Promise<void> {
             fileName: doc.fileName,
             pdf: toPlainBytes(doc.pdf),
             placeholderCount: doc.placeholderCount,
+            // System auto-approval — reviewedById left null marks "no human
+            // reviewer" (vs. the session user the approve route stamps).
+            ...(isAutoApproved(doc)
+              ? { reviewStatus: "APPROVED" as const, reviewedAt: autoApprovedAt }
+              : {}),
           },
         }),
       ),
@@ -469,7 +503,13 @@ export async function processJob(jobId: string): Promise<void> {
         data: {
           jobId: job.id,
           level: "INFO",
-          message: `generated ${generated.length} documents (${generated.map((d) => d.variant.key).join(", ")})`,
+          message:
+            `generated ${generated.length} documents (${generated.map((d) => d.variant.key).join(", ")})` +
+            (autoApprovedDocs.length > 0
+              ? ` · auto-approved ${autoApprovedDocs.length} (${autoApprovedDocs
+                  .map((d) => d.variant.key)
+                  .join(", ")}) — skipped manual review, still pending supplier send`
+              : ""),
         },
       }),
     ]);

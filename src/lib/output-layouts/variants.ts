@@ -39,6 +39,14 @@ export function isLayoutVariantKey(key: string): boolean {
   return key.startsWith(LAYOUT_VARIANT_PREFIX);
 }
 
+// The OutputLayout id behind a layout variant key, or null for non-layout
+// keys. Strips the `#<suffix>` that multi-document (per-EAN split) assets
+// carry, so `layout:abc#m-blue` and `layout:abc` both resolve to `abc`.
+export function layoutIdFromVariantKey(key: string | null | undefined): string | null {
+  if (!key || !key.startsWith(LAYOUT_VARIANT_PREFIX)) return null;
+  return key.slice(LAYOUT_VARIANT_PREFIX.length).split("#")[0] || null;
+}
+
 type LayoutRow = {
   id: string;
   name: string;
