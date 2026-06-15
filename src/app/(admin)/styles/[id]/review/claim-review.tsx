@@ -14,11 +14,22 @@
 // and the first decision claims implicitly anyway (see claim.ts).
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { UserAvatar } from "@/components/user-avatar";
 import { timeAgo } from "@/lib/time";
 
 const CLAIM_PROMPT_DELAY_MS = 10_000;
+
+// Drop ?claim=1 from the address bar after an inbox-driven auto-claim so a
+// refresh can't re-fire it and the URL reads cleanly. History replace — no
+// navigation, no extra render.
+function stripClaimParam() {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("claim")) return;
+  url.searchParams.delete("claim");
+  window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+}
 
 export function ReviewClaim({
   jobId,
@@ -27,6 +38,7 @@ export function ReviewClaim({
   claimedByMe,
   claimedAtIso,
   styleContext,
+  autoClaim = false,
 }: {
   jobId: string;
   pendingCount: number;
@@ -35,18 +47,33 @@ export function ReviewClaim({
   claimedByMe: boolean;
   claimedAtIso: string | null;
   styleContext: string;
+  // Opened from the reviewer inbox (?claim=1) — claim immediately on mount
+  // rather than after the 10s prompt. See styles/[id]/review/page.tsx.
+  autoClaim?: boolean;
 }) {
   const router = useRouter();
   const [prompt, setPrompt] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const unclaimed = claimedByName === null;
+  const autoClaimedRef = useRef(false);
 
   useEffect(() => {
     if (!unclaimed || pendingCount === 0) return;
     const t = window.setTimeout(() => setPrompt(true), CLAIM_PROMPT_DELAY_MS);
     return () => window.clearTimeout(t);
   }, [unclaimed, pendingCount]);
+
+  // Inbox claim-on-open: fire the claim once, then tidy the URL. Guarded so a
+  // post-claim re-render (router.refresh) can't loop, and a no-op when the
+  // review is already owned or has nothing pending.
+  useEffect(() => {
+    if (!autoClaim || autoClaimedRef.current) return;
+    autoClaimedRef.current = true;
+    if (unclaimed && pendingCount > 0) void claim();
+    stripClaimParam();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoClaim, unclaimed, pendingCount]);
 
   async function claim() {
     setBusy(true);

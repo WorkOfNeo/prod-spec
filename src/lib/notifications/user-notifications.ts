@@ -25,15 +25,22 @@ export async function notifyUser(userId: string, data: NotificationData): Promis
   }
 }
 
-// The review-notification recipients are plain email strings from Settings —
-// not user ids. Mirror to the matching accounts and silently skip addresses
-// without one (e.g. a shared inbox): the email still goes out, there is
-// just no in-app trace for a non-user.
-export async function notifyUsersByEmail(emails: string[], data: NotificationData): Promise<number> {
-  if (emails.length === 0) return 0;
+// Reviewer inbox fan-out for "documents ready for review" (T2): every
+// reviewer/admin gets the in-app entry so the inbox is the shared source of
+// truth for who can pick up a review — matching the dashboard's global queue
+// ("shown to everyone until reviewer assignment exists"). Any configured
+// notification address that maps to an account is unioned in too, so a
+// non-reviewer recipient still sees it. Deduped by user; fail-soft like the
+// rest — a missing inbox row must never break the runner.
+export async function notifyReviewers(emails: string[], data: NotificationData): Promise<number> {
   try {
     const users = await db.user.findMany({
-      where: { email: { in: emails } },
+      where: {
+        OR: [
+          { role: { in: ["ADMIN", "REVIEWER"] } },
+          ...(emails.length > 0 ? [{ email: { in: emails } }] : []),
+        ],
+      },
       select: { id: true },
     });
     if (users.length === 0) return 0;
@@ -42,7 +49,7 @@ export async function notifyUsersByEmail(emails: string[], data: NotificationDat
     });
     return users.length;
   } catch (err) {
-    console.warn(`[notifications] failed to mirror to ${emails.length} email(s): ${(err as Error).message}`);
+    console.warn(`[notifications] failed to notify reviewers: ${(err as Error).message}`);
     return 0;
   }
 }

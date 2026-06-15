@@ -9,7 +9,7 @@ import type { StyleData } from "@/lib/pdf/types";
 import { defaultArtifactFileName, type TemplateVariant } from "@/lib/pdf/template-registry";
 import { dispatchEmail } from "@/lib/email/dispatch";
 import { reviewNotificationEmail } from "@/lib/email/templates/review-notification";
-import { notifyUsersByEmail } from "@/lib/notifications/user-notifications";
+import { notifyReviewers } from "@/lib/notifications/user-notifications";
 import { getReviewNotificationEmails } from "@/lib/settings/app-settings";
 import {
   COVER_VARIANT_KEY,
@@ -551,10 +551,14 @@ async function notifyReviewer(input: {
     });
   }
 
-  // In-app mirror on /dashboard for recipients with an account — fires even
-  // when the email was SIMULATED/SKIPPED (the work exists either way).
+  // In-app reviewer inbox (T2): every reviewer/admin gets the entry — the
+  // inbox is the shared queue for who can pick up the review — plus any
+  // configured recipient with an account. Fires even when the email was
+  // SIMULATED/SKIPPED (the work exists either way). The href carries
+  // ?claim=1 so opening the review FROM the inbox claims it and starts the
+  // timer (reviewClaimedAt); see styles/[id]/review/claim-review.tsx.
   // Fail-soft inside the helper; auto-resolved when the job settles.
-  await notifyUsersByEmail(recipients, {
+  await notifyReviewers(recipients, {
     type: "REVIEW_READY",
     title: "Documents ready for review",
     body: [
@@ -565,7 +569,7 @@ async function notifyReviewer(input: {
     ]
       .filter(Boolean)
       .join(" · "),
-    href: `/styles/${input.styleId}/review`,
+    href: `/styles/${input.styleId}/review?claim=1`,
     jobId: input.jobId,
     styleId: input.styleId,
   });

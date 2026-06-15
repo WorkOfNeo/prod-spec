@@ -56,6 +56,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             {followThrough && (
               <>
                 <MyTasksLink />
+                {/* All generated outputs, newest first — sits with My tasks so
+                    reviewers reach it without the admin-only nav below. */}
+                <Link
+                  href="/reviews"
+                  className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+                >
+                  Reviews
+                </Link>
                 <div className="my-2 border-t border-zinc-100" />
               </>
             )}

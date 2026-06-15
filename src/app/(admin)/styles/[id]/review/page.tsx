@@ -13,8 +13,19 @@ import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
 
 export const dynamic = "force-dynamic";
 
-export default async function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ReviewPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { id } = await params;
+  // ?claim=1 — set on the reviewer-inbox notification link (T2). Opening the
+  // review from the inbox claims it (stamps reviewClaimedAt, the start timer)
+  // instead of waiting for the 10s "Start review" prompt. Idempotent and
+  // first-writer-wins, so it no-ops if someone already owns the review.
+  const autoClaim = (await searchParams).claim === "1";
   const session = await getServerSession();
 
   const style = await db.style.findUnique({
@@ -24,6 +35,9 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
       businessAreaRef: true,
       jobs: {
         where: { status: "AWAITING_REVIEW" },
+        // reviewEndedAt isn't read here — omit it so the review screen keeps
+        // loading before the additive column is deployed (db:deploy).
+        omit: { reviewEndedAt: true },
         // Assets by fileName, not insertion: rows land in one transaction
         // (tied timestamps) and the 00-cover / 01-general-information
         // prefixes are designed to open the bundle.
@@ -116,6 +130,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
               claimedByMe={claimedByMe}
               claimedAtIso={job.reviewClaimedAt?.toISOString() ?? null}
               styleContext={styleContext}
+              autoClaim={autoClaim}
             />
           ) : null}
         </div>

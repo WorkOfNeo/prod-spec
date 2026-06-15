@@ -45,6 +45,10 @@ export type ReviewWork = {
 export async function getReviewWork(userId: string): Promise<ReviewWork> {
   const jobs = await db.job.findMany({
     where: { status: "AWAITING_REVIEW" },
+    // This list never renders reviewEndedAt — omit it, both to trim the
+    // payload (same reason queries elsewhere avoid the pdf blob) and so the
+    // dashboard keeps working before the additive column is deployed.
+    omit: { reviewEndedAt: true },
     include: {
       style: { include: { customer: true, businessAreaRef: true } },
       reviewClaimedBy: { select: { email: true } },

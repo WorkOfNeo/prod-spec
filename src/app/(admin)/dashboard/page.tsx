@@ -77,6 +77,9 @@ export default async function DashboardPage() {
             <Link href="/styles" className="text-zinc-700 underline hover:text-zinc-900">
               Browse styles
             </Link>
+            <Link href="/reviews" className="text-zinc-700 underline hover:text-zinc-900">
+              All outputs
+            </Link>
             <Link href="/jobs" className="text-zinc-700 underline hover:text-zinc-900">
               View jobs
             </Link>
