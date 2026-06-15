@@ -268,6 +268,7 @@ export default async function StyleDetail({
     if (!style.prodSpec || enabledOutputs.length === 0) return [];
     const base = await buildStyleData(
       {
+        id: style.id,
         rawData: style.rawData,
         poNumber: style.poNumber,
         cartonEan: style.cartonEan,

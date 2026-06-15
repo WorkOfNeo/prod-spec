@@ -29,8 +29,9 @@ export type StyleOutputCardProps = {
   thumbSrc: string | null;
   pdfHref: string | null;
   generatedAt: string | null;
-  // Layout opted into manual "X of Y" carton-numbered prints — shows the
-  // badge + the "Carton numbers…" action alongside Run.
+  // Layout opted into manual carton prints — shows the badge + the "Carton
+  // marking…" action alongside Run (numbered X-of-Y sets and/or Custom
+  // Carton Marking: other same-PO styles on the box via {{style2}}…).
   cartonNumbering: boolean;
 };
 
@@ -61,10 +62,10 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           </span>
           {p.cartonNumbering && (
             <span
-              title="This output can be printed as a numbered carton set (X of Y)"
+              title="Carton marking — print a numbered set (X of Y) and/or place other styles from the same PO on the box ({{style2}}…)"
               className="shrink-0 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700"
             >
-              Carton X/Y
+              Carton
             </span>
           )}
           {!open && p.missing.length > 0 && (

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerSession } from "@/lib/auth-server";
 import { getVariant } from "@/lib/pdf/template-registry";
-import { applyFieldOverrides } from "@/lib/pdf/pins";
+import { applyCustomCartonMarking, applyFieldOverrides, withSelectedSiblings } from "@/lib/pdf/pins";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 
 export const runtime = "nodejs";
@@ -60,9 +60,18 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       ? { no: cartonNo, total: cartonTotal }
       : undefined;
 
+  // Custom Carton Marking siblings. `siblingIds` present (even empty) ⇒ the
+  // dialog's one-off selection wins; absent ⇒ this output's permanent slot
+  // policy, so the always-open card preview mirrors what the runner emits.
+  const siblingIdsParam = req.nextUrl.searchParams.get("siblingIds");
+
   try {
-    const base = applyFieldOverrides(context.styleData, output.fieldOverrides);
-    const renderStyle = cartonSerial ? { ...base, cartonSerial } : base;
+    let renderStyle = applyFieldOverrides(context.styleData, output.fieldOverrides);
+    renderStyle =
+      siblingIdsParam === null
+        ? applyCustomCartonMarking(renderStyle, output)
+        : withSelectedSiblings(renderStyle, siblingIdsParam.split(",").filter(Boolean));
+    if (cartonSerial) renderStyle = { ...renderStyle, cartonSerial };
     const html = await variant.render(renderStyle, {
       widthMm: output.widthMm,
       heightMm: output.heightMm,

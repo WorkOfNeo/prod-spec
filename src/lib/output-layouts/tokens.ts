@@ -1,4 +1,4 @@
-import type { StyleData } from "@/lib/pdf/types";
+import type { StyleData, SiblingStyle } from "@/lib/pdf/types";
 import type { ColumnMapping } from "@/lib/customers/config";
 import { tFor } from "@/lib/pdf/templates/base";
 import { loadTranslationDictionary, translateComposition, translatePhrase } from "@/lib/translations/lookup";
@@ -7,7 +7,7 @@ import { isCareLabelVisible, type PresentSymbol } from "@/lib/care-labels/visibi
 import { getWashcareSymbol, loadWashcareSymbols } from "@/lib/pdf/washcare-symbols";
 import { ruleRequiredColumns } from "@/lib/pdf/spec-fields";
 import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-marking";
-import { tokenMeta, type BarcodeSource } from "./token-meta";
+import { tokenMeta, parseSiblingTokenKey, type BarcodeSource } from "./token-meta";
 import {
   applyConditionals,
   conditionalsInDef,
@@ -108,10 +108,69 @@ const RESOLVERS: Record<string, TextResolver> = {
   washSymbols: (s) => s.washSymbols.join(", "),
 };
 
+// ---------------------------------------------------------------------
+// Sibling styles — the {{style2}}/{{style3Name}}… slot tokens. A slot's
+// field suffix (canonical-cased by parseSiblingTokenKey) maps here to one
+// SiblingStyle field; the empty suffix is the bare {{styleN}} headline
+// (the style number). Keep the suffixes in sync with SIBLING_FIELDS
+// (token-meta.ts). projectSiblingStyle builds a SiblingStyle from a fully
+// mapped StyleData using the SAME base resolvers, so a sibling can never
+// drift from how the style would render on its own.
+// ---------------------------------------------------------------------
+const SIBLING_FIELD_RESOLVERS: Record<string, (s: SiblingStyle) => string> = {
+  "": (s) => s.styleNumber,
+  number: (s) => s.styleNumber,
+  name: (s) => s.styleName,
+  description: (s) => s.description,
+  customeritemno: (s) => s.customerItemNo,
+  colourname: (s) => s.colourName,
+  colourcode: (s) => s.colourCode,
+  sizes: (s) => s.sizes,
+  sizerange: (s) => s.sizeRange,
+  qtypercarton: (s) => s.qtyPerCarton,
+  cartonean: (s) => s.cartonEan,
+  ean13: (s) => s.ean13,
+};
+
+export function projectSiblingStyle(style: StyleData, id: string): SiblingStyle {
+  return {
+    id,
+    styleNumber: resolveTextToken(style, "styleNumber"),
+    styleName: resolveTextToken(style, "styleName"),
+    description: resolveTextToken(style, "description"),
+    customerItemNo: resolveTextToken(style, "customerItemNo"),
+    colourName: resolveTextToken(style, "colourName"),
+    colourCode: resolveTextToken(style, "colourCode"),
+    sizes: resolveTextToken(style, "sizes"),
+    sizeRange: resolveTextToken(style, "sizeRange"),
+    qtyPerCarton: resolveTextToken(style, "qtyPerCarton"),
+    cartonEan: resolveTextToken(style, "cartonEan"),
+    ean13: resolveTextToken(style, "ean13"),
+  };
+}
+
+// The SiblingStyle for a slot ("style2…" → siblings[0]); slot 1 is the
+// base style itself. Returns null when the slot has no sibling (renders
+// empty per the caller's gap rules).
+function siblingForSlot(style: StyleData, slot: number): SiblingStyle | null {
+  if (slot <= 1) return projectSiblingStyle(style, "self");
+  return style.siblings?.[slot - 2] ?? null;
+}
+
 // Resolve a TEXT token to its string value ("" when empty/unknown —
 // callers decide how to surface gaps). Barcode/symbol tokens are drawn
 // by the renderer; their resolvers here return the underlying value.
 export function resolveTextToken(style: StyleData, key: string, arg?: string): string {
+  // Sibling slot tokens resolve against StyleData.siblings (sync — the
+  // pool is pre-fetched in buildStyleData). They take no :arg.
+  const sib = parseSiblingTokenKey(key);
+  if (sib) {
+    if (arg) return "";
+    const target = siblingForSlot(style, sib.slot);
+    if (!target) return "";
+    const fn = SIBLING_FIELD_RESOLVERS[sib.suffix.toLowerCase()];
+    return fn ? (fn(target) ?? "").trim() : "";
+  }
   const fn = RESOLVERS[key];
   if (!fn) return "";
   return (fn(style, arg) ?? "").trim();
@@ -283,6 +342,10 @@ export function unresolvedTokens(def: LayoutDef, style: StyleData): string[] {
         for (const ref of tokensInLine(effective)) {
           const meta = tokenMeta(ref.key);
           if (!meta) continue;
+          // Sibling slot tokens ({{style2}}…) depend on OTHER styles on the
+          // PO, not this style's columns — an empty slot is never a "missing
+          // field" on the style being built. Don't list them as amber gaps.
+          if (parseSiblingTokenKey(ref.key)) continue;
           // Image tokens (logos, certification marks) always render
           // something: present → the artwork, absent → a visible chip on
           // the proof counted by the ship gate. This sync check can't see

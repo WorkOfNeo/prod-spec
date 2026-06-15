@@ -3,7 +3,7 @@ import { renderPdf } from "@/lib/pdf/renderer";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
-import { applyCartonBarcodePrefs, applyFieldOverrides } from "@/lib/pdf/pins";
+import { applyCartonBarcodePrefs, applyCustomCartonMarking, applyFieldOverrides } from "@/lib/pdf/pins";
 import { countPlaceholderMarkers } from "@/lib/pdf/placeholders";
 import type { StyleData } from "@/lib/pdf/types";
 import { defaultArtifactFileName, type TemplateVariant } from "@/lib/pdf/template-registry";
@@ -146,6 +146,7 @@ export async function processJob(jobId: string): Promise<void> {
     // src/lib/styles/render-context.ts for the full resolution rules.
     styleData = await buildStyleData(
       {
+        id: job.style.id,
         rawData: job.style.rawData,
         poNumber: job.style.poNumber,
         cartonEan: job.style.cartonEan,
@@ -263,11 +264,12 @@ export async function processJob(jobId: string): Promise<void> {
       continue;
     }
     try {
-      // Per-output pins ("customerName is ALWAYS …") and the carton
-      // barcode preference applied on a copy — the base StyleData is
-      // shared across this job's outputs.
-      const renderStyle = applyCartonBarcodePrefs(
-        applyFieldOverrides(styleData, output.fieldOverrides),
+      // Per-output pins ("customerName is ALWAYS …"), the carton barcode
+      // preference, and the Custom Carton Marking slot policy applied on a
+      // copy — the base StyleData (incl. the same-PO sibling pool) is shared
+      // across this job's outputs.
+      const renderStyle = applyCustomCartonMarking(
+        applyCartonBarcodePrefs(applyFieldOverrides(styleData, output.fieldOverrides), output),
         output,
       );
       // Static-pdf passthrough variants emit their source artwork bytes
