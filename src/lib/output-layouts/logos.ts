@@ -1,6 +1,5 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { db } from "@/lib/db";
 
 // =====================================================
 // Logos for {{logo:contrast}} / {{logo:custom}} (SERVER-ONLY).
@@ -8,12 +7,10 @@ import { db } from "@/lib/db";
 //   • CONTRAST — a static asset committed to the repo at
 //     public/logos/contrast.svg (preferred) or .png/.jpg. Inlined as a
 //     data URL at render time so the PDF needs no network fetch.
-//   • CUSTOM   — uploaded in the app (Output builder list → Logos card),
-//     stored as a data URL in the AppSetting key-value store. Global —
-//     one custom logo for all layouts.
+//   • CUSTOM   — now stored PER LAYOUT on OutputLayout.customLogo (uploaded
+//     in the Output Builder) and threaded into the renderer via the render
+//     options, NOT loaded here. The old global AppSetting logo was removed.
 // =====================================================
-
-const CUSTOM_LOGO_KEY = "outputBuilderCustomLogo";
 
 const CONTRAST_CANDIDATES: Array<{ file: string; mime: string }> = [
   { file: "contrast.svg", mime: "image/svg+xml" },
@@ -38,22 +35,4 @@ export async function getContrastLogoDataUrl(): Promise<string | null> {
   }
   contrastCache = { at: Date.now(), dataUrl };
   return dataUrl;
-}
-
-export async function getCustomLogoDataUrl(): Promise<string | null> {
-  const row = await db.appSetting.findUnique({ where: { key: CUSTOM_LOGO_KEY } });
-  const v = row?.value;
-  return typeof v === "string" && v.startsWith("data:image/") ? v : null;
-}
-
-export async function setCustomLogoDataUrl(dataUrl: string | null): Promise<void> {
-  if (dataUrl === null) {
-    await db.appSetting.deleteMany({ where: { key: CUSTOM_LOGO_KEY } });
-    return;
-  }
-  await db.appSetting.upsert({
-    where: { key: CUSTOM_LOGO_KEY },
-    update: { value: dataUrl },
-    create: { key: CUSTOM_LOGO_KEY, value: dataUrl },
-  });
 }

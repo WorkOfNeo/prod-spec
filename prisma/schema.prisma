@@ -410,6 +410,11 @@ model OutputLayout {
   // chosen size; see effectiveOutputDims in src/lib/prod-spec/info-area.ts
   // and renderLayoutHtml's sizeOverrideMm option.
   isInfoArea     Boolean            @default(false)
+  // Per-layout logo for the {{logo:custom}} token (data URL — SVG/PNG/JPEG),
+  // uploaded in the Output Builder. Replaces the old global custom logo so
+  // each layout carries its own. The print width is set as a % of the block
+  // (LayoutSettings.customLogoWidthPct); height auto-scales. Null = none.
+  customLogo     String?
   customerId     String?
   businessAreaId String?
   createdAt      DateTime           @default(now())

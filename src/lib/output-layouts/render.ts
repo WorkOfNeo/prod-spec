@@ -18,7 +18,7 @@ import {
   type LayoutPage,
 } from "./schema";
 import { tokenMeta, type BarcodeSource, type LogoSource } from "./token-meta";
-import { getContrastLogoDataUrl, getCustomLogoDataUrl } from "./logos";
+import { getContrastLogoDataUrl } from "./logos";
 import {
   applyConditionalsForStyle,
   augmentCareAndMadeIn,
@@ -101,6 +101,10 @@ export type LayoutRenderOptions = {
   // Passed by the runner / preview routes for outputs whose variant is an
   // info area (TemplateVariant.isInfoArea). Margins are absolute and kept.
   sizeOverrideMm?: { widthMm: number; heightMm: number };
+  // Per-layout {{logo:custom}} image (data URL). Threaded in by the caller
+  // (variant render closure from OutputLayout.customLogo, or the builder
+  // preview route by layout id) — there is no global custom logo anymore.
+  customLogo?: string | null;
 };
 
 // Keep an overridden page size inside the LayoutPage schema's mm bounds.
@@ -134,6 +138,9 @@ type RenderCtx = {
   // the grid-relative positions — when an info-area size override resizes the
   // page. 1 = no scaling (normal render / builder). See prepareLayoutRender.
   fontScale: number;
+  // Print width of the {{logo:custom}} image as a % of its block (height
+  // auto). %-based, so it already scales with the page — no fontScale.
+  customLogoWidthPct: number;
 };
 
 function defUsesToken(pages: LayoutPage[], key: string): boolean {
@@ -314,13 +321,20 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx): string | nu
       const source = (arg ?? "contrast") as LogoSource;
       const dataUrl = ctx.logos[source];
       if (dataUrl) {
-        html += `<span class="ol-logo"><img src="${dataUrl}" alt="${escapeHtml(source)} logo" /></span>`;
+        // Custom logo sizes by WIDTH (% of its block; height auto). Contrast
+        // keeps the font-scaled height (--ol-logo).
+        if (source === "custom") {
+          const pct = ctx.customLogoWidthPct;
+          html += `<span class="ol-logo ol-logo-custom" style="width: ${pct}%"><img src="${dataUrl}" alt="custom logo" /></span>`;
+        } else {
+          html += `<span class="ol-logo"><img src="${dataUrl}" alt="${escapeHtml(source)} logo" /></span>`;
+        }
         hadValue = true;
       } else {
         const hint =
           source === "contrast"
             ? "Contrast logo missing — add public/logos/contrast.svg"
-            : "No custom logo uploaded (Output builder → Logos)";
+            : "No custom logo — upload one for this layout in the Output Builder";
         html += `<span class="missing">${escapeHtml(hint)}</span>`;
         hadValue = true; // visible authoring gap, counted by the ship-gate
       }
@@ -501,14 +515,23 @@ async function prepareLayoutRender(
   const repStyles: StyleData[] = repetitionStyles(style, settings.repeatBy);
 
   const usesLogo = defUsesToken(pages, "logo");
-  const [barcodes, symbols, contrastLogo, customLogo, certs] = await Promise.all([
+  const [barcodes, symbols, contrastLogo, certs] = await Promise.all([
     buildBarcodeCache(repStyles, pages),
     defUsesToken(pages, "washSymbols") ? loadWashcareSymbols() : Promise.resolve(null),
     usesLogo ? getContrastLogoDataUrl() : Promise.resolve(null),
-    usesLogo ? getCustomLogoDataUrl() : Promise.resolve(null),
     defUsesToken(pages, "cert") ? loadCertificates() : Promise.resolve(null),
   ]);
-  const ctx: RenderCtx = { mode, barcodes, symbols, logos: { contrast: contrastLogo, custom: customLogo }, certs, fontScale };
+  // The custom logo is per layout — supplied by the caller, not loaded here.
+  const customLogo = opts.customLogo ?? null;
+  const ctx: RenderCtx = {
+    mode,
+    barcodes,
+    symbols,
+    logos: { contrast: contrastLogo, custom: customLogo },
+    certs,
+    fontScale,
+    customLogoWidthPct: settings.customLogoWidthPct,
+  };
 
   return { pages, repStyles, ctx, barcodeFont: style.barcodeFont };
 }
@@ -588,6 +611,10 @@ function emitLayoutDocument(
   .ol-symbols img { width: var(--ol-sym, 6mm); height: var(--ol-sym, 6mm); object-fit: contain; }
   .ol-logo { display: inline-block; vertical-align: middle; max-width: 100%; }
   .ol-logo img { display: block; height: var(--ol-logo, 10mm); width: auto; max-width: 100%; }
+  /* Custom logo: width set inline as a % of the block; height auto-scales.
+     Must follow .ol-logo img so it wins on equal specificity. */
+  .ol-logo-custom { max-width: 100%; }
+  .ol-logo-custom img { width: 100%; height: auto; max-width: 100%; }
   .ol-cert { display: inline-block; vertical-align: middle; max-width: 100%; }
   .ol-cert img { display: block; height: var(--ol-cert, 10mm); width: auto; max-width: 100%; }
   .cert-missing {

@@ -84,6 +84,9 @@ type LayoutProps = {
   status: "DRAFT" | "PUBLISHED";
   version: number;
   isInfoArea: boolean;
+  // Per-layout {{logo:custom}} image (data URL) — managed by its own upload
+  // endpoint, not the autosave payload.
+  customLogo: string | null;
   customerId: string | null;
   businessAreaId: string | null;
   definition: LayoutDef;
@@ -116,6 +119,9 @@ export function LayoutEditor({
   const [name, setName] = useState(layout.name);
   const [docType, setDocType] = useState(layout.docType);
   const [isInfoArea, setIsInfoArea] = useState(layout.isInfoArea);
+  const [customLogo, setCustomLogo] = useState<string | null>(layout.customLogo);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
   const [def, setDef] = useState<LayoutDef>(layout.definition);
   const [customerId, setCustomerId] = useState<string | null>(layout.customerId);
   const [businessAreaId, setBusinessAreaId] = useState<string | null>(layout.businessAreaId);
@@ -257,6 +263,61 @@ export function LayoutEditor({
       ),
     [def],
   );
+
+  // Whether the design places the per-layout custom logo — gates the upload
+  // + width controls so they only appear when {{logo:custom}} is in use.
+  const usesCustomLogo = useMemo(
+    () => tokensInDef(def).some((t) => t.key === "logo" && t.arg === "custom"),
+    [def],
+  );
+
+  // Upload / clear the per-layout custom logo. Its own endpoint (not the
+  // autosave payload) since the data URL is too big to ride every keystroke.
+  async function uploadCustomLogo(file: File) {
+    setLogoError(null);
+    if (file.size > 450_000) {
+      setLogoError("Keep the logo under ~450 KB.");
+      return;
+    }
+    setLogoBusy(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result));
+        r.onerror = () => reject(new Error("could not read file"));
+        r.readAsDataURL(file);
+      });
+      const res = await fetch(`/api/admin/output-layouts/${layout.id}/logo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataUrl }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setLogoError(body.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setCustomLogo(dataUrl);
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
+  async function removeCustomLogo() {
+    setLogoError(null);
+    setLogoBusy(true);
+    try {
+      const res = await fetch(`/api/admin/output-layouts/${layout.id}/logo`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setLogoError(body.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setCustomLogo(null);
+    } finally {
+      setLogoBusy(false);
+    }
+  }
 
   function addRectBlock(rect: LayoutRect) {
     const block: LayoutBlock = {
@@ -552,6 +613,7 @@ export function LayoutEditor({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             definition: def,
+            layoutId: layout.id,
             styleId: testStyle?.id,
             pageIndex: pageIdx,
             includeTokenValues: showValues,
@@ -597,6 +659,8 @@ export function LayoutEditor({
     settings.cartonNumbering,
     cartonPreviewNo,
     cartonPreviewTotal,
+    // Re-render the preview when the per-layout custom logo is set/cleared.
+    customLogo,
   ]);
 
   // Delete / Backspace removes the selected block — unless the user is
@@ -646,7 +710,7 @@ export function LayoutEditor({
       const res = await fetch("/api/admin/output-layouts/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ definition: def, styleId: testStyle?.id, format: "pdf" }),
+        body: JSON.stringify({ definition: def, layoutId: layout.id, styleId: testStyle?.id, format: "pdf" }),
       });
       if (!res.ok) return;
       const blob = await res.blob();
@@ -1415,6 +1479,75 @@ export function LayoutEditor({
                 </p>
               ) : null}
             </div>
+
+            {/* Custom logo — appears only when the design uses
+                {{logo:custom}}. Uploaded per layout (not global); printed at
+                a % of its block width, height auto. */}
+            {usesCustomLogo ? (
+              <div className="border-t border-zinc-100 pt-3">
+                <div className="text-sm text-zinc-700">
+                  Custom logo <span className="font-mono text-[11px] text-zinc-400">{"{{logo:custom}}"}</span>
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  {customLogo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={customLogo}
+                      alt="Custom logo"
+                      className="h-8 w-auto max-w-[7rem] rounded border border-zinc-200 bg-white object-contain p-0.5"
+                    />
+                  ) : (
+                    <span className="text-[11px] text-zinc-400">none uploaded</span>
+                  )}
+                  <label
+                    className={`cursor-pointer rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 ${
+                      logoBusy ? "opacity-50" : ""
+                    }`}
+                  >
+                    {customLogo ? "Replace" : "Upload (SVG/PNG/JPG)"}
+                    <input
+                      type="file"
+                      accept="image/svg+xml,image/png,image/jpeg"
+                      className="hidden"
+                      disabled={logoBusy}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void uploadCustomLogo(f);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {customLogo ? (
+                    <button
+                      type="button"
+                      onClick={() => void removeCustomLogo()}
+                      disabled={logoBusy}
+                      className="text-xs text-zinc-400 hover:text-red-600 disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+                {logoError ? <p className="mt-1 text-[10px] text-red-600">{logoError}</p> : null}
+
+                <div className="mt-3">
+                  <div className="flex items-baseline justify-between">
+                    <label className="text-xs text-zinc-500">Logo width</label>
+                    <span className="font-mono text-[11px] text-zinc-400">{settings.customLogoWidthPct}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={100}
+                    step={1}
+                    value={settings.customLogoWidthPct}
+                    onChange={(e) => updateSettings({ customLogoWidthPct: Number(e.target.value) })}
+                    className="mt-1 w-full accent-zinc-900"
+                  />
+                  <p className="mt-0.5 text-[10px] text-zinc-400">% of the block&rsquo;s width — height scales to keep the aspect ratio.</p>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 
