@@ -112,6 +112,7 @@ main()
   .then(() => batch9())
   .then(() => batch10())
   .then(() => batch11())
+  .then(() => batch12())
   .catch((err) => {
     console.error(err);
     process.exit(1);
@@ -680,4 +681,34 @@ async function batch11() {
 
   await closeBrowser();
   console.log(process.exitCode ? "BATCH 11 FAILED" : "BATCH 11 PASSED");
+}
+
+// ---------------------------------------------------------------------
+// Batch 12 coverage: free font sizing. Small sub-4pt sizes (wash-care text)
+// parse and render; the bounds are 1–144 pt.
+// ---------------------------------------------------------------------
+async function batch12() {
+  const style = buildSampleStyleData();
+
+  // A sub-4pt block parses (was rejected by the old min(4)) and renders the
+  // exact size in the output (font-size: pt.toFixed(2)).
+  const SMALL = LayoutDefSchema.parse({
+    pages: [{ id: "p1", title: "", widthMm: 40, heightMm: 20,
+      blocks: [{ id: "b1", rect: { col: 0, row: 0, colSpan: 12, rowSpan: 6 }, fontPt: 2.5, lines: ["wash cold"] }] }],
+  });
+  assert(SMALL.pages[0].blocks[0].fontPt === 2.5, "2.5pt block parses (sub-4pt allowed)");
+  const smallHtml = await renderLayoutHtml(SMALL, style, { mode: "production" });
+  assert(smallHtml.includes("font-size: 2.50pt"), "2.5pt renders as font-size: 2.50pt");
+
+  // Bounds: 1 pt floor and 144 pt ceiling accepted; outside that rejected.
+  const ok = (pt: number) => {
+    try { LayoutDefSchema.parse({ pages: [{ id: "p", title: "", widthMm: 40, heightMm: 20,
+      blocks: [{ id: "b", rect: { col: 0, row: 0, colSpan: 2, rowSpan: 2 }, fontPt: pt, lines: ["x"] }] }] }); return true; }
+    catch { return false; }
+  };
+  assert(ok(1) && ok(144), "1pt and 144pt are within bounds");
+  assert(!ok(0.5) && !ok(200), "sub-1pt and >144pt are rejected");
+
+  await closeBrowser();
+  console.log(process.exitCode ? "BATCH 12 FAILED" : "BATCH 12 PASSED");
 }
