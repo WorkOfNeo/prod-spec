@@ -1,11 +1,6 @@
 import { MONDAY_BOARDS, MONDAY_STYLE_COLS, MONDAY_STYLE_SUBITEM } from "@/lib/monday/boards";
-import {
-  changeItemValue,
-  findItemByName,
-  getSubitems,
-  getUsers,
-  personIds,
-} from "@/lib/monday/client";
+import { findItemByName, getSubitems, getUsers, personIds } from "@/lib/monday/client";
+import { writeBackStatus } from "@/lib/monday/writeback";
 
 // =====================================================
 // Monday side of the "style fully approved" chain reaction.
@@ -18,16 +13,19 @@ import {
 // flipping their status to "Approved", and resolve the customer-responsible
 // person so the publish step can email them.
 //
-// WEBHOOK RULE (CLAUDE.md): this module only ever calls changeItemValue()
-// to SET a status. It never creates, deletes, or recreates webhooks.
+// WEBHOOK RULE (CLAUDE.md): the actual Monday write goes through
+// writeBackStatus(), which only SETS a column value (gated by the write-back
+// master switch). It never creates, deletes, or recreates webhooks.
 // =====================================================
 
 export type StyleApprovalMondayResult = {
   // An item with this style number exists on the Styles board.
   found: boolean;
   stylesBoardItemId: string | null;
-  // Subitem display names whose status was set to Approved.
+  // Subitem display names whose status was set to Approved (or already were).
   subitemsUpdated: string[];
+  // Subitems that WOULD have been set but write-backs are off (logged only).
+  subitemsSimulated: string[];
   // Configured codes (e.g. "01e") with no matching subitem on this item.
   subitemsMissing: string[];
   // Per-subitem failures, "code (name): message".
@@ -43,11 +41,13 @@ const codeToken = (name: string): string => (name.split(".")[0] ?? "").trim().to
 
 export async function applyStyleApprovalToMonday(
   styleNumber: string,
+  jobId?: string | null,
 ): Promise<StyleApprovalMondayResult> {
   const result: StyleApprovalMondayResult = {
     found: false,
     stylesBoardItemId: null,
     subitemsUpdated: [],
+    subitemsSimulated: [],
     subitemsMissing: [],
     subitemErrors: [],
     customerResponsible: [],
@@ -74,17 +74,23 @@ export async function applyStyleApprovalToMonday(
         result.subitemsMissing.push(code);
         continue;
       }
-      try {
-        await changeItemValue({
-          boardId: match.board.id,
-          itemId: match.id,
-          columnId: statusCol,
-          value: JSON.stringify({ label: approvedLabel }),
-        });
-        result.subitemsUpdated.push(match.name);
-      } catch (err) {
-        result.subitemErrors.push(`${code} (${match.name}): ${(err as Error).message}`);
-      }
+      // Current label is the readable "from" for the write-back log.
+      const current = match.column_values.find((c) => c.id === statusCol)?.text ?? null;
+      const r = await writeBackStatus({
+        boardId: match.board.id,
+        itemId: match.id,
+        columnId: statusCol,
+        label: approvedLabel,
+        currentLabel: current,
+        entity: match.name,
+        boardLabel: "Styles",
+        columnTitle: "Status",
+        styleNumber,
+        jobId,
+      });
+      if (r.mode === "APPLIED" || r.mode === "NOOP") result.subitemsUpdated.push(match.name);
+      else if (r.mode === "SIMULATED") result.subitemsSimulated.push(match.name);
+      else result.subitemErrors.push(`${code} (${match.name}): ${r.error ?? "failed"}`);
     }
   } catch (err) {
     result.subitemErrors.push(`subitem lookup failed: ${(err as Error).message}`);

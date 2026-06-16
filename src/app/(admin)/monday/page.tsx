@@ -17,6 +17,7 @@ import { SyncTab } from "./tabs/sync-tab";
 import { DataTab, ROW_PAGE_STEP, ROW_PAGE_MAX } from "./tabs/data-tab";
 import { WebhooksTab } from "./tabs/webhooks-tab";
 import { requireAdminPage } from "@/lib/auth-server";
+import { getMondayWriteBackEnabled } from "@/lib/settings/app-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -99,7 +100,7 @@ export default async function MondayPage({
 }
 
 async function WebhooksTabAsync() {
-  const [webhooks, logs] = await Promise.all([
+  const [webhooks, logs, writeBackLogs, writeBackEnabled] = await Promise.all([
     db.mondayWebhook.findMany({ orderBy: { createdAt: "desc" } }),
     // Webhook activity comes from the Log table: the handler writes one
     // `monday.webhook …` line per inbound event, plus `failed to handle …`
@@ -114,12 +115,21 @@ async function WebhooksTabAsync() {
       orderBy: { createdAt: "desc" },
       take: 50,
     }),
+    // OUTBOUND write-backs (us → Monday): one `monday.writeback …` row per
+    // status write, applied OR simulated, plus switch-toggle audit rows.
+    db.log.findMany({
+      where: { message: { startsWith: "monday.writeback" } },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    }),
+    getMondayWriteBackEnabled(),
   ]);
 
   const boardLabelById = new Map(listKnownBoards().map((b) => [b.id, b.label]));
 
   return (
     <WebhooksTab
+      writeBackEnabled={writeBackEnabled}
       webhooks={webhooks.map((w) => ({
         id: w.id,
         boardId: w.boardId,
@@ -129,8 +139,55 @@ async function WebhooksTabAsync() {
         createdAt: w.createdAt,
       }))}
       activity={logs.map((row) => normalizeWebhookLog(row, boardLabelById))}
+      writeBacks={writeBackLogs.map((row) => normalizeWriteBackLog(row, boardLabelById))}
     />
   );
+}
+
+// Parse a `monday.writeback …` Log row into the readable shape the outbound
+// write-back table renders. Everything we need is in the structured payload
+// (written by writeBackStatus / the switch route); the message is a fallback.
+function normalizeWriteBackLog(
+  row: { id: string; message: string; level: string; payload: unknown; createdAt: Date },
+  boardLabelById: Map<string, string>,
+): {
+  id: string;
+  at: Date;
+  level: string;
+  mode: string;
+  board: string;
+  item: string;
+  change: string;
+} {
+  const base = { id: row.id, at: row.createdAt, level: String(row.level) };
+  const p = (row.payload ?? {}) as Record<string, unknown>;
+
+  if (p.kind === "writeback") {
+    const boardId = typeof p.boardId === "string" ? p.boardId : null;
+    const entity = typeof p.entity === "string" ? p.entity : "";
+    const columnTitle = typeof p.columnTitle === "string" ? p.columnTitle : "Status";
+    const from = p.from == null ? "—" : String(p.from);
+    const to = typeof p.to === "string" ? p.to : "";
+    return {
+      ...base,
+      mode: typeof p.mode === "string" ? p.mode : "—",
+      board: typeof p.boardLabel === "string" && p.boardLabel ? p.boardLabel : boardId ? (boardLabelById.get(boardId) ?? boardId) : "—",
+      item: typeof p.styleNumber === "string" && p.styleNumber ? p.styleNumber : typeof p.itemId === "string" ? p.itemId : "—",
+      change: `${entity ? `${entity} — ` : ""}${columnTitle}: ${from} → ${to}`,
+    };
+  }
+
+  if (p.kind === "writeback-switch") {
+    return {
+      ...base,
+      mode: "SWITCH",
+      board: "—",
+      item: "—",
+      change: `Write-backs ${p.enabled ? "ENABLED" : "DISABLED"}`,
+    };
+  }
+
+  return { ...base, mode: "—", board: "—", item: "—", change: row.message.replace(/^monday\.writeback /, "") };
 }
 
 // Parse a Log row into the readable shape the activity table renders.

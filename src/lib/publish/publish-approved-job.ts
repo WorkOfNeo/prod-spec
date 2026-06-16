@@ -438,9 +438,12 @@ export async function onStyleFullyApproved(ctx: StyleApprovalContext): Promise<v
     }
 
     // 1) Monday: flip subitems 01e/01f to Approved + resolve customer contact.
-    const monday = await applyStyleApprovalToMonday(ctx.styleNumber);
+    const monday = await applyStyleApprovalToMonday(ctx.styleNumber, ctx.jobId);
     const mondayMsg = monday.found
       ? `monday item ${monday.stylesBoardItemId} · approved [${monday.subitemsUpdated.join(", ") || "none"}]` +
+        (monday.subitemsSimulated.length
+          ? ` · simulated/write-backs-off [${monday.subitemsSimulated.join(", ")}]`
+          : "") +
         (monday.subitemsMissing.length ? ` · missing [${monday.subitemsMissing.join(", ")}]` : "") +
         (monday.subitemErrors.length ? ` · errors [${monday.subitemErrors.join("; ")}]` : "")
       : `monday: ${monday.notes.join("; ")}`;
