@@ -3,8 +3,11 @@ import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import {
   MANUAL_COLUMN_IDS,
   parseCustomerConfig,
+  type ColumnMapping,
   type CustomerConfig,
 } from "@/lib/customers/config";
+import { projectSiblingStyle } from "@/lib/output-layouts/tokens";
+import { MAX_SIBLING_SLOTS } from "@/lib/output-layouts/token-meta";
 import {
   parseProdSpecColumnMapping,
   parseProdSpecLanguages,
@@ -34,6 +37,9 @@ import { outputReadinessForStyle, type OutputReadiness } from "./output-readines
 // The style fields the assembly needs. Matches what the runner's job
 // include and the preview loader both fetch.
 export type RenderableStyle = {
+  // The Style.id — needed to exclude self from the same-PO sibling fetch
+  // (Custom Carton Marking) and to tag each sibling for the carton dialog.
+  id: string;
   rawData: unknown;
   poNumber: string | null;
   cartonEan: string | null;
@@ -72,6 +78,12 @@ export async function buildStyleData(
   style: RenderableStyle,
   prodSpec: RenderableProdSpec,
   config: CustomerConfig,
+  // Pre-fetch the same-PO sibling POOL (Custom Carton Marking). OFF by
+  // default: siblings are only ever used by a MANUAL multi-style carton
+  // print, so standard generation (the runner) skips the extra query +
+  // per-sibling mapping. The preview/dialog loaders (loadStyleRenderContext)
+  // opt in so the carton dialog + multi-style preview have candidates.
+  opts: { loadSiblings?: boolean } = {},
 ): Promise<StyleData> {
   // Inject the canonical Style.poNumber as the manual.* fallback so the PO
   // renders on labels even when the mapped PO column isn't the one this
@@ -135,7 +147,70 @@ export async function buildStyleData(
     styleData.washSymbols = rejoinWashTokens(styleData.washSymbols, symbolMap);
   }
 
+  // Custom Carton Marking: pre-fetch the same-PO siblings POOL so the carton
+  // dialog can offer candidates and a multi-style preview/print resolves
+  // {{style2}}+ SYNC. Opt-in (loadSiblings) + guarded by poNumber. The flag
+  // style.multipleStyles — set later by withSelectedSiblings on a one-off
+  // print — is what actually gates {{style2}}+; the pool alone never leaks
+  // into standard generation.
+  if (opts.loadSiblings && style.poNumber) {
+    styleData.siblings = await loadSiblingStyles(
+      style.id,
+      style.poNumber,
+      effectiveMapping,
+      style.customer.name,
+    );
+  }
+
   return styleData;
+}
+
+// How many same-PO siblings to load into the pool. A layout can reference
+// at most MAX_SIBLING_SLOTS-1 siblings; load a few extra so the carton
+// dialog's one-off picker can offer more candidates than any single layout
+// uses, without an unbounded query on a large PO.
+const SIBLING_POOL_CAP = Math.max(MAX_SIBLING_SLOTS - 1, 3) + 16;
+
+// Load the OTHER styles on the same PO and project each to a SiblingStyle
+// (carton-relevant fields only). Each sibling is mapped with the CURRENT
+// style's effective column mapping + customer name: same-PO styles are
+// virtually always the same customer/board, so this reuses the already
+// resolved mapping instead of re-deriving each sibling's ProdSpec — and it
+// maps siblings WITHOUT fetching their own siblings (no recursion). Ordered
+// by creation so the slot assignment is stable across renders.
+async function loadSiblingStyles(
+  thisId: string,
+  poNumber: string,
+  mapping: ColumnMapping,
+  customerName: string,
+): Promise<StyleData["siblings"]> {
+  const rows = await db.style.findMany({
+    where: { poNumber, id: { not: thisId }, archivedAt: null, deletedAt: null },
+    orderBy: { createdAt: "asc" },
+    take: SIBLING_POOL_CAP,
+    select: {
+      id: true,
+      rawData: true,
+      poNumber: true,
+      cartonEan: true,
+      supplier: { select: { country: true } },
+      eans: {
+        orderBy: { position: "asc" },
+        select: { size: true, ean13: true, variantLabel: true },
+      },
+    },
+  });
+  return rows.map((row) => {
+    const item = effectiveStyleItem({
+      rawData: row.rawData,
+      poNumber: row.poNumber,
+      supplier: row.supplier,
+      eans: row.eans,
+      cartonEan: row.cartonEan,
+    }) as MondayItem;
+    const sd = mapMondayItemToStyleData(item, customerName, mapping);
+    return projectSiblingStyle(sd, row.id);
+  });
 }
 
 // =====================================================
@@ -175,6 +250,7 @@ export async function loadStyleRenderContext(styleId: string): Promise<StyleRend
   const config = parseCustomerConfig(style.customer.config);
   const styleData = await buildStyleData(
     {
+      id: style.id,
       rawData: style.rawData,
       poNumber: style.poNumber,
       cartonEan: style.cartonEan,
@@ -186,6 +262,9 @@ export async function loadStyleRenderContext(styleId: string): Promise<StyleRend
     },
     prodSpec,
     config,
+    // The preview/dialog loader — load the same-PO sibling pool so the carton
+    // dialog can offer candidates and a multi-style preview resolves.
+    { loadSiblings: true },
   );
 
   const outputs = prodSpec

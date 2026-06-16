@@ -4,9 +4,10 @@ import { parseLayoutDef } from "@/lib/output-layouts/schema";
 import { docTypeLabel } from "@/lib/pdf/doc-types";
 import { loadDocTypeLabels, loadDocTypesWithUsage } from "@/lib/pdf/doc-types-db";
 import { LAYOUT_VARIANT_PREFIX } from "@/lib/output-layouts/variants";
+import { generationCountsByLayout } from "@/lib/output-layouts/stats";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { TEMPLATE_VARIANTS } from "@/lib/pdf/template-registry";
-import { getContrastLogoDataUrl, getCustomLogoDataUrl } from "@/lib/output-layouts/logos";
+import { getContrastAddressLogoDataUrl, getContrastLogoDataUrl } from "@/lib/output-layouts/logos";
 import { LayoutsList } from "./layouts-list";
 import { DocTypesManager } from "./doc-types-manager";
 import { requireAdminPage } from "@/lib/auth-server";
@@ -28,9 +29,9 @@ export default async function OutputBuilderPage() {
     );
   }
 
-  const [contrastLogo, customLogo] = await Promise.all([
+  const [contrastLogo, contrastAddressLogo] = await Promise.all([
     getContrastLogoDataUrl(),
-    getCustomLogoDataUrl(),
+    getContrastAddressLogoDataUrl(),
   ]);
 
   let rows;
@@ -98,7 +99,10 @@ export default async function OutputBuilderPage() {
     stylesBySpec.set(st.prodSpecId, list);
   }
 
-  const docTypeLabels = await loadDocTypeLabels();
+  const [docTypeLabels, genCounts] = await Promise.all([
+    loadDocTypeLabels(),
+    generationCountsByLayout(),
+  ]);
   // Doc-type catalogue with usage counts for the management card (relocated
   // here from the retired Custom outputs page). `builtinVariants` is flagged
   // against the code-registered template doc types.
@@ -117,6 +121,7 @@ export default async function OutputBuilderPage() {
     // A style belongs to exactly one ProdSpec, so the union across this
     // layout's specs is duplicate-free by construction.
     const styles = usedBy.flatMap((s) => stylesBySpec.get(s.id) ?? []);
+    const counts = genCounts.get(l.id);
     return {
       id: l.id,
       name: l.name,
@@ -124,11 +129,14 @@ export default async function OutputBuilderPage() {
       docTypeLabel: docTypeLabel(l.docType, docTypeLabels),
       status: l.status,
       version: l.version,
+      autoApprove: l.autoApprove,
       pageCount,
       defInvalid,
       customerName: l.customer?.name ?? null,
       businessAreaName: l.businessArea?.name ?? null,
       updatedAt: l.updatedAt.toISOString(),
+      generationCount: counts?.total ?? 0,
+      lastGeneratedAt: counts?.lastGeneratedAt ?? null,
       prodSpecs: usedBy,
       styleCount: styles.length,
       styles: styles.slice(0, STYLE_CAP),
@@ -137,7 +145,11 @@ export default async function OutputBuilderPage() {
 
   return (
     <>
-      <LayoutsList layouts={layouts} contrastLogoFound={contrastLogo !== null} customLogo={customLogo} />
+      <LayoutsList
+        layouts={layouts}
+        contrastLogoFound={contrastLogo !== null}
+        contrastAddressLogoFound={contrastAddressLogo !== null}
+      />
       {/* Document types — relocated from the retired Custom outputs page.
           The editor's "Manage types" link jumps to #doc-types here. */}
       <div className="px-8 pb-10">

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
-import { applyFieldOverrides } from "@/lib/pdf/pins";
+import { applyFieldOverrides, withSelectedSiblings } from "@/lib/pdf/pins";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import { isLayoutVariantKey, LAYOUT_VARIANT_PREFIX } from "@/lib/output-layouts/variants";
 import { parseLayoutDef, layoutSettings } from "@/lib/output-layouts/schema";
@@ -13,14 +13,19 @@ export const runtime = "nodejs";
 // One Chromium render of an N-page document; N can be large (cap below).
 export const maxDuration = 300;
 
-// Manual "X of Y" carton-numbered prints are a SIDE action — standard
-// generation is untouched. This renders the chosen Output Builder layout
-// once per carton (1…total) into ONE multi-page PDF the operator prints,
-// with {{cartonNo}}/{{cartonTotal}} bound to the running number. Nothing
-// is persisted as a JobAsset; the file streams straight back as a download.
+// Manual carton prints are a SIDE action — standard generation is untouched
+// (always single-style). This renders the chosen Output Builder layout once
+// per carton (1…total) into ONE multi-page PDF the operator prints. Two
+// INDEPENDENT capabilities feed it (a layout can opt into either or both):
+//   • carton numbering — {{cartonNo}}/{{cartonTotal}} bound to the running
+//     number (total = how many cartons).
+//   • multiple styles  — siblingIds places OTHER styles from the same PO on
+//     the box ({{style2}}, {{style3}}…) and flips {{multipleStyles}} on; a
+//     multi-style-only print is a single page (total = 1).
+// Nothing is persisted; the file streams straight back as a download.
 //
 //   POST /api/admin/styles/<id>/carton-prints
-//   body: { variantKey: "layout:<id>", total: number }
+//   body: { variantKey: "layout:<id>", total: number, siblingIds?: string[] }
 const CARTON_MAX = 2000;
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -31,10 +36,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   let variantKey = "";
   let total = 0;
+  let siblingIds: string[] | null = null;
   try {
-    const body = (await req.json()) as { variantKey?: unknown; total?: unknown };
+    const body = (await req.json()) as {
+      variantKey?: unknown;
+      total?: unknown;
+      siblingIds?: unknown;
+    };
     if (typeof body?.variantKey === "string") variantKey = body.variantKey;
     if (typeof body?.total === "number") total = body.total;
+    if (Array.isArray(body?.siblingIds)) {
+      siblingIds = body.siblingIds.filter((x): x is string => typeof x === "string");
+    }
   } catch {
     return NextResponse.json({ error: "Expected a JSON body" }, { status: 400 });
   }
@@ -87,25 +100,32 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   const def = parseLayoutDef(layout.definition);
   const settings = layoutSettings(def);
-  if (!settings.cartonNumbering) {
+  if (!settings.cartonNumbering && !settings.multipleStyles) {
     return NextResponse.json(
-      { error: "This output is not enabled for carton numbering" },
+      { error: "This output is not enabled for carton numbering or multiple styles" },
       { status: 400 },
     );
   }
 
   try {
-    const renderStyle = applyFieldOverrides(context.styleData, output.fieldOverrides);
+    // Single-style by default; a sibling pick (slot order) flips multi-style
+    // mode ON and fills {{style2}}+ off the pre-fetched pool. {{cartonNo}}/
+    // {{cartonTotal}} bind per page when carton numbering is in play.
+    let renderStyle = applyFieldOverrides(context.styleData, output.fieldOverrides);
+    if (siblingIds !== null) {
+      renderStyle = withSelectedSiblings(renderStyle, siblingIds);
+    }
+    const numbered = settings.cartonNumbering && total > 1;
     const html = await renderLayoutHtmlSerial(def, renderStyle, total, {
       mode: "production",
-      title: `${layout.name} — cartons 1–${total}`,
+      title: numbered ? `${layout.name} — cartons 1–${total}` : layout.name,
     });
     const pdf = await renderPdf({ html });
 
     const stem =
       resolveLayoutFileName(settings.fileName, renderStyle)?.replace(/\.pdf$/i, "") ??
       `${context.styleData.styleNumber || "style"}-${layout.name}`;
-    const fileName = `${stem}-cartons-1-${total}.pdf`
+    const fileName = `${stem}${numbered ? `-cartons-1-${total}` : "-carton"}.pdf`
       .replace(/[^\w.\- ]+/g, "")
       .replace(/\s+/g, "-");
 

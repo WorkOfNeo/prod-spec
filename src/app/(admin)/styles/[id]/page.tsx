@@ -275,6 +275,7 @@ export default async function StyleDetail({
     if (!style.prodSpec || enabledOutputs.length === 0) return [];
     const base = await buildStyleData(
       {
+        id: style.id,
         rawData: style.rawData,
         poNumber: style.poNumber,
         cartonEan: style.cartonEan,
@@ -402,6 +403,7 @@ export default async function StyleDetail({
         : null,
       generatedAt: asset ? formatDate(asset.createdAt) : null,
       cartonNumbering: variant?.cartonNumbering ?? false,
+      multipleStyles: variant?.multipleStyles ?? false,
       isInfoArea,
       prodSpecId: style.prodSpec?.id ?? null,
       infoAreaSizeId,

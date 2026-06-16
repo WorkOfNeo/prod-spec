@@ -5,20 +5,30 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DocTypeEntry } from "@/lib/pdf/doc-types";
 import {
+  DEFAULT_GRID_CELL_MM,
   LAYOUT_GRID_COLS,
   LAYOUT_GRID_ROWS,
   LayoutDefSchema,
   TOKEN_RE,
   blockId,
+  gridFromCellMm,
   layoutSettings,
+  pageGrid,
   tokensInDef,
+  type FoldLine,
   type LayoutBlock,
   type LayoutDef,
   type LayoutPage,
   type LayoutRect,
   type LayoutSettings,
+  type SewingLine,
 } from "@/lib/output-layouts/schema";
-import { LAYOUT_TOKENS, tokenMeta } from "@/lib/output-layouts/token-meta";
+import {
+  LAYOUT_TOKENS,
+  tokenMeta,
+  SIBLING_FIELDS,
+  MAX_SIBLING_SLOTS,
+} from "@/lib/output-layouts/token-meta";
 import { PreviewFrame } from "@/components/output-preview";
 
 // =====================================================
@@ -41,6 +51,11 @@ import { PreviewFrame } from "@/components/output-preview";
 const AUTOSAVE_MS = 1200;
 const PREVIEW_DEBOUNCE_MS = 600;
 const PT_TO_MM = 25.4 / 72;
+
+// mm input accepts a comma OR dot decimal ("7,5" → 7.5).
+function parseMm(raw: string): number {
+  return Number(String(raw).replace(",", ".").trim());
+}
 
 
 // Id generators — module scope, called from event handlers only (the
@@ -74,10 +89,40 @@ type LayoutProps = {
   docType: string;
   status: "DRAFT" | "PUBLISHED";
   version: number;
+  autoApprove: boolean;
   isInfoArea: boolean;
+  // Per-layout {{logo:custom}} image (data URL) — managed by its own upload
+  // endpoint, not the autosave payload.
+  customLogo: string | null;
   customerId: string | null;
   businessAreaId: string | null;
   definition: LayoutDef;
+};
+
+// Single-output view tabs. The canvas lives in "customizer" and stays there;
+// switching tabs swaps the surrounding panels, not the canvas's home.
+type LayoutTab = "customizer" | "reviews" | "settings";
+
+// Plain (db-free) shapes the server page passes in — the editor is a client
+// component, so these must NOT import from stats.ts (which pulls in db).
+type GenerationStats = {
+  total: number;
+  approved: number;
+  pendingReview: number;
+  rejected: number;
+  distinctStyles: number;
+  lastGeneratedAt: string | null;
+};
+type RecentAsset = {
+  id: string;
+  displayName: string | null;
+  fileName: string;
+  reviewStatus: "PENDING_REVIEW" | "APPROVED" | "REJECTED";
+  placeholderCount: number;
+  createdAt: string;
+  jobId: string;
+  styleId: string;
+  styleName: string;
 };
 
 type DrawState = {
@@ -96,6 +141,8 @@ export function LayoutEditor({
   businessAreas,
   languages,
   docTypes,
+  stats,
+  recentAssets,
   prodSpecs,
 }: {
   layout: LayoutProps;
@@ -104,15 +151,23 @@ export function LayoutEditor({
   languages: Language[];
   // The doc-type catalogue (DB-managed) — options for the type select.
   docTypes: DocTypeEntry[];
+  // Generation history for the Settings + Reviews tabs (server-computed).
+  stats: GenerationStats;
+  recentAssets: RecentAsset[];
   // Prod Specs that reference this layout (layout:<id>) — listed in the
   // delete confirmation so the operator sees what loses the output.
   prodSpecs: Array<{ id: string; name: string; customerName: string }>;
 }) {
   const router = useRouter();
+  const [tab, setTab] = useState<LayoutTab>("customizer");
   const [name, setName] = useState(layout.name);
   const [docType, setDocType] = useState(layout.docType);
   const [isInfoArea, setIsInfoArea] = useState(layout.isInfoArea);
+  const [customLogo, setCustomLogo] = useState<string | null>(layout.customLogo);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
   const [def, setDef] = useState<LayoutDef>(layout.definition);
+  const [autoApprove, setAutoApprove] = useState(layout.autoApprove);
   const [customerId, setCustomerId] = useState<string | null>(layout.customerId);
   const [businessAreaId, setBusinessAreaId] = useState<string | null>(layout.businessAreaId);
   const [status, setStatus] = useState(layout.status);
@@ -146,6 +201,8 @@ export function LayoutEditor({
     const m = layout.definition.pages[0]?.margins;
     return !m || (m.topMm === m.rightMm && m.topMm === m.bottomMm && m.topMm === m.leftMm);
   });
+  // The cell size (mm) the "Regenerate grid" button uses. Defaults to 4 mm.
+  const [gridCellMm, setGridCellMm] = useState(String(DEFAULT_GRID_CELL_MM));
   const [sel, setSel] = useState<string | null>(null);
   // Draw state lives in a ref (handlers must see updates within the same
   // tick — fast pointermoves outrun React renders) and is mirrored into
@@ -181,6 +238,8 @@ export function LayoutEditor({
   const [pdfBusy, setPdfBusy] = useState(false);
 
   const [langSel, setLangSel] = useState(languages[0]?.code ?? "en");
+  // Custom Carton Marking — which sibling slot the palette chips insert.
+  const [siblingSlot, setSiblingSlot] = useState(2);
 
   const [jsonText, setJsonText] = useState("");
   const [jsonOpen, setJsonOpen] = useState(false);
@@ -193,6 +252,9 @@ export function LayoutEditor({
   const page: LayoutPage | undefined = def.pages[pageIdx];
   const selBlock = page?.blocks.find((b) => blockId(b) === sel) ?? null;
   const testStyle = styles[styleIdx] ?? null;
+  // The current page's placement grid (cols×rows) — stored, or the legacy
+  // 12×12 default. Drives the canvas overlay, drawing and block geometry.
+  const grid = page ? pageGrid(page) : { cols: LAYOUT_GRID_COLS, rows: LAYOUT_GRID_ROWS };
 
   // ---- definition mutators (immutably rewrite def) --------------------
 
@@ -205,6 +267,43 @@ export function LayoutEditor({
     },
     [pageIdx],
   );
+
+  // Print-guide mutators (current page). Sewing lines append/edit/remove;
+  // the fold line is a single per-page setting.
+  const sewingLines = page?.sewingLines ?? [];
+  function addSewingLine() {
+    updatePage({ sewingLines: [...sewingLines, { edge: "top", offsetMm: 5 }] });
+  }
+  function updateSewingLine(i: number, patch: Partial<SewingLine>) {
+    updatePage({ sewingLines: sewingLines.map((s, idx) => (idx === i ? { ...s, ...patch } : s)) });
+  }
+  function removeSewingLine(i: number) {
+    updatePage({ sewingLines: sewingLines.filter((_, idx) => idx !== i) });
+  }
+  function setFoldLine(v: FoldLine) {
+    updatePage({ foldLine: v });
+  }
+
+  // Recompute the grid from a square cell size and remap existing blocks
+  // proportionally into the new grid (clamped to fit) — keep what we can;
+  // the user can then nudge anything the resize shifted.
+  function regenerateGrid() {
+    if (!page) return;
+    const cell = parseMm(gridCellMm);
+    if (!Number.isFinite(cell) || cell <= 0) return;
+    const next = gridFromCellMm(page.widthMm, page.heightMm, cell);
+    const old = pageGrid(page);
+    const blocks = page.blocks.map((b) => {
+      if (!b.rect) return b;
+      const r = b.rect;
+      const col = Math.min(next.cols - 1, Math.round((r.col / old.cols) * next.cols));
+      const row = Math.min(next.rows - 1, Math.round((r.row / old.rows) * next.rows));
+      const colSpan = Math.max(1, Math.min(next.cols - col, Math.round((r.colSpan / old.cols) * next.cols)));
+      const rowSpan = Math.max(1, Math.min(next.rows - row, Math.round((r.rowSpan / old.rows) * next.rows)));
+      return { ...b, rect: { col, row, colSpan, rowSpan } };
+    });
+    updatePage({ gridCols: next.cols, gridRows: next.rows, blocks });
+  }
 
   const updateBlock = useCallback(
     (id: string, patch: Partial<LayoutBlock>) => {
@@ -234,6 +333,61 @@ export function LayoutEditor({
       ),
     [def],
   );
+
+  // Whether the design places the per-layout custom logo — gates the upload
+  // + width controls so they only appear when {{logo:custom}} is in use.
+  const usesCustomLogo = useMemo(
+    () => tokensInDef(def).some((t) => t.key === "logo" && t.arg === "custom"),
+    [def],
+  );
+
+  // Upload / clear the per-layout custom logo. Its own endpoint (not the
+  // autosave payload) since the data URL is too big to ride every keystroke.
+  async function uploadCustomLogo(file: File) {
+    setLogoError(null);
+    if (file.size > 450_000) {
+      setLogoError("Keep the logo under ~450 KB.");
+      return;
+    }
+    setLogoBusy(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result));
+        r.onerror = () => reject(new Error("could not read file"));
+        r.readAsDataURL(file);
+      });
+      const res = await fetch(`/api/admin/output-layouts/${layout.id}/logo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataUrl }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setLogoError(body.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setCustomLogo(dataUrl);
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
+  async function removeCustomLogo() {
+    setLogoError(null);
+    setLogoBusy(true);
+    try {
+      const res = await fetch(`/api/admin/output-layouts/${layout.id}/logo`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setLogoError(body.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setCustomLogo(null);
+    } finally {
+      setLogoBusy(false);
+    }
+  }
 
   function addRectBlock(rect: LayoutRect) {
     const block: LayoutBlock = {
@@ -285,6 +439,8 @@ export function LayoutEditor({
           widthMm: last.widthMm,
           heightMm: last.heightMm,
           margins: { ...last.margins },
+          sewingLines: [],
+          foldLine: "none",
           blocks: [],
         },
       ],
@@ -326,8 +482,8 @@ export function LayoutEditor({
     const g = gridGeom(page, scale);
     const x = e.clientX - r.left - g.left;
     const y = e.clientY - r.top - g.top;
-    const col = Math.min(LAYOUT_GRID_COLS - 1, Math.max(0, Math.floor((x / g.width) * LAYOUT_GRID_COLS)));
-    const row = Math.min(LAYOUT_GRID_ROWS - 1, Math.max(0, Math.floor((y / g.height) * LAYOUT_GRID_ROWS)));
+    const col = Math.min(grid.cols - 1, Math.max(0, Math.floor((x / g.width) * grid.cols)));
+    const row = Math.min(grid.rows - 1, Math.max(0, Math.floor((y / g.height) * grid.rows)));
     return { col, row };
   }
 
@@ -387,8 +543,8 @@ export function LayoutEditor({
   // ---- autosave --------------------------------------------------------
 
   const payload = useMemo(
-    () => JSON.stringify({ name, docType, isInfoArea, definition: def, customerId, businessAreaId }),
-    [name, docType, isInfoArea, def, customerId, businessAreaId],
+    () => JSON.stringify({ name, docType, isInfoArea, definition: def, customerId, businessAreaId, autoApprove }),
+    [name, docType, isInfoArea, def, customerId, businessAreaId, autoApprove],
   );
 
   useEffect(() => {
@@ -527,6 +683,7 @@ export function LayoutEditor({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             definition: def,
+            layoutId: layout.id,
             styleId: testStyle?.id,
             pageIndex: pageIdx,
             includeTokenValues: showValues,
@@ -572,6 +729,8 @@ export function LayoutEditor({
     settings.cartonNumbering,
     cartonPreviewNo,
     cartonPreviewTotal,
+    // Re-render the preview when the per-layout custom logo is set/cleared.
+    customLogo,
   ]);
 
   // Delete / Backspace removes the selected block — unless the user is
@@ -621,7 +780,7 @@ export function LayoutEditor({
       const res = await fetch("/api/admin/output-layouts/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ definition: def, styleId: testStyle?.id, format: "pdf" }),
+        body: JSON.stringify({ definition: def, layoutId: layout.id, styleId: testStyle?.id, format: "pdf" }),
       });
       if (!res.ok) return;
       const blob = await res.blob();
@@ -906,6 +1065,35 @@ export function LayoutEditor({
         </div>
       ) : null}
 
+      {/* ---------- tabs ---------- */}
+      <div className="flex items-center gap-6 border-b border-zinc-200 px-8">
+        {([
+          ["customizer", "Customizer"],
+          ["reviews", "Reviews"],
+          ["settings", "Settings"],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={`-mb-px border-b-2 px-1 py-2.5 text-sm font-medium transition-colors ${
+              tab === key
+                ? "border-zinc-900 text-zinc-900"
+                : "border-transparent text-zinc-400 hover:text-zinc-700"
+            }`}
+          >
+            {label}
+            {key === "reviews" && stats.pendingReview > 0 ? (
+              <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-px text-[11px] font-semibold text-amber-700">
+                {stats.pendingReview}
+              </span>
+            ) : null}
+          </button>
+        ))}
+      </div>
+
+      {/* ===== Customizer tab — canvas lives here, always ===== */}
+      <div className={tab === "customizer" ? undefined : "hidden"}>
       {/* ---------- test data ---------- */}
       <div className="flex flex-wrap items-center gap-3 border-b border-zinc-100 px-8 py-2.5">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Test data</span>
@@ -1252,6 +1440,114 @@ export function LayoutEditor({
             ) : null}
           </div>
 
+          <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Grid</div>
+          <div className="mt-2 space-y-2">
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <label className="text-xs text-zinc-500">Cell size (mm)</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={gridCellMm}
+                  onChange={(e) => setGridCellMm(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-zinc-200 px-2 py-1.5 text-sm tabular-nums"
+                  placeholder={String(DEFAULT_GRID_CELL_MM)}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={regenerateGrid}
+                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                title="Recompute cols × rows from this cell size and remap existing blocks"
+              >
+                Regenerate
+              </button>
+            </div>
+            <p className="text-[10px] leading-relaxed text-zinc-400">
+              Current grid <span className="font-mono text-zinc-500">{grid.cols} × {grid.rows}</span>
+              {page ? (
+                <>
+                  {" "}
+                  · ≈ {(page.widthMm / grid.cols).toFixed(1)} × {(page.heightMm / grid.rows).toFixed(1)} mm per cell
+                </>
+              ) : null}
+              . Regenerate keeps existing blocks, adjusting any that no longer fit.
+            </p>
+          </div>
+
+          <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Print guides</div>
+          <div className="mt-2 space-y-3">
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-zinc-500">Sewing lines</label>
+                <button
+                  type="button"
+                  onClick={addSewingLine}
+                  className="text-xs font-medium text-zinc-700 hover:text-zinc-900"
+                >
+                  + Add
+                </button>
+              </div>
+              {sewingLines.length === 0 ? (
+                <p className="mt-1 text-[10px] text-zinc-400">
+                  A solid rule a fixed distance from the top or bottom edge (the seam allowance).
+                </p>
+              ) : (
+                <div className="mt-1.5 space-y-1.5">
+                  {sewingLines.map((s, i) => (
+                    // Inputs remount when the list length changes (key carries it),
+                    // so an uncontrolled offset field re-reads the right value after
+                    // add/remove while still letting you type a "7,5" decimal freely.
+                    <div key={`sew-${sewingLines.length}-${i}`} className="flex items-center gap-1.5">
+                      <select
+                        value={s.edge}
+                        onChange={(e) => updateSewingLine(i, { edge: e.target.value as SewingLine["edge"] })}
+                        className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700"
+                      >
+                        <option value="top">From top</option>
+                        <option value="bottom">From bottom</option>
+                      </select>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        defaultValue={String(s.offsetMm).replace(".", ",")}
+                        onChange={(e) => {
+                          const v = parseMm(e.target.value);
+                          if (Number.isFinite(v) && v >= 0 && v <= 1000) updateSewingLine(i, { offsetMm: v });
+                        }}
+                        className="w-16 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                        aria-label="Offset from edge (mm)"
+                      />
+                      <span className="text-[10px] text-zinc-400">mm</span>
+                      <button
+                        type="button"
+                        onClick={() => removeSewingLine(i)}
+                        className="ml-auto text-zinc-300 hover:text-red-600"
+                        aria-label="Remove sewing line"
+                        title="Remove"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="text-xs text-zinc-500">Folding line</label>
+              <select
+                value={page?.foldLine ?? "none"}
+                onChange={(e) => setFoldLine(e.target.value as FoldLine)}
+                className="mt-1 w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-sm text-zinc-700"
+              >
+                <option value="none">Off</option>
+                <option value="horizontal">Horizontal — across centre</option>
+                <option value="vertical">Vertical — down centre</option>
+              </select>
+              <p className="mt-0.5 text-[10px] text-zinc-400">A dashed rule through the page centre.</p>
+            </div>
+          </div>
+
           <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Settings</div>
           <div className="mt-2 space-y-3">
             <div>
@@ -1353,6 +1649,99 @@ export function LayoutEditor({
                 </p>
               ) : null}
             </div>
+
+            {/* Multiple styles (Custom Carton Marking) — INDEPENDENT of
+                carton numbering. Eligibility only; standard generation stays
+                single-style. Surfaces the {{style2}}… slots + {{multipleStyles}}
+                and lets the Style-page carton dialog pick same-PO siblings. */}
+            <div className="border-t border-zinc-100 pt-3">
+              <label className="flex items-center gap-2 text-sm text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={settings.multipleStyles}
+                  onChange={(e) => updateSettings({ multipleStyles: e.target.checked })}
+                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                />
+                Multiple styles on the box
+              </label>
+              <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
+                Lets operators place OTHER styles from the same PO on the box (a manual one-off).
+                Branch with{" "}
+                <code className="rounded bg-zinc-100 px-1">{"{{if multipleStyles == true}}"}</code>{" "}
+                and place{" "}
+                <code className="rounded bg-zinc-100 px-1">{"{{style2}}"}</code> /{" "}
+                <code className="rounded bg-zinc-100 px-1">{"{{style2Number}}"}</code> slots.
+              </p>
+            </div>
+
+            {/* Custom logo — appears only when the design uses
+                {{logo:custom}}. Uploaded per layout (not global); printed at
+                a % of its block width, height auto. */}
+            {usesCustomLogo ? (
+              <div className="border-t border-zinc-100 pt-3">
+                <div className="text-sm text-zinc-700">
+                  Custom logo <span className="font-mono text-[11px] text-zinc-400">{"{{logo:custom}}"}</span>
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  {customLogo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={customLogo}
+                      alt="Custom logo"
+                      className="h-8 w-auto max-w-[7rem] rounded border border-zinc-200 bg-white object-contain p-0.5"
+                    />
+                  ) : (
+                    <span className="text-[11px] text-zinc-400">none uploaded</span>
+                  )}
+                  <label
+                    className={`cursor-pointer rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 ${
+                      logoBusy ? "opacity-50" : ""
+                    }`}
+                  >
+                    {customLogo ? "Replace" : "Upload (SVG/PNG/JPG)"}
+                    <input
+                      type="file"
+                      accept="image/svg+xml,image/png,image/jpeg"
+                      className="hidden"
+                      disabled={logoBusy}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void uploadCustomLogo(f);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {customLogo ? (
+                    <button
+                      type="button"
+                      onClick={() => void removeCustomLogo()}
+                      disabled={logoBusy}
+                      className="text-xs text-zinc-400 hover:text-red-600 disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+                {logoError ? <p className="mt-1 text-[10px] text-red-600">{logoError}</p> : null}
+
+                <div className="mt-3">
+                  <div className="flex items-baseline justify-between">
+                    <label className="text-xs text-zinc-500">Logo width</label>
+                    <span className="font-mono text-[11px] text-zinc-400">{settings.customLogoWidthPct}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={100}
+                    step={1}
+                    value={settings.customLogoWidthPct}
+                    onChange={(e) => updateSettings({ customLogoWidthPct: Number(e.target.value) })}
+                    className="mt-1 w-full accent-zinc-900"
+                  />
+                  <p className="mt-0.5 text-[10px] text-zinc-400">% of the block&rsquo;s width — height scales to keep the aspect ratio.</p>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -1361,7 +1750,7 @@ export function LayoutEditor({
           <div className="flex items-baseline justify-between">
             <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Canvas</div>
             <div className="font-mono text-[11px] text-zinc-400">
-              {page.widthMm} × {page.heightMm} mm · {orientation} · grid {LAYOUT_GRID_COLS} × {LAYOUT_GRID_ROWS}
+              {page.widthMm} × {page.heightMm} mm · {orientation} · grid {grid.cols} × {grid.rows}
             </div>
           </div>
           <div className="mt-2 flex justify-center rounded-lg border border-zinc-200 bg-zinc-50/60 px-6 py-10">
@@ -1390,8 +1779,8 @@ export function LayoutEditor({
                       ? "1px dashed rgba(24,24,27,0.12)"
                       : "none",
                   backgroundImage:
-                    "repeating-linear-gradient(to right, transparent 0, transparent calc(8.3333% - 1px), rgba(24,24,27,0.045) calc(8.3333% - 1px), rgba(24,24,27,0.045) 8.3333%)," +
-                    "repeating-linear-gradient(to bottom, transparent 0, transparent calc(8.3333% - 1px), rgba(24,24,27,0.045) calc(8.3333% - 1px), rgba(24,24,27,0.045) 8.3333%)",
+                    `repeating-linear-gradient(to right, transparent 0, transparent calc(${100 / grid.cols}% - 1px), rgba(24,24,27,0.045) calc(${100 / grid.cols}% - 1px), rgba(24,24,27,0.045) ${100 / grid.cols}%),` +
+                    `repeating-linear-gradient(to bottom, transparent 0, transparent calc(${100 / grid.rows}% - 1px), rgba(24,24,27,0.045) calc(${100 / grid.rows}% - 1px), rgba(24,24,27,0.045) ${100 / grid.rows}%)`,
                 }}
               />
               {page.blocks.map((block) => (
@@ -1405,14 +1794,54 @@ export function LayoutEditor({
                   onRemove={() => removeBlock(blockId(block))}
                 />
               ))}
+              {/* Print-guide overlays — full page width/height, matching the
+                  true render. Sewing solid, fold dashed. */}
+              {sewingLines.map((s, i) => (
+                <div
+                  // eslint-disable-next-line react/no-array-index-key
+                  key={`csew-${i}`}
+                  className="pointer-events-none absolute"
+                  style={{
+                    left: 0,
+                    width: page.widthMm * scale,
+                    top: (s.edge === "bottom" ? page.heightMm - s.offsetMm : s.offsetMm) * scale,
+                    borderTop: "1px solid rgba(24,24,27,0.7)",
+                  }}
+                  title={`Sewing line — ${String(s.offsetMm).replace(".", ",")} mm from ${s.edge}`}
+                />
+              ))}
+              {page.foldLine === "horizontal" ? (
+                <div
+                  className="pointer-events-none absolute"
+                  style={{
+                    left: 0,
+                    width: page.widthMm * scale,
+                    top: (page.heightMm / 2) * scale,
+                    borderTop: "1px dashed rgba(82,82,91,0.9)",
+                  }}
+                  title="Folding line — horizontal centre"
+                />
+              ) : null}
+              {page.foldLine === "vertical" ? (
+                <div
+                  className="pointer-events-none absolute"
+                  style={{
+                    top: 0,
+                    height: page.heightMm * scale,
+                    left: (page.widthMm / 2) * scale,
+                    borderLeft: "1px dashed rgba(82,82,91,0.9)",
+                  }}
+                  title="Folding line — vertical centre"
+                />
+              ) : null}
               {ghost ? (
                 <div
                   className="pointer-events-none absolute rounded-sm border border-zinc-900/50 bg-zinc-900/5"
                   style={{
-                    left: gridGeom(page, scale).left + (ghost.col / LAYOUT_GRID_COLS) * gridGeom(page, scale).width,
-                    top: gridGeom(page, scale).top + (ghost.row / LAYOUT_GRID_ROWS) * gridGeom(page, scale).height,
-                    width: (ghost.colSpan / LAYOUT_GRID_COLS) * gridGeom(page, scale).width,
-                    height: (ghost.rowSpan / LAYOUT_GRID_ROWS) * gridGeom(page, scale).height,
+                    left: gridGeom(page, scale).left + (ghost.col / grid.cols) * gridGeom(page, scale).width,
+                    top: gridGeom(page, scale).top + (ghost.row / grid.rows) * gridGeom(page, scale).height,
+                    width: (ghost.colSpan / grid.cols) * gridGeom(page, scale).width,
+                    height: (ghost.rowSpan / grid.rows) * gridGeom(page, scale).height,
                   }}
                 />
               ) : null}
@@ -1512,34 +1941,34 @@ export function LayoutEditor({
                         label="Column"
                         value={selBlock.rect.col + 1}
                         min={1}
-                        max={LAYOUT_GRID_COLS - selBlock.rect.colSpan + 1}
+                        max={grid.cols - selBlock.rect.colSpan + 1}
                         onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, col: v - 1 } })}
                       />
                       <RectStepper
                         label="Row"
                         value={selBlock.rect.row + 1}
                         min={1}
-                        max={LAYOUT_GRID_ROWS - selBlock.rect.rowSpan + 1}
+                        max={grid.rows - selBlock.rect.rowSpan + 1}
                         onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, row: v - 1 } })}
                       />
                       <RectStepper
                         label="Width (cols)"
                         value={selBlock.rect.colSpan}
                         min={1}
-                        max={LAYOUT_GRID_COLS - selBlock.rect.col}
+                        max={grid.cols - selBlock.rect.col}
                         onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, colSpan: v } })}
                       />
                       <RectStepper
                         label="Height (rows)"
                         value={selBlock.rect.rowSpan}
                         min={1}
-                        max={LAYOUT_GRID_ROWS - selBlock.rect.row}
+                        max={grid.rows - selBlock.rect.row}
                         onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, rowSpan: v } })}
                       />
                     </div>
                     <div className="font-mono text-[11px] text-zinc-400">
-                      ≈ {((page.widthMm * selBlock.rect.colSpan) / LAYOUT_GRID_COLS).toFixed(1)} ×{" "}
-                      {((page.heightMm * selBlock.rect.rowSpan) / LAYOUT_GRID_ROWS).toFixed(1)} mm
+                      ≈ {((page.widthMm * selBlock.rect.colSpan) / grid.cols).toFixed(1)} ×{" "}
+                      {((page.heightMm * selBlock.rect.rowSpan) / grid.rows).toFixed(1)} mm
                     </div>
                     <div className="flex items-center gap-3">
                       <div>
@@ -1585,19 +2014,17 @@ export function LayoutEditor({
                 ) : null}
 
                 <div>
-                  <div className="flex items-baseline justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <label className="text-xs text-zinc-500">Font size</label>
-                    <span className="font-mono text-[11px] text-zinc-400">{selBlock.fontPt} pt</span>
+                    <NumberStepper
+                      value={selBlock.fontPt}
+                      min={4}
+                      max={48}
+                      step={0.5}
+                      suffix="pt"
+                      onChange={(v) => updateBlock(blockId(selBlock), { fontPt: v })}
+                    />
                   </div>
-                  <input
-                    type="range"
-                    min={5}
-                    max={24}
-                    step={0.5}
-                    value={selBlock.fontPt}
-                    onChange={(e) => updateBlock(blockId(selBlock), { fontPt: Number(e.target.value) })}
-                    className="mt-1 w-full accent-zinc-900"
-                  />
                   <p className="mt-0.5 text-[10px] text-zinc-400">Barcodes and wash symbols scale with the font size.</p>
                 </div>
 
@@ -1780,6 +2207,62 @@ export function LayoutEditor({
               </div>
             </div>
             <div className="mt-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">
+                  Sibling styles
+                </span>
+                <select
+                  value={siblingSlot}
+                  onChange={(e) => setSiblingSlot(Number(e.target.value))}
+                  className="rounded border border-zinc-200 px-1 py-0.5 text-[11px] text-zinc-600"
+                  title="Which carton slot these chips fill — other styles from the same PO"
+                >
+                  {Array.from({ length: MAX_SIBLING_SLOTS - 1 }, (_, i) => i + 2).map((n) => (
+                    <option key={n} value={n}>
+                      style{n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="mt-1 text-[11px] text-zinc-400">
+                Other styles from the same PO, filled on a manual print. Turn on{" "}
+                <b>Multiple styles</b> in Settings, then branch:{" "}
+                <code className="rounded bg-zinc-100 px-1 text-[10px]">
+                  {"{{if multipleStyles == true}}{{style2}}{{else}}{{style}}{{endif}}"}
+                </code>{" "}
+                (<code className="rounded bg-zinc-100 px-1 text-[10px]">==</code>, not{" "}
+                <code className="rounded bg-zinc-100 px-1 text-[10px]">===</code>).
+              </p>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                <TokenChip
+                  token="{{if multipleStyles}}…{{endif}}"
+                  title="Insert the multi-style conditional skeleton"
+                  disabled={!selBlock}
+                  onClick={() => insertToken("{{if multipleStyles == true}}{{else}}{{endif}}")}
+                />
+                <TokenChip
+                  token="{{style}}"
+                  title="Base style number — the single-style branch"
+                  disabled={!selBlock}
+                  onClick={() => insertToken("{{style}}")}
+                />
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {SIBLING_FIELDS.map((f) => {
+                  const key = `style${siblingSlot}${f.suffix}`;
+                  return (
+                    <TokenChip
+                      key={key}
+                      token={`{{${key}}}`}
+                      title={`Style ${siblingSlot} · ${f.label}`}
+                      disabled={!selBlock}
+                      onClick={() => insertToken(`{{${key}}}`)}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+            <div className="mt-3">
               <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">Graphics</div>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 <TokenChip
@@ -1798,7 +2281,7 @@ export function LayoutEditor({
                 />
                 <TokenChip
                   token="{{washSymbols}}"
-                  title="The style's wash care symbols as a row of icons — scales with the block font size"
+                  title="The style's wash care symbols as a row of icons — scales with the block font size. Add a mm gap with {{washSymbols:0}} (0 = flush together)."
                   disabled={!selBlock}
                   value={showValues ? (tokenValues["washSymbols"] ?? "") : undefined}
                   onClick={() => insertToken("{{washSymbols}}")}
@@ -1810,8 +2293,14 @@ export function LayoutEditor({
                   onClick={() => insertToken("{{logo:contrast}}")}
                 />
                 <TokenChip
+                  token="{{logo:contrastAddress}}"
+                  title="The Contrast logo with address (public/logos/contrast-address.svg in the repo) — height scales with the block font size"
+                  disabled={!selBlock}
+                  onClick={() => insertToken("{{logo:contrastAddress}}")}
+                />
+                <TokenChip
                   token="{{logo:custom}}"
-                  title="The uploaded custom logo (Output builder → Logos) — height scales with the block font size"
+                  title="This layout's own uploaded logo (upload it under Settings → Custom logo when this token is used) — width set as a % of its block"
                   disabled={!selBlock}
                   onClick={() => insertToken("{{logo:custom}}")}
                 />
@@ -1894,11 +2383,242 @@ export function LayoutEditor({
           </div>
         </div>
       </div>
+      </div>
+      {/* ↑ closes the Customizer visibility wrapper */}
+
+      {/* ===== Settings tab ===== */}
+      {tab === "settings" ? (
+        <div className="mx-auto max-w-2xl space-y-6 px-8 py-8">
+          {/* Generation activity — "how many times it has been generated" */}
+          <section className="rounded-lg border border-zinc-200 bg-white p-5">
+            <h2 className="text-sm font-semibold text-zinc-800">Generation activity</h2>
+            <p className="mt-1 text-xs text-zinc-500">
+              Every PDF this output has produced, across all styles and runs.
+            </p>
+            <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {([
+                ["Total generated", stats.total, "text-zinc-900"],
+                ["Approved", stats.approved, "text-emerald-700"],
+                ["Pending review", stats.pendingReview, "text-amber-700"],
+                ["Rejected", stats.rejected, "text-red-700"],
+              ] as const).map(([label, value, color]) => (
+                <div key={label} className="rounded-md border border-zinc-100 bg-zinc-50/60 px-3 py-2">
+                  <dt className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">{label}</dt>
+                  <dd className={`mt-0.5 text-xl font-semibold tabular-nums ${color}`}>{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-3 text-xs text-zinc-400">
+              {stats.distinctStyles} style{stats.distinctStyles === 1 ? "" : "s"} ·{" "}
+              {stats.lastGeneratedAt
+                ? `last generated ${new Date(stats.lastGeneratedAt).toLocaleString()}`
+                : "never generated yet"}
+            </p>
+          </section>
+
+          {/* Auto-approve — skip review queue, keep manual send */}
+          <section className="rounded-lg border border-zinc-200 bg-white p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-semibold text-zinc-800">Auto-approve outputs</h2>
+                <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+                  Skip the manual per-asset review queue — an asset from this output is
+                  marked <span className="font-medium text-zinc-700">approved</span> the
+                  moment it generates. Two guards stay in place: a print-unsafe document
+                  (missing artwork or EAN) always falls back to manual review, and a
+                  person still presses <span className="font-medium text-zinc-700">“Approve
+                  all &amp; publish”</span> on the style to send it to the supplier.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={autoApprove}
+                onClick={() => setAutoApprove((v) => !v)}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                  autoApprove ? "bg-emerald-500" : "bg-zinc-300"
+                }`}
+                title="Toggle auto-approve (autosaves)"
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                    autoApprove ? "translate-x-5" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </div>
+            {autoApprove ? (
+              <p className="mt-3 rounded-md bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                On — new generations of this output skip review. Auto-approved assets show
+                a system reviewer (no person) in the activity log.
+              </p>
+            ) : null}
+          </section>
+
+          {/* Output mechanics (repeat / split / file name / carton numbering /
+              custom logo) live in the Customizer's left rail, beside the canvas
+              and grid they affect — kept there when main reworked that panel. */}
+          <section className="rounded-lg border border-zinc-200 bg-white p-5">
+            <h2 className="text-sm font-semibold text-zinc-800">Output settings</h2>
+            <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+              Repeat &amp; split, output file name, carton numbering and the custom
+              logo are edited in the{" "}
+              <button
+                type="button"
+                onClick={() => setTab("customizer")}
+                className="font-medium text-zinc-700 underline underline-offset-2 hover:text-zinc-900"
+              >
+                Customizer
+              </button>{" "}
+              tab, beside the canvas and grid they affect.
+            </p>
+          </section>
+        </div>
+      ) : null}
+
+      {/* ===== Reviews tab ===== */}
+      {tab === "reviews" ? (
+        <div className="px-8 py-8">
+          <h2 className="text-sm font-semibold text-zinc-800">Recent generations</h2>
+          <p className="mt-1 text-xs text-zinc-500">
+            The {recentAssets.length} most recent PDFs this output produced. Open the
+            style&apos;s review screen to approve or reject.
+          </p>
+          {recentAssets.length === 0 ? (
+            <div className="mt-6 rounded-lg border border-dashed border-zinc-200 px-6 py-10 text-center text-sm text-zinc-400">
+              This output hasn&apos;t been generated yet. It generates for a style once it&apos;s
+              added as an output on that style&apos;s Prod Spec.
+            </div>
+          ) : (
+            <div className="mt-4 overflow-hidden rounded-lg border border-zinc-200">
+              <table className="w-full text-sm">
+                <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wide text-zinc-400">
+                  <tr>
+                    <th className="px-4 py-2 font-medium">Style</th>
+                    <th className="px-4 py-2 font-medium">File</th>
+                    <th className="px-4 py-2 font-medium">Status</th>
+                    <th className="px-4 py-2 font-medium">Generated</th>
+                    <th className="px-4 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100">
+                  {recentAssets.map((a) => (
+                    <tr key={a.id} className="hover:bg-zinc-50/60">
+                      <td className="px-4 py-2">
+                        <Link href={`/styles/${a.styleId}/review`} className="font-medium text-zinc-800 hover:underline">
+                          {a.styleName}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-2 font-mono text-[11px] text-zinc-500">
+                        {a.displayName ?? a.fileName}
+                        {a.placeholderCount > 0 ? (
+                          <span className="ml-1.5 rounded bg-amber-50 px-1 py-px text-[10px] font-medium text-amber-700">
+                            {a.placeholderCount} placeholder
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-2">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                            a.reviewStatus === "APPROVED"
+                              ? "bg-emerald-50 text-emerald-700"
+                              : a.reviewStatus === "REJECTED"
+                                ? "bg-red-50 text-red-700"
+                                : "bg-amber-50 text-amber-700"
+                          }`}
+                        >
+                          {a.reviewStatus === "PENDING_REVIEW" ? "Pending" : a.reviewStatus === "APPROVED" ? "Approved" : "Rejected"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-xs text-zinc-500">{new Date(a.createdAt).toLocaleString()}</td>
+                      <td className="px-4 py-2 text-right">
+                        <a
+                          href={`/api/admin/job-assets/${a.id}/download`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-zinc-500 hover:text-zinc-800 hover:underline"
+                        >
+                          Open PDF
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
+
+// Compact −/value/+ stepper for a (possibly fractional) number — saves the
+// vertical space a slider takes. The middle field accepts a comma or dot and
+// commits on blur/Enter (so a "9,5" decimal can be typed without the value
+// resetting mid-keystroke); the buttons step immediately.
+function NumberStepper({
+  value,
+  min,
+  max,
+  step,
+  onChange,
+  suffix,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (v: number) => void;
+  suffix?: string;
+}) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => {
+    setText(String(value));
+  }, [value]);
+  const clamp = (v: number) => Math.min(max, Math.max(min, v));
+  const round = (v: number) => Math.round(v * 100) / 100;
+  const commit = () => {
+    const v = parseMm(text);
+    if (Number.isFinite(v)) onChange(clamp(v));
+    else setText(String(value));
+  };
+  return (
+    <div className="inline-flex items-stretch overflow-hidden rounded-md border border-zinc-200 bg-white">
+      <button
+        type="button"
+        onClick={() => onChange(clamp(round(value - step)))}
+        className="px-2 text-zinc-500 hover:bg-zinc-50"
+        aria-label="Decrease"
+      >
+        −
+      </button>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        }}
+        className="w-12 border-x border-zinc-200 px-1 py-1 text-center text-sm tabular-nums focus:outline-none"
+        aria-label="Value"
+      />
+      <button
+        type="button"
+        onClick={() => onChange(clamp(round(value + step)))}
+        className="px-2 text-zinc-500 hover:bg-zinc-50"
+        aria-label="Increase"
+      >
+        +
+      </button>
+      {suffix ? <span className="flex items-center px-1.5 text-[10px] text-zinc-400">{suffix}</span> : null}
+    </div>
+  );
+}
 
 function RectStepper({
   label,
@@ -1952,14 +2672,15 @@ function CanvasBlock({
   // rects by parseLayoutDef before they reach this component.
   if (!block.rect) return null;
   const r = block.rect;
+  const { cols: gridCols, rows: gridRows } = pageGrid(page);
   const m = page.margins ?? { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 };
   const gw = (page.widthMm - m.leftMm - m.rightMm) * scale;
   const gh = (page.heightMm - m.topMm - m.bottomMm) * scale;
   const positionStyle: React.CSSProperties = {
-    left: m.leftMm * scale + (r.col / LAYOUT_GRID_COLS) * gw,
-    top: m.topMm * scale + (r.row / LAYOUT_GRID_ROWS) * gh,
-    width: (r.colSpan / LAYOUT_GRID_COLS) * gw,
-    height: (r.rowSpan / LAYOUT_GRID_ROWS) * gh,
+    left: m.leftMm * scale + (r.col / gridCols) * gw,
+    top: m.topMm * scale + (r.row / gridRows) * gh,
+    width: (r.colSpan / gridCols) * gw,
+    height: (r.rowSpan / gridRows) * gh,
     display: "flex",
     flexDirection: "column",
     justifyContent: block.valign === "middle" ? "center" : block.valign === "bottom" ? "flex-end" : "flex-start",

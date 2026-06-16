@@ -12,8 +12,7 @@
 // to indicate whether a Style row was new.
 
 import { db } from "@/lib/db";
-import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
-import { pendingOutputKeysForStyle } from "@/lib/styles/output-readiness";
+import { autoEnqueueReadyOutputs } from "@/lib/queue/auto-enqueue";
 import { evaluateCompletion } from "@/lib/monday/completion";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { parseProdSpecRequiredFields } from "@/lib/prod-spec/config";
@@ -21,7 +20,6 @@ import {
   backfillStyleProdSpecLinks,
   ensureProdSpecsForStyle,
 } from "@/lib/prod-spec/ensure";
-import { enqueueGenerationJob } from "@/lib/queue/enqueue";
 import { MONDAY_BOARDS, MONDAY_STYLE_COLS, MONDAY_PRE_ORDER_COLS } from "@/lib/monday/boards";
 import { ghostItemToMondayItem } from "@/lib/monday/sink";
 import {
@@ -245,34 +243,20 @@ export async function promoteGhostToStyle(input: PromoteInput): Promise<PromoteR
   }
 
   // ---------- Conditionally enqueue a Job ----------
-  // Same in-flight gate as src/app/api/webhooks/monday/route.ts:90-98.
-  // Caller is responsible for calling triggerRunner() once at the end of
-  // the bulk operation — we don't fire it per item.
-  // Gated by the global auto-generate master switch, same as the webhook
-  // path. When off, promotion still creates/refreshes the Style; it just
-  // doesn't fire a Job.
-  let jobEnqueued = false;
-  // Per-output generation: enqueue a job scoped to the outputs whose own
-  // required fields are filled and that haven't been generated yet, rather
-  // than gating on the whole prod spec's union completion. The global flag
-  // is read first so a bulk promote only computes per-output readiness for
-  // otherwise-eligible items.
-  if (prodSpecId && prodSpecActive && (await getAutoGenerateEnabled())) {
-    const inflight = await db.job.count({
-      where: { styleId: style.id, status: { in: ["QUEUED", "RUNNING"] } },
-    });
-    if (inflight === 0) {
-      const pending = await pendingOutputKeysForStyle(style.id);
-      if (pending.length > 0) {
-        await enqueueGenerationJob({
-          styleId: style.id,
-          triggerSource: "MANUAL_IMPORT",
-          variantKeys: pending,
-        });
-        jobEnqueued = true;
-      }
-    }
-  }
+  // Per-output generation through the shared T6 gate (master switch +
+  // active ProdSpec + in-flight guard + per-output dedup), identical to the
+  // Monday webhook and the bulk Pre-Order sync. The gate short-circuits on
+  // the master switch and inactive specs before any per-output readiness
+  // work, so a bulk promote only pays that cost for eligible items. When the
+  // switch is off, promotion still creates/refreshes the Style — it just
+  // doesn't fire a Job. The bulk caller fires triggerRunner() once at the
+  // end of the operation; we don't fire it per item.
+  const enqueue = await autoEnqueueReadyOutputs({
+    styleId: style.id,
+    prodSpecActive,
+    triggerSource: "MANUAL_IMPORT",
+  });
+  const jobEnqueued = enqueue.enqueued;
 
   return {
     styleId: style.id,

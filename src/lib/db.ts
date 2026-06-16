@@ -40,3 +40,11 @@ function makeClient() {
 export const db = globalForPrisma.prisma ?? makeClient();
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
+
+// The full Prisma client OR an interactive-transaction client (the value
+// `db.$transaction(async (tx) => …)` hands back). The model delegates are
+// identical on both, so helpers that only touch model delegates can accept
+// either — production callers get the global `db`, while a transactional
+// caller (or a rollback-only test) can pass `tx` to make the whole unit of
+// work atomic. Extend the picked set when a helper needs another model.
+export type DbClient = Pick<typeof db, "job" | "style" | "jobAsset" | "log">;

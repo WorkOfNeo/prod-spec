@@ -39,6 +39,14 @@ export function isLayoutVariantKey(key: string): boolean {
   return key.startsWith(LAYOUT_VARIANT_PREFIX);
 }
 
+// The OutputLayout id behind a layout variant key, or null for non-layout
+// keys. Strips the `#<suffix>` that multi-document (per-EAN split) assets
+// carry, so `layout:abc#m-blue` and `layout:abc` both resolve to `abc`.
+export function layoutIdFromVariantKey(key: string | null | undefined): string | null {
+  if (!key || !key.startsWith(LAYOUT_VARIANT_PREFIX)) return null;
+  return key.slice(LAYOUT_VARIANT_PREFIX.length).split("#")[0] || null;
+}
+
 type LayoutRow = {
   id: string;
   name: string;
@@ -46,6 +54,7 @@ type LayoutRow = {
   definition: unknown;
   version: number;
   isInfoArea: boolean;
+  customLogo: string | null;
 };
 
 // The per-file plan when a repeat layout splits per EAN: one entry per
@@ -116,6 +125,7 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
         mode: "production",
         title: row.name,
         sizeOverrideMm: row.isInfoArea ? dims : undefined,
+        customLogo: row.customLogo,
       }),
     fileNameFor: (style) => {
       const expr = settings.fileName;
@@ -123,6 +133,8 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     },
     // Manual carton-numbered prints are offered for layouts that opt in.
     cartonNumbering: settings.cartonNumbering,
+    // Custom Carton Marking (multi-style box) — independent opt-in.
+    multipleStyles: settings.multipleStyles,
     // Split per EAN: ONE FILE PER REPETITION ROW — repeat "size": per
     // size row; repeat "ean": per PO EAN row (size × colour,
     // {{colourName}} bound). Either way each file carries one EAN.
@@ -136,6 +148,7 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
                 html: await renderLayoutHtml(def, repStyle, {
                   mode: "production",
                   sizeOverrideMm: row.isInfoArea ? dims : undefined,
+                  customLogo: row.customLogo,
                 }),
               })),
             )
@@ -176,7 +189,7 @@ export async function ensureLayoutVariantsLoaded(force = false): Promise<void> {
     try {
       const rows = await db.outputLayout.findMany({
         where: { status: "PUBLISHED" },
-        select: { id: true, name: true, docType: true, definition: true, version: true, isInfoArea: true },
+        select: { id: true, name: true, docType: true, definition: true, version: true, isInfoArea: true, customLogo: true },
       });
       setDynamicVariants(
         rows
