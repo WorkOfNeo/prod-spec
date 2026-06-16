@@ -43,6 +43,36 @@ export const EFFECTIVE_STATUS_TONE_CLASSES: Record<EffectiveStatusTone, string> 
   red: "bg-red-100 text-red-800",
 };
 
+// The Status facet filter on /styles keys on EffectiveStatusKey rather than
+// the per-row label: the label carries a "· x/y" suffix and queued/generating
+// share the "queued" key, so deriving options from labels would explode into
+// dozens of near-duplicates. These give one stable option per key instead.
+// Order = the status ladder (pre-generation readiness → in-flight → review
+// flow). Keep in sync with EffectiveStatusKey above.
+export const STATUS_FACET_KEYS: readonly EffectiveStatusKey[] = [
+  "no_spec",
+  "awaiting_data",
+  "partially_ready",
+  "spec_inactive",
+  "ready_to_generate",
+  "queued",
+  "ready_for_review",
+  "approved",
+  "rejected",
+];
+
+export const STATUS_FACET_LABELS: Record<EffectiveStatusKey, string> = {
+  no_spec: "No spec",
+  awaiting_data: "Awaiting data",
+  partially_ready: "Partially ready",
+  spec_inactive: "Spec inactive",
+  ready_to_generate: "Ready to generate",
+  queued: "Queued / generating",
+  ready_for_review: "Ready for review",
+  approved: "Approved",
+  rejected: "Rejected",
+};
+
 export function computeEffectiveStatus(opts: {
   readiness: Readiness;
   // ≥1 JobAsset on a non-FAILED job for this style.

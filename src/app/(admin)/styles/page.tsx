@@ -97,8 +97,8 @@ export default async function StylesPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Styles</h1>
           <p className="mt-1 text-sm text-zinc-500">
             {styles.length} {styles.length === 1 ? "style" : "styles"} on file. Search
-            across name, customer, business area, PO# and status, or use the filter
-            chips (click to cycle: has → missing).
+            across name, customer, business area, PO# and status, or pick values in the
+            Customer / Business Area / Group / Status / EAN dropdowns and press Apply.
           </p>
         </div>
         <Link

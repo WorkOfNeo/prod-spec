@@ -10,13 +10,17 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   EFFECTIVE_STATUS_TONE_CLASSES,
+  STATUS_FACET_KEYS,
+  STATUS_FACET_LABELS,
   type EffectiveStatus,
 } from "@/lib/styles/effective-status";
 import { STYLE_TABLE_COLUMNS, type StyleColumnKey } from "@/lib/styles/table-columns";
-import { eanStatusMeta } from "@/lib/po/ean-status-meta";
+import { eanStatusMeta, EAN_STATUS_META } from "@/lib/po/ean-status-meta";
+import { BLANK_BA_VALUES } from "@/lib/import/heuristics";
 import type { EanView } from "@/lib/po/ean-view";
 import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
 import { ColumnsPopover } from "./columns-popover";
+import { FacetFilter, type FacetOption } from "./facet-filter";
 
 // Hover hints on column headers.
 const HEADER_HINTS: Partial<Record<StyleColumnKey, string>> = {
@@ -28,19 +32,60 @@ const HEADER_HINTS: Partial<Record<StyleColumnKey, string>> = {
   ean: "PO → EAN resolution: auto-queued when a PO is filled, then the PO PDF is scraped for the per-size barcodes. Click Resolve to run it now.",
 };
 
-// Attribute presence filters shown as chips next to the search box. Each is
+// Attribute *presence* filters shown as chips below the facet bar. Each is
 // tri-state: "any" (ignored), "has" (row must HAVE the attribute), "no"
 // (row must LACK it). Customer is intentionally absent — every style has a
 // required customer FK, so a "Has Customer" filter would never narrow.
+// Business area is absent too: it graduated to a value-picking facet dropdown
+// (filter by *which* BA, not just has/lacks one).
 type TriState = "any" | "has" | "no";
 const NEXT_STATE: Record<TriState, TriState> = { any: "has", has: "no", no: "any" };
 
 const ATTR_FILTERS: ReadonlyArray<{ key: string; label: string; has: (r: StyleRow) => boolean }> = [
   { key: "po", label: "PO", has: (r) => Boolean(r.poNumber && r.poNumber.trim()) },
-  { key: "ba", label: "Business area", has: (r) => Boolean(r.businessArea && r.businessArea.trim()) },
   { key: "prodSpec", label: "Prod spec", has: (r) => r.hasProdSpec },
   { key: "supplier", label: "Supplier", has: (r) => r.hasSupplier },
 ];
+
+// The five value-picking facet dropdowns. Within a facet selections are OR'd
+// (Netto OR Børn); across facets they're AND'd (customer ∈ {…} AND status ∈
+// {…}). Options are derived from the loaded rows, so a value only appears if
+// a real style carries it — "based off actual data in the board".
+type FacetKey = "customer" | "ba" | "group" | "status" | "ean";
+const FACET_KEYS: readonly FacetKey[] = ["customer", "ba", "group", "status", "ean"];
+const EMPTY_FACETS: Record<FacetKey, string[]> = {
+  customer: [],
+  ba: [],
+  group: [],
+  status: [],
+  ean: [],
+};
+
+// Sentinel so blank / "–" business areas and null groups collapse into one
+// selectable "(blank)" option instead of vanishing. The leading-space prefix
+// can't collide with a real (trimmed) value carried by a row.
+const BLANK_VALUE = "__blank__";
+
+function baValue(r: StyleRow): string {
+  const v = r.businessArea;
+  if (v == null) return BLANK_VALUE;
+  const t = v.trim();
+  return BLANK_BA_VALUES.has(t) ? BLANK_VALUE : t;
+}
+function groupValue(r: StyleRow): string {
+  const t = r.groupTitle?.trim();
+  return t ? t : BLANK_VALUE;
+}
+function customerValue(r: StyleRow): string {
+  return r.customerName.trim() || BLANK_VALUE;
+}
+
+// Two string[]s as unordered sets — drives the Apply button's dirty state.
+function sameSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const s = new Set(a);
+  return b.every((v) => s.has(v));
+}
 
 export type StyleRow = {
   id: string;
@@ -100,6 +145,29 @@ export function StylesTable({
   const cycleAttr = (key: string) =>
     setAttrFilters((p) => ({ ...p, [key]: NEXT_STATE[p[key] ?? "any"] }));
   const activeAttrFilters = ATTR_FILTERS.filter((a) => (attrFilters[a.key] ?? "any") !== "any");
+
+  // Value-picking facet filters. `draft` is what's checked in the dropdowns
+  // right now; `applied` is what the table actually filters by. They diverge
+  // until the user presses Apply (or Clear all) — see the filter bar below.
+  const [draftFacets, setDraftFacets] = useState<Record<FacetKey, string[]>>(EMPTY_FACETS);
+  const [appliedFacets, setAppliedFacets] = useState<Record<FacetKey, string[]>>(EMPTY_FACETS);
+  const setFacet = (key: FacetKey, next: string[]) =>
+    setDraftFacets((p) => ({ ...p, [key]: next }));
+  const applyFacets = () => setAppliedFacets(draftFacets);
+  const clearAllFacets = () => {
+    setDraftFacets(EMPTY_FACETS);
+    setAppliedFacets(EMPTY_FACETS);
+  };
+  // Apply is enabled only when the draft differs from what's applied.
+  const facetsDirty = useMemo(
+    () => FACET_KEYS.some((k) => !sameSet(draftFacets[k], appliedFacets[k])),
+    [draftFacets, appliedFacets],
+  );
+  const anyFacetActive = useMemo(
+    () => FACET_KEYS.some((k) => appliedFacets[k].length > 0 || draftFacets[k].length > 0),
+    [appliedFacets, draftFacets],
+  );
+
   // Per-row live EAN resolve results (manual "Resolve" button). A row's
   // freshly-resolved view overrides its stored eanStatus badge in-place.
   const [eanResults, setEanResults] = useState<Record<string, EanView | "loading">>({});
@@ -135,10 +203,74 @@ export function StylesTable({
     [archivedFlags],
   );
 
+  // Distinct option lists (+counts) per facet, derived once from the loaded
+  // rows — a value only appears if a real style carries it. Counts are over
+  // all loaded rows (static); they don't react to other facets' selections
+  // (a "smart counts" v2). Customer/BA/Group sort alphabetically; Status and
+  // EAN follow their ladder/enum order.
+  const facetOptions = useMemo(() => {
+    const customer = new Map<string, number>();
+    const ba = new Map<string, number>();
+    const group = new Map<string, number>();
+    const status = new Map<string, number>();
+    const ean = new Map<string, number>();
+    const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1);
+    for (const r of rows) {
+      bump(customer, customerValue(r));
+      bump(ba, baValue(r));
+      bump(group, groupValue(r));
+      bump(status, r.statusView.key);
+      bump(ean, r.eanStatus);
+    }
+    const alpha = (m: Map<string, number>): FacetOption[] =>
+      [...m.entries()]
+        .map(([value, count]) => ({
+          value,
+          label: value === BLANK_VALUE ? "(blank)" : value,
+          count,
+        }))
+        .sort((a, b) =>
+          a.value === BLANK_VALUE
+            ? 1
+            : b.value === BLANK_VALUE
+              ? -1
+              : a.label.localeCompare(b.label),
+        );
+    const statusOpts: FacetOption[] = STATUS_FACET_KEYS.filter((k) => status.has(k)).map((k) => ({
+      value: k,
+      label: STATUS_FACET_LABELS[k],
+      count: status.get(k) ?? 0,
+    }));
+    const eanOrder = Object.keys(EAN_STATUS_META);
+    const eanOpts: FacetOption[] = [...ean.entries()]
+      .map(([value, count]) => ({ value, label: eanStatusMeta(value).label, count }))
+      .sort((a, b) => eanOrder.indexOf(a.value) - eanOrder.indexOf(b.value));
+    return {
+      customer: alpha(customer),
+      ba: alpha(ba),
+      group: alpha(group),
+      status: statusOpts,
+      ean: eanOpts,
+    };
+  }, [rows]);
+
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
+    // Pre-build a Set per active facet so the row loop is membership-only.
+    const fa = appliedFacets;
+    const cSet = fa.customer.length ? new Set(fa.customer) : null;
+    const bSet = fa.ba.length ? new Set(fa.ba) : null;
+    const gSet = fa.group.length ? new Set(fa.group) : null;
+    const sSet = fa.status.length ? new Set(fa.status) : null;
+    const eSet = fa.ean.length ? new Set(fa.ean) : null;
     return rows.filter((r, i) => {
       if (!showArchived && archivedFlags[i]) return false;
+      // Value facets: OR within a facet (Set membership), AND across facets.
+      if (cSet && !cSet.has(customerValue(r))) return false;
+      if (bSet && !bSet.has(baValue(r))) return false;
+      if (gSet && !gSet.has(groupValue(r))) return false;
+      if (sSet && !sSet.has(r.statusView.key)) return false;
+      if (eSet && !eSet.has(r.eanStatus)) return false;
       // Attribute presence filters (AND across all active chips).
       for (const a of activeAttrFilters) {
         const want = attrFilters[a.key];
@@ -149,7 +281,7 @@ export function StylesTable({
       if (!needle) return true;
       return r.searchBlob.includes(needle);
     });
-  }, [rows, q, showArchived, archivedFlags, attrFilters, activeAttrFilters]);
+  }, [rows, q, showArchived, archivedFlags, attrFilters, activeAttrFilters, appliedFacets]);
 
   // Render order = registry order filtered by the visible set, so the
   // column layout always matches table-columns.ts.
@@ -321,8 +453,59 @@ export function StylesTable({
         {canConfigureColumns && <ColumnsPopover visible={visible} onChange={setVisible} />}
       </div>
 
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-zinc-400">Filter by</span>
+        <FacetFilter
+          label="Customer"
+          options={facetOptions.customer}
+          selected={draftFacets.customer}
+          onChange={(n) => setFacet("customer", n)}
+        />
+        <FacetFilter
+          label="Business Area"
+          options={facetOptions.ba}
+          selected={draftFacets.ba}
+          onChange={(n) => setFacet("ba", n)}
+        />
+        <FacetFilter
+          label="Group"
+          options={facetOptions.group}
+          selected={draftFacets.group}
+          onChange={(n) => setFacet("group", n)}
+        />
+        <FacetFilter
+          label="Status"
+          options={facetOptions.status}
+          selected={draftFacets.status}
+          onChange={(n) => setFacet("status", n)}
+        />
+        <FacetFilter
+          label="EAN"
+          options={facetOptions.ean}
+          selected={draftFacets.ean}
+          onChange={(n) => setFacet("ean", n)}
+        />
+        <button
+          type="button"
+          onClick={applyFacets}
+          disabled={!facetsDirty}
+          className="ml-1 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+        >
+          Apply{facetsDirty ? " •" : ""}
+        </button>
+        {anyFacetActive && (
+          <button
+            type="button"
+            onClick={clearAllFacets}
+            className="text-xs text-zinc-500 underline hover:text-zinc-700"
+          >
+            Clear all
+          </button>
+        )}
+      </div>
+
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-zinc-400">Filters</span>
+        <span className="text-xs font-medium text-zinc-400">Attributes</span>
         {ATTR_FILTERS.map((a) => (
           <FilterChip
             key={a.key}
@@ -357,9 +540,25 @@ export function StylesTable({
             {filtered.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="px-4 py-12 text-center text-zinc-500">
-                  {rows.length === 0
-                    ? "No styles yet. Run a Fill (or trigger a Monday webhook) to ingest."
-                    : "No styles match the current search."}
+                  {rows.length === 0 ? (
+                    "No styles yet. Run a Fill (or trigger a Monday webhook) to ingest."
+                  ) : (
+                    <div className="flex flex-col items-center gap-2">
+                      <span>No styles match the current search or filters.</span>
+                      {(anyFacetActive || q.trim().length > 0) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQ("");
+                            clearAllFacets();
+                          }}
+                          className="text-xs text-zinc-600 underline hover:text-zinc-900"
+                        >
+                          Clear search &amp; filters
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </td>
               </tr>
             ) : (
