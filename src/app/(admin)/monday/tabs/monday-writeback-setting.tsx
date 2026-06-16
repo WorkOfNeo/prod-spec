@@ -41,8 +41,8 @@ export function MondayWriteBackSetting({ initialEnabled }: { initialEnabled: boo
           <h2 className="text-sm font-semibold text-zinc-900">Status write-backs to Monday</h2>
           <p className="mt-1 text-sm text-zinc-500">
             When on, ProdSpec writes statuses back to Monday: a fully-approved style flips the Styles
-            board subitems <strong>01e</strong> + <strong>01f</strong> to <strong>Approved</strong>,
-            and a rejection writes <strong>Rejected</strong> to the Pre-Order status column. When off,
+            board subitems <strong>01e</strong> + <strong>01f</strong> to <strong>Approved</strong>.
+            Rejections never write back to Monday. When off,
             <strong> nothing is sent to Monday</strong> — every write that would have happened is
             still recorded below so you can preview it first. Emails and inbound webhooks are
             unaffected by this switch.

@@ -96,9 +96,9 @@ const MONDAY_WRITEBACK_KEY = "mondayWriteBackEnabled";
 // Master switch for OUTBOUND Monday status write-backs (us → Monday).
 //
 // When ON: the approval chain-reaction flips the Styles board subitems
-// 01e/01f to "Approved", and a rejection writes "Rejected" back to the
-// Pre-Order status column. These are the ONLY automated Monday writes —
-// they always go through writeBackStatus() (src/lib/monday/writeback.ts).
+// 01e/01f to "Approved". That is the ONLY automated Monday write, and it
+// always goes through writeBackStatus() (src/lib/monday/writeback.ts).
+// Rejections NEVER write back to Monday — not even a "Rejected" status.
 //
 // When OFF: nothing is written to Monday. Every write that WOULD have
 // happened is still recorded to the write-back log (a `monday.writeback`
