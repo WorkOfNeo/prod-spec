@@ -70,6 +70,15 @@ const RESOLVERS: Record<string, TextResolver> = {
     if (labels.length === 1) return labels[0];
     return `${labels[0]}–${labels[labels.length - 1]}`;
   },
+  // Every size in the run joined by " - " (the full pre-repetition list,
+  // preserved on allSizes). The renderer draws this specially so the
+  // CURRENT repetition's size is enlarged; this plain value backs
+  // readiness / show-values / file names.
+  sizeRangeCoop: (s) =>
+    (s.allSizes ?? s.sizes)
+      .map((x) => x.label)
+      .filter(Boolean)
+      .join(" - "),
   price: (s) => (s.price ? `${s.price.amount.toFixed(2)} ${s.price.currency}` : ""),
 
   poNumber: (s) => s.poNumber ?? "",
@@ -103,10 +112,26 @@ const RESOLVERS: Record<string, TextResolver> = {
 
   composition: (s, arg) => tFor(s.composition, (arg ?? "en").toLowerCase()),
   // "Made in <country>" per language — values are precomputed by
-  // augmentCareAndMadeIn (translation bank), carried on a side-channel
+  // augmentTranslatedFields (translation bank), carried on a side-channel
   // field; unaugmented styles resolve "" (→ unresolved chip in preview).
   madeIn: (s, arg) =>
     (s as StyleData & { madeInByLang?: Record<string, string> }).madeInByLang?.[
+      (arg ?? "en").toLowerCase()
+    ] ?? "",
+  // "Made in" / "Manufacturer" labels and the bare country name, each
+  // translated per language straight from the translation bank (board is
+  // the single source of truth). Precomputed by augmentTranslatedFields
+  // onto side-channel fields; unaugmented styles resolve "".
+  madeInLabel: (s, arg) =>
+    (s as StyleData & { madeInLabelByLang?: Record<string, string> }).madeInLabelByLang?.[
+      (arg ?? "en").toLowerCase()
+    ] ?? "",
+  country: (s, arg) =>
+    (s as StyleData & { countryByLang?: Record<string, string> }).countryByLang?.[
+      (arg ?? "en").toLowerCase()
+    ] ?? "",
+  manufacturer: (s, arg) =>
+    (s as StyleData & { manufacturerByLang?: Record<string, string> }).manufacturerByLang?.[
       (arg ?? "en").toLowerCase()
     ] ?? "",
   productName: (s, arg) => tFor(s.productNameTranslations, (arg ?? "en").toLowerCase()),
@@ -223,6 +248,7 @@ const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   sizes: ["sizes"],
   size: ["sizes"],
   sizeRange: ["sizes"],
+  sizeRangeCoop: ["sizes"],
   price: ["price"],
   poNumber: ["poNumber"],
   customerOrderNo: ["customerOrderNo"],
@@ -236,6 +262,9 @@ const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   supplierNumber: ["supplierNumber"],
   composition: ["composition"],
   madeIn: ["countryOfOrigin"],
+  // The bare translated country name needs the same column as madeIn; the
+  // "Made in" / "Manufacturer" labels are constants (no column gate).
+  country: ["countryOfOrigin"],
   washSymbols: ["washCare"],
   // The condition field itself: resolvable at readiness time via this
   // column, but never REQUIRED (empty = DDP, a valid state).
@@ -446,13 +475,15 @@ export async function augmentCompositionTranslations(
 }
 
 // ---------------------------------------------------------------------
-// Care instructions + "Made in" per language. Care instructions are the
-// standard catalogue (CareLabel rows) FILTERED BY THE STYLE'S WASH-CARE
-// SYMBOLS (isCareLabelVisible — prohibition symbols drop their action's
-// lines), each line translated via the bank, joined " / " — exactly the
-// care-label-02 derivation. A non-empty ProdSpec careInstructionsByLang
-// entry for a language overrides the derived text. "Made in" resolves
-// the full "Made in <country>" phrase from the bank per language.
+// Per-language fields resolved through the translation bank, precomputed
+// onto side-channel maps so the sync resolvers above just read them.
+// Care instructions are the standard catalogue (CareLabel rows) FILTERED
+// BY THE STYLE'S WASH-CARE SYMBOLS (isCareLabelVisible — prohibition
+// symbols drop their action's lines), each line translated via the bank,
+// joined " / " — exactly the care-label-02 derivation; a non-empty
+// ProdSpec careInstructionsByLang entry overrides it. {{madeIn}} resolves
+// the full "Made in <country>" phrase; {{madeInLabel}} / {{manufacturer}}
+// the bare labels; {{country}} the translated country name.
 // ---------------------------------------------------------------------
 
 export function langArgsInDef(def: LayoutDef, tokenKey: string): string[] {
@@ -469,18 +500,53 @@ export function langArgsInDef(def: LayoutDef, tokenKey: string): string[] {
   return [...langs];
 }
 
-export async function augmentCareAndMadeIn(
+// The per-language sets a layout needs precomputed, gathered with
+// langArgsInDef(def, "<key>") at the call site. Each maps to the matching
+// token: {{careInstructions}}, {{madeIn}}, {{madeInLabel}}, {{country}},
+// {{manufacturer}}.
+export type TranslatedFieldLangs = {
+  care?: string[];
+  madeIn?: string[];
+  madeInLabel?: string[];
+  country?: string[];
+  manufacturer?: string[];
+};
+
+export async function augmentTranslatedFields(
   style: StyleData,
-  careLangs: string[],
-  madeInLangs: string[],
+  langs: TranslatedFieldLangs,
 ): Promise<StyleData> {
-  if (careLangs.length === 0 && madeInLangs.length === 0) return style;
+  const careLangs = langs.care ?? [];
+  const madeInLangs = langs.madeIn ?? [];
+  const madeInLabelLangs = langs.madeInLabel ?? [];
+  const countryLangs = langs.country ?? [];
+  const manufacturerLangs = langs.manufacturer ?? [];
+
+  type Carried = StyleData & {
+    madeInByLang?: Record<string, string>;
+    madeInLabelByLang?: Record<string, string>;
+    countryByLang?: Record<string, string>;
+    manufacturerByLang?: Record<string, string>;
+  };
+  const carried = style as Carried;
+  const carriedMadeIn = carried.madeInByLang ?? {};
+  const carriedMadeInLabel = carried.madeInLabelByLang ?? {};
+  const carriedCountry = carried.countryByLang ?? {};
+  const carriedManufacturer = carried.manufacturerByLang ?? {};
+
+  const country = (style.countryOfOrigin ?? "").trim();
 
   const needsCare = careLangs.some((l) => !(style.careInstructionsByLang?.[l] ?? "").trim());
-  const carried = (style as StyleData & { madeInByLang?: Record<string, string> }).madeInByLang ?? {};
-  const needsMadeIn = madeInLangs.some((l) => !(carried[l] ?? "").trim());
-  if (!needsCare && !needsMadeIn) return style;
+  const needsMadeIn = country !== "" && madeInLangs.some((l) => !(carriedMadeIn[l] ?? "").trim());
+  const needsMadeInLabel = madeInLabelLangs.some((l) => !(carriedMadeInLabel[l] ?? "").trim());
+  const needsCountry = country !== "" && countryLangs.some((l) => !(carriedCountry[l] ?? "").trim());
+  const needsManufacturer = manufacturerLangs.some((l) => !(carriedManufacturer[l] ?? "").trim());
+  if (!needsCare && !needsMadeIn && !needsMadeInLabel && !needsCountry && !needsManufacturer) {
+    return style;
+  }
 
+  // One dictionary load powers every per-language field below (care also
+  // needs the catalogue + wash symbols to filter visible lines).
   const [labels, dict, symbolMap] = await Promise.all([
     needsCare ? loadCareLabels() : Promise.resolve([]),
     loadTranslationDictionary(),
@@ -505,8 +571,8 @@ export async function augmentCareAndMadeIn(
     }
   }
 
-  const madeInByLang: Record<string, string> = { ...carried };
-  const country = (style.countryOfOrigin ?? "").trim();
+  // Made in <country> (full phrase) — kept for the existing {{madeIn}}.
+  const madeInByLang: Record<string, string> = { ...carriedMadeIn };
   if (country) {
     for (const lang of madeInLangs) {
       if ((madeInByLang[lang] ?? "").trim()) continue;
@@ -514,5 +580,36 @@ export async function augmentCareAndMadeIn(
     }
   }
 
-  return { ...style, careInstructionsByLang: careByLang, madeInByLang } as StyleData;
+  // Split fields: the "Made in" / "Manufacturer" labels are constants
+  // translated per language; the country name translates the style's
+  // country of origin. All three flow from the translation board, so a
+  // phrase the board doesn't carry degrades to English (like {{madeIn}}).
+  const madeInLabelByLang: Record<string, string> = { ...carriedMadeInLabel };
+  for (const lang of madeInLabelLangs) {
+    if ((madeInLabelByLang[lang] ?? "").trim()) continue;
+    madeInLabelByLang[lang] = translatePhrase(dict, "Made in", lang);
+  }
+
+  const countryByLang: Record<string, string> = { ...carriedCountry };
+  if (country) {
+    for (const lang of countryLangs) {
+      if ((countryByLang[lang] ?? "").trim()) continue;
+      countryByLang[lang] = translatePhrase(dict, country, lang);
+    }
+  }
+
+  const manufacturerByLang: Record<string, string> = { ...carriedManufacturer };
+  for (const lang of manufacturerLangs) {
+    if ((manufacturerByLang[lang] ?? "").trim()) continue;
+    manufacturerByLang[lang] = translatePhrase(dict, "Manufacturer", lang);
+  }
+
+  return {
+    ...style,
+    careInstructionsByLang: careByLang,
+    madeInByLang,
+    madeInLabelByLang,
+    countryByLang,
+    manufacturerByLang,
+  } as StyleData;
 }

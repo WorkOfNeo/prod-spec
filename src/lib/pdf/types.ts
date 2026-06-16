@@ -59,6 +59,13 @@ export type StyleData = {
   // without scraped EANs.
   eanVariants?: Array<{ size: string; ean13: string; colour: string | null }>;
 
+  // The FULL size run, preserved across the Output Builder's per-size /
+  // per-EAN repetition (which narrows `sizes` to the current row). Set by
+  // repetitionStyles; lets {{sizeRangeCoop}} list every size while still
+  // knowing which one is current. Absent ⇒ no repetition happened, so
+  // `sizes` already IS the full run.
+  allSizes?: SizeVariant[];
+
   carton: {
     klNumber: string;
     supplierNumber: string;

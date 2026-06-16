@@ -56,6 +56,16 @@ export async function renderPdf(opts: RenderOptions): Promise<Buffer> {
     // font, etc.) have landed before the PDF snapshot. Without this, the
     // first cold render uses the fallback monospace font.
     await page.evaluate(() => document.fonts.ready);
+    // Output Builder "fit width" blocks scale their text to the block width
+    // via an in-page script (window.__olFitWidth). Re-run it here, after the
+    // fonts have settled, so the PDF measures with the real metrics. No-op
+    // for every other template (the global is undefined).
+    await page
+      .evaluate(() => {
+        const fit = (window as unknown as { __olFitWidth?: () => void }).__olFitWidth;
+        if (typeof fit === "function") fit();
+      })
+      .catch(() => undefined);
     const result = await page.pdf({ ...DEFAULT_PDF_OPTIONS, ...opts.pdf });
     return Buffer.from(result);
   } finally {

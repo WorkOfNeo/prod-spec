@@ -111,6 +111,7 @@ main()
   .then(() => batch8())
   .then(() => batch9())
   .then(() => batch10())
+  .then(() => batch11())
   .catch((err) => {
     console.error(err);
     process.exit(1);
@@ -305,10 +306,10 @@ async function batch4() {
 // repeat × multi-page grouping, per-language augmentation idempotence.
 // ---------------------------------------------------------------------
 async function batch5() {
-  const { augmentCareAndMadeIn } = await import("@/lib/output-layouts/tokens");
+  const { augmentTranslatedFields } = await import("@/lib/output-layouts/tokens");
   const style = { ...buildSampleStyleData(), countryOfOrigin: "China" };
 
-  const aug = await augmentCareAndMadeIn(style, ["da"], ["en", "da"]);
+  const aug = await augmentTranslatedFields(style, { care: ["da"], madeIn: ["en", "da"] });
   const madeIn = (aug as typeof aug & { madeInByLang?: Record<string, string> }).madeInByLang ?? {};
   assert((madeIn["en"] ?? "").startsWith("Made in"), `madeIn:en resolves (${madeIn["en"]})`);
   assert((madeIn["da"] ?? "").length > 0 && madeIn["da"] !== madeIn["en"],
@@ -426,7 +427,9 @@ async function batch8() {
         border: { widthMm: 0.5, color: "#cc0000" }, lines: ["boxed"] }] }],
   });
   const html = await renderLayoutHtml(B, style, { mode: "production" });
-  assert(html.includes("border: 0.5mm solid #cc0000"), "block border renders with hex colour");
+  // Border width is rendered scaled (toFixed(3) × fontScale) since the
+  // size-aware-scaling change, so 0.5 mm prints as "0.500mm".
+  assert(html.includes("border: 0.500mm solid #cc0000"), "block border renders with hex colour");
   // invalid hex rejected by the schema
   let rejected = false;
   try {
@@ -574,4 +577,107 @@ async function batch10() {
 
   await closeBrowser();
   console.log(process.exitCode ? "BATCH 10 FAILED" : "BATCH 10 PASSED");
+}
+
+// ---------------------------------------------------------------------
+// Batch 11 coverage: the new tokens + fit-width.
+//   (1) split translated fields {{madeInLabel}}/{{country}}/{{manufacturer}}
+//       via the translation bank (labels degrade to English, country
+//       translates the style's country of origin);
+//   (2) {{sizeRangeCoop}} lists every size joined " - " and enlarges the
+//       current repetition's size, with allSizes preserved across narrowing;
+//   (3) "Fit width" injects the scaler script + nowrap CSS only when a block
+//       opts in, and a fit layout still renders a PDF (script runs, no throw).
+// ---------------------------------------------------------------------
+async function batch11() {
+  const { augmentTranslatedFields, resolveTextToken } = await import("@/lib/output-layouts/tokens");
+  const { repetitionStyles } = await import("@/lib/output-layouts/render");
+
+  // (1) Split translated fields — precomputed onto side-channel maps.
+  const style = { ...buildSampleStyleData(), countryOfOrigin: "China" };
+  const aug = await augmentTranslatedFields(style, {
+    madeInLabel: ["en", "da"],
+    country: ["en", "da"],
+    manufacturer: ["en", "da"],
+  });
+  const a = aug as typeof aug & {
+    madeInLabelByLang?: Record<string, string>;
+    countryByLang?: Record<string, string>;
+    manufacturerByLang?: Record<string, string>;
+  };
+  assert((a.madeInLabelByLang?.["en"] ?? "") === "Made in", `madeInLabel:en === "Made in" (${a.madeInLabelByLang?.["en"]})`);
+  assert((a.countryByLang?.["en"] ?? "") === "China", `country:en === "China" (${a.countryByLang?.["en"]})`);
+  assert((a.manufacturerByLang?.["en"] ?? "") === "Manufacturer", `manufacturer:en === "Manufacturer" (${a.manufacturerByLang?.["en"]})`);
+  assert((a.madeInLabelByLang?.["da"] ?? "").length > 0, "madeInLabel:da non-empty (board or English fallback)");
+  assert((a.countryByLang?.["da"] ?? "").length > 0, `country:da non-empty (${a.countryByLang?.["da"]})`);
+  assert((a.manufacturerByLang?.["da"] ?? "").length > 0, "manufacturer:da non-empty (board or English fallback)");
+
+  // The tokens resolve to real text in a rendered layout.
+  const SPLIT = LayoutDefSchema.parse({
+    pages: [{ id: "p1", title: "", widthMm: 80, heightMm: 40,
+      blocks: [{ id: "b1", rect: { col: 0, row: 0, colSpan: 12, rowSpan: 6 },
+        lines: ["{{madeInLabel:da}} {{country:da}}", "{{manufacturer:da}}"] }] }],
+  });
+  const splitHtml = await renderLayoutHtml(SPLIT, style, { mode: "production" });
+  assert(splitHtml.includes(a.madeInLabelByLang!["da"]), "madeInLabel:da renders in the output");
+  assert(splitHtml.includes(a.countryByLang!["da"]), "country:da renders in the output");
+  assert(splitHtml.includes(a.manufacturerByLang!["da"]), "manufacturer:da renders in the output");
+
+  // (2) sizeRangeCoop — all sizes joined " - "; current enlarged; allSizes kept.
+  const sized = {
+    ...style,
+    sizes: [
+      { label: "86/92", ean13: "5701234567104" },
+      { label: "98/104", ean13: "5701234567111" },
+      { label: "110/116", ean13: "5701234567128" },
+    ],
+  };
+  assert(resolveTextToken(sized, "sizeRangeCoop") === "86/92 - 98/104 - 110/116",
+    `plain sizeRangeCoop joins all sizes (${resolveTextToken(sized, "sizeRangeCoop")})`);
+  const reps = repetitionStyles(sized, "size");
+  assert(reps.length === 3 && (reps[1].allSizes?.length ?? 0) === 3 && reps[1].sizes.length === 1,
+    "repetition narrows sizes to 1 but preserves allSizes (3)");
+
+  const COOP = LayoutDefSchema.parse({
+    pages: [{ id: "p1", title: "", widthMm: 80, heightMm: 40,
+      blocks: [{ id: "b1", rect: { col: 0, row: 0, colSpan: 12, rowSpan: 6 }, lines: ["{{sizeRangeCoop}}"] }] }],
+    settings: { repeatBy: "size", splitBy: "none", fileName: "" },
+  });
+  const coopHtml = await renderLayoutHtml(COOP, sized, { mode: "production" });
+  assert((coopHtml.match(/<span class="ol-size-current">/g) ?? []).length === 3,
+    "each of the 3 repetitions enlarges exactly its current size");
+  assert(coopHtml.includes('<span class="ol-size-current">86/92</span>') &&
+    coopHtml.includes('<span class="ol-size-current">110/116</span>'),
+    "current size wrapped in the enlarge span per repetition");
+  assert(coopHtml.includes("86/92 - ") && coopHtml.includes(" - 110/116"),
+    "full size run joined by ' - '");
+
+  // (3) fit-width — script + nowrap CSS only when a block opts in.
+  const FIT = LayoutDefSchema.parse({
+    pages: [{ id: "p1", title: "", widthMm: 80, heightMm: 30,
+      blocks: [{ id: "b1", rect: { col: 0, row: 0, colSpan: 12, rowSpan: 6 }, fitWidth: true,
+        lines: ["A VERY LONG SINGLE LINE THAT MUST SHRINK {{styleNumber}}"] }] }],
+  });
+  const fitHtml = await renderLayoutHtml(FIT, style, { mode: "production" });
+  assert(fitHtml.includes(" ol-fit\""), "fit block carries the ol-fit class");
+  assert(fitHtml.includes("window.__olFitWidth"), "fit script injected when a block opts in");
+  assert(fitHtml.includes(".ol-fit .ol-line { white-space: nowrap"), "fit CSS forces one line");
+  assert(FIT.pages[0].blocks[0].fitWidth === true, "fitWidth true survives schema parse");
+
+  const NOFIT = LayoutDefSchema.parse({
+    pages: [{ id: "p1", title: "", widthMm: 80, heightMm: 30,
+      blocks: [{ id: "b1", rect: { col: 0, row: 0, colSpan: 12, rowSpan: 6 }, lines: ["plain"] }] }],
+  });
+  const noFitHtml = await renderLayoutHtml(NOFIT, style, { mode: "production" });
+  assert(!noFitHtml.includes("window.__olFitWidth"), "no fit script when no block opts in");
+  assert(NOFIT.pages[0].blocks[0].fitWidth === false, "fitWidth defaults to false");
+
+  // Fit-width survives the real Puppeteer render (the in-page scaler runs).
+  const fitPdf = await renderPdf({ html: fitHtml });
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const fitDoc = await pdfjs.getDocument({ data: new Uint8Array(fitPdf) }).promise;
+  assert(fitDoc.numPages === 1, `fit-width layout renders a PDF (got ${fitDoc.numPages})`);
+
+  await closeBrowser();
+  console.log(process.exitCode ? "BATCH 11 FAILED" : "BATCH 11 PASSED");
 }

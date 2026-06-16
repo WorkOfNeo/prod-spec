@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { LayoutDefSchema, layoutSettings, tokensInDef } from "@/lib/output-layouts/schema";
 import { renderLayoutHtml, repetitionStyles } from "@/lib/output-layouts/render";
 import {
-  augmentCareAndMadeIn,
+  augmentTranslatedFields,
   augmentCompositionTranslations,
   compositionLangsInDef,
   langArgsInDef,
@@ -99,11 +99,13 @@ export async function POST(req: NextRequest) {
   if (compLangs.length > 0) {
     styleData = await augmentCompositionTranslations(styleData, compLangs);
   }
-  styleData = await augmentCareAndMadeIn(
-    styleData,
-    [...new Set([...langArgsInDef(definition, "careInstructions"), vl])],
-    [...new Set([...langArgsInDef(definition, "madeIn"), vl])],
-  );
+  styleData = await augmentTranslatedFields(styleData, {
+    care: [...new Set([...langArgsInDef(definition, "careInstructions"), vl])],
+    madeIn: [...new Set([...langArgsInDef(definition, "madeIn"), vl])],
+    madeInLabel: [...new Set([...langArgsInDef(definition, "madeInLabel"), vl])],
+    country: [...new Set([...langArgsInDef(definition, "country"), vl])],
+    manufacturer: [...new Set([...langArgsInDef(definition, "manufacturer"), vl])],
+  });
 
   // "Preview as carton N of M" — bind the running number so {{cartonNo}} /
   // {{cartonTotal}} resolve in both the rendered HTML and the show-values map.

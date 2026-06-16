@@ -55,6 +55,13 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     example: "98/104",
   },
   { key: "sizeRange", label: "Size range", group: "Style", kind: "text", example: "86/92–110/116" },
+  {
+    key: "sizeRangeCoop",
+    label: "Size range, current size enlarged (Coop)",
+    group: "Style",
+    kind: "text",
+    example: "86/92 - 98/104 - 110/116",
+  },
   { key: "price", label: "Retail price", group: "Style", kind: "text", example: "29.00 DKK" },
 
   // ---- Order & carton ----
@@ -113,6 +120,30 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     kind: "text",
     arg: "lang",
     example: "Fremstillet i Kina",
+  },
+  {
+    key: "madeInLabel",
+    label: "Made in (label only, translated)",
+    group: "Per language",
+    kind: "text",
+    arg: "lang",
+    example: "Fremstillet i",
+  },
+  {
+    key: "country",
+    label: "Country of origin (translated)",
+    group: "Per language",
+    kind: "text",
+    arg: "lang",
+    example: "Kina",
+  },
+  {
+    key: "manufacturer",
+    label: "Manufacturer (label, translated)",
+    group: "Per language",
+    kind: "text",
+    arg: "lang",
+    example: "Producent",
   },
 
   // ---- Barcodes & symbols (rendered as graphics, scaled by block font size) ----
