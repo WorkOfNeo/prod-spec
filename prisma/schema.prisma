@@ -151,6 +151,8 @@ model Customer {
   prodSpecs     ProdSpec[]
   outputLayouts OutputLayout[]
 
+  customerBusinessAreaCombos CustomerBusinessAreaCombo[]
+
   @@index([active])
   @@map("customers")
 }
@@ -211,9 +213,64 @@ model BusinessArea {
   prodSpecs     ProdSpec[]
   outputLayouts OutputLayout[]
 
+  customerBusinessAreaCombos CustomerBusinessAreaCombo[]
+
   @@index([active])
   @@index([mergedIntoId])
   @@map("business_areas")
+}
+
+// =====================================================
+// Customer × Business-Area combo registry. One row per distinct
+// (customer, business area) pair ever seen among ACTIVE styles — the same
+// active set the /styles list shows (see src/lib/styles/active-filter.ts).
+// A newly-appearing combo is flagged NEW and stages a heads-up email so the
+// admin can give it a first look and build a ProdSpec / make PDFs from spec.
+//
+// Rows are kept as history even after a combo's last active style is gone
+// (activeStyleCount → 0, row retained). notifiedAt is stamped once and never
+// reset, so a combo that reappears later is not re-emailed. The very first
+// reconcile (empty registry) seeds the current landscape as REVIEWED with
+// notifiedAt set — a baseline, not a flood of alerts.
+//   - baKey: non-null unique discriminator (NULL-in-unique-index trap):
+//       resolved BA → the businessAreaId
+//       free-text-only → "freetext:<lowercased, whitespace-collapsed>"
+//       no business area → "none"
+//   - baLabel / customerName: display snapshots refreshed each reconcile.
+//   - exampleStyleId: loose ref (no FK) for a dashboard deep link, like
+//     EmailLog.styleId — the registry must outlive any single style.
+// =====================================================
+model CustomerBusinessAreaCombo {
+  id               String      @id @default(cuid())
+  customerId       String
+  businessAreaId   String?
+  baKey            String
+  baLabel          String
+  customerName     String
+  status           ComboStatus @default(NEW)
+  firstSeenAt      DateTime    @default(now())
+  lastSeenAt       DateTime    @default(now())
+  notifiedAt       DateTime?
+  reviewedAt       DateTime?
+  activeStyleCount Int         @default(0)
+  exampleStyleId   String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  customer     Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  businessArea BusinessArea? @relation(fields: [businessAreaId], references: [id], onDelete: SetNull)
+
+  @@unique([customerId, baKey])
+  @@index([status])
+  @@index([notifiedAt])
+  @@index([customerId])
+  @@index([businessAreaId])
+  @@map("customer_business_area_combos")
+}
+
+enum ComboStatus {
+  NEW // detected after baseline, awaiting the admin's first look
+  REVIEWED // admin acknowledged / built the ProdSpec (or seeded at baseline)
 }
 
 // Language is the canonical translation namespace. Every JSON translation
@@ -410,6 +467,18 @@ model OutputLayout {
   // still requires the explicit job-level "Approve all & publish" action —
   // auto-approve removes the review click, not the human send checkpoint.
   autoApprove    Boolean            @default(false)
+  // Marks this layout as an "info area" — a direct-print packaging block
+  // whose physical print size is switchable PER STYLE (admin InfoAreaSize
+  // or a one-time custom size, stored on ProdSpecOutput.infoAreaSizeId).
+  // When set, the renderer overrides the layout's page dimensions with the
+  // chosen size; see effectiveOutputDims in src/lib/prod-spec/info-area.ts
+  // and renderLayoutHtml's sizeOverrideMm option.
+  isInfoArea     Boolean            @default(false)
+  // Per-layout logo for the {{logo:custom}} token (data URL — SVG/PNG/JPEG),
+  // uploaded in the Output Builder. Replaces the old global custom logo so
+  // each layout carries its own. The print width is set as a % of the block
+  // (LayoutSettings.customLogoWidthPct); height auto-scales. Null = none.
+  customLogo     String?
   customerId     String?
   businessAreaId String?
   createdAt      DateTime           @default(now())
@@ -837,6 +906,7 @@ enum EmailType {
   TICKET_FIXED // rejection ticket marked fixed → internal reviewer
   SUPPLIER_APPROVAL // job fully approved → supplier
   INVITE // signup invitation link → invitee
+  NEW_COMBO // new (customer × business area) combo detected → admin heads-up
 }
 
 enum EmailStatus {
@@ -1144,6 +1214,28 @@ model CareLabel {
 
   @@index([active])
   @@map("care_labels")
+}
+
+// =====================================================
+// Info Area Sizes — admin-managed catalogue of named print sizes (mm) for
+// "info area" outputs (OutputLayout.isInfoArea). On a style's info-area
+// output the operator picks one of these (or a one-time custom size); the
+// renderer prints the layout at the chosen dimensions. DB-managed via
+// /settings/info-area-sizes, mirroring the CareLabel / QrImage CRUD.
+// =====================================================
+model InfoAreaSize {
+  id        String   @id @default(cuid())
+  name      String
+  // Millimetres — fractional allowed (e.g. 27.5). Float, not Int, so sizes
+  // like 27,5 mm round-trip. The UI accepts a comma or dot decimal.
+  widthMm   Float
+  heightMm  Float
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active])
+  @@map("info_area_sizes")
 }
 
 // =====================================================

@@ -6,7 +6,7 @@ import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { LAYOUT_VARIANT_PREFIX } from "@/lib/output-layouts/variants";
 import { generationCountsByLayout } from "@/lib/output-layouts/stats";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
-import { getContrastLogoDataUrl, getCustomLogoDataUrl } from "@/lib/output-layouts/logos";
+import { getContrastAddressLogoDataUrl, getContrastLogoDataUrl } from "@/lib/output-layouts/logos";
 import { LayoutsList } from "./layouts-list";
 import { requireAdminPage } from "@/lib/auth-server";
 
@@ -27,9 +27,9 @@ export default async function OutputBuilderPage() {
     );
   }
 
-  const [contrastLogo, customLogo] = await Promise.all([
+  const [contrastLogo, contrastAddressLogo] = await Promise.all([
     getContrastLogoDataUrl(),
-    getCustomLogoDataUrl(),
+    getContrastAddressLogoDataUrl(),
   ]);
 
   let rows;
@@ -137,5 +137,11 @@ export default async function OutputBuilderPage() {
     };
   });
 
-  return <LayoutsList layouts={layouts} contrastLogoFound={contrastLogo !== null} customLogo={customLogo} />;
+  return (
+    <LayoutsList
+      layouts={layouts}
+      contrastLogoFound={contrastLogo !== null}
+      contrastAddressLogoFound={contrastAddressLogo !== null}
+    />
+  );
 }

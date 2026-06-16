@@ -6,11 +6,15 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
 
 export type ProdSpecRow = {
   id: string;
   name: string;
   customerName: string;
+  // Customer.config.skipSupplierDelivery — "Delivers own" chip beside the
+  // customer so the spec isn't read as one that sends supplier delivery.
+  customerDeliversOwn: boolean;
   businessAreaName: string;
   businessAreaMondayValue: string;
   // The custom outputs configured on this prod spec, resolved to display
@@ -97,7 +101,12 @@ export function ProdSpecsTable({ rows }: { rows: ProdSpecRow[] }) {
                       {ps.name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-zinc-600">{ps.customerName}</td>
+                  <td className="px-4 py-3 text-zinc-600">
+                    <span className="flex items-center gap-1.5">
+                      {ps.customerName}
+                      {ps.customerDeliversOwn && <SkipSupplierDeliveryBadge variant="chip" />}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-zinc-600">{ps.businessAreaName}</td>
                   <td className="px-4 py-3">
                     {ps.outputs.length === 0 ? (

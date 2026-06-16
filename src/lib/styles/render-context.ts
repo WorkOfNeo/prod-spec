@@ -3,8 +3,11 @@ import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import {
   MANUAL_COLUMN_IDS,
   parseCustomerConfig,
+  type ColumnMapping,
   type CustomerConfig,
 } from "@/lib/customers/config";
+import { projectSiblingStyle } from "@/lib/output-layouts/tokens";
+import { MAX_SIBLING_SLOTS } from "@/lib/output-layouts/token-meta";
 import {
   parseProdSpecColumnMapping,
   parseProdSpecLanguages,
@@ -34,6 +37,9 @@ import { outputReadinessForStyle, type OutputReadiness } from "./output-readines
 // The style fields the assembly needs. Matches what the runner's job
 // include and the preview loader both fetch.
 export type RenderableStyle = {
+  // The Style.id — needed to exclude self from the same-PO sibling fetch
+  // (Custom Carton Marking) and to tag each sibling for the carton dialog.
+  id: string;
   rawData: unknown;
   poNumber: string | null;
   cartonEan: string | null;
@@ -135,7 +141,70 @@ export async function buildStyleData(
     styleData.washSymbols = rejoinWashTokens(styleData.washSymbols, symbolMap);
   }
 
+  // Custom Carton Marking: pre-fetch the same-PO siblings POOL so the
+  // {{style2}}/{{style3}}… tokens resolve SYNC at render time. This is the
+  // unfiltered candidate set; the per-output render narrows it to the
+  // output's permanent slot count or an operator's one-off pick (see
+  // applyCustomCartonMarking / withSelectedSiblings). Guarded by poNumber —
+  // a style with no PO has no siblings.
+  if (style.poNumber) {
+    styleData.siblings = await loadSiblingStyles(
+      style.id,
+      style.poNumber,
+      effectiveMapping,
+      style.customer.name,
+    );
+  }
+
   return styleData;
+}
+
+// How many same-PO siblings to load into the pool. A layout can reference
+// at most MAX_SIBLING_SLOTS-1 siblings; load a few extra so the carton
+// dialog's one-off picker can offer more candidates than any single layout
+// uses, without an unbounded query on a large PO.
+const SIBLING_POOL_CAP = Math.max(MAX_SIBLING_SLOTS - 1, 3) + 16;
+
+// Load the OTHER styles on the same PO and project each to a SiblingStyle
+// (carton-relevant fields only). Each sibling is mapped with the CURRENT
+// style's effective column mapping + customer name: same-PO styles are
+// virtually always the same customer/board, so this reuses the already
+// resolved mapping instead of re-deriving each sibling's ProdSpec — and it
+// maps siblings WITHOUT fetching their own siblings (no recursion). Ordered
+// by creation so the slot assignment is stable across renders.
+async function loadSiblingStyles(
+  thisId: string,
+  poNumber: string,
+  mapping: ColumnMapping,
+  customerName: string,
+): Promise<StyleData["siblings"]> {
+  const rows = await db.style.findMany({
+    where: { poNumber, id: { not: thisId }, archivedAt: null, deletedAt: null },
+    orderBy: { createdAt: "asc" },
+    take: SIBLING_POOL_CAP,
+    select: {
+      id: true,
+      rawData: true,
+      poNumber: true,
+      cartonEan: true,
+      supplier: { select: { country: true } },
+      eans: {
+        orderBy: { position: "asc" },
+        select: { size: true, ean13: true, variantLabel: true },
+      },
+    },
+  });
+  return rows.map((row) => {
+    const item = effectiveStyleItem({
+      rawData: row.rawData,
+      poNumber: row.poNumber,
+      supplier: row.supplier,
+      eans: row.eans,
+      cartonEan: row.cartonEan,
+    }) as MondayItem;
+    const sd = mapMondayItemToStyleData(item, customerName, mapping);
+    return projectSiblingStyle(sd, row.id);
+  });
 }
 
 // =====================================================
@@ -175,6 +244,7 @@ export async function loadStyleRenderContext(styleId: string): Promise<StyleRend
   const config = parseCustomerConfig(style.customer.config);
   const styleData = await buildStyleData(
     {
+      id: style.id,
       rawData: style.rawData,
       poNumber: style.poNumber,
       cartonEan: style.cartonEan,

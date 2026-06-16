@@ -38,6 +38,9 @@ const PATCH_SCHEMA = z.object({
   // operational flag, not part of the rendered definition — so it doesn't
   // touch the variant registry.
   autoApprove: z.boolean().optional(),
+  // Info-area flag — when on, the layout's print size becomes switchable
+  // per style (admin InfoAreaSize / custom) instead of its fixed page size.
+  isInfoArea: z.boolean().optional(),
 });
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -76,6 +79,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         ...(d.customerId !== undefined ? { customerId: d.customerId } : {}),
         ...(d.businessAreaId !== undefined ? { businessAreaId: d.businessAreaId } : {}),
         ...(d.autoApprove !== undefined ? { autoApprove: d.autoApprove } : {}),
+        ...(d.isInfoArea !== undefined ? { isInfoArea: d.isInfoArea } : {}),
       },
     });
     // Edits to a PUBLISHED layout take effect on future renders

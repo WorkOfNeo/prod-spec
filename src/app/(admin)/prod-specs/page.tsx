@@ -2,6 +2,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
+import { parseCustomerConfig } from "@/lib/customers/config";
 import { getVariant } from "@/lib/pdf/template-registry";
 import { NewProdSpecButton } from "./new-prod-spec-button";
 import { ProdSpecsTable } from "./prod-specs-table";
@@ -92,6 +93,9 @@ export default async function ProdSpecsPage() {
             id: ps.id,
             name: ps.name,
             customerName: ps.customer.name,
+            // Customer delivers their own goods — chip beside the customer so
+            // this spec's outputs aren't assumed to ship a supplier delivery.
+            customerDeliversOwn: parseCustomerConfig(ps.customer.config).skipSupplierDelivery,
             businessAreaName: ps.businessArea.name,
             businessAreaMondayValue: ps.businessArea.mondayValue,
             outputs,
