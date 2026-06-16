@@ -8,6 +8,29 @@ export type SizeVariant = {
   ean13: string;
 };
 
+// A SIBLING style on the same PO, projected to the carton-relevant fields.
+// "Custom Carton Marking" places one or more of these on a single box
+// alongside the base style — exposed to Output Builder layouts through the
+// {{style2}}/{{style2Number}}/{{style3Name}}… token family (slot 1 = the
+// base style itself). Pre-computed once in buildStyleData() (src/lib/styles/
+// render-context.ts) and carried on StyleData.siblings so the token
+// resolvers stay SYNC. `id` is the sibling Style.id — used by the carton
+// dialog to pick specific siblings; never printed.
+export type SiblingStyle = {
+  id: string;
+  styleNumber: string;
+  styleName: string;
+  description: string;
+  customerItemNo: string;
+  colourName: string;
+  colourCode: string;
+  sizes: string;
+  sizeRange: string;
+  qtyPerCarton: string;
+  cartonEan: string;
+  ean13: string;
+};
+
 // Free-text identifier for a wash-care symbol. Used to be a strict union
 // of the 16 ISO 3758 codes; now any string, defined by admins via the
 // WashSymbol table at /settings/washcare-symbols.
@@ -147,4 +170,13 @@ export type StyleData = {
   // {{cartonTotal}} resolve empty and the standard output is unchanged.
   // Rides the `...style` spread in repetitionStyles for free.
   cartonSerial?: { no: number; total: number };
+
+  // OTHER styles on the same PO, for "Custom Carton Marking" — the
+  // {{style2}}/{{style3}}… slots. Pre-fetched + projected in buildStyleData
+  // (the resolved pool); the per-output render then narrows this to the
+  // output's permanent slot count (applyCustomCartonMarking) or to an
+  // operator's explicit one-off selection (withSelectedSiblings). Empty /
+  // undefined ⇒ every {{styleN}} slot resolves empty (honest production-mode
+  // gaps). Rides the `...style` spread in repetitionStyles for free.
+  siblings?: SiblingStyle[];
 };

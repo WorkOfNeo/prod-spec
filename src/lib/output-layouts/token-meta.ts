@@ -11,7 +11,7 @@ export type LayoutTokenKind = "text" | "barcode" | "symbols" | "image";
 export type LayoutTokenMeta = {
   key: string;
   label: string;
-  group: "Style" | "Order & carton" | "Per language" | "Barcodes & symbols";
+  group: "Style" | "Order & carton" | "Per language" | "Barcodes & symbols" | "Sibling styles";
   kind: LayoutTokenKind;
   // "lang" → the token takes a language argument ({{composition:da}});
   // "source" → barcode/logo source argument ({{barcode:cartonEan}});
@@ -156,10 +156,82 @@ const SOURCES_BY_KEY: Record<string, readonly string[]> = {
   cert: CERT_SOURCES,
 };
 
+// ---------------------------------------------------------------------
+// Sibling styles — "Custom Carton Marking". A carton-marking layout can
+// place OTHER styles from the SAME PO on the box via slot tokens:
+//   {{style2}}            slot 2 — the style number (the headline)
+//   {{style2Number}}      slot 2 — style number
+//   {{style2Name}} / {{style2Description}} / {{style2ColourName}} / …
+// Slot 1 is the base style itself (so a template can render every slot
+// uniformly with {{style1…}}/{{style2…}} if it prefers). Slots resolve
+// against StyleData.siblings, pre-computed in buildStyleData — the token
+// pipeline stays SYNC. Keys are dynamic (slot × field), so tokenMeta /
+// resolveTextToken recognise them by pattern rather than a static table.
+// ---------------------------------------------------------------------
+
+// Highest slot number a layout / the palette / the permanent config will
+// offer. Slot N means up to N styles on one box (1 base + N-1 siblings).
+export const MAX_SIBLING_SLOTS = 8;
+
+// The field suffixes a sibling slot exposes. The empty suffix is the bare
+// {{styleN}} headline. tokens.ts maps each suffix (case-insensitively) to
+// a StyleData field — keep the two in sync.
+export const SIBLING_FIELDS: ReadonlyArray<{ suffix: string; label: string }> = [
+  { suffix: "", label: "Style (number)" },
+  { suffix: "Number", label: "Style number" },
+  { suffix: "Name", label: "Style name" },
+  { suffix: "Description", label: "Description" },
+  { suffix: "CustomerItemNo", label: "Customer item no" },
+  { suffix: "ColourName", label: "Colour name" },
+  { suffix: "ColourCode", label: "Colour code" },
+  { suffix: "Sizes", label: "Sizes" },
+  { suffix: "SizeRange", label: "Size range" },
+  { suffix: "QtyPerCarton", label: "Qty per carton" },
+  { suffix: "CartonEan", label: "Carton EAN" },
+  { suffix: "Ean13", label: "EAN-13 (first size)" },
+];
+
+// "style" + slot digits + optional field suffix. The digit requirement is
+// what keeps this from colliding with the static "styleName"/"styleNumber"
+// keys (a letter follows "style" there, never a digit).
+const SIBLING_KEY_RE = /^style(\d{1,2})([A-Za-z][A-Za-z0-9]*)?$/;
+
+export type SiblingTokenRef = { slot: number; suffix: string };
+
+// Parse a sibling token key ("style2Number") into { slot, canonical suffix }
+// — or null when it isn't one (unknown field suffix, slot out of range, or
+// a non-sibling key). The returned suffix is the canonical-cased entry from
+// SIBLING_FIELDS so downstream lookups are stable.
+export function parseSiblingTokenKey(key: string): SiblingTokenRef | null {
+  const m = SIBLING_KEY_RE.exec(key);
+  if (!m) return null;
+  const slot = Number(m[1]);
+  if (!Number.isInteger(slot) || slot < 1 || slot > MAX_SIBLING_SLOTS) return null;
+  const raw = m[2] ?? "";
+  const field = SIBLING_FIELDS.find((f) => f.suffix.toLowerCase() === raw.toLowerCase());
+  if (!field) return null;
+  return { slot, suffix: field.suffix };
+}
+
 const META_BY_KEY = new Map(LAYOUT_TOKENS.map((t) => [t.key, t]));
 
 export function tokenMeta(key: string): LayoutTokenMeta | null {
-  return META_BY_KEY.get(key) ?? null;
+  const direct = META_BY_KEY.get(key);
+  if (direct) return direct;
+  // Sibling slot tokens ({{style2}}, {{style3Name}}…) are synthesised so
+  // the renderer treats them as known TEXT tokens and publish validation
+  // accepts them.
+  const sib = parseSiblingTokenKey(key);
+  if (sib) {
+    const field = SIBLING_FIELDS.find((f) => f.suffix === sib.suffix);
+    return {
+      key,
+      label: `Style ${sib.slot} · ${field?.label ?? "field"}`,
+      group: "Sibling styles",
+      kind: "text",
+    };
+  }
+  return null;
 }
 
 // Validation shared by the builder (live) and the publish endpoint

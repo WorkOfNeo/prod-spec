@@ -1,4 +1,4 @@
-import type { StyleData } from "./types";
+import type { StyleData, SiblingStyle } from "./types";
 import { computeEan13Checksum, isValidEan13 } from "./barcode";
 import { parseFieldOverrides, type PinnableField } from "./pins-meta";
 
@@ -119,4 +119,39 @@ export function applyCartonBarcodePrefs(
       heightMm: output.cartonBarcodeHeightMm,
     },
   };
+}
+
+// "Custom Carton Marking" — narrow the pre-fetched same-PO sibling POOL
+// (StyleData.siblings) down to what THIS output's PERMANENT config asks for.
+// buildStyleData attaches the full pool; this applies the per-output policy
+// on a copy (same copy-on-write contract as the pins above):
+//   • enabled  → keep the first (slots-1) siblings → {{style2}}…{{styleN}}
+//   • disabled / absent → clear siblings → every slot renders empty
+// Structurally typed so this module stays decoupled from prod-spec/config.
+export function applyCustomCartonMarking(
+  style: StyleData,
+  output: { customCartonMarking?: { enabled?: boolean; slots?: number } },
+): StyleData {
+  const cfg = output.customCartonMarking;
+  if (!cfg?.enabled) {
+    if (!style.siblings || style.siblings.length === 0) return style;
+    return { ...style, siblings: [] };
+  }
+  const slots = Math.max(2, cfg.slots ?? 2);
+  return { ...style, siblings: (style.siblings ?? []).slice(0, slots - 1) };
+}
+
+// Operator's one-off selection from the carton dialog: replace siblings
+// with exactly the chosen ids, in the chosen order (slot order), drawing
+// from the pre-fetched pool. Unknown ids are dropped. An empty selection
+// clears the slots.
+export function withSelectedSiblings(style: StyleData, ids: string[]): StyleData {
+  const pool = style.siblings ?? [];
+  const byId = new Map(pool.map((s) => [s.id, s]));
+  const picked: SiblingStyle[] = [];
+  for (const id of ids) {
+    const hit = byId.get(id);
+    if (hit) picked.push(hit);
+  }
+  return { ...style, siblings: picked };
 }

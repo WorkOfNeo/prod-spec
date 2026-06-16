@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
-import { applyFieldOverrides } from "@/lib/pdf/pins";
+import { applyCustomCartonMarking, applyFieldOverrides, withSelectedSiblings } from "@/lib/pdf/pins";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import { isLayoutVariantKey, LAYOUT_VARIANT_PREFIX } from "@/lib/output-layouts/variants";
 import { parseLayoutDef, layoutSettings } from "@/lib/output-layouts/schema";
@@ -20,7 +20,12 @@ export const maxDuration = 300;
 // is persisted as a JobAsset; the file streams straight back as a download.
 //
 //   POST /api/admin/styles/<id>/carton-prints
-//   body: { variantKey: "layout:<id>", total: number }
+//   body: { variantKey: "layout:<id>", total: number, siblingIds?: string[] }
+//
+// siblingIds is the operator's one-off "Custom Carton Marking" selection —
+// OTHER styles on the same PO to place on the box, in slot order
+// ({{style2}}, {{style3}}…). Omitted ⇒ fall back to this output's permanent
+// slot policy on the ProdSpec.
 const CARTON_MAX = 2000;
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -31,10 +36,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   let variantKey = "";
   let total = 0;
+  let siblingIds: string[] | null = null;
   try {
-    const body = (await req.json()) as { variantKey?: unknown; total?: unknown };
+    const body = (await req.json()) as {
+      variantKey?: unknown;
+      total?: unknown;
+      siblingIds?: unknown;
+    };
     if (typeof body?.variantKey === "string") variantKey = body.variantKey;
     if (typeof body?.total === "number") total = body.total;
+    if (Array.isArray(body?.siblingIds)) {
+      siblingIds = body.siblingIds.filter((x): x is string => typeof x === "string");
+    }
   } catch {
     return NextResponse.json({ error: "Expected a JSON body" }, { status: 400 });
   }
@@ -95,7 +108,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   }
 
   try {
-    const renderStyle = applyFieldOverrides(context.styleData, output.fieldOverrides);
+    // One-off sibling pick (slot order) wins; otherwise the output's
+    // permanent slot policy. Either way {{style2}}… resolve SYNC off the
+    // pre-fetched pool on context.styleData.siblings.
+    let renderStyle = applyFieldOverrides(context.styleData, output.fieldOverrides);
+    renderStyle =
+      siblingIds === null
+        ? applyCustomCartonMarking(renderStyle, output)
+        : withSelectedSiblings(renderStyle, siblingIds);
     const html = await renderLayoutHtmlSerial(def, renderStyle, total, {
       mode: "production",
       title: `${layout.name} — cartons 1–${total}`,

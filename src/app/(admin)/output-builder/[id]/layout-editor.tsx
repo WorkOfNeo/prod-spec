@@ -22,7 +22,12 @@ import {
   type LayoutSettings,
   type SewingLine,
 } from "@/lib/output-layouts/schema";
-import { LAYOUT_TOKENS, tokenMeta } from "@/lib/output-layouts/token-meta";
+import {
+  LAYOUT_TOKENS,
+  tokenMeta,
+  SIBLING_FIELDS,
+  MAX_SIBLING_SLOTS,
+} from "@/lib/output-layouts/token-meta";
 import { PreviewFrame } from "@/components/output-preview";
 
 // =====================================================
@@ -170,6 +175,8 @@ export function LayoutEditor({
   const [pdfBusy, setPdfBusy] = useState(false);
 
   const [langSel, setLangSel] = useState(languages[0]?.code ?? "en");
+  // Custom Carton Marking — which sibling slot the palette chips insert.
+  const [siblingSlot, setSiblingSlot] = useState(2);
 
   const [jsonText, setJsonText] = useState("");
   const [jsonOpen, setJsonOpen] = useState(false);
@@ -2010,6 +2017,43 @@ export function LayoutEditor({
                     onClick={() => insertToken(`{{${t.key}:${langSel}}}`)}
                   />
                 ))}
+              </div>
+            </div>
+            <div className="mt-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">
+                  Sibling styles
+                </span>
+                <select
+                  value={siblingSlot}
+                  onChange={(e) => setSiblingSlot(Number(e.target.value))}
+                  className="rounded border border-zinc-200 px-1 py-0.5 text-[11px] text-zinc-600"
+                  title="Which carton slot these chips fill — other styles from the same PO"
+                >
+                  {Array.from({ length: MAX_SIBLING_SLOTS - 1 }, (_, i) => i + 2).map((n) => (
+                    <option key={n} value={n}>
+                      style{n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="mt-1 text-[11px] text-zinc-400">
+                Custom Carton Marking — filled per style/PO at print time. Turn on carton numbering
+                in Settings to print the box.
+              </p>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {SIBLING_FIELDS.map((f) => {
+                  const key = `style${siblingSlot}${f.suffix}`;
+                  return (
+                    <TokenChip
+                      key={key}
+                      token={`{{${key}}}`}
+                      title={`Style ${siblingSlot} · ${f.label}`}
+                      disabled={!selBlock}
+                      onClick={() => insertToken(`{{${key}}}`)}
+                    />
+                  );
+                })}
               </div>
             </div>
             <div className="mt-3">
