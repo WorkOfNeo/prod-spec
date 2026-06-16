@@ -1,10 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { getServerSession } from "@/lib/auth-server";
+import { getSessionWithRole } from "@/lib/auth-server";
+import { canReview } from "@/lib/roles";
 import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
 import { publishApprovedJob, PublishError, stampReviewEnded } from "@/lib/publish/publish-approved-job";
 import { claimReviewIfUnclaimed } from "@/lib/review-flow/claim";
 import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
+import { deliverOutput } from "@/lib/publish/deliver-output";
+import { perOutputDeliveryEnabled } from "@/lib/review-flow/flags";
 
 export const runtime = "nodejs";
 // Approving the LAST pending asset rolls the job up and publishes —
@@ -23,8 +26,11 @@ export const maxDuration = 120;
 // then carries `settled` + `email` so the review screen can show what was
 // sent (or simulated while RESEND_EMAILS is off).
 export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getServerSession();
+  const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  if (!canReview(role)) {
+    return NextResponse.json({ error: "Requires role: ADMIN or REVIEWER" }, { status: 403 });
+  }
 
   const { id } = await ctx.params;
 
@@ -81,6 +87,15 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
         message: `resolved ${resolved} rejection ticket(s) for ${asset.variantKey ?? asset.docType}`,
       },
     });
+  }
+
+  // Per-output delivery (phase 3) — gated off. When enabled, an approved
+  // output notifies the supplier on its own and we skip the job-level publish;
+  // the job no longer needs to "settle" as a unit (status is derived from the
+  // outputs). Until then, the job roll-up + publish path is unchanged.
+  if (perOutputDeliveryEnabled()) {
+    const email = await deliverOutput(id);
+    return NextResponse.json({ ok: true, perOutput: true, email });
   }
 
   return NextResponse.json(await maybeSettleJob(asset.jobId, session.user.id));
