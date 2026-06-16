@@ -92,6 +92,10 @@ export const LayoutBlockSchema = z.object({
     .optional(),
   fontPt: z.number().min(4).max(48).default(9),
   bold: z.boolean().default(false),
+  // Invert just THIS block: black background, white text (appearance only —
+  // doesn't touch tokens or generation). A barcode inside keeps a white chip
+  // so it stays scannable.
+  invert: z.boolean().default(false),
   lineHeight: z.number().min(1).max(3).default(1.4),
   lines: z.array(z.string().max(500)).max(100).default([]),
 });
@@ -235,10 +239,6 @@ export const LayoutSettingsSchema = z.object({
   // height auto-scales to preserve aspect. The image itself is stored per
   // layout on OutputLayout.customLogo (uploaded in the builder).
   customLogoWidthPct: z.number().min(1).max(100).default(100),
-  // Invert the whole field: black page background, white text (an appearance
-  // setting — doesn't touch tokens or generation). Barcodes keep a white chip
-  // when inverted so they stay scannable.
-  invert: z.boolean().default(false),
 });
 export type LayoutSettings = z.infer<typeof LayoutSettingsSchema>;
 
@@ -257,7 +257,6 @@ export function layoutSettings(def: LayoutDef): LayoutSettings {
       cartonNumbering: false,
       multipleStyles: false,
       customLogoWidthPct: 100,
-      invert: false,
     }
   );
 }

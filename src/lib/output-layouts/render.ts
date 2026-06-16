@@ -440,7 +440,7 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
       `text-align: ${block.align ?? "left"}; ` +
       blockBorder(block, ctx.fontScale) +
       blockTypography(block, ctx.fontScale);
-    return `<div class="ol-block ol-rect" style="${styleAttr}">${lines}</div>`;
+    return `<div class="ol-block ol-rect${block.invert ? " ol-binvert" : ""}" style="${styleAttr}">${lines}</div>`;
   }
 
   const anchor = block.anchor ?? "top-left";
@@ -451,7 +451,7 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
     blockBorder(block, ctx.fontScale) +
     blockTypography(block, ctx.fontScale) +
     ANCHOR_CSS[anchor];
-  return `<div class="ol-block ol-${anchor}" style="${styleAttr}">${lines}</div>`;
+  return `<div class="ol-block ol-${anchor}${block.invert ? " ol-binvert" : ""}" style="${styleAttr}">${lines}</div>`;
 }
 
 type PreparedLayoutRender = {
@@ -459,7 +459,6 @@ type PreparedLayoutRender = {
   repStyles: StyleData[];
   ctx: RenderCtx;
   barcodeFont: StyleData["barcodeFont"];
-  invert: boolean;
 };
 
 // Shared setup for the single-document and serial (carton-numbered)
@@ -551,7 +550,7 @@ async function prepareLayoutRender(
     customLogoWidthPct: settings.customLogoWidthPct,
   };
 
-  return { pages, repStyles, ctx, barcodeFont: style.barcodeFont, invert: settings.invert };
+  return { pages, repStyles, ctx, barcodeFont: style.barcodeFont };
 }
 
 // Print guides — non-content rules overlaid on the page (drawn after the
@@ -598,8 +597,7 @@ function emitLayoutDocument(
   const body = emitted
     .map(({ page, repStyle }, i) => {
       const blocks = page.blocks.map((b) => renderBlock(b, page, repStyle, ctx)).join("");
-      const invertCls = prep.invert ? " ol-invert" : "";
-      return `<div class="ol-page ol-page-${i}${invertCls}">${blocks}${renderGuides(page)}</div>`;
+      return `<div class="ol-page ol-page-${i}">${blocks}${renderGuides(page)}</div>`;
     })
     .join("\n");
 
@@ -617,12 +615,12 @@ function emitLayoutDocument(
     background: #fff;
   }
   .ol-page:last-child { page-break-after: auto; }
-  /* Inverted field — white-on-black. Barcodes keep a white chip (dark bars +
-     number) so they stay scannable on the dark page. */
-  .ol-page.ol-invert { background: #000; color: #fff; }
-  .ol-page.ol-invert .ol-barcode { background: #fff; color: #000; padding: ${(1 * ctx.fontScale).toFixed(3)}mm; border-radius: 1mm; }
   ${pageCss}
   .ol-block { position: absolute; }
+  /* Per-block invert — that block prints white-on-black. A barcode inside
+     keeps a white chip (dark bars + number) so it stays scannable. */
+  .ol-block.ol-binvert { background: #000; color: #fff; }
+  .ol-block.ol-binvert .ol-barcode { background: #fff; color: #000; padding: ${(1 * ctx.fontScale).toFixed(3)}mm; border-radius: 1mm; }
   .ol-guide { position: absolute; pointer-events: none; z-index: 5; }
   /* Dash patterns via gradients so sewing and fold read as distinct lines:
      sewing = long dashes (2.5/1.5 mm), fold = fine dashes (1/1 mm). */
