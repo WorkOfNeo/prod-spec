@@ -90,7 +90,10 @@ export const LayoutBlockSchema = z.object({
       padMm: z.number().min(0).max(20).optional(),
     })
     .optional(),
-  fontPt: z.number().min(4).max(48).default(9),
+  // Free font sizing: floor 1 pt (≈0.35 mm — below any real wash-care text)
+  // and a generous 144 pt ceiling. The builder's NumberStepper accepts a
+  // typed value and clamps to the same bounds, so the two never disagree.
+  fontPt: z.number().min(1).max(144).default(9),
   bold: z.boolean().default(false),
   // Invert just THIS block: black background, white text (appearance only —
   // doesn't touch tokens or generation). A barcode inside keeps a white chip

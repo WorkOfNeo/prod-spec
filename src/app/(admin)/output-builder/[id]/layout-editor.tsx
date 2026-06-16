@@ -2020,8 +2020,8 @@ export function LayoutEditor({
                     <label className="text-xs text-zinc-500">Font size</label>
                     <NumberStepper
                       value={selBlock.fontPt}
-                      min={4}
-                      max={48}
+                      min={1}
+                      max={144}
                       step={0.5}
                       suffix="pt"
                       onChange={(v) => updateBlock(blockId(selBlock), { fontPt: v })}
