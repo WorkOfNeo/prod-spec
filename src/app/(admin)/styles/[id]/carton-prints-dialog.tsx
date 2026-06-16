@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import { LazyOutputPreview } from "@/components/output-preview";
 
-// MANUAL carton prints — a side action next to the per-output "Run". Standard
-// generation is untouched (always single-style). Two INDEPENDENT capabilities,
-// each a layout setting, drive this dialog:
-//   • Carton numbering — print a numbered set (1/N … N/N), {{cartonNo}}.
-//   • Multiple styles  — "Custom Carton Marking": place OTHER styles from the
-//     SAME PO on the box ({{style2}}/{{style3}}…). A one-off for this print
-//     only — there is no standing config. The endpoint streams back ONE
-//     PDF (one page per carton) to download.
+// MANUAL "Customize" print — a side action next to the per-output "Run".
+// Standard generation is untouched (always single-style). The dialog exposes
+// whichever of two INDEPENDENT capabilities the layout opted into; when it has
+// BOTH, the operator checks which to apply for this print:
+//   • Carton numbering — a numbered set (1/N … N/N), {{cartonNo}}.
+//   • Multiple styles  — place OTHER styles from the SAME PO on the box
+//     ({{style2}}…), a one-off (no standing config).
+// The endpoint streams back ONE PDF (one page per carton) to download.
 const CARTON_MAX = 2000;
 
 type SiblingCandidate = {
@@ -35,21 +35,16 @@ export type CartonPrintsButtonProps = {
 
 export function CartonPrintsButton(props: CartonPrintsButtonProps) {
   const [open, setOpen] = useState(false);
-  const title = props.cartonNumbering && props.multipleStyles
-    ? "Print a numbered carton set (X of Y) and/or place other styles from this PO on the box"
-    : props.cartonNumbering
-      ? "Print a numbered carton set (X of Y)"
-      : "Place other styles from this PO on the box";
   return (
     <>
       <button
         type="button"
         disabled={!props.ready}
         onClick={() => setOpen(true)}
-        title={props.ready ? title : "Output not ready yet"}
+        title={props.ready ? "Customize this output for a manual print" : "Output not ready yet"}
         className="flex-shrink-0 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        Carton marking…
+        Customize
       </button>
       {open ? <CartonPrintsDialog {...props} onClose={() => setOpen(false)} /> : null}
     </>
@@ -66,6 +61,15 @@ function CartonPrintsDialog({
   multipleStyles,
   onClose,
 }: CartonPrintsButtonProps & { onClose: () => void }) {
+  // When the layout supports BOTH, the operator chooses which to include for
+  // this print (numbering on by default, multiple-styles opt-in). With only
+  // one capability there's no choice — its section shows directly.
+  const bothEligible = cartonNumbering && multipleStyles;
+  const [useNumbering, setUseNumbering] = useState(true);
+  const [useMulti, setUseMulti] = useState(false);
+  const numbering = cartonNumbering && (!bothEligible || useNumbering);
+  const multi = multipleStyles && (!bothEligible || useMulti);
+
   const [total, setTotal] = useState(cartonNumbering ? 200 : 1);
   const [debouncedTotal, setDebouncedTotal] = useState(total);
   const [busy, setBusy] = useState(false);
@@ -74,8 +78,8 @@ function CartonPrintsDialog({
   // Custom Carton Marking — same-PO siblings to place on the box (one-off).
   const [siblings, setSiblings] = useState<SiblingCandidate[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  // Starts "loaded" when this layout can't do multi-style (the section is
-  // hidden anyway) so the fetch effect never has to setState synchronously.
+  // Starts "loaded" when this layout can't do multi-style (no fetch) so the
+  // effect never has to setState synchronously.
   const [siblingsLoaded, setSiblingsLoaded] = useState(!multipleStyles);
 
   // Debounce the preview so typing the count doesn't refetch per keystroke.
@@ -84,7 +88,8 @@ function CartonPrintsDialog({
     return () => window.clearTimeout(t);
   }, [total]);
 
-  // Load the same-PO sibling candidates — only when this layout supports it.
+  // Load the same-PO sibling candidates up front (so they're ready the moment
+  // the operator ticks Multiple styles) — only when the layout supports it.
   useEffect(() => {
     if (!multipleStyles) return;
     let cancelled = false;
@@ -95,7 +100,7 @@ function CartonPrintsDialog({
         const j = (await res.json()) as { siblings?: SiblingCandidate[] };
         if (!cancelled) setSiblings(j.siblings ?? []);
       } catch {
-        // Non-fatal — the dialog still does plain X-of-Y without siblings.
+        // Non-fatal — the dialog still does plain numbering without siblings.
       } finally {
         if (!cancelled) setSiblingsLoaded(true);
       }
@@ -118,18 +123,16 @@ function CartonPrintsDialog({
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
-  // Count only matters for carton numbering; a multi-style-only print is one
-  // page. total is fixed to 1 when numbering is off.
-  const countValid =
-    !cartonNumbering || (Number.isInteger(total) && total >= 1 && total <= CARTON_MAX);
-  const effectiveTotal = cartonNumbering ? total : 1;
+  // Count only matters when numbering is included; otherwise it's one page.
+  const countValid = !numbering || (Number.isInteger(total) && total >= 1 && total <= CARTON_MAX);
+  const effectiveTotal = numbering ? total : 1;
   const previewNo = Math.min(7, Math.max(1, debouncedTotal));
 
   const previewSrc =
     `/api/admin/styles/${styleId}/output-preview?variantKey=${encodeURIComponent(variantKey)}` +
-    (cartonNumbering ? `&cartonNo=${previewNo}&cartonTotal=${Math.max(1, debouncedTotal)}` : "") +
+    (numbering ? `&cartonNo=${previewNo}&cartonTotal=${Math.max(1, debouncedTotal)}` : "") +
     // Present (even empty) ⇒ multi-style mode ON, {{multipleStyles}} = true.
-    (multipleStyles ? `&siblingIds=${selectedIds.join(",")}` : "");
+    (multi ? `&siblingIds=${selectedIds.join(",")}` : "");
 
   async function generate() {
     if (!countValid || busy) return;
@@ -142,7 +145,7 @@ function CartonPrintsDialog({
         body: JSON.stringify({
           variantKey,
           total: effectiveTotal,
-          ...(multipleStyles ? { siblingIds: selectedIds } : {}),
+          ...(multi ? { siblingIds: selectedIds } : {}),
         }),
       });
       if (!res.ok) {
@@ -182,14 +185,41 @@ function CartonPrintsDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-zinc-200 px-5 py-3.5">
-          <h2 className="text-[15px] font-semibold text-zinc-900">Carton marking prints</h2>
+          <h2 className="text-[15px] font-semibold text-zinc-900">Customize output</h2>
           <p className="mt-0.5 text-xs text-zinc-500">{name}</p>
         </div>
 
         <div className="space-y-4 overflow-y-auto px-5 py-4">
-          {/* Carton numbering — X of Y. */}
-          {cartonNumbering && (
+          {/* Capability picker — only when the layout supports BOTH. */}
+          {bothEligible && (
             <div>
+              <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Include</div>
+              <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1.5">
+                <label className="flex items-center gap-1.5 text-xs font-medium text-zinc-700">
+                  <input
+                    type="checkbox"
+                    checked={useNumbering}
+                    onChange={(e) => setUseNumbering(e.target.checked)}
+                    className="accent-amber-600"
+                  />
+                  Carton numbering (X of Y)
+                </label>
+                <label className="flex items-center gap-1.5 text-xs font-medium text-zinc-700">
+                  <input
+                    type="checkbox"
+                    checked={useMulti}
+                    onChange={(e) => setUseMulti(e.target.checked)}
+                    className="accent-indigo-600"
+                  />
+                  Multiple styles
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* Carton numbering — X of Y. */}
+          {numbering && (
+            <div className={bothEligible ? "border-t border-zinc-100 pt-3" : ""}>
               <label className="text-xs font-medium text-zinc-700">How many cartons?</label>
               <div className="mt-1.5 flex items-center gap-3">
                 <input
@@ -218,9 +248,9 @@ function CartonPrintsDialog({
             </div>
           )}
 
-          {/* Custom Carton Marking — other styles from the same PO. */}
-          {multipleStyles && (
-            <div className={cartonNumbering ? "border-t border-zinc-100 pt-3" : ""}>
+          {/* Multiple styles — other styles from the same PO. */}
+          {multi && (
+            <div className={numbering || bothEligible ? "border-t border-zinc-100 pt-3" : ""}>
               <div className="flex items-baseline justify-between">
                 <label className="text-xs font-medium text-zinc-700">
                   Other styles on the box{" "}
@@ -254,14 +284,14 @@ function CartonPrintsDialog({
                         onClick={() => toggleSibling(s.id)}
                         className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition ${
                           checked
-                            ? "border-amber-300 bg-amber-50"
+                            ? "border-indigo-300 bg-indigo-50"
                             : "border-zinc-200 bg-white hover:bg-zinc-50"
                         }`}
                       >
                         <span
                           className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border text-[9px] font-bold ${
                             checked
-                              ? "border-amber-500 bg-amber-500 text-white"
+                              ? "border-indigo-500 bg-indigo-500 text-white"
                               : "border-zinc-300 bg-white text-transparent"
                           }`}
                         >
@@ -277,7 +307,7 @@ function CartonPrintsDialog({
                           ) : null}
                         </span>
                         {checked && (
-                          <span className="flex-shrink-0 rounded bg-amber-200 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-800">
+                          <span className="flex-shrink-0 rounded bg-indigo-200 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-800">
                             {`{{style${slot + 2}}}`}
                           </span>
                         )}
@@ -291,7 +321,7 @@ function CartonPrintsDialog({
 
           <div className="rounded-lg border border-zinc-200 bg-zinc-50/60 p-3">
             <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-              {cartonNumbering
+              {numbering
                 ? `Live preview — carton ${previewNo} of ${Math.max(1, debouncedTotal)}`
                 : "Live preview"}
             </div>
@@ -300,20 +330,22 @@ function CartonPrintsDialog({
                 src={previewSrc}
                 widthMm={widthMm}
                 heightMm={heightMm}
-                refreshKey={`${previewNo}-${debouncedTotal}-${selectedIds.join(",")}`}
+                refreshKey={`${numbering ? previewNo : "x"}-${debouncedTotal}-${multi ? selectedIds.join(",") : "x"}`}
               />
             </div>
           </div>
 
           <p className="text-[11px] leading-relaxed text-zinc-500">
-            {cartonNumbering ? (
+            {numbering ? (
               <>
                 One print-ready PDF, {countValid ? total : "N"} pages — each numbered with{" "}
                 <code className="rounded bg-zinc-100 px-1">{"{{cartonNo}}"}</code>/
                 <code className="rounded bg-zinc-100 px-1">{"{{cartonTotal}}"}</code>.{" "}
               </>
-            ) : (
+            ) : multi ? (
               <>One print-ready page with the selected styles on the box. </>
+            ) : (
+              <>One print-ready page. </>
             )}
             The standard output is unaffected.
           </p>
