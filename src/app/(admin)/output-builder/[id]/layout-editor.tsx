@@ -398,6 +398,7 @@ export function LayoutEditor({
       valign: "top",
       fontPt: 9,
       bold: false,
+      invert: false,
       lineHeight: 1.4,
       lines: ["New text"],
     };
@@ -1623,25 +1624,6 @@ export function LayoutEditor({
               </p>
             </div>
 
-            {/* Invert — render the whole field white-on-black. Appearance
-                only; tokens / generation unaffected. Barcodes keep a white
-                chip so they stay scannable. */}
-            <div className="border-t border-zinc-100 pt-3">
-              <label className="flex items-center gap-2 text-sm text-zinc-700">
-                <input
-                  type="checkbox"
-                  checked={settings.invert}
-                  onChange={(e) => updateSettings({ invert: e.target.checked })}
-                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
-                />
-                Invert (white text on black)
-              </label>
-              <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
-                Flips the whole field: black background, white text. Barcodes stay on a white chip so they
-                remain scannable; dark logos / wash-care symbols may need light versions.
-              </p>
-            </div>
-
             {/* Carton numbering (X/Y) — eligibility only; standard
                 generation is untouched. Surfaces the {{cartonNo}} /
                 {{cartonTotal}} tokens and the Style-page "Carton numbers…"
@@ -1778,9 +1760,7 @@ export function LayoutEditor({
               onPointerDown={onCanvasPointerDown}
               onPointerMove={onCanvasPointerMove}
               onPointerUp={onCanvasPointerUp}
-              className={`relative touch-none border border-zinc-300 shadow-sm ${
-                settings.invert ? "bg-black text-white" : "bg-white"
-              }`}
+              className="relative touch-none border border-zinc-300 bg-white shadow-sm"
               style={{
                 width: page.widthMm * scale,
                 height: page.heightMm * scale,
@@ -1800,8 +1780,8 @@ export function LayoutEditor({
                       ? "1px dashed rgba(24,24,27,0.12)"
                       : "none",
                   backgroundImage:
-                    `repeating-linear-gradient(to right, transparent 0, transparent calc(${100 / grid.cols}% - 1px), ${settings.invert ? "rgba(255,255,255,0.12)" : "rgba(24,24,27,0.045)"} calc(${100 / grid.cols}% - 1px), ${settings.invert ? "rgba(255,255,255,0.12)" : "rgba(24,24,27,0.045)"} ${100 / grid.cols}%),` +
-                    `repeating-linear-gradient(to bottom, transparent 0, transparent calc(${100 / grid.rows}% - 1px), ${settings.invert ? "rgba(255,255,255,0.12)" : "rgba(24,24,27,0.045)"} calc(${100 / grid.rows}% - 1px), ${settings.invert ? "rgba(255,255,255,0.12)" : "rgba(24,24,27,0.045)"} ${100 / grid.rows}%)`,
+                    `repeating-linear-gradient(to right, transparent 0, transparent calc(${100 / grid.cols}% - 1px), rgba(24,24,27,0.045) calc(${100 / grid.cols}% - 1px), rgba(24,24,27,0.045) ${100 / grid.cols}%),` +
+                    `repeating-linear-gradient(to bottom, transparent 0, transparent calc(${100 / grid.rows}% - 1px), rgba(24,24,27,0.045) calc(${100 / grid.rows}% - 1px), rgba(24,24,27,0.045) ${100 / grid.rows}%)`,
                 }}
               />
               {page.blocks.map((block) => (
@@ -2100,55 +2080,64 @@ export function LayoutEditor({
                     </select>
                   </label>
                   {selBlock.border ? (
-                    <>
-                      <label className="flex items-center gap-1.5 text-xs text-zinc-600">
-                        <input
-                          type="color"
-                          value={selBlock.border.color}
-                          onChange={(e) =>
-                            updateBlock(blockId(selBlock), {
-                              border: { ...selBlock.border!, color: e.target.value },
-                            })
+                    <label className="flex items-center gap-1.5 text-xs text-zinc-600">
+                      <input
+                        type="color"
+                        value={selBlock.border.color}
+                        onChange={(e) =>
+                          updateBlock(blockId(selBlock), {
+                            border: { ...selBlock.border!, color: e.target.value },
+                          })
+                        }
+                        className="h-6 w-8 cursor-pointer rounded border border-zinc-200 bg-white p-0.5"
+                        title="Border colour"
+                      />
+                      <input
+                        type="text"
+                        value={selBlock.border.color}
+                        onChange={(e) => {
+                          const v = e.target.value.trim();
+                          if (/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v)) {
+                            updateBlock(blockId(selBlock), { border: { ...selBlock.border!, color: v } });
                           }
-                          className="h-6 w-8 cursor-pointer rounded border border-zinc-200 bg-white p-0.5"
-                          title="Border colour"
-                        />
-                        <input
-                          type="text"
-                          value={selBlock.border.color}
-                          onChange={(e) => {
-                            const v = e.target.value.trim();
-                            if (/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v)) {
-                              updateBlock(blockId(selBlock), { border: { ...selBlock.border!, color: v } });
-                            }
-                          }}
-                          className="w-20 rounded border border-zinc-200 px-1.5 py-0.5 font-mono text-[11px]"
-                          spellCheck={false}
-                        />
-                      </label>
-                      <label className="flex items-center gap-1.5 text-xs text-zinc-600">
-                        Pad
-                        <select
-                          value={selBlock.border.padMm ?? 0}
-                          onChange={(e) =>
-                            updateBlock(blockId(selBlock), {
-                              border: { ...selBlock.border!, padMm: Number(e.target.value) || undefined },
-                            })
-                          }
-                          className="rounded border border-zinc-200 px-1 py-0.5 text-xs"
-                          title="Inner padding between the border and the text"
-                        >
-                          <option value={0}>None</option>
-                          {[0.5, 1, 1.5, 2, 3, 4].map((p) => (
-                            <option key={p} value={p}>
-                              {p} mm
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </>
+                        }}
+                        className="w-20 rounded border border-zinc-200 px-1.5 py-0.5 font-mono text-[11px]"
+                        spellCheck={false}
+                      />
+                    </label>
                   ) : null}
                 </div>
+                {selBlock.border ? (
+                  <label className="flex items-center gap-1.5 text-xs text-zinc-600">
+                    Padding
+                    <select
+                      value={selBlock.border.padMm ?? 0}
+                      onChange={(e) =>
+                        updateBlock(blockId(selBlock), {
+                          border: { ...selBlock.border!, padMm: Number(e.target.value) || undefined },
+                        })
+                      }
+                      className="rounded border border-zinc-200 px-1 py-0.5 text-xs"
+                      title="Inner padding between the border and the text"
+                    >
+                      <option value={0}>None</option>
+                      {[0.5, 1, 1.5, 2, 3, 4].map((p) => (
+                        <option key={p} value={p}>
+                          {p} mm
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                <label className="flex items-center gap-2 text-xs text-zinc-600">
+                  <input
+                    type="checkbox"
+                    checked={selBlock.invert ?? false}
+                    onChange={(e) => updateBlock(blockId(selBlock), { invert: e.target.checked })}
+                    className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                  />
+                  Invert block (white text on black)
+                </label>
 
                 <div>
                   <div className="flex items-center justify-between">
