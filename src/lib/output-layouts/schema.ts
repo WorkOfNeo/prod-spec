@@ -352,9 +352,17 @@ export function lineWithoutConditionals(line: string): string {
 
 export type TokenRef = { key: string; arg?: string };
 
+// Conditional control tags are NOT variables. {{if …}} carries spaces so it
+// never matches TOKEN_RE, but bare {{else}} / {{endif}} are token-shaped and
+// would otherwise be extracted as variables — and publish validation would
+// reject them as "unknown variable {{else}}". They're handled entirely by
+// IF_RE / validateLineConditionals, so exclude them here.
+const CONTROL_TOKEN_KEYS = new Set(["if", "else", "endif"]);
+
 export function tokensInLine(line: string): TokenRef[] {
   const out: TokenRef[] = [];
   for (const m of line.matchAll(new RegExp(TOKEN_RE.source, "g"))) {
+    if (CONTROL_TOKEN_KEYS.has(m[1])) continue;
     out.push({ key: m[1], arg: m[2] || undefined });
   }
   return out;
