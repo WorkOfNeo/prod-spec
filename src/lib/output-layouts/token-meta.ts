@@ -25,6 +25,13 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   // ---- Style ----
   { key: "styleName", label: "Style name", group: "Style", kind: "text", example: "2044 PAW PATROL TEE" },
   { key: "styleNumber", label: "Style number", group: "Style", kind: "text", example: "IL97261" },
+  {
+    key: "style",
+    label: "Style (number) — single-style branch of {{if multipleStyles == true}}",
+    group: "Style",
+    kind: "text",
+    example: "IL97261",
+  },
   { key: "customerName", label: "Customer name", group: "Style", kind: "text", example: "Netto A/S" },
   { key: "description", label: "Description", group: "Style", kind: "text", example: "T-Shirt Paw Patrol – Blue" },
   { key: "customerItemNo", label: "Customer item no", group: "Style", kind: "text", example: "223609" },
@@ -133,6 +140,17 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     kind: "image",
     arg: "source",
     example: "{{cert:oekotex}}",
+  },
+
+  // ---- Sibling styles (Custom Carton Marking) ----
+  // The slot tokens ({{style2}}, {{style3Name}}…) are recognised
+  // dynamically by parseSiblingTokenKey; only this mode flag is static.
+  {
+    key: "multipleStyles",
+    label: 'Multi-style mode flag — use as {{if multipleStyles == true}}…{{else}}…{{endif}} (== not ===)',
+    group: "Sibling styles",
+    kind: "text",
+    example: "true",
   },
 ];
 

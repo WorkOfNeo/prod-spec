@@ -219,6 +219,14 @@ export const LayoutSettingsSchema = z.object({
   // count is typed at print time; the carton-prints endpoint loops the
   // layout once per carton with StyleData.cartonSerial set.
   cartonNumbering: z.boolean().default(false),
+  // Eligible for "Custom Carton Marking" — placing OTHER styles from the
+  // SAME PO on the box ({{style2}}/{{style3}}… slots). INDEPENDENT of
+  // cartonNumbering. Does NOT touch standard generation (which stays
+  // single-style); it only (a) reveals the sibling tokens + {{multipleStyles}}
+  // in the builder, and (b) lets the Style page's carton dialog offer the
+  // sibling multiselect. A render goes multi-style ONLY on a one-off dialog
+  // print that picks siblings (StyleData.multipleStyles).
+  multipleStyles: z.boolean().default(false),
   // Print width of the {{logo:custom}} image as a % of its block's width;
   // height auto-scales to preserve aspect. The image itself is stored per
   // layout on OutputLayout.customLogo (uploaded in the builder).
@@ -239,6 +247,7 @@ export function layoutSettings(def: LayoutDef): LayoutSettings {
       splitBy: "ean",
       fileName: "",
       cartonNumbering: false,
+      multipleStyles: false,
       customLogoWidthPct: 100,
     }
   );

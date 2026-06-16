@@ -123,7 +123,6 @@ export default async function ProdSpecDetailPage({
           description: v.description,
           defaultWidthMm: v.defaultWidthMm,
           defaultHeightMm: v.defaultHeightMm,
-          cartonNumbering: v.cartonNumbering ?? false,
         }))}
         careLabels={careLabels.map((l) => ({
           id: l.id,

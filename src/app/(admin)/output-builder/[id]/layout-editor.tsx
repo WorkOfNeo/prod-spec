@@ -1550,6 +1550,30 @@ export function LayoutEditor({
               ) : null}
             </div>
 
+            {/* Multiple styles (Custom Carton Marking) — INDEPENDENT of
+                carton numbering. Eligibility only; standard generation stays
+                single-style. Surfaces the {{style2}}… slots + {{multipleStyles}}
+                and lets the Style-page carton dialog pick same-PO siblings. */}
+            <div className="border-t border-zinc-100 pt-3">
+              <label className="flex items-center gap-2 text-sm text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={settings.multipleStyles}
+                  onChange={(e) => updateSettings({ multipleStyles: e.target.checked })}
+                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                />
+                Multiple styles on the box
+              </label>
+              <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
+                Lets operators place OTHER styles from the same PO on the box (a manual one-off).
+                Branch with{" "}
+                <code className="rounded bg-zinc-100 px-1">{"{{if multipleStyles == true}}"}</code>{" "}
+                and place{" "}
+                <code className="rounded bg-zinc-100 px-1">{"{{style2}}"}</code> /{" "}
+                <code className="rounded bg-zinc-100 px-1">{"{{style2Number}}"}</code> slots.
+              </p>
+            </div>
+
             {/* Custom logo — appears only when the design uses
                 {{logo:custom}}. Uploaded per layout (not global); printed at
                 a % of its block width, height auto. */}
@@ -2101,9 +2125,28 @@ export function LayoutEditor({
                 </select>
               </div>
               <p className="mt-1 text-[11px] text-zinc-400">
-                Custom Carton Marking — filled per style/PO at print time. Turn on carton numbering
-                in Settings to print the box.
+                Other styles from the same PO, filled on a manual print. Turn on{" "}
+                <b>Multiple styles</b> in Settings, then branch:{" "}
+                <code className="rounded bg-zinc-100 px-1 text-[10px]">
+                  {"{{if multipleStyles == true}}{{style2}}{{else}}{{style}}{{endif}}"}
+                </code>{" "}
+                (<code className="rounded bg-zinc-100 px-1 text-[10px]">==</code>, not{" "}
+                <code className="rounded bg-zinc-100 px-1 text-[10px]">===</code>).
               </p>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                <TokenChip
+                  token="{{if multipleStyles}}…{{endif}}"
+                  title="Insert the multi-style conditional skeleton"
+                  disabled={!selBlock}
+                  onClick={() => insertToken("{{if multipleStyles == true}}{{else}}{{endif}}")}
+                />
+                <TokenChip
+                  token="{{style}}"
+                  title="Base style number — the single-style branch"
+                  disabled={!selBlock}
+                  onClick={() => insertToken("{{style}}")}
+                />
+              </div>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 {SIBLING_FIELDS.map((f) => {
                   const key = `style${siblingSlot}${f.suffix}`;

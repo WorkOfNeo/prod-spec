@@ -121,30 +121,13 @@ export function applyCartonBarcodePrefs(
   };
 }
 
-// "Custom Carton Marking" — narrow the pre-fetched same-PO sibling POOL
-// (StyleData.siblings) down to what THIS output's PERMANENT config asks for.
-// buildStyleData attaches the full pool; this applies the per-output policy
-// on a copy (same copy-on-write contract as the pins above):
-//   • enabled  → keep the first (slots-1) siblings → {{style2}}…{{styleN}}
-//   • disabled / absent → clear siblings → every slot renders empty
-// Structurally typed so this module stays decoupled from prod-spec/config.
-export function applyCustomCartonMarking(
-  style: StyleData,
-  output: { customCartonMarking?: { enabled?: boolean; slots?: number } },
-): StyleData {
-  const cfg = output.customCartonMarking;
-  if (!cfg?.enabled) {
-    if (!style.siblings || style.siblings.length === 0) return style;
-    return { ...style, siblings: [] };
-  }
-  const slots = Math.max(2, cfg.slots ?? 2);
-  return { ...style, siblings: (style.siblings ?? []).slice(0, slots - 1) };
-}
-
-// Operator's one-off selection from the carton dialog: replace siblings
-// with exactly the chosen ids, in the chosen order (slot order), drawing
-// from the pre-fetched pool. Unknown ids are dropped. An empty selection
-// clears the slots.
+// "Custom Carton Marking" is a MANUAL one-off — there is no standing
+// per-output config. The carton dialog passes the operator's chosen sibling
+// ids (slot order); this turns multi-style mode ON (so {{style2}}+ and
+// {{multipleStyles}} resolve) and narrows the pre-fetched POOL to exactly
+// those picks. Standard generation never calls this, so it stays
+// single-style. Unknown ids are dropped; an empty pick still flips the mode
+// flag on (the operator opted in) but fills no sibling slots.
 export function withSelectedSiblings(style: StyleData, ids: string[]): StyleData {
   const pool = style.siblings ?? [];
   const byId = new Map(pool.map((s) => [s.id, s]));
@@ -153,5 +136,5 @@ export function withSelectedSiblings(style: StyleData, ids: string[]): StyleData
     const hit = byId.get(id);
     if (hit) picked.push(hit);
   }
-  return { ...style, siblings: picked };
+  return { ...style, siblings: picked, multipleStyles: true };
 }

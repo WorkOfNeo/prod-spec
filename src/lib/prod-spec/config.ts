@@ -6,7 +6,6 @@ import {
   type RequiredField,
 } from "@/lib/customers/config";
 import { TEMPLATE_VARIANTS, getVariant, type TemplateVariant } from "@/lib/pdf/template-registry";
-import { MAX_SIBLING_SLOTS } from "@/lib/output-layouts/token-meta";
 
 // =====================================================
 // ProdSpec — config bundle for one (Customer × BusinessArea) pair.
@@ -41,20 +40,6 @@ export const ProdSpecOutputSchema = z.object({
   // barcode only. Applied via applyCartonBarcodePrefs (src/lib/pdf/pins.ts).
   cartonBarcodeType: z.enum(["ean128", "ean13"]).optional(),
   cartonBarcodeHeightMm: z.number().min(4).max(60).optional(),
-  // "Custom Carton Marking" — the PERMANENT (prod-spec level) setting that
-  // makes this carton output a MULTI-STYLE marking: `slots` styles share
-  // the box (1 base + slots-1 siblings), exposed via {{style2}}…{{styleN}}.
-  // Persists the BEHAVIOUR/SLOTS only — never specific sibling style ids
-  // (those are PO-specific). The actual siblings are resolved per style/PO
-  // at render time from StyleData.siblings (applyCustomCartonMarking). When
-  // absent / disabled the slots render empty. Inherited by every style on
-  // this ProdSpec, because it lives on the output row.
-  customCartonMarking: z
-    .object({
-      enabled: z.boolean().default(false),
-      slots: z.number().int().min(2).max(MAX_SIBLING_SLOTS).default(2),
-    })
-    .optional(),
   // Per-style info-area size pick — only meaningful when the output's
   // variant is an info area (OutputLayout.isInfoArea). When set, names an
   // admin InfoAreaSize whose dimensions override the layout's page size at

@@ -403,6 +403,7 @@ export default async function StyleDetail({
         : null,
       generatedAt: asset ? formatDate(asset.createdAt) : null,
       cartonNumbering: variant?.cartonNumbering ?? false,
+      multipleStyles: variant?.multipleStyles ?? false,
       isInfoArea,
       prodSpecId: style.prodSpec?.id ?? null,
       infoAreaSizeId,

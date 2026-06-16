@@ -3,7 +3,7 @@ import { renderPdf } from "@/lib/pdf/renderer";
 import { ensureLayoutVariantsLoaded, layoutIdFromVariantKey } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
-import { applyCartonBarcodePrefs, applyCustomCartonMarking, applyFieldOverrides } from "@/lib/pdf/pins";
+import { applyCartonBarcodePrefs, applyFieldOverrides } from "@/lib/pdf/pins";
 import { countPlaceholderMarkers } from "@/lib/pdf/placeholders";
 import type { StyleData } from "@/lib/pdf/types";
 import { defaultArtifactFileName, type TemplateVariant } from "@/lib/pdf/template-registry";
@@ -269,12 +269,14 @@ export async function processJob(jobId: string): Promise<void> {
       continue;
     }
     try {
-      // Per-output pins ("customerName is ALWAYS …"), the carton barcode
-      // preference, and the Custom Carton Marking slot policy applied on a
-      // copy — the base StyleData (incl. the same-PO sibling pool) is shared
-      // across this job's outputs.
-      const renderStyle = applyCustomCartonMarking(
-        applyCartonBarcodePrefs(applyFieldOverrides(styleData, output.fieldOverrides), output),
+      // Per-output pins ("customerName is ALWAYS …") and the carton barcode
+      // preference applied on a copy — the base StyleData is shared across
+      // this job's outputs. Standard generation is always SINGLE-style:
+      // multi-style carton marking is a manual one-off (the carton dialog),
+      // never standing config, so the runner never flips style.multipleStyles
+      // and {{style2}}+ stay empty here.
+      const renderStyle = applyCartonBarcodePrefs(
+        applyFieldOverrides(styleData, output.fieldOverrides),
         output,
       );
       // Printed size — the info-area size override (admin pick or custom)
