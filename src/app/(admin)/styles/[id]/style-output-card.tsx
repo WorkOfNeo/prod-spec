@@ -6,6 +6,7 @@ import { LazyOutputPreview } from "@/components/output-preview";
 import { OutputThumbnail } from "./output-thumbnail";
 import { RunOutputButton } from "./run-output-button";
 import { CartonPrintsButton } from "./carton-prints-dialog";
+import type { AssetReviewStatus } from "@/generated/prisma/enums";
 
 export type InfoAreaSizeOption = {
   id: string;
@@ -52,6 +53,10 @@ export type StyleOutputCardProps = {
   //   • multipleStyles  — Custom Carton Marking: other same-PO styles on the
   //     box via {{style2}}… (a manual one-off; standard output stays single).
   cartonNumbering: boolean;
+  // Per-PDF review state of the latest generated asset for this output, or
+  // null when nothing has been generated yet. Surfaces the approved state
+  // (mirrors the review screen) directly on the Outputs list.
+  reviewStatus: AssetReviewStatus | null;
   multipleStyles: boolean;
   // Info-area sizing: when isInfoArea, the output's print size is switchable
   // here (admin size or one-time custom). The pick is stored on the
@@ -96,6 +101,22 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           <span className="truncate text-sm font-semibold text-zinc-900" title={p.name}>
             {p.name}
           </span>
+          {p.reviewStatus === "APPROVED" && (
+            <span
+              title="This output was approved in review"
+              className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"
+            >
+              ✓ Approved
+            </span>
+          )}
+          {p.reviewStatus === "REJECTED" && (
+            <span
+              title="This output was rejected in review"
+              className="shrink-0 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700"
+            >
+              ✗ Rejected
+            </span>
+          )}
           {/* Two INDEPENDENT carton capabilities — distinct chips so the
               overview tells them apart at a glance. */}
           {p.cartonNumbering && (

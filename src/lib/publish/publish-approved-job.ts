@@ -2,11 +2,17 @@ import { db } from "@/lib/db";
 import { uploadJobAssets, type UploadResult } from "@/lib/sharepoint/upload";
 import { getFile } from "@/lib/sharepoint/client";
 import { dispatchEmail, type EmailOutcome } from "@/lib/email/dispatch";
-import { supplierApprovalEmail } from "@/lib/email/templates/review-notification";
+import {
+  customerApprovalEmail,
+  supplierApprovalEmail,
+} from "@/lib/email/templates/review-notification";
 import { getSupplierReviewCcEmails } from "@/lib/settings/app-settings";
 import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
 import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
 import { upsertShareForStyle } from "@/lib/supplier-share/share";
+import { parseCustomerConfig } from "@/lib/customers/config";
+import { resolveStyleCertificates } from "@/lib/styles/resolved-fields";
+import { applyStyleApprovalToMonday } from "@/lib/monday/style-approval";
 
 // =====================================================
 // "Publish" = everything that happens when a job's outputs are approved:
@@ -59,6 +65,10 @@ export type PublishResult = {
 export async function publishApprovedJob(jobId: string, userId: string): Promise<PublishResult> {
   const job = await db.job.findUnique({
     where: { id: jobId },
+    // reviewEndedAt is WRITTEN here (best-effort, separately) but never read —
+    // omit it so the settle flow keeps working before the additive Track-A
+    // column is deployed (db:deploy). See stampReviewEnded below.
+    omit: { reviewEndedAt: true },
     include: {
       assets: true,
       style: { include: { customer: true, supplier: true, businessAreaRef: true } },
@@ -183,44 +193,16 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
   }
   folderUrl = folderUrl ?? job.style.supplier?.sharepointUrl ?? uploaded[0]?.webUrl ?? null;
 
-  // Recipient: the supplier's mirrored inbox (To), CC the named contact
-  // person. Both come from the Monday suppliers board. When the board
-  // carries no supplier email yet, fall back to SUPPLIER_NOTIFICATION_EMAIL
-  // so approval still surfaces to an operator who can forward manually.
-  const supplier = job.style.supplier;
-  const supplierEmail = supplier?.email?.trim() || process.env.SUPPLIER_NOTIFICATION_EMAIL || null;
-  // CC = the admin-typed review CC list (from /settings) plus the supplier's
-  // own synced contact email if present, de-duplicated.
-  const reviewCc = await getSupplierReviewCcEmails();
-  const ccList = Array.from(
-    new Set([...reviewCc, supplier?.contactEmail ?? ""].map((e) => e.trim()).filter(Boolean)),
-  );
-  const ccDisplay = ccList.length > 0 ? ccList.join(", ") : null;
-
-  // The supplier-only share link (one durable link per style: stable token
-  // + 4-digit PIN). Refreshed on every approval — the portal always serves
-  // the style's LATEST APPROVED version, so a correction pushes through to
-  // this same link. Created even when no supplier email resolved, so the
-  // team can read the link + PIN off the prod-spec tab and forward it.
-  const share = await upsertShareForStyle({
-    styleId: job.styleId,
-    email: supplierEmail ?? "",
-  });
-  await db.log.create({
-    data: {
-      jobId: job.id,
-      level: "INFO",
-      message: `supplier share link ${share.url} — PIN ${share.pin}${supplierEmail ? "" : " · no recipient yet, forward manually from the prod-spec tab"}`,
-    },
-  });
-
-  const notification: PublishNotificationSummary = {
-    to: supplierEmail,
-    cc: ccDisplay,
-    attachments: 0,
-    folderUrl,
-    sent: false,
-  };
+  // Customer config drives delivery: when the customer delivers their own
+  // goods (config.skipSupplierDelivery, e.g. Woolworth) we skip ALL external
+  // delivery — the supplier email + share link here, and the Monday subitem
+  // flip + customer-responsible email in onStyleFullyApproved. Internal
+  // approval and per-PDF approved state are unaffected.
+  const skipDelivery = parseCustomerConfig(job.style.customer.config).skipSupplierDelivery;
+  // Certificates the supplier must apply (T10) — resolved from the style's
+  // declared certifications; listed in the supplier email and echoed to the
+  // customer-responsible notice.
+  const requiredCerts = resolveStyleCertificates(job.style);
 
   // Re-runs of any flavour overwrite previously published files — flag the
   // email as a correction so the supplier knows to discard the old set.
@@ -232,66 +214,297 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
     uploaded.length > 0
       ? uploaded.map((f) => ({ name: f.name, webUrl: f.webUrl as string | null }))
       : job.assets.map((a) => ({ name: a.fileName, webUrl: null }));
-  const email = supplierApprovalEmail({
-    supplierEmail: supplierEmail ?? "",
-    styleName: job.style.name,
-    styleNumber: job.style.mondayItemId,
+
+  // Recipient: the supplier's mirrored inbox (To), CC the named contact
+  // person. Both come from the Monday suppliers board. When the board
+  // carries no supplier email yet, fall back to SUPPLIER_NOTIFICATION_EMAIL
+  // so approval still surfaces to an operator who can forward manually.
+  const supplier = job.style.supplier;
+  const supplierEmail = supplier?.email?.trim() || process.env.SUPPLIER_NOTIFICATION_EMAIL || null;
+
+  const notification: PublishNotificationSummary = {
+    to: null,
+    cc: null,
+    attachments: 0,
+    folderUrl,
+    sent: false,
+  };
+  let emailOutcome: EmailOutcome | null = null;
+
+  if (skipDelivery) {
+    // Customer delivers own — no supplier email, no share link created.
+    notification.note =
+      "Customer delivers own goods — supplier delivery skipped (config.skipSupplierDelivery).";
+    await db.log.create({
+      data: {
+        jobId: job.id,
+        level: "INFO",
+        message:
+          "supplier delivery skipped — customer delivers own (skipSupplierDelivery): no supplier email, no share link",
+      },
+    });
+  } else {
+    // CC = the admin-typed review CC list (from /settings) plus the supplier's
+    // own synced contact email if present, de-duplicated.
+    const reviewCc = await getSupplierReviewCcEmails();
+    const ccList = Array.from(
+      new Set([...reviewCc, supplier?.contactEmail ?? ""].map((e) => e.trim()).filter(Boolean)),
+    );
+    const ccDisplay = ccList.length > 0 ? ccList.join(", ") : null;
+
+    // The supplier-only share link (one durable link per style: stable token
+    // + 4-digit PIN). Refreshed on every approval — the portal always serves
+    // the style's LATEST APPROVED version, so a correction pushes through to
+    // this same link. Created even when no supplier email resolved, so the
+    // team can read the link + PIN off the prod-spec tab and forward it.
+    const share = await upsertShareForStyle({
+      styleId: job.styleId,
+      email: supplierEmail ?? "",
+    });
+    await db.log.create({
+      data: {
+        jobId: job.id,
+        level: "INFO",
+        message: `supplier share link ${share.url} — PIN ${share.pin}${supplierEmail ? "" : " · no recipient yet, forward manually from the prod-spec tab"}`,
+      },
+    });
+
+    notification.to = supplierEmail;
+    notification.cc = ccDisplay;
+
+    const email = supplierApprovalEmail({
+      supplierEmail: supplierEmail ?? "",
+      styleName: job.style.name,
+      styleNumber: job.style.mondayItemId,
+      customerName: job.style.customer.name,
+      businessArea: job.style.businessAreaRef?.name ?? job.style.businessArea ?? null,
+      poNumber: job.style.poNumber,
+      files,
+      shareUrl: share.url,
+      sharePin: share.pin,
+      folderUrl,
+      certificates: requiredCerts,
+      isCorrection,
+    });
+    // Attach the generated PDFs so the supplier can review them directly,
+    // not only via the SharePoint link.
+    const attachments = job.assets.map((a) => ({
+      filename: a.fileName,
+      content: Buffer.from(a.pdf),
+    }));
+    // Always dispatch — even with no recipient. The dispatcher records a
+    // SKIPPED EmailLog row so the activity table shows "we wanted to send a
+    // supplier email but had nowhere to send it", same as the review-ready
+    // path. (Empty `to` → SKIPPED, never an actual send.)
+    emailOutcome = await dispatchEmail({
+      type: "SUPPLIER_APPROVAL",
+      to: supplierEmail ?? "",
+      cc: ccList.length > 0 ? ccList : undefined,
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+      attachments,
+      jobId: job.id,
+      styleId: job.styleId,
+    });
+    notification.attachments = supplierEmail ? attachments.length : 0;
+    notification.sent = emailOutcome.status === "SENT";
+    if (emailOutcome.status !== "SENT") {
+      notification.note = supplierEmail
+        ? (emailOutcome.note ?? undefined)
+        : "No supplier email resolved — set the Monday supplier email column (MONDAY_SUPPLIER_COL_EMAIL) + re-sync, or set SUPPLIER_NOTIFICATION_EMAIL.";
+    }
+    const verb =
+      emailOutcome.status === "SENT"
+        ? "sent"
+        : emailOutcome.status === "SIMULATED"
+          ? "SIMULATED (RESEND_EMAILS off) — would send"
+          : emailOutcome.status === "FAILED"
+            ? `FAILED (${emailOutcome.note ?? "Resend error"}) — would send`
+            : supplierEmail
+              ? "skipped — would send"
+              : "skipped — no supplier recipient resolved";
+    await db.log.create({
+      data: {
+        jobId: job.id,
+        level: emailOutcome.status === "FAILED" ? "WARN" : emailOutcome.status === "SKIPPED" ? "WARN" : "INFO",
+        message: `supplier review email ${verb} · To: ${supplierEmail ?? "(none)"}${ccDisplay ? ` · CC: ${ccDisplay}` : ""} · ${attachments.length} attachment(s)${folderUrl ? ` · folder: ${folderUrl}` : ""}${isCorrection ? " · correction" : ""}`,
+      },
+    });
+  }
+
+  // Mark the review's end the moment the job leaves AWAITING_REVIEW. Best-
+  // effort: reviewEndedAt is an additive Track-A column that may not be
+  // deployed yet — never fail a publish over reporting metadata.
+  await stampReviewEnded(job.id);
+
+  // Style-level chain reaction: once EVERY output for the whole style is
+  // approved, flip the Monday subitems (01e/01f) and email the customer-
+  // responsible person. Skipped wholesale for skipSupplierDelivery customers.
+  // Never throws — a Monday/email hiccup must not unwind a published job.
+  await onStyleFullyApproved({
+    styleId: job.styleId,
+    jobId: job.id,
+    styleNumber: job.style.name,
     customerName: job.style.customer.name,
     businessArea: job.style.businessAreaRef?.name ?? job.style.businessArea ?? null,
     poNumber: job.style.poNumber,
     files,
-    shareUrl: share.url,
-    sharePin: share.pin,
-    folderUrl,
-    isCorrection,
-  });
-  // Attach the generated PDFs so the supplier can review them directly,
-  // not only via the SharePoint link.
-  const attachments = job.assets.map((a) => ({
-    filename: a.fileName,
-    content: Buffer.from(a.pdf),
-  }));
-  // Always dispatch — even with no recipient. The dispatcher records a
-  // SKIPPED EmailLog row so the activity table shows "we wanted to send a
-  // supplier email but had nowhere to send it", same as the review-ready
-  // path. (Empty `to` → SKIPPED, never an actual send.)
-  const emailOutcome = await dispatchEmail({
-    type: "SUPPLIER_APPROVAL",
-    to: supplierEmail ?? "",
-    cc: ccList.length > 0 ? ccList : undefined,
-    subject: email.subject,
-    html: email.html,
-    text: email.text,
-    attachments,
-    jobId: job.id,
-    styleId: job.styleId,
-  });
-  notification.attachments = supplierEmail ? attachments.length : 0;
-  notification.sent = emailOutcome.status === "SENT";
-  if (emailOutcome.status !== "SENT") {
-    notification.note = supplierEmail
-      ? (emailOutcome.note ?? undefined)
-      : "No supplier email resolved — set the Monday supplier email column (MONDAY_SUPPLIER_COL_EMAIL) + re-sync, or set SUPPLIER_NOTIFICATION_EMAIL.";
-  }
-  const verb =
-    emailOutcome.status === "SENT"
-      ? "sent"
-      : emailOutcome.status === "SIMULATED"
-        ? "SIMULATED (RESEND_EMAILS off) — would send"
-        : emailOutcome.status === "FAILED"
-          ? `FAILED (${emailOutcome.note ?? "Resend error"}) — would send`
-          : supplierEmail
-            ? "skipped — would send"
-            : "skipped — no supplier recipient resolved";
-  await db.log.create({
-    data: {
-      jobId: job.id,
-      level: emailOutcome.status === "FAILED" ? "WARN" : emailOutcome.status === "SKIPPED" ? "WARN" : "INFO",
-      message: `supplier review email ${verb} · To: ${supplierEmail ?? "(none)"}${ccDisplay ? ` · CC: ${ccDisplay}` : ""} · ${attachments.length} attachment(s)${folderUrl ? ` · folder: ${folderUrl}` : ""}${isCorrection ? " · correction" : ""}`,
-    },
+    requiredCerts,
+    supplierEmail: skipDelivery ? null : supplierEmail,
+    skipExternal: skipDelivery,
   });
 
   return { uploaded, folderUrl, sharepointConfigured, notification, email: emailOutcome };
+}
+
+// Best-effort stamp of Job.reviewEndedAt — the instant a job leaves
+// AWAITING_REVIEW (approved → published, or rejected → rolled up). Paired
+// with reviewClaimedAt it gives a review's start→end span for super-admin
+// reporting. reviewEndedAt is an additive Track-A column; until db:deploy
+// runs the write throws (ColumnNotFound), so we swallow it — reports already
+// tolerate a null, and the value starts persisting the moment the column
+// lands. Shared by every settle path (this file + the reject routes).
+export async function stampReviewEnded(jobId: string): Promise<void> {
+  try {
+    await db.job.update({ where: { id: jobId }, data: { reviewEndedAt: new Date() } });
+  } catch (err) {
+    await db.log
+      .create({
+        data: {
+          jobId,
+          level: "INFO",
+          message: `reviewEndedAt not stamped (${(err as Error).message.slice(0, 100)}) — additive column pending db:deploy`,
+        },
+      })
+      .catch(() => {});
+  }
+}
+
+type StyleApprovalContext = {
+  styleId: string;
+  jobId: string;
+  // Style number = the Style row name; used to find the matching item on the
+  // Monday "🛍️ Styles" board (our styles are sourced from the Pre-Order board,
+  // which has no relation to it, so we bridge by name).
+  styleNumber: string;
+  customerName: string;
+  businessArea: string | null;
+  poNumber: string | null;
+  files: Array<{ name: string; webUrl: string | null }>;
+  requiredCerts: string[];
+  // Supplier the prod specs were delivered to (for the customer notice).
+  supplierEmail: string | null;
+  // When true (customer delivers own) skip ALL external chain actions — the
+  // Monday subitem flip AND the customer-responsible email — keeping only the
+  // internal approval + per-PDF state that already landed.
+  skipExternal: boolean;
+};
+
+// Style-level chain reaction, fired from publishApprovedJob once a job
+// publishes. Only acts when the WHOLE style is fully approved — i.e. no other
+// job for the style is still queued, running, or awaiting review. Wrapped so
+// it NEVER throws: the job is already approved + published, and a Monday or
+// email failure must not unwind that.
+export async function onStyleFullyApproved(ctx: StyleApprovalContext): Promise<void> {
+  try {
+    const pending = await db.job.count({
+      where: {
+        styleId: ctx.styleId,
+        status: { in: ["QUEUED", "RUNNING", "AWAITING_REVIEW"] },
+      },
+    });
+    if (pending > 0) {
+      await db.log.create({
+        data: {
+          jobId: ctx.jobId,
+          level: "INFO",
+          message: `style not fully approved yet — ${pending} output run(s) still pending; chain reaction deferred`,
+        },
+      });
+      return;
+    }
+
+    if (ctx.skipExternal) {
+      await db.log.create({
+        data: {
+          jobId: ctx.jobId,
+          level: "INFO",
+          message:
+            "style fully approved · customer delivers own — Monday subitems + customer-responsible email skipped (internal approval only)",
+        },
+      });
+      return;
+    }
+
+    // 1) Monday: flip subitems 01e/01f to Approved + resolve customer contact.
+    const monday = await applyStyleApprovalToMonday(ctx.styleNumber, ctx.jobId);
+    const mondayMsg = monday.found
+      ? `monday item ${monday.stylesBoardItemId} · approved [${monday.subitemsUpdated.join(", ") || "none"}]` +
+        (monday.subitemsSimulated.length
+          ? ` · simulated/write-backs-off [${monday.subitemsSimulated.join(", ")}]`
+          : "") +
+        (monday.subitemsMissing.length ? ` · missing [${monday.subitemsMissing.join(", ")}]` : "") +
+        (monday.subitemErrors.length ? ` · errors [${monday.subitemErrors.join("; ")}]` : "")
+      : `monday: ${monday.notes.join("; ")}`;
+    await db.log.create({
+      data: {
+        jobId: ctx.jobId,
+        level: monday.subitemErrors.length ? "WARN" : "INFO",
+        message: `style fully approved — ${mondayMsg}`,
+      },
+    });
+
+    // 2) Customer-responsible email (the people column on the Styles board).
+    const recipients = monday.customerResponsible.map((r) => r.email);
+    if (recipients.length === 0) {
+      await db.log.create({
+        data: {
+          jobId: ctx.jobId,
+          level: "INFO",
+          message: `customer-responsible email skipped — no recipient resolved (${monday.notes.join("; ") || "none"})`,
+        },
+      });
+      return;
+    }
+    const base = process.env.PROD_SPEC_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
+    const email = customerApprovalEmail({
+      styleName: ctx.styleNumber,
+      customerName: ctx.customerName,
+      businessArea: ctx.businessArea,
+      poNumber: ctx.poNumber,
+      files: ctx.files,
+      certificates: ctx.requiredCerts,
+      supplierEmail: ctx.supplierEmail,
+      styleUrl: `${base}/styles/${ctx.styleId}`,
+    });
+    const outcome = await dispatchEmail({
+      type: "SUPPLIER_APPROVAL",
+      to: recipients,
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+      jobId: ctx.jobId,
+      styleId: ctx.styleId,
+    });
+    await db.log.create({
+      data: {
+        jobId: ctx.jobId,
+        level: outcome.status === "FAILED" ? "WARN" : "INFO",
+        message: `customer-responsible email ${outcome.status} · To: ${recipients.join(", ")}`,
+      },
+    });
+  } catch (err) {
+    await db.log
+      .create({
+        data: {
+          jobId: ctx.jobId,
+          level: "WARN",
+          message: `style chain reaction failed: ${(err as Error).message}`,
+        },
+      })
+      .catch(() => {});
+  }
 }
 
 function slugify(s: string): string {

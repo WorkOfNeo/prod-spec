@@ -91,6 +91,36 @@ export async function setDoneGroupPoCutoff(cutoff: number | null): Promise<void>
   });
 }
 
+const MONDAY_WRITEBACK_KEY = "mondayWriteBackEnabled";
+
+// Master switch for OUTBOUND Monday status write-backs (us → Monday).
+//
+// When ON: the approval chain-reaction flips the Styles board subitems
+// 01e/01f to "Approved", and a rejection writes "Rejected" back to the
+// Pre-Order status column. These are the ONLY automated Monday writes —
+// they always go through writeBackStatus() (src/lib/monday/writeback.ts).
+//
+// When OFF: nothing is written to Monday. Every write that WOULD have
+// happened is still recorded to the write-back log (a `monday.writeback`
+// Log row with readable "<name> <column>: <from> → <to>") so an admin can
+// preview exactly what will fire before enabling.
+//
+// Defaults to FALSE when unset — outbound writes are opt-in, flipped on from
+// the Monday → Webhooks tab once the column mapping has been confirmed.
+// (Inbound webhooks + email notifications are unaffected by this switch.)
+export async function getMondayWriteBackEnabled(): Promise<boolean> {
+  const row = await db.appSetting.findUnique({ where: { key: MONDAY_WRITEBACK_KEY } });
+  return row?.value === true;
+}
+
+export async function setMondayWriteBackEnabled(enabled: boolean): Promise<void> {
+  await db.appSetting.upsert({
+    where: { key: MONDAY_WRITEBACK_KEY },
+    create: { key: MONDAY_WRITEBACK_KEY, value: enabled },
+    update: { value: enabled },
+  });
+}
+
 const REVIEW_NOTIFICATION_KEY = "reviewNotificationEmails";
 
 // Internal recipient(s) of the post-generation notifications: the

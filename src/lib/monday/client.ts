@@ -223,6 +223,54 @@ export async function getSubitems(parentItemId: string | number): Promise<Monday
   return data.items?.[0]?.subitems ?? [];
 }
 
+// Look up a single item on a board BY NAME. Styles in our DB are sourced
+// from the Pre-Order board, but the approval chain-reaction targets the
+// separate "🛍️ Styles" board — there is no relation between them, so we
+// bridge by style number (the item name). Monday's column-value search
+// keys "name" specially; it can match fuzzily, so we prefer an exact
+// (case-insensitive) hit among the results. Returns null when nothing
+// matches (e.g. a style with no twin on the target board).
+export async function findItemByName(
+  boardId: string | number,
+  name: string,
+): Promise<MondayItem | null> {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const data = await gql<{ items_page_by_column_values: { items: MondayItem[] } | null }>(
+    `query ($boardId: ID!, $names: [String]!) {
+      items_page_by_column_values (
+        board_id: $boardId,
+        columns: [{ column_id: "name", column_values: $names }],
+        limit: 25
+      ) {
+        items { ${ITEM_FIELDS} }
+      }
+    }`,
+    { boardId: String(boardId), names: [trimmed] },
+  );
+  const items = data.items_page_by_column_values?.items ?? [];
+  return (
+    items.find((i) => i.name.trim().toLowerCase() === trimmed.toLowerCase()) ??
+    items[0] ??
+    null
+  );
+}
+
+export type MondayUser = { id: string; name: string | null; email: string | null };
+
+// Resolve Monday user ids → their profiles (id/name/email). Used to turn a
+// people column (which stores user ids, not emails) into real recipients.
+// The API token must have access to read user emails (confirmed live).
+export async function getUsers(userIds: Array<string | number>): Promise<MondayUser[]> {
+  const ids = Array.from(new Set(userIds.map(String).map((s) => s.trim()).filter(Boolean)));
+  if (ids.length === 0) return [];
+  const data = await gql<{ users: MondayUser[] | null }>(
+    `query ($ids: [ID!]) { users (ids: $ids) { id name email } }`,
+    { ids },
+  );
+  return data.users ?? [];
+}
+
 export type WebhookEvent =
   | "create_item"
   | "create_subitem"
@@ -318,4 +366,21 @@ export function columnValue(item: MondayItem, columnId: string): unknown {
     };
   }
   return null;
+}
+
+// People columns serialize as { personsAndTeams: [{ id, kind: "person" |
+// "team" }] }. Pull the PERSON ids (teams excluded) for a column on an item
+// so getUsers() can resolve them to emails.
+export function personIds(item: MondayItem, columnId: string): string[] {
+  const v = columnValue(item, columnId);
+  if (v && typeof v === "object" && "personsAndTeams" in v) {
+    const arr = (v as { personsAndTeams?: Array<{ id: unknown; kind?: string }> }).personsAndTeams;
+    if (Array.isArray(arr)) {
+      return arr
+        .filter((p) => !p.kind || p.kind === "person")
+        .map((p) => String(p.id))
+        .filter(Boolean);
+    }
+  }
+  return [];
 }

@@ -26,6 +26,7 @@ import { ProdSpecTab } from "./prod-spec-tab";
 import { ReviewTab } from "./review-tab";
 import { EanPanel } from "./ean-panel";
 import type { EanView } from "@/lib/po/ean-view";
+import type { AssetReviewStatus } from "@/generated/prisma/enums";
 import { colorFromVariantLabel } from "@/lib/po/ean-format";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import {
@@ -147,6 +148,10 @@ export default async function StyleDetail({
       eans: { orderBy: { position: "asc" } },
       prodSpec: { include: { businessArea: true, suppliers: { include: { supplier: true } } } },
       jobs: {
+        // reviewEndedAt isn't read on this page — omit it so the style page
+        // keeps loading before the additive column is deployed (db:deploy).
+        // Matches the hardening on the review screen / dashboard reads.
+        omit: { reviewEndedAt: true },
         include: {
           // Pull asset METADATA only. The `pdf` Bytes column lives here
           // too and runs ~50-200 KB per asset — with 10 jobs × 2-3
@@ -186,19 +191,22 @@ export default async function StyleDetail({
   const recentAssets = await db.jobAsset.findMany({
     where: { job: { styleId: id }, variantKey: { not: null } },
     orderBy: { createdAt: "desc" },
-    select: { id: true, jobId: true, variantKey: true, createdAt: true },
+    select: { id: true, jobId: true, variantKey: true, createdAt: true, reviewStatus: true },
     take: 400,
   });
-  const latestAssetByVariant = new Map<string, { id: string; jobId: string; createdAt: Date }>();
+  const latestAssetByVariant = new Map<
+    string,
+    { id: string; jobId: string; createdAt: Date; reviewStatus: AssetReviewStatus }
+  >();
   for (const a of recentAssets) {
     if (a.variantKey && !latestAssetByVariant.has(a.variantKey)) {
-      latestAssetByVariant.set(a.variantKey, { id: a.id, jobId: a.jobId, createdAt: a.createdAt });
+      latestAssetByVariant.set(a.variantKey, { id: a.id, jobId: a.jobId, createdAt: a.createdAt, reviewStatus: a.reviewStatus });
     }
     // Multi-document assets ("layout:<id>#<size>") also register under
     // their BASE key so the output card finds its latest asset.
     const base = a.variantKey?.split("#")[0];
     if (base && base !== a.variantKey && !latestAssetByVariant.has(base)) {
-      latestAssetByVariant.set(base, { id: a.id, jobId: a.jobId, createdAt: a.createdAt });
+      latestAssetByVariant.set(base, { id: a.id, jobId: a.jobId, createdAt: a.createdAt, reviewStatus: a.reviewStatus });
     }
   }
 
@@ -403,6 +411,9 @@ export default async function StyleDetail({
         : null,
       generatedAt: asset ? formatDate(asset.createdAt) : null,
       cartonNumbering: variant?.cartonNumbering ?? false,
+      // Per-PDF review state for the latest generated asset (drives the
+      // Approved/Rejected/In-review badge on the output row).
+      reviewStatus: asset?.reviewStatus ?? null,
       multipleStyles: variant?.multipleStyles ?? false,
       isInfoArea,
       prodSpecId: style.prodSpec?.id ?? null,

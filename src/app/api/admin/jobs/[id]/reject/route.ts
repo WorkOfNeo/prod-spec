@@ -2,9 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
-import { changeItemValue } from "@/lib/monday/client";
+import { getItem, columnText } from "@/lib/monday/client";
+import { writeBackStatus } from "@/lib/monday/writeback";
 import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
 import { createOrReopenRejectionTicket } from "@/lib/tickets/rejection-tickets";
+import { stampReviewEnded } from "@/lib/publish/publish-approved-job";
 
 export const runtime = "nodejs";
 
@@ -29,6 +31,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   const job = await db.job.findUnique({
     where: { id },
+    // reviewEndedAt isn't read here and may not be deployed yet — omit it so
+    // bulk reject keeps working pre-db:deploy.
+    omit: { reviewEndedAt: true },
     include: {
       style: { include: { customer: true, businessAreaRef: true } },
       assets: true,
@@ -77,6 +82,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     }),
   ]);
 
+  // The review just ended (rejected) — stamp reviewEndedAt at the settle seam.
+  await stampReviewEnded(job.id);
   // Settled — open dashboard notifications for this job are done.
   await resolveNotificationsForJob(job.id);
 
@@ -101,22 +108,44 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     }
   }
 
-  // Best-effort write-back to Monday. If the column id isn't configured
-  // or the call fails we still return success — rejection is a local
-  // decision, the Monday note is optional.
+  // Best-effort write-back to Monday — GATED by the write-back master switch
+  // and logged with readable from→to. When the switch is off, this records
+  // "would set Status: <from> → Rejected" and sends nothing. If the column id
+  // isn't configured we still return success: rejection is a local decision.
   const statusColumnId = process.env.MONDAY_STATUS_COLUMN_ID;
   if (statusColumnId) {
     try {
-      await changeItemValue({
+      // Read the live status first so the log shows the real "from" value
+      // (a read is always safe — the switch only gates the write).
+      let currentLabel: string | null = null;
+      try {
+        const item = await getItem(job.style.mondayItemId);
+        currentLabel = item ? columnText(item, statusColumnId) || null : null;
+      } catch {
+        currentLabel = null;
+      }
+      await writeBackStatus({
         boardId: job.style.mondayBoardId,
         itemId: job.style.mondayItemId,
         columnId: statusColumnId,
-        value: JSON.stringify({ label: "Rejected" }),
+        label: "Rejected",
+        currentLabel,
+        entity: job.style.name,
+        boardLabel: "Pre Order",
+        columnTitle: "Status",
+        styleNumber: job.style.name,
+        jobId: job.id,
       });
     } catch (err) {
-      await db.log.create({
-        data: { jobId: job.id, level: "WARN", message: `monday writeback failed: ${(err as Error).message}` },
-      });
+      await db.log
+        .create({
+          data: {
+            jobId: job.id,
+            level: "WARN",
+            message: `monday writeback log failed: ${(err as Error).message}`,
+          },
+        })
+        .catch(() => {});
     }
   }
 

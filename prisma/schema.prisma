@@ -699,6 +699,14 @@ model Job {
   // run is a new Job row). SetNull keeps historical jobs if a user goes.
   reviewClaimedById String?
   reviewClaimedAt   DateTime?
+  // When this review finished — the moment the job left AWAITING_REVIEW
+  // (all assets approved → published, or any rejected → rolled up). Paired
+  // with reviewClaimedAt it gives a review's start→end span for super-admin
+  // reporting (/settings/review-activity). DEFINED here, but the WRITE lives
+  // at the settle seam in the approval track (maybeSettleJob /
+  // publishApprovedJob) — kept out of this track to avoid colliding there.
+  // Read-only until that write lands; reports tolerate a still-null value.
+  reviewEndedAt     DateTime?
 
   style            Style             @relation(fields: [styleId], references: [id], onDelete: Cascade)
   prodSpec         ProdSpec?         @relation(fields: [prodSpecId], references: [id], onDelete: SetNull)

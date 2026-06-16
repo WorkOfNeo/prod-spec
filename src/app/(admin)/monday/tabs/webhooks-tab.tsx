@@ -1,5 +1,6 @@
 import { formatDate } from "@/lib/utils";
 import { RegisterWebhooksButton } from "./register-webhooks-button";
+import { MondayWriteBackSetting } from "./monday-writeback-setting";
 
 type WebhookRow = {
   id: string;
@@ -8,6 +9,18 @@ type WebhookRow = {
   eventType: string;
   mondayWebhookId: string;
   createdAt: Date;
+};
+
+// One normalized line of OUTBOUND write-back activity (us → Monday),
+// parsed server-side from the `monday.writeback` Log rows.
+type WriteBackRow = {
+  id: string;
+  at: Date;
+  level: string;
+  mode: string; // APPLIED | SIMULATED | FAILED | NOOP | SWITCH
+  board: string;
+  item: string;
+  change: string; // "01e. … — Status: Awaiting → Approved"
 };
 
 // One normalized line of webhook activity, parsed server-side from the Log
@@ -60,18 +73,93 @@ function LevelBadge({ level }: { level: string }) {
   );
 }
 
+// Outbound write-back outcome badge: APPLIED (sent), SIMULATED (switch off —
+// would have sent), FAILED, NOOP (already at target), SWITCH (toggle audit).
+function ModeBadge({ mode }: { mode: string }) {
+  const cls =
+    mode === "APPLIED"
+      ? "bg-emerald-100 text-emerald-800"
+      : mode === "FAILED"
+        ? "bg-red-100 text-red-800"
+        : mode === "SIMULATED"
+          ? "bg-amber-100 text-amber-800"
+          : mode === "SWITCH"
+            ? "bg-blue-100 text-blue-800"
+            : "bg-zinc-100 text-zinc-700";
+  const label = mode === "SIMULATED" ? "simulated" : mode.toLowerCase();
+  return (
+    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{label}</span>
+  );
+}
+
 // Monday webhook registry + recent activity. Append-only by design:
 // deletion is a manual, user-initiated action and is never automated
 // (project rule).
 export function WebhooksTab({
   webhooks,
   activity,
+  writeBackEnabled,
+  writeBacks,
 }: {
   webhooks: WebhookRow[];
   activity: WebhookActivityRow[];
+  writeBackEnabled: boolean;
+  writeBacks: WriteBackRow[];
 }) {
   return (
     <div className="flex flex-col gap-8">
+      {/* ──────── Outbound status write-backs (toggle + log) ──────── */}
+      <section>
+        <MondayWriteBackSetting initialEnabled={writeBackEnabled} />
+        <div className="mt-4 mb-2">
+          <h2 className="text-sm font-semibold text-zinc-700">Status write-back log (outgoing)</h2>
+          <p className="mt-1 text-xs text-zinc-500">
+            Every status ProdSpec writes (or, while the switch is off,{" "}
+            <strong>would write</strong>) to Monday — newest first, with the original value and what
+            it changed to. <em>simulated</em> rows are previews only; nothing was sent.
+          </p>
+        </div>
+        <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+              <tr>
+                <th className="px-4 py-2">When</th>
+                <th className="px-4 py-2">Outcome</th>
+                <th className="px-4 py-2">Board</th>
+                <th className="px-4 py-2">Item</th>
+                <th className="px-4 py-2">Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              {writeBacks.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-zinc-500">
+                    No write-backs yet. Approve every output of a style (or reject one) and the
+                    status change — applied or simulated — shows up here.
+                  </td>
+                </tr>
+              ) : (
+                writeBacks.map((w) => (
+                  <tr key={w.id} className="border-t border-zinc-100 align-top">
+                    <td className="whitespace-nowrap px-4 py-2 text-xs text-zinc-500">
+                      {formatDate(w.at)}
+                    </td>
+                    <td className="px-4 py-2">
+                      <ModeBadge mode={w.mode} />
+                    </td>
+                    <td className="px-4 py-2 text-zinc-700">{w.board}</td>
+                    <td className="px-4 py-2 font-mono text-xs text-zinc-500">{w.item}</td>
+                    <td className="px-4 py-2 text-xs text-zinc-700">
+                      <span title={w.change}>{w.change.slice(0, 160)}</span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       {/* ──────── Registered webhooks ──────── */}
       <section>
         <div className="mb-2 flex items-start justify-between gap-3">

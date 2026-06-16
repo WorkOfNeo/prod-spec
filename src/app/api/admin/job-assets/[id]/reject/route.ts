@@ -5,6 +5,7 @@ import { getServerSession } from "@/lib/auth-server";
 import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
 import { claimReviewIfUnclaimed } from "@/lib/review-flow/claim";
 import { createOrReopenRejectionTicket } from "@/lib/tickets/rejection-tickets";
+import { stampReviewEnded } from "@/lib/publish/publish-approved-job";
 
 export const runtime = "nodejs";
 
@@ -35,6 +36,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     where: { id },
     include: {
       job: {
+        // reviewEndedAt isn't read here and may not be deployed yet — omit it
+        // so the reject path keeps working pre-db:deploy.
+        omit: { reviewEndedAt: true },
         include: {
           style: { include: { customer: true, businessAreaRef: true } },
         },
@@ -101,6 +105,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     await db.log.create({
       data: { jobId: asset.jobId, level: "INFO", message: "asset(s) rejected — job rolled up to REJECTED" },
     });
+    // The review just ended (rejected) — stamp reviewEndedAt at the settle seam.
+    await stampReviewEnded(asset.jobId);
     // Settled — open dashboard notifications for this job are done.
     await resolveNotificationsForJob(asset.jobId);
   }

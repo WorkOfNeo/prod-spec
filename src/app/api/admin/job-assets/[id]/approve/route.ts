@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
 import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
-import { publishApprovedJob, PublishError } from "@/lib/publish/publish-approved-job";
+import { publishApprovedJob, PublishError, stampReviewEnded } from "@/lib/publish/publish-approved-job";
 import { claimReviewIfUnclaimed } from "@/lib/review-flow/claim";
 import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
 
@@ -30,7 +30,9 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
 
   const asset = await db.jobAsset.findUnique({
     where: { id },
-    include: { job: true },
+    // reviewEndedAt (additive Track-A column) isn't read here and may not be
+    // deployed yet — omit it so the approve path keeps working pre-db:deploy.
+    include: { job: { omit: { reviewEndedAt: true } } },
   });
   if (!asset) return NextResponse.json({ error: "Asset not found" }, { status: 404 });
 
@@ -110,7 +112,9 @@ async function maybeSettleJob(jobId: string, userId: string): Promise<SettleResu
   if (stillPending) return { ok: true };
 
   const allApproved = assets.every((a) => a.reviewStatus === "APPROVED");
-  const job = await db.job.findUnique({ where: { id: jobId } });
+  // omit reviewEndedAt — written via stampReviewEnded, never read; tolerates
+  // the additive column not being deployed yet.
+  const job = await db.job.findUnique({ where: { id: jobId }, omit: { reviewEndedAt: true } });
   if (!job || job.status === "APPROVED" || job.status === "REJECTED") return { ok: true };
 
   if (allApproved) {
@@ -151,6 +155,8 @@ async function maybeSettleJob(jobId: string, userId: string): Promise<SettleResu
   await db.log.create({
     data: { jobId, level: "INFO", message: "asset(s) rejected — job rolled up to REJECTED" },
   });
+  // The review just ended (rejected) — stamp reviewEndedAt at the settle seam.
+  await stampReviewEnded(jobId);
   // Settled — open dashboard notifications for this job are done. (The
   // approved branch resolves inside publishApprovedJob.)
   await resolveNotificationsForJob(jobId);
