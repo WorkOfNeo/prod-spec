@@ -453,6 +453,7 @@ type PreparedLayoutRender = {
   repStyles: StyleData[];
   ctx: RenderCtx;
   barcodeFont: StyleData["barcodeFont"];
+  invert: boolean;
 };
 
 // Shared setup for the single-document and serial (carton-numbered)
@@ -544,7 +545,7 @@ async function prepareLayoutRender(
     customLogoWidthPct: settings.customLogoWidthPct,
   };
 
-  return { pages, repStyles, ctx, barcodeFont: style.barcodeFont };
+  return { pages, repStyles, ctx, barcodeFont: style.barcodeFont, invert: settings.invert };
 }
 
 // Print guides — non-content rules overlaid on the page (drawn after the
@@ -591,7 +592,8 @@ function emitLayoutDocument(
   const body = emitted
     .map(({ page, repStyle }, i) => {
       const blocks = page.blocks.map((b) => renderBlock(b, page, repStyle, ctx)).join("");
-      return `<div class="ol-page ol-page-${i}">${blocks}${renderGuides(page)}</div>`;
+      const invertCls = prep.invert ? " ol-invert" : "";
+      return `<div class="ol-page ol-page-${i}${invertCls}">${blocks}${renderGuides(page)}</div>`;
     })
     .join("\n");
 
@@ -609,6 +611,10 @@ function emitLayoutDocument(
     background: #fff;
   }
   .ol-page:last-child { page-break-after: auto; }
+  /* Inverted field — white-on-black. Barcodes keep a white chip (dark bars +
+     number) so they stay scannable on the dark page. */
+  .ol-page.ol-invert { background: #000; color: #fff; }
+  .ol-page.ol-invert .ol-barcode { background: #fff; color: #000; padding: ${(1 * ctx.fontScale).toFixed(3)}mm; border-radius: 1mm; }
   ${pageCss}
   .ol-block { position: absolute; }
   .ol-guide { position: absolute; pointer-events: none; z-index: 5; }
