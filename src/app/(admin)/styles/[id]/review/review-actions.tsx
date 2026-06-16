@@ -46,8 +46,8 @@ export function ReviewActions({
       }
       setResult(body.notification ?? { to: null, cc: null, attachments: 0, folderUrl: null, sent: false });
       setEmail(body.email ?? null);
-      // Simulation mode: pop the full email straight away — that's the
-      // whole point of the flag being off.
+      // Not auto-sent: pop the full staged email straight away so the
+      // reviewer sees it (and can send it manually from the dialog).
       if (body.email && body.email.status !== "SENT") setShowEmail(true);
     } finally {
       setPending(null);
@@ -142,8 +142,8 @@ type EmailNotification = {
 };
 
 // Shown after a successful approve. Confirms the supplier-email recipients
-// (To / CC) and whether it was actually sent or simulated (RESEND_EMAILS
-// off). Persisted copy also lands in the job log on the style page.
+// (To / CC) and whether it was actually sent or just staged (manual-only
+// mode — the default). Persisted copy also lands in the job log.
 function ApprovedPanel({
   result,
   styleId,
@@ -157,7 +157,7 @@ function ApprovedPanel({
     <div className="w-full max-w-md rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm">
       <div className="font-semibold text-emerald-800">✓ Approved &amp; published</div>
       <div className="mt-2 text-zinc-700">
-        {result.sent ? "Supplier email sent:" : "Supplier email — simulated (sending is off):"}
+        {result.sent ? "Supplier email sent:" : "Supplier email — staged, NOT sent:"}
       </div>
       <ul className="mt-1 space-y-0.5 text-xs text-zinc-700">
         <li>

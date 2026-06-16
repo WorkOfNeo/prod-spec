@@ -12,6 +12,7 @@ const SETTINGS_ITEMS: Array<{ href: string; label: string }> = [
   { href: "/settings/notifications", label: "Notifications" },
   { href: "/settings/rejection-log", label: "Rejection log" },
   { href: "/settings/review-activity", label: "Review activity" },
+  { href: "/settings/statistics", label: "Review stats" },
   { href: "/monday", label: "Monday" },
   { href: "/settings/care-labels", label: "Care labels" },
   { href: "/settings/info-area-sizes", label: "Info area sizes" },

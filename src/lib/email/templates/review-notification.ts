@@ -223,6 +223,37 @@ export function supplierApprovalEmail(input: {
   return { subject, html, text };
 }
 
+// Per-output supplier email (per-output refactor, phase 3): one approved
+// output rather than the whole job. Reuses the approval body with a single
+// file and a per-output subject. Routed through dispatchEmail, so the email
+// kill switch still blocks real sends during the test phase.
+export function supplierOutputEmail(input: {
+  outputName: string;
+  styleName: string;
+  styleNumber: string;
+  customerName: string;
+  businessArea?: string | null;
+  poNumber?: string | null;
+  file: { name: string; webUrl: string | null };
+  shareUrl: string;
+  sharePin: string;
+  folderUrl?: string | null;
+}): { subject: string; html: string; text: string } {
+  const body = supplierApprovalEmail({
+    supplierEmail: "",
+    styleName: input.styleName,
+    styleNumber: input.styleNumber,
+    customerName: input.customerName,
+    businessArea: input.businessArea,
+    poNumber: input.poNumber,
+    files: [input.file],
+    shareUrl: input.shareUrl,
+    sharePin: input.sharePin,
+    folderUrl: input.folderUrl,
+  });
+  return { ...body, subject: `ProdSpec — ${input.outputName} approved (${input.styleName})` };
+}
+
 // "This style is fully approved" — sent to the person responsible toward the
 // customer (the Styles board's people column, resolved to their email) once
 // EVERY ProdSpec output for the style has been approved. Internal-facing

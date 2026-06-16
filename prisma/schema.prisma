@@ -117,6 +117,26 @@ model Invite {
   @@map("invites")
 }
 
+// Per-output supplier delivery (per-output refactor, phase 3). One row per
+// (style × output): when a single approved output is delivered to the supplier,
+// deliveredAt + emailLogId are stamped so a re-run doesn't re-notify. Standalone
+// (scalar refs, no relations) so adding it never changes existing model selects.
+// Written/queried only behind PER_OUTPUT_DELIVERY_ENABLED (default off).
+model OutputDelivery {
+  id          String    @id @default(cuid())
+  styleId     String
+  variantKey  String
+  jobAssetId  String?
+  deliveredAt DateTime?
+  emailLogId  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([styleId, variantKey])
+  @@index([styleId])
+  @@map("output_deliveries")
+}
+
 // =====================================================
 // Domain — Monday mirrors + ProdSpec
 //

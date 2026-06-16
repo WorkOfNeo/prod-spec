@@ -15,3 +15,13 @@
 export function reviewFollowThroughEnabled(): boolean {
   return process.env.REVIEW_FOLLOW_THROUGH_DISABLED !== "true";
 }
+
+// Per-output supplier delivery (per-output refactor, phase 3). OFF by default:
+// when enabled, approving a SINGLE output notifies the supplier of that output
+// (and skips the job-level "publish everything"). Turn on only after the
+// output_deliveries table is deployed (npm run db:deploy). Even when ON, the
+// email kill switch in src/lib/email/dispatch.ts still blocks real sends — so
+// during the test phase this stages previews, never delivers.
+export function perOutputDeliveryEnabled(): boolean {
+  return process.env.PER_OUTPUT_DELIVERY_ENABLED === "true";
+}

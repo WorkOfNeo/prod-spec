@@ -28,6 +28,14 @@ export type ReviewTask = {
   lastActivityAt: Date;
   // Who decided so far — labels the "in review by others" rows.
   reviewerEmails: string[];
+  // Per-output breakdown for the dashboard accordion (this job's documents).
+  outputs: ReviewTaskOutput[];
+};
+
+export type ReviewTaskOutput = {
+  variantKey: string;
+  name: string;
+  state: "APPROVED" | "REJECTED" | "TO_REVIEW" | "BLOCKED";
 };
 
 export type ReviewWork = {
@@ -54,6 +62,9 @@ export async function getReviewWork(userId: string): Promise<ReviewWork> {
       reviewClaimedBy: { select: { email: true } },
       assets: {
         select: {
+          variantKey: true,
+          docType: true,
+          displayName: true,
           reviewStatus: true,
           reviewedById: true,
           reviewedAt: true,
@@ -112,6 +123,20 @@ export async function getReviewWork(userId: string): Promise<ReviewWork> {
             (e): e is string => !!e,
           ),
         ),
+      ),
+      outputs: job.assets.map(
+        (a): ReviewTaskOutput => ({
+          variantKey: a.variantKey ?? `doc:${a.docType}`,
+          name: a.displayName ?? a.docType,
+          state:
+            a.reviewStatus === "APPROVED"
+              ? "APPROVED"
+              : a.reviewStatus === "REJECTED"
+                ? "REJECTED"
+                : a.placeholderCount > 0
+                  ? "BLOCKED"
+                  : "TO_REVIEW",
+        }),
       ),
     };
 

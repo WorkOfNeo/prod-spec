@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getServerSession } from "@/lib/auth-server";
+import { getSessionWithRole } from "@/lib/auth-server";
+import { canReview } from "@/lib/roles";
 import { publishApprovedJob, PublishError } from "@/lib/publish/publish-approved-job";
 
 export const runtime = "nodejs";
@@ -10,8 +11,11 @@ export const maxDuration = 120;
 // All the actual work lives in src/lib/publish/publish-approved-job.ts,
 // shared with the per-asset roll-up path.
 export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getServerSession();
+  const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  if (!canReview(role)) {
+    return NextResponse.json({ error: "Requires role: ADMIN or REVIEWER" }, { status: 403 });
+  }
 
   const { id } = await ctx.params;
 

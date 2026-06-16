@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getServerSession } from "@/lib/auth-server";
+import { getSessionWithRole } from "@/lib/auth-server";
+import { canReview } from "@/lib/roles";
 import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
 import { claimReviewIfUnclaimed } from "@/lib/review-flow/claim";
 import { createOrReopenRejectionTicket } from "@/lib/tickets/rejection-tickets";
@@ -16,8 +17,11 @@ const SCHEMA = z.object({
 });
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getServerSession();
+  const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  if (!canReview(role)) {
+    return NextResponse.json({ error: "Requires role: ADMIN or REVIEWER" }, { status: 403 });
+  }
 
   const { id } = await ctx.params;
 

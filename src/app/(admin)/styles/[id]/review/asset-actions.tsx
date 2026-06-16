@@ -58,9 +58,9 @@ export function AssetActions({
       }
       if (body.settled === "APPROVED") {
         // All outputs approved → the job just published. Hold navigation
-        // until the email dialog is dismissed so the reviewer sees what
-        // went to the supplier (or would have, in simulation mode).
-        setPublishNote("All outputs approved — published to the supplier.");
+        // until the email dialog is dismissed so the reviewer sees the
+        // supplier email (staged — not auto-sent).
+        setPublishNote("All outputs approved & published.");
         if (body.email) {
           setEmail(body.email);
         } else {
