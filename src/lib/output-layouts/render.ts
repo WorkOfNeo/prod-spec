@@ -389,7 +389,13 @@ function applyInlineMarkdown(html: string): string {
 
 function blockBorder(block: LayoutBlock, fontScale: number): string {
   if (!block.border) return "";
-  return `border: ${(block.border.widthMm * fontScale).toFixed(3)}mm solid ${block.border.color}; `;
+  // Inner padding keeps text off the border. box-sizing is border-box
+  // (base.ts), so it insets the content within the block's set size rather
+  // than growing the box past its grid cell.
+  const pad = block.border.padMm
+    ? `padding: ${(block.border.padMm * fontScale).toFixed(3)}mm; `
+    : "";
+  return `border: ${(block.border.widthMm * fontScale).toFixed(3)}mm solid ${block.border.color}; ${pad}`;
 }
 
 function blockTypography(block: LayoutBlock, fontScale: number): string {

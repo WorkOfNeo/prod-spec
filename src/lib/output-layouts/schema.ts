@@ -84,6 +84,10 @@ export const LayoutBlockSchema = z.object({
     .object({
       widthMm: z.number().min(0.1).max(5),
       color: z.string().regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "hex colour like #000 or #1a1a1a"),
+      // Inner padding (mm) between the border and the text so content isn't
+      // flush against the box. Scales with fontScale at render, like the
+      // border width. Absent / 0 = flush (previous behaviour).
+      padMm: z.number().min(0).max(20).optional(),
     })
     .optional(),
   fontPt: z.number().min(4).max(48).default(9),
