@@ -10,6 +10,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --import tsx --test \"src/**/*.test.ts\" && npm run test:auth",
+    "test:auth": "node --experimental-test-module-mocks --import tsx --test \"tests/**/*.test.ts\"",
     "postinstall": "prisma generate",
     "db:deploy": "prisma migrate deploy",
     "release": "prisma migrate deploy",

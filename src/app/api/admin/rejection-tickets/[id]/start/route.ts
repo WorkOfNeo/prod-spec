@@ -1,14 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { getServerSession } from "@/lib/auth-server";
+import { getSessionWithRole } from "@/lib/auth-server";
+import { isAdmin } from "@/lib/roles";
 
 export const runtime = "nodejs";
 
 // "Start work" on a rejection ticket: OPEN → IN_PROGRESS. Idempotent —
-// pressing it on a ticket that's already in progress is a no-op.
+// pressing it on a ticket that's already in progress is a no-op. ADMIN only.
 export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getServerSession();
+  const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  if (!isAdmin(role)) {
+    return NextResponse.json({ error: "Requires role: ADMIN" }, { status: 403 });
+  }
 
   const { id } = await ctx.params;
   const ticket = await db.rejectionTicket.findUnique({ where: { id } });

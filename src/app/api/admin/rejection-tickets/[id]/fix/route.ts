@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { getServerSession } from "@/lib/auth-server";
+import { getSessionWithRole } from "@/lib/auth-server";
+import { isAdmin } from "@/lib/roles";
 import { runTicketJob, TicketRunError } from "@/lib/tickets/run-ticket-job";
 import { dispatchEmail } from "@/lib/email/dispatch";
 import { ticketFixedEmail } from "@/lib/email/templates/review-notification";
@@ -22,8 +23,11 @@ const STAMP = new Intl.DateTimeFormat("en-GB", {
 // reviewer, quoting the original rejection comment. If the render fails
 // the ticket keeps its status and no email is sent.
 export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getServerSession();
+  const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  if (!isAdmin(role)) {
+    return NextResponse.json({ error: "Requires role: ADMIN" }, { status: 403 });
+  }
 
   const { id } = await ctx.params;
   const ticket = await db.rejectionTicket.findUnique({
