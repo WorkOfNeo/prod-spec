@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerSession } from "@/lib/auth-server";
 import { getVariant } from "@/lib/pdf/template-registry";
-import { applyFieldOverrides } from "@/lib/pdf/pins";
+import { applyFieldOverrides, withSelectedSiblings } from "@/lib/pdf/pins";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
+import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 
 export const runtime = "nodejs";
 
@@ -60,13 +61,23 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       ? { no: cartonNo, total: cartonTotal }
       : undefined;
 
+  // Custom Carton Marking siblings. `siblingIds` present ⇒ the carton
+  // dialog's one-off multi-style selection (flips multipleStyles ON, fills
+  // {{style2}}+). Absent ⇒ the standard SINGLE-style render the runner emits
+  // — no siblings, multipleStyles off (so the always-open card preview
+  // matches production).
+  const siblingIdsParam = req.nextUrl.searchParams.get("siblingIds");
+
   try {
-    const base = applyFieldOverrides(context.styleData, output.fieldOverrides);
-    const renderStyle = cartonSerial ? { ...base, cartonSerial } : base;
-    const html = await variant.render(renderStyle, {
-      widthMm: output.widthMm,
-      heightMm: output.heightMm,
-    });
+    let renderStyle = applyFieldOverrides(context.styleData, output.fieldOverrides);
+    if (siblingIdsParam !== null) {
+      renderStyle = withSelectedSiblings(renderStyle, siblingIdsParam.split(",").filter(Boolean));
+    }
+    if (cartonSerial) renderStyle = { ...renderStyle, cartonSerial };
+    // Resolve the printed size the same way the runner does, so the live
+    // preview matches the real render at the chosen info-area size.
+    const dims = effectiveOutputDims(output, variant.isInfoArea ?? false, await loadInfoAreaSizeMap());
+    const html = await variant.render(renderStyle, dims);
     return new NextResponse(html, {
       status: 200,
       headers: {

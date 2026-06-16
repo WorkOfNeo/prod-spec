@@ -1,4 +1,4 @@
-import type { StyleData } from "./types";
+import type { StyleData, SiblingStyle } from "./types";
 import { computeEan13Checksum, isValidEan13 } from "./barcode";
 import { parseFieldOverrides, type PinnableField } from "./pins-meta";
 
@@ -119,4 +119,22 @@ export function applyCartonBarcodePrefs(
       heightMm: output.cartonBarcodeHeightMm,
     },
   };
+}
+
+// "Custom Carton Marking" is a MANUAL one-off — there is no standing
+// per-output config. The carton dialog passes the operator's chosen sibling
+// ids (slot order); this turns multi-style mode ON (so {{style2}}+ and
+// {{multipleStyles}} resolve) and narrows the pre-fetched POOL to exactly
+// those picks. Standard generation never calls this, so it stays
+// single-style. Unknown ids are dropped; an empty pick still flips the mode
+// flag on (the operator opted in) but fills no sibling slots.
+export function withSelectedSiblings(style: StyleData, ids: string[]): StyleData {
+  const pool = style.siblings ?? [];
+  const byId = new Map(pool.map((s) => [s.id, s]));
+  const picked: SiblingStyle[] = [];
+  for (const id of ids) {
+    const hit = byId.get(id);
+    if (hit) picked.push(hit);
+  }
+  return { ...style, siblings: picked, multipleStyles: true };
 }

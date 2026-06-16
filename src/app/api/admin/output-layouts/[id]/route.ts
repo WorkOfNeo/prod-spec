@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-server";
 import { LayoutDefSchema } from "@/lib/output-layouts/schema";
 import { refreshLayoutVariants } from "@/lib/output-layouts/variants";
+import { detachLayoutsFromProdSpecs } from "@/lib/output-layouts/detach";
 import { loadDocTypes } from "@/lib/pdf/doc-types-db";
 
 export const runtime = "nodejs";
@@ -34,6 +35,13 @@ const PATCH_SCHEMA = z.object({
   // null clears it.
   customerId: z.string().min(1).nullable().optional(),
   businessAreaId: z.string().min(1).nullable().optional(),
+  // Skip the manual per-asset review queue for this layout's outputs. An
+  // operational flag, not part of the rendered definition — so it doesn't
+  // touch the variant registry.
+  autoApprove: z.boolean().optional(),
+  // Info-area flag — when on, the layout's print size becomes switchable
+  // per style (admin InfoAreaSize / custom) instead of its fixed page size.
+  isInfoArea: z.boolean().optional(),
 });
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -56,7 +64,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const known = await loadDocTypes();
     if (!known.some((t) => t.value === d.docType)) {
       return NextResponse.json(
-        { error: `Unknown doc type "${d.docType}" — add it under Custom outputs → Document types first` },
+        { error: `Unknown doc type "${d.docType}" — add it under Output builder → Document types first` },
         { status: 400 },
       );
     }
@@ -71,6 +79,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         ...(d.definition !== undefined ? { definition: d.definition as object } : {}),
         ...(d.customerId !== undefined ? { customerId: d.customerId } : {}),
         ...(d.businessAreaId !== undefined ? { businessAreaId: d.businessAreaId } : {}),
+        ...(d.autoApprove !== undefined ? { autoApprove: d.autoApprove } : {}),
+        ...(d.isInfoArea !== undefined ? { isInfoArea: d.isInfoArea } : {}),
       },
     });
     // Edits to a PUBLISHED layout take effect on future renders
@@ -90,11 +100,12 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
   const { id } = await ctx.params;
   try {
     const layout = await db.outputLayout.delete({ where: { id } });
-    // ProdSpec rows that still reference layout:<id> keep their entry;
-    // the runner logs + skips unknown variant keys (same path as a
-    // removed coded variant), and the editor shows the stale key.
+    // Cleanly drop this layout from any Prod Spec that referenced it
+    // (layout:<id> entries) so nothing lingers as a stale key. Generated
+    // PDFs (JobAsset rows) hang off Jobs, not layouts, so they're kept.
+    const { specsUpdated } = await detachLayoutsFromProdSpecs([id]);
     if (layout.status === "PUBLISHED") await refreshLayoutVariants();
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, specsUpdated });
   } catch {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

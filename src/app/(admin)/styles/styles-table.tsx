@@ -15,6 +15,7 @@ import {
 import { STYLE_TABLE_COLUMNS, type StyleColumnKey } from "@/lib/styles/table-columns";
 import { eanStatusMeta } from "@/lib/po/ean-status-meta";
 import type { EanView } from "@/lib/po/ean-view";
+import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
 import { ColumnsPopover } from "./columns-popover";
 
 // Hover hints on column headers.
@@ -46,6 +47,10 @@ export type StyleRow = {
   name: string;
   poNumber: string | null;
   customerName: string;
+  // Customer.config.skipSupplierDelivery — shows a "Delivers own" chip next
+  // to the customer so the row isn't mistaken for one that sends supplier
+  // delivery on generation.
+  customerDeliversOwn: boolean;
   businessArea: string | null;
   completionPct: number;
   // % of required columns this style must reach before it can generate.
@@ -178,7 +183,10 @@ export function StylesTable({
       case "customer":
         return (
           <td key={key} className="px-4 py-3 text-zinc-600">
-            {s.customerName}
+            <span className="flex items-center gap-1.5">
+              {s.customerName}
+              {s.customerDeliversOwn && <SkipSupplierDeliveryBadge variant="chip" />}
+            </span>
           </td>
         );
       case "businessArea":

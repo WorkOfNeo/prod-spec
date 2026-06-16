@@ -51,6 +51,11 @@ export type TemplateVariant = {
   // customerOrderNo). When absent, `requiredFields` is the static gate.
   readiness?: (resolve: (field: keyof ColumnMapping) => string) => Array<keyof ColumnMapping>;
   render: (style: StyleData, dims: OutputDims) => Promise<string>;
+  // True for "info area" Output Builder layouts (OutputLayout.isInfoArea):
+  // the print size is switchable per style, so `dims` (the resolved
+  // InfoAreaSize / custom size) OVERRIDES the layout's page dimensions at
+  // render time. Coded variants leave it undefined (= fixed dims as before).
+  isInfoArea?: boolean;
   // Optional custom output file name (Output Builder layouts carry a
   // fileName expression in their settings). Returns "<name>.pdf" or null
   // to use the runner's default.
@@ -59,10 +64,15 @@ export type TemplateVariant = {
   // layouts whose settings.cartonNumbering is on. Surfaces the Style-page
   // "Carton numbers…" action; coded variants leave it undefined (= false).
   cartonNumbering?: boolean;
+  // Eligible for "Custom Carton Marking" (multi-style box) — Output Builder
+  // layouts whose settings.multipleStyles is on. Surfaces the carton
+  // dialog's sibling multiselect; independent of cartonNumbering.
+  multipleStyles?: boolean;
   // Optional multi-document rendering (Output Builder repeat-per-EAN):
   // one PDF per returned doc, persisted as JobAssets with variantKey
-  // "<key>#<suffix>". fileName null → runner default + suffix.
-  renderMany?: (style: StyleData) => Promise<Array<{ suffix: string; fileName: string | null; html: string }>>;
+  // "<key>#<suffix>". fileName null → runner default + suffix. `dims` is the
+  // resolved output size (info-area size override flows through here too).
+  renderMany?: (style: StyleData, dims: OutputDims) => Promise<Array<{ suffix: string; fileName: string | null; html: string }>>;
   // Optional pre-run files preview: the per-file plan (suffix + custom
   // name, null = runner default) the NEXT run would emit for a style,
   // WITHOUT rendering anything. Output Builder layouts implement it

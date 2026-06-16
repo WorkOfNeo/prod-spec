@@ -17,10 +17,10 @@ import { SettingsNav } from "@/components/sidebar/settings-nav";
 // server-side via requireAdminPage — hiding a link is not access control).
 const NAV: Array<{ href?: string; label?: string; divider?: true }> = [
   { href: "/styles", label: "Styles" },
+  { href: "/combos", label: "New combos" },
   { href: "/jobs", label: "Jobs" },
   { divider: true },
   { href: "/prod-specs", label: "Prod specs" },
-  { href: "/custom-outputs", label: "Custom outputs" },
   { href: "/output-builder", label: "Output builder" },
   { href: "/po-eans", label: "PO barcodes" },
   { href: "/customers", label: "Customers" },

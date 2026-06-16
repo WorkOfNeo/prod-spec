@@ -1,4 +1,4 @@
-import type { StyleData } from "@/lib/pdf/types";
+import type { StyleData, SiblingStyle } from "@/lib/pdf/types";
 import type { ColumnMapping } from "@/lib/customers/config";
 import { tFor } from "@/lib/pdf/templates/base";
 import { loadTranslationDictionary, translateComposition, translatePhrase } from "@/lib/translations/lookup";
@@ -7,7 +7,7 @@ import { isCareLabelVisible, type PresentSymbol } from "@/lib/care-labels/visibi
 import { getWashcareSymbol, loadWashcareSymbols } from "@/lib/pdf/washcare-symbols";
 import { ruleRequiredColumns } from "@/lib/pdf/spec-fields";
 import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-marking";
-import { tokenMeta, type BarcodeSource } from "./token-meta";
+import { tokenMeta, parseSiblingTokenKey, type BarcodeSource } from "./token-meta";
 import {
   applyConditionals,
   conditionalsInDef,
@@ -38,6 +38,15 @@ type TextResolver = (style: StyleData, arg?: string) => string;
 const RESOLVERS: Record<string, TextResolver> = {
   styleName: (s) => s.styleName,
   styleNumber: (s) => s.styleNumber,
+  // Bare {{style}} — the base style's identifier (its number); the
+  // single-style branch of a {{if multipleStyles == true}}…{{else}}{{style}}…
+  // carton template. Same value as {{style1}}; {{style2}}+ are the siblings.
+  style: (s) => s.styleNumber,
+  // Multi-style mode flag — "true" ONLY on a one-off multi-style carton
+  // print (the operator picked siblings in the carton dialog); "" on
+  // standard generation. Drives {{if multipleStyles == true}}… so one
+  // carton layout can render single normally and multi on a manual print.
+  multipleStyles: (s) => (s.multipleStyles ? "true" : ""),
   customerName: (s) => s.customerName,
   // Same fallback chain the Netto carton template uses: Description
   // column → EN product name → style name.
@@ -108,10 +117,74 @@ const RESOLVERS: Record<string, TextResolver> = {
   washSymbols: (s) => s.washSymbols.join(", "),
 };
 
+// ---------------------------------------------------------------------
+// Sibling styles — the {{style2}}/{{style3Name}}… slot tokens. A slot's
+// field suffix (canonical-cased by parseSiblingTokenKey) maps here to one
+// SiblingStyle field; the empty suffix is the bare {{styleN}} headline
+// (the style number). Keep the suffixes in sync with SIBLING_FIELDS
+// (token-meta.ts). projectSiblingStyle builds a SiblingStyle from a fully
+// mapped StyleData using the SAME base resolvers, so a sibling can never
+// drift from how the style would render on its own.
+// ---------------------------------------------------------------------
+const SIBLING_FIELD_RESOLVERS: Record<string, (s: SiblingStyle) => string> = {
+  "": (s) => s.styleNumber,
+  number: (s) => s.styleNumber,
+  name: (s) => s.styleName,
+  description: (s) => s.description,
+  customeritemno: (s) => s.customerItemNo,
+  colourname: (s) => s.colourName,
+  colourcode: (s) => s.colourCode,
+  sizes: (s) => s.sizes,
+  sizerange: (s) => s.sizeRange,
+  qtypercarton: (s) => s.qtyPerCarton,
+  cartonean: (s) => s.cartonEan,
+  ean13: (s) => s.ean13,
+};
+
+export function projectSiblingStyle(style: StyleData, id: string): SiblingStyle {
+  return {
+    id,
+    styleNumber: resolveTextToken(style, "styleNumber"),
+    styleName: resolveTextToken(style, "styleName"),
+    description: resolveTextToken(style, "description"),
+    customerItemNo: resolveTextToken(style, "customerItemNo"),
+    colourName: resolveTextToken(style, "colourName"),
+    colourCode: resolveTextToken(style, "colourCode"),
+    sizes: resolveTextToken(style, "sizes"),
+    sizeRange: resolveTextToken(style, "sizeRange"),
+    qtyPerCarton: resolveTextToken(style, "qtyPerCarton"),
+    cartonEan: resolveTextToken(style, "cartonEan"),
+    ean13: resolveTextToken(style, "ean13"),
+  };
+}
+
+// The SiblingStyle for a slot ("style2…" → siblings[0]); slot 1 is the
+// base style itself. Returns null when the slot has no sibling (renders
+// empty per the caller's gap rules). Slots ≥ 2 resolve ONLY in multi-style
+// mode (style.multipleStyles) — the sibling POOL is always on StyleData, so
+// without this gate {{style2}} would leak siblings into standard generation.
+// Slot 1 (the base) always resolves, so {{style}}/{{style1}} stay available
+// in the single-style branch.
+function siblingForSlot(style: StyleData, slot: number): SiblingStyle | null {
+  if (slot <= 1) return projectSiblingStyle(style, "self");
+  if (!style.multipleStyles) return null;
+  return style.siblings?.[slot - 2] ?? null;
+}
+
 // Resolve a TEXT token to its string value ("" when empty/unknown —
 // callers decide how to surface gaps). Barcode/symbol tokens are drawn
 // by the renderer; their resolvers here return the underlying value.
 export function resolveTextToken(style: StyleData, key: string, arg?: string): string {
+  // Sibling slot tokens resolve against StyleData.siblings (sync — the
+  // pool is pre-fetched in buildStyleData). They take no :arg.
+  const sib = parseSiblingTokenKey(key);
+  if (sib) {
+    if (arg) return "";
+    const target = siblingForSlot(style, sib.slot);
+    if (!target) return "";
+    const fn = SIBLING_FIELD_RESOLVERS[sib.suffix.toLowerCase()];
+    return fn ? (fn(target) ?? "").trim() : "";
+  }
   const fn = RESOLVERS[key];
   if (!fn) return "";
   return (fn(style, arg) ?? "").trim();
@@ -283,6 +356,12 @@ export function unresolvedTokens(def: LayoutDef, style: StyleData): string[] {
         for (const ref of tokensInLine(effective)) {
           const meta = tokenMeta(ref.key);
           if (!meta) continue;
+          // Sibling slot tokens ({{style2}}…) depend on OTHER styles on the
+          // PO, not this style's columns — an empty slot is never a "missing
+          // field" on the style being built. {{multipleStyles}} is a mode
+          // flag that's legitimately "" in single-style mode. Don't list
+          // either as amber gaps.
+          if (parseSiblingTokenKey(ref.key) || ref.key === "multipleStyles") continue;
           // Image tokens (logos, certification marks) always render
           // something: present → the artwork, absent → a visible chip on
           // the proof counted by the ship gate. This sync check can't see

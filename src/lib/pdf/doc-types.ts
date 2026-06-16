@@ -3,7 +3,7 @@
 // labelling, SharePoint metadata; no render behaviour hangs off them).
 //
 // The catalogue lives in the doc_types TABLE and is managed in the UI
-// (Custom outputs → Document types card): operators add types and edit
+// (Output builder → Document types card): operators add types and edit
 // labels there, no migration needed. Server code loads it via
 // loadDocTypes() in ./doc-types-db; client components receive entries/
 // labels as props.

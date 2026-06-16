@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 type LayoutRow = {
   id: string;
@@ -11,11 +11,16 @@ type LayoutRow = {
   docTypeLabel: string;
   status: "DRAFT" | "PUBLISHED";
   version: number;
+  autoApprove: boolean;
   pageCount: number;
   defInvalid: boolean;
   customerName: string | null;
   businessAreaName: string | null;
   updatedAt: string;
+  // Generation history (server-computed): how many PDFs this layout has
+  // produced across all styles, and when it last ran.
+  generationCount: number;
+  lastGeneratedAt: string | null;
   // Usage joins (computed server-side): the Prod Specs that carry this
   // layout as an enabled output (+ their customer), and the styles
   // currently resolved to those specs. `styles` is capped — `styleCount`
@@ -44,70 +49,93 @@ function HoverPopover({ trigger, children }: { trigger: ReactNode; children: Rea
 export function LayoutsList({
   layouts,
   contrastLogoFound,
-  customLogo,
+  contrastAddressLogoFound,
 }: {
   layouts: LayoutRow[];
   contrastLogoFound: boolean;
-  customLogo: string | null;
+  contrastAddressLogoFound: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [logoError, setLogoError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "PUBLISHED" | "DRAFT">("all");
+  const [autoApproveFilter, setAutoApproveFilter] = useState<"all" | "on" | "off">("all");
+  // Multi-select + delete. `selected` holds ids across the full list (so a
+  // selection survives filtering); `confirmRows` are the rows queued in the
+  // delete confirmation modal (one row from the row button, or every selected
+  // row from the bulk bar).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmRows, setConfirmRows] = useState<LayoutRow[] | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Distinct doc types present among the layouts — drives the Type dropdown
+  // (value = docType, label = its catalogue label, e.g. "Private Label"),
+  // sorted by label so the menu reads alphabetically.
+  const typeOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const l of layouts) if (!seen.has(l.docType)) seen.set(l.docType, l.docTypeLabel);
+    return [...seen.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [layouts]);
 
   // Search across everything a row shows or links to: layout name/type,
   // test-data customer, the prod specs (+ their customers) using the
   // layout, and the (capped) style list — so "which layout prints style
-  // X / customer Y" is findable from here.
+  // X / customer Y" is findable from here. The dropdown filters (type /
+  // status / auto-approve) and the search box all apply together.
   const q = query.trim().toLowerCase();
-  const visibleLayouts = q
-    ? layouts.filter((l) =>
-        [
-          l.name,
-          l.docType,
-          l.docTypeLabel,
-          l.customerName ?? "",
-          l.businessAreaName ?? "",
-          ...l.prodSpecs.flatMap((s) => [s.name, s.customerName]),
-          ...l.styles.map((s) => s.name),
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(q),
-      )
-    : layouts;
+  const visibleLayouts = layouts.filter((l) => {
+    if (typeFilter !== "all" && l.docType !== typeFilter) return false;
+    if (statusFilter !== "all" && l.status !== statusFilter) return false;
+    if (autoApproveFilter !== "all" && l.autoApprove !== (autoApproveFilter === "on")) return false;
+    if (
+      q &&
+      ![
+        l.name,
+        l.docType,
+        l.docTypeLabel,
+        l.customerName ?? "",
+        l.businessAreaName ?? "",
+        ...l.prodSpecs.flatMap((s) => [s.name, s.customerName]),
+        ...l.styles.map((s) => s.name),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(q)
+    )
+      return false;
+    return true;
+  });
+  const filtersActive =
+    q !== "" || typeFilter !== "all" || statusFilter !== "all" || autoApproveFilter !== "all";
 
-  async function uploadLogo(file: File) {
-    setLogoError(null);
-    if (file.size > 450_000) {
-      setLogoError("Keep the logo under ~450 KB.");
-      return;
-    }
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(String(r.result));
-      r.onerror = () => reject(new Error("could not read file"));
-      r.readAsDataURL(file);
+  function toggleOne(id: string) {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
-    const res = await fetch("/api/admin/output-layouts/logo", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dataUrl }),
+  }
+  const allVisibleSelected = visibleLayouts.length > 0 && visibleLayouts.every((l) => selected.has(l.id));
+  const someVisibleSelected = visibleLayouts.some((l) => selected.has(l.id));
+  function toggleAllVisible() {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (allVisibleSelected) for (const l of visibleLayouts) next.delete(l.id);
+      else for (const l of visibleLayouts) next.add(l.id);
+      return next;
     });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      setLogoError(body.error ?? `HTTP ${res.status}`);
-      return;
-    }
-    router.refresh();
   }
 
-  async function removeLogo() {
-    setLogoError(null);
-    await fetch("/api/admin/output-layouts/logo", { method: "DELETE" });
-    router.refresh();
-  }
+  // Union (deduped by id) of the prod specs across the rows queued for
+  // deletion — exactly what loses this output. PDFs already generated are kept.
+  const affectedSpecs = confirmRows
+    ? [...new Map(confirmRows.flatMap((r) => r.prodSpecs).map((s) => [s.id, s])).values()]
+    : [];
 
   async function createLayout() {
     setBusy("new");
@@ -149,24 +177,30 @@ export function LayoutsList({
     }
   }
 
-  async function deleteLayout(row: LayoutRow) {
-    const warning =
-      row.status === "PUBLISHED"
-        ? `Delete "${row.name}"?\n\nIt is PUBLISHED — Prod Specs that link it will keep a stale output entry (skipped with a warning at run time) until the entry is removed there.`
-        : `Delete draft "${row.name}"?`;
-    if (!window.confirm(warning)) return;
-    setBusy(row.id);
+  // Delete the queued rows via the bulk endpoint (works for one id too). The
+  // server cleanly drops each layout from any prod spec referencing it and
+  // keeps already-generated PDFs.
+  async function deleteConfirmed() {
+    if (!confirmRows || confirmRows.length === 0) return;
+    const ids = confirmRows.map((r) => r.id);
+    setDeleting(true);
     setError(null);
     try {
-      const res = await fetch(`/api/admin/output-layouts/${row.id}`, { method: "DELETE" });
+      const res = await fetch("/api/admin/output-layouts/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         setError(body.error ?? `HTTP ${res.status}`);
         return;
       }
+      setSelected(new Set());
+      setConfirmRows(null);
       router.refresh();
     } finally {
-      setBusy(null);
+      setDeleting(false);
     }
   }
 
@@ -211,35 +245,24 @@ export function LayoutsList({
           )}
         </div>
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-zinc-600">Custom</span>
-          {customLogo ? (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={customLogo} alt="Custom logo" className="h-6 w-auto rounded border border-zinc-100" />
-              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                {"{{logo:custom}}"}
-              </span>
-              <button type="button" onClick={removeLogo} className="text-xs text-zinc-400 hover:text-red-600">
-                Remove
-              </button>
-            </>
+          <span className="text-zinc-600">Contrast (address)</span>
+          {contrastAddressLogoFound ? (
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+              found · {"{{logo:contrastAddress}}"}
+            </span>
           ) : (
-            <label className="cursor-pointer rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50">
-              Upload (SVG/PNG/JPG)
-              <input
-                type="file"
-                accept="image/svg+xml,image/png,image/jpeg"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void uploadLogo(f);
-                  e.target.value = "";
-                }}
-              />
-            </label>
+            <span
+              className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700"
+              title="Commit the logo file to the repo — no code change needed"
+            >
+              add <code className="font-mono">public/logos/contrast-address.svg</code> to the repo
+            </span>
           )}
         </div>
-        {logoError ? <span className="text-xs text-red-600">{logoError}</span> : null}
+        <div className="text-xs text-zinc-500">
+          <span className="text-zinc-600">{"{{logo:custom}}"}</span> is now uploaded per layout — open a
+          layout and use it where the token appears.
+        </div>
       </div>
 
       {layouts.length === 0 ? (
@@ -252,27 +275,114 @@ export function LayoutsList({
         </div>
       ) : (
         <>
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search layouts — name, customer, prod spec, style…"
-            className="mt-6 w-full max-w-md rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"
-            spellCheck={false}
-          />
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search layouts — name, customer, prod spec, style…"
+              className="w-full max-w-md flex-1 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"
+              spellCheck={false}
+            />
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none"
+              title="Filter by document type"
+            >
+              <option value="all">All types</option>
+              {typeOptions.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none"
+              title="Filter by status"
+            >
+              <option value="all">All statuses</option>
+              <option value="PUBLISHED">Published</option>
+              <option value="DRAFT">Draft</option>
+            </select>
+            <select
+              value={autoApproveFilter}
+              onChange={(e) => setAutoApproveFilter(e.target.value as typeof autoApproveFilter)}
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none"
+              title="Filter by auto-approve"
+            >
+              <option value="all">Auto-approve: any</option>
+              <option value="on">Auto-approve: on</option>
+              <option value="off">Auto-approve: off</option>
+            </select>
+            {filtersActive ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setTypeFilter("all");
+                  setStatusFilter("all");
+                  setAutoApproveFilter("all");
+                }}
+                className="text-xs text-zinc-400 hover:text-zinc-700"
+              >
+                Clear
+              </button>
+            ) : null}
+            <span className="ml-auto text-xs text-zinc-400">
+              {visibleLayouts.length} of {layouts.length}
+            </span>
+          </div>
+
+          {selected.size > 0 ? (
+            <div className="mt-4 flex items-center justify-between rounded-lg border border-zinc-300 bg-white px-4 py-2.5 shadow-sm">
+              <span className="text-sm font-medium text-zinc-700">{selected.size} selected</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelected(new Set())}
+                  className="rounded-md px-2.5 py-1 text-xs font-medium text-zinc-500 hover:text-zinc-800"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmRows(layouts.filter((l) => selected.has(l.id)))}
+                  disabled={busy !== null}
+                  className="rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
+                >
+                  Delete selected
+                </button>
+              </div>
+            </div>
+          ) : null}
           {visibleLayouts.length === 0 ? (
             <div className="mt-4 rounded-lg border border-dashed border-zinc-300 bg-white px-8 py-12 text-center text-sm text-zinc-500">
-              No layouts match “{query}”.
+              No layouts match the current filters.
             </div>
           ) : (
         <div className="mt-4 rounded-lg border border-zinc-200 bg-white">
           <table className="w-full">
             <thead>
               <tr className="border-b border-zinc-200 text-left text-xs uppercase tracking-wide text-zinc-500">
-                <th className="rounded-tl-lg bg-zinc-50 px-4 py-3 font-medium">Layout</th>
+                <th className="w-10 rounded-tl-lg bg-zinc-50 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all layouts"
+                    checked={allVisibleSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected;
+                    }}
+                    onChange={toggleAllVisible}
+                    className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                  />
+                </th>
+                <th className="bg-zinc-50 px-4 py-3 font-medium">Layout</th>
                 <th className="bg-zinc-50 px-4 py-3 font-medium">Type</th>
                 <th className="bg-zinc-50 px-4 py-3 font-medium">Pages</th>
-                <th className="bg-zinc-50 px-4 py-3 font-medium">Test data</th>
+                <th className="bg-zinc-50 px-4 py-3 font-medium">Generations</th>
                 <th className="bg-zinc-50 px-4 py-3 font-medium">Prod specs</th>
                 <th className="bg-zinc-50 px-4 py-3 font-medium">Styles</th>
                 <th className="bg-zinc-50 px-4 py-3 font-medium">Updated</th>
@@ -281,7 +391,21 @@ export function LayoutsList({
             </thead>
             <tbody>
               {visibleLayouts.map((l) => (
-                <tr key={l.id} className="border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50/60">
+                <tr
+                  key={l.id}
+                  className={`border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50/60 ${
+                    selected.has(l.id) ? "bg-zinc-50" : ""
+                  }`}
+                >
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${l.name}`}
+                      checked={selected.has(l.id)}
+                      onChange={() => toggleOne(l.id)}
+                      className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                    />
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <span
@@ -293,10 +417,16 @@ export function LayoutsList({
                       <Link href={`/output-builder/${l.id}`} className="text-sm font-medium text-zinc-900 hover:underline">
                         {l.name}
                       </Link>
+                      {l.autoApprove ? (
+                        <span
+                          className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700"
+                          title="Outputs skip the manual review queue (a person still sends to the supplier)"
+                        >
+                          Auto-approve
+                        </span>
+                      ) : null}
                     </div>
-                    <div className="ml-4 mt-0.5 font-mono text-xs text-zinc-400">
-                      layout:{l.id.slice(0, 10)}…
-                    </div>
+                    <div className="ml-4 mt-0.5 font-mono text-xs text-zinc-400">layout:{l.id.slice(0, 10)}…</div>
                   </td>
                   <td className="px-4 py-3">
                     <span className="inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600">
@@ -307,22 +437,24 @@ export function LayoutsList({
                     {l.defInvalid ? <span className="text-amber-600">invalid</span> : l.pageCount}
                   </td>
                   <td className="px-4 py-3 text-sm text-zinc-600">
-                    {l.customerName ? (
-                      <>
-                        {l.customerName}
-                        {l.businessAreaName ? <span className="text-zinc-400"> · {l.businessAreaName}</span> : null}
-                      </>
-                    ) : (
+                    {l.generationCount === 0 ? (
                       <span className="text-zinc-400">—</span>
+                    ) : (
+                      <>
+                        <span className="font-medium tabular-nums text-zinc-800">{l.generationCount}</span>
+                        {l.lastGeneratedAt ? (
+                          <div className="mt-0.5 text-xs text-zinc-400">
+                            last {new Date(l.lastGeneratedAt).toLocaleDateString()}
+                          </div>
+                        ) : null}
+                      </>
                     )}
                   </td>
                   <td className="px-4 py-3 text-sm text-zinc-600">
                     {l.prodSpecs.length === 0 ? (
                       <span className="text-zinc-400">—</span>
                     ) : (
-                      <HoverPopover
-                        trigger={`${l.prodSpecs.length} prod spec${l.prodSpecs.length === 1 ? "" : "s"}`}
-                      >
+                      <HoverPopover trigger={`${l.prodSpecs.length} prod spec${l.prodSpecs.length === 1 ? "" : "s"}`}>
                         <ul className="space-y-1.5 text-xs">
                           {l.prodSpecs.map((s) => (
                             <li key={s.id}>
@@ -335,11 +467,6 @@ export function LayoutsList({
                         </ul>
                       </HoverPopover>
                     )}
-                    {l.prodSpecs.length > 0 ? (
-                      <div className="mt-0.5 max-w-56 truncate text-xs text-zinc-400">
-                        {[...new Set(l.prodSpecs.map((s) => s.customerName))].join(", ")}
-                      </div>
-                    ) : null}
                   </td>
                   <td className="px-4 py-3 text-sm text-zinc-600">
                     {l.styleCount === 0 ? (
@@ -374,7 +501,7 @@ export function LayoutsList({
                       </button>
                       <button
                         type="button"
-                        onClick={() => deleteLayout(l)}
+                        onClick={() => setConfirmRows([l])}
                         disabled={busy !== null}
                         className="rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-400 hover:border-red-200 hover:text-red-600 disabled:opacity-60"
                       >
@@ -390,6 +517,80 @@ export function LayoutsList({
           )}
         </>
       )}
+
+      {confirmRows ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => {
+            if (!deleting) setConfirmRows(null);
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-lg border border-zinc-200 bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-zinc-100 px-5 py-4">
+              <h2 className="text-sm font-semibold text-zinc-900">
+                {confirmRows.length === 1 ? `Delete “${confirmRows[0].name}”?` : `Delete ${confirmRows.length} layouts?`}
+              </h2>
+            </div>
+            <div className="space-y-3 px-5 py-4 text-sm text-zinc-600">
+              {confirmRows.length > 1 ? (
+                <ul className="max-h-32 space-y-0.5 overflow-y-auto rounded-md border border-zinc-100 bg-zinc-50 px-3 py-2 text-xs">
+                  {confirmRows.map((r) => (
+                    <li key={r.id} className="truncate">
+                      {r.name}
+                      {r.status === "PUBLISHED" ? <span className="text-emerald-600"> · published</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {affectedSpecs.length > 0 ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                  <p className="font-medium">
+                    Removes the output from {affectedSpecs.length} prod spec{affectedSpecs.length === 1 ? "" : "s"}:
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {affectedSpecs.slice(0, 8).map((s) => (
+                      <li key={s.id} className="truncate">
+                        {s.name} <span className="text-amber-600">· {s.customerName}</span>
+                      </li>
+                    ))}
+                    {affectedSpecs.length > 8 ? (
+                      <li className="text-amber-600">+{affectedSpecs.length - 8} more</li>
+                    ) : null}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-zinc-500">Not linked to any prod spec.</p>
+              )}
+              <p className="text-xs text-zinc-400">
+                Already-generated PDFs are kept — only the prod-spec link is removed.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-zinc-100 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setConfirmRows(null)}
+                disabled={deleting}
+                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={deleteConfirmed}
+                disabled={deleting}
+                className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {deleting ? "Deleting…" : confirmRows.length === 1 ? "Delete" : `Delete ${confirmRows.length}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

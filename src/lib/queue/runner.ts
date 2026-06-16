@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { renderPdf } from "@/lib/pdf/renderer";
-import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
+import { ensureLayoutVariantsLoaded, layoutIdFromVariantKey } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import { applyCartonBarcodePrefs, applyFieldOverrides } from "@/lib/pdf/pins";
@@ -27,6 +27,7 @@ import {
   resolveOutputVariant,
   type ProdSpecOutput,
 } from "@/lib/prod-spec/config";
+import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 
 const STALE_RUNNING_MS = 15 * 60 * 1000;
 
@@ -146,6 +147,7 @@ export async function processJob(jobId: string): Promise<void> {
     // src/lib/styles/render-context.ts for the full resolution rules.
     styleData = await buildStyleData(
       {
+        id: job.style.id,
         rawData: job.style.rawData,
         poNumber: job.style.poNumber,
         cartonEan: job.style.cartonEan,
@@ -247,6 +249,10 @@ export async function processJob(jobId: string): Promise<void> {
   // One row per OUTPUT (not per file) for the cover page's documents
   // table — title + dims once, with a file count for multi-doc variants.
   const docSummaries: BundleDocSummary[] = [];
+  // Info-area size catalogue, loaded once — resolves each info-area
+  // output's per-style size pick to printed mm. Empty if the migration
+  // isn't applied yet; outputs then fall back to their stored dims.
+  const infoAreaSizes = await loadInfoAreaSizeMap();
   for (const output of outputs) {
     const variant = resolveOutputVariant(output);
     if (!variant) {
@@ -263,19 +269,25 @@ export async function processJob(jobId: string): Promise<void> {
       continue;
     }
     try {
-      // Per-output pins ("customerName is ALWAYS …") and the carton
-      // barcode preference applied on a copy — the base StyleData is
-      // shared across this job's outputs.
+      // Per-output pins ("customerName is ALWAYS …") and the carton barcode
+      // preference applied on a copy — the base StyleData is shared across
+      // this job's outputs. Standard generation is always SINGLE-style:
+      // multi-style carton marking is a manual one-off (the carton dialog),
+      // never standing config, so the runner never flips style.multipleStyles
+      // and {{style2}}+ stay empty here.
       const renderStyle = applyCartonBarcodePrefs(
         applyFieldOverrides(styleData, output.fieldOverrides),
         output,
       );
+      // Printed size — the info-area size override (admin pick or custom)
+      // when the variant is an info area, else the output's own dims.
+      const dims = effectiveOutputDims(output, variant.isInfoArea ?? false, infoAreaSizes);
       // Static-pdf passthrough variants emit their source artwork bytes
       // verbatim; everything else renders HTML → PDF.
       if (!variant.staticPdf && variant.renderMany) {
         // Multi-document variant: one PDF per returned doc, each its own
         // JobAsset under "<key>#<suffix>".
-        const docs = await variant.renderMany(renderStyle);
+        const docs = await variant.renderMany(renderStyle, dims);
         for (const doc of docs) {
           const pdf = await renderPdf({ html: doc.html });
           const defaultName = fileNameFor(variant, styleData.styleNumber).replace(
@@ -294,8 +306,8 @@ export async function processJob(jobId: string): Promise<void> {
         }
         docSummaries.push({
           displayName: variant.name,
-          widthMm: output.widthMm,
-          heightMm: output.heightMm,
+          widthMm: dims.widthMm,
+          heightMm: dims.heightMm,
           fileCount: docs.length,
         });
         continue;
@@ -306,10 +318,7 @@ export async function processJob(jobId: string): Promise<void> {
       if (variant.staticPdf) {
         pdf = await variant.staticPdf();
       } else {
-        const html = await variant.render(renderStyle, {
-          widthMm: output.widthMm,
-          heightMm: output.heightMm,
-        });
+        const html = await variant.render(renderStyle, dims);
         placeholderCount = countPlaceholderMarkers(html);
         pdf = await renderPdf({ html });
       }
@@ -317,15 +326,15 @@ export async function processJob(jobId: string): Promise<void> {
         variant,
         output,
         variantKey: variant.key,
-        displayName: `${variant.name} · ${output.widthMm}×${output.heightMm} mm`,
+        displayName: `${variant.name} · ${dims.widthMm}×${dims.heightMm} mm`,
         fileName: variant.fileNameFor?.(renderStyle) ?? fileNameFor(variant, styleData.styleNumber),
         pdf,
         placeholderCount,
       });
       docSummaries.push({
         displayName: variant.name,
-        widthMm: output.widthMm,
-        heightMm: output.heightMm,
+        widthMm: dims.widthMm,
+        heightMm: dims.heightMm,
         fileCount: 1,
       });
     } catch (err) {
@@ -428,6 +437,35 @@ export async function processJob(jobId: string): Promise<void> {
     );
   }
 
+  // Auto-approve resolution. A generated doc skips the manual review queue
+  // (reviewStatus APPROVED at creation) when its OutputLayout has
+  // autoApprove = true — BUT only when print-safe: a doc carrying
+  // placeholder artifacts always falls back to manual review (mirrors the
+  // ship-gate in the approve route + publishApprovedJob). Bundle pages
+  // (cover / general info) are never auto-approved — they're cascaded by the
+  // human "Approve all & publish" send, which is the manual checkpoint we
+  // deliberately keep. Delivery (SharePoint + supplier email) is NOT
+  // triggered here; auto-approve removes the review click, not the send.
+  const generatedLayoutIds = [
+    ...new Set(generated.map((d) => layoutIdFromVariantKey(d.variantKey)).filter((x): x is string => x !== null)),
+  ];
+  const autoApproveLayoutIds = new Set(
+    generatedLayoutIds.length > 0
+      ? (
+          await db.outputLayout.findMany({
+            where: { id: { in: generatedLayoutIds }, autoApprove: true },
+            select: { id: true },
+          })
+        ).map((l) => l.id)
+      : [],
+  );
+  const isAutoApproved = (doc: (typeof generated)[number]): boolean => {
+    const layoutId = layoutIdFromVariantKey(doc.variantKey);
+    return layoutId !== null && autoApproveLayoutIds.has(layoutId) && doc.placeholderCount === 0;
+  };
+  const autoApprovedAt = new Date();
+  const autoApprovedDocs = generated.filter(isAutoApproved);
+
   try {
     await db.$transaction([
       db.jobAsset.deleteMany({ where: { jobId: job.id } }),
@@ -454,6 +492,11 @@ export async function processJob(jobId: string): Promise<void> {
             fileName: doc.fileName,
             pdf: toPlainBytes(doc.pdf),
             placeholderCount: doc.placeholderCount,
+            // System auto-approval — reviewedById left null marks "no human
+            // reviewer" (vs. the session user the approve route stamps).
+            ...(isAutoApproved(doc)
+              ? { reviewStatus: "APPROVED" as const, reviewedAt: autoApprovedAt }
+              : {}),
           },
         }),
       ),
@@ -469,7 +512,13 @@ export async function processJob(jobId: string): Promise<void> {
         data: {
           jobId: job.id,
           level: "INFO",
-          message: `generated ${generated.length} documents (${generated.map((d) => d.variant.key).join(", ")})`,
+          message:
+            `generated ${generated.length} documents (${generated.map((d) => d.variant.key).join(", ")})` +
+            (autoApprovedDocs.length > 0
+              ? ` · auto-approved ${autoApprovedDocs.length} (${autoApprovedDocs
+                  .map((d) => d.variant.key)
+                  .join(", ")}) — skipped manual review, still pending supplier send`
+              : ""),
         },
       }),
     ]);

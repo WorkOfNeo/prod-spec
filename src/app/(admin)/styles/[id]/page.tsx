@@ -29,10 +29,16 @@ import type { EanView } from "@/lib/po/ean-view";
 import type { AssetReviewStatus } from "@/generated/prisma/enums";
 import { colorFromVariantLabel } from "@/lib/po/ean-format";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
+import {
+  effectiveOutputDims,
+  listActiveInfoAreaSizes,
+  loadInfoAreaSizeMap,
+} from "@/lib/prod-spec/info-area";
 import { requiredFieldsForVariants, getVariant, defaultArtifactFileName } from "@/lib/pdf/template-registry";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { parseCustomerConfig } from "@/lib/customers/config";
+import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
 import { applyFieldOverrides } from "@/lib/pdf/pins";
 import { parseFieldOverrides, PINNABLE_FIELD_LABELS, type PinnableField } from "@/lib/pdf/pins-meta";
 import { findFieldRule } from "@/lib/pdf/spec-fields";
@@ -235,7 +241,8 @@ export default async function StyleDetail({
   const enabledVariantKeys = enabledOutputs.map((o) => o.variantKey);
   const outputEntryByKey = new Map(enabledOutputs.map((o) => [o.variantKey, o]));
   const requiredKeys = requiredFieldsForVariants(enabledVariantKeys);
-  const reqMapping = parseCustomerConfig(style.customer.config).columnMapping;
+  const customerConfig = parseCustomerConfig(style.customer.config);
+  const reqMapping = customerConfig.columnMapping;
   const effItem = effectiveStyleItem(style) as MondayItem | null;
   const missingDetail = findMissingDetailFields(effItem, reqMapping, requiredKeys);
   const reqMissing = new Set(missingDetail.map((m) => m.field));
@@ -276,6 +283,7 @@ export default async function StyleDetail({
     if (!style.prodSpec || enabledOutputs.length === 0) return [];
     const base = await buildStyleData(
       {
+        id: style.id,
         rawData: style.rawData,
         poNumber: style.poNumber,
         cartonEan: style.cartonEan,
@@ -350,6 +358,20 @@ export default async function StyleDetail({
     };
   })();
 
+  // Info-area sizing catalogue: the active sizes the dropdown offers, plus a
+  // full map (incl. inactive) to resolve a current pick's name + printed
+  // dims. Resilient to a not-yet-deployed table (empty → custom only).
+  const [infoAreaSizesActive, infoAreaSizeMap] = await Promise.all([
+    listActiveInfoAreaSizes(),
+    loadInfoAreaSizeMap(),
+  ]);
+  const infoAreaSizeOptions = infoAreaSizesActive.map((s) => ({
+    id: s.id,
+    name: s.name,
+    widthMm: s.widthMm,
+    heightMm: s.heightMm,
+  }));
+
   // Per-output card props — live preview src, missing/pin/note chips, last
   // generated artifact. Computed here (not in DetailsTab) because they need
   // the effective item + mapping + parsed output entries.
@@ -358,6 +380,13 @@ export default async function StyleDetail({
     const query = `variantKey=${encodeURIComponent(o.variantKey)}`;
     const entry = outputEntryByKey.get(o.variantKey);
     const variant = getVariant(o.variantKey);
+    const isInfoArea = variant?.isInfoArea ?? false;
+    // Effective printed dims — the info-area size override when applicable,
+    // else the output's own dims (or the variant default for the fallback).
+    const dims = entry
+      ? effectiveOutputDims(entry, isInfoArea, infoAreaSizeMap)
+      : { widthMm: variant?.defaultWidthMm ?? 100, heightMm: variant?.defaultHeightMm ?? 100 };
+    const infoAreaSizeId = entry?.infoAreaSizeId ?? null;
     const pins = Object.entries(parseFieldOverrides(entry?.fieldOverrides)).map(
       ([field, value]) => ({
         label: PINNABLE_FIELD_LABELS[field as PinnableField],
@@ -370,8 +399,8 @@ export default async function StyleDetail({
       name: o.name,
       ready: o.ready,
       missing: o.missing.map((m) => m.label),
-      widthMm: entry?.widthMm ?? variant?.defaultWidthMm ?? 100,
-      heightMm: entry?.heightMm ?? variant?.defaultHeightMm ?? 100,
+      widthMm: dims.widthMm,
+      heightMm: dims.heightMm,
       pins,
       notes: outputDataNotes(o.variantKey, effItem, reqMapping),
       thumbSrc: asset
@@ -385,6 +414,12 @@ export default async function StyleDetail({
       // Per-PDF review state for the latest generated asset (drives the
       // Approved/Rejected/In-review badge on the output row).
       reviewStatus: asset?.reviewStatus ?? null,
+      multipleStyles: variant?.multipleStyles ?? false,
+      isInfoArea,
+      prodSpecId: style.prodSpec?.id ?? null,
+      infoAreaSizeId,
+      infoAreaSizeName: isInfoArea && infoAreaSizeId ? (infoAreaSizeMap.get(infoAreaSizeId)?.name ?? null) : null,
+      infoAreaSizes: isInfoArea ? infoAreaSizeOptions : [],
     };
   });
 
@@ -547,6 +582,8 @@ export default async function StyleDetail({
           />
         </div>
       </div>
+
+      {customerConfig.skipSupplierDelivery && <SkipSupplierDeliveryBadge className="mt-4" />}
 
       <nav className="mt-6 border-b border-zinc-200">
         <ul className="flex gap-1">

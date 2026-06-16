@@ -39,12 +39,22 @@ export function isLayoutVariantKey(key: string): boolean {
   return key.startsWith(LAYOUT_VARIANT_PREFIX);
 }
 
+// The OutputLayout id behind a layout variant key, or null for non-layout
+// keys. Strips the `#<suffix>` that multi-document (per-EAN split) assets
+// carry, so `layout:abc#m-blue` and `layout:abc` both resolve to `abc`.
+export function layoutIdFromVariantKey(key: string | null | undefined): string | null {
+  if (!key || !key.startsWith(LAYOUT_VARIANT_PREFIX)) return null;
+  return key.slice(LAYOUT_VARIANT_PREFIX.length).split("#")[0] || null;
+}
+
 type LayoutRow = {
   id: string;
   name: string;
   docType: string;
   definition: unknown;
   version: number;
+  isInfoArea: boolean;
+  customLogo: string | null;
 };
 
 // The per-file plan when a repeat layout splits per EAN: one entry per
@@ -100,30 +110,46 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     // Branch-dependent content ({{orderNo}}, {{if …}} conditionals) gates
     // readiness by the TAKEN branch only — evaluated per style.
     readiness: defNeedsDynamicReadiness(def) ? (resolve) => layoutReadinessColumns(def, resolve) : undefined,
-    // Page dimensions live IN the layout (per page) — the ProdSpec-level
-    // dims override that applies to coded variants is ignored here (the
-    // dims param is dropped from the signature deliberately).
+    // Info-area layouts print at a per-style switchable size; the runner /
+    // preview routes resolve it (admin InfoAreaSize or custom) and pass it
+    // as `dims`, which we forward as a page-size override below.
+    isInfoArea: row.isInfoArea,
+    // Page dimensions live IN the layout (per page). For a normal layout the
+    // ProdSpec-level dims are ignored (fixed page size); for an info area we
+    // forward them as sizeOverrideMm so the layout prints at the chosen size.
     // Single-file path — also taken when a REPEATING layout has
     // splitBy "none": renderLayoutHtml expands every repetition into one
     // document, so the whole run still ships as exactly one PDF.
-    render: (style) => renderLayoutHtml(def, style, { mode: "production", title: row.name }),
+    render: (style, dims) =>
+      renderLayoutHtml(def, style, {
+        mode: "production",
+        title: row.name,
+        sizeOverrideMm: row.isInfoArea ? dims : undefined,
+        customLogo: row.customLogo,
+      }),
     fileNameFor: (style) => {
       const expr = settings.fileName;
       return expr ? resolveLayoutFileName(expr, style) : null;
     },
     // Manual carton-numbered prints are offered for layouts that opt in.
     cartonNumbering: settings.cartonNumbering,
+    // Custom Carton Marking (multi-style box) — independent opt-in.
+    multipleStyles: settings.multipleStyles,
     // Split per EAN: ONE FILE PER REPETITION ROW — repeat "size": per
     // size row; repeat "ean": per PO EAN row (size × colour,
     // {{colourName}} bound). Either way each file carries one EAN.
     renderMany:
       settings.repeatBy !== "none" && settings.splitBy === "ean"
-        ? (style) =>
+        ? (style, dims) =>
             Promise.all(
               splitFilePlan(settings, style).map(async ({ suffix, fileName, repStyle }) => ({
                 suffix,
                 fileName,
-                html: await renderLayoutHtml(def, repStyle, { mode: "production" }),
+                html: await renderLayoutHtml(def, repStyle, {
+                  mode: "production",
+                  sizeOverrideMm: row.isInfoArea ? dims : undefined,
+                  customLogo: row.customLogo,
+                }),
               })),
             )
         : undefined,
@@ -163,7 +189,7 @@ export async function ensureLayoutVariantsLoaded(force = false): Promise<void> {
     try {
       const rows = await db.outputLayout.findMany({
         where: { status: "PUBLISHED" },
-        select: { id: true, name: true, docType: true, definition: true, version: true },
+        select: { id: true, name: true, docType: true, definition: true, version: true, isInfoArea: true, customLogo: true },
       });
       setDynamicVariants(
         rows

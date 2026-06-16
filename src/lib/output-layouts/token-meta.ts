@@ -11,11 +11,12 @@ export type LayoutTokenKind = "text" | "barcode" | "symbols" | "image";
 export type LayoutTokenMeta = {
   key: string;
   label: string;
-  group: "Style" | "Order & carton" | "Per language" | "Barcodes & symbols";
+  group: "Style" | "Order & carton" | "Per language" | "Barcodes & symbols" | "Sibling styles";
   kind: LayoutTokenKind;
   // "lang" → the token takes a language argument ({{composition:da}});
-  // "source" → barcode source argument ({{barcode:cartonEan}}).
-  arg?: "lang" | "source";
+  // "source" → barcode/logo source argument ({{barcode:cartonEan}});
+  // "gap" → optional numeric mm gap, e.g. {{washSymbols:0}} (0 mm gap).
+  arg?: "lang" | "source" | "gap";
   // Example value shown in the palette tooltip.
   example?: string;
 };
@@ -24,6 +25,13 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   // ---- Style ----
   { key: "styleName", label: "Style name", group: "Style", kind: "text", example: "2044 PAW PATROL TEE" },
   { key: "styleNumber", label: "Style number", group: "Style", kind: "text", example: "IL97261" },
+  {
+    key: "style",
+    label: "Style (number) — single-style branch of {{if multipleStyles == true}}",
+    group: "Style",
+    kind: "text",
+    example: "IL97261",
+  },
   { key: "customerName", label: "Customer name", group: "Style", kind: "text", example: "Netto A/S" },
   { key: "description", label: "Description", group: "Style", kind: "text", example: "T-Shirt Paw Patrol – Blue" },
   { key: "customerItemNo", label: "Customer item no", group: "Style", kind: "text", example: "223609" },
@@ -111,14 +119,15 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   { key: "barcode", label: "Barcode", group: "Barcodes & symbols", kind: "barcode", arg: "source", example: "{{barcode:cartonEan}}" },
   {
     key: "washSymbols",
-    label: "Wash care symbols",
+    label: "Wash care symbols (optional gap in mm, e.g. {{washSymbols:0}})",
     group: "Barcodes & symbols",
     kind: "symbols",
+    arg: "gap",
     example: "{{washSymbols}}",
   },
   {
     key: "logo",
-    label: "Logo (contrast = repo file, custom = uploaded)",
+    label: "Logo (contrast / contrastAddress = repo files, custom = uploaded)",
     group: "Barcodes & symbols",
     kind: "image",
     arg: "source",
@@ -132,12 +141,23 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     arg: "source",
     example: "{{cert:oekotex}}",
   },
+
+  // ---- Sibling styles (Custom Carton Marking) ----
+  // The slot tokens ({{style2}}, {{style3Name}}…) are recognised
+  // dynamically by parseSiblingTokenKey; only this mode flag is static.
+  {
+    key: "multipleStyles",
+    label: 'Multi-style mode flag — use as {{if multipleStyles == true}}…{{else}}…{{endif}} (== not ===)',
+    group: "Sibling styles",
+    kind: "text",
+    example: "true",
+  },
 ];
 
 export const BARCODE_SOURCES = ["cartonEan", "ean13"] as const;
 export type BarcodeSource = (typeof BARCODE_SOURCES)[number];
 
-export const LOGO_SOURCES = ["contrast", "custom"] as const;
+export const LOGO_SOURCES = ["contrast", "contrastAddress", "custom"] as const;
 export type LogoSource = (typeof LOGO_SOURCES)[number];
 
 // Certification marks resolvable by {{cert:…}} — each needs a row in the
@@ -154,10 +174,82 @@ const SOURCES_BY_KEY: Record<string, readonly string[]> = {
   cert: CERT_SOURCES,
 };
 
+// ---------------------------------------------------------------------
+// Sibling styles — "Custom Carton Marking". A carton-marking layout can
+// place OTHER styles from the SAME PO on the box via slot tokens:
+//   {{style2}}            slot 2 — the style number (the headline)
+//   {{style2Number}}      slot 2 — style number
+//   {{style2Name}} / {{style2Description}} / {{style2ColourName}} / …
+// Slot 1 is the base style itself (so a template can render every slot
+// uniformly with {{style1…}}/{{style2…}} if it prefers). Slots resolve
+// against StyleData.siblings, pre-computed in buildStyleData — the token
+// pipeline stays SYNC. Keys are dynamic (slot × field), so tokenMeta /
+// resolveTextToken recognise them by pattern rather than a static table.
+// ---------------------------------------------------------------------
+
+// Highest slot number a layout / the palette / the permanent config will
+// offer. Slot N means up to N styles on one box (1 base + N-1 siblings).
+export const MAX_SIBLING_SLOTS = 8;
+
+// The field suffixes a sibling slot exposes. The empty suffix is the bare
+// {{styleN}} headline. tokens.ts maps each suffix (case-insensitively) to
+// a StyleData field — keep the two in sync.
+export const SIBLING_FIELDS: ReadonlyArray<{ suffix: string; label: string }> = [
+  { suffix: "", label: "Style (number)" },
+  { suffix: "Number", label: "Style number" },
+  { suffix: "Name", label: "Style name" },
+  { suffix: "Description", label: "Description" },
+  { suffix: "CustomerItemNo", label: "Customer item no" },
+  { suffix: "ColourName", label: "Colour name" },
+  { suffix: "ColourCode", label: "Colour code" },
+  { suffix: "Sizes", label: "Sizes" },
+  { suffix: "SizeRange", label: "Size range" },
+  { suffix: "QtyPerCarton", label: "Qty per carton" },
+  { suffix: "CartonEan", label: "Carton EAN" },
+  { suffix: "Ean13", label: "EAN-13 (first size)" },
+];
+
+// "style" + slot digits + optional field suffix. The digit requirement is
+// what keeps this from colliding with the static "styleName"/"styleNumber"
+// keys (a letter follows "style" there, never a digit).
+const SIBLING_KEY_RE = /^style(\d{1,2})([A-Za-z][A-Za-z0-9]*)?$/;
+
+export type SiblingTokenRef = { slot: number; suffix: string };
+
+// Parse a sibling token key ("style2Number") into { slot, canonical suffix }
+// — or null when it isn't one (unknown field suffix, slot out of range, or
+// a non-sibling key). The returned suffix is the canonical-cased entry from
+// SIBLING_FIELDS so downstream lookups are stable.
+export function parseSiblingTokenKey(key: string): SiblingTokenRef | null {
+  const m = SIBLING_KEY_RE.exec(key);
+  if (!m) return null;
+  const slot = Number(m[1]);
+  if (!Number.isInteger(slot) || slot < 1 || slot > MAX_SIBLING_SLOTS) return null;
+  const raw = m[2] ?? "";
+  const field = SIBLING_FIELDS.find((f) => f.suffix.toLowerCase() === raw.toLowerCase());
+  if (!field) return null;
+  return { slot, suffix: field.suffix };
+}
+
 const META_BY_KEY = new Map(LAYOUT_TOKENS.map((t) => [t.key, t]));
 
 export function tokenMeta(key: string): LayoutTokenMeta | null {
-  return META_BY_KEY.get(key) ?? null;
+  const direct = META_BY_KEY.get(key);
+  if (direct) return direct;
+  // Sibling slot tokens ({{style2}}, {{style3Name}}…) are synthesised so
+  // the renderer treats them as known TEXT tokens and publish validation
+  // accepts them.
+  const sib = parseSiblingTokenKey(key);
+  if (sib) {
+    const field = SIBLING_FIELDS.find((f) => f.suffix === sib.suffix);
+    return {
+      key,
+      label: `Style ${sib.slot} · ${field?.label ?? "field"}`,
+      group: "Sibling styles",
+      kind: "text",
+    };
+  }
+  return null;
 }
 
 // Validation shared by the builder (live) and the publish endpoint
@@ -175,6 +267,14 @@ export function validateTokenRef(key: string, arg?: string): string[] {
       errs.push(
         `{{${key}${arg ? `:${arg}` : ""}}} needs a source: ${allowed.map((s) => `{{${key}:${s}}}`).join(" or ")}`,
       );
+    }
+  }
+  // "gap" arg is optional; when present it must be a non-negative mm number
+  // (≤ 20 mm — a sane ceiling for a symbol strip gap).
+  if (meta.arg === "gap" && arg !== undefined) {
+    const n = Number(arg);
+    if (!Number.isFinite(n) || n < 0 || n > 20) {
+      errs.push(`{{${key}:${arg}}} gap must be a number of mm between 0 and 20`);
     }
   }
   if (!meta.arg && arg) {

@@ -2,9 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { isChallenge, isEventPayload, verifyWebhookRequest } from "@/lib/monday/webhook";
 import { ingestMondayItem, markStyleArchived, markStyleDeleted } from "@/lib/monday/ingest";
-import { enqueueGenerationJob } from "@/lib/queue/enqueue";
-import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
-import { pendingOutputKeysForStyle } from "@/lib/styles/output-readiness";
+import { autoEnqueueReadyOutputs } from "@/lib/queue/auto-enqueue";
 import { triggerRunner, triggerEanRunner } from "@/lib/queue/trigger";
 import { MONDAY_BOARDS } from "@/lib/monday/boards";
 import { getItem } from "@/lib/monday/client";
@@ -127,32 +125,17 @@ async function handleStyleEvent(pulseId: number): Promise<void> {
     await triggerEanRunner();
   }
 
-  // Global master switch — when auto-generation is OFF, sync the style
-  // but never enqueue. Short-circuits ahead of the per-ProdSpec checks.
-  const autoGenerateEnabled = await getAutoGenerateEnabled();
-
-  // Auto-enqueue only when the ProdSpec is ACTIVE — operator hasn't yet
-  // reviewed inactive scaffolds. Per-output generation: enqueue a job scoped
-  // to the outputs whose OWN required fields are now filled and that haven't
-  // been generated yet, instead of waiting for the whole prod spec. The
-  // in-flight guard keeps us to one job at a time; any output that becomes
-  // ready while a job runs is picked up on the next sync.
-  if (autoGenerateEnabled && result.prodSpecActive) {
-    const inflight = await db.job.count({
-      where: { styleId: result.styleId, status: { in: ["QUEUED", "RUNNING"] } },
-    });
-    if (inflight === 0) {
-      const pending = await pendingOutputKeysForStyle(result.styleId);
-      if (pending.length > 0) {
-        await enqueueGenerationJob({
-          styleId: result.styleId,
-          triggerSource: "WEBHOOK",
-          variantKeys: pending,
-        });
-        await triggerRunner();
-      }
-    }
-  }
+  // Auto-enqueue the now-ready outputs — the shared T6 gate (global master
+  // switch + active ProdSpec + in-flight guard + per-output dedup). One
+  // source of truth with the bulk Pre-Order sync and the /import promotion,
+  // so the three ingest paths can never drift. Kick the runner only when a
+  // job was actually queued.
+  const enqueue = await autoEnqueueReadyOutputs({
+    styleId: result.styleId,
+    prodSpecActive: result.prodSpecActive,
+    triggerSource: "WEBHOOK",
+  });
+  if (enqueue.enqueued) await triggerRunner();
 }
 
 async function handleCustomerEvent(pulseId: number): Promise<void> {

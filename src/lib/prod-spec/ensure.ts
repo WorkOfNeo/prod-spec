@@ -5,7 +5,8 @@ import { DEFAULT_OUTPUTS } from "./config";
 // Returns true if a new row was created, false if it already existed.
 //
 // Defaults:
-//   - name: "<Customer name> · <BusinessArea name>"
+//   - name: "<Customer name> · <BusinessArea name>" (override via opts.name —
+//     applied only on create, so an existing spec is never renamed)
 //   - outputs: [] — operator picks variants in the editor
 //   - columnMapping: {} → inherits from Customer.config.columnMapping
 //   - requiredFields: [] → inherits from Customer.config.requiredFields
@@ -16,6 +17,7 @@ import { DEFAULT_OUTPUTS } from "./config";
 export async function ensureProdSpecsForStyle(
   customerId: string,
   businessAreaId: string,
+  opts?: { name?: string },
 ): Promise<boolean> {
   const existing = await db.prodSpec.findUnique({
     where: { customerId_businessAreaId: { customerId, businessAreaId } },
@@ -27,7 +29,7 @@ export async function ensureProdSpecsForStyle(
     db.businessArea.findUnique({ where: { id: businessAreaId } }),
   ]);
 
-  const name = `${customer?.name ?? "Unknown"} · ${businessArea?.name ?? "Unknown"}`;
+  const name = opts?.name ?? `${customer?.name ?? "Unknown"} · ${businessArea?.name ?? "Unknown"}`;
 
   await db.prodSpec.create({
     data: {

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
+import { parseCustomerConfig } from "@/lib/customers/config";
+import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
 import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
@@ -55,7 +57,12 @@ export default async function CustomersPage() {
                   className={`border-t border-zinc-100 hover:bg-zinc-50 ${c.active ? "" : "opacity-50"}`}
                 >
                   <td className="px-4 py-3 font-medium">
-                    <Link href={`/customers/${c.id}`} className="hover:underline">{c.name}</Link>
+                    <span className="flex items-center gap-1.5">
+                      <Link href={`/customers/${c.id}`} className="hover:underline">{c.name}</Link>
+                      {parseCustomerConfig(c.config).skipSupplierDelivery && (
+                        <SkipSupplierDeliveryBadge variant="chip" />
+                      )}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-zinc-600">{c.country ?? "—"}</td>
                   <td className="px-4 py-3 text-zinc-600">{c.priority ?? "—"}</td>

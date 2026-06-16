@@ -10,9 +10,9 @@ import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { effectiveStyleItem } from "@/lib/styles/resolved-fields";
 import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
-import { HIDDEN_STYLE_GROUP_TERMS, isArchivedGroup } from "@/lib/import/heuristics";
+import { isArchivedGroup } from "@/lib/import/heuristics";
 import { getDoneGroupPoCutoff } from "@/lib/settings/app-settings";
-import { parsePoNumberValue } from "@/lib/po/po-number";
+import { activeStylesWhere, resolveDoneCutoffIds } from "@/lib/styles/active-filter";
 import { StylesTable } from "./styles-table";
 import { DonePoCutoffSetting } from "./done-po-cutoff-setting";
 import { eanStatusMeta } from "@/lib/po/ean-status-meta";
@@ -41,47 +41,19 @@ export default async function StylesPage() {
 
   // Done-group exception: when the cutoff is set, Done-group styles whose
   // PO number parses ABOVE it join the list (in the MAIN view, not behind
-  // "Show archived") — the review window for backfilled orders. The PO is
-  // free text ("C-PO63145"), so the numeric compare happens here, on a
-  // cheap two-column scan, and the main query re-admits the ids.
-  const doneCutoffIds = new Set<string>();
-  if (doneCutoff !== null) {
-    const candidates = await db.style.findMany({
-      where: {
-        archivedAt: null,
-        deletedAt: null,
-        groupTitle: { contains: "done", mode: "insensitive" },
-        poNumber: { not: null },
-      },
-      select: { id: true, poNumber: true },
-    });
-    for (const c of candidates) {
-      if ((parsePoNumberValue(c.poNumber) ?? -1) > doneCutoff) doneCutoffIds.add(c.id);
-    }
-  }
+  // "Show archived") — the review window for backfilled orders. Computed
+  // once here and reused both for the query and the per-row `archived` flag
+  // below. See src/lib/styles/active-filter.ts for the shared predicate.
+  const doneCutoffIds = await resolveDoneCutoffIds(doneCutoff);
 
   // Load all styles for client-side search. At ~4k rows the initial
   // HTML payload is bigger than the legacy 200-row cap, but the table
   // renders in <500 ms and the filtering UX is instant. Switch to
   // server-side pagination if the row count ever crosses ~20k.
   const styles = await db.style.findMany({
-      // Hard-exclude the "Templates" + "Done" groups — except Done styles
-      // re-admitted by the PO cutoff above. A null group is kept (matches
-      // neither term). See HIDDEN_STYLE_GROUP_TERMS.
-      where: {
-        // Archived / deleted Monday items are retained for the audit log but
-        // hidden here (soft lifecycle stamped by the webhook).
-        archivedAt: null,
-        deletedAt: null,
-        OR: [
-          {
-            NOT: HIDDEN_STYLE_GROUP_TERMS.map((term) => ({
-              groupTitle: { contains: term, mode: "insensitive" as const },
-            })),
-          },
-          ...(doneCutoffIds.size > 0 ? [{ id: { in: [...doneCutoffIds] } }] : []),
-        ],
-      },
+      // Exactly the active set — not archived/deleted, Templates/Done hidden,
+      // Done-cutoff styles re-admitted. Shared with /combos via activeStylesWhere.
+      where: await activeStylesWhere({ doneCutoff, doneCutoffIds }),
       include: {
         // config feeds the per-style required-field check below.
         customer: { select: { name: true, config: true } },
@@ -103,16 +75,20 @@ export default async function StylesPage() {
       orderBy: { updatedAt: "desc" },
   });
 
-  // Parse each customer's column mapping once, not per style row.
-  const mappingByCustomer = new Map<string, ColumnMapping>();
-  const mappingFor = (customerId: string, config: unknown): ColumnMapping => {
-    let m = mappingByCustomer.get(customerId);
-    if (!m) {
-      m = parseCustomerConfig(config).columnMapping;
-      mappingByCustomer.set(customerId, m);
+  // Parse each customer's config once, not per style row. Yields both the
+  // column mapping (required-field check) and the skipSupplierDelivery flag
+  // (the "Delivers own" row indicator).
+  const configByCustomer = new Map<string, ReturnType<typeof parseCustomerConfig>>();
+  const configFor = (customerId: string, config: unknown) => {
+    let c = configByCustomer.get(customerId);
+    if (!c) {
+      c = parseCustomerConfig(config);
+      configByCustomer.set(customerId, c);
     }
-    return m;
+    return c;
   };
+  const mappingFor = (customerId: string, config: unknown): ColumnMapping =>
+    configFor(customerId, config).columnMapping;
 
   return (
     <div className="px-8 py-8">
@@ -198,6 +174,9 @@ export default async function StylesPage() {
             name: s.name,
             poNumber: s.poNumber,
             customerName: s.customer.name,
+            // Customer delivers their own goods — surfaced as a row chip so a
+            // style isn't mistaken for one the app sends supplier delivery for.
+            customerDeliversOwn: configFor(s.customerId, s.customer.config).skipSupplierDelivery,
             businessArea: ba,
             completionPct: s.completionPct,
             threshold: s.prodSpec?.autoGenerateThresholdPct ?? null,
