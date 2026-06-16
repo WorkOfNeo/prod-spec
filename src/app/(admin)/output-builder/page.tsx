@@ -4,6 +4,7 @@ import { parseLayoutDef } from "@/lib/output-layouts/schema";
 import { docTypeLabel } from "@/lib/pdf/doc-types";
 import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { LAYOUT_VARIANT_PREFIX } from "@/lib/output-layouts/variants";
+import { generationCountsByLayout } from "@/lib/output-layouts/stats";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { getContrastAddressLogoDataUrl, getContrastLogoDataUrl } from "@/lib/output-layouts/logos";
 import { LayoutsList } from "./layouts-list";
@@ -96,7 +97,10 @@ export default async function OutputBuilderPage() {
     stylesBySpec.set(st.prodSpecId, list);
   }
 
-  const docTypeLabels = await loadDocTypeLabels();
+  const [docTypeLabels, genCounts] = await Promise.all([
+    loadDocTypeLabels(),
+    generationCountsByLayout(),
+  ]);
 
   const layouts = rows.map((l) => {
     let pageCount = 0;
@@ -111,6 +115,7 @@ export default async function OutputBuilderPage() {
     // A style belongs to exactly one ProdSpec, so the union across this
     // layout's specs is duplicate-free by construction.
     const styles = usedBy.flatMap((s) => stylesBySpec.get(s.id) ?? []);
+    const counts = genCounts.get(l.id);
     return {
       id: l.id,
       name: l.name,
@@ -118,11 +123,14 @@ export default async function OutputBuilderPage() {
       docTypeLabel: docTypeLabel(l.docType, docTypeLabels),
       status: l.status,
       version: l.version,
+      autoApprove: l.autoApprove,
       pageCount,
       defInvalid,
       customerName: l.customer?.name ?? null,
       businessAreaName: l.businessArea?.name ?? null,
       updatedAt: l.updatedAt.toISOString(),
+      generationCount: counts?.total ?? 0,
+      lastGeneratedAt: counts?.lastGeneratedAt ?? null,
       prodSpecs: usedBy,
       styleCount: styles.length,
       styles: styles.slice(0, STYLE_CAP),

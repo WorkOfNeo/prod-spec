@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { db, type DbClient } from "@/lib/db";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
 import { parseProdSpecColumnMapping, parseProdSpecOutputs } from "@/lib/prod-spec/config";
@@ -90,13 +90,19 @@ export function outputReadinessForStyle(style: ReadinessStyle): OutputReadiness[
 // MINUS outputs already generated for this style. "Already generated" = a
 // distinct variantKey among the style's JobAssets that isn't on a FAILED job,
 // so we don't redo work that's already awaiting review or approved.
-export async function pendingOutputKeysForStyle(styleId: string): Promise<string[]> {
+export async function pendingOutputKeysForStyle(
+  styleId: string,
+  // Transaction client for atomic / rollback-test callers; defaults to the
+  // global `db`. Layout-variant loading below always uses the global client
+  // (published layouts are reference data, fine to read outside any tx).
+  client: DbClient = db,
+): Promise<string[]> {
   // ProdSpec.outputs may reference Output Builder layouts (`layout:<id>`
   // keys) — make sure they're in the registry before the sync readiness
   // walk below resolves variants.
   await ensureLayoutVariantsLoaded();
 
-  const style = await db.style.findUnique({
+  const style = await client.style.findUnique({
     where: { id: styleId },
     select: {
       rawData: true,
@@ -115,7 +121,7 @@ export async function pendingOutputKeysForStyle(styleId: string): Promise<string
     .map((o) => o.variantKey);
   if (ready.length === 0) return [];
 
-  const existing = await db.jobAsset.findMany({
+  const existing = await client.jobAsset.findMany({
     where: {
       job: { styleId, status: { not: "FAILED" } },
       variantKey: { not: null },

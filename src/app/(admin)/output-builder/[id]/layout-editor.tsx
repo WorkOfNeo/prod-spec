@@ -88,6 +88,7 @@ type LayoutProps = {
   docType: string;
   status: "DRAFT" | "PUBLISHED";
   version: number;
+  autoApprove: boolean;
   isInfoArea: boolean;
   // Per-layout {{logo:custom}} image (data URL) — managed by its own upload
   // endpoint, not the autosave payload.
@@ -95,6 +96,32 @@ type LayoutProps = {
   customerId: string | null;
   businessAreaId: string | null;
   definition: LayoutDef;
+};
+
+// Single-output view tabs. The canvas lives in "customizer" and stays there;
+// switching tabs swaps the surrounding panels, not the canvas's home.
+type LayoutTab = "customizer" | "reviews" | "settings";
+
+// Plain (db-free) shapes the server page passes in — the editor is a client
+// component, so these must NOT import from stats.ts (which pulls in db).
+type GenerationStats = {
+  total: number;
+  approved: number;
+  pendingReview: number;
+  rejected: number;
+  distinctStyles: number;
+  lastGeneratedAt: string | null;
+};
+type RecentAsset = {
+  id: string;
+  displayName: string | null;
+  fileName: string;
+  reviewStatus: "PENDING_REVIEW" | "APPROVED" | "REJECTED";
+  placeholderCount: number;
+  createdAt: string;
+  jobId: string;
+  styleId: string;
+  styleName: string;
 };
 
 type DrawState = {
@@ -113,6 +140,8 @@ export function LayoutEditor({
   businessAreas,
   languages,
   docTypes,
+  stats,
+  recentAssets,
 }: {
   layout: LayoutProps;
   customers: Customer[];
@@ -120,7 +149,11 @@ export function LayoutEditor({
   languages: Language[];
   // The doc-type catalogue (DB-managed) — options for the type select.
   docTypes: DocTypeEntry[];
+  // Generation history for the Settings + Reviews tabs (server-computed).
+  stats: GenerationStats;
+  recentAssets: RecentAsset[];
 }) {
+  const [tab, setTab] = useState<LayoutTab>("customizer");
   const [name, setName] = useState(layout.name);
   const [docType, setDocType] = useState(layout.docType);
   const [isInfoArea, setIsInfoArea] = useState(layout.isInfoArea);
@@ -128,6 +161,7 @@ export function LayoutEditor({
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
   const [def, setDef] = useState<LayoutDef>(layout.definition);
+  const [autoApprove, setAutoApprove] = useState(layout.autoApprove);
   const [customerId, setCustomerId] = useState<string | null>(layout.customerId);
   const [businessAreaId, setBusinessAreaId] = useState<string | null>(layout.businessAreaId);
   const [status, setStatus] = useState(layout.status);
@@ -480,8 +514,8 @@ export function LayoutEditor({
   // ---- autosave --------------------------------------------------------
 
   const payload = useMemo(
-    () => JSON.stringify({ name, docType, isInfoArea, definition: def, customerId, businessAreaId }),
-    [name, docType, isInfoArea, def, customerId, businessAreaId],
+    () => JSON.stringify({ name, docType, isInfoArea, definition: def, customerId, businessAreaId, autoApprove }),
+    [name, docType, isInfoArea, def, customerId, businessAreaId, autoApprove],
   );
 
   useEffect(() => {
@@ -931,6 +965,35 @@ export function LayoutEditor({
         ) : null}
       </div>
 
+      {/* ---------- tabs ---------- */}
+      <div className="flex items-center gap-6 border-b border-zinc-200 px-8">
+        {([
+          ["customizer", "Customizer"],
+          ["reviews", "Reviews"],
+          ["settings", "Settings"],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setTab(key)}
+            className={`-mb-px border-b-2 px-1 py-2.5 text-sm font-medium transition-colors ${
+              tab === key
+                ? "border-zinc-900 text-zinc-900"
+                : "border-transparent text-zinc-400 hover:text-zinc-700"
+            }`}
+          >
+            {label}
+            {key === "reviews" && stats.pendingReview > 0 ? (
+              <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-px text-[11px] font-semibold text-amber-700">
+                {stats.pendingReview}
+              </span>
+            ) : null}
+          </button>
+        ))}
+      </div>
+
+      {/* ===== Customizer tab — canvas lives here, always ===== */}
+      <div className={tab === "customizer" ? undefined : "hidden"}>
       {/* ---------- test data ---------- */}
       <div className="flex flex-wrap items-center gap-3 border-b border-zinc-100 px-8 py-2.5">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Test data</span>
@@ -2177,6 +2240,172 @@ export function LayoutEditor({
           </div>
         </div>
       </div>
+      </div>
+      {/* ↑ closes the Customizer visibility wrapper */}
+
+      {/* ===== Settings tab ===== */}
+      {tab === "settings" ? (
+        <div className="mx-auto max-w-2xl space-y-6 px-8 py-8">
+          {/* Generation activity — "how many times it has been generated" */}
+          <section className="rounded-lg border border-zinc-200 bg-white p-5">
+            <h2 className="text-sm font-semibold text-zinc-800">Generation activity</h2>
+            <p className="mt-1 text-xs text-zinc-500">
+              Every PDF this output has produced, across all styles and runs.
+            </p>
+            <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {([
+                ["Total generated", stats.total, "text-zinc-900"],
+                ["Approved", stats.approved, "text-emerald-700"],
+                ["Pending review", stats.pendingReview, "text-amber-700"],
+                ["Rejected", stats.rejected, "text-red-700"],
+              ] as const).map(([label, value, color]) => (
+                <div key={label} className="rounded-md border border-zinc-100 bg-zinc-50/60 px-3 py-2">
+                  <dt className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">{label}</dt>
+                  <dd className={`mt-0.5 text-xl font-semibold tabular-nums ${color}`}>{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-3 text-xs text-zinc-400">
+              {stats.distinctStyles} style{stats.distinctStyles === 1 ? "" : "s"} ·{" "}
+              {stats.lastGeneratedAt
+                ? `last generated ${new Date(stats.lastGeneratedAt).toLocaleString()}`
+                : "never generated yet"}
+            </p>
+          </section>
+
+          {/* Auto-approve — skip review queue, keep manual send */}
+          <section className="rounded-lg border border-zinc-200 bg-white p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-semibold text-zinc-800">Auto-approve outputs</h2>
+                <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+                  Skip the manual per-asset review queue — an asset from this output is
+                  marked <span className="font-medium text-zinc-700">approved</span> the
+                  moment it generates. Two guards stay in place: a print-unsafe document
+                  (missing artwork or EAN) always falls back to manual review, and a
+                  person still presses <span className="font-medium text-zinc-700">“Approve
+                  all &amp; publish”</span> on the style to send it to the supplier.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={autoApprove}
+                onClick={() => setAutoApprove((v) => !v)}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                  autoApprove ? "bg-emerald-500" : "bg-zinc-300"
+                }`}
+                title="Toggle auto-approve (autosaves)"
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                    autoApprove ? "translate-x-5" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </div>
+            {autoApprove ? (
+              <p className="mt-3 rounded-md bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                On — new generations of this output skip review. Auto-approved assets show
+                a system reviewer (no person) in the activity log.
+              </p>
+            ) : null}
+          </section>
+
+          {/* Output mechanics (repeat / split / file name / carton numbering /
+              custom logo) live in the Customizer's left rail, beside the canvas
+              and grid they affect — kept there when main reworked that panel. */}
+          <section className="rounded-lg border border-zinc-200 bg-white p-5">
+            <h2 className="text-sm font-semibold text-zinc-800">Output settings</h2>
+            <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+              Repeat &amp; split, output file name, carton numbering and the custom
+              logo are edited in the{" "}
+              <button
+                type="button"
+                onClick={() => setTab("customizer")}
+                className="font-medium text-zinc-700 underline underline-offset-2 hover:text-zinc-900"
+              >
+                Customizer
+              </button>{" "}
+              tab, beside the canvas and grid they affect.
+            </p>
+          </section>
+        </div>
+      ) : null}
+
+      {/* ===== Reviews tab ===== */}
+      {tab === "reviews" ? (
+        <div className="px-8 py-8">
+          <h2 className="text-sm font-semibold text-zinc-800">Recent generations</h2>
+          <p className="mt-1 text-xs text-zinc-500">
+            The {recentAssets.length} most recent PDFs this output produced. Open the
+            style&apos;s review screen to approve or reject.
+          </p>
+          {recentAssets.length === 0 ? (
+            <div className="mt-6 rounded-lg border border-dashed border-zinc-200 px-6 py-10 text-center text-sm text-zinc-400">
+              This output hasn&apos;t been generated yet. It generates for a style once it&apos;s
+              added as an output on that style&apos;s Prod Spec.
+            </div>
+          ) : (
+            <div className="mt-4 overflow-hidden rounded-lg border border-zinc-200">
+              <table className="w-full text-sm">
+                <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wide text-zinc-400">
+                  <tr>
+                    <th className="px-4 py-2 font-medium">Style</th>
+                    <th className="px-4 py-2 font-medium">File</th>
+                    <th className="px-4 py-2 font-medium">Status</th>
+                    <th className="px-4 py-2 font-medium">Generated</th>
+                    <th className="px-4 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100">
+                  {recentAssets.map((a) => (
+                    <tr key={a.id} className="hover:bg-zinc-50/60">
+                      <td className="px-4 py-2">
+                        <Link href={`/styles/${a.styleId}/review`} className="font-medium text-zinc-800 hover:underline">
+                          {a.styleName}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-2 font-mono text-[11px] text-zinc-500">
+                        {a.displayName ?? a.fileName}
+                        {a.placeholderCount > 0 ? (
+                          <span className="ml-1.5 rounded bg-amber-50 px-1 py-px text-[10px] font-medium text-amber-700">
+                            {a.placeholderCount} placeholder
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-2">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                            a.reviewStatus === "APPROVED"
+                              ? "bg-emerald-50 text-emerald-700"
+                              : a.reviewStatus === "REJECTED"
+                                ? "bg-red-50 text-red-700"
+                                : "bg-amber-50 text-amber-700"
+                          }`}
+                        >
+                          {a.reviewStatus === "PENDING_REVIEW" ? "Pending" : a.reviewStatus === "APPROVED" ? "Approved" : "Rejected"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-xs text-zinc-500">{new Date(a.createdAt).toLocaleString()}</td>
+                      <td className="px-4 py-2 text-right">
+                        <a
+                          href={`/api/admin/job-assets/${a.id}/download`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-zinc-500 hover:text-zinc-800 hover:underline"
+                        >
+                          Open PDF
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

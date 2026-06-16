@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { db as dbClient, type DbClient } from "@/lib/db";
 import type { TriggerSource } from "@/generated/prisma/enums";
 
 export async function enqueueGenerationJob(input: {
@@ -9,7 +9,11 @@ export async function enqueueGenerationJob(input: {
   // landed. Omitted / empty ⇒ the runner renders all enabled outputs
   // (manual full-regen / legacy behaviour).
   variantKeys?: string[];
+  // Transaction client for atomic / rollback-test callers (see DbClient).
+  // Defaults to the global `db`.
+  client?: DbClient;
 }): Promise<{ jobId: string }> {
+  const db = input.client ?? dbClient;
   // Snapshot the Style's resolved ProdSpec so analytics queries can group
   // jobs by ProdSpec without joining through Style (and so the link
   // survives even if the Style later changes its ProdSpec, e.g. after a
