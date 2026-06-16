@@ -5,6 +5,7 @@ import { LazyOutputPreview } from "@/components/output-preview";
 import { OutputThumbnail } from "./output-thumbnail";
 import { RunOutputButton } from "./run-output-button";
 import { CartonPrintsButton } from "./carton-prints-dialog";
+import type { AssetReviewStatus } from "@/generated/prisma/enums";
 
 // One output of one style, as a fold-out row. Collapsed it shows just the
 // ready dot + name + a missing-fields hint, with the per-output Run button
@@ -32,6 +33,10 @@ export type StyleOutputCardProps = {
   // Layout opted into manual "X of Y" carton-numbered prints — shows the
   // badge + the "Carton numbers…" action alongside Run.
   cartonNumbering: boolean;
+  // Per-PDF review state of the latest generated asset for this output, or
+  // null when nothing has been generated yet. Surfaces the approved state
+  // (mirrors the review screen) directly on the Outputs list.
+  reviewStatus: AssetReviewStatus | null;
 };
 
 export function StyleOutputCard(p: StyleOutputCardProps) {
@@ -59,6 +64,22 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           <span className="truncate text-sm font-semibold text-zinc-900" title={p.name}>
             {p.name}
           </span>
+          {p.reviewStatus === "APPROVED" && (
+            <span
+              title="This output was approved in review"
+              className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"
+            >
+              ✓ Approved
+            </span>
+          )}
+          {p.reviewStatus === "REJECTED" && (
+            <span
+              title="This output was rejected in review"
+              className="shrink-0 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700"
+            >
+              ✗ Rejected
+            </span>
+          )}
           {p.cartonNumbering && (
             <span
               title="This output can be printed as a numbered carton set (X of Y)"

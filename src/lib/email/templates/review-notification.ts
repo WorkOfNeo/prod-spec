@@ -153,6 +153,10 @@ export function supplierApprovalEmail(input: {
   // SharePoint isn't live yet ("soon"), so we always TELL the supplier the
   // files will be in their SharePoint folder, but only link it when real.
   folderUrl?: string | null;
+  // Certification marks the supplier must apply to the labels/packaging
+  // (e.g. ["FSC", "OEKOTEX"]) — the style's resolved certificates (T10).
+  // Omitted/empty ⇒ the section is not rendered.
+  certificates?: string[];
   isCorrection?: boolean;
 }): { subject: string; html: string; text: string } {
   const prefix = input.isCorrection ? "[Correction] " : "";
@@ -167,6 +171,14 @@ export function supplierApprovalEmail(input: {
     ? `You can also find them in your SharePoint supplier folder, linked below.`
     : `These files will also be saved to your SharePoint supplier folder.`;
   const folderButton = input.folderUrl ? ctaButton(input.folderUrl, "Open SharePoint folder") : "";
+  const certs = (input.certificates ?? []).map((c) => c.trim()).filter(Boolean);
+  const certsBlock =
+    certs.length > 0
+      ? `
+      <h3 style="margin: 24px 0 8px;">Certificates to apply</h3>
+      <p style="color: #444; margin: 0 0 8px;">This style requires the following certification mark(s). Please make sure they appear on the labels / packaging:</p>
+      <ul style="padding-left: 18px; margin: 0;">${certs.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul>`
+      : "";
   const ctx = contextRows(input);
 
   // The link block: button + how to unlock (their email + the PIN).
@@ -183,6 +195,7 @@ export function supplierApprovalEmail(input: {
       ${linkBlock}
       <p style="color: #444; margin-top: 18px;">${folderLine} The files are also attached to this email.</p>
       ${folderButton}
+      ${certsBlock}
       <h3 style="margin: 24px 0 8px;">Files</h3>
       <ul style="padding-left: 18px;">${fileLinks}</ul>
     </div>
@@ -199,9 +212,79 @@ export function supplierApprovalEmail(input: {
     folderLine,
     ...(input.folderUrl ? [`SharePoint folder: ${input.folderUrl}`] : []),
     "The files are also attached to this email.",
+    ...(certs.length > 0
+      ? ["", "Certificates to apply (must appear on labels/packaging):", ...certs.map((c) => `- ${c}`)]
+      : []),
     "",
     "Files:",
     ...input.files.map((f) => (f.webUrl ? `- ${f.name}: ${f.webUrl}` : `- ${f.name}`)),
+  ].join("\n");
+
+  return { subject, html, text };
+}
+
+// "This style is fully approved" — sent to the person responsible toward the
+// customer (the Styles board's people column, resolved to their email) once
+// EVERY ProdSpec output for the style has been approved. Internal-facing
+// confirmation: it states the delivery outcome to the supplier and lists the
+// certificates the supplier was asked to apply, so the customer owner has the
+// full picture without opening the platform.
+export function customerApprovalEmail(input: {
+  styleName: string;
+  styleNumber?: string;
+  customerName: string;
+  businessArea?: string | null;
+  poNumber?: string | null;
+  files: Array<{ name: string; webUrl: string | null }>;
+  certificates?: string[];
+  // The supplier the prod specs were delivered to (To: of the supplier
+  // email). Null when no supplier recipient resolved.
+  supplierEmail?: string | null;
+  // Deep link to the style page in the platform, if available.
+  styleUrl?: string | null;
+}): { subject: string; html: string; text: string } {
+  const subject = `[Prod Spec] ${input.customerName} — ${input.styleName} fully approved`;
+  const ctx = contextRows(input);
+  const certs = (input.certificates ?? []).map((c) => c.trim()).filter(Boolean);
+  const deliveryLine = input.supplierEmail
+    ? `The prod-spec files have been published and delivered to the supplier (${escapeHtml(input.supplierEmail)}).`
+    : `The prod-spec files have been published. No supplier recipient was on file, so forward them from the prod-spec tab if needed.`;
+  const certsHtml =
+    certs.length > 0
+      ? `
+      <h3 style="margin: 24px 0 8px;">Certificates requested from the supplier</h3>
+      <ul style="padding-left: 18px; margin: 0;">${certs.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul>`
+      : "";
+  const fileLinks = input.files
+    .map((f) => (f.webUrl ? `<li><a href="${f.webUrl}">${escapeHtml(f.name)}</a></li>` : `<li>${escapeHtml(f.name)}</li>`))
+    .join("");
+  const html = `
+    <div style="font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; max-width: 480px; padding: 20px;">
+      <h2 style="margin: 0 0 8px;">${escapeHtml(input.styleName)}</h2>
+      <p style="color: #444; margin: 0 0 12px;">All ProdSpec outputs for this style have been approved.</p>
+      ${ctx.html}
+      <p style="color: #444; margin: 12px 0 0;">${deliveryLine}</p>
+      ${certsHtml}
+      <h3 style="margin: 24px 0 8px;">Approved documents</h3>
+      <ul style="padding-left: 18px;">${fileLinks}</ul>
+      ${input.styleUrl ? ctaButton(input.styleUrl, "Open style") : ""}
+    </div>
+  `;
+  const text = [
+    `All ProdSpec outputs for ${input.styleName} have been approved.`,
+    "",
+    ...ctx.text,
+    "",
+    input.supplierEmail
+      ? `Delivered to supplier: ${input.supplierEmail}`
+      : "Published — no supplier recipient on file.",
+    ...(certs.length > 0
+      ? ["", "Certificates requested from the supplier:", ...certs.map((c) => `- ${c}`)]
+      : []),
+    "",
+    "Approved documents:",
+    ...input.files.map((f) => (f.webUrl ? `- ${f.name}: ${f.webUrl}` : `- ${f.name}`)),
+    ...(input.styleUrl ? ["", `Open style: ${input.styleUrl}`] : []),
   ].join("\n");
 
   return { subject, html, text };

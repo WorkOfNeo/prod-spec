@@ -169,3 +169,29 @@ export function resolveStyleSpecFields(style: {
     return { field, label: STYLE_FIELD_LABELS[field], value, fallback };
   });
 }
+
+// Declared certificate names for a style (e.g. ["FSC", "OEKOTEX"]), resolved
+// from the customer's mapped certificates column (default "certifications__1")
+// with the manual.* fallback. Split on comma / semicolon / newline, trimmed
+// and case-insensitively de-duplicated. Used by the supplier approval email
+// (T10) to tell the supplier which certification marks they must apply. No
+// fallback sources apply to certificates, so rawData + config is enough.
+export function resolveStyleCertificates(style: {
+  rawData: unknown;
+  customer: { config: unknown };
+}): string[] {
+  const item = style.rawData as MondayItem | null;
+  const mapping = parseCustomerConfig(style.customer.config).columnMapping;
+  const raw = resolveMappedField(item, mapping, "certificates");
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(/[,;\n]+/)) {
+    const v = part.trim();
+    if (!v) continue;
+    const key = v.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(v);
+  }
+  return out;
+}

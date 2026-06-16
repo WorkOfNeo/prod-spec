@@ -5,6 +5,7 @@ import { getServerSession } from "@/lib/auth-server";
 import { changeItemValue } from "@/lib/monday/client";
 import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
 import { createOrReopenRejectionTicket } from "@/lib/tickets/rejection-tickets";
+import { stampReviewEnded } from "@/lib/publish/publish-approved-job";
 
 export const runtime = "nodejs";
 
@@ -29,6 +30,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   const job = await db.job.findUnique({
     where: { id },
+    // reviewEndedAt isn't read here and may not be deployed yet — omit it so
+    // bulk reject keeps working pre-db:deploy.
+    omit: { reviewEndedAt: true },
     include: {
       style: { include: { customer: true, businessAreaRef: true } },
       assets: true,
@@ -77,6 +81,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     }),
   ]);
 
+  // The review just ended (rejected) — stamp reviewEndedAt at the settle seam.
+  await stampReviewEnded(job.id);
   // Settled — open dashboard notifications for this job are done.
   await resolveNotificationsForJob(job.id);
 

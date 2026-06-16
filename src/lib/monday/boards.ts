@@ -64,6 +64,34 @@ export const MONDAY_STYLE_COLS = {
   businessArea: process.env.MONDAY_STYLE_COL_BUSINESS_AREA ?? "",
   poNumber: process.env.MONDAY_STYLE_COL_PO_NUMBER ?? "",
   styleFolderUrl: process.env.MONDAY_STYLE_COL_FOLDER_LINK ?? "",
+  // Person column on the "🛍️ Styles" board (6979419195) naming who is
+  // responsible toward the customer for a style. When a style is fully
+  // approved the approval-chain emails this person ("Customer Contact" =
+  // people_Mjj6yEkx in the live board). Empty ⇒ no customer email sent.
+  // It is a PEOPLE column → resolve the linked Monday user(s) to email via
+  // getUserEmails(). Re-point with MONDAY_STYLE_CUSTOMER_RESPONSIBLE_COL.
+  customerResponsible: process.env.MONDAY_STYLE_CUSTOMER_RESPONSIBLE_COL ?? "",
+} as const;
+
+// Approval chain-reaction config for the "🛍️ Styles" board (6979419195).
+// When every ProdSpec output for a style is approved we flip the two
+// ProdSpec-owned subitems to "Approved" on that board's subitem board
+// (discovered at runtime via subitem.board.id — "Subitems of 🛍️ Styles",
+// 6979430232). All values are env-wired so an admin can re-point without a
+// deploy. Defaults are the live ids confirmed against the board on
+// 2026-06-16.
+//   • statusCol  — the subitem "🪜 Status" column id.
+//   • approvedLabel — the exact label to set (index 1 in the live board).
+//   • approveCodes — leading code-tokens (text before the first ".") of the
+//     subitems ProdSpec produces: 01e "Label/Packaging layouts" and
+//     01f "Box marking layouts". Comma-separated; matched case-insensitively.
+export const MONDAY_STYLE_SUBITEM = {
+  statusCol: process.env.MONDAY_SUBITEM_STATUS_COL ?? "status",
+  approvedLabel: process.env.MONDAY_SUBITEM_APPROVED_LABEL ?? "Approved",
+  approveCodes: (process.env.MONDAY_SUBITEM_APPROVE_CODES ?? "01e,01f")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
 } as const;
 
 // Column IDs on the Pre Order board (7322835224) — the SOURCE OF TRUTH for
