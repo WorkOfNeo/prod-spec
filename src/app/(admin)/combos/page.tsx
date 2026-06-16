@@ -1,36 +1,67 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
+import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { requireAdminPage } from "@/lib/auth-server";
 import { ComboRowActions, RescanCombosButton } from "./combo-row-actions";
 
 export const dynamic = "force-dynamic";
 
+// Enabled-output count on a ProdSpec's `outputs` JSON. Defensive: a malformed
+// row counts as zero rather than throwing the whole page.
+function enabledOutputCount(outputs: unknown): number {
+  try {
+    return parseProdSpecOutputs(outputs).filter((o) => o.enabled !== false).length;
+  } catch {
+    return 0;
+  }
+}
+
 // Customer × Business-Area combo registry. Lists every combo present among
-// active styles (same set as /styles), NEW first. A newcomer is flagged NEW
-// and stages a heads-up email to nh@neo-labs.com; the admin gives it a first
-// look, builds the ProdSpec / PDFs, then marks it reviewed. See
-// src/lib/combos/reconcile.ts for how the registry is kept up to date.
+// active styles (the same set as /styles). Each combo's status is DERIVED from
+// its auto-created ProdSpec: a combo stays New until that spec is active AND
+// carries at least one enabled output, then it's Ready — there's no manual
+// review flag. A newly-detected combo still stages a heads-up email (see
+// src/lib/combos/reconcile.ts; that alert is gated on notifiedAt, not status).
 export default async function CombosPage() {
   await requireAdminPage();
 
   const [combos, specPairs] = await Promise.all([
     db.customerBusinessAreaCombo.findMany({
-      orderBy: [
-        { status: "asc" }, // NEW before REVIEWED (Postgres enum declaration order)
-        { activeStyleCount: "desc" },
-        { firstSeenAt: "desc" },
-      ],
+      orderBy: [{ activeStyleCount: "desc" }, { firstSeenAt: "desc" }],
     }),
-    // Existing ProdSpecs keyed by their (customer, business area) pair — a
-    // combo with a match shows "Open spec" instead of "Create", so we never
-    // attempt a duplicate (the pair is unique) or rename an existing one.
-    db.prodSpec.findMany({ select: { id: true, customerId: true, businessAreaId: true } }),
+    // ProdSpecs keyed by their (customer, business area) pair — drives both the
+    // derived status (active + enabled outputs) and the Open/Create action.
+    db.prodSpec.findMany({
+      select: { id: true, customerId: true, businessAreaId: true, active: true, outputs: true },
+    }),
   ]);
-  const specByPair = new Map(specPairs.map((s) => [`${s.customerId}:${s.businessAreaId}`, s.id]));
+  const specByPair = new Map(
+    specPairs.map((s) => [
+      `${s.customerId}:${s.businessAreaId}`,
+      { id: s.id, active: s.active, enabledOutputs: enabledOutputCount(s.outputs) },
+    ]),
+  );
 
-  const newCount = combos.filter((c) => c.status === "NEW").length;
-  const activeCount = combos.filter((c) => c.activeStyleCount > 0).length;
+  // Ready = the combo's ProdSpec is active AND has >=1 enabled output;
+  // otherwise New (no spec — e.g. a combo with no business area — no outputs
+  // yet, or the spec was deactivated).
+  const rows = combos
+    .map((c) => {
+      const spec = c.businessAreaId ? specByPair.get(`${c.customerId}:${c.businessAreaId}`) ?? null : null;
+      const status: "NEW" | "READY" = spec && spec.active && spec.enabledOutputs > 0 ? "READY" : "NEW";
+      return { combo: c, specId: spec?.id ?? null, status };
+    })
+    .sort((a, b) => {
+      if (a.status !== b.status) return a.status === "NEW" ? -1 : 1; // New first
+      if (b.combo.activeStyleCount !== a.combo.activeStyleCount) {
+        return b.combo.activeStyleCount - a.combo.activeStyleCount;
+      }
+      return b.combo.firstSeenAt.getTime() - a.combo.firstSeenAt.getTime();
+    });
+
+  const newCount = rows.filter((r) => r.status === "NEW").length;
+  const readyCount = rows.length - newCount;
 
   return (
     <div className="px-8 py-8">
@@ -42,10 +73,10 @@ export default async function CombosPage() {
             <Link href="/styles" className="underline">
               Styles
             </Link>
-            ). A new combination is flagged <strong>New</strong> and stages an email to
-            nh@neo-labs.com so it gets a first look before PDFs are made.{" "}
+            ). A combo is <strong>New</strong> until its Prod Spec is active with outputs attached, then it&apos;s{" "}
+            <strong>Ready</strong>. New combinations also stage a heads-up email to nh@neo-labs.com.{" "}
             <span className="tabular-nums">
-              {newCount} new · {activeCount} active.
+              {newCount} new · {readyCount} ready.
             </span>
           </p>
         </div>
@@ -65,7 +96,7 @@ export default async function CombosPage() {
             </tr>
           </thead>
           <tbody>
-            {combos.length === 0 ? (
+            {rows.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-zinc-500">
                   No combos yet. Run a style sync from{" "}
@@ -76,7 +107,7 @@ export default async function CombosPage() {
                 </td>
               </tr>
             ) : (
-              combos.map((c) => {
+              rows.map(({ combo: c, specId, status }) => {
                 const inactive = c.activeStyleCount === 0;
                 return (
                   <tr
@@ -91,20 +122,11 @@ export default async function CombosPage() {
                     <td className="px-4 py-3 text-zinc-600">{c.baLabel}</td>
                     <td className="px-4 py-3 tabular-nums text-zinc-600">{c.activeStyleCount}</td>
                     <td className="px-4 py-3">
-                      <StatusPill status={c.status} />
+                      <StatusPill status={status} />
                     </td>
                     <td className="px-4 py-3 text-xs text-zinc-500">{formatDate(c.firstSeenAt)}</td>
                     <td className="px-4 py-3 text-right">
-                      <ComboRowActions
-                        id={c.id}
-                        status={c.status}
-                        hasBusinessArea={c.businessAreaId !== null}
-                        existingSpecId={
-                          c.businessAreaId
-                            ? specByPair.get(`${c.customerId}:${c.businessAreaId}`) ?? null
-                            : null
-                        }
-                      />
+                      <ComboRowActions id={c.id} hasBusinessArea={c.businessAreaId !== null} existingSpecId={specId} />
                     </td>
                   </tr>
                 );
@@ -117,17 +139,17 @@ export default async function CombosPage() {
   );
 }
 
-function StatusPill({ status }: { status: "NEW" | "REVIEWED" }) {
-  if (status === "NEW") {
+function StatusPill({ status }: { status: "NEW" | "READY" }) {
+  if (status === "READY") {
     return (
-      <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-        New
+      <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+        Ready
       </span>
     );
   }
   return (
-    <span className="inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600">
-      Reviewed
+    <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+      New
     </span>
   );
 }

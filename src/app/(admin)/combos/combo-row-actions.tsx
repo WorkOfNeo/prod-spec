@@ -7,43 +7,22 @@ import { useRouter } from "next/navigation";
 // Per-row actions on /combos. "Create" builds the ProdSpec for this combo
 // (pre-named "<Customer> - <Business area> - ") and drops you into the editor;
 // once a spec exists the button becomes "Open spec". A combo with no business
-// area can't have a spec, so Create is disabled there. Plus the review toggle.
-// Mirrors the fetch/loading shape of review-notification-email-setting.tsx
-// (the app uses API routes + fetch, not server actions).
+// area can't have a spec, so Create is disabled there. The combo's New/Ready
+// status is derived from that spec (active + enabled outputs) — there's no
+// manual review toggle. Mirrors the fetch/loading shape the app uses elsewhere
+// (API routes + fetch, not server actions).
 export function ComboRowActions({
   id,
-  status,
   hasBusinessArea,
   existingSpecId,
 }: {
   id: string;
-  status: "NEW" | "REVIEWED";
   hasBusinessArea: boolean;
   existingSpecId: string | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const next = status === "NEW" ? "REVIEWED" : "NEW";
-
-  async function flip() {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/admin/combos/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: next }),
-      });
-      const j = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(j.error ?? `Failed (${res.status})`);
-      router.refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed");
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function createSpec() {
     setBusy(true);
@@ -87,15 +66,6 @@ export function ComboRowActions({
           {busy ? "Creating…" : "Create"}
         </button>
       )}
-
-      <button
-        type="button"
-        onClick={flip}
-        disabled={busy}
-        className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-      >
-        {busy ? "…" : status === "NEW" ? "Mark reviewed" : "Mark new"}
-      </button>
     </span>
   );
 }
