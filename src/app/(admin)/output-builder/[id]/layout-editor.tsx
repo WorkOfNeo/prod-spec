@@ -2083,7 +2083,10 @@ export function LayoutEditor({
                       onChange={(e) => {
                         const w = Number(e.target.value);
                         updateBlock(blockId(selBlock), {
-                          border: w > 0 ? { widthMm: w, color: selBlock.border?.color ?? "#000000" } : undefined,
+                          border:
+                            w > 0
+                              ? { widthMm: w, color: selBlock.border?.color ?? "#000000", padMm: selBlock.border?.padMm }
+                              : undefined,
                         });
                       }}
                       className="rounded border border-zinc-200 px-1 py-0.5 text-xs"
@@ -2097,31 +2100,53 @@ export function LayoutEditor({
                     </select>
                   </label>
                   {selBlock.border ? (
-                    <label className="flex items-center gap-1.5 text-xs text-zinc-600">
-                      <input
-                        type="color"
-                        value={selBlock.border.color}
-                        onChange={(e) =>
-                          updateBlock(blockId(selBlock), {
-                            border: { ...selBlock.border!, color: e.target.value },
-                          })
-                        }
-                        className="h-6 w-8 cursor-pointer rounded border border-zinc-200 bg-white p-0.5"
-                        title="Border colour"
-                      />
-                      <input
-                        type="text"
-                        value={selBlock.border.color}
-                        onChange={(e) => {
-                          const v = e.target.value.trim();
-                          if (/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v)) {
-                            updateBlock(blockId(selBlock), { border: { ...selBlock.border!, color: v } });
+                    <>
+                      <label className="flex items-center gap-1.5 text-xs text-zinc-600">
+                        <input
+                          type="color"
+                          value={selBlock.border.color}
+                          onChange={(e) =>
+                            updateBlock(blockId(selBlock), {
+                              border: { ...selBlock.border!, color: e.target.value },
+                            })
                           }
-                        }}
-                        className="w-20 rounded border border-zinc-200 px-1.5 py-0.5 font-mono text-[11px]"
-                        spellCheck={false}
-                      />
-                    </label>
+                          className="h-6 w-8 cursor-pointer rounded border border-zinc-200 bg-white p-0.5"
+                          title="Border colour"
+                        />
+                        <input
+                          type="text"
+                          value={selBlock.border.color}
+                          onChange={(e) => {
+                            const v = e.target.value.trim();
+                            if (/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v)) {
+                              updateBlock(blockId(selBlock), { border: { ...selBlock.border!, color: v } });
+                            }
+                          }}
+                          className="w-20 rounded border border-zinc-200 px-1.5 py-0.5 font-mono text-[11px]"
+                          spellCheck={false}
+                        />
+                      </label>
+                      <label className="flex items-center gap-1.5 text-xs text-zinc-600">
+                        Pad
+                        <select
+                          value={selBlock.border.padMm ?? 0}
+                          onChange={(e) =>
+                            updateBlock(blockId(selBlock), {
+                              border: { ...selBlock.border!, padMm: Number(e.target.value) || undefined },
+                            })
+                          }
+                          className="rounded border border-zinc-200 px-1 py-0.5 text-xs"
+                          title="Inner padding between the border and the text"
+                        >
+                          <option value={0}>None</option>
+                          {[0.5, 1, 1.5, 2, 3, 4].map((p) => (
+                            <option key={p} value={p}>
+                              {p} mm
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </>
                   ) : null}
                 </div>
 
@@ -2707,7 +2732,10 @@ function CanvasBlock({
     justifyContent: block.valign === "middle" ? "center" : block.valign === "bottom" ? "flex-end" : "flex-start",
     textAlign: (block.align ?? "left") as React.CSSProperties["textAlign"],
     ...(block.border
-      ? { border: `${Math.max(block.border.widthMm * scale, 1)}px solid ${block.border.color}` }
+      ? {
+          border: `${Math.max(block.border.widthMm * scale, 1)}px solid ${block.border.color}`,
+          ...(block.border.padMm ? { padding: block.border.padMm * scale } : {}),
+        }
       : {}),
   };
 
