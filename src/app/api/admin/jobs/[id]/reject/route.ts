@@ -2,8 +2,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
-import { getItem, columnText } from "@/lib/monday/client";
-import { writeBackStatus } from "@/lib/monday/writeback";
 import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
 import { createOrReopenRejectionTicket } from "@/lib/tickets/rejection-tickets";
 import { stampReviewEnded } from "@/lib/publish/publish-approved-job";
@@ -108,46 +106,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     }
   }
 
-  // Best-effort write-back to Monday — GATED by the write-back master switch
-  // and logged with readable from→to. When the switch is off, this records
-  // "would set Status: <from> → Rejected" and sends nothing. If the column id
-  // isn't configured we still return success: rejection is a local decision.
-  const statusColumnId = process.env.MONDAY_STATUS_COLUMN_ID;
-  if (statusColumnId) {
-    try {
-      // Read the live status first so the log shows the real "from" value
-      // (a read is always safe — the switch only gates the write).
-      let currentLabel: string | null = null;
-      try {
-        const item = await getItem(job.style.mondayItemId);
-        currentLabel = item ? columnText(item, statusColumnId) || null : null;
-      } catch {
-        currentLabel = null;
-      }
-      await writeBackStatus({
-        boardId: job.style.mondayBoardId,
-        itemId: job.style.mondayItemId,
-        columnId: statusColumnId,
-        label: "Rejected",
-        currentLabel,
-        entity: job.style.name,
-        boardLabel: "Pre Order",
-        columnTitle: "Status",
-        styleNumber: job.style.name,
-        jobId: job.id,
-      });
-    } catch (err) {
-      await db.log
-        .create({
-          data: {
-            jobId: job.id,
-            level: "WARN",
-            message: `monday writeback log failed: ${(err as Error).message}`,
-          },
-        })
-        .catch(() => {});
-    }
-  }
+  // Rejection intentionally performs NO Monday write-back — not even a
+  // "Rejected" status. Only APPROVALS write to Monday (the 01e/01f subitem
+  // flip in the approval chain-reaction). A rejection is a local decision,
+  // surfaced via rejection tickets + the reviewer dashboard, never mirrored
+  // to Monday.
 
   return NextResponse.json({ ok: true });
 }

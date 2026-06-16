@@ -134,8 +134,8 @@ export function WebhooksTab({
               {writeBacks.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-zinc-500">
-                    No write-backs yet. Approve every output of a style (or reject one) and the
-                    status change — applied or simulated — shows up here.
+                    No write-backs yet. Approve every output of a style and the status change —
+                    applied or simulated — shows up here.
                   </td>
                 </tr>
               ) : (
