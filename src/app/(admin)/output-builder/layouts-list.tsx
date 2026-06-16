@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 type LayoutRow = {
   id: string;
@@ -59,28 +59,51 @@ export function LayoutsList({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "PUBLISHED" | "DRAFT">("all");
+  const [autoApproveFilter, setAutoApproveFilter] = useState<"all" | "on" | "off">("all");
+
+  // Distinct doc types present among the layouts — drives the Type dropdown
+  // (value = docType, label = its catalogue label, e.g. "Private Label"),
+  // sorted by label so the menu reads alphabetically.
+  const typeOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const l of layouts) if (!seen.has(l.docType)) seen.set(l.docType, l.docTypeLabel);
+    return [...seen.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [layouts]);
 
   // Search across everything a row shows or links to: layout name/type,
   // test-data customer, the prod specs (+ their customers) using the
   // layout, and the (capped) style list — so "which layout prints style
-  // X / customer Y" is findable from here.
+  // X / customer Y" is findable from here. The dropdown filters (type /
+  // status / auto-approve) and the search box all apply together.
   const q = query.trim().toLowerCase();
-  const visibleLayouts = q
-    ? layouts.filter((l) =>
-        [
-          l.name,
-          l.docType,
-          l.docTypeLabel,
-          l.customerName ?? "",
-          l.businessAreaName ?? "",
-          ...l.prodSpecs.flatMap((s) => [s.name, s.customerName]),
-          ...l.styles.map((s) => s.name),
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(q),
-      )
-    : layouts;
+  const visibleLayouts = layouts.filter((l) => {
+    if (typeFilter !== "all" && l.docType !== typeFilter) return false;
+    if (statusFilter !== "all" && l.status !== statusFilter) return false;
+    if (autoApproveFilter !== "all" && l.autoApprove !== (autoApproveFilter === "on")) return false;
+    if (
+      q &&
+      ![
+        l.name,
+        l.docType,
+        l.docTypeLabel,
+        l.customerName ?? "",
+        l.businessAreaName ?? "",
+        ...l.prodSpecs.flatMap((s) => [s.name, s.customerName]),
+        ...l.styles.map((s) => s.name),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(q)
+    )
+      return false;
+    return true;
+  });
+  const filtersActive =
+    q !== "" || typeFilter !== "all" || statusFilter !== "all" || autoApproveFilter !== "all";
 
   async function createLayout() {
     setBusy("new");
@@ -214,159 +237,195 @@ export function LayoutsList({
         </div>
       ) : (
         <>
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search layouts — name, customer, prod spec, style…"
-            className="mt-6 w-full max-w-md rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"
-            spellCheck={false}
-          />
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search layouts — name, customer, prod spec, style…"
+              className="w-full max-w-md flex-1 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"
+              spellCheck={false}
+            />
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none"
+              title="Filter by document type"
+            >
+              <option value="all">All types</option>
+              {typeOptions.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none"
+              title="Filter by status"
+            >
+              <option value="all">All statuses</option>
+              <option value="PUBLISHED">Published</option>
+              <option value="DRAFT">Draft</option>
+            </select>
+            <select
+              value={autoApproveFilter}
+              onChange={(e) => setAutoApproveFilter(e.target.value as typeof autoApproveFilter)}
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none"
+              title="Filter by auto-approve"
+            >
+              <option value="all">Auto-approve: any</option>
+              <option value="on">Auto-approve: on</option>
+              <option value="off">Auto-approve: off</option>
+            </select>
+            {filtersActive ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setTypeFilter("all");
+                  setStatusFilter("all");
+                  setAutoApproveFilter("all");
+                }}
+                className="text-xs text-zinc-400 hover:text-zinc-700"
+              >
+                Clear
+              </button>
+            ) : null}
+            <span className="ml-auto text-xs text-zinc-400">
+              {visibleLayouts.length} of {layouts.length}
+            </span>
+          </div>
           {visibleLayouts.length === 0 ? (
             <div className="mt-4 rounded-lg border border-dashed border-zinc-300 bg-white px-8 py-12 text-center text-sm text-zinc-500">
-              No layouts match “{query}”.
+              No layouts match the current filters.
             </div>
           ) : (
-        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {visibleLayouts.map((l) => (
-            <div
-              key={l.id}
-              className="flex flex-col rounded-lg border border-zinc-200 bg-white p-4 transition hover:border-zinc-300 hover:shadow-sm"
-            >
-              {/* header — status, name, doc type */}
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`inline-block h-2 w-2 shrink-0 rounded-full ${
-                        l.status === "PUBLISHED" ? "bg-emerald-500" : "bg-zinc-300"
-                      }`}
-                      title={l.status === "PUBLISHED" ? `Published · v${l.version}` : "Draft"}
-                    />
-                    <Link
-                      href={`/output-builder/${l.id}`}
-                      className="truncate text-sm font-semibold text-zinc-900 hover:underline"
-                    >
-                      {l.name}
-                    </Link>
-                  </div>
-                  <div className="ml-4 mt-0.5 font-mono text-[11px] text-zinc-400">layout:{l.id.slice(0, 10)}…</div>
-                </div>
-                <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
-                  {l.docTypeLabel}
-                </span>
-              </div>
-
-              {/* badges — pages, publish state, auto-approve */}
-              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                <span className="rounded-full border border-zinc-200 px-2 py-0.5 text-[11px] text-zinc-500">
-                  {l.defInvalid ? (
-                    <span className="text-amber-600">invalid def</span>
-                  ) : (
-                    `${l.pageCount} page${l.pageCount === 1 ? "" : "s"}`
-                  )}
-                </span>
-                {l.status === "PUBLISHED" ? (
-                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                    Published · v{l.version}
-                  </span>
-                ) : (
-                  <span className="rounded-full border border-zinc-200 px-2 py-0.5 text-[11px] font-medium text-zinc-500">
-                    Draft
-                  </span>
-                )}
-                {l.autoApprove ? (
-                  <span
-                    className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700"
-                    title="Outputs skip the manual review queue (a person still sends to the supplier)"
-                  >
-                    Auto-approve
-                  </span>
-                ) : null}
-              </div>
-
-              {/* generation activity */}
-              <div className="mt-3 flex items-baseline gap-2">
-                <span className="text-2xl font-semibold tabular-nums text-zinc-900">{l.generationCount}</span>
-                <span className="text-xs text-zinc-500">
-                  generation{l.generationCount === 1 ? "" : "s"}
-                  {l.lastGeneratedAt ? ` · last ${new Date(l.lastGeneratedAt).toLocaleDateString()}` : ""}
-                </span>
-              </div>
-
-              {/* scope + usage */}
-              <div className="mt-3 space-y-1 text-xs text-zinc-500">
-                <div>
-                  <span className="text-zinc-400">Test data: </span>
-                  {l.customerName ? (
-                    <>
-                      {l.customerName}
-                      {l.businessAreaName ? <span className="text-zinc-400"> · {l.businessAreaName}</span> : null}
-                    </>
-                  ) : (
-                    <span className="text-zinc-400">—</span>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-x-3 gap-y-1">
-                  {l.prodSpecs.length === 0 ? (
-                    <span className="text-zinc-400">No prod specs</span>
-                  ) : (
-                    <HoverPopover trigger={`${l.prodSpecs.length} prod spec${l.prodSpecs.length === 1 ? "" : "s"}`}>
-                      <ul className="space-y-1.5 text-xs">
-                        {l.prodSpecs.map((s) => (
-                          <li key={s.id}>
-                            <Link href={`/prod-specs/${s.id}`} className="font-medium text-zinc-800 hover:underline">
-                              {s.name}
-                            </Link>
-                            <div className="text-zinc-500">{s.customerName}</div>
-                          </li>
-                        ))}
-                      </ul>
-                    </HoverPopover>
-                  )}
-                  {l.styleCount > 0 ? (
-                    <HoverPopover trigger={`${l.styleCount} style${l.styleCount === 1 ? "" : "s"}`}>
-                      <ul className="space-y-1 text-xs">
-                        {l.styles.map((s) => (
-                          <li key={s.id}>
-                            <Link href={`/styles/${s.id}`} className="text-zinc-700 hover:underline">
-                              {s.name}
-                            </Link>
-                          </li>
-                        ))}
-                        {l.styleCount > l.styles.length ? (
-                          <li className="pt-0.5 text-zinc-400">+{l.styleCount - l.styles.length} more</li>
+        <div className="mt-4 rounded-lg border border-zinc-200 bg-white">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-zinc-200 text-left text-xs uppercase tracking-wide text-zinc-500">
+                <th className="rounded-tl-lg bg-zinc-50 px-4 py-3 font-medium">Layout</th>
+                <th className="bg-zinc-50 px-4 py-3 font-medium">Type</th>
+                <th className="bg-zinc-50 px-4 py-3 font-medium">Pages</th>
+                <th className="bg-zinc-50 px-4 py-3 font-medium">Generations</th>
+                <th className="bg-zinc-50 px-4 py-3 font-medium">Prod specs</th>
+                <th className="bg-zinc-50 px-4 py-3 font-medium">Styles</th>
+                <th className="bg-zinc-50 px-4 py-3 font-medium">Updated</th>
+                <th className="rounded-tr-lg bg-zinc-50 px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody>
+              {visibleLayouts.map((l) => (
+                <tr key={l.id} className="border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50/60">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                          l.status === "PUBLISHED" ? "bg-emerald-500" : "bg-zinc-300"
+                        }`}
+                        title={l.status === "PUBLISHED" ? `Published · v${l.version}` : "Draft"}
+                      />
+                      <Link href={`/output-builder/${l.id}`} className="text-sm font-medium text-zinc-900 hover:underline">
+                        {l.name}
+                      </Link>
+                      {l.autoApprove ? (
+                        <span
+                          className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700"
+                          title="Outputs skip the manual review queue (a person still sends to the supplier)"
+                        >
+                          Auto-approve
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="ml-4 mt-0.5 font-mono text-xs text-zinc-400">layout:{l.id.slice(0, 10)}…</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600">
+                      {l.docTypeLabel}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-zinc-600">
+                    {l.defInvalid ? <span className="text-amber-600">invalid</span> : l.pageCount}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-zinc-600">
+                    {l.generationCount === 0 ? (
+                      <span className="text-zinc-400">—</span>
+                    ) : (
+                      <>
+                        <span className="font-medium tabular-nums text-zinc-800">{l.generationCount}</span>
+                        {l.lastGeneratedAt ? (
+                          <div className="mt-0.5 text-xs text-zinc-400">
+                            last {new Date(l.lastGeneratedAt).toLocaleDateString()}
+                          </div>
                         ) : null}
-                      </ul>
-                    </HoverPopover>
-                  ) : null}
-                </div>
-              </div>
-
-              {/* footer — updated + actions */}
-              <div className="mt-4 flex items-center justify-between border-t border-zinc-100 pt-3">
-                <span className="text-[11px] text-zinc-400">Updated {new Date(l.updatedAt).toLocaleDateString()}</span>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => duplicateLayout(l.id)}
-                    disabled={busy !== null}
-                    className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
-                  >
-                    Duplicate
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => deleteLayout(l)}
-                    disabled={busy !== null}
-                    className="rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-400 hover:border-red-200 hover:text-red-600 disabled:opacity-60"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
+                      </>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-zinc-600">
+                    {l.prodSpecs.length === 0 ? (
+                      <span className="text-zinc-400">—</span>
+                    ) : (
+                      <HoverPopover trigger={`${l.prodSpecs.length} prod spec${l.prodSpecs.length === 1 ? "" : "s"}`}>
+                        <ul className="space-y-1.5 text-xs">
+                          {l.prodSpecs.map((s) => (
+                            <li key={s.id}>
+                              <Link href={`/prod-specs/${s.id}`} className="font-medium text-zinc-800 hover:underline">
+                                {s.name}
+                              </Link>
+                              <div className="text-zinc-500">{s.customerName}</div>
+                            </li>
+                          ))}
+                        </ul>
+                      </HoverPopover>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-zinc-600">
+                    {l.styleCount === 0 ? (
+                      <span className="text-zinc-400">—</span>
+                    ) : (
+                      <HoverPopover trigger={`${l.styleCount} style${l.styleCount === 1 ? "" : "s"}`}>
+                        <ul className="space-y-1 text-xs">
+                          {l.styles.map((s) => (
+                            <li key={s.id}>
+                              <Link href={`/styles/${s.id}`} className="text-zinc-700 hover:underline">
+                                {s.name}
+                              </Link>
+                            </li>
+                          ))}
+                          {l.styleCount > l.styles.length ? (
+                            <li className="pt-0.5 text-zinc-400">+{l.styleCount - l.styles.length} more</li>
+                          ) : null}
+                        </ul>
+                      </HoverPopover>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-zinc-500">{new Date(l.updatedAt).toLocaleDateString()}</td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => duplicateLayout(l.id)}
+                        disabled={busy !== null}
+                        className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+                      >
+                        Duplicate
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteLayout(l)}
+                        disabled={busy !== null}
+                        className="rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-400 hover:border-red-200 hover:text-red-600 disabled:opacity-60"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
           )}
         </>
