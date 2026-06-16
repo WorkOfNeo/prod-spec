@@ -55,6 +55,13 @@ export function LayoutsList({
   const [error, setError] = useState<string | null>(null);
   const [logoError, setLogoError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // Multi-select + delete. `selected` holds ids across the full list (so a
+  // selection survives filtering); `confirmRows` are the rows queued in the
+  // delete confirmation modal (single row from the row button, or every
+  // selected row from the bulk bar).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmRows, setConfirmRows] = useState<LayoutRow[] | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Search across everything a row shows or links to: layout name/type,
   // test-data customer, the prod specs (+ their customers) using the
@@ -77,6 +84,32 @@ export function LayoutsList({
           .includes(q),
       )
     : layouts;
+
+  function toggleOne(id: string) {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  const allVisibleSelected = visibleLayouts.length > 0 && visibleLayouts.every((l) => selected.has(l.id));
+  const someVisibleSelected = visibleLayouts.some((l) => selected.has(l.id));
+  function toggleAllVisible() {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (allVisibleSelected) for (const l of visibleLayouts) next.delete(l.id);
+      else for (const l of visibleLayouts) next.add(l.id);
+      return next;
+    });
+  }
+
+  // Union (deduped by id) of the prod specs across the rows queued for
+  // deletion — exactly what loses this output. PDFs already generated are
+  // kept regardless.
+  const affectedSpecs = confirmRows
+    ? [...new Map(confirmRows.flatMap((r) => r.prodSpecs).map((s) => [s.id, s])).values()]
+    : [];
 
   async function uploadLogo(file: File) {
     setLogoError(null);
@@ -149,24 +182,30 @@ export function LayoutsList({
     }
   }
 
-  async function deleteLayout(row: LayoutRow) {
-    const warning =
-      row.status === "PUBLISHED"
-        ? `Delete "${row.name}"?\n\nIt is PUBLISHED — Prod Specs that link it will keep a stale output entry (skipped with a warning at run time) until the entry is removed there.`
-        : `Delete draft "${row.name}"?`;
-    if (!window.confirm(warning)) return;
-    setBusy(row.id);
+  // Delete the queued rows via the bulk endpoint (works for one id too). The
+  // server cleanly drops each layout from any prod spec referencing it and
+  // keeps already-generated PDFs.
+  async function deleteConfirmed() {
+    if (!confirmRows || confirmRows.length === 0) return;
+    const ids = confirmRows.map((r) => r.id);
+    setDeleting(true);
     setError(null);
     try {
-      const res = await fetch(`/api/admin/output-layouts/${row.id}`, { method: "DELETE" });
+      const res = await fetch("/api/admin/output-layouts/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         setError(body.error ?? `HTTP ${res.status}`);
         return;
       }
+      setSelected(new Set());
+      setConfirmRows(null);
       router.refresh();
     } finally {
-      setBusy(null);
+      setDeleting(false);
     }
   }
 
@@ -260,6 +299,30 @@ export function LayoutsList({
             className="mt-6 w-full max-w-md rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"
             spellCheck={false}
           />
+
+          {selected.size > 0 ? (
+            <div className="mt-4 flex items-center justify-between rounded-lg border border-zinc-300 bg-white px-4 py-2.5 shadow-sm">
+              <span className="text-sm font-medium text-zinc-700">{selected.size} selected</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelected(new Set())}
+                  className="rounded-md px-2.5 py-1 text-xs font-medium text-zinc-500 hover:text-zinc-800"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmRows(layouts.filter((l) => selected.has(l.id)))}
+                  disabled={busy !== null}
+                  className="rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
+                >
+                  Delete selected
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {visibleLayouts.length === 0 ? (
             <div className="mt-4 rounded-lg border border-dashed border-zinc-300 bg-white px-8 py-12 text-center text-sm text-zinc-500">
               No layouts match “{query}”.
@@ -269,7 +332,19 @@ export function LayoutsList({
           <table className="w-full">
             <thead>
               <tr className="border-b border-zinc-200 text-left text-xs uppercase tracking-wide text-zinc-500">
-                <th className="rounded-tl-lg bg-zinc-50 px-4 py-3 font-medium">Layout</th>
+                <th className="w-10 rounded-tl-lg bg-zinc-50 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all layouts"
+                    checked={allVisibleSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected;
+                    }}
+                    onChange={toggleAllVisible}
+                    className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                  />
+                </th>
+                <th className="bg-zinc-50 px-4 py-3 font-medium">Layout</th>
                 <th className="bg-zinc-50 px-4 py-3 font-medium">Type</th>
                 <th className="bg-zinc-50 px-4 py-3 font-medium">Pages</th>
                 <th className="bg-zinc-50 px-4 py-3 font-medium">Test data</th>
@@ -281,7 +356,21 @@ export function LayoutsList({
             </thead>
             <tbody>
               {visibleLayouts.map((l) => (
-                <tr key={l.id} className="border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50/60">
+                <tr
+                  key={l.id}
+                  className={`border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50/60 ${
+                    selected.has(l.id) ? "bg-zinc-50" : ""
+                  }`}
+                >
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${l.name}`}
+                      checked={selected.has(l.id)}
+                      onChange={() => toggleOne(l.id)}
+                      className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                    />
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <span
@@ -374,7 +463,7 @@ export function LayoutsList({
                       </button>
                       <button
                         type="button"
-                        onClick={() => deleteLayout(l)}
+                        onClick={() => setConfirmRows([l])}
                         disabled={busy !== null}
                         className="rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-400 hover:border-red-200 hover:text-red-600 disabled:opacity-60"
                       >
@@ -390,6 +479,80 @@ export function LayoutsList({
           )}
         </>
       )}
+
+      {confirmRows ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => {
+            if (!deleting) setConfirmRows(null);
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-lg border border-zinc-200 bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-zinc-100 px-5 py-4">
+              <h2 className="text-sm font-semibold text-zinc-900">
+                {confirmRows.length === 1 ? `Delete “${confirmRows[0].name}”?` : `Delete ${confirmRows.length} layouts?`}
+              </h2>
+            </div>
+            <div className="space-y-3 px-5 py-4 text-sm text-zinc-600">
+              {confirmRows.length > 1 ? (
+                <ul className="max-h-32 space-y-0.5 overflow-y-auto rounded-md border border-zinc-100 bg-zinc-50 px-3 py-2 text-xs">
+                  {confirmRows.map((r) => (
+                    <li key={r.id} className="truncate">
+                      {r.name}
+                      {r.status === "PUBLISHED" ? <span className="text-emerald-600"> · published</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {affectedSpecs.length > 0 ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                  <p className="font-medium">
+                    Removes the output from {affectedSpecs.length} prod spec{affectedSpecs.length === 1 ? "" : "s"}:
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {affectedSpecs.slice(0, 8).map((s) => (
+                      <li key={s.id} className="truncate">
+                        {s.name} <span className="text-amber-600">· {s.customerName}</span>
+                      </li>
+                    ))}
+                    {affectedSpecs.length > 8 ? (
+                      <li className="text-amber-600">+{affectedSpecs.length - 8} more</li>
+                    ) : null}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-zinc-500">Not linked to any prod spec.</p>
+              )}
+              <p className="text-xs text-zinc-400">
+                Already-generated PDFs are kept — only the prod-spec link is removed.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-zinc-100 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setConfirmRows(null)}
+                disabled={deleting}
+                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={deleteConfirmed}
+                disabled={deleting}
+                className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {deleting ? "Deleting…" : confirmRows.length === 1 ? "Delete" : `Delete ${confirmRows.length}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

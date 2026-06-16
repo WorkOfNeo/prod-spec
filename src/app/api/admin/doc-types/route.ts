@@ -9,7 +9,7 @@ import { TEMPLATE_VARIANTS } from "@/lib/pdf/template-registry";
 export const runtime = "nodejs";
 
 // =====================================================
-// Doc-type catalogue management (Custom outputs → Document types card).
+// Doc-type catalogue management (Output builder → Document types card).
 // GET returns the catalogue with usage counts (drives the delete guard
 // in the UI); POST adds a type. Label edits / deletes live in
 // ./[value]/route.ts.

@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { listActiveLanguages } from "@/lib/languages/active";
 import { parseLayoutDef } from "@/lib/output-layouts/schema";
+import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
+import { LAYOUT_VARIANT_PREFIX } from "@/lib/output-layouts/variants";
 import { loadDocTypes } from "@/lib/pdf/doc-types-db";
 import { LayoutEditor } from "./layout-editor";
 import { requireAdminPage } from "@/lib/auth-server";
@@ -23,7 +25,7 @@ export default async function OutputLayoutEditorPage(props: { params: Promise<{ 
   }
 
   const { id } = await props.params;
-  const [layout, customers, businessAreas, languages] = await Promise.all([
+  const [layout, customers, businessAreas, languages, specs] = await Promise.all([
     db.outputLayout.findUnique({ where: { id } }),
     db.customer.findMany({
       where: { active: true },
@@ -36,8 +38,26 @@ export default async function OutputLayoutEditorPage(props: { params: Promise<{ 
       select: { id: true, name: true },
     }),
     listActiveLanguages(),
+    db.prodSpec.findMany({
+      select: { id: true, name: true, outputs: true, customer: { select: { name: true } } },
+    }),
   ]);
   if (!layout) notFound();
+
+  // Prod Specs that reference this layout as an output (layout:<id>, enabled
+  // or not) — surfaced in the editor's delete confirmation. Matched in JS
+  // because `outputs` is JSON, not relational (same join the list page does).
+  // A single malformed spec must not 500 the editor, so parse defensively.
+  const layoutKey = `${LAYOUT_VARIANT_PREFIX}${id}`;
+  const prodSpecs = specs
+    .filter((s) => {
+      try {
+        return parseProdSpecOutputs(s.outputs).some((o) => o.variantKey === layoutKey);
+      } catch {
+        return false;
+      }
+    })
+    .map((s) => ({ id: s.id, name: s.name, customerName: s.customer.name }));
 
   let definition;
   try {
@@ -63,6 +83,7 @@ export default async function OutputLayoutEditorPage(props: { params: Promise<{ 
       docTypes={await loadDocTypes()}
       businessAreas={businessAreas}
       languages={languages}
+      prodSpecs={prodSpecs}
     />
   );
 }

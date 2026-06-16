@@ -20,7 +20,6 @@ const NAV: Array<{ href?: string; label?: string; divider?: true }> = [
   { href: "/jobs", label: "Jobs" },
   { divider: true },
   { href: "/prod-specs", label: "Prod specs" },
-  { href: "/custom-outputs", label: "Custom outputs" },
   { href: "/output-builder", label: "Output builder" },
   { href: "/po-eans", label: "PO barcodes" },
   { href: "/customers", label: "Customers" },
