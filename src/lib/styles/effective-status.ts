@@ -14,6 +14,7 @@ export type EffectiveStatusKey =
   | "no_spec"
   | "awaiting_data"
   | "partially_ready"
+  | "spec_inactive"
   | "ready_to_generate"
   | "queued"
   | "ready_for_review"
@@ -108,7 +109,13 @@ export function computeEffectiveStatus(opts: {
   if (readiness.reason === "incomplete" || readiness.reason === "missing_fields") {
     return { key: "awaiting_data", label: "Awaiting data", tone: "amber", hint: readiness.title + failedNote };
   }
-  // ready / auto_off / inactive — the fields are all there; the nuance of
-  // WHY it hasn't fired yet (auto-gen off, inactive spec) rides in the hint.
+  // Fields are all there, but the Prod Spec is inactive — it won't generate
+  // (auto-enqueue is gated on active), so it must NOT read as "Ready to
+  // generate". Its own pill instead, with the activate-it hint.
+  if (readiness.reason === "inactive") {
+    return { key: "spec_inactive", label: "Spec inactive", tone: "amber", hint: readiness.title + failedNote };
+  }
+  // ready / auto_off — the fields are all there on an active spec; the
+  // auto-gen-off nuance (still manually runnable) rides in the hint.
   return { key: "ready_to_generate", label: "Ready to generate", tone: "green", hint: readiness.title + failedNote };
 }
