@@ -133,6 +133,8 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     },
     // Manual carton-numbered prints are offered for layouts that opt in.
     cartonNumbering: settings.cartonNumbering,
+    // Custom Carton Marking (multi-style box) — independent opt-in.
+    multipleStyles: settings.multipleStyles,
     // Split per EAN: ONE FILE PER REPETITION ROW — repeat "size": per
     // size row; repeat "ean": per PO EAN row (size × colour,
     // {{colourName}} bound). Either way each file carries one EAN.

@@ -78,6 +78,12 @@ export async function buildStyleData(
   style: RenderableStyle,
   prodSpec: RenderableProdSpec,
   config: CustomerConfig,
+  // Pre-fetch the same-PO sibling POOL (Custom Carton Marking). OFF by
+  // default: siblings are only ever used by a MANUAL multi-style carton
+  // print, so standard generation (the runner) skips the extra query +
+  // per-sibling mapping. The preview/dialog loaders (loadStyleRenderContext)
+  // opt in so the carton dialog + multi-style preview have candidates.
+  opts: { loadSiblings?: boolean } = {},
 ): Promise<StyleData> {
   // Inject the canonical Style.poNumber as the manual.* fallback so the PO
   // renders on labels even when the mapped PO column isn't the one this
@@ -141,13 +147,13 @@ export async function buildStyleData(
     styleData.washSymbols = rejoinWashTokens(styleData.washSymbols, symbolMap);
   }
 
-  // Custom Carton Marking: pre-fetch the same-PO siblings POOL so the
-  // {{style2}}/{{style3}}… tokens resolve SYNC at render time. This is the
-  // unfiltered candidate set; the per-output render narrows it to the
-  // output's permanent slot count or an operator's one-off pick (see
-  // applyCustomCartonMarking / withSelectedSiblings). Guarded by poNumber —
-  // a style with no PO has no siblings.
-  if (style.poNumber) {
+  // Custom Carton Marking: pre-fetch the same-PO siblings POOL so the carton
+  // dialog can offer candidates and a multi-style preview/print resolves
+  // {{style2}}+ SYNC. Opt-in (loadSiblings) + guarded by poNumber. The flag
+  // style.multipleStyles — set later by withSelectedSiblings on a one-off
+  // print — is what actually gates {{style2}}+; the pool alone never leaks
+  // into standard generation.
+  if (opts.loadSiblings && style.poNumber) {
     styleData.siblings = await loadSiblingStyles(
       style.id,
       style.poNumber,
@@ -256,6 +262,9 @@ export async function loadStyleRenderContext(styleId: string): Promise<StyleRend
     },
     prodSpec,
     config,
+    // The preview/dialog loader — load the same-PO sibling pool so the carton
+    // dialog can offer candidates and a multi-style preview resolves.
+    { loadSiblings: true },
   );
 
   const outputs = prodSpec

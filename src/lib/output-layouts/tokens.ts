@@ -38,6 +38,15 @@ type TextResolver = (style: StyleData, arg?: string) => string;
 const RESOLVERS: Record<string, TextResolver> = {
   styleName: (s) => s.styleName,
   styleNumber: (s) => s.styleNumber,
+  // Bare {{style}} — the base style's identifier (its number); the
+  // single-style branch of a {{if multipleStyles == true}}…{{else}}{{style}}…
+  // carton template. Same value as {{style1}}; {{style2}}+ are the siblings.
+  style: (s) => s.styleNumber,
+  // Multi-style mode flag — "true" ONLY on a one-off multi-style carton
+  // print (the operator picked siblings in the carton dialog); "" on
+  // standard generation. Drives {{if multipleStyles == true}}… so one
+  // carton layout can render single normally and multi on a manual print.
+  multipleStyles: (s) => (s.multipleStyles ? "true" : ""),
   customerName: (s) => s.customerName,
   // Same fallback chain the Netto carton template uses: Description
   // column → EN product name → style name.
@@ -151,9 +160,14 @@ export function projectSiblingStyle(style: StyleData, id: string): SiblingStyle 
 
 // The SiblingStyle for a slot ("style2…" → siblings[0]); slot 1 is the
 // base style itself. Returns null when the slot has no sibling (renders
-// empty per the caller's gap rules).
+// empty per the caller's gap rules). Slots ≥ 2 resolve ONLY in multi-style
+// mode (style.multipleStyles) — the sibling POOL is always on StyleData, so
+// without this gate {{style2}} would leak siblings into standard generation.
+// Slot 1 (the base) always resolves, so {{style}}/{{style1}} stay available
+// in the single-style branch.
 function siblingForSlot(style: StyleData, slot: number): SiblingStyle | null {
   if (slot <= 1) return projectSiblingStyle(style, "self");
+  if (!style.multipleStyles) return null;
   return style.siblings?.[slot - 2] ?? null;
 }
 
@@ -344,8 +358,10 @@ export function unresolvedTokens(def: LayoutDef, style: StyleData): string[] {
           if (!meta) continue;
           // Sibling slot tokens ({{style2}}…) depend on OTHER styles on the
           // PO, not this style's columns — an empty slot is never a "missing
-          // field" on the style being built. Don't list them as amber gaps.
-          if (parseSiblingTokenKey(ref.key)) continue;
+          // field" on the style being built. {{multipleStyles}} is a mode
+          // flag that's legitimately "" in single-style mode. Don't list
+          // either as amber gaps.
+          if (parseSiblingTokenKey(ref.key) || ref.key === "multipleStyles") continue;
           // Image tokens (logos, certification marks) always render
           // something: present → the artwork, absent → a visible chip on
           // the proof counted by the ship gate. This sync check can't see

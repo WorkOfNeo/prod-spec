@@ -46,10 +46,13 @@ export type StyleOutputCardProps = {
   thumbSrc: string | null;
   pdfHref: string | null;
   generatedAt: string | null;
-  // Layout opted into manual carton prints — shows the badge + the "Carton
-  // marking…" action alongside Run (numbered X-of-Y sets and/or Custom
-  // Carton Marking: other same-PO styles on the box via {{style2}}…).
+  // Two INDEPENDENT manual-carton capabilities. Either one shows the badge
+  // + the "Carton marking…" action alongside Run:
+  //   • cartonNumbering — numbered X-of-Y sets ({{cartonNo}}/{{cartonTotal}}).
+  //   • multipleStyles  — Custom Carton Marking: other same-PO styles on the
+  //     box via {{style2}}… (a manual one-off; standard output stays single).
   cartonNumbering: boolean;
+  multipleStyles: boolean;
   // Info-area sizing: when isInfoArea, the output's print size is switchable
   // here (admin size or one-time custom). The pick is stored on the
   // ProdSpec output, so prodSpecId is needed to PATCH it.
@@ -93,9 +96,15 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           <span className="truncate text-sm font-semibold text-zinc-900" title={p.name}>
             {p.name}
           </span>
-          {p.cartonNumbering && (
+          {(p.cartonNumbering || p.multipleStyles) && (
             <span
-              title="Carton marking — print a numbered set (X of Y) and/or place other styles from the same PO on the box ({{style2}}…)"
+              title={
+                p.cartonNumbering && p.multipleStyles
+                  ? "Carton marking — numbered set (X of Y) and multiple styles on the box"
+                  : p.cartonNumbering
+                    ? "Carton marking — print a numbered set (X of Y)"
+                    : "Carton marking — place other styles from the same PO on the box ({{style2}}…)"
+              }
               className="shrink-0 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700"
             >
               Carton
@@ -111,7 +120,7 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           {sizeLabel ? `${sizeLabel} · ` : ""}
           {fmtMm(p.widthMm)} × {fmtMm(p.heightMm)} mm
         </span>
-        {p.cartonNumbering && (
+        {(p.cartonNumbering || p.multipleStyles) && (
           <CartonPrintsButton
             styleId={p.styleId}
             variantKey={p.variantKey}
@@ -119,6 +128,8 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
             ready={p.ready}
             widthMm={p.widthMm}
             heightMm={p.heightMm}
+            cartonNumbering={p.cartonNumbering}
+            multipleStyles={p.multipleStyles}
           />
         )}
         <RunOutputButton

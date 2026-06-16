@@ -20,9 +20,6 @@ export type VariantInfo = {
   description: string;
   defaultWidthMm: number;
   defaultHeightMm: number;
-  // Layout opted into manual carton prints — also the gate for the
-  // per-output "Custom Carton Marking" (multi-style box) control.
-  cartonNumbering?: boolean;
 };
 
 type Source = "builtin" | "layout";

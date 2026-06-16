@@ -173,10 +173,16 @@ export type StyleData = {
 
   // OTHER styles on the same PO, for "Custom Carton Marking" — the
   // {{style2}}/{{style3}}… slots. Pre-fetched + projected in buildStyleData
-  // (the resolved pool); the per-output render then narrows this to the
-  // output's permanent slot count (applyCustomCartonMarking) or to an
-  // operator's explicit one-off selection (withSelectedSiblings). Empty /
-  // undefined ⇒ every {{styleN}} slot resolves empty (honest production-mode
-  // gaps). Rides the `...style` spread in repetitionStyles for free.
+  // (the resolved POOL); withSelectedSiblings narrows it to the operator's
+  // one-off pick. The pool is present even in standard generation, so
+  // `multipleStyles` (not this list) is what actually gates {{style2}}+.
+  // Rides the `...style` spread in repetitionStyles for free.
   siblings?: SiblingStyle[];
+
+  // Multi-style carton mode is ACTIVE for this render. Set true ONLY by a
+  // one-off carton-dialog print that picked siblings (withSelectedSiblings);
+  // never on standard generation. Gates {{style2}}+ and resolves the
+  // {{multipleStyles}} conditional token. Eligibility to use it at all is a
+  // separate LAYOUT setting (LayoutSettings.multipleStyles).
+  multipleStyles?: boolean;
 };

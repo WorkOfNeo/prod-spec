@@ -20,7 +20,6 @@ import {
   type PanelSymbol,
 } from "./care-standard-panel";
 import { AddOutputPicker, type VariantInfo } from "./add-output-picker";
-import { MAX_SIBLING_SLOTS } from "@/lib/output-layouts/token-meta";
 
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
 type Tab = "general" | "cover" | "outputs";
@@ -557,63 +556,6 @@ export function ProdSpecEditor(props: Props) {
                                   className="ml-1 w-20 rounded-md border border-zinc-300 px-2 py-1 text-sm tabular-nums"
                                 />
                               </label>
-                            </div>
-                          )}
-                          {/* Custom Carton Marking — the PERMANENT (prod-spec
-                              level) multi-style box setting. Stores the slot
-                              COUNT only; the specific siblings are resolved per
-                              style from the same PO at render time. Shown for
-                              carton-numbering layouts (or any output already
-                              carrying the setting, so it can be edited/cleared). */}
-                          {(v?.cartonNumbering || o.customCartonMarking) && (
-                            <div className="mb-3 rounded-md border border-amber-200 bg-amber-50/60 p-2.5">
-                              <label className="flex items-center gap-2 text-xs font-medium text-zinc-700">
-                                <input
-                                  type="checkbox"
-                                  checked={Boolean(o.customCartonMarking?.enabled)}
-                                  onChange={(e) =>
-                                    updateOutput(i, {
-                                      customCartonMarking: {
-                                        enabled: e.target.checked,
-                                        slots: o.customCartonMarking?.slots ?? 2,
-                                      },
-                                    })
-                                  }
-                                  className="accent-amber-600"
-                                />
-                                Custom Carton Marking — multiple styles on the box
-                              </label>
-                              {o.customCartonMarking?.enabled && (
-                                <label className="mt-2 flex items-center gap-2 text-[10px] uppercase text-zinc-500">
-                                  Styles on the box
-                                  <input
-                                    type="number"
-                                    min={2}
-                                    max={MAX_SIBLING_SLOTS}
-                                    value={o.customCartonMarking?.slots ?? 2}
-                                    onChange={(e) =>
-                                      updateOutput(i, {
-                                        customCartonMarking: {
-                                          enabled: true,
-                                          slots: Math.min(
-                                            MAX_SIBLING_SLOTS,
-                                            Math.max(2, Math.floor(Number(e.target.value) || 2)),
-                                          ),
-                                        },
-                                      })
-                                    }
-                                    className="w-16 rounded-md border border-zinc-300 px-2 py-1 text-sm normal-case tabular-nums"
-                                  />
-                                  <span className="normal-case text-zinc-400">
-                                    1 base + {(o.customCartonMarking?.slots ?? 2) - 1} siblings
-                                    ({"{{style2}}"}…)
-                                  </span>
-                                </label>
-                              )}
-                              <p className="mt-1.5 text-[10px] normal-case leading-relaxed text-zinc-400">
-                                Siblings come from the same PO, resolved per style at render time —
-                                inherited by every style on this prod spec.
-                              </p>
                             </div>
                           )}
                           <PinControls
