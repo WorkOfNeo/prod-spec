@@ -47,7 +47,7 @@ export type StyleOutputCardProps = {
   pdfHref: string | null;
   generatedAt: string | null;
   // Two INDEPENDENT manual-carton capabilities. Either one shows the badge
-  // + the "Carton marking…" action alongside Run:
+  // + the "Customize" action alongside Run:
   //   • cartonNumbering — numbered X-of-Y sets ({{cartonNo}}/{{cartonTotal}}).
   //   • multipleStyles  — Custom Carton Marking: other same-PO styles on the
   //     box via {{style2}}… (a manual one-off; standard output stays single).
@@ -100,7 +100,7 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
               overview tells them apart at a glance. */}
           {p.cartonNumbering && (
             <span
-              title="Carton numbering — print a numbered set (X of Y) from the Carton marking… action"
+              title="Carton numbering — print a numbered set (X of Y) from the Customize action"
               className="shrink-0 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700"
             >
               X of Y
