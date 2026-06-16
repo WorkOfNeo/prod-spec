@@ -96,18 +96,22 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           <span className="truncate text-sm font-semibold text-zinc-900" title={p.name}>
             {p.name}
           </span>
-          {(p.cartonNumbering || p.multipleStyles) && (
+          {/* Two INDEPENDENT carton capabilities — distinct chips so the
+              overview tells them apart at a glance. */}
+          {p.cartonNumbering && (
             <span
-              title={
-                p.cartonNumbering && p.multipleStyles
-                  ? "Carton marking — numbered set (X of Y) and multiple styles on the box"
-                  : p.cartonNumbering
-                    ? "Carton marking — print a numbered set (X of Y)"
-                    : "Carton marking — place other styles from the same PO on the box ({{style2}}…)"
-              }
+              title="Carton numbering — print a numbered set (X of Y) from the Carton marking… action"
               className="shrink-0 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700"
             >
-              Carton
+              X of Y
+            </span>
+          )}
+          {p.multipleStyles && (
+            <span
+              title="Multiple styles — place other styles from the same PO on the box ({{style2}}…), a manual one-off"
+              className="shrink-0 rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-700"
+            >
+              Multi-style
             </span>
           )}
           {!open && p.missing.length > 0 && (
