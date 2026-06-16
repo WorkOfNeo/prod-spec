@@ -51,7 +51,6 @@ export function TranslationList({ rows, languages }: Props) {
           <span className="text-xs text-zinc-500">
             {filtered.length} / {rows.length}
           </span>
-          <SeedButton />
           <SyncButton />
         </div>
       </div>
@@ -121,53 +120,6 @@ export function TranslationList({ rows, languages }: Props) {
         <ViewDialog row={view} languages={languages} onClose={() => setView(null)} />
       )}
     </>
-  );
-}
-
-// Seeds the shipped standard translations (e.g. the fixed care-label
-// instruction) so the dictionary renders them even before the Monday
-// board is synced. Idempotent and merge-safe — see POST
-// /api/admin/translations.
-function SeedButton() {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-
-  async function seed() {
-    setBusy(true);
-    setMsg(null);
-    try {
-      const res = await fetch("/api/admin/translations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seedStandard: true }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setMsg(`error: ${body.error ?? res.statusText}`);
-        return;
-      }
-      setMsg(`seeded · ${body.created} new, ${body.updated} updated`);
-      router.refresh();
-    } catch (err) {
-      setMsg(`error: ${(err as Error).message}`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="flex items-center gap-3">
-      {msg && <span className="max-w-md truncate text-xs text-zinc-500">{msg}</span>}
-      <button
-        type="button"
-        onClick={seed}
-        disabled={busy}
-        className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-      >
-        {busy ? "Seeding…" : "Seed standard set"}
-      </button>
-    </div>
   );
 }
 
