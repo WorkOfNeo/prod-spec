@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-server";
 import { LayoutDefSchema } from "@/lib/output-layouts/schema";
 import { refreshLayoutVariants } from "@/lib/output-layouts/variants";
+import { detachLayoutsFromProdSpecs } from "@/lib/output-layouts/detach";
 import { loadDocTypes } from "@/lib/pdf/doc-types-db";
 
 export const runtime = "nodejs";
@@ -63,7 +64,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const known = await loadDocTypes();
     if (!known.some((t) => t.value === d.docType)) {
       return NextResponse.json(
-        { error: `Unknown doc type "${d.docType}" — add it under Custom outputs → Document types first` },
+        { error: `Unknown doc type "${d.docType}" — add it under Output builder → Document types first` },
         { status: 400 },
       );
     }
@@ -99,11 +100,12 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
   const { id } = await ctx.params;
   try {
     const layout = await db.outputLayout.delete({ where: { id } });
-    // ProdSpec rows that still reference layout:<id> keep their entry;
-    // the runner logs + skips unknown variant keys (same path as a
-    // removed coded variant), and the editor shows the stale key.
+    // Cleanly drop this layout from any Prod Spec that referenced it
+    // (layout:<id> entries) so nothing lingers as a stale key. Generated
+    // PDFs (JobAsset rows) hang off Jobs, not layouts, so they're kept.
+    const { specsUpdated } = await detachLayoutsFromProdSpecs([id]);
     if (layout.status === "PUBLISHED") await refreshLayoutVariants();
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, specsUpdated });
   } catch {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

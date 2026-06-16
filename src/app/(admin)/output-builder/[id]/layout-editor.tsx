@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DocTypeEntry } from "@/lib/pdf/doc-types";
 import {
@@ -142,6 +143,7 @@ export function LayoutEditor({
   docTypes,
   stats,
   recentAssets,
+  prodSpecs,
 }: {
   layout: LayoutProps;
   customers: Customer[];
@@ -152,7 +154,11 @@ export function LayoutEditor({
   // Generation history for the Settings + Reviews tabs (server-computed).
   stats: GenerationStats;
   recentAssets: RecentAsset[];
+  // Prod Specs that reference this layout (layout:<id>) — listed in the
+  // delete confirmation so the operator sees what loses the output.
+  prodSpecs: Array<{ id: string; name: string; customerName: string }>;
 }) {
+  const router = useRouter();
   const [tab, setTab] = useState<LayoutTab>("customizer");
   const [name, setName] = useState(layout.name);
   const [docType, setDocType] = useState(layout.docType);
@@ -166,6 +172,29 @@ export function LayoutEditor({
   const [businessAreaId, setBusinessAreaId] = useState<string | null>(layout.businessAreaId);
   const [status, setStatus] = useState(layout.status);
   const [version, setVersion] = useState(layout.version);
+
+  // Delete this layout — confirmation modal → DELETE → back to the list.
+  // The server cleanly drops it from any referencing prod spec; generated
+  // PDFs are kept.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function deleteLayout() {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/admin/output-layouts/${layout.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setDeleteError(body.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      router.push("/output-builder");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const [pageIdx, setPageIdx] = useState(0);
   const [marginsLinked, setMarginsLinked] = useState(() => {
@@ -881,9 +910,9 @@ export function LayoutEditor({
             )}
           </select>
           <Link
-            href="/custom-outputs#doc-types"
+            href="/output-builder#doc-types"
             className="text-[11px] text-zinc-400 underline-offset-2 hover:text-zinc-600 hover:underline"
-            title="Add or rename document types (Custom outputs page)"
+            title="Add or rename document types"
           >
             Manage types
           </Link>
@@ -947,6 +976,14 @@ export function LayoutEditor({
                 {publishing ? "Publishing…" : "Publish"}
               </button>
             ) : null}
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="ml-1 border-l border-zinc-200 pl-3 text-sm font-medium text-zinc-400 hover:text-red-600"
+              title="Delete this layout"
+            >
+              Delete
+            </button>
           </div>
         </div>
         {publishErrors.length > 0 ? (
@@ -964,6 +1001,69 @@ export function LayoutEditor({
           </p>
         ) : null}
       </div>
+
+      {confirmDelete ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => {
+            if (!deleting) setConfirmDelete(false);
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-lg border border-zinc-200 bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-zinc-100 px-5 py-4">
+              <h2 className="text-sm font-semibold text-zinc-900">Delete “{name}”?</h2>
+            </div>
+            <div className="space-y-3 px-5 py-4 text-sm text-zinc-600">
+              {prodSpecs.length > 0 ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                  <p className="font-medium">
+                    Removes the output from {prodSpecs.length} prod spec{prodSpecs.length === 1 ? "" : "s"}:
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {prodSpecs.slice(0, 8).map((s) => (
+                      <li key={s.id} className="truncate">
+                        {s.name} <span className="text-amber-600">· {s.customerName}</span>
+                      </li>
+                    ))}
+                    {prodSpecs.length > 8 ? (
+                      <li className="text-amber-600">+{prodSpecs.length - 8} more</li>
+                    ) : null}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-zinc-500">Not linked to any prod spec.</p>
+              )}
+              <p className="text-xs text-zinc-400">
+                Already-generated PDFs are kept — only the prod-spec link is removed.
+              </p>
+              {deleteError ? <p className="text-xs text-red-600">{deleteError}</p> : null}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-zinc-100 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={deleteLayout}
+                disabled={deleting}
+                className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* ---------- tabs ---------- */}
       <div className="flex items-center gap-6 border-b border-zinc-200 px-8">

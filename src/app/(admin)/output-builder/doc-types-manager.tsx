@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { deriveDocTypeValue, type DocTypeEntry } from "@/lib/pdf/doc-types";
 
 // =====================================================
-// Document types card (Custom outputs overview) — see, rename, add and
+// Document types card (Output Builder) — see, rename, add and
 // delete the doc-type catalogue the whole app categorises outputs by
 // (builder type select, picker filter chips, asset grouping).
 //

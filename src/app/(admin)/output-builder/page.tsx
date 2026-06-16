@@ -2,12 +2,14 @@ import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { parseLayoutDef } from "@/lib/output-layouts/schema";
 import { docTypeLabel } from "@/lib/pdf/doc-types";
-import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
+import { loadDocTypeLabels, loadDocTypesWithUsage } from "@/lib/pdf/doc-types-db";
 import { LAYOUT_VARIANT_PREFIX } from "@/lib/output-layouts/variants";
 import { generationCountsByLayout } from "@/lib/output-layouts/stats";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
+import { TEMPLATE_VARIANTS } from "@/lib/pdf/template-registry";
 import { getContrastAddressLogoDataUrl, getContrastLogoDataUrl } from "@/lib/output-layouts/logos";
 import { LayoutsList } from "./layouts-list";
+import { DocTypesManager } from "./doc-types-manager";
 import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
@@ -101,6 +103,10 @@ export default async function OutputBuilderPage() {
     loadDocTypeLabels(),
     generationCountsByLayout(),
   ]);
+  // Doc-type catalogue with usage counts for the management card (relocated
+  // here from the retired Custom outputs page). `builtinVariants` is flagged
+  // against the code-registered template doc types.
+  const docTypesUsage = await loadDocTypesWithUsage(new Set(TEMPLATE_VARIANTS.map((v) => v.docType)));
 
   const layouts = rows.map((l) => {
     let pageCount = 0;
@@ -138,10 +144,17 @@ export default async function OutputBuilderPage() {
   });
 
   return (
-    <LayoutsList
-      layouts={layouts}
-      contrastLogoFound={contrastLogo !== null}
-      contrastAddressLogoFound={contrastAddressLogo !== null}
-    />
+    <>
+      <LayoutsList
+        layouts={layouts}
+        contrastLogoFound={contrastLogo !== null}
+        contrastAddressLogoFound={contrastAddressLogo !== null}
+      />
+      {/* Document types — relocated from the retired Custom outputs page.
+          The editor's "Manage types" link jumps to #doc-types here. */}
+      <div className="px-8 pb-10">
+        <DocTypesManager initialTypes={docTypesUsage} />
+      </div>
+    </>
   );
 }
