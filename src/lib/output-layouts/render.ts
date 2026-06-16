@@ -21,7 +21,7 @@ import { tokenMeta, type BarcodeSource, type LogoSource } from "./token-meta";
 import { getContrastAddressLogoDataUrl, getContrastLogoDataUrl } from "./logos";
 import {
   applyConditionalsForStyle,
-  augmentCareAndMadeIn,
+  augmentTranslatedFields,
   augmentCompositionTranslations,
   compositionLangsInDef,
   langArgsInDef,
@@ -66,8 +66,14 @@ export type LayoutRenderMode = "production" | "preview";
 //            row's colour parsed from the PO variant label). Falls back
 //            to size rows when no EAN rows were scraped.
 export function repetitionStyles(style: StyleData, repeatBy: "none" | "size" | "ean"): StyleData[] {
+  // The full size run, preserved as we narrow `sizes` to one row per
+  // repetition so {{sizeRangeCoop}} can still list every size and enlarge
+  // the current one. `?? style.sizes` keeps it idempotent: renderLayoutHtml
+  // re-applies repetitionStyles to already-narrowed styles, and an
+  // already-set allSizes must survive that second pass.
+  const allSizes = style.allSizes ?? style.sizes;
   if (repeatBy === "size" && style.sizes.length > 0) {
-    return style.sizes.map((entry) => ({ ...style, sizes: [entry] }));
+    return style.sizes.map((entry) => ({ ...style, sizes: [entry], allSizes }));
   }
   if (repeatBy === "ean") {
     const rows = style.eanVariants ?? [];
@@ -79,12 +85,13 @@ export function repetitionStyles(style: StyleData, repeatBy: "none" | "size" | "
       return rows.map((v) => ({
         ...style,
         sizes: [{ label: v.size, ean13: v.ean13 }],
+        allSizes,
         eanVariants: [v],
         colour: v.colour ? { name: v.colour, code: style.colour?.code ?? "" } : style.colour,
       }));
     }
     if (style.sizes.length > 0) {
-      return style.sizes.map((entry) => ({ ...style, sizes: [entry] }));
+      return style.sizes.map((entry) => ({ ...style, sizes: [entry], allSizes }));
     }
   }
   return [style];
@@ -358,6 +365,28 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx): string | nu
       continue;
     }
 
+    // Coop size range: every size joined " - ", with the CURRENT
+    // repetition's size (style.sizes[0], narrowed by repetitionStyles)
+    // enlarged. Drawn here rather than via the text resolver so the
+    // highlight markup survives escaping.
+    if (key === "sizeRangeCoop") {
+      const all = (style.allSizes ?? style.sizes).map((x) => x.label).filter(Boolean);
+      if (all.length > 0) {
+        const current = style.sizes[0]?.label ?? "";
+        html += all
+          .map((label) =>
+            label === current
+              ? `<span class="ol-size-current">${escapeHtml(label)}</span>`
+              : escapeHtml(label),
+          )
+          .join(" - ");
+        hadValue = true;
+      } else if (ctx.mode === "preview") {
+        html += `<span class="ol-miss">sizeRangeCoop?</span>`;
+      }
+      continue;
+    }
+
     const value = resolveTextToken(style, key, arg);
     if (value) {
       html += escapeHtml(value);
@@ -440,7 +469,7 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
       `text-align: ${block.align ?? "left"}; ` +
       blockBorder(block, ctx.fontScale) +
       blockTypography(block, ctx.fontScale);
-    return `<div class="ol-block ol-rect${block.invert ? " ol-binvert" : ""}" style="${styleAttr}">${lines}</div>`;
+    return `<div class="ol-block ol-rect${block.invert ? " ol-binvert" : ""}${block.fitWidth ? " ol-fit" : ""}" style="${styleAttr}">${lines}</div>`;
   }
 
   const anchor = block.anchor ?? "top-left";
@@ -451,7 +480,7 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
     blockBorder(block, ctx.fontScale) +
     blockTypography(block, ctx.fontScale) +
     ANCHOR_CSS[anchor];
-  return `<div class="ol-block ol-${anchor}${block.invert ? " ol-binvert" : ""}" style="${styleAttr}">${lines}</div>`;
+  return `<div class="ol-block ol-${anchor}${block.invert ? " ol-binvert" : ""}${block.fitWidth ? " ol-fit" : ""}" style="${styleAttr}">${lines}</div>`;
 }
 
 type PreparedLayoutRender = {
@@ -512,16 +541,19 @@ async function prepareLayoutRender(
   // Resolve language-derived tokens through the translation bank before
   // anything renders (idempotent — values already present are kept):
   // {{composition:<lang>}}, {{careInstructions:<lang>}} (standard
-  // catalogue filtered by the style's wash icons), {{madeIn:<lang>}}.
+  // catalogue filtered by the style's wash icons), {{madeIn:<lang>}},
+  // {{madeInLabel:<lang>}}, {{country:<lang>}}, {{manufacturer:<lang>}}.
   const compLangs = compositionLangsInDef(def);
   if (compLangs.length > 0) {
     style = await augmentCompositionTranslations(style, compLangs);
   }
-  style = await augmentCareAndMadeIn(
-    style,
-    langArgsInDef(def, "careInstructions"),
-    langArgsInDef(def, "madeIn"),
-  );
+  style = await augmentTranslatedFields(style, {
+    care: langArgsInDef(def, "careInstructions"),
+    madeIn: langArgsInDef(def, "madeIn"),
+    madeInLabel: langArgsInDef(def, "madeInLabel"),
+    country: langArgsInDef(def, "country"),
+    manufacturer: langArgsInDef(def, "manufacturer"),
+  });
 
   // Repeat-per-EAN: the whole (filtered) page set renders once per size
   // row, with style.sizes narrowed to the current row — {{size}},
@@ -552,6 +584,46 @@ async function prepareLayoutRender(
 
   return { pages, repStyles, ctx, barcodeFont: style.barcodeFont };
 }
+
+// Fit-to-width: scale every line inside an .ol-fit block so it fills the
+// line's width on ONE line, regardless of character count (scales up AND
+// down). Pure CSS can't size a font to a line's content, so we measure in
+// the page: the line's content width (Range) vs its own clientWidth (which
+// already accounts for the block's border padding), set font-size by the
+// ratio, one correction pass for font-metric non-linearity. Exposed as
+// window.__olFitWidth so renderPdf can re-run it after fonts settle; it
+// also self-runs on load and on fonts.ready for the (script-enabled,
+// un-sandboxed) preview iframe. Blank/whitespace lines are skipped.
+const FIT_SCRIPT = `<script>
+(function () {
+  function fitLine(el) {
+    if (!el.textContent || !el.textContent.trim()) return;
+    var avail = el.clientWidth;
+    if (!avail || avail <= 0) return;
+    var range = document.createRange();
+    function measure() { range.selectNodeContents(el); return range.getBoundingClientRect().width; }
+    var w = measure();
+    if (!w) return;
+    var size = (parseFloat(getComputedStyle(el).fontSize) || 12) * (avail / w);
+    if (size < 1) size = 1;
+    if (size > 1000) size = 1000;
+    el.style.fontSize = size + "px";
+    var w2 = measure();
+    if (w2 > avail && w2 > 0) {
+      size = size * (avail / w2);
+      if (size < 1) size = 1;
+      el.style.fontSize = size + "px";
+    }
+  }
+  function fitAll() {
+    var lines = document.querySelectorAll(".ol-fit .ol-line");
+    for (var i = 0; i < lines.length; i++) fitLine(lines[i]);
+  }
+  window.__olFitWidth = fitAll;
+  fitAll();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitAll);
+})();
+</script>`;
 
 // Print guides — non-content rules overlaid on the page (drawn after the
 // blocks so they sit on top). Sewing lines are full-width long-dashed rules
@@ -594,12 +666,15 @@ function emitLayoutDocument(
     )
     .join("");
 
-  const body = emitted
+  const pagesHtml = emitted
     .map(({ page, repStyle }, i) => {
       const blocks = page.blocks.map((b) => renderBlock(b, page, repStyle, ctx)).join("");
       return `<div class="ol-page ol-page-${i}">${blocks}${renderGuides(page)}</div>`;
     })
     .join("\n");
+  // Append the fit-to-width script only when a block opts in.
+  const usesFit = emitted.some(({ page }) => page.blocks.some((b) => b.fitWidth));
+  const body = usesFit ? `${pagesHtml}\n${FIT_SCRIPT}` : pagesHtml;
 
   return htmlDocument({
     title,
@@ -628,6 +703,10 @@ function emitLayoutDocument(
   .ol-fold-h { left: 0; right: 0; top: 50%; height: 0.3mm; transform: translateY(-50%); background: repeating-linear-gradient(to right, #555 0 1mm, transparent 1mm 2mm); }
   .ol-fold-v { top: 0; bottom: 0; left: 50%; width: 0.3mm; transform: translateX(-50%); background: repeating-linear-gradient(to bottom, #555 0 1mm, transparent 1mm 2mm); }
   .ol-line { white-space: pre-wrap; word-break: break-word; min-height: 1em; }
+  /* Fit-to-width: each line stays on one line; the fit script scales font. */
+  .ol-fit .ol-line { white-space: nowrap; word-break: normal; }
+  /* Coop size range: enlarge the current size within the dash-joined run. */
+  .ol-size-current { font-size: 1.6em; font-weight: 700; }
   .ol-barcode { display: inline-block; text-align: center; max-width: 100%; }
   .ol-barcode img { display: block; height: var(--ol-bc-h, 16mm); width: auto; max-width: 100%; margin-left: auto; margin-right: auto; }
   .ol-ean-number { margin-top: ${(1 * ctx.fontScale).toFixed(3)}mm; font-size: var(--ol-bc-num, 10pt); letter-spacing: 0.08em; }

@@ -96,6 +96,11 @@ export const LayoutBlockSchema = z.object({
   // doesn't touch tokens or generation). A barcode inside keeps a white chip
   // so it stays scannable.
   invert: z.boolean().default(false),
+  // Fit to width: render every line on ONE line, auto-scaling the font (up
+  // or down) so it exactly fills the block width regardless of character
+  // count. fontPt becomes the starting size; the renderer's fit script does
+  // the scaling at render time (preview iframe + Puppeteer).
+  fitWidth: z.boolean().default(false),
   lineHeight: z.number().min(1).max(3).default(1.4),
   lines: z.array(z.string().max(500)).max(100).default([]),
 });
