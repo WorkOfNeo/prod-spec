@@ -34,6 +34,7 @@ model User {
   invitesSent      Invite[]          @relation("InvitesSent")
   acceptedInvite   Invite?           @relation("InviteAccepted")
   claimedReviews   Job[]             @relation("ReviewClaimer")
+  styleViews       StyleView[]
 
   @@map("users")
 }
@@ -636,6 +637,7 @@ model Style {
   eans             StyleEan[]
   rejectionTickets RejectionTicket[]
   supplierShare    SupplierShare?
+  views            StyleView[]
 
   @@index([customerId])
   @@index([status])
@@ -1115,6 +1117,36 @@ model SupplierShare {
   style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
 
   @@map("supplier_shares")
+}
+
+// =====================================================
+// Style view log — append-only audit trail of who opened a style and when.
+// One row per page open: surface = REVIEW (the /styles/<id>/review screen) or
+// STYLE (the /styles/<id> detail page). Distinct from Job.reviewClaimedAt
+// (which records who OWNS a review, once), this captures EVERY visit so the
+// admin oversight panel (/admin) can show a full chronological view log.
+// Written best-effort by a one-shot client beacon; reads tolerate the table
+// not being deployed yet (see /admin).
+// =====================================================
+model StyleView {
+  id        String           @id @default(cuid())
+  styleId   String
+  userId    String
+  surface   StyleViewSurface
+  createdAt DateTime         @default(now())
+
+  style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([styleId, createdAt])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("style_views")
+}
+
+enum StyleViewSurface {
+  REVIEW // the /styles/<id>/review screen
+  STYLE // the /styles/<id> detail page
 }
 
 // =====================================================
