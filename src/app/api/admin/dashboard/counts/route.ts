@@ -1,9 +1,10 @@
 // GET /api/admin/dashboard/counts
 //
-// Powers the "My tasks" sidebar badge. badge = reviews waiting on YOU
-// (your unfinished ones + the untouched first-review queue). Reviews in
-// flight under other users are reported but deliberately not counted —
-// they aren't your to-do.
+// Powers the "My tasks" sidebar badge. badge = reviews YOU'VE STARTED and
+// not yet finished (claimed, or ≥1 decision made, still pending). The
+// untouched first-review queue and reviews in flight under other users are
+// still reported in `parts` for context, but deliberately NOT counted —
+// neither is your committed to-do. The global queue lives on /reviews.
 //
 // Same derived queries as /dashboard (lib/dashboard/review-tasks.ts), so
 // the badge and the page can never disagree. The sidebar polls every 60s,
@@ -28,7 +29,7 @@ export async function GET() {
 
   const work = await getReviewWork(auth.userId);
   return NextResponse.json({
-    badge: work.mine.length + work.untouched.length,
+    badge: work.mine.length,
     parts: {
       mine: work.mine.length,
       queue: work.untouched.length,
