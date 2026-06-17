@@ -65,34 +65,6 @@ const READINESS_TONE: Record<ReadinessTone, { box: string; dot: string }> = {
   blocked: { box: "border-amber-200 bg-amber-50 text-amber-900", dot: "bg-amber-500" },
 };
 
-// Completion bar with a threshold marker. The fill turns green once the
-// style clears its threshold; the tick shows where the threshold sits.
-function CompletionBar({
-  pct,
-  threshold,
-  ready,
-}: {
-  pct: number;
-  threshold: number | null;
-  ready: boolean;
-}) {
-  return (
-    <div className="relative h-2 w-full overflow-hidden rounded-full bg-zinc-100">
-      <div
-        className={`h-full ${ready ? "bg-emerald-500" : "bg-zinc-900"}`}
-        style={{ width: `${pct}%` }}
-      />
-      {threshold != null && threshold < 100 && (
-        <div
-          className="absolute top-0 h-full w-0.5 bg-zinc-500"
-          style={{ left: `${threshold}%` }}
-          title={`Threshold ${threshold}%`}
-        />
-      )}
-    </div>
-  );
-}
-
 // Data notes for an output card — currently the delivery-term switch:
 // outputs whose order number branches on FOB/DDP get a chip naming the
 // branch in effect, and an explicit "defaulting to DDP" note when the row
@@ -212,7 +184,6 @@ export default async function StyleDetail({
   }
 
   const latestJob = style.jobs[0];
-  const missing = (style.missingFields as Array<{ id: string; label: string }>) ?? [];
 
   // The style's durable supplier share (if approved at least once) — drives
   // the "Supplier link" panel on the prod-spec tab: the stable link + PIN to
@@ -609,7 +580,6 @@ export default async function StyleDetail({
       {tab === "details" && (
         <DetailsTab
           style={style}
-          missing={missing}
           resolvedFields={resolvedFields}
           recordFields={recordFields}
           readiness={readiness}
@@ -659,7 +629,6 @@ export default async function StyleDetail({
 
 function DetailsTab({
   style,
-  missing,
   resolvedFields,
   recordFields,
   readiness,
@@ -680,7 +649,6 @@ function DetailsTab({
       reviewActions: Array<{ user: { email: string } }>;
     }>;
   };
-  missing: Array<{ id: string; label: string }>;
   resolvedFields: ResolvedSpecField[];
   recordFields: Array<{ label: string; value: string | null; href?: string }>;
   readiness: Readiness;
@@ -719,43 +687,8 @@ function DetailsTab({
         </div>
       </div>
 
-      <section className="mt-6 grid grid-cols-3 gap-6">
-        {/* 1 — Required COLUMNS: progress toward the auto-generate threshold
-            (measured against the customer's required columns). A separate
-            check from the output fields in card 2. */}
-        <div className="rounded-lg border border-zinc-200 bg-white p-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-            Required columns
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-semibold">{style.completionPct}%</span>
-            <span className="text-xs text-zinc-400">filled · auto-runs at ≥ {readiness.threshold}%</span>
-          </div>
-          <div className="mt-2">
-            <CompletionBar
-              pct={style.completionPct}
-              threshold={readiness.hasProdSpec ? readiness.threshold : null}
-              ready={readiness.hasProdSpec && readiness.meetsThreshold}
-            />
-          </div>
-          {missing.length > 0 ? (
-            <div className="mt-3">
-              <div className="text-xs font-medium text-zinc-500">Missing columns</div>
-              <ul className="mt-1 space-y-0.5 text-xs text-zinc-600">
-                {missing.slice(0, 8).map((m) => (
-                  <li key={m.id}>· {m.label}</li>
-                ))}
-                {missing.length > 8 && (
-                  <li className="text-zinc-400">… and {missing.length - 8} more</li>
-                )}
-              </ul>
-            </div>
-          ) : (
-            <div className="mt-3 text-xs text-zinc-500">All required columns filled.</div>
-          )}
-        </div>
-
-        {/* 2 — Required OUTPUT FIELDS: what the enabled outputs actually need to
+      <section className="mt-6 grid grid-cols-2 gap-6">
+        {/* 1 — Required OUTPUT FIELDS: what the enabled outputs actually need to
             render. This is the real "can it generate" gate, and the reason the
             banner can read "Not ready" even when columns are 100%. */}
         <div className="rounded-lg border border-zinc-200 bg-white p-4">
@@ -792,7 +725,7 @@ function DetailsTab({
           )}
         </div>
 
-        {/* 3 — Workflow status + last sync. Same computed pill as the
+        {/* 2 — Workflow status + last sync. Same computed pill as the
             /styles list (effective-status.ts) so the two never disagree —
             NOT the stored Style.status, which completion re-evaluation
             used to reset. */}

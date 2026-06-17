@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import { getAutoGenerateEnabled, getStylesTableColumns } from "@/lib/settings/app-settings";
@@ -38,6 +37,10 @@ export default async function StylesPage() {
     }),
   ]);
   const stylesWithPdfs = new Set(withPdfs.map((j) => j.styleId));
+  // Reviewers see /styles read-only: the admin-only setting cards and the
+  // not-yet-ready auto-generation surfaces are hidden from them (only ADMIN
+  // and REVIEWER exist, so this is "not a reviewer").
+  const isAdmin = role === "ADMIN";
 
   // Done-group exception: when the cutoff is set, Done-group styles whose
   // PO number parses ABOVE it join the list (in the MAIN view, not behind
@@ -92,31 +95,25 @@ export default async function StylesPage() {
 
   return (
     <div className="px-8 py-8">
-      <div className="mb-6 flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Styles</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            {styles.length} {styles.length === 1 ? "style" : "styles"} on file. Search
-            across name, customer, business area, PO# and status, or pick values in the
-            Customer / Business Area / Group / Status / EAN dropdowns and press Apply.
-          </p>
-        </div>
-        <Link
-          href="/styles/new"
-          className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
-        >
-          + New manual style
-        </Link>
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold tracking-tight">Styles</h1>
+        <p className="mt-1 text-sm text-zinc-500">
+          {styles.length} {styles.length === 1 ? "style" : "styles"} on file. Search
+          across name, customer, business area, PO# and status, or pick values in the
+          Customer / Business Area / Group / Status / EAN dropdowns and press Apply.
+        </p>
       </div>
 
-      <div className="mb-6">
-        <DonePoCutoffSetting initialCutoff={doneCutoff} />
-      </div>
+      {isAdmin && (
+        <div className="mb-6">
+          <DonePoCutoffSetting initialCutoff={doneCutoff} />
+        </div>
+      )}
 
       <StylesTable
         autoGenerateEnabled={autoGenerateEnabled}
         visibleColumns={visibleColumns}
-        canConfigureColumns={role === "ADMIN"}
+        isAdmin={isAdmin}
         rows={styles.map((s) => {
           const ba = s.businessAreaRef?.name ?? s.businessArea ?? null;
           const requiredKeys = requiredFieldKeysFromOutputs(s.prodSpec?.outputs);

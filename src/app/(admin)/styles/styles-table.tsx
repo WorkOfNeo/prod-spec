@@ -131,14 +131,16 @@ export function StylesTable({
   rows,
   autoGenerateEnabled,
   visibleColumns,
-  canConfigureColumns,
+  isAdmin,
 }: {
   rows: StyleRow[];
   autoGenerateEnabled: boolean;
   // The admin-defined standard view (AppSetting), already normalized.
   visibleColumns: StyleColumnKey[];
-  // ADMIN gets the Columns popover; saves apply to everyone.
-  canConfigureColumns: boolean;
+  // ADMIN-only chrome: the Columns popover (saves apply to everyone) and the
+  // "automatic generation is OFF" banner, which points at a Settings page
+  // reviewers can't reach. Reviewers get a clean, read-only table.
+  isAdmin: boolean;
 }) {
   const [q, setQ] = useState("");
   // Live column set — seeded from the server-read setting, updated
@@ -421,7 +423,7 @@ export function StylesTable({
 
   return (
     <div>
-      {!autoGenerateEnabled && (
+      {isAdmin && !autoGenerateEnabled && (
         <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           Automatic generation is <strong>OFF</strong> — complete styles won&rsquo;t generate on
           sync until it&rsquo;s switched on in{" "}
@@ -456,7 +458,7 @@ export function StylesTable({
         <span className="text-xs tabular-nums text-zinc-500">
           {filtered.length} of {rows.length}
         </span>
-        {canConfigureColumns && <ColumnsPopover visible={visible} onChange={setVisible} />}
+        {isAdmin && <ColumnsPopover visible={visible} onChange={setVisible} />}
       </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
