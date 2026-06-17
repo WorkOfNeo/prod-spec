@@ -584,6 +584,12 @@ export default async function StyleDetail({
         </div>
       </div>
 
+      {style.poNumber && (
+        <div className="mt-4">
+          <PoPreview styleId={style.id} poNumber={style.poNumber} status={style.eanStatus} />
+        </div>
+      )}
+
       {customerConfig.skipSupplierDelivery && <SkipSupplierDeliveryBadge className="mt-4" />}
 
       <nav className="mt-6 border-b border-zinc-200">
@@ -1017,22 +1023,6 @@ function DetailsTab({
               );
             })}
           </dl>
-        </div>
-      </section>
-
-      <section className="mt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-zinc-700">Purchase Order</h2>
-          <span className="text-xs text-zinc-400">Preview the PO PDF — served from SharePoint, no login needed</span>
-        </div>
-        <div className="mt-2">
-          {style.poNumber ? (
-            <PoPreview styleId={style.id} poNumber={style.poNumber} />
-          ) : (
-            <div className="rounded-lg border border-zinc-200 bg-white p-4 text-sm text-zinc-500">
-              No PO number on this style yet.
-            </div>
-          )}
         </div>
       </section>
 
