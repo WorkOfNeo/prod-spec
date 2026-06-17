@@ -101,6 +101,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                 Styles
               </Link>
             )}
+            {/* Reviewer guides — reference docs, available to everyone signed in
+                (not gated by the review-flow flag or the admin role). */}
+            <div className="my-2 border-t border-zinc-100" />
+            <Link
+              href="/guides"
+              className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+            >
+              Guides
+            </Link>
           </nav>
           <div className="mt-auto absolute bottom-6 left-4 right-4 w-48">
             <div className="border-t border-zinc-200 pt-4 text-xs text-zinc-500">

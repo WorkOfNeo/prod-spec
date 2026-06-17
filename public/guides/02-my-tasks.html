@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Reviewer guide · My tasks</title>
+<link rel="stylesheet" href="_guide.css" />
+</head>
+<body>
+
+  <div class="doc-head">
+    <div class="kicker">Prod Spec · Reviewer guide · 2 of 6</div>
+    <h1>My tasks</h1>
+    <p class="sub">Your personal to-do list. What's waiting on you, what those buckets mean, and how to start reviewing.</p>
+    <div class="crumb">Open it from <b>My tasks</b> in the sidebar. It's the best page to start your day on.</div>
+  </div>
+
+  <!-- SECTION 1 -->
+  <div class="section">
+    <h2><span class="n">1</span> The page at a glance</h2>
+    <p class="lead">Everything that involves you is sorted into a few labelled sections, busiest first. The line under the title tells you how much is waiting.</p>
+
+    <div class="mock">
+      <div class="chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">prod-spec.app / dashboard</span></div>
+      <div class="appbody">
+        <div class="side">
+          <div class="brand">Prod Spec</div>
+          <a href="#">Styles</a>
+          <a href="#" class="on">My tasks</a>
+          <a href="#">Reviews</a>
+        </div>
+        <div class="canvas" style="padding:13px 15px;">
+          <div class="ptitle">My tasks</div>
+          <div class="pdesc">nina@acme.com · 3 things waiting on you <span class="mk in">1</span></div>
+
+          <div style="border:1px solid #fde68a;background:#fffbeb;border-radius:9px;padding:9px 11px;margin-top:11px;">
+            <div style="font-weight:800;font-size:11px;color:#92400e;">⚠ Unfinished reviews — yours (1) <span class="mk in">2</span></div>
+            <div style="color:#92400e;font-size:9px;margin-top:2px;">You decided some documents but not all. Nothing is sent to the supplier until every document is decided.</div>
+            <div class="tcard warn" style="margin-top:8px;">
+              <div class="tcard-top">
+                <div><div class="tname">4471 — Kids hooded sweat</div><div class="tmeta">Acme Apparel · PO 100423 · 12 minutes ago</div></div>
+                <div class="right">
+                  <div class="prog"><div class="bar"><span style="width:50%"></span></div><div class="xy">3/6</div></div>
+                  <span class="btn dark">Finish review</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="border:1px solid #e4e4e7;background:#fff;border-radius:9px;padding:9px 11px;margin-top:9px;">
+            <div style="font-weight:800;font-size:11px;">Waiting for first review (2) <span class="mk in">3</span></div>
+            <div style="color:#71717a;font-size:9px;margin-top:2px;">Documents finished rendering — nobody has started reviewing. Shown to everyone.</div>
+            <div class="tcard" style="margin-top:8px;">
+              <div class="tcard-top">
+                <div><div class="tname">5180 — Ribbed beanie</div><div class="tmeta">Acme Apparel · PO 100451 · ready 1 hour ago</div></div>
+                <div class="right"><div class="prog"><div class="bar"><span style="width:0%"></span></div><div class="xy">0/4</div></div><span class="btn dark">Start review</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div style="border:1px solid #e4e4e7;background:#fff;border-radius:9px;padding:9px 11px;margin-top:9px;">
+            <div style="font-weight:800;font-size:11px;color:#71717a;">In review by others (1) <span class="mk in">4</span></div>
+            <div style="color:#a1a1aa;font-size:9px;margin-top:3px;">5402 — Zip hoodie · 2/5 decided · jonas@acme.com · 20 minutes ago</div>
+          </div>
+
+          <div style="border:1px solid #e4e4e7;background:#fff;border-radius:9px;padding:9px 11px;margin-top:9px;">
+            <div style="font-weight:800;font-size:11px;">Open rejections (0) <span class="mk in">5</span></div>
+            <div style="color:#71717a;font-size:9px;margin-top:2px;">Tickets you reported that aren't resolved — fixes land back here as a re-review.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>The summary line</b> — your email and a count of how many things need you. When you're clear it reads <i>“nothing waiting on you.”</i></span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>⚠ Unfinished reviews — yours.</b> Reviews you <b>started but haven't finished</b> (amber, top priority). You've decided some documents but not all — and nothing reaches the supplier until every one is decided. Button: <b>Finish review</b>.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>Waiting for first review.</b> Documents that have finished generating and <b>nobody has started</b> yet. Shown to everyone so they don't sit idle. Button: <b>Start review</b>.</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>In review by others.</b> Someone else has already started these — listed (muted) just so a half-finished review can't hide. Not your to-do.</span></li>
+      <li><span class="ln"><span class="mk">5</span></span><span class="tx"><b>Open rejections.</b> Documents <b>you</b> rejected that haven't been resolved yet. When they're fixed they come back to you as a fresh review.</span></li>
+    </ol>
+  </div>
+
+  <!-- SECTION 2 -->
+  <div class="section">
+    <h2><span class="n">2</span> A task card, explained — and the “X / Y”</h2>
+    <p class="lead">Each style is one card. The numbers on it tell you how far along the review is — this is the “X of Y” progress.</p>
+
+    <div class="mock">
+      <div class="appbody"><div class="canvas" style="padding:13px 15px;">
+        <div class="tcard warn">
+          <div class="tcard-top">
+            <div>
+              <div class="tname">4471 — Kids hooded sweat <span class="mk in">6</span></div>
+              <div class="tmeta">Kids · Acme Apparel · PO 100423 · 12 minutes ago <span class="mk in">7</span></div>
+            </div>
+            <div class="right">
+              <div class="prog"><div class="bar"><span style="width:50%"></span></div><div class="xy">3/6 <span class="mk in">8</span></div></div>
+              <span class="btn dark">Finish review <span class="mk in">9</span></span>
+            </div>
+          </div>
+          <div style="border-top:1px solid #f4f4f5;margin-top:9px;padding-top:8px;display:grid;gap:5px;">
+            <div style="display:flex;align-items:center;gap:8px;font-size:10px;"><span style="flex:1;color:#3f3f46;">Care label — front</span><span class="pill em">approved</span><a class="openlink" href="#">Review →</a></div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:10px;"><span style="flex:1;color:#3f3f46;">Carton front</span><span class="pill zc">to review</span><a class="openlink" href="#">Review →</a></div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:10px;"><span style="flex:1;color:#3f3f46;">Carton side</span><span class="pill am">blocked</span><a class="openlink" href="#">Review →</a></div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">6</span></span><span class="tx">The <b>style</b> — its number and name (and business area, if set).</span></li>
+      <li><span class="ln"><span class="mk">7</span></span><span class="tx">Context: <b>customer</b>, <b>PO number</b>, and when it last moved (“ready 1 hour ago” for ones nobody's touched).</span></li>
+      <li><span class="ln"><span class="mk">8</span></span><span class="tx"><b>The X / Y progress.</b> <b>3 / 6</b> means 3 of the style's 6 documents are decided; the bar fills as you go. That's your “X of Y ready” for this style — when it reads 6 / 6 the style can publish.</span></li>
+      <li><span class="ln"><span class="mk">9</span></span><span class="tx">The <b>action button</b> — what to do next (see the variants below). Click the card to <b>expand</b> it and see every document with its status and a <b>Review →</b> link.</span></li>
+    </ol>
+  </div>
+
+  <!-- SECTION 3 -->
+  <div class="section">
+    <h2><span class="n">3</span> What the button is telling you</h2>
+    <p class="lead">The button changes with the state of the style. Four you'll see:</p>
+    <div class="variants">
+      <div class="variant">
+        <div class="vh"><span class="btn dark">Start review</span></div>
+        <div class="vd">Nobody's begun — you'll be the first. Marks the style as yours when you open it.</div>
+      </div>
+      <div class="variant">
+        <div class="vh"><span class="btn dark">Finish review</span></div>
+        <div class="vd">You've decided some but not all documents. Pick up where you left off.</div>
+      </div>
+      <div class="variant">
+        <div class="vh"><span class="btn amber">Blocked — fix &amp; re-run</span></div>
+        <div class="vd">Remaining documents have placeholders (e.g. missing artwork / EAN) that must be fixed before they can be approved. Opens the style page.</div>
+      </div>
+      <div class="variant">
+        <div class="vh"><span class="btn red">Publish failed — retry</span></div>
+        <div class="vd">All approved, but the hand-off to the supplier hit a snag. Open the review screen and retry the send.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 4 -->
+  <div class="section">
+    <h2><span class="n">4</span> Starting a review &amp; finishing the day</h2>
+    <p class="lead">Click a card's button (or a <b>Review →</b> link) and you land on the Review screen — that's guide 5, where you approve and reject. Two things worth knowing:</p>
+    <div class="two">
+      <div class="note good" style="margin-top:0;">
+        <div class="h">It stays yours until it's done</div>
+        <p>Starting a review marks the style as <b>in review by you</b>. Even if you step away, it waits in <b>⚠ Unfinished reviews — yours</b> so it can't be forgotten — and teammates see it's already in hand.</p>
+      </div>
+      <div class="note good" style="margin-top:0;">
+        <div class="h">“All caught up.”</div>
+        <p>When there's nothing on you, the page says <b>All caught up</b> — no unfinished reviews, nothing waiting for a first look, no open rejections — with quick links to <b>Browse styles</b>, the <b>Review queue</b>, and Jobs.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>Prod Spec · Reviewer guide 2 of 6 — My tasks</span>
+    <span>Start here each day · X / Y = documents decided</span>
+  </div>
+
+</body>
+</html>
