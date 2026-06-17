@@ -818,6 +818,12 @@ enum TriggerSource {
   // Generic review-ready email suppressed too — the fix endpoint sends
   // the dedicated TICKET_FIXED email itself after the run succeeds.
   TICKET_FIX
+  // Job enqueued by the PO→EAN resolve handoff: when a scrape lands the
+  // barcodes a style's outputs were waiting on, its now-ready outputs auto-
+  // fire (same gate as WEBHOOK). See enqueueReadyOutputsAfterResolve in
+  // src/lib/po/ean-runner.ts. Kept distinct so dashboards can tell
+  // "generated because barcodes landed" apart from a Monday sync.
+  EAN_RESOLVED
 }
 
 model Log {
