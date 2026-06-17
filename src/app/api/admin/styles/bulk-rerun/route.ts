@@ -5,6 +5,8 @@ import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin } from "@/lib/roles";
 import { triggerRunner } from "@/lib/queue/trigger";
+import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
+import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import type { JobStatus } from "@/generated/prisma/enums";
 
 export const runtime = "nodejs";
@@ -24,10 +26,13 @@ const BODY = z.object({
 
 const IN_FLIGHT: JobStatus[] = ["QUEUED", "RUNNING"];
 
-// POST — enqueue one full re-run job per eligible style in the current filter,
-// group them under a BulkRunBatch, and kick the runner once. Does NOT render
-// inline (hundreds × ~300 s would time out): the runner cron drains the queue
-// while the page polls GET below for DONE/TOTAL.
+// POST — for every eligible style in the current filter, enqueue ONE job scoped
+// to that style's READY, not-yet-generated outputs (not a full re-run), group
+// them under a BulkRunBatch, and kick the runner once. Scoping to ready outputs
+// is the whole point: an unready output must never render as a placeholder, and
+// skipping already-generated ones avoids re-reviewing approved work — same rule
+// as the auto-generate sweep (pendingOutputKeysForStyle). Does NOT render inline
+// — the runner drains the queue while the page polls GET below for DONE/TOTAL.
 export async function POST(req: NextRequest) {
   const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -42,62 +47,111 @@ export async function POST(req: NextRequest) {
 
   const requestedIds = [...new Set(parsed.data.styleIds)];
 
-  // Only enqueue styles that can actually produce something: they exist AND
-  // carry an active prod spec. A style with no active spec can't generate, so
-  // a job would just no-op — skip it and report it as skipped (honest count).
+  // ProdSpec.outputs can reference Output Builder layouts (`layout:<id>` keys) —
+  // load them into the variant registry before the readiness walk resolves them.
+  await ensureLayoutVariantsLoaded();
+
+  // Candidates: exist AND carry an active prod spec (no spec ⇒ can't generate).
+  // Pull exactly the fields readiness reads (mirrors the /styles page query and
+  // pendingOutputKeysForStyle) so the ready check here matches the real render.
   const candidates = await db.style.findMany({
     where: { id: { in: requestedIds }, prodSpec: { active: true } },
-    select: { id: true, prodSpecId: true },
+    select: {
+      id: true,
+      prodSpecId: true,
+      rawData: true,
+      poNumber: true,
+      cartonEan: true,
+      supplier: { select: { country: true } },
+      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
+      customer: { select: { config: true } },
+      prodSpec: { select: { outputs: true, columnMapping: true } },
+    },
   });
+  const candidateIds = candidates.map((c) => c.id);
 
-  // Don't double-enqueue a style that's already mid-flight (matches the single
-  // re-run's 409 guard, but here we silently skip rather than fail the batch).
+  // Outputs already generated for these styles (a JobAsset on a non-FAILED job)
+  // — excluded so we don't redo awaiting/approved work. One batched query; keyed
+  // by style, bases compared (multi-doc assets are "<variantKey>#<suffix>").
+  const assets = candidateIds.length
+    ? await db.jobAsset.findMany({
+        where: {
+          job: { styleId: { in: candidateIds }, status: { not: "FAILED" } },
+          variantKey: { not: null },
+        },
+        select: { variantKey: true, job: { select: { styleId: true } } },
+      })
+    : [];
+  const generatedByStyle = new Map<string, Set<string>>();
+  for (const a of assets) {
+    if (!a.variantKey) continue;
+    const set = generatedByStyle.get(a.job.styleId) ?? new Set<string>();
+    set.add(a.variantKey.split("#")[0]);
+    generatedByStyle.set(a.job.styleId, set);
+  }
+
+  // Don't double-enqueue a style that's already mid-flight (silently skipped).
   const inflight = await db.job.findMany({
-    where: { styleId: { in: candidates.map((c) => c.id) }, status: { in: IN_FLIGHT } },
+    where: { styleId: { in: candidateIds }, status: { in: IN_FLIGHT } },
     select: { styleId: true },
     distinct: ["styleId"],
   });
   const inflightSet = new Set(inflight.map((j) => j.styleId));
-  const toRun = candidates.filter((c) => !inflightSet.has(c.id));
 
-  if (toRun.length === 0) {
+  // Per style: ready outputs MINUS already-generated. A style with nothing
+  // pending (no ready outputs, or all already done) or one mid-flight is
+  // skipped — running it would render placeholders or redo finished work.
+  const runnable: Array<{ id: string; prodSpecId: string | null; variantKeys: string[] }> = [];
+  for (const c of candidates) {
+    if (inflightSet.has(c.id)) continue;
+    const generated = generatedByStyle.get(c.id);
+    const pending = outputReadinessForStyle(c)
+      .filter((o) => o.ready)
+      .map((o) => o.variantKey)
+      .filter((k) => !generated?.has(k));
+    if (pending.length === 0) continue;
+    runnable.push({ id: c.id, prodSpecId: c.prodSpecId, variantKeys: pending });
+  }
+
+  if (runnable.length === 0) {
     return NextResponse.json({ ok: true, batchId: null, enqueued: 0, skipped: requestedIds.length });
   }
 
-  // Generate the job ids up front so a single createMany (not an N-deep await
-  // loop) records them — keeps "Run all" on a 4k-row board within maxDuration.
-  // No per-job Log row here (cf. enqueueGenerationJob): the batch is the audit
-  // record, and the runner logs each job as it processes it.
-  const jobs = toRun.map((c) => ({
+  // One job per runnable style, SCOPED to its ready+pending outputs. Ids minted
+  // up front for a single createMany (cf. enqueueGenerationJob). The runner
+  // re-checks each variant's readiness at render time, so a field that regresses
+  // between here and render still won't ship an incomplete output.
+  const jobs = runnable.map((r) => ({
     id: randomUUID(),
-    styleId: c.id,
-    prodSpecId: c.prodSpecId, // analytics snapshot, same as enqueueGenerationJob
+    styleId: r.id,
+    prodSpecId: r.prodSpecId, // analytics snapshot, same as enqueueGenerationJob
     triggerSource: "MANUAL_BULK" as const,
     status: "QUEUED" as const,
+    variantKeys: r.variantKeys,
   }));
   await db.job.createMany({ data: jobs });
-  await db.style.updateMany({ where: { id: { in: toRun.map((c) => c.id) } }, data: { status: "GENERATING" } });
+  await db.style.updateMany({ where: { id: { in: runnable.map((r) => r.id) } }, data: { status: "GENERATING" } });
 
   const batch = await db.bulkRunBatch.create({
     data: {
       createdById: session.user.id,
       createdByEmail: session.user.email ?? null,
-      label: parsed.data.label?.trim() || `${toRun.length} styles`,
-      total: toRun.length,
-      styleIds: toRun.map((c) => c.id),
+      label: parsed.data.label?.trim() || `${runnable.length} styles`,
+      total: runnable.length,
+      styleIds: runnable.map((r) => r.id),
       jobIds: jobs.map((j) => j.id),
     },
     select: { id: true },
   });
 
-  // One immediate kick; the Railway cron keeps draining the backlog after.
+  // One immediate kick; the self-chaining runner drains the rest continuously.
   await triggerRunner();
 
   return NextResponse.json({
     ok: true,
     batchId: batch.id,
-    enqueued: toRun.length,
-    skipped: requestedIds.length - toRun.length,
+    enqueued: runnable.length,
+    skipped: requestedIds.length - runnable.length,
   });
 }
 
