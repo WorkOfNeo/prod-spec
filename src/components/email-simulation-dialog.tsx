@@ -115,6 +115,10 @@ export function EmailSimulationDialog({
 
   const heading = HEADINGS[outcome.status];
   const attachments = outcome.attachments ?? [];
+  // Invitations are admin-initiated and safe to deliver even while the flag
+  // is off, so the simulated-invite popup leads with a plain "Send anyway"
+  // (to the real invitee) instead of the dev-oriented "test delivery" copy.
+  const isInvite = outcome.type === "INVITE";
   // Manual one-off send: anything that didn't actually go out can be pushed
   // through Resend with an overridden To/From — except emails that carried
   // attachments (bytes aren't stored, a partial re-send would mislead).
@@ -172,11 +176,25 @@ export function EmailSimulationDialog({
         {canSendForReal && (
           <div className="border-t border-zinc-100 px-5 py-3">
             <div className="mb-1 text-[10px] font-semibold tracking-wide text-zinc-400 uppercase">
-              Send for real — one-off, the flag stays off
+              {isInvite
+                ? "Email sending is off — send the invitation anyway"
+                : "Send for real — one-off, the flag stays off"}
             </div>
             <p className="mb-2 text-[11px] text-zinc-500">
-              Would have gone to <span className="font-medium text-zinc-700">{outcome.to || "—"}</span>.
-              Override the recipient (e.g. your own inbox) to test the full delivery path.
+              {isInvite ? (
+                <>
+                  RESEND_EMAILS is off, so the invitation to{" "}
+                  <span className="font-medium text-zinc-700">{outcome.to || "—"}</span> was only
+                  simulated — nothing was delivered. Send it for real anyway (or redirect the
+                  recipient to test the delivery path).
+                </>
+              ) : (
+                <>
+                  Would have gone to{" "}
+                  <span className="font-medium text-zinc-700">{outcome.to || "—"}</span>. Override the
+                  recipient (e.g. your own inbox) to test the full delivery path.
+                </>
+              )}
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <input
@@ -202,7 +220,7 @@ export function EmailSimulationDialog({
                 onClick={sendForReal}
                 className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
               >
-                {sending ? "Sending…" : "Send now"}
+                {sending ? "Sending…" : isInvite ? "Send anyway" : "Send now"}
               </button>
             </div>
             {sendResult && (
