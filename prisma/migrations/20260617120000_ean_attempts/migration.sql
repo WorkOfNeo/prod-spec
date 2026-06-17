@@ -1,0 +1,11 @@
+-- EAN scrape retry counter. Drives the "3 strikes then float" cap in the EAN
+-- runner's retry sweep (src/lib/po/ean-runner.ts): every non-resolved scrape
+-- (error / PO-not-found / no-barcode-page) increments it, RESOLVED/PARTIAL
+-- resets it, and once it reaches MAX_EAN_ATTEMPTS the sweep stops re-queuing
+-- the row so it "floats" on /po-eans for a human to re-trigger.
+--
+-- Purely additive — one defaulted column, no existing rows touched — so it
+-- applies cleanly to the already-live database via `prisma migrate deploy`.
+-- Written idempotently (IF NOT EXISTS) to match the repo convention and stay
+-- safe to re-run.
+ALTER TABLE "styles" ADD COLUMN IF NOT EXISTS "eanAttempts" INTEGER NOT NULL DEFAULT 0;

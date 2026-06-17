@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { EanView } from "@/lib/po/ean-view";
-import { eanStatusMeta } from "@/lib/po/ean-status-meta";
+import { eanStatusMeta, eanFloated } from "@/lib/po/ean-status-meta";
 import { colorFromVariantLabel } from "@/lib/po/ean-format";
 
 export type PoEanRow = {
@@ -12,6 +12,9 @@ export type PoEanRow = {
   supplierName: string | null;
   // Formatted timestamp of the last resolution attempt (null = never).
   resolvedAt: string | null;
+  // Consecutive non-resolved scrape attempts; at MAX_EAN_ATTEMPTS the row
+  // "floats" (the sweep gives up) and needs a manual Re-resolve.
+  eanAttempts: number;
   // Persisted resolution snapshot rendered on first paint.
   initial: EanView;
 };
@@ -44,6 +47,14 @@ export function PoEansTable({
       `${r.name} ${r.poNumber} ${r.supplierName ?? ""}`.toLowerCase().includes(n),
     );
   }, [rows, q]);
+
+  // Rows that have burned their attempt budget — the sweep has given up and a
+  // human must Re-resolve. Counted across all rows (not the current filter) so
+  // the banner is a stable "this many need attention" signal.
+  const floatedCount = useMemo(
+    () => rows.filter((r) => eanFloated(r.initial.status, r.eanAttempts)).length,
+    [rows],
+  );
 
   async function resolve(id: string) {
     setOverrides((p) => ({ ...p, [id]: "loading" }));
@@ -99,6 +110,11 @@ export function PoEansTable({
       </div>
 
       <div className="mb-3 flex flex-wrap gap-2">
+        {floatedCount > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+            needs attention <span className="tabular-nums">{floatedCount}</span>
+          </span>
+        )}
         {Object.entries(counts)
           .sort((a, b) => b[1] - a[1])
           .map(([status, n]) => {
@@ -131,6 +147,9 @@ export function PoEansTable({
               const ov = overrides[r.id];
               const loading = ov === "loading";
               const view = ov && ov !== "loading" ? ov : r.initial;
+              // Only the persisted snapshot can be "floated" — a manual
+              // re-resolve (override present) has reset the counter server-side.
+              const floated = !ov && eanFloated(r.initial.status, r.eanAttempts);
               return (
                 <tr key={r.id} className="border-t border-zinc-100 align-top">
                   <td className="px-4 py-3 font-medium">{r.name}</td>
@@ -138,6 +157,11 @@ export function PoEansTable({
                   <td className="px-4 py-3 text-zinc-600">{r.supplierName ?? "—"}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={loading ? "RESOLVING" : view.status} />
+                    {floated && (
+                      <span className="ml-1 inline-flex rounded-full bg-red-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
+                        gave up · {r.eanAttempts}×
+                      </span>
+                    )}
                     {!ov && r.resolvedAt && (
                       <div className="mt-0.5 text-[11px] text-zinc-400">{r.resolvedAt}</div>
                     )}

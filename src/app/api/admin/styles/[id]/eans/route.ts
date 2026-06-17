@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerSession } from "@/lib/auth-server";
+import { db } from "@/lib/db";
 import { resolveAndPersistStyleEans } from "@/lib/po/ean-runner";
 
 export const runtime = "nodejs";
@@ -15,6 +16,11 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
   const { id } = await ctx.params;
+  // A human clicking Re-resolve is an explicit override: clear the strike
+  // counter so a floated row un-floats and gets a fresh MAX_EAN_ATTEMPTS
+  // budget. resolveAndPersistStyleEans then sets it to 0 (success) or 1
+  // (this attempt failed) — never straight back to floated.
+  await db.style.updateMany({ where: { id }, data: { eanAttempts: 0 } });
   const view = await resolveAndPersistStyleEans(id);
   return NextResponse.json(view);
 }

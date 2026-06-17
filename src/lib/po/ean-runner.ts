@@ -5,7 +5,12 @@ import { evaluateCompletion, withSyntheticColumns } from "@/lib/monday/completio
 import { parseCustomerConfig, MANUAL_COLUMN_IDS } from "@/lib/customers/config";
 import { parseProdSpecRequiredFields, parseProdSpecColumnMapping } from "@/lib/prod-spec/config";
 import { formatEanMap } from "@/lib/styles/resolved-fields";
+import { pendingOutputKeysForStyle } from "@/lib/styles/output-readiness";
+import { enqueueGenerationJob } from "@/lib/queue/enqueue";
+import { triggerRunner } from "@/lib/queue/trigger";
+import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
 import { resolveStyleEans, type StyleEanStatus as ResolveStatus } from "./resolve-style-eans";
+import { MAX_EAN_ATTEMPTS } from "./ean-status-meta";
 import type { EanView } from "./ean-view";
 
 // =====================================================
@@ -28,10 +33,13 @@ import type { EanView } from "./ean-view";
 const STALE_RESOLVING_MS = 15 * 60 * 1000;
 
 // How long before a non-terminal outcome (no barcode page yet, PO PDF not
-// found, transient error) is retried by the sweep.
-const RETRY_AFTER_MS = 24 * 60 * 60 * 1000;
+// found, transient error) is retried by the sweep. Spaced so the
+// MAX_EAN_ATTEMPTS strikes span ~1.5 days rather than burning in minutes.
+const RETRY_AFTER_MS = 12 * 60 * 60 * 1000;
 
-// Statuses the sweep re-queues — all "might succeed later" outcomes.
+// Statuses the sweep re-queues — all "might succeed later" outcomes. After
+// MAX_EAN_ATTEMPTS strikes a row in one of these states stops being re-queued
+// and "floats" for manual attention (see eanFloated in ./ean-status-meta).
 const RETRYABLE: DbEanStatus[] = ["PO_FOUND_NO_EANS", "PO_NOT_FOUND", "ERROR"];
 
 export type EanRunSummary = {
@@ -114,10 +122,20 @@ async function requeueRetryable(): Promise<number> {
       OR: [
         // Never queued — covers existing styles after the migration backfill.
         { eanStatus: "NONE" },
-        // Non-terminal outcomes, retried once the window passes.
+        // Non-terminal outcomes, retried once the window passes — but only
+        // while strikes remain. At MAX_EAN_ATTEMPTS the row floats (stops
+        // being re-queued) and waits for a manual Re-resolve.
         // eanResolvedAt is set on every terminal write; null = never attempted.
-        { eanStatus: { in: RETRYABLE }, eanResolvedAt: { lt: cutoff } },
-        { eanStatus: { in: RETRYABLE }, eanResolvedAt: null },
+        {
+          eanStatus: { in: RETRYABLE },
+          eanAttempts: { lt: MAX_EAN_ATTEMPTS },
+          eanResolvedAt: { lt: cutoff },
+        },
+        {
+          eanStatus: { in: RETRYABLE },
+          eanAttempts: { lt: MAX_EAN_ATTEMPTS },
+          eanResolvedAt: null,
+        },
       ],
     },
     data: { eanStatus: "PENDING" },
@@ -133,6 +151,10 @@ export async function resolveAndPersistStyleEans(styleId: string): Promise<EanVi
   const result = await resolveStyleEans(styleId);
   const dbStatus = toDbStatus(result.status);
   const withEan = result.sizeEans.filter((s) => s.ean13).length;
+  // RESOLVED / PARTIAL are the healthy outcomes — reset the strike counter.
+  // Everything else (error / not-found / no-barcode) is a strike toward the
+  // MAX_EAN_ATTEMPTS float cap enforced by requeueRetryable().
+  const resolved = dbStatus === "RESOLVED" || dbStatus === "PARTIAL";
 
   await db.$transaction([
     // Replace the per-size rows wholesale — simplest correct way to keep
@@ -157,13 +179,14 @@ export async function resolveAndPersistStyleEans(styleId: string): Promise<EanVi
         poFileName: result.poFileName,
         eanResolvedAt: new Date(),
         eanResolveStartedAt: null,
+        eanAttempts: resolved ? 0 : { increment: 1 },
       },
     }),
     db.log.create({
       data: {
         // RESOLVED / PARTIAL are healthy; everything else is worth flagging
         // for review, so log it at WARN with the full diagnostics payload.
-        level: dbStatus === "RESOLVED" || dbStatus === "PARTIAL" ? "INFO" : "WARN",
+        level: resolved ? "INFO" : "WARN",
         message: `ean resolve ${styleId}: ${result.status} (${withEan}/${result.sizeEans.length} sizes${
           result.poFileName ? `, po=${result.poFileName}` : ""
         })`,
@@ -184,6 +207,21 @@ export async function resolveAndPersistStyleEans(styleId: string): Promise<EanVi
     await recomputeStyleCompletion(styleId);
   } catch (err) {
     console.error(`[ean] ${styleId}: completion recompute failed:`, (err as Error).message);
+  }
+
+  // PO→EAN → generation handoff: a resolve that landed barcodes can be the
+  // last gap an output was waiting on. Auto-enqueue those now-ready outputs
+  // (same gate as the Monday webhook) so generation fires the moment EANs
+  // land — no Monday re-edit needed. Only on a healthy resolve, and never
+  // fail the resolve over a generation kick. (Stopgap reusing the existing
+  // enqueue primitives; collapses into one call to autoEnqueueReadyOutputs()
+  // when claude/auto-run-when-ready lands.)
+  if (resolved) {
+    try {
+      await enqueueReadyOutputsAfterResolve(styleId);
+    } catch (err) {
+      console.error(`[ean] ${styleId}: generation handoff failed:`, (err as Error).message);
+    }
   }
 
   // One-line summary in the dev/worker console with the decisive signals.
@@ -207,12 +245,50 @@ export async function resolveAndPersistStyleEans(styleId: string): Promise<EanVi
   };
 }
 
+// The PO→EAN → generation handoff. Mirrors the Monday-webhook auto-enqueue
+// gate exactly (global switch → active ProdSpec → in-flight guard → ready,
+// not-yet-generated outputs) so the two paths can't drift, then kicks the
+// runner. See src/app/api/webhooks/monday/route.ts.
+async function enqueueReadyOutputsAfterResolve(styleId: string): Promise<void> {
+  // Global master switch — when auto-generation is OFF, resolve EANs but never
+  // generate (EAN resolution is independent of this switch; generation isn't).
+  if (!(await getAutoGenerateEnabled())) return;
+
+  const style = await db.style.findUnique({
+    where: { id: styleId },
+    select: { prodSpec: { select: { active: true } } },
+  });
+  // Inactive (auto-scaffolded, unreviewed) ProdSpecs never auto-generate.
+  if (!style?.prodSpec?.active) return;
+
+  // One job at a time — any output that becomes ready while a job runs is
+  // picked up on the next resolve/sync.
+  const inflight = await db.job.count({
+    where: { styleId, status: { in: ["QUEUED", "RUNNING"] } },
+  });
+  if (inflight > 0) return;
+
+  // Only the outputs whose own required fields are now filled and that aren't
+  // already generated (a non-FAILED JobAsset). Empty ⇒ nothing to do.
+  const variantKeys = await pendingOutputKeysForStyle(styleId);
+  if (variantKeys.length === 0) return;
+
+  await enqueueGenerationJob({ styleId, triggerSource: "EAN_RESOLVED", variantKeys });
+  await triggerRunner();
+}
+
 async function markEanError(styleId: string, message: string): Promise<void> {
   // Print to stderr too — `next dev` swallows non-prisma logs otherwise.
   console.error(`[ean-runner] style ${styleId} FAILED: ${message}`);
   await db.style.update({
     where: { id: styleId },
-    data: { eanStatus: "ERROR", eanResolvedAt: new Date(), eanResolveStartedAt: null },
+    data: {
+      eanStatus: "ERROR",
+      eanResolvedAt: new Date(),
+      eanResolveStartedAt: null,
+      // A throw is a failed attempt too — count it toward the float cap.
+      eanAttempts: { increment: 1 },
+    },
   });
   await db.log.create({
     data: { level: "ERROR", message: `ean resolve ${styleId} failed: ${message}` },
