@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Reviewer guide · Reviewing a style — the outputs</title>
+<link rel="stylesheet" href="_guide.css" />
+</head>
+<body>
+
+  <div class="doc-head">
+    <div class="kicker">Prod Spec · Reviewer guide · 5 of 6</div>
+    <h1>Reviewing a style — the outputs</h1>
+    <p class="sub">What the Review screen shows you, what every status means, and exactly which buttons are yours. No technical knowledge needed.</p>
+    <div class="crumb">You reach this screen by opening a card on <b>My tasks</b> or <b>Reviews</b> and pressing <b>Start review</b> / <b>Finish review</b> — or from a style's page via <b>Review &amp; decide</b>.</div>
+  </div>
+
+  <div class="note">
+    <div class="h">Your two levers</div>
+    <p>On this screen you only ever do two things: <b>✓ Approve</b> a document that's correct, or <b>✗ Reject</b> one that isn't (with a short note saying why). You don't edit data or re-generate documents from here — if something's wrong, you reject it with a note, and a short how-to is further down.</p>
+  </div>
+
+  <!-- ============ SECTION 1 ============ -->
+  <div class="section">
+    <h2><span class="n">1</span> The header — how many outputs are ready</h2>
+    <p class="lead">The top of the screen tells you which style you're reviewing and, at a glance, how many of its documents are ready for you and where each one stands. This is your “X of Y outputs ready”.</p>
+
+    <div class="mock">
+      <div class="chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">prod-spec.app / styles / 4471 / review</span></div>
+      <div class="appbody">
+        <div class="side">
+          <div class="brand">Prod Spec</div>
+          <a href="#" class="on">Styles</a>
+          <a href="#">My tasks</a>
+          <a href="#">Reviews</a>
+        </div>
+        <div class="canvas">
+          <a class="backlink" href="#">← Back to style</a>
+          <div class="rtitle">Review · 4471 — Kids hooded sweat <span class="mk in">1</span></div>
+          <div class="rmeta">Acme Apparel · Kids · PO 100423 · <b>6 outputs</b> · 3 approved · 2 to review · 1 blocked <span class="mk in">2</span></div>
+          <div class="chip"><span class="av">N</span> In review · you · 4 minutes ago <span class="mk in">3</span></div>
+        </div>
+      </div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>Which style you're reviewing</b> — its number and name. “← Back to style” returns to the style's own page (where all its data lives).</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>The readiness summary.</b> First the <b>total</b> number of documents (here <b>6 outputs</b>), then a running tally of where each one stands. Here: 3 already approved, 2 still waiting for your decision (“to review”), and 1 blocked. You'll only ever see the labels that apply — the full set is: <span class="pill em">approved</span> <span class="pill rd">rejected</span> <span class="pill zc">to review</span> <span class="pill am">blocked</span> <span class="pill zc">generating</span> <span class="pill zc">not generated</span>.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>“In review · you”</b> appears once you've started. It marks this style as <b>yours, in progress</b>, so it stays on your <b>My tasks</b> until every document is decided. If someone else started it first, you'll see their name here instead.</span></li>
+    </ol>
+  </div>
+
+  <!-- ============ SECTION 2 ============ -->
+  <div class="section">
+    <h2><span class="n">2</span> The outputs, grouped by type</h2>
+    <p class="lead">Documents are grouped into <b>accordions</b> by what they are — Carton print, Care label, Hangtag, and so on. Click a group's header to open or close it.</p>
+
+    <div class="mock">
+      <div class="appbody">
+        <div class="canvas" style="padding:13px 14px;">
+          <div class="acc">
+            <div class="acc-head"><span class="chev">▸</span><span class="name">Care label</span><span class="cnt">(3)</span><span class="hint">2 approved · 1 pending <span class="mk in">4</span></span></div>
+          </div>
+          <div class="acc">
+            <div class="acc-head"><span class="chev">▾</span><span class="name">Carton print</span><span class="cnt">(2)</span><span class="hint">1 approved · 1 blocked</span></div>
+            <div class="acc-body" style="grid-template-columns:1fr 1fr;">
+              <div class="ocard" style="padding:8px;"><div class="ocard-top"><div class="meta"><div class="oname">Carton front</div></div><div class="acts"><span class="pill em">✓ APPROVED</span></div></div></div>
+              <div class="ocard" style="padding:8px;"><div class="ocard-top"><div class="meta"><div class="oname">Carton side</div></div><div class="acts"><span class="pill am">blocked</span></div></div></div>
+            </div>
+          </div>
+          <span class="mk in" style="margin-left:4px;">5</span>
+        </div>
+      </div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx">The group header shows the <b>document type</b>, how many documents it holds (the number in brackets), and a <b>mini-tally for that group only</b> — a quick way to see which kinds of document still need you.</span></li>
+      <li><span class="ln"><span class="mk">5</span></span><span class="tx">Click anywhere on a header to <b>open or close</b> it. An open group lays out each document as a card — that's the next section.</span></li>
+    </ol>
+  </div>
+
+  <!-- ============ SECTION 3 ============ -->
+  <div class="section">
+    <h2><span class="n">3</span> An output card, opened</h2>
+    <p class="lead">Each document is a card. Open the group and you can see the actual PDF and decide on it without leaving the page.</p>
+
+    <div class="mock">
+      <div class="appbody">
+        <div class="canvas" style="padding:13px 14px;">
+          <div class="ocard">
+            <div class="ocard-top">
+              <div class="meta">
+                <div class="oname">Carton front <span class="mk in">6</span></div>
+                <div class="ofile">4471_carton_front.pdf</div>
+              </div>
+              <div class="acts">
+                <a class="openlink" href="#">Open ↗ <span class="mk in">7</span></a>
+                <span class="btn approve">✓ Approve</span>
+                <span class="btn reject">✗ Reject…</span>
+                <span class="mk in">9</span>
+              </div>
+            </div>
+            <div class="pdf">
+              <span class="tag">PDF · 8</span>
+              <div class="ln" style="width:42%"></div>
+              <div class="ln" style="width:68%"></div>
+              <div class="ln" style="width:55%"></div>
+              <div class="ln" style="width:60%"></div>
+              <div class="ln" style="width:38%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">6</span></span><span class="tx">The document's <b>name</b>, with its exact <b>file name</b> just beneath it (in monospace).</span></li>
+      <li><span class="ln"><span class="mk">7</span></span><span class="tx"><b>“Open ↗”</b> opens the PDF in a new browser tab — handy for zooming in or viewing it full-screen.</span></li>
+      <li><span class="ln"><span class="mk">8</span></span><span class="tx">The <b>inline PDF preview.</b> The same document is shown right here — scroll it to read the whole thing without opening a tab.</span></li>
+      <li><span class="ln"><span class="mk">9</span></span><span class="tx">Your <b>decision buttons.</b> <b>✓ Approve</b> marks the document correct. <b>✗ Reject…</b> opens a box to type what's wrong (a note is required) before it's sent back. Both are available to you as a reviewer.</span></li>
+    </ol>
+  </div>
+
+  <!-- ============ SECTION 4 ============ -->
+  <div class="section">
+    <h2><span class="n">4</span> What each status looks like</h2>
+    <p class="lead">A document is always in one of these states. Here's how each one appears on its card.</p>
+
+    <div class="variants">
+      <div class="variant">
+        <div class="vh"><span class="pill zc">to review</span></div>
+        <div class="row"><span class="btn approve">✓ Approve</span><span class="btn reject">✗ Reject…</span></div>
+        <div class="vd">Waiting for your decision — both buttons live, no badge yet.</div>
+      </div>
+      <div class="variant">
+        <div class="vh"><span class="pill em">approved</span></div>
+        <div class="row"><span class="pill em">✓ APPROVED</span></div>
+        <div class="vd">You (or another reviewer) approved it. The buttons disappear.</div>
+      </div>
+      <div class="variant">
+        <div class="vh"><span class="pill rd">rejected</span></div>
+        <div class="row"><span class="pill rd">✗ REJECTED</span></div>
+        <div class="banner red" style="margin-top:7px;"><b>Rejected:</b> wrong size run — <span style="text-decoration:underline;">view ticket →</span></div>
+        <div class="vd">Sent back with your note; it's logged and re-run once fixed.</div>
+      </div>
+      <div class="variant">
+        <div class="vh"><span class="pill am">blocked</span></div>
+        <div class="row"><span class="btn approve off">✓ Approve</span><span class="btn reject">✗ Reject…</span></div>
+        <div class="banner amber" style="margin-top:7px;">⚠ <b>1 placeholder</b> in this PDF — approval is blocked until the data is fixed and the output re-run.</div>
+        <div class="vd">Approve is locked (greyed). The PDF holds a stand-in tile — safe to look at, must never ship.</div>
+      </div>
+    </div>
+
+    <div class="banner red" style="margin-top:12px;">
+      <b>2 outputs contain placeholder artifacts — approval is blocked.</b> Dashed “missing artwork” tiles or “No carton EAN” boxes are review-safe but must never ship to print. Fix the gaps and re-run the output.
+    </div>
+    <p class="lead" style="margin-top:8px;">This red banner sits at the top of the screen whenever any document is blocked, so you can't miss it.</p>
+  </div>
+
+  <!-- ============ SECTION 5 ============ -->
+  <div class="section">
+    <h2><span class="n">5</span> When something's missing or not generated yet</h2>
+    <p class="lead">Not every document is always ready. Two cases you'll meet — and in both, your move is the same: reject with a note (or chase the data), not “fix it yourself”.</p>
+
+    <div class="two">
+      <div>
+        <div class="mock">
+          <div class="appbody"><div class="canvas" style="padding:12px;">
+            <div class="acc">
+              <div class="acc-head"><span class="chev">▾</span><span class="name">Not generated yet</span><span class="cnt">(2)</span><span class="hint">awaiting data, queued…</span></div>
+              <div class="acc-body" style="display:block;">
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:7px;"><span class="oname" style="font-size:10.5px;">Hangtag</span><span class="pill zc">Awaiting data</span></div>
+                <div style="color:#92400e;font-size:9px;margin-bottom:10px;">missing: Care symbols, Fibre composition</div>
+                <div style="display:flex;align-items:center;gap:6px;"><span class="oname" style="font-size:10.5px;">Size sticker</span><span class="pill zc">Generating…</span></div>
+              </div>
+            </div>
+          </div></div>
+        </div>
+        <p class="lead" style="margin-top:7px;"><b>“Not generated yet”</b> lists documents that haven't been produced. If a document is <i>awaiting data</i>, the <b>exact missing fields</b> are spelled out. If you need one of these, that's your cue to chase the missing data so it can be generated.</p>
+      </div>
+      <div>
+        <div class="mock">
+          <div class="appbody"><div class="canvas" style="padding:12px;">
+            <div class="ocard">
+              <div class="ocard-top"><div class="meta"><div class="oname">Carton side</div><div class="ofile">4471_carton_side.pdf</div></div><div class="acts"><span class="btn approve off">✓ Approve</span></div></div>
+              <div class="pdf">
+                <span class="tag">PDF</span>
+                <div class="ln" style="width:40%"></div><div class="ln" style="width:55%"></div><div class="ln" style="width:30%"></div>
+                <div class="miss">missing artwork</div>
+              </div>
+            </div>
+          </div></div>
+        </div>
+        <p class="lead" style="margin-top:7px;">A <b>placeholder inside a generated PDF</b> — a dashed “missing artwork” tile or a “No carton EAN” box. The document still renders so you can sanity-check the rest, but <b>Approve is locked</b>. Reject it with a note so the data can be fixed and the document re-run.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SECTION 6 ============ -->
+  <div class="section">
+    <h2><span class="n">6</span> Rejecting a document</h2>
+    <div class="note warn">
+      <div class="h">Say what's wrong, in one box</div>
+      <p>When a document isn't right, press <b>✗ Reject…</b> and type a short note. Your comment is saved to the <b>rejection log</b> with full context — customer, business area, order, and which document — so the underlying data can be fixed and the document re-run. The corrected version then comes back to you as a fresh review.</p>
+    </div>
+    <div class="mock" style="margin-top:11px;">
+      <div class="appbody"><div class="canvas" style="padding:12px;">
+        <div class="dlg" style="box-shadow:none;border-color:#e4e4e7;">
+          <div class="dt">Reject “Carton side”</div>
+          <div style="border:1px solid #e4e4e7;border-radius:7px;padding:7px 9px;margin-top:8px;color:#a1a1aa;font-size:9.5px;height:38px;">What's wrong with this output?</div>
+          <div class="dp" style="margin-top:6px;">Your comment goes into the rejection log with the full context (customer, business area, order, output) so it can be worked on and re-run.</div>
+          <div class="dacts"><span class="btn ghost">Cancel</span><span class="btn reject">Reject output</span></div>
+        </div>
+      </div></div>
+    </div>
+    <p class="lead" style="margin-top:8px;">The reject box. A note is required — it's what turns a rejection into something actionable.</p>
+  </div>
+
+  <!-- ============ SECTION 7 ============ -->
+  <div class="section">
+    <h2><span class="n">7</span> Finishing up — and not losing a half-done review</h2>
+    <p class="lead">When you're confident, you can clear a whole style quickly. And the screen actively protects you from forgetting a review you've half-finished.</p>
+
+    <div class="mock">
+      <div class="appbody"><div class="canvas" style="padding:12px 14px;">
+        <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;">
+          <span class="btn reject">Reject all (2)…</span>
+          <span class="btn dark">Approve all (3)</span>
+          <span class="mk in">10</span>
+        </div>
+        <div style="text-align:right;color:#92400e;font-size:9px;margin-top:6px;">1 output blocked by placeholders — fix &amp; re-run.</div>
+      </div></div>
+    </div>
+    <ol class="legend" style="margin-top:9px;">
+      <li><span class="ln"><span class="mk">10</span></span><span class="tx"><b>Approve all / Reject all</b> act on every <i>pending</i> document at once. Blocked ones are skipped automatically — you can't bulk-approve something that isn't print-safe.</span></li>
+      <li><span class="ln"><span class="mk">11</span></span><span class="tx">The moment the <b>last</b> document is decided and approved, the style is <b>published</b>: the documents are sent on to the supplier and the style's status flows back to <b>Monday automatically</b>. Until then, nothing leaves.</span></li>
+      <li><span class="ln"><span class="mk">12</span></span><span class="tx">If you wander off mid-review, the app reminds you and keeps the style <b>waiting on your My tasks</b> so it can't be forgotten (dialogs below).</span></li>
+    </ol>
+
+    <div class="two" style="margin-top:12px;">
+      <div class="dlg">
+        <div class="dt">Start reviewing this prod spec?</div>
+        <div class="dp">Pressing yes marks this review as <b>in review by you</b> — it stays on your My tasks until every document is approved or rejected, so a half-finished check can't be forgotten.</div>
+        <div class="dacts"><span class="btn ghost">Not yet</span><span class="btn dark">Yes — start review</span></div>
+      </div>
+      <div class="dlg">
+        <div class="dt">Finish this review before you go?</div>
+        <div class="dp">You've decided <b>3 of 6</b> documents. <b>Nothing is sent to the supplier until every document is approved or rejected</b> — if you leave now, this review stays open and lands on your My tasks page.</div>
+        <div class="dacts"><span class="btn ghost">Leave — it'll wait on My tasks</span><span class="btn dark">Keep reviewing</span></div>
+      </div>
+    </div>
+
+    <div class="tip">
+      <b>Rule of thumb.</b> Approve what's print-ready. Reject anything with a placeholder or a mistake — and say why. Everything you decide is tracked, and the supplier only ever sees a <b>fully-approved</b> style.
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>Prod Spec · Reviewer guide 5 of 6 — Reviewing a style's outputs</span>
+    <span>Approve ✓ · Reject ✗ · the supplier sees only fully-approved styles</span>
+  </div>
+
+</body>
+</html>

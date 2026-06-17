@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Reviewer guide · The Reviews queue</title>
+<link rel="stylesheet" href="_guide.css" />
+</head>
+<body>
+
+  <div class="doc-head">
+    <div class="kicker">Prod Spec · Reviewer guide · 3 of 6</div>
+    <h1>The Reviews queue</h1>
+    <p class="sub">The shared list of every style awaiting review — and exactly how it's different from My tasks.</p>
+    <div class="crumb">Open it from <b>Reviews</b> in the sidebar (it sits just under My tasks).</div>
+  </div>
+
+  <div class="note">
+    <div class="h">If you've wondered “isn't this the same as My tasks?”</div>
+    <p>They look alike because they use the <b>same style cards</b> — but they answer different questions. <b>My tasks</b> = “what's on <i>me</i>?” <b>Reviews</b> = “what's waiting for <i>anyone</i>?” This guide makes the difference concrete.</p>
+  </div>
+
+  <!-- SECTION 1 -->
+  <div class="section">
+    <h2><span class="n">1</span> The page at a glance</h2>
+    <p class="lead">One flat list: every style currently awaiting review, <b>longest-waiting first</b>, no matter who (if anyone) has started it. Open one to decide its documents.</p>
+
+    <div class="mock">
+      <div class="chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">prod-spec.app / reviews</span></div>
+      <div class="appbody">
+        <div class="side">
+          <div class="brand">Prod Spec</div>
+          <a href="#">Styles</a>
+          <a href="#">My tasks</a>
+          <a href="#" class="on">Reviews</a>
+        </div>
+        <div class="canvas" style="padding:13px 15px;">
+          <div class="ptitle">Reviews</div>
+          <div class="pdesc">Every style awaiting review, grouped by style — longest-waiting first. Open one to decide its documents. <span class="mk in">1</span></div>
+          <div style="color:#71717a;font-size:9.5px;margin-top:8px;">4 styles awaiting review <span class="mk in">2</span></div>
+
+          <div class="tcard" style="margin-top:9px;">
+            <div class="tcard-top"><div><div class="tname">5402 — Zip hoodie</div><div class="tmeta">Acme Apparel · PO 100390 · ready 2 days ago</div></div>
+            <div class="right"><div class="prog"><div class="bar"><span style="width:40%"></span></div><div class="xy">2/5</div></div><span class="btn dark">Finish review</span></div></div>
+          </div>
+          <div class="tcard" style="margin-top:8px;">
+            <div class="tcard-top"><div><div class="tname">5180 — Ribbed beanie</div><div class="tmeta">Acme Apparel · PO 100451 · ready 1 hour ago</div></div>
+            <div class="right"><div class="prog"><div class="bar"><span style="width:0%"></span></div><div class="xy">0/4</div></div><span class="btn dark">Start review</span></div></div>
+          </div>
+          <div class="tcard" style="margin-top:8px;">
+            <div class="tcard-top"><div><div class="tname">4471 — Kids hooded sweat</div><div class="tmeta">Acme Apparel · PO 100423 · ready 35 minutes ago</div></div>
+            <div class="right"><div class="prog"><div class="bar"><span style="width:50%"></span></div><div class="xy">3/6</div></div><span class="btn dark">Start review</span></div></div>
+          </div>
+          <div class="cap" style="margin-top:8px;"><span class="mk in">3</span> &nbsp;every style here, regardless of who started it</div>
+        </div>
+      </div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx">The description spells out the rule: <b>grouped by style, longest-waiting first.</b> The oldest unreviewed work floats to the top so nothing is left for days.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx">A simple <b>count</b> of how many styles are waiting in total.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx">The cards are <b>identical</b> to My tasks (progress, status, the same buttons) — but here it's <b>everything</b>, not just your slice. You'll even see styles already started by others, so you can jump in if needed.</span></li>
+    </ol>
+  </div>
+
+  <!-- SECTION 2 -->
+  <div class="section">
+    <h2><span class="n">2</span> My tasks vs Reviews — the one real difference</h2>
+    <p class="lead">Same cards, different scope. Here's the side-by-side.</p>
+    <div class="compare">
+      <div class="col">
+        <h3>📋 My tasks</h3>
+        <div class="body"><ul>
+          <li><b>Your slice</b> of the work.</li>
+          <li><b>Sorted into buckets</b> by your involvement: yours-unfinished, waiting for a first look, others', your rejections.</li>
+          <li>Answers: <b>“What should I do next?”</b></li>
+          <li>Best as your <b>daily starting point</b>.</li>
+        </ul></div>
+      </div>
+      <div class="col">
+        <h3>🗂️ Reviews</h3>
+        <div class="body"><ul>
+          <li><b>The whole queue</b> — every awaiting style.</li>
+          <li><b>One flat list</b>, no buckets, oldest first.</li>
+          <li>Answers: <b>“What's waiting for anyone?”</b></li>
+          <li>Best when you've cleared your own and want to <b>pick up the next thing</b>.</li>
+        </ul></div>
+      </div>
+    </div>
+    <table class="tbl" style="margin-top:11px;">
+      <tr class="head-strong"><th style="width:26%"> </th><th>My tasks</th><th>Reviews</th></tr>
+      <tr><td><b>Scope</b></td><td>Only work involving you (plus untouched items)</td><td>Every style awaiting review</td></tr>
+      <tr><td><b>Layout</b></td><td>Four labelled buckets</td><td>One flat list</td></tr>
+      <tr><td><b>Order</b></td><td>Busiest/most-yours first</td><td>Longest-waiting first</td></tr>
+      <tr><td><b>Empty message</b></td><td>“All caught up.”</td><td>“Nothing awaiting review.”</td></tr>
+      <tr><td><b>Use it to…</b></td><td>See what's on you</td><td>Grab the next available job</td></tr>
+    </table>
+  </div>
+
+  <!-- SECTION 3 -->
+  <div class="section">
+    <h2><span class="n">3</span> When it's empty</h2>
+    <p class="lead">If nothing is awaiting review, the queue says <b>“Nothing awaiting review.”</b> — “When a job finishes rendering, its style appears here for review.” That simply means nothing new has been generated yet; check back later or start your day on My tasks.</p>
+    <div class="tip">
+      <b>Rule of thumb.</b> Start on <b>My tasks</b> to clear what's yours. Then hop to <b>Reviews</b> to pull the next waiting style. Same cards, same Approve/Reject screen behind them — just a wider net.
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>Prod Spec · Reviewer guide 3 of 6 — The Reviews queue</span>
+    <span>My tasks = yours · Reviews = everyone's</span>
+  </div>
+
+</body>
+</html>

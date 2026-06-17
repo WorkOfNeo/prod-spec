@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Reviewer guide · Finding a style</title>
+<link rel="stylesheet" href="_guide.css" />
+</head>
+<body>
+
+  <div class="doc-head">
+    <div class="kicker">Prod Spec · Reviewer guide · 4 of 6</div>
+    <h1>Finding a style</h1>
+    <p class="sub">The Styles list: how to search and filter, what the status and readiness columns mean, and how to open one.</p>
+    <div class="crumb">Open it from <b>Styles</b> in the sidebar. Every style on file lives here — not just the ones up for review.</div>
+  </div>
+
+  <!-- SECTION 1 -->
+  <div class="section">
+    <h2><span class="n">1</span> The Styles page</h2>
+    <p class="lead">A searchable table of every style. Use the search box and the dropdowns to narrow it down, then click a row to open the style.</p>
+
+    <div class="mock">
+      <div class="chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">prod-spec.app / styles</span></div>
+      <div class="appbody">
+        <div class="side">
+          <div class="brand">Prod Spec</div>
+          <a href="#" class="on">Styles</a>
+          <a href="#">My tasks</a>
+          <a href="#">Reviews</a>
+        </div>
+        <div class="canvas" style="padding:13px 14px;">
+          <div class="ptitle">Styles</div>
+          <div class="pdesc">128 styles on file. Search across name, customer, business area, PO# and status — or filter with the dropdowns and press Apply.</div>
+
+          <div style="margin-top:9px;border:1px solid #e4e4e7;border-radius:8px;padding:6px 9px;color:#a1a1aa;font-size:9.5px;">Search by name, customer, business area, PO#, or status… <span class="mk in">1</span></div>
+          <div style="display:flex;gap:6px;margin-top:7px;flex-wrap:wrap;align-items:center;">
+            <span class="chip3">Customer <span class="s">▾</span></span>
+            <span class="chip3">Business area <span class="s">▾</span></span>
+            <span class="chip3">Group <span class="s">▾</span></span>
+            <span class="chip3">Status <span class="s">▾</span></span>
+            <span class="chip3">EAN <span class="s">▾</span></span>
+            <span class="btn dark">Apply</span>
+            <span class="mk in">2</span>
+          </div>
+          <div class="chips">
+            <span class="chip3 has">PO <span class="s">HAS</span></span>
+            <span class="chip3">Prod spec <span class="s">ANY</span></span>
+            <span class="chip3 no">Supplier <span class="s">NO</span></span>
+            <span class="mk in">3</span>
+          </div>
+
+          <table class="tbl" style="margin-top:10px;">
+            <tr class="head-strong"><th>Style</th><th>PO</th><th>Customer</th><th>Generation</th><th>Completion</th><th>Status</th></tr>
+            <tr><td><b>4471</b> Kids hooded sweat</td><td>100423</td><td>Acme</td><td style="color:#059669;">8/8</td><td>92% ▪</td><td><span class="pill bl">Ready for review</span></td></tr>
+            <tr><td><b>5180</b> Ribbed beanie</td><td>100451</td><td>Acme</td><td style="color:#b45309;">5/8</td><td>61%</td><td><span class="pill am">Awaiting data</span></td></tr>
+            <tr><td><b>5402</b> Zip hoodie</td><td>100390</td><td>Acme</td><td style="color:#059669;">8/8</td><td>100% ▪</td><td><span class="pill em">Approved</span></td></tr>
+            <tr><td colspan="6" style="color:#a1a1aa;"><span class="mk in">4</span> &nbsp;click any row to open the style</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>Search</b> matches across name, customer, business area, PO number and status all at once — just type any of them.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>Filter dropdowns</b> — Customer, Business area, Group, Status, EAN. Tick values and press <b>Apply</b> (a <b>Clear all</b> appears when any filter is on). Picks within one dropdown widen the results; across dropdowns they narrow.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>Quick chips</b> — <b>PO</b>, <b>Prod spec</b>, <b>Supplier</b>. Click to cycle <i>Any → Has → No</i>, e.g. “styles that <b>have</b> a PO but <b>no</b> supplier yet”.</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>Any row</b> opens that style's page — its data, care instructions, barcodes, and the Review screen.</span></li>
+    </ol>
+  </div>
+
+  <!-- SECTION 2 -->
+  <div class="section">
+    <h2><span class="n">2</span> Reading a row</h2>
+    <p class="lead">A few columns tell you, without opening anything, how far along a style is and whether it needs you.</p>
+    <table class="tbl">
+      <tr class="head-strong"><th style="width:20%">Column</th><th>What it tells you</th></tr>
+      <tr><td><b>Style</b></td><td>The style number and name. Always shown.</td></tr>
+      <tr><td><b>PO</b> / <b>Customer</b> / <b>Business area</b> / <b>Group</b></td><td>Who and what it's for — the order number, the customer, and how it's grouped.</td></tr>
+      <tr><td><b>Generation</b></td><td>Required fields filled, e.g. <b>5 / 8</b>. Green when complete, amber when fields are still missing. Below the line it can't generate.</td></tr>
+      <tr><td><b>Completion</b></td><td>A bar: how much of the required data is filled, with a small tick marking the threshold a style must reach before it can generate.</td></tr>
+      <tr><td><b>Status</b></td><td>The single most useful column — see below.</td></tr>
+      <tr><td><b>EAN</b></td><td>Whether the per-size barcodes have been read from the PO PDF (with a <b>Resolve</b> button to run it). More in guide 6.</td></tr>
+      <tr><td><b>Last synced</b></td><td>When the style last refreshed from Monday.</td></tr>
+    </table>
+  </div>
+
+  <!-- SECTION 3 -->
+  <div class="section">
+    <h2><span class="n">3</span> What the Status column means</h2>
+    <p class="lead">Status reads differently depending on whether the documents exist yet. Two phases:</p>
+    <div class="two">
+      <div class="note" style="margin-top:0;">
+        <div class="h">Before documents exist — is the data ready?</div>
+        <p><span class="pill am">Awaiting data</span> → <span class="pill am">Partially ready</span> → <span class="pill zc">Ready to generate</span></p>
+        <p>The style is gathering the fields it needs. Once it's “ready to generate,” the documents can be produced.</p>
+      </div>
+      <div class="note good" style="margin-top:0;">
+        <div class="h">After documents exist — the review flow</div>
+        <p><span class="pill zc">Queued</span> → <span class="pill bl">Ready for review</span> → <span class="pill em">Approved</span> / <span class="pill rd">Rejected</span></p>
+        <p><b>Ready for review</b> is your cue — that style has documents waiting for you. It'll also be sitting in the Reviews queue.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="tip">
+    <b>Fastest path to your work:</b> filter <b>Status → Ready for review</b>, or just use the <b>Reviews</b> queue. Use the Styles list when you need to find one <i>specific</i> style — by PO, customer or name — whatever state it's in.
+  </div>
+
+  <div class="foot">
+    <span>Prod Spec · Reviewer guide 4 of 6 — Finding a style</span>
+    <span>Search · filter · open the row</span>
+  </div>
+
+</body>
+</html>
