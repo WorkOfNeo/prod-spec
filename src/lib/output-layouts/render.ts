@@ -702,7 +702,15 @@ function emitLayoutDocument(
   .ol-sew { left: 0; right: 0; height: 0.3mm; background: repeating-linear-gradient(to right, #111 0 2.5mm, transparent 2.5mm 4mm); }
   .ol-fold-h { left: 0; right: 0; top: 50%; height: 0.3mm; transform: translateY(-50%); background: repeating-linear-gradient(to right, #555 0 1mm, transparent 1mm 2mm); }
   .ol-fold-v { top: 0; bottom: 0; left: 50%; width: 0.3mm; transform: translateX(-50%); background: repeating-linear-gradient(to bottom, #555 0 1mm, transparent 1mm 2mm); }
-  .ol-line { white-space: pre-wrap; word-break: break-word; min-height: 1em; }
+  /* flex-shrink:0 is load-bearing: .ol-block is a FIXED-height flex column
+     (the drawn grid cell), so without it an over-full block shrinks each
+     line's BOX toward min-height (1em) while the wrapped text inside still
+     needs its full height — the text then spills out of its squashed box and
+     lands on top of the line below, the stacked/illegible care text we kept
+     hitting. Pinning lines to their natural height instead makes an over-full
+     block overflow its frame VISIBLY (legible, clipped at the page edge) — an
+     honest "this cell is too small" signal, not a scrambled label. */
+  .ol-line { white-space: pre-wrap; word-break: break-word; min-height: 1em; flex-shrink: 0; }
   /* Fit-to-width: each line stays on one line; the fit script scales font. */
   .ol-fit .ol-line { white-space: nowrap; word-break: normal; }
   /* Coop size range: enlarge the current size within the dash-joined run. */
