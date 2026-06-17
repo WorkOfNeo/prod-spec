@@ -9,7 +9,7 @@ import type { StyleData } from "@/lib/pdf/types";
 import { defaultArtifactFileName, type TemplateVariant } from "@/lib/pdf/template-registry";
 import { dispatchEmail } from "@/lib/email/dispatch";
 import { reviewNotificationEmail } from "@/lib/email/templates/review-notification";
-import { notifyReviewers } from "@/lib/notifications/user-notifications";
+import { notifyReviewReady } from "@/lib/notifications/user-notifications";
 import { getReviewNotificationEmails } from "@/lib/settings/app-settings";
 import {
   COVER_VARIANT_KEY,
@@ -613,14 +613,16 @@ async function notifyReviewer(input: {
     }
   }
 
-  // In-app reviewer inbox (T2): every reviewer/admin gets the entry — the
-  // inbox is the shared queue for who can pick up the review — plus any
-  // configured recipient with an account. Fires even when the email was
-  // SIMULATED/SKIPPED (the work exists either way). The href carries
-  // ?claim=1 so opening the review FROM the inbox claims it and starts the
-  // timer (reviewClaimedAt); see styles/[id]/review/claim-review.tsx.
-  // Fail-soft inside the helper; auto-resolved when the job settles.
-  await notifyReviewers(recipients, {
+  // In-app review-ready notice (T2): ADMINs get the entry — they own the
+  // pipeline and triage the queue — plus any configured recipient with an
+  // account. REVIEWERs are deliberately excluded (a fresh output in the queue
+  // isn't theirs to act on until they pick it up; they work from /reviews and
+  // reviews they've started). Fires even when the email was SIMULATED/SKIPPED
+  // (the work exists either way). The href carries ?claim=1 so opening the
+  // review FROM the notice claims it and starts the timer (reviewClaimedAt);
+  // see styles/[id]/review/claim-review.tsx. Fail-soft inside the helper;
+  // auto-resolved when the job settles.
+  await notifyReviewReady(recipients, {
     type: "REVIEW_READY",
     title: "Documents ready for review",
     body: [

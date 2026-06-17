@@ -53,7 +53,9 @@ export default async function DashboardPage() {
     unread: n.readAt === null,
   }));
 
-  const waitingOnYou = work.mine.length + work.untouched.length;
+  // Only reviews you've STARTED count as "waiting on you" — the untouched
+  // first-review queue isn't yours until you pick it up (it lives on /reviews).
+  const waitingOnYou = work.mine.length;
   const allQuiet = waitingOnYou === 0 && work.others.length === 0 && openTickets === 0;
 
   return (
@@ -72,7 +74,8 @@ export default async function DashboardPage() {
         <div className="mt-6 rounded-lg border border-zinc-200 bg-white p-8 text-center">
           <div className="text-sm font-semibold text-zinc-800">All caught up.</div>
           <p className="mt-1 text-sm text-zinc-500">
-            No unfinished reviews, nothing waiting for a first review, no open rejections.
+            No unfinished reviews, no open rejections. New work waiting for a first review lives on
+            the Review queue.
           </p>
           <div className="mt-4 flex justify-center gap-3 text-sm">
             <Link href="/styles" className="text-zinc-700 underline hover:text-zinc-900">
@@ -99,21 +102,6 @@ export default async function DashboardPage() {
                   <b>Nothing is sent to the supplier until every document is decided.</b>
                 </p>
                 <StyleTaskList tasks={work.mine} activityPrefix="" />
-              </div>
-            </section>
-          )}
-
-          {work.untouched.length > 0 && (
-            <section className="mt-6">
-              <div className="rounded-lg border border-zinc-200 bg-white p-4">
-                <h2 className="text-sm font-semibold text-zinc-800">
-                  Waiting for first review ({work.untouched.length})
-                </h2>
-                <p className="mt-0.5 text-xs text-zinc-500">
-                  Documents finished rendering — nobody has started reviewing. Shown to everyone
-                  until reviewer assignment exists.
-                </p>
-                <StyleTaskList tasks={work.untouched} activityPrefix="ready " />
               </div>
             </section>
           )}
