@@ -95,7 +95,8 @@ export function BulkRunOutputs({
     const n = styleIds.length;
     const ok = window.confirm(
       `Generate outputs for ${n} style${n === 1 ? "" : "s"} in the current view?\n\n` +
-        `This enqueues a full re-run for each and renders in the background — it may take a while.`,
+        `Runs only each style's ready, not-yet-generated outputs, in the background — ` +
+        `it may take a while. Styles with nothing ready are skipped.`,
     );
     if (!ok) return;
     setSubmitting(true);
@@ -121,7 +122,8 @@ export function BulkRunOutputs({
         const skipped = data.skipped ?? n;
         setError(
           `Nothing to run — ${skipped} style${skipped === 1 ? "" : "s"} skipped ` +
-            `(already generating, or no active prod spec).`,
+            `(no ready, un-generated outputs — already generated, not ready, ` +
+            `already running, or no active prod spec).`,
         );
         return;
       }
