@@ -24,6 +24,7 @@ export default async function PoEansPage() {
       name: true,
       poNumber: true,
       eanStatus: true,
+      eanAttempts: true,
       cartonEan: true,
       poFileName: true,
       eanResolvedAt: true,
@@ -43,6 +44,7 @@ export default async function PoEansPage() {
     poNumber: s.poNumber ?? "",
     supplierName: s.supplier?.name ?? null,
     resolvedAt: s.eanResolvedAt ? formatDate(s.eanResolvedAt) : null,
+    eanAttempts: s.eanAttempts,
     initial: {
       status: s.eanStatus,
       poFileName: s.poFileName,

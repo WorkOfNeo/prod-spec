@@ -150,6 +150,13 @@ The runner fires automatically after a webhook brings a style to 100% completion
 - **UI**: `/jobs` → **Run pending jobs now**.
 - **Cron**: `curl -X POST $PROD_SPEC_BASE_URL/api/jobs/run?secret=$JOB_RUNNER_SECRET`. Recommended cadence: every minute on Railway cron, as a safety net for the inline trigger.
 
+### Draining the PO→barcode (EAN) queue
+
+A filled PO number queues a style for barcode scraping (PENDING on `/po-eans`); the runner scrapes the PO PDF from SharePoint and stores the per-size + carton EANs. Same trust boundary as the job runner (`JOB_RUNNER_SECRET`), gated by the **Automatic barcode scraping** switch on `/po-eans` (Off ⇒ secret-driven calls no-op; the queue then only drains from the per-row Re-resolve button).
+
+- **UI**: `/po-eans` → **Re-resolve** (per row) or **Re-resolve first 20** — always work, switch notwithstanding, and reset the row's strike counter.
+- **Cron**: `curl -X POST "$PROD_SPEC_BASE_URL/api/po-eans/run?secret=$JOB_RUNNER_SECRET&sweep=1"`. `&sweep=1` also re-queues stuck rows; a non-resolved scrape is retried up to 3× (~12h apart) then "floats" on `/po-eans` (shown as **gave up · 3×** / a **needs attention** chip) for a human to re-trigger.
+
 ### Reading the logs
 
 - `/jobs` shows recent job runs (top) and the last 100 log entries (bottom).
@@ -189,4 +196,11 @@ The full kickoff plan with milestone breakdown lives at `/Users/niels/.claude/pl
 - **Railway**: deploy `main` to a single service. Postgres comes from a Railway Postgres add-on. Internal URL (`*.railway.internal`) for `DATABASE_URL`; public proxy URL with `?sslmode=require` only needed for local migrations.
 - **Set every env var from `.env.example`** in Railway before first boot. Missing `BETTER_AUTH_SECRET` will throw immediately.
 - **Puppeteer on Railway**: the default `puppeteer` package downloads Chromium at install time. If image build is too slow, switch to `puppeteer-core` + a base image with Chromium preinstalled.
-- **Job runner schedule**: add a Railway cron hitting `POST /api/jobs/run?secret=$JOB_RUNNER_SECRET` every minute. Inline triggering covers the happy path; cron handles missed runs.
+- **Cron schedule**: add one Railway cron service that pokes both runners every minute. Inline triggering covers the happy path; the cron handles missed runs, dropped fire-and-forget kicks, and stuck-row retries. Start command:
+
+  ```
+  curl -fsS -X POST "$PROD_SPEC_BASE_URL/api/po-eans/run?secret=$JOB_RUNNER_SECRET&sweep=1" ;
+  curl -fsS -X POST "$PROD_SPEC_BASE_URL/api/jobs/run?secret=$JOB_RUNNER_SECRET"
+  ```
+
+  EAN call first so any generation it enqueues is in the queue when the job drain runs; `;` (not `&&`) keeps the job drain running even if the EAN call hiccups.

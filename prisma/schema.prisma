@@ -599,6 +599,11 @@ model Style {
   // Set when a worker claims the row (PENDING→RESOLVING); used for stale
   // recovery, mirrors Job.startedAt.
   eanResolveStartedAt DateTime?
+  // Consecutive non-resolved scrape attempts. Reset to 0 on RESOLVED/PARTIAL;
+  // incremented on every error / not-found / no-barcode outcome. Once it hits
+  // MAX_EAN_ATTEMPTS (see src/lib/po/ean-status-meta.ts) the retry sweep stops
+  // re-queuing the row and it "floats" on /po-eans for a human to re-trigger.
+  eanAttempts         Int            @default(0)
   lastSyncedAt        DateTime?
   // Soft lifecycle from Monday. We never hard-delete a Style: an
   // item_archived / item_deleted webhook stamps these instead, so the row

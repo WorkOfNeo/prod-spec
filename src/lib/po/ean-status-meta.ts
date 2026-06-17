@@ -15,3 +15,19 @@ export const EAN_STATUS_META: Record<string, { label: string; cls: string }> = {
 export function eanStatusMeta(status: string): { label: string; cls: string } {
   return EAN_STATUS_META[status] ?? { label: status.toLowerCase(), cls: "bg-zinc-100 text-zinc-600" };
 }
+
+// Max consecutive non-resolved scrape attempts before a row stops auto-
+// retrying and "floats" for manual attention. The retry sweep caps on this
+// (src/lib/po/ean-runner.ts) and the /po-eans table surfaces it.
+export const MAX_EAN_ATTEMPTS = 3;
+
+// The non-resolved statuses the sweep retries — i.e. the ones that can float
+// once attempts run out. Keep in sync with RETRYABLE in ean-runner.ts.
+const FLOATABLE_STATUSES = new Set(["PO_FOUND_NO_EANS", "PO_NOT_FOUND", "ERROR"]);
+
+// A row has "floated" when it's in a retryable-but-unresolved state and has
+// burned its attempt budget — the sweep will no longer pick it up, so a human
+// must re-trigger it (the per-row Re-resolve, which resets the counter).
+export function eanFloated(status: string, attempts: number): boolean {
+  return attempts >= MAX_EAN_ATTEMPTS && FLOATABLE_STATUSES.has(status);
+}
