@@ -584,12 +584,6 @@ export default async function StyleDetail({
         </div>
       </div>
 
-      {style.poNumber && (
-        <div className="mt-4">
-          <PoPreview styleId={style.id} poNumber={style.poNumber} status={style.eanStatus} />
-        </div>
-      )}
-
       {customerConfig.skipSupplierDelivery && <SkipSupplierDeliveryBadge className="mt-4" />}
 
       <nav className="mt-6 border-b border-zinc-200">
@@ -1031,6 +1025,11 @@ function DetailsTab({
           <h2 className="text-sm font-semibold text-zinc-700">EAN barcodes</h2>
           <span className="text-xs text-zinc-400">Read from the PO PDF — per size, in size order</span>
         </div>
+        {style.poNumber && (
+          <div className="mt-3">
+            <PoPreview styleId={style.id} poNumber={style.poNumber} status={style.eanStatus} />
+          </div>
+        )}
         <div className="mt-2">
           <EanPanel styleId={style.id} hasPo={Boolean(style.poNumber)} initial={eanView} />
         </div>
