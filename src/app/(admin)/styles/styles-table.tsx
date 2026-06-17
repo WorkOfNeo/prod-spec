@@ -43,7 +43,10 @@ const NEXT_STATE: Record<TriState, TriState> = { any: "has", has: "no", no: "any
 
 const ATTR_FILTERS: ReadonlyArray<{ key: string; label: string; has: (r: StyleRow) => boolean }> = [
   { key: "po", label: "PO", has: (r) => Boolean(r.poNumber && r.poNumber.trim()) },
-  { key: "prodSpec", label: "Prod spec", has: (r) => r.hasProdSpec },
+  // "Applied" = linked AND active. A linked-but-inactive spec counts as "No
+  // Prod spec" here — it won't generate, so it shouldn't read as having a
+  // working spec (see prodSpecActive in page.tsx).
+  { key: "prodSpec", label: "Prod spec", has: (r) => r.prodSpecActive },
   { key: "supplier", label: "Supplier", has: (r) => r.hasSupplier },
 ];
 
@@ -102,6 +105,9 @@ export type StyleRow = {
   // From the linked ProdSpec; null when no ProdSpec is linked.
   threshold: number | null;
   hasProdSpec: boolean;
+  // Linked AND active — the "Prod spec" chip's "applied" sense. Distinct from
+  // hasProdSpec (mere linkage), which the completion column still relies on.
+  prodSpecActive: boolean;
   hasSupplier: boolean;
   // Required detail fields filled / total (Settings ▸ Required fields).
   // requiredTotal 0 = none configured.
