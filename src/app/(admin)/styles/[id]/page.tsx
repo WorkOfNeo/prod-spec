@@ -41,6 +41,7 @@ import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
+import { LogStyleView } from "@/components/log-style-view";
 import { applyFieldOverrides } from "@/lib/pdf/pins";
 import { parseFieldOverrides, PINNABLE_FIELD_LABELS, type PinnableField } from "@/lib/pdf/pins-meta";
 import { findFieldRule } from "@/lib/pdf/spec-fields";
@@ -560,6 +561,7 @@ export default async function StyleDetail({
 
   return (
     <div className="px-8 py-8">
+      <LogStyleView styleId={id} surface="STYLE" />
       <Link href="/styles" className="text-xs text-zinc-500 underline">
         ← All styles
       </Link>

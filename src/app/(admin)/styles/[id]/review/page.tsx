@@ -6,6 +6,7 @@ import { AssetActions } from "./asset-actions";
 import { OutputBulkActions } from "./output-bulk-actions";
 import { ReviewClaim } from "./claim-review";
 import { ReviewLeaveGuard } from "./leave-guard";
+import { LogStyleView } from "@/components/log-style-view";
 import { groupByDocType, DocTypeAccordion } from "../doc-type-groups";
 import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
@@ -114,6 +115,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   if (outputs.length === 0) {
     return (
       <div className="px-8 py-8">
+        <LogStyleView styleId={id} surface="REVIEW" />
         <Link href={`/styles/${id}`} className="text-xs text-zinc-500 underline">← Back</Link>
         <h1 className="mt-2 text-2xl font-semibold">No outputs to review</h1>
         <p className="mt-1 text-sm text-zinc-500">
@@ -128,6 +130,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
 
   return (
     <div className="px-8 py-8">
+      <LogStyleView styleId={id} surface="REVIEW" />
       {followThrough ? (
         // Per-style key now — leaving with some-decided/some-pending intercepts.
         <ReviewLeaveGuard
