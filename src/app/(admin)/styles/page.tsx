@@ -181,6 +181,13 @@ export default async function StylesPage() {
             completionPct: s.completionPct,
             threshold: s.prodSpec?.autoGenerateThresholdPct ?? null,
             hasProdSpec: Boolean(s.prodSpec),
+            // The "Prod spec" attribute chip filters on an *applied* spec —
+            // linked AND active. A linked-but-inactive spec counts as "no
+            // spec" there: it won't generate (auto-enqueue is gated on active),
+            // and nearly every style carries a linked spec, so the bare
+            // presence check never narrowed. hasProdSpec stays "linked" for
+            // the completion column's tooltip.
+            prodSpecActive: Boolean(s.prodSpec?.active),
             hasSupplier: Boolean(s.supplierId),
             // How many of the fields this style's outputs need carry a value
             // (filled / total). 0 total = its outputs need nothing / none set.
