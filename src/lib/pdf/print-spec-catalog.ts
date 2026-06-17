@@ -36,10 +36,8 @@ import geKasUllaredLicenseWashcareLabelLayout from "@/print-specs/ge-kas-ullared
 import geKasUllaredPrivateLabelCartonMarkingLayout from "@/print-specs/ge-kas-ullared/private-label/carton-marking-layout";
 import geKasUllaredPrivateLabelPriceStickerLayout from "@/print-specs/ge-kas-ullared/private-label/price-sticker-layout";
 import geKasUllaredPrivateLabelWashcareLabelLayout from "@/print-specs/ge-kas-ullared/private-label/washcare-label-layout";
-import kauflandLicenseCartonMarkingLayout from "@/print-specs/kaufland/license/carton-marking-layout";
 import kauflandLicenseWashcareLabelLayout from "@/print-specs/kaufland/license/washcare-label-layout";
 import kauflandPrivateLabelCareLabel from "@/print-specs/kaufland/private-label/care-label";
-import kauflandPrivateLabelCartonMarking from "@/print-specs/kaufland/private-label/carton-marking";
 import nettoDeBodyGuide62193CareLabel1 from "@/print-specs/netto-de/body-guide/62193-care-label-1";
 import nettoDeBodyGuideCartonStickerBodyguideLicense1 from "@/print-specs/netto-de/body-guide/carton-sticker-bodyguide-license-1";
 import nettoDeBodyGuideInfoAreas1 from "@/print-specs/netto-de/body-guide/info-areas-1";
@@ -122,10 +120,8 @@ export const ALL_PRINT_SPECS: PrintSpec[] = [
   geKasUllaredPrivateLabelCartonMarkingLayout,
   geKasUllaredPrivateLabelPriceStickerLayout,
   geKasUllaredPrivateLabelWashcareLabelLayout,
-  kauflandLicenseCartonMarkingLayout,
   kauflandLicenseWashcareLabelLayout,
   kauflandPrivateLabelCareLabel,
-  kauflandPrivateLabelCartonMarking,
   nettoDeBodyGuide62193CareLabel1,
   nettoDeBodyGuideCartonStickerBodyguideLicense1,
   nettoDeBodyGuideInfoAreas1,

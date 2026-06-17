@@ -42,7 +42,6 @@ Layout is a placeholder template. Dimensions in the spec are placeholders taken 
 | `europris/private-label/po62740-polybag-sticker-2026-5-13.ts` | Europris-Private label-PO62740  polybag sticker 2026.5.13.pdf | Template without callouts; 105×75 placeholder. Measure real polybag sticker size. |
 | `europris/t2c/po62740-polybag-sticker-2026-5-13.ts` | Europris-T2C-PO62740  polybag sticker 2026.5.13.pdf | Template without callouts; 105×75 placeholder. Measure real polybag sticker size. |
 | `kaufland/private-label/care-label.ts` | Kaufland-Private Label-Care label.pdf | Template without callouts; 155×40 placeholder from License sibling. Verify size, languages and care-instruction presence. |
-| `kaufland/private-label/carton-marking.ts` | Kaufland-Private Label-Carton marking.pdf | Carton template without size callout (License sibling is 200×75). Confirm print size. |
 | `ottos-ag-zentrallager/license/sticker-for-hangtag.ts` | Otto's AG Zentrallager-License-Sticker for Hangtag.pdf | Marker-only layout without callouts; 28×35 placeholder. Measure real sticker; confirm retail price currency (CHF not representable). |
 | `ottos-ag-zentrallager/private-label/sticker-for-hangtag.ts` | Otto's AG Zentrallager-Private label-Sticker for Hangtag.pdf | Marker-only layout without callouts; 28×35 placeholder. Measure real sticker; confirm retail price currency (CHF not representable). |
 | `tokmanni/license/price-sticker.ts` | Tokmanni-License-PRICE STICKER.pdf | Marker-only template without callouts; 28×35 placeholder. Measure real sticker size. |
