@@ -200,7 +200,9 @@ The full kickoff plan with milestone breakdown lives at `/Users/niels/.claude/pl
 
   ```
   curl -fsS -X POST "$PROD_SPEC_BASE_URL/api/po-eans/run?secret=$JOB_RUNNER_SECRET&sweep=1" ;
-  curl -fsS -X POST "$PROD_SPEC_BASE_URL/api/jobs/run?secret=$JOB_RUNNER_SECRET"
+  curl -fsS -X POST "$PROD_SPEC_BASE_URL/api/jobs/run?secret=$JOB_RUNNER_SECRET&sweep=1"
   ```
 
-  EAN call first so any generation it enqueues is in the queue when the job drain runs; `;` (not `&&`) keeps the job drain running even if the EAN call hiccups.
+  EAN call first so any generation it enqueues is in the queue when the job drain runs; `;` (not `&&`) keeps the job drain running even if the EAN call hiccups. `&sweep=1` on the **jobs** call also runs the generation backlog sweep — it pulls every active style with ready, ungenerated outputs into the queue (bounded per tick), so already-ready styles generate without waiting for a Monday edit. Cron-origin generation never emails (the in-app review inbox still fills); rejected outputs are never auto-regenerated; a style that fails to render 3× floats for manual attention.
+
+  **Watch it:** `/automation` shows recent cron runs (what each did), queue depths, and a **Run now** button. If the queue is full but no runs are listed, the cron isn't reaching the app. If `railway.json` is used as a same-repo service's start command it will boot the full app instead of pinging — run the cron as a **dedicated `curlimages/curl` image service**, not the app repo.

@@ -558,46 +558,56 @@ async function notifyReviewer(input: {
   // fix endpoint, with the rejection context the generic mail lacks.
   if (input.triggerSource === "TICKET_RERUN" || input.triggerSource === "TICKET_FIX") return;
 
-  const recipients = await getReviewNotificationEmails();
-  const base = process.env.PROD_SPEC_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
-  const reviewUrl = `${base}/styles/${input.styleId}/review`;
-  const email = reviewNotificationEmail({
-    styleName: input.styleName,
-    styleNumber: input.styleNumber,
-    customerName: input.customerName,
-    businessArea: input.businessArea,
-    poNumber: input.poNumber,
-    reviewUrl,
-    outputNames: input.outputNames,
-  });
+  // Cron-origin generation (the PO→EAN handoff and the backlog sweep) never
+  // sends the review-ready EMAIL — automated fills shouldn't blast the mailbox
+  // — but still drops the in-app review-inbox entry below so the work stays
+  // visible. Holds even if email is re-enabled for manual/webhook runs.
+  const emailSuppressed =
+    input.triggerSource === "EAN_RESOLVED" || input.triggerSource === "CRON_SWEEP";
 
-  try {
-    // Empty recipients still dispatch: that records a SKIPPED email_logs
-    // row with an actionable note instead of silently notifying no one.
-    const outcome = await dispatchEmail({
-      type: "REVIEW_READY",
-      to: recipients,
-      subject: email.subject,
-      html: email.html,
-      text: email.text,
-      jobId: input.jobId,
-      styleId: input.styleId,
+  const recipients = await getReviewNotificationEmails();
+
+  if (!emailSuppressed) {
+    const base = process.env.PROD_SPEC_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
+    const reviewUrl = `${base}/styles/${input.styleId}/review`;
+    const email = reviewNotificationEmail({
+      styleName: input.styleName,
+      styleNumber: input.styleNumber,
+      customerName: input.customerName,
+      businessArea: input.businessArea,
+      poNumber: input.poNumber,
+      reviewUrl,
+      outputNames: input.outputNames,
     });
-    const message =
-      outcome.status === "SENT"
-        ? `review notification sent to ${outcome.to}`
-        : outcome.status === "SIMULATED"
-          ? `review notification SIMULATED (RESEND_EMAILS off) — would go to ${outcome.to}`
-          : outcome.status === "FAILED"
-            ? `review notification FAILED: ${outcome.note ?? "Resend error"}`
-            : `review notification skipped: ${outcome.note ?? "no recipient — set it at /settings/notifications"}`;
-    await db.log.create({
-      data: { jobId: input.jobId, level: outcome.status === "FAILED" ? "WARN" : "INFO", message },
-    });
-  } catch (err) {
-    await db.log.create({
-      data: { jobId: input.jobId, level: "WARN", message: `review notification failed: ${(err as Error).message}` },
-    });
+
+    try {
+      // Empty recipients still dispatch: that records a SKIPPED email_logs
+      // row with an actionable note instead of silently notifying no one.
+      const outcome = await dispatchEmail({
+        type: "REVIEW_READY",
+        to: recipients,
+        subject: email.subject,
+        html: email.html,
+        text: email.text,
+        jobId: input.jobId,
+        styleId: input.styleId,
+      });
+      const message =
+        outcome.status === "SENT"
+          ? `review notification sent to ${outcome.to}`
+          : outcome.status === "SIMULATED"
+            ? `review notification SIMULATED (RESEND_EMAILS off) — would go to ${outcome.to}`
+            : outcome.status === "FAILED"
+              ? `review notification FAILED: ${outcome.note ?? "Resend error"}`
+              : `review notification skipped: ${outcome.note ?? "no recipient — set it at /settings/notifications"}`;
+      await db.log.create({
+        data: { jobId: input.jobId, level: outcome.status === "FAILED" ? "WARN" : "INFO", message },
+      });
+    } catch (err) {
+      await db.log.create({
+        data: { jobId: input.jobId, level: "WARN", message: `review notification failed: ${(err as Error).message}` },
+      });
+    }
   }
 
   // In-app reviewer inbox (T2): every reviewer/admin gets the entry — the

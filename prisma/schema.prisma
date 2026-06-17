@@ -824,6 +824,10 @@ enum TriggerSource {
   // src/lib/po/ean-runner.ts. Kept distinct so dashboards can tell
   // "generated because barcodes landed" apart from a Monday sync.
   EAN_RESOLVED
+  // Job enqueued by the periodic backlog sweep (/api/jobs/run?sweep=1, driven
+  // by the Railway cron): pulls every active style with ready, ungenerated
+  // outputs through generation, gradually. Email-suppressed like EAN_RESOLVED.
+  CRON_SWEEP
 }
 
 model Log {
@@ -839,6 +843,37 @@ model Log {
   @@index([jobId])
   @@index([createdAt])
   @@map("logs")
+}
+
+// One row per automation tick that did (or skipped) work. The EAN runner and
+// the generation runner each write one when invoked by the Railway cron
+// (?sweep=1) or a signed-in "Run now" — powering the /automation activity page
+// so operators can see what the cron actually did. High-frequency inline
+// webhook triggers are NOT recorded (only sweep / session calls) to keep it
+// readable.
+model CronRun {
+  id   String @id @default(cuid())
+  // "po-eans" = EAN scrape drain · "jobs" = generation enqueue + render.
+  kind String
+  // "secret" = automation (cron) · "session" = a signed-in operator.
+  source String
+  // True when the call no-op'd because its master switch was off.
+  skipped    Boolean  @default(false)
+  note       String?
+  processed  Int      @default(0)
+  failed     Int      @default(0)
+  // EAN runner: rows re-queued by the sweep.
+  requeued   Int      @default(0)
+  // Generation runner: jobs enqueued by the backlog sweep.
+  enqueued   Int      @default(0)
+  styleIds   Json     @default("[]")
+  jobIds     Json     @default("[]")
+  durationMs Int?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([kind, createdAt])
+  @@map("cron_runs")
 }
 
 enum LogLevel {

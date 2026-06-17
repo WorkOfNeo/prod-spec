@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { runPendingEanResolutions } from "@/lib/po/ean-runner";
+import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin } from "@/lib/roles";
 import { getPoEanAutoRunEnabled } from "@/lib/settings/app-settings";
@@ -41,17 +42,34 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   const auth = await authSource(req);
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error.message }, { status: auth.error.status });
   }
   const source = auth.source;
+  const sweep = req.nextUrl.searchParams.get("sweep") === "1";
+  // Record cron ticks (sweep) and operator "Run now" (session) for the
+  // /automation page — but NOT the high-frequency inline webhook triggers
+  // (secret without sweep), which would flood it.
+  const record = sweep || source === "session";
 
   // Automation gate: when the /po-eans auto-run switch is OFF, cron and the
   // post-ingest trigger no-op — queueing still happens, nothing scrapes.
   // Operator-initiated calls (session auth: the per-row "Re-resolve" and
   // batch buttons) always run, switch state notwithstanding.
   if (source === "secret" && !(await getPoEanAutoRunEnabled())) {
+    if (record) {
+      await db.cronRun.create({
+        data: {
+          kind: "po-eans",
+          source,
+          skipped: true,
+          note: "auto-run off — queue drains manually from /po-eans",
+          durationMs: Date.now() - startedAt,
+        },
+      });
+    }
     return NextResponse.json({
       skipped: true,
       reason: "PO→EAN auto-run is disabled — queue drains manually from /po-eans",
@@ -63,8 +81,20 @@ export async function POST(req: NextRequest) {
   }
 
   const limit = Number(req.nextUrl.searchParams.get("limit") ?? "5");
-  const sweep = req.nextUrl.searchParams.get("sweep") === "1";
   const summary = await runPendingEanResolutions(Math.min(Math.max(limit, 1), 20), { sweep });
+  if (record) {
+    await db.cronRun.create({
+      data: {
+        kind: "po-eans",
+        source,
+        processed: summary.processed,
+        failed: summary.failed,
+        requeued: summary.requeued,
+        styleIds: summary.styleIds,
+        durationMs: Date.now() - startedAt,
+      },
+    });
+  }
   return NextResponse.json(summary);
 }
 
