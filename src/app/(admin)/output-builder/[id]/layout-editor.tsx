@@ -204,6 +204,10 @@ export function LayoutEditor({
   // The cell size (mm) the "Regenerate grid" button uses. Defaults to 4 mm.
   const [gridCellMm, setGridCellMm] = useState(String(DEFAULT_GRID_CELL_MM));
   const [sel, setSel] = useState<string | null>(null);
+  // The block the Blocks list is hovering — highlights that block on the
+  // canvas with a blue locator ring, so a tiny or overlapped block can be
+  // found by scanning the list rather than hunting the crammed canvas.
+  const [hoverBlock, setHoverBlock] = useState<string | null>(null);
   // Draw state lives in a ref (handlers must see updates within the same
   // tick — fast pointermoves outrun React renders) and is mirrored into
   // state purely to render the ghost rectangle.
@@ -753,6 +757,12 @@ export function LayoutEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel, pageIdx, def]);
 
+  // A hovered Blocks-list row highlights its block by id; clear that when the
+  // page switches so an id from the old page can't linger.
+  useEffect(() => {
+    setHoverBlock(null);
+  }, [pageIdx]);
+
   // ---- actions -----------------------------------------------------------
 
   async function publish() {
@@ -881,6 +891,16 @@ export function LayoutEditor({
         rowSpan: Math.abs(draw.curRow - draw.startRow) + 1,
       }
     : null;
+
+  // Blocks listed in reading order (top→bottom, then left→right) so the
+  // Blocks panel mirrors how the label reads — easier to scan than the
+  // crammed canvas. Display order only; selection/identity stay keyed by id.
+  const orderedBlocks = [...page.blocks].sort((a, b) => {
+    const ra = a.rect;
+    const rb = b.rect;
+    if (!ra || !rb) return 0;
+    return ra.row - rb.row || ra.col - rb.col;
+  });
 
   return (
     <div className="min-h-screen bg-white">
@@ -1792,6 +1812,7 @@ export function LayoutEditor({
                   page={page}
                   scale={scale}
                   selected={sel === blockId(block)}
+                  highlighted={hoverBlock === blockId(block)}
                   onSelect={() => setSel(blockId(block))}
                   onRemove={() => removeBlock(blockId(block))}
                 />
@@ -1912,8 +1933,85 @@ export function LayoutEditor({
           </div>
         </div>
 
-        {/* ----- right: inspector + variables ----- */}
+        {/* ----- right: blocks + inspector + variables ----- */}
         <div className="space-y-5">
+          {/* Blocks on this page — a navigable list. Click a row to select
+              (far easier than hunting a tiny block on the canvas); hover to
+              flash that block's position with a blue locator ring; the row
+              ✕ deletes it. Stays in sync with the canvas selection. */}
+          <div className="rounded-lg border border-zinc-200 p-4">
+            <div className="flex items-baseline justify-between">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Blocks</div>
+              <span className="text-[11px] tabular-nums text-zinc-400">{page.blocks.length}</span>
+            </div>
+            {page.blocks.length === 0 ? (
+              <p className="mt-2 text-xs text-zinc-400">No blocks yet — drag on the grid to draw one.</p>
+            ) : (
+              <ul className="mt-2 max-h-64 space-y-0.5 overflow-y-auto pr-0.5">
+                {orderedBlocks.map((b) => {
+                  const id = blockId(b);
+                  const isSel = sel === id;
+                  const { kind, text, extra } = blockSummary(b);
+                  return (
+                    <li key={id}>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSel(id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setSel(id);
+                          }
+                        }}
+                        onMouseEnter={() => setHoverBlock(id)}
+                        onMouseLeave={() => setHoverBlock((h) => (h === id ? null : h))}
+                        onFocus={() => setHoverBlock(id)}
+                        onBlur={() => setHoverBlock((h) => (h === id ? null : h))}
+                        className={`group flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 ${
+                          isSel
+                            ? "border-zinc-900 bg-zinc-50"
+                            : "border-transparent hover:border-zinc-200 hover:bg-zinc-50"
+                        }`}
+                      >
+                        {kind ? (
+                          <span className="shrink-0 rounded bg-zinc-100 px-1 py-px text-[9px] font-medium uppercase tracking-wide text-zinc-500">
+                            {kind}
+                          </span>
+                        ) : null}
+                        <span className={`min-w-0 flex-1 truncate text-xs ${isSel ? "text-zinc-900" : "text-zinc-600"}`}>
+                          {text}
+                        </span>
+                        {extra > 0 ? (
+                          <span className="shrink-0 text-[10px] text-zinc-300" title={`${extra + 1} lines`}>
+                            +{extra}
+                          </span>
+                        ) : null}
+                        {b.rect ? (
+                          <span className="shrink-0 font-mono text-[10px] text-zinc-300 group-hover:hidden">
+                            R{b.rect.row + 1}·C{b.rect.col + 1}
+                          </span>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeBlock(id);
+                          }}
+                          className="hidden h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] leading-none text-zinc-300 hover:bg-red-50 hover:text-red-600 group-hover:flex"
+                          title="Delete this block"
+                          aria-label="Delete block"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
           <div className="rounded-lg border border-zinc-200 p-4">
             <div className="flex items-baseline justify-between">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
@@ -2701,6 +2799,7 @@ function CanvasBlock({
   page,
   scale,
   selected,
+  highlighted,
   onSelect,
   onRemove,
 }: {
@@ -2708,6 +2807,9 @@ function CanvasBlock({
   page: LayoutPage;
   scale: number;
   selected: boolean;
+  // Hovered in the Blocks list — a blue locator ring + raised stack order so
+  // it stands out from (and above) overlapping neighbours.
+  highlighted: boolean;
   onSelect: () => void;
   onRemove: () => void;
 }) {
@@ -2740,13 +2842,20 @@ function CanvasBlock({
 
   const badgePos: React.CSSProperties = { top: -8, left: -8 };
 
+  // Selected wins the ring; otherwise a list-hover paints a blue locator.
+  // Either state raises z-index so the block isn't hidden behind neighbours.
+  const ringCls = selected
+    ? "z-10 ring-2 ring-zinc-900/80 ring-offset-1"
+    : highlighted
+      ? "z-10 ring-2 ring-sky-500 ring-offset-1"
+      : "hover:ring-1 hover:ring-zinc-300";
+  const bgCls = block.rect ? (highlighted && !selected ? "bg-sky-100/60" : "bg-white/40") : "";
+
   return (
     <div
       data-block
       onClick={onSelect}
-      className={`absolute cursor-pointer rounded-sm px-1 py-0.5 ${
-        selected ? "ring-2 ring-zinc-900/80 ring-offset-1" : "hover:ring-1 hover:ring-zinc-300"
-      } ${block.rect ? "bg-white/40" : ""}`}
+      className={`absolute cursor-pointer rounded-sm px-1 py-0.5 ${ringCls} ${bgCls}`}
       style={positionStyle}
     >
       {selected ? (
@@ -2814,6 +2923,23 @@ function CanvasLine({ line }: { line: string }) {
   if (last < line.length) parts.push(<span key={`e${i}`}>{line.slice(last)}</span>);
   if (parts.length === 0) parts.push(<span key="empty">&nbsp;</span>);
   return <>{parts}</>;
+}
+
+// One-line summary of a block for the Blocks list: a coarse kind tag inferred
+// from the graphics token it places (so a barcode/logo/etc. reads as such),
+// its first non-empty line as the label, and how many more non-empty lines
+// follow. Pure — safe to call during render.
+function blockSummary(block: LayoutBlock): { kind: string | null; text: string; extra: number } {
+  const lines = block.lines ?? [];
+  const joined = lines.join("\n");
+  let kind: string | null = null;
+  if (/\{\{barcode:/.test(joined)) kind = "Barcode";
+  else if (/\{\{washSymbols/.test(joined)) kind = "Wash";
+  else if (/\{\{logo:/.test(joined)) kind = "Logo";
+  else if (/\{\{cert:/.test(joined)) kind = "Cert";
+  const nonEmpty = lines.filter((l) => l.trim().length > 0);
+  const text = nonEmpty[0]?.trim() || "(empty)";
+  return { kind, text, extra: Math.max(0, nonEmpty.length - 1) };
 }
 
 function TokenChip({
