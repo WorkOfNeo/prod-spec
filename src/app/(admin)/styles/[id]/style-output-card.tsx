@@ -34,6 +34,9 @@ function fmtMm(n: number): string {
 // render every output up front.
 export type StyleOutputCardProps = {
   styleId: string;
+  // ADMIN-only: the per-output Run + carton-print buttons are generation
+  // actions (the API is ADMIN-gated), so REVIEWERs see the card without them.
+  isAdmin: boolean;
   variantKey: string;
   name: string;
   ready: boolean;
@@ -145,7 +148,7 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           {sizeLabel ? `${sizeLabel} · ` : ""}
           {fmtMm(p.widthMm)} × {fmtMm(p.heightMm)} mm
         </span>
-        {(p.cartonNumbering || p.multipleStyles) && (
+        {p.isAdmin && (p.cartonNumbering || p.multipleStyles) && (
           <CartonPrintsButton
             styleId={p.styleId}
             variantKey={p.variantKey}
@@ -157,12 +160,14 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
             multipleStyles={p.multipleStyles}
           />
         )}
-        <RunOutputButton
-          styleId={p.styleId}
-          variantKey={p.variantKey}
-          ready={p.ready}
-          missingLabels={p.missing}
-        />
+        {p.isAdmin && (
+          <RunOutputButton
+            styleId={p.styleId}
+            variantKey={p.variantKey}
+            ready={p.ready}
+            missingLabels={p.missing}
+          />
+        )}
       </div>
 
       {open && (

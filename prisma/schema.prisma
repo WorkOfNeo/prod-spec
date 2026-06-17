@@ -846,6 +846,11 @@ enum TriggerSource {
   // by the Railway cron): pulls every active style with ready, ungenerated
   // outputs through generation, gradually. Email-suppressed like EAN_RESOLVED.
   CRON_SWEEP
+  // Job enqueued by the admin "Run all outputs" bulk action on /styles — one
+  // job per style in the operator's current filtered table view, tracked by a
+  // BulkRunBatch. Email-suppressed (a 200-style run mustn't blast 200 review
+  // emails); reviewers still get the in-app inbox entry per style.
+  MANUAL_BULK
 }
 
 model Log {
@@ -892,6 +897,40 @@ model CronRun {
   @@index([createdAt])
   @@index([kind, createdAt])
   @@map("cron_runs")
+}
+
+// One row per admin "Run all outputs" bulk action on /styles. The button
+// enqueues a MANUAL_BULK generation job per style in the operator's current
+// filtered table view; this row is the progress handle the page polls
+// (DONE/TOTAL) so the run survives navigating away and back. Mirrors the
+// SyncJob progress model the Fill flow already polls.
+//
+// Job linkage is denormalized as jobIds[] (same pattern as CronRun) rather
+// than a Job.batchId column — keeps this purely additive, so existing Job
+// reads never hit a not-yet-deployed column (the ColumnNotFound trap).
+model BulkRunBatch {
+  id String @id @default(cuid())
+  // Who pressed the button. Denormalized email so "Started by …" needs no
+  // join and survives the user being deleted; id kept for attribution.
+  createdById    String?
+  createdByEmail String?
+  // Human description of the filter that produced this batch, e.g.
+  // "Customer: Netto · Status: Ready to generate · 42 styles". Shown in the
+  // progress widget so a returning admin recognizes which run this is.
+  label String
+  // Stable denominator: jobs actually enqueued at creation. DONE is counted
+  // live over jobIds at poll time; TOTAL stays put even if a job row is later
+  // pruned (e.g. its style is deleted), so the bar can't exceed 100%.
+  total      Int       @default(0)
+  styleIds   Json      @default("[]")
+  jobIds     Json      @default("[]")
+  createdAt  DateTime  @default(now())
+  // Stamped the first time a poll finds nothing left in flight (all jobs left
+  // QUEUED/RUNNING). Drives the "complete" state + the recency window.
+  finishedAt DateTime?
+
+  @@index([createdAt])
+  @@map("bulk_run_batches")
 }
 
 enum LogLevel {

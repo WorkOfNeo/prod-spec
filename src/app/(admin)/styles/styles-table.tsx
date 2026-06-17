@@ -21,6 +21,7 @@ import type { EanView } from "@/lib/po/ean-view";
 import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
 import { ColumnsPopover } from "./columns-popover";
 import { FacetFilter, type FacetOption } from "./facet-filter";
+import { BulkRunOutputs } from "./bulk-run-outputs";
 
 // Hover hints on column headers.
 const HEADER_HINTS: Partial<Record<StyleColumnKey, string>> = {
@@ -132,6 +133,7 @@ export function StylesTable({
   autoGenerateEnabled,
   visibleColumns,
   canConfigureColumns,
+  isAdmin,
 }: {
   rows: StyleRow[];
   autoGenerateEnabled: boolean;
@@ -139,6 +141,9 @@ export function StylesTable({
   visibleColumns: StyleColumnKey[];
   // ADMIN gets the Columns popover; saves apply to everyone.
   canConfigureColumns: boolean;
+  // ADMIN gets the "Run all outputs" bulk action over the current filter.
+  // REVIEWERs see the styles list but never the run controls.
+  isAdmin: boolean;
 }) {
   const [q, setQ] = useState("");
   // Live column set — seeded from the server-read setting, updated
@@ -288,6 +293,34 @@ export function StylesTable({
       return r.searchBlob.includes(needle);
     });
   }, [rows, q, showArchived, archivedFlags, attrFilters, activeAttrFilters, appliedFacets]);
+
+  // The exact set the bulk "Run all outputs" action targets — the filtered
+  // rows, in table order. The browser already holds the filtered list, so the
+  // ids go straight to the server (no need to re-derive the filter there).
+  const filteredIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
+
+  // A human description of the active filter, stored on the batch so the
+  // progress widget reads "Customer: Netto · Ready to generate · 42 styles"
+  // and a returning admin can tell which run they kicked off.
+  const filterLabel = useMemo(() => {
+    const parts: string[] = [];
+    const lbl = (v: string) => (v === BLANK_VALUE ? "(blank)" : v);
+    const statusLabels = STATUS_FACET_LABELS as Record<string, string>;
+    if (appliedFacets.customer.length)
+      parts.push(`Customer: ${appliedFacets.customer.map(lbl).join(", ")}`);
+    if (appliedFacets.ba.length) parts.push(`Business Area: ${appliedFacets.ba.map(lbl).join(", ")}`);
+    if (appliedFacets.group.length) parts.push(`Group: ${appliedFacets.group.map(lbl).join(", ")}`);
+    if (appliedFacets.status.length)
+      parts.push(`Status: ${appliedFacets.status.map((k) => statusLabels[k] ?? k).join(", ")}`);
+    if (appliedFacets.ean.length)
+      parts.push(`EAN: ${appliedFacets.ean.map((k) => eanStatusMeta(k).label).join(", ")}`);
+    for (const a of activeAttrFilters)
+      parts.push(`${attrFilters[a.key] === "has" ? "Has" : "No"} ${a.label}`);
+    if (q.trim()) parts.push(`"${q.trim()}"`);
+    if (showArchived) parts.push("incl. archived");
+    parts.push(`${filtered.length} styles`);
+    return parts.join(" · ");
+  }, [appliedFacets, activeAttrFilters, attrFilters, q, showArchived, filtered.length]);
 
   // Render order = registry order filtered by the visible set, so the
   // column layout always matches table-columns.ts.
@@ -530,6 +563,8 @@ export function StylesTable({
           </button>
         )}
       </div>
+
+      {isAdmin && <BulkRunOutputs styleIds={filteredIds} filterLabel={filterLabel} />}
 
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
         <table className="w-full text-sm">
