@@ -63,6 +63,38 @@ export async function setPoEanAutoRunEnabled(enabled: boolean): Promise<void> {
   });
 }
 
+const AUTOMATION_WINDOW_DAYS_KEY = "automationWindowDays";
+const AUTOMATION_WINDOW_DAYS_DEFAULT = 30;
+
+// Recent-window for automation. Auto-scrape and the generation sweep only act
+// on styles whose PO landed within this many days (Style.eanQueuedAt) — the
+// historical backlog (older) is parked, so turning automation on doesn't chew
+// through thousands of old PO'd styles. Manual /po-eans actions ignore it.
+// 0 = no window (process everything — the old "full backlog" behaviour).
+export async function getAutomationWindowDays(): Promise<number> {
+  const row = await db.appSetting.findUnique({ where: { key: AUTOMATION_WINDOW_DAYS_KEY } });
+  const value = typeof row?.value === "number" ? row.value : NaN;
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : AUTOMATION_WINDOW_DAYS_DEFAULT;
+}
+
+export async function setAutomationWindowDays(days: number): Promise<void> {
+  const value = Number.isFinite(days) && days >= 0 ? Math.floor(days) : AUTOMATION_WINDOW_DAYS_DEFAULT;
+  await db.appSetting.upsert({
+    where: { key: AUTOMATION_WINDOW_DAYS_KEY },
+    create: { key: AUTOMATION_WINDOW_DAYS_KEY, value },
+    update: { value },
+  });
+}
+
+// The cutoff Date for the recent-window, or null when the window is disabled
+// (0 days = process the whole backlog). Helpers that filter by eanQueuedAt
+// take this and skip the filter when it's null.
+export async function getAutomationWindowCutoff(): Promise<Date | null> {
+  const days = await getAutomationWindowDays();
+  if (days <= 0) return null;
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+}
+
 const DONE_GROUP_PO_CUTOFF_KEY = "doneGroupPoCutoff";
 
 // Done-group visibility cutoff for /styles.

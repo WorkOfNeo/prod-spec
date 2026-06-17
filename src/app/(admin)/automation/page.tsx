@@ -1,9 +1,15 @@
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import { requireAdminPage } from "@/lib/auth-server";
-import { getPoEanAutoRunEnabled, getAutoGenerateEnabled } from "@/lib/settings/app-settings";
+import {
+  getPoEanAutoRunEnabled,
+  getAutoGenerateEnabled,
+  getAutomationWindowDays,
+  getAutomationWindowCutoff,
+} from "@/lib/settings/app-settings";
 import { eanStatusMeta, MAX_EAN_ATTEMPTS } from "@/lib/po/ean-status-meta";
 import { RunNowButton } from "./run-now-button";
+import { WindowControl } from "./window-control";
 
 export const dynamic = "force-dynamic";
 
@@ -29,28 +35,42 @@ const JOB_ORDER = ["QUEUED", "RUNNING", "AWAITING_REVIEW", "APPROVED", "REJECTED
 export default async function AutomationPage() {
   await requireAdminPage();
 
-  const [autoScrape, autoGen, eanGroups, floatedEan, jobGroups, runs] = await Promise.all([
-    getPoEanAutoRunEnabled(),
-    getAutoGenerateEnabled(),
-    db.style.groupBy({
-      by: ["eanStatus"],
-      where: { poNumber: { not: null } },
-      _count: { _all: true },
-    }),
-    db.style.count({
-      where: {
-        poNumber: { not: null },
-        eanStatus: { in: ["ERROR", "PO_NOT_FOUND", "PO_FOUND_NO_EANS"] },
-        eanAttempts: { gte: MAX_EAN_ATTEMPTS },
-      },
-    }),
-    db.job.groupBy({ by: ["status"], _count: { _all: true } }),
-    db.cronRun.findMany({ orderBy: { createdAt: "desc" }, take: 50 }),
-  ]);
+  const windowDays = await getAutomationWindowDays();
+  const windowCutoff = await getAutomationWindowCutoff();
+
+  const [autoScrape, autoGen, eanGroups, floatedEan, jobGroups, runs, activeQueued] =
+    await Promise.all([
+      getPoEanAutoRunEnabled(),
+      getAutoGenerateEnabled(),
+      db.style.groupBy({
+        by: ["eanStatus"],
+        where: { poNumber: { not: null } },
+        _count: { _all: true },
+      }),
+      db.style.count({
+        where: {
+          poNumber: { not: null },
+          eanStatus: { in: ["ERROR", "PO_NOT_FOUND", "PO_FOUND_NO_EANS"] },
+          eanAttempts: { gte: MAX_EAN_ATTEMPTS },
+        },
+      }),
+      db.job.groupBy({ by: ["status"], _count: { _all: true } }),
+      db.cronRun.findMany({ orderBy: { createdAt: "desc" }, take: 50 }),
+      // PENDING within the recent window — what auto-scrape will actually touch.
+      db.style.count({
+        where: {
+          poNumber: { not: null },
+          eanStatus: "PENDING",
+          ...(windowCutoff ? { eanQueuedAt: { gte: windowCutoff } } : {}),
+        },
+      }),
+    ]);
 
   const eanCounts = new Map(eanGroups.map((g) => [g.eanStatus as string, g._count._all]));
   const jobCounts = new Map(jobGroups.map((g) => [g.status as string, g._count._all]));
   const queued = eanCounts.get("PENDING") ?? 0;
+  // Out-of-window PENDING — sitting parked, NOT auto-scraped.
+  const parkedQueued = Math.max(queued - activeQueued, 0);
   const lastRunByKind = new Map<string, (typeof runs)[number]>();
   for (const r of runs) if (!lastRunByKind.has(r.kind)) lastRunByKind.set(r.kind, r);
 
@@ -83,15 +103,30 @@ export default async function AutomationPage() {
         />
         <div className="rounded-lg border border-zinc-200 bg-white p-4">
           <div className="text-sm font-semibold text-zinc-900">Barcodes queued</div>
-          <div className="mt-1 text-2xl font-semibold tabular-nums text-zinc-900">{queued}</div>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-2xl font-semibold tabular-nums text-zinc-900">{activeQueued}</span>
+            <span className="text-xs text-zinc-400">active{windowDays > 0 ? ` (last ${windowDays}d)` : ""}</span>
+          </div>
           <div className="mt-1 text-xs text-zinc-400">
-            {queued === 0
-              ? "queue empty"
-              : lastRunByKind.has("po-eans")
-                ? `last EAN run ${formatDate(lastRunByKind.get("po-eans")!.createdAt)}`
-                : "no recorded EAN run yet — is the cron hitting the app?"}
+            {parkedQueued > 0 ? (
+              <>
+                + <span className="tabular-nums">{parkedQueued.toLocaleString()}</span> parked backlog
+                (not auto-scraped)
+              </>
+            ) : activeQueued === 0 ? (
+              "queue empty"
+            ) : lastRunByKind.has("po-eans") ? (
+              `last EAN run ${formatDate(lastRunByKind.get("po-eans")!.createdAt)}`
+            ) : (
+              "no recorded EAN run yet — is the cron hitting the app?"
+            )}
           </div>
         </div>
+      </div>
+
+      {/* Recent-window control */}
+      <div className="mb-6">
+        <WindowControl initialDays={windowDays} parkedCount={parkedQueued} />
       </div>
 
       {/* Queue depths */}

@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import type { TriggerSource } from "@/generated/prisma/enums";
-import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
+import { getAutoGenerateEnabled, getAutomationWindowCutoff } from "@/lib/settings/app-settings";
 import { pendingOutputKeysForStyle } from "@/lib/styles/output-readiness";
 import { enqueueGenerationJob } from "./enqueue";
 
@@ -81,6 +81,13 @@ export async function sweepReadyStyleGenerations(limit = 10): Promise<GenSweepSu
   const summary: GenSweepSummary = { enqueued: 0, styleIds: [], jobIds: [] };
   if (!(await getAutoGenerateEnabled())) return summary;
 
+  // Recent-window: the sweep only pulls styles whose PO landed within the
+  // window (Style.eanQueuedAt) — the historical backlog is parked, same as the
+  // EAN scrape. null = window disabled (whole backlog). The event-driven paths
+  // (Monday webhook, EAN→gen handoff) still generate newly-ready styles
+  // regardless of the window; this sweep is the bounded backstop.
+  const windowCutoff = await getAutomationWindowCutoff();
+
   // Cheap prefilter: pre-generation styles on an active ProdSpec with no job
   // already in flight. Over-fetch — many candidates will have nothing pending
   // (already generated) and get skipped by the per-style gate below.
@@ -90,6 +97,7 @@ export async function sweepReadyStyleGenerations(limit = 10): Promise<GenSweepSu
       prodSpec: { is: { active: true } },
       status: { in: ["PENDING", "READY"] },
       jobs: { none: { status: { in: ["QUEUED", "RUNNING"] } } },
+      ...(windowCutoff ? { eanQueuedAt: { gte: windowCutoff } } : {}),
     },
     select: { id: true },
     orderBy: { updatedAt: "desc" },

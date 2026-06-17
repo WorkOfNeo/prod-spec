@@ -604,6 +604,13 @@ model Style {
   // MAX_EAN_ATTEMPTS (see src/lib/po/ean-status-meta.ts) the retry sweep stops
   // re-queuing the row and it "floats" on /po-eans for a human to re-trigger.
   eanAttempts         Int            @default(0)
+  // When this style's PO landed (newly filled or changed at ingest) — a STABLE
+  // "PO queued at" stamp, NOT bumped by unrelated re-syncs. The automation
+  // recent-window uses it: only PENDING rows whose eanQueuedAt is within the
+  // window auto-scrape, so the historical backlog (older / null) is parked and
+  // a bulk re-sync can't drag it back in. Backfilled to createdAt for existing
+  // rows. Null = never had a PO queued.
+  eanQueuedAt         DateTime?
   lastSyncedAt        DateTime?
   // Soft lifecycle from Monday. We never hard-delete a Style: an
   // item_archived / item_deleted webhook stamps these instead, so the row
@@ -632,6 +639,8 @@ model Style {
   @@index([poNumber])
   @@index([groupTitle])
   @@index([eanStatus])
+  // Windowed EAN claim/sweep filters PENDING by eanQueuedAt.
+  @@index([eanStatus, eanQueuedAt])
   @@index([archivedAt])
   @@index([deletedAt])
   @@map("styles")

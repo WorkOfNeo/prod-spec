@@ -278,13 +278,19 @@ export async function ingestMondayItem(
     if (prevEan && prevEan.eanStatus !== "NONE") {
       await db.style.update({
         where: { id: style.id },
-        data: { eanStatus: "NONE", eanResolveStartedAt: null },
+        data: { eanStatus: "NONE", eanResolveStartedAt: null, eanQueuedAt: null },
       });
     }
-  } else if (prevEan?.poNumber !== poNumber || (prevEan?.eanStatus ?? "NONE") === "NONE") {
+  } else if (prevEan?.poNumber !== poNumber) {
+    // PO newly filled or changed — queue for scraping and STAMP eanQueuedAt,
+    // the recent-window anchor. We deliberately no longer re-queue purely
+    // because eanStatus is NONE: an unrelated re-sync of a parked backlog
+    // style must NOT pull it back into the queue. A genuinely new/changed PO
+    // is the only automatic trigger; the historical backlog is scraped
+    // manually from /po-eans (or by widening the window on /automation).
     await db.style.update({
       where: { id: style.id },
-      data: { eanStatus: "PENDING", eanResolveStartedAt: null },
+      data: { eanStatus: "PENDING", eanResolveStartedAt: null, eanQueuedAt: new Date() },
     });
     eanQueued = true;
   }
