@@ -19,6 +19,7 @@ const NAV: Array<{ href?: string; label?: string; divider?: true }> = [
   { href: "/styles", label: "Styles" },
   { href: "/combos", label: "New combos" },
   { href: "/jobs", label: "Jobs" },
+  { href: "/automation", label: "Automation" },
   { divider: true },
   { href: "/prod-specs", label: "Prod specs" },
   { href: "/output-builder", label: "Output builder" },
