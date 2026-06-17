@@ -4,12 +4,11 @@ import { requireAdminPage } from "@/lib/auth-server";
 import {
   getPoEanAutoRunEnabled,
   getAutoGenerateEnabled,
-  getAutomationWindowDays,
-  getAutomationWindowCutoff,
+  getAutomationMinPo,
 } from "@/lib/settings/app-settings";
 import { eanStatusMeta, MAX_EAN_ATTEMPTS } from "@/lib/po/ean-status-meta";
 import { RunNowButton } from "./run-now-button";
-import { WindowControl } from "./window-control";
+import { PoCutoffControl } from "./po-cutoff-control";
 
 export const dynamic = "force-dynamic";
 
@@ -35,8 +34,7 @@ const JOB_ORDER = ["QUEUED", "RUNNING", "AWAITING_REVIEW", "APPROVED", "REJECTED
 export default async function AutomationPage() {
   await requireAdminPage();
 
-  const windowDays = await getAutomationWindowDays();
-  const windowCutoff = await getAutomationWindowCutoff();
+  const minPo = await getAutomationMinPo();
 
   const [autoScrape, autoGen, eanGroups, floatedEan, jobGroups, runs, activeQueued] =
     await Promise.all([
@@ -56,12 +54,12 @@ export default async function AutomationPage() {
       }),
       db.job.groupBy({ by: ["status"], _count: { _all: true } }),
       db.cronRun.findMany({ orderBy: { createdAt: "desc" }, take: 50 }),
-      // PENDING within the recent window — what auto-scrape will actually touch.
+      // PENDING at/above the PO cutoff — what auto-scrape will actually touch.
       db.style.count({
         where: {
           poNumber: { not: null },
           eanStatus: "PENDING",
-          ...(windowCutoff ? { eanQueuedAt: { gte: windowCutoff } } : {}),
+          ...(minPo !== null ? { poSeq: { gte: minPo } } : {}),
         },
       }),
     ]);
@@ -69,7 +67,7 @@ export default async function AutomationPage() {
   const eanCounts = new Map(eanGroups.map((g) => [g.eanStatus as string, g._count._all]));
   const jobCounts = new Map(jobGroups.map((g) => [g.status as string, g._count._all]));
   const queued = eanCounts.get("PENDING") ?? 0;
-  // Out-of-window PENDING — sitting parked, NOT auto-scraped.
+  // Below-cutoff PENDING — sitting parked, NOT auto-scraped.
   const parkedQueued = Math.max(queued - activeQueued, 0);
   const lastRunByKind = new Map<string, (typeof runs)[number]>();
   for (const r of runs) if (!lastRunByKind.has(r.kind)) lastRunByKind.set(r.kind, r);
@@ -105,7 +103,7 @@ export default async function AutomationPage() {
           <div className="text-sm font-semibold text-zinc-900">Barcodes queued</div>
           <div className="mt-1 flex items-baseline gap-2">
             <span className="text-2xl font-semibold tabular-nums text-zinc-900">{activeQueued}</span>
-            <span className="text-xs text-zinc-400">active{windowDays > 0 ? ` (last ${windowDays}d)` : ""}</span>
+            <span className="text-xs text-zinc-400">active{minPo !== null ? ` (PO ≥ ${minPo})` : ""}</span>
           </div>
           <div className="mt-1 text-xs text-zinc-400">
             {parkedQueued > 0 ? (
@@ -124,9 +122,9 @@ export default async function AutomationPage() {
         </div>
       </div>
 
-      {/* Recent-window control */}
+      {/* PO cutoff control */}
       <div className="mb-6">
-        <WindowControl initialDays={windowDays} parkedCount={parkedQueued} />
+        <PoCutoffControl initialCutoff={minPo} parkedCount={parkedQueued} />
       </div>
 
       {/* Queue depths */}

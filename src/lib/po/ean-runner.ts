@@ -7,7 +7,7 @@ import { parseProdSpecRequiredFields, parseProdSpecColumnMapping } from "@/lib/p
 import { formatEanMap } from "@/lib/styles/resolved-fields";
 import { triggerRunner } from "@/lib/queue/trigger";
 import { maybeEnqueueStyleGeneration } from "@/lib/queue/generation-sweep";
-import { getAutomationWindowCutoff } from "@/lib/settings/app-settings";
+import { getAutomationMinPo } from "@/lib/settings/app-settings";
 import { resolveStyleEans, type StyleEanStatus as ResolveStatus } from "./resolve-style-eans";
 import { MAX_EAN_ATTEMPTS } from "./ean-status-meta";
 import type { EanView } from "./ean-view";
@@ -54,17 +54,17 @@ export async function runPendingEanResolutions(
 ): Promise<EanRunSummary> {
   const summary: EanRunSummary = { processed: 0, failed: 0, requeued: 0, styleIds: [] };
 
-  // Recent-window: auto-processing only touches styles whose PO landed within
-  // the window (Style.eanQueuedAt). null = window disabled (whole backlog, the
-  // old behaviour). Manual /po-eans resolves bypass this — they call
+  // PO cutoff: auto-processing only touches styles whose PO is at/above the
+  // configured minimum (Style.poSeq >= minPo). null = no cutoff (whole
+  // backlog). Manual /po-eans resolves bypass this — they call
   // resolveAndPersistStyleEans directly, never the claim/sweep below.
-  const windowCutoff = await getAutomationWindowCutoff();
+  const minPo = await getAutomationMinPo();
 
   await releaseStaleResolving();
-  if (opts.sweep) summary.requeued = await requeueRetryable(windowCutoff);
+  if (opts.sweep) summary.requeued = await requeueRetryable(minPo);
 
   for (let i = 0; i < limit; i++) {
-    const claimed = await claimNextPendingStyle(windowCutoff);
+    const claimed = await claimNextPendingStyle(minPo);
     if (!claimed) break;
     summary.styleIds.push(claimed.id);
     try {
@@ -80,17 +80,17 @@ export async function runPendingEanResolutions(
 }
 
 // Atomically claim the oldest PENDING style and flip it to RESOLVING so a
-// second runner pass can't pick up the same row mid-download. When a recent-
-// window cutoff is set, only claim rows whose PO landed within it
-// (eanQueuedAt >= cutoff) — the parked backlog (older / null) is skipped.
-async function claimNextPendingStyle(windowCutoff: Date | null): Promise<{ id: string } | null> {
-  const rows = windowCutoff
+// second runner pass can't pick up the same row mid-download. When a PO cutoff
+// is set, only claim rows at/above it (poSeq >= minPo) — the parked backlog
+// (lower PO / null poSeq) is skipped.
+async function claimNextPendingStyle(minPo: number | null): Promise<{ id: string } | null> {
+  const rows = minPo !== null
     ? await db.$queryRaw<Array<{ id: string }>>`
         UPDATE styles
         SET "eanStatus" = 'RESOLVING', "eanResolveStartedAt" = NOW(), "updatedAt" = NOW()
         WHERE id = (
           SELECT id FROM styles
-          WHERE "eanStatus" = 'PENDING' AND "eanQueuedAt" >= ${windowCutoff}
+          WHERE "eanStatus" = 'PENDING' AND "poSeq" >= ${minPo}
           ORDER BY "updatedAt" ASC
           FOR UPDATE SKIP LOCKED
           LIMIT 1
@@ -133,16 +133,16 @@ async function releaseStaleResolving(): Promise<void> {
 // remain — at MAX_EAN_ATTEMPTS the row floats and waits for a manual Re-resolve.
 // Queueing is event-driven: we deliberately do NOT re-queue NONE rows here, so
 // the historical backlog stays parked — a style only (re-)enters via a new or
-// changed PO at ingest. The recent-window cutoff bounds even the retries:
-// nothing outside the window is auto-retried. Terminal-good states (RESOLVED /
-// PARTIAL) and no-PO rows are left untouched.
-async function requeueRetryable(windowCutoff: Date | null): Promise<number> {
+// changed PO at ingest. The PO cutoff bounds even the retries: nothing below
+// the cutoff is auto-retried. Terminal-good states (RESOLVED / PARTIAL) and
+// no-PO rows are left untouched.
+async function requeueRetryable(minPo: number | null): Promise<number> {
   const cutoff = new Date(Date.now() - RETRY_AFTER_MS);
   const requeued = await db.style.updateMany({
     where: {
       poNumber: { not: null },
-      // Recent-window: never auto-retry a parked (out-of-window) backlog row.
-      ...(windowCutoff ? { eanQueuedAt: { gte: windowCutoff } } : {}),
+      // PO cutoff: never auto-retry a parked (below-cutoff) backlog row.
+      ...(minPo !== null ? { poSeq: { gte: minPo } } : {}),
       // eanResolvedAt is set on every terminal write; null = never attempted.
       OR: [
         {

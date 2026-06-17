@@ -7,6 +7,7 @@ import { MONDAY_STYLE_COLS, MONDAY_PRE_ORDER_COLS, MONDAY_BOARDS } from "./board
 import { ensureProdSpecsForStyle } from "@/lib/prod-spec/ensure";
 import { parseProdSpecRequiredFields, parseProdSpecColumnMapping } from "@/lib/prod-spec/config";
 import { formatEanMap } from "@/lib/styles/resolved-fields";
+import { parsePoNumberValue } from "@/lib/po/po-number";
 import {
   buildCustomerTokenIndex,
   extractLeadingToken,
@@ -235,6 +236,7 @@ export async function ingestMondayItem(
       name: fetched.name,
       businessArea: businessAreaText,
       poNumber,
+      poSeq: parsePoNumberValue(poNumber),
       styleFolderUrl,
       groupId: fetched.group?.id ?? null,
       groupTitle: fetched.group?.title ?? null,
@@ -253,6 +255,7 @@ export async function ingestMondayItem(
       name: fetched.name,
       businessArea: businessAreaText,
       poNumber,
+      poSeq: parsePoNumberValue(poNumber),
       styleFolderUrl,
       groupId: fetched.group?.id ?? null,
       groupTitle: fetched.group?.title ?? null,

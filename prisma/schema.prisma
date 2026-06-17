@@ -611,6 +611,13 @@ model Style {
   // a bulk re-sync can't drag it back in. Backfilled to createdAt for existing
   // rows. Null = never had a PO queued.
   eanQueuedAt         DateTime?
+  // Numeric value of the PO reference (last digit run of poNumber, e.g. 63144
+  // for "C-PO63144") — see parsePoNumberValue in src/lib/po/po-number.ts. The
+  // automation cutoff uses it: auto-scrape + the generation sweep only touch
+  // styles whose poSeq >= the configured minimum PO, so orders before the
+  // cutoff are parked. Set at ingest whenever poNumber is written; null when
+  // there's no PO / no digits.
+  poSeq               Int?
   lastSyncedAt        DateTime?
   // Soft lifecycle from Monday. We never hard-delete a Style: an
   // item_archived / item_deleted webhook stamps these instead, so the row
@@ -641,6 +648,8 @@ model Style {
   @@index([eanStatus])
   // Windowed EAN claim/sweep filters PENDING by eanQueuedAt.
   @@index([eanStatus, eanQueuedAt])
+  // Automation PO cutoff filters PENDING by poSeq.
+  @@index([eanStatus, poSeq])
   @@index([archivedAt])
   @@index([deletedAt])
   @@map("styles")

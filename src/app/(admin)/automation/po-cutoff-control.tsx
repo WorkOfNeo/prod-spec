@@ -3,33 +3,29 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-// Recent-window control: how many days back auto-scrape + the generation sweep
-// reach. 0 disables the window (whole backlog). PATCHes the setting and refreshes.
-export function WindowControl({
-  initialDays,
+// Automation PO cutoff: "scrape + generate from this PO onward". Accepts a
+// pasted PO ("C-PO63144") or a bare number; empty clears it (whole backlog).
+// PATCHes the setting and refreshes.
+export function PoCutoffControl({
+  initialCutoff,
   parkedCount,
 }: {
-  initialDays: number;
+  initialCutoff: number | null;
   parkedCount: number;
 }) {
   const router = useRouter();
-  const [days, setDays] = useState(String(initialDays));
+  const [value, setValue] = useState(initialCutoff === null ? "" : String(initialCutoff));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function save() {
-    const n = Number(days);
-    if (!Number.isFinite(n) || n < 0) {
-      setError("Enter a whole number of days (0 or more)");
-      return;
-    }
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/settings/automation-window", {
+      const res = await fetch("/api/admin/settings/automation-min-po", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ days: Math.floor(n) }),
+        body: JSON.stringify({ cutoff: value.trim() }),
       });
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { error?: string };
@@ -47,25 +43,25 @@ export function WindowControl({
     <div className="rounded-lg border border-zinc-200 bg-white p-4">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold text-zinc-900">Recent-window</h2>
+          <h2 className="text-sm font-semibold text-zinc-900">PO cutoff</h2>
           <p className="mt-1 max-w-2xl text-sm text-zinc-500">
-            Auto-scrape and the generation sweep only touch styles whose PO landed within this many
-            days. Older POs are parked
+            Auto-scrape and the generation sweep only touch styles whose PO is{" "}
+            <strong>at or above</strong> this number. Orders before it are parked
             {parkedCount > 0 ? ` (${parkedCount.toLocaleString()} right now)` : ""} — never
-            auto-processed, but still scrape-able per-row from <strong>/po-eans</strong>. Set{" "}
-            <strong>0</strong> to disable the window and process the whole backlog.
+            auto-processed, but still scrape-able per-row from <strong>/po-eans</strong>. Paste a PO
+            (e.g. <code>C-PO63144</code>) — everything from that PO onward is in scope. Empty =
+            no cutoff (whole backlog).
           </p>
           {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
         </div>
         <div className="flex items-center gap-2">
           <input
-            type="number"
-            min={0}
-            value={days}
-            onChange={(e) => setDays(e.target.value)}
-            className="w-24 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="C-PO63144"
+            className="w-40 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none"
           />
-          <span className="text-sm text-zinc-500">days</span>
           <button
             type="button"
             onClick={save}
