@@ -558,12 +558,15 @@ async function notifyReviewer(input: {
   // fix endpoint, with the rejection context the generic mail lacks.
   if (input.triggerSource === "TICKET_RERUN" || input.triggerSource === "TICKET_FIX") return;
 
-  // Cron-origin generation (the PO→EAN handoff and the backlog sweep) never
-  // sends the review-ready EMAIL — automated fills shouldn't blast the mailbox
-  // — but still drops the in-app review-inbox entry below so the work stays
-  // visible. Holds even if email is re-enabled for manual/webhook runs.
+  // Cron-origin generation (the PO→EAN handoff and the backlog sweep) and the
+  // admin "Run all outputs" bulk action never send the review-ready EMAIL —
+  // automated / many-at-once fills shouldn't blast the mailbox — but still drop
+  // the in-app review-inbox entry below so the work stays visible. Holds even
+  // if email is re-enabled for manual/webhook runs.
   const emailSuppressed =
-    input.triggerSource === "EAN_RESOLVED" || input.triggerSource === "CRON_SWEEP";
+    input.triggerSource === "EAN_RESOLVED" ||
+    input.triggerSource === "CRON_SWEEP" ||
+    input.triggerSource === "MANUAL_BULK";
 
   const recipients = await getReviewNotificationEmails();
 

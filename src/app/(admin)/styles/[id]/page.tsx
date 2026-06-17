@@ -11,6 +11,7 @@ import {
 } from "@/lib/styles/resolved-fields";
 import type { MondayItem } from "@/lib/monday/client";
 import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
+import { getSessionWithRole } from "@/lib/auth-server";
 import { shareUrl } from "@/lib/supplier-share/share";
 import { findMissingDetailFields } from "@/lib/styles/detail-fields";
 import { computeReadiness, type Readiness, type ReadinessTone } from "@/lib/styles/readiness";
@@ -138,6 +139,12 @@ export default async function StyleDetail({
   const tabParam = (await searchParams).tab;
   const tab: TabKey =
     tabParam === "prod-spec" ? "prod-spec" : tabParam === "review" ? "review" : "details";
+
+  // Generation actions (Re-run, per-output Run, carton prints) are ADMIN-only
+  // — the API enforces it, and REVIEWERs (who can reach this page) must not see
+  // buttons that would only 403. Threaded into the output cards below.
+  const { role } = await getSessionWithRole();
+  const isAdmin = role === "ADMIN";
 
   const style = await db.style.findUnique({
     where: { id },
@@ -396,6 +403,8 @@ export default async function StyleDetail({
     );
     return {
       styleId: style.id,
+      // Gates the per-output Run + carton-print buttons inside the card.
+      isAdmin,
       variantKey: o.variantKey,
       name: o.name,
       ready: o.ready,
@@ -577,10 +586,12 @@ export default async function StyleDetail({
           >
             Edit
           </Link>
-          <RerunButton
-            styleId={style.id}
-            disabled={latestJob?.status === "RUNNING" || latestJob?.status === "QUEUED"}
-          />
+          {isAdmin && (
+            <RerunButton
+              styleId={style.id}
+              disabled={latestJob?.status === "RUNNING" || latestJob?.status === "QUEUED"}
+            />
+          )}
         </div>
       </div>
 
