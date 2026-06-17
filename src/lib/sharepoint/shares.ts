@@ -111,12 +111,43 @@ export async function listDriveChildren(driveId: string, itemId: string): Promis
   return res.value ?? [];
 }
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+// How long to wait before retrying a throttled request: honour SharePoint's
+// `Retry-After` (delta-seconds or HTTP-date) when present, else exponential
+// backoff. Capped so a hostile/garbled header can't stall the worker forever.
+function retryAfterMs(res: Response, attempt: number): number {
+  const header = res.headers.get("retry-after");
+  if (header) {
+    const secs = Number(header);
+    if (Number.isFinite(secs)) return Math.min(secs * 1000, 60_000);
+    const at = Date.parse(header);
+    if (Number.isFinite(at)) return Math.min(Math.max(at - Date.now(), 0), 60_000);
+  }
+  return Math.min(1000 * 2 ** attempt, 30_000);
+}
+
+// The pre-authenticated download URL points at SharePoint content storage and
+// bypasses the Graph SDK's RetryHandler — so 429/503 throttling there would
+// otherwise fail silently. Retry it ourselves, respecting Retry-After, so the
+// scrape honours SharePoint's rate limit instead of dropping the PDF.
+async function fetchDownloadWithRetry(url: string, maxRetries = 4): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url);
+    if ((res.status === 429 || res.status === 503 || res.status === 504) && attempt < maxRetries) {
+      await sleep(retryAfterMs(res, attempt));
+      continue;
+    }
+    return res;
+  }
+}
+
 // Download a drive item's bytes via its short-lived pre-authenticated URL,
 // falling back to the Graph /content endpoint when the URL isn't present.
 export async function downloadDriveItem(item: SharedDriveItem): Promise<Buffer | null> {
   const direct = item["@microsoft.graph.downloadUrl"];
   if (direct) {
-    const res = await fetch(direct);
+    const res = await fetchDownloadWithRetry(direct);
     if (!res.ok) return null;
     return Buffer.from(await res.arrayBuffer());
   }
