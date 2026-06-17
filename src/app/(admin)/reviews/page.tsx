@@ -1,82 +1,43 @@
 import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
-import { db } from "@/lib/db";
-import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
-import { timeAgo } from "@/lib/time";
-import { ReviewsList, type ReviewRow } from "./reviews-list";
+import { getReviewQueue } from "@/lib/dashboard/review-tasks";
+import { StyleTaskList } from "@/components/style-task-list";
 
 export const dynamic = "force-dynamic";
 
-// All outputs, newest first (T8). Read-only over JobAsset joined to its Job /
-// Style / Customer. Visible to reviewers and admins alike — it sits under
+// The review queue — every style currently awaiting review, grouped one card
+// per style (the same "collected per style" unit as My tasks' "waiting for
+// first review"). Un-bucketed: the whole queue, regardless of who has started
+// it, in one place. Visible to reviewers and admins alike — it sits under
 // "My tasks" in the sidebar — so it gates on a session, not the admin role.
-//
-// Cap the scan: the table is a browsing surface, not an export. The client
-// filter narrows within the most recent slice; if the history grows past the
-// cap the page says so rather than silently implying it showed everything.
-const MAX_ROWS = 500;
-
-// COVER / GENERAL_INFO framing pages aren't catalogue doc types, so they have
-// no label row — fall back to a humanised version of the raw value.
-function humaniseDocType(value: string): string {
-  const lower = value.toLowerCase().replace(/_/g, " ");
-  return lower.charAt(0).toUpperCase() + lower.slice(1);
-}
-
 export default async function ReviewsPage() {
   const { session } = await getSessionWithRole();
   if (!session) redirect("/login");
 
-  const [assets, docTypeLabels] = await Promise.all([
-    db.jobAsset.findMany({
-      orderBy: { createdAt: "desc" },
-      take: MAX_ROWS,
-      select: {
-        id: true,
-        jobId: true,
-        docType: true,
-        displayName: true,
-        fileName: true,
-        variantKey: true,
-        reviewStatus: true,
-        createdAt: true,
-        job: {
-          select: {
-            styleId: true,
-            style: {
-              select: {
-                name: true,
-                businessArea: true,
-                customer: { select: { name: true } },
-                businessAreaRef: { select: { name: true } },
-              },
-            },
-          },
-        },
-      },
-    }),
-    loadDocTypeLabels(),
-  ]);
+  const queue = await getReviewQueue();
 
-  const rows: ReviewRow[] = assets.map((a) => {
-    // Prefer variantKey — uniquely identifies the asset when several variants
-    // on one job share a docType; fall back to docType for legacy assets.
-    const previewQuery = a.variantKey
-      ? `variantKey=${encodeURIComponent(a.variantKey)}`
-      : `docType=${encodeURIComponent(a.docType)}`;
-    return {
-      id: a.id,
-      outputType: docTypeLabels[a.docType] ?? humaniseDocType(a.docType),
-      outputName: a.displayName ?? a.fileName,
-      styleId: a.job.styleId,
-      styleName: a.job.style.name,
-      customerName: a.job.style.customer.name,
-      businessArea: a.job.style.businessAreaRef?.name ?? a.job.style.businessArea ?? null,
-      reviewStatus: a.reviewStatus,
-      openHref: `/api/admin/jobs/${a.jobId}/preview?${previewQuery}`,
-      createdAgo: timeAgo(a.createdAt),
-    };
-  });
+  return (
+    <div className="px-8 py-8">
+      <h1 className="text-2xl font-semibold tracking-tight">Reviews</h1>
+      <p className="text-sm text-zinc-500">
+        Every style awaiting review, grouped by style — longest-waiting first. Open one to decide
+        its documents.
+      </p>
 
-  return <ReviewsList rows={rows} truncated={assets.length === MAX_ROWS} />;
+      <p className="mt-4 text-xs text-zinc-500">
+        {queue.length} {queue.length === 1 ? "style" : "styles"} awaiting review
+      </p>
+
+      {queue.length === 0 ? (
+        <div className="mt-3 rounded-lg border border-zinc-200 bg-white p-8 text-center">
+          <div className="text-sm font-semibold text-zinc-800">Nothing awaiting review.</div>
+          <p className="mt-1 text-sm text-zinc-500">
+            When a job finishes rendering, its style appears here for review.
+          </p>
+        </div>
+      ) : (
+        <StyleTaskList tasks={queue} activityPrefix="ready " />
+      )}
+    </div>
+  );
 }

@@ -50,8 +50,12 @@ export type ReviewWork = {
   untouched: ReviewTask[];
 };
 
-export async function getReviewWork(userId: string): Promise<ReviewWork> {
-  const jobs = await db.job.findMany({
+// The awaiting-review jobs, one entry per STYLE (newest job wins). Shared by
+// getReviewWork (per-user buckets) and getReviewQueue (the flat queue) so both
+// see the same collapse and the same task shape. The raw `job` is carried
+// alongside the built task because the bucketing reads per-asset reviewer ids.
+function queryAwaitingReviewJobs() {
+  return db.job.findMany({
     where: { status: "AWAITING_REVIEW" },
     // This list never renders reviewEndedAt — omit it, both to trim the
     // payload (same reason queries elsewhere avoid the pdf blob) and so the
@@ -75,6 +79,12 @@ export async function getReviewWork(userId: string): Promise<ReviewWork> {
     },
     orderBy: { createdAt: "desc" },
   });
+}
+
+type AwaitingReviewJob = Awaited<ReturnType<typeof queryAwaitingReviewJobs>>[number];
+
+async function awaitingReviewEntries(): Promise<{ job: AwaitingReviewJob; task: ReviewTask }[]> {
+  const jobs = await queryAwaitingReviewJobs();
 
   // One task per STYLE: the review screen always shows the NEWEST awaiting
   // job (take 1, newest first), so that is the only actionable unit — a
@@ -82,64 +92,82 @@ export async function getReviewWork(userId: string): Promise<ReviewWork> {
   // listing those would produce duplicate rows whose CTA opens a different
   // job than the row described. Newest job per style wins; superseded jobs
   // (and any partial decisions on them) are deliberately invisible here.
-  const latestPerStyle = new Map<string, (typeof jobs)[number]>();
+  const latestPerStyle = new Map<string, AwaitingReviewJob>();
   for (const job of jobs) {
     if (!latestPerStyle.has(job.styleId)) latestPerStyle.set(job.styleId, job);
   }
+
+  const entries: { job: AwaitingReviewJob; task: ReviewTask }[] = [];
+  for (const job of latestPerStyle.values()) {
+    if (job.assets.length === 0) continue;
+    entries.push({ job, task: buildTask(job) });
+  }
+  return entries;
+}
+
+function buildTask(job: AwaitingReviewJob): ReviewTask {
+  const decidedAssets = job.assets.filter((a) => a.reviewStatus !== "PENDING_REVIEW");
+  const pendingAssets = job.assets.filter((a) => a.reviewStatus === "PENDING_REVIEW");
+
+  // Activity = the newest of: a decision, or the claim itself ("Start
+  // review" with no clicks yet is still activity worth surfacing).
+  const lastActivity = [
+    ...decidedAssets.map((a) => a.reviewedAt),
+    job.reviewClaimedAt,
+  ]
+    .filter((d): d is Date => d != null)
+    .sort((a, b) => b.getTime() - a.getTime())[0];
+
+  return {
+    jobId: job.id,
+    styleId: job.styleId,
+    styleName: job.style.name,
+    customerName: job.style.customer.name,
+    businessArea: job.style.businessAreaRef?.name ?? job.style.businessArea ?? null,
+    poNumber: job.style.poNumber ?? null,
+    total: job.assets.length,
+    decided: decidedAssets.length,
+    blocked: pendingAssets.length > 0 && pendingAssets.every((a) => a.placeholderCount > 0),
+    needsPublishRetry: pendingAssets.length === 0,
+    lastActivityAt: lastActivity ?? job.createdAt,
+    reviewerEmails: Array.from(
+      new Set(
+        [...decidedAssets.map((a) => a.reviewedBy?.email), job.reviewClaimedBy?.email].filter(
+          (e): e is string => !!e,
+        ),
+      ),
+    ),
+    outputs: job.assets.map(
+      (a): ReviewTaskOutput => ({
+        variantKey: a.variantKey ?? `doc:${a.docType}`,
+        name: a.displayName ?? a.docType,
+        state:
+          a.reviewStatus === "APPROVED"
+            ? "APPROVED"
+            : a.reviewStatus === "REJECTED"
+              ? "REJECTED"
+              : a.placeholderCount > 0
+                ? "BLOCKED"
+                : "TO_REVIEW",
+      }),
+    ),
+  };
+}
+
+// Oldest first — the longest-stuck review is the most at risk of being
+// forgotten, so it tops every list.
+const byAge = (a: ReviewTask, b: ReviewTask) =>
+  a.lastActivityAt.getTime() - b.lastActivityAt.getTime();
+
+export async function getReviewWork(userId: string): Promise<ReviewWork> {
+  const entries = await awaitingReviewEntries();
 
   const mine: ReviewTask[] = [];
   const others: ReviewTask[] = [];
   const untouched: ReviewTask[] = [];
 
-  for (const job of latestPerStyle.values()) {
-    if (job.assets.length === 0) continue;
+  for (const { job, task } of entries) {
     const decidedAssets = job.assets.filter((a) => a.reviewStatus !== "PENDING_REVIEW");
-    const pendingAssets = job.assets.filter((a) => a.reviewStatus === "PENDING_REVIEW");
-
-    // Activity = the newest of: a decision, or the claim itself ("Start
-    // review" with no clicks yet is still activity worth surfacing).
-    const lastActivity = [
-      ...decidedAssets.map((a) => a.reviewedAt),
-      job.reviewClaimedAt,
-    ]
-      .filter((d): d is Date => d != null)
-      .sort((a, b) => b.getTime() - a.getTime())[0];
-
-    const task: ReviewTask = {
-      jobId: job.id,
-      styleId: job.styleId,
-      styleName: job.style.name,
-      customerName: job.style.customer.name,
-      businessArea: job.style.businessAreaRef?.name ?? job.style.businessArea ?? null,
-      poNumber: job.style.poNumber ?? null,
-      total: job.assets.length,
-      decided: decidedAssets.length,
-      blocked: pendingAssets.length > 0 && pendingAssets.every((a) => a.placeholderCount > 0),
-      needsPublishRetry: pendingAssets.length === 0,
-      lastActivityAt: lastActivity ?? job.createdAt,
-      reviewerEmails: Array.from(
-        new Set(
-          [...decidedAssets.map((a) => a.reviewedBy?.email), job.reviewClaimedBy?.email].filter(
-            (e): e is string => !!e,
-          ),
-        ),
-      ),
-      outputs: job.assets.map(
-        (a): ReviewTaskOutput => ({
-          variantKey: a.variantKey ?? `doc:${a.docType}`,
-          name: a.displayName ?? a.docType,
-          state:
-            a.reviewStatus === "APPROVED"
-              ? "APPROVED"
-              : a.reviewStatus === "REJECTED"
-                ? "REJECTED"
-                : a.placeholderCount > 0
-                  ? "BLOCKED"
-                  : "TO_REVIEW",
-        }),
-      ),
-    };
-
     const touched = decidedAssets.length > 0 || job.reviewClaimedById != null;
     if (!touched) {
       untouched.push(task);
@@ -153,14 +181,20 @@ export async function getReviewWork(userId: string): Promise<ReviewWork> {
     }
   }
 
-  // Oldest first — the longest-stuck review is the most at risk of being
-  // forgotten, so it tops each list.
-  const byAge = (a: ReviewTask, b: ReviewTask) => a.lastActivityAt.getTime() - b.lastActivityAt.getTime();
   mine.sort(byAge);
   others.sort(byAge);
   untouched.sort(byAge);
 
   return { mine, others, untouched };
+}
+
+// The global review queue — every style currently awaiting review, regardless
+// of who (if anyone) has started it, as one flat per-style list. Powers
+// /reviews: the same collapse and card as the dashboard's "waiting for first
+// review", but un-bucketed so the whole queue is visible in one place.
+export async function getReviewQueue(): Promise<ReviewTask[]> {
+  const entries = await awaitingReviewEntries();
+  return entries.map((e) => e.task).sort(byAge);
 }
 
 // Relative-time formatting moved to lib/time so client components (the
