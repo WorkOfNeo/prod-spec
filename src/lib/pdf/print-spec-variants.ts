@@ -192,6 +192,6 @@ function toVariant(spec: PrintSpec): TemplateVariant {
   };
 }
 
-// Variants for the full print-spec catalogue (84 = 54 dynamic + 30 static).
+// Variants for the full print-spec catalogue (82 = 54 dynamic + 28 static).
 // Spread into TEMPLATE_VARIANTS by the registry.
 export const PRINT_SPEC_VARIANTS: TemplateVariant[] = ALL_PRINT_SPECS.map(toVariant);
