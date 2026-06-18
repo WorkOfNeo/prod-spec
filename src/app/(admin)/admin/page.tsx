@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
+import { timeAgo } from "@/lib/time";
 import { requireAdminPage } from "@/lib/auth-server";
 import { activeStylesWhere } from "@/lib/styles/active-filter";
 
@@ -16,9 +17,10 @@ import { activeStylesWhere } from "@/lib/styles/active-filter";
 
 export const dynamic = "force-dynamic";
 
-type TabKey = "views" | "approvals" | "rejections" | "gaps";
+type TabKey = "users" | "views" | "approvals" | "rejections" | "gaps";
 
 const TABS: Array<{ key: TabKey; label: string }> = [
+  { key: "users", label: "Users" },
   { key: "views", label: "Style views" },
   { key: "approvals", label: "Approvals" },
   { key: "rejections", label: "Rejections" },
@@ -26,7 +28,7 @@ const TABS: Array<{ key: TabKey; label: string }> = [
 ];
 
 function normalizeTab(raw: string | undefined): TabKey {
-  return TABS.some((t) => t.key === raw) ? (raw as TabKey) : "views";
+  return TABS.some((t) => t.key === raw) ? (raw as TabKey) : "users";
 }
 
 // Live-DB quirk: some BusinessArea rows are literally named "–". Treat those
@@ -73,6 +75,7 @@ export default async function AdminPanelPage({
       </nav>
 
       <div className="mt-6">
+        {tab === "users" && <UsersTab />}
         {tab === "views" && <ViewsTab />}
         {tab === "approvals" && <ApprovalsTab />}
         {tab === "rejections" && <RejectionsTab />}
@@ -122,6 +125,97 @@ function CustomerBA({ customer, ba }: { customer: string; ba: string | null }) {
       {customer}
       {baLabel ? <span className="text-zinc-400"> · {baLabel}</span> : null}
     </span>
+  );
+}
+
+// ---------- Tab · Users (presence) ----------
+
+// Heartbeat pings every ~60s; treat "seen within 2 min" as online so a single
+// missed ping (background tab, slow request) doesn't flip someone offline.
+const ONLINE_WINDOW_MS = 2 * 60_000;
+
+async function UsersTab() {
+  const [users, presence] = await Promise.all([
+    db.user.findMany({
+      select: { id: true, name: true, email: true, role: true, createdAt: true },
+    }),
+    // .catch keeps the tab alive before the user_presence table is deployed.
+    db.userPresence.findMany({ select: { userId: true, lastSeenAt: true } }).catch(() => []),
+  ]);
+
+  const seenByUser = new Map(presence.map((p) => [p.userId, p.lastSeenAt]));
+  const now = Date.now();
+  const rows = users
+    .map((u) => {
+      const lastSeen = seenByUser.get(u.id) ?? null;
+      const online = lastSeen != null && now - lastSeen.getTime() < ONLINE_WINDOW_MS;
+      return { ...u, lastSeen, online };
+    })
+    .sort(
+      (a, b) =>
+        Number(b.online) - Number(a.online) ||
+        (b.lastSeen?.getTime() ?? 0) - (a.lastSeen?.getTime() ?? 0) ||
+        (a.name || a.email).localeCompare(b.name || b.email),
+    );
+  const onlineCount = rows.filter((r) => r.online).length;
+
+  return (
+    <>
+      <div className="mb-4 flex items-center gap-2 text-sm">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
+          <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+          {onlineCount} online now
+        </span>
+        <span className="text-zinc-400">
+          of {rows.length} user{rows.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <TableShell
+        head={
+          <tr>
+            <th className="px-4 py-3">User</th>
+            <th className="px-4 py-3">Role</th>
+            <th className="px-4 py-3">Status</th>
+            <th className="px-4 py-3">Last online</th>
+            <th className="px-4 py-3">Member since</th>
+          </tr>
+        }
+      >
+        {rows.length === 0 ? (
+          <EmptyRow colSpan={5}>No users yet.</EmptyRow>
+        ) : (
+          rows.map((u) => (
+            <tr key={u.id} className="border-t border-zinc-100 hover:bg-zinc-50">
+              <td className="px-4 py-3">
+                <div className="text-zinc-800">{u.name || "—"}</div>
+                <div className="text-xs text-zinc-400">{u.email}</div>
+              </td>
+              <td className="px-4 py-3">
+                <Pill tone={u.role === "ADMIN" ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600"}>
+                  {u.role}
+                </Pill>
+              </td>
+              <td className="px-4 py-3">
+                {u.online ? (
+                  <span className="inline-flex items-center gap-1.5 font-medium text-emerald-700">
+                    <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                    Online
+                  </span>
+                ) : u.lastSeen ? (
+                  <span className="text-zinc-500">{timeAgo(u.lastSeen)}</span>
+                ) : (
+                  <span className="text-zinc-300">Never seen</span>
+                )}
+              </td>
+              <td className="whitespace-nowrap px-4 py-3 text-zinc-500">
+                {u.lastSeen ? formatDate(u.lastSeen) : "—"}
+              </td>
+              <td className="whitespace-nowrap px-4 py-3 text-zinc-500">{formatDate(u.createdAt)}</td>
+            </tr>
+          ))
+        )}
+      </TableShell>
+    </>
   );
 }
 

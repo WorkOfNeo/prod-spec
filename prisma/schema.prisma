@@ -35,6 +35,7 @@ model User {
   acceptedInvite   Invite?           @relation("InviteAccepted")
   claimedReviews   Job[]             @relation("ReviewClaimer")
   styleViews       StyleView[]
+  presence         UserPresence?
 
   @@map("users")
 }
@@ -1147,6 +1148,25 @@ model StyleView {
 enum StyleViewSurface {
   REVIEW // the /styles/<id>/review screen
   STYLE // the /styles/<id> detail page
+}
+
+// =====================================================
+// User presence — one row per user, refreshed by a client heartbeat (every
+// ~60s while any admin page tab is open; see PresencePing in the admin layout).
+// `lastSeenAt` is the single source for "online now" (seen within the window),
+// "last online", and the online count on the /admin Users tab. One row per user
+// (userId is the PK), upserted on each ping. Standalone table (no column on the
+// hot `users` row) so existing user reads never change; reads tolerate the table
+// not being deployed yet (see /admin Users tab).
+// =====================================================
+model UserPresence {
+  userId     String   @id
+  lastSeenAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([lastSeenAt])
+  @@map("user_presence")
 }
 
 // =====================================================
