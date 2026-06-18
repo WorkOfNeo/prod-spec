@@ -7,6 +7,7 @@ import { SignOutButton } from "@/components/sign-out-button";
 import { MyTasksLink } from "@/components/sidebar/my-tasks-link";
 import { NotificationBell } from "@/components/sidebar/notification-bell";
 import { SettingsNav } from "@/components/sidebar/settings-nav";
+import { PresencePing } from "@/components/presence-ping";
 
 // Primary, high-traffic destinations only. Config / admin surfaces
 // (Monday, catalogues, reference data) live under the Settings dropdown
@@ -40,6 +41,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     // The guard provider lives at the layout so pages can intercept exits
     // through links they don't own (this sidebar). See navigation-guard.tsx.
     <NavigationGuardProvider>
+      <PresencePing />
       <div className="flex min-h-screen bg-zinc-50">
         <aside className="w-56 border-r border-zinc-200 bg-white px-4 py-6">
           <div className="flex items-center justify-between px-2">
