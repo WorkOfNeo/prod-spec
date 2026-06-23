@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import type { EanView } from "@/lib/po/ean-view";
 import { eanStatusMeta, eanFloated } from "@/lib/po/ean-status-meta";
 import { colorFromVariantLabel } from "@/lib/po/ean-format";
+import { PoPdfLink } from "@/components/po-pdf-preview";
 
 // Which slice of the queue the page is showing — driven by the URL
 // (?floated=1 / ?status=…) and deep-linked from the /automation chips.
@@ -228,7 +229,9 @@ export function PoEansTable({
               return (
                 <tr key={r.id} className="border-t border-zinc-100 align-top">
                   <td className="px-4 py-3 font-medium">{r.name}</td>
-                  <td className="px-4 py-3 tabular-nums text-zinc-600">{r.poNumber}</td>
+                  <td className="px-4 py-3">
+                    <PoPdfLink styleId={r.id} poNumber={r.poNumber} />
+                  </td>
                   <td className="px-4 py-3 text-zinc-600">{r.supplierName ?? "—"}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={loading ? "RESOLVING" : view.status} />
