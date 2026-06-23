@@ -2,11 +2,18 @@ import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import { getPoEanAutoRunEnabled, getAutomationMinPo } from "@/lib/settings/app-settings";
-import { PoEansTable, type PoEanRow } from "./po-eans-table";
+import { PoEansTable, type PoEanRow, type PoEanFilter } from "./po-eans-table";
 import { PoEanAutoRunSetting } from "./po-ean-auto-run-setting";
 import { requireAdminPage } from "@/lib/auth-server";
+import { EAN_STATUS_META, FLOATABLE_STATUSES, MAX_EAN_ATTEMPTS } from "@/lib/po/ean-status-meta";
+import type { StyleEanStatus } from "@/generated/prisma/enums";
 
 export const dynamic = "force-dynamic";
+
+// Filtered views (a status, or the gave-up set) can hold more than the default
+// recent window so a deep-linked badge (e.g. "gave up 74") lands on the whole
+// set, not a recent slice.
+const FILTERED_TAKE = 500;
 
 // PO → EAN resolution. Every style that carries a PO number is shown with its
 // persisted resolution state: resolution is queued automatically when the PO
@@ -17,7 +24,9 @@ export const dynamic = "force-dynamic";
 export default async function PoEansPage({
   searchParams,
 }: {
-  searchParams: Promise<{ scope?: string }>;
+  // scope = active/parked PO-cutoff view; status / floated are the deep-link
+  // filters from the /automation EAN queue chips.
+  searchParams: Promise<{ scope?: string; status?: string; floated?: string }>;
 }) {
   await requireAdminPage();
 
@@ -27,21 +36,57 @@ export default async function PoEansPage({
     getAutomationMinPo(),
   ]);
 
+  // Deep-link filters. "floated" is a global triage view (every gave-up row,
+  // regardless of cutoff scope) so the /automation count and the landed set
+  // always agree; "status" composes with the active/parked scope below.
+  const floatedActive = sp.floated === "1";
+  const statusActive: StyleEanStatus | null =
+    !floatedActive && sp.status && sp.status in EAN_STATUS_META
+      ? (sp.status as StyleEanStatus)
+      : null;
+  const activeFilter: PoEanFilter = floatedActive
+    ? { kind: "floated" }
+    : statusActive
+      ? { kind: "status", value: statusActive }
+      : null;
+
   // The queue view follows the automation PO cutoff: "active" = the POs the
   // automation actually touches (poSeq >= cutoff); "parked" = the backlog below
   // it (still here, still manually scrape-able per row). No cutoff ⇒ one
-  // undivided list of every PO'd style.
-  const viewingParked = minPo !== null && sp.scope === "parked";
+  // undivided list. The floated triage spans both scopes.
+  const viewingParked = !floatedActive && minPo !== null && sp.scope === "parked";
   const scopeWhere: Prisma.StyleWhereInput =
-    minPo === null
+    minPo === null || floatedActive
       ? {}
       : viewingParked
         ? { OR: [{ poSeq: { lt: minPo } }, { poSeq: null }] }
         : { poSeq: { gte: minPo } };
 
-  const [styles, activeCount, parkedCount] = await Promise.all([
+  // Same predicate the /automation "gave up" badge counts with, so the count
+  // and the landed set always agree.
+  const floatedWhere: Prisma.StyleWhereInput = {
+    poNumber: { not: null },
+    eanStatus: { in: [...FLOATABLE_STATUSES] },
+    eanAttempts: { gte: MAX_EAN_ATTEMPTS },
+  };
+
+  const rowsWhere: Prisma.StyleWhereInput = floatedActive
+    ? floatedWhere
+    : {
+        poNumber: { not: null },
+        ...scopeWhere,
+        ...(statusActive ? { eanStatus: statusActive } : {}),
+      };
+
+  // Status chips show true totals for the scope being viewed (global for the
+  // floated triage), so the chip numbers match the list below them.
+  const countsWhere: Prisma.StyleWhereInput = floatedActive
+    ? { poNumber: { not: null } }
+    : { poNumber: { not: null }, ...scopeWhere };
+
+  const [styles, activeCount, parkedCount, statusGroups, floatedCount] = await Promise.all([
     db.style.findMany({
-      where: { poNumber: { not: null }, ...scopeWhere },
+      where: rowsWhere,
       select: {
         id: true,
         name: true,
@@ -58,7 +103,7 @@ export default async function PoEansPage({
         },
       },
       orderBy: { updatedAt: "desc" },
-      take: 200,
+      take: activeFilter ? FILTERED_TAKE : 200,
     }),
     minPo === null
       ? Promise.resolve(0)
@@ -68,6 +113,9 @@ export default async function PoEansPage({
       : db.style.count({
           where: { poNumber: { not: null }, OR: [{ poSeq: { lt: minPo } }, { poSeq: null }] },
         }),
+    // True per-status totals across the scope (not just the loaded window).
+    db.style.groupBy({ by: ["eanStatus"], where: countsWhere, _count: { _all: true } }),
+    db.style.count({ where: floatedWhere }),
   ]);
 
   const rows: PoEanRow[] = styles.map((s) => ({
@@ -89,11 +137,11 @@ export default async function PoEansPage({
     },
   }));
 
-  // Roll up the persisted statuses into summary chips above the table.
-  const counts = rows.reduce<Record<string, number>>((acc, r) => {
-    acc[r.initial.status] = (acc[r.initial.status] ?? 0) + 1;
-    return acc;
-  }, {});
+  // True per-status totals (from the DB, within the current scope) for the chips.
+  const counts: Record<string, number> = {};
+  for (const g of statusGroups) counts[g.eanStatus] = g._count._all;
+
+  const scopeQuery = viewingParked ? "scope=parked" : "";
 
   return (
     <div className="px-8 py-8">
@@ -113,7 +161,7 @@ export default async function PoEansPage({
         <PoEanAutoRunSetting initialEnabled={autoRunEnabled} />
       </div>
 
-      {minPo !== null && (
+      {minPo !== null && !floatedActive && (
         <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
           <span className="text-zinc-500">PO cutoff ≥ {minPo}:</span>
           <a
@@ -140,7 +188,13 @@ export default async function PoEansPage({
         </div>
       )}
 
-      <PoEansTable rows={rows} counts={counts} />
+      <PoEansTable
+        rows={rows}
+        counts={counts}
+        floatedCount={floatedCount}
+        activeFilter={activeFilter}
+        scopeQuery={scopeQuery}
+      />
     </div>
   );
 }

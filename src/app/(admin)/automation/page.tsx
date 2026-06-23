@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import { requireAdminPage } from "@/lib/auth-server";
@@ -31,46 +32,85 @@ const JOB_ORDER = ["QUEUED", "RUNNING", "AWAITING_REVIEW", "APPROVED", "REJECTED
 // button to drain on demand — the diagnostic home for "why are things still
 // queued?". The cron pokes POST /api/po-eans/run?sweep=1 and
 // POST /api/jobs/run?sweep=1; both record a row here when run by cron or "Run now".
-export default async function AutomationPage() {
+export default async function AutomationPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ show?: string }>;
+}) {
   await requireAdminPage();
 
   const minPo = await getAutomationMinPo();
+  const showAll = (await searchParams).show === "all";
 
-  const [autoScrape, autoGen, eanGroups, floatedEan, jobGroups, runs, activeQueued] =
-    await Promise.all([
-      getPoEanAutoRunEnabled(),
-      getAutoGenerateEnabled(),
-      db.style.groupBy({
-        by: ["eanStatus"],
-        where: { poNumber: { not: null } },
-        _count: { _all: true },
-      }),
-      db.style.count({
-        where: {
-          poNumber: { not: null },
-          eanStatus: { in: ["ERROR", "PO_NOT_FOUND", "PO_FOUND_NO_EANS"] },
-          eanAttempts: { gte: MAX_EAN_ATTEMPTS },
-        },
-      }),
-      db.job.groupBy({ by: ["status"], _count: { _all: true } }),
-      db.cronRun.findMany({ orderBy: { createdAt: "desc" }, take: 50 }),
-      // PENDING at/above the PO cutoff — what auto-scrape will actually touch.
-      db.style.count({
-        where: {
-          poNumber: { not: null },
-          eanStatus: "PENDING",
-          ...(minPo !== null ? { poSeq: { gte: minPo } } : {}),
-        },
-      }),
-    ]);
+  // A run "did something" when any counter moved. The default log shows only
+  // these — hiding the idle/skipped cron ticks that otherwise read "0 0 0".
+  const activityWhere = {
+    OR: [
+      { processed: { gt: 0 } },
+      { failed: { gt: 0 } },
+      { requeued: { gt: 0 } },
+      { enqueued: { gt: 0 } },
+    ],
+  };
+
+  const [
+    autoScrape,
+    autoGen,
+    eanGroups,
+    floatedEan,
+    jobGroups,
+    runs,
+    activeQueued,
+    lastFired,
+    activityCount,
+    totalCount,
+  ] = await Promise.all([
+    getPoEanAutoRunEnabled(),
+    getAutoGenerateEnabled(),
+    db.style.groupBy({
+      by: ["eanStatus"],
+      where: { poNumber: { not: null } },
+      _count: { _all: true },
+    }),
+    db.style.count({
+      where: {
+        poNumber: { not: null },
+        eanStatus: { in: ["ERROR", "PO_NOT_FOUND", "PO_FOUND_NO_EANS"] },
+        eanAttempts: { gte: MAX_EAN_ATTEMPTS },
+      },
+    }),
+    db.job.groupBy({ by: ["status"], _count: { _all: true } }),
+    db.cronRun.findMany({
+      where: showAll ? undefined : activityWhere,
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    }),
+    // PENDING at/above the PO cutoff — what auto-scrape will actually touch.
+    db.style.count({
+      where: {
+        poNumber: { not: null },
+        eanStatus: "PENDING",
+        ...(minPo !== null ? { poSeq: { gte: minPo } } : {}),
+      },
+    }),
+    // Heartbeat: when each kind last fired at all (incl. idle ticks), so the
+    // activity-only log still proves the cron is reaching the app.
+    db.cronRun.groupBy({ by: ["kind"], _max: { createdAt: true } }),
+    db.cronRun.count({ where: activityWhere }),
+    db.cronRun.count(),
+  ]);
 
   const eanCounts = new Map(eanGroups.map((g) => [g.eanStatus as string, g._count._all]));
   const jobCounts = new Map(jobGroups.map((g) => [g.status as string, g._count._all]));
   const queued = eanCounts.get("PENDING") ?? 0;
   // Below-cutoff PENDING — sitting parked, NOT auto-scraped.
   const parkedQueued = Math.max(queued - activeQueued, 0);
-  const lastRunByKind = new Map<string, (typeof runs)[number]>();
-  for (const r of runs) if (!lastRunByKind.has(r.kind)) lastRunByKind.set(r.kind, r);
+  // Last-fired per kind from the heartbeat query (independent of the activity
+  // filter, so it stays accurate even when every recent tick was a no-op).
+  const lastFiredByKind = new Map(lastFired.map((g) => [g.kind, g._max.createdAt]));
+  const lastEan = lastFiredByKind.get("po-eans") ?? null;
+  const lastGen = lastFiredByKind.get("jobs") ?? null;
+  const hiddenCount = totalCount - activityCount;
 
   return (
     <div className="px-8 py-8">
@@ -113,8 +153,8 @@ export default async function AutomationPage() {
               </>
             ) : activeQueued === 0 ? (
               "queue empty"
-            ) : lastRunByKind.has("po-eans") ? (
-              `last EAN run ${formatDate(lastRunByKind.get("po-eans")!.createdAt)}`
+            ) : lastEan ? (
+              `last EAN run ${formatDate(lastEan)}`
             ) : (
               "no recorded EAN run yet — is the cron hitting the app?"
             )}
@@ -131,21 +171,27 @@ export default async function AutomationPage() {
       <div className="mb-6 grid gap-6 md:grid-cols-2">
         <div>
           <h2 className="mb-2 text-sm font-semibold text-zinc-900">EAN queue</h2>
+          {/* Each chip deep-links to /po-eans filtered to that set, where the
+              rows can be re-resolved (the gave-up set in bulk). */}
           <div className="flex flex-wrap gap-2">
             {floatedEan > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+              <Link
+                href="/po-eans?floated=1"
+                className="inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-red-500"
+              >
                 gave up <span className="tabular-nums">{floatedEan}</span>
-              </span>
+              </Link>
             )}
             {EAN_ORDER.filter((s) => (eanCounts.get(s) ?? 0) > 0).map((s) => {
               const m = eanStatusMeta(s);
               return (
-                <span
+                <Link
                   key={s}
-                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${m.cls}`}
+                  href={`/po-eans?status=${s}`}
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium hover:opacity-80 ${m.cls}`}
                 >
                   {m.label} <span className="tabular-nums opacity-70">{eanCounts.get(s)}</span>
-                </span>
+                </Link>
               );
             })}
           </div>
@@ -167,7 +213,25 @@ export default async function AutomationPage() {
       </div>
 
       {/* Recent runs */}
-      <h2 className="mb-2 text-sm font-semibold text-zinc-900">Recent runs</h2>
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold text-zinc-900">
+          Recent runs{showAll ? "" : " with activity"}
+        </h2>
+        <div className="flex items-center gap-3 text-xs text-zinc-400">
+          <span>
+            EAN scrape {lastEan ? `last fired ${formatDate(lastEan)}` : "never fired"} · Generation{" "}
+            {lastGen ? `last fired ${formatDate(lastGen)}` : "never fired"}
+          </span>
+          <Link
+            href={showAll ? "/automation" : "/automation?show=all"}
+            className="rounded-md border border-zinc-200 px-2 py-1 font-medium text-zinc-600 hover:bg-zinc-50"
+          >
+            {showAll
+              ? "Activity only"
+              : `Show all${hiddenCount > 0 ? ` (+${hiddenCount} idle)` : ""}`}
+          </Link>
+        </div>
+      </div>
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
@@ -183,9 +247,22 @@ export default async function AutomationPage() {
             {runs.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-6 text-center text-zinc-400">
-                  No runs recorded yet. Once the Railway cron hits the app (or you press Run now),
-                  ticks show here. An empty list with a full queue means the cron isn&rsquo;t reaching
-                  the app.
+                  {!showAll && hiddenCount > 0 ? (
+                    <>
+                      No runs with activity yet — the cron has fired {hiddenCount} idle tick
+                      {hiddenCount === 1 ? "" : "s"} with nothing to do.{" "}
+                      <Link href="/automation?show=all" className="underline">
+                        Show all
+                      </Link>{" "}
+                      to see them.
+                    </>
+                  ) : (
+                    <>
+                      No runs recorded yet. Once the Railway cron hits the app (or you press Run now),
+                      ticks show here. An empty list with a full queue means the cron isn&rsquo;t
+                      reaching the app.
+                    </>
+                  )}
                 </td>
               </tr>
             )}
