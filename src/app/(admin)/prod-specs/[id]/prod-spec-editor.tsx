@@ -20,6 +20,7 @@ import {
   type PanelSymbol,
 } from "./care-standard-panel";
 import { AddOutputPicker, type VariantInfo } from "./add-output-picker";
+import { RerunStylesPanel } from "./rerun-styles-panel";
 
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
 type Tab = "general" | "cover" | "outputs";
@@ -589,6 +590,12 @@ export function ProdSpecEditor(props: Props) {
                 previewRefreshKey={savedAt ?? undefined}
               />
             )}
+
+            <RerunStylesPanel
+              prodSpecId={props.prodSpecId}
+              specActive={active}
+              unsaved={status === "dirty" || status === "saving"}
+            />
           </Section>
 
           {/* Everything below feeds rendering, so it stays reachable — it
