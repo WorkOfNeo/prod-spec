@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { TicketList, type TicketRow } from "./ticket-list";
 import { requireAdminPage } from "@/lib/auth-server";
+import { outputEditLink } from "@/lib/outputs/output-edit-link";
 
 export const dynamic = "force-dynamic";
 
@@ -12,49 +13,44 @@ const STAMP_FORMAT = new Intl.DateTimeFormat("en-GB", {
   minute: "2-digit",
 });
 
+// Safety bound on the backlog we render at once. The list groups by style, so
+// even a few thousand tickets collapse to a handful of rows — and with each
+// ticket's latest asset now loaded lazily on expand, the page is a single
+// cheap query. If the open backlog ever exceeds this, the UI says so instead
+// of silently hiding rows (the old hard 200 cap did).
+const MAX_TICKETS = 2000;
+
 // Rejection log — the admin workbench for outputs the reviewer rejected.
-// Tickets carry snapshots (the runner deletes assets on every re-run), so
-// the page enriches each ticket with the LATEST generated asset for its
-// (style × variantKey) to show where the output stands now.
+// Tickets carry snapshots (the runner deletes assets on every re-run); each
+// rejected + latest generated assets are fetched on demand when expanded (see
+// the /assets route) rather than enriched up front.
 export default async function RejectionLogPage() {
   await requireAdminPage();
 
-  const tickets = await db.rejectionTicket.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 200,
-    include: { reportedBy: { select: { name: true, email: true } } },
-  });
+  const [tickets, totalCount] = await Promise.all([
+    db.rejectionTicket.findMany({
+      orderBy: { createdAt: "desc" },
+      take: MAX_TICKETS,
+      include: { reportedBy: { select: { name: true, email: true } } },
+    }),
+    db.rejectionTicket.count(),
+  ]);
 
-  // Latest asset per (styleId, variantKey) across the involved styles —
-  // one query, newest first, first hit per key wins.
+  // Resolve each involved style's applied Prod Spec so cover / general-info
+  // tickets can deep-link to the right editor tab (layout outputs don't need
+  // it). All tickets of a style share one spec.
   const styleIds = [...new Set(tickets.map((t) => t.styleId))];
-  const recentAssets =
+  const styles =
     styleIds.length === 0
       ? []
-      : await db.jobAsset.findMany({
-          where: { job: { styleId: { in: styleIds } } },
-          orderBy: { createdAt: "desc" },
-          take: 500,
-          select: {
-            id: true,
-            jobId: true,
-            variantKey: true,
-            docType: true,
-            placeholderCount: true,
-            reviewStatus: true,
-            createdAt: true,
-            job: { select: { styleId: true, status: true } },
-          },
+      : await db.style.findMany({
+          where: { id: { in: styleIds } },
+          select: { id: true, prodSpec: { select: { id: true } } },
         });
-  const latestByKey = new Map<string, (typeof recentAssets)[number]>();
-  for (const a of recentAssets) {
-    const key = `${a.job.styleId}::${a.variantKey ?? `doc:${a.docType}`}`;
-    if (!latestByKey.has(key)) latestByKey.set(key, a);
-  }
+  const prodSpecByStyle = new Map(styles.map((s) => [s.id, s.prodSpec?.id ?? null]));
 
   const rows: TicketRow[] = tickets.map((t) => {
-    const latest =
-      latestByKey.get(`${t.styleId}::${t.variantKey || `doc:${t.docType}`}`) ?? null;
+    const edit = outputEditLink(t.variantKey, prodSpecByStyle.get(t.styleId) ?? null);
     return {
       id: t.id,
       status: t.status,
@@ -79,18 +75,8 @@ export default async function RejectionLogPage() {
       ]
         .filter(Boolean)
         .join(" → "),
-      latest: latest
-        ? {
-            jobId: latest.jobId,
-            previewQuery: latest.variantKey
-              ? `variantKey=${encodeURIComponent(latest.variantKey)}`
-              : `docType=${latest.docType}`,
-            placeholderCount: latest.placeholderCount,
-            reviewStatus: latest.reviewStatus,
-            jobStatus: latest.job.status,
-            generatedAtLabel: STAMP_FORMAT.format(latest.createdAt),
-          }
-        : null,
+      editHref: edit?.href ?? null,
+      editLabel: edit?.label ?? "",
       searchBlob:
         `${t.styleName} ${t.styleNumber} ${t.outputName} ${t.customerName} ${t.businessArea ?? ""} ${t.poNumber ?? ""} ${t.comment}`.toLowerCase(),
     };
@@ -105,6 +91,12 @@ export default async function RejectionLogPage() {
         reviewer to take another look. Approving the output on the review screen resolves its ticket
         automatically.
       </p>
+      {totalCount > rows.length ? (
+        <p className="mt-2 text-xs text-amber-700">
+          Showing the {rows.length.toLocaleString()} most recent of {totalCount.toLocaleString()}{" "}
+          rejections — resolve older threads to clear the backlog.
+        </p>
+      ) : null}
       <TicketList rows={rows} />
     </div>
   );

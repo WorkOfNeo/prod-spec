@@ -38,12 +38,10 @@ import { DEFAULT_PAGE_SETTINGS, type PageSettings } from "@/lib/prod-spec/config
 // so no sanitiser pass here.
 // =====================================================
 
-// Reserved synthetic variantKeys for the bundle pages' JobAsset rows.
-// Double-underscore framing keeps them impossible to collide with
-// catalogue keys (kebab-case) or Output Builder keys ("layout:<id>"),
-// and `@@unique([jobId, variantKey])` holds since each appears once.
-export const COVER_VARIANT_KEY = "__cover__";
-export const GENERAL_INFO_VARIANT_KEY = "__general_info__";
+// Reserved synthetic variantKeys for the bundle pages' JobAsset rows live in
+// bundle-page-keys.ts (no render-pipeline imports) and are re-exported here so
+// existing callers keep importing them from this module.
+export { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "./bundle-page-keys";
 
 export type BundleDocSummary = {
   // Variant display name, listed once per output ("Care Label 02 · Long
