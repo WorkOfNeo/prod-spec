@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
 import { renderGeneralInfoHtml } from "@/lib/pdf/bundle-pages";
+import { inlineProdSpecImages } from "@/lib/pdf/inline-images";
 import { parseBundlePageSettings } from "@/lib/prod-spec/config";
 
 export const runtime = "nodejs";
@@ -29,7 +30,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   const markdown = (prodSpec.generalInfoMd ?? "").trim();
 
   try {
-    const html = markdown
+    let html = markdown
       ? renderGeneralInfoHtml({
           markdown,
           customerName: prodSpec.customer.name,
@@ -37,6 +38,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
           settings: parseBundlePageSettings(prodSpec.bundlePageSettings).generalInfo,
         })
       : emptyStateHtml();
+    // Inline uploaded images to data URLs so the preview is byte-for-byte the
+    // print truth (and independent of the iframe's base-URL resolution).
+    if (markdown) html = await inlineProdSpecImages(html, id);
 
     return new NextResponse(html, {
       status: 200,

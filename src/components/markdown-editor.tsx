@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "@tiptap/markdown";
 import { Table, TableKit, renderTableToMarkdown } from "@tiptap/extension-table";
 import HardBreak from "@tiptap/extension-hard-break";
+import Image from "@tiptap/extension-image";
 
 // =====================================================
 // WYSIWYG markdown editor — TipTap wearing a plain-markdown costume.
@@ -28,6 +29,10 @@ import HardBreak from "@tiptap/extension-hard-break";
 type Props = {
   value: string;
   onChange: (markdown: string) => void;
+  // POST endpoint for image uploads (returns { url } pointing at the stored
+  // image). Inserted images reference that URL, so the markdown text itself
+  // stays small — the bytes live in Postgres. See the prod-spec images route.
+  uploadUrl: string;
 };
 
 // Multi-line table cells serialize through `<br>`, NOT markdown's
@@ -43,9 +48,29 @@ const MarkdownHardBreak = HardBreak.extend({
 const MarkdownTable = Table.extend({
   renderMarkdown: (node, h) => renderTableToMarkdown(node, h, { cellLineSeparator: "<br>" }),
 });
+// Images serialize to `![alt](src)`. @tiptap/markdown drives serialization off
+// each extension's renderMarkdown, and the base Image extension defines none —
+// so without this, an inserted image silently vanishes on getMarkdown(). The
+// src is the short serve URL the upload returns (not base64), so the markdown
+// stays small. Parsing needs no override: marked emits <img>, which
+// Image.parseHTML matches on the visual↔source round-trip.
+const MarkdownImage = Image.extend({
+  renderMarkdown: (node) => {
+    const src: string = node.attrs?.src ?? "";
+    if (!src) return "";
+    const alt: string = node.attrs?.alt ?? "";
+    const title: string = node.attrs?.title
+      ? ` "${String(node.attrs.title).replaceAll('"', '\\"')}"`
+      : "";
+    return `![${alt}](${src}${title})`;
+  },
+});
 
-export function MarkdownEditor({ value, onChange }: Props) {
+export function MarkdownEditor({ value, onChange, uploadUrl }: Props) {
   const [mode, setMode] = useState<"visual" | "source">("visual");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
 
   const editor = useEditor({
     extensions: [
@@ -53,6 +78,7 @@ export function MarkdownEditor({ value, onChange }: Props) {
       MarkdownHardBreak,
       TableKit.configure({ table: false }),
       MarkdownTable.configure({ resizable: false }),
+      MarkdownImage,
       Markdown,
     ],
     content: value,
@@ -93,6 +119,41 @@ export function MarkdownEditor({ value, onChange }: Props) {
     setMode(next);
   }
 
+  // Image upload — read the picked file as a data URL, POST it to the prod
+  // spec's images endpoint, then insert an <img> pointing at the returned serve
+  // URL. The bytes live in Postgres; the markdown carries only the short URL.
+  async function uploadAndInsert(file: File) {
+    setUploadErr(null);
+    if (!file.type.startsWith("image/")) {
+      setUploadErr(`Expected an image, got "${file.name}"`);
+      return;
+    }
+    if (file.size > 5_000_000) {
+      setUploadErr("Image too large (max 5 MB) — prefer a smaller PNG/JPG or an SVG");
+      return;
+    }
+    setUploading(true);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const res = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataUrl, fileName: file.name }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setUploadErr(body.error ? String(body.error) : `Upload failed (HTTP ${res.status})`);
+        return;
+      }
+      const { url } = (await res.json()) as { url: string };
+      editor?.chain().focus().setImage({ src: url, alt: file.name }).run();
+    } catch (err) {
+      setUploadErr((err as Error).message || "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
   return (
     <div className="mdedit overflow-hidden rounded-md border border-zinc-300 bg-white">
       <div className="flex flex-wrap items-center gap-1 border-b border-zinc-200 bg-zinc-50 px-2 py-1.5">
@@ -125,6 +186,24 @@ export function MarkdownEditor({ value, onChange }: Props) {
           />
         )}
         <Divider />
+        <ToolBtn
+          label={uploading ? "⏳ Image…" : "🖼 Image"}
+          title="Insert image — upload a PNG, JPG, WebP, GIF or SVG (max 5 MB)"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={mode === "source" || uploading}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void uploadAndInsert(f);
+            e.target.value = ""; // allow re-picking the same file
+          }}
+        />
+        <Divider />
         <ToolBtn label="↺" title="Undo" onClick={() => editor?.chain().focus().undo().run()} disabled={mode === "source" || !state?.canUndo} />
         <ToolBtn label="↻" title="Redo" onClick={() => editor?.chain().focus().redo().run()} disabled={mode === "source" || !state?.canRedo} />
 
@@ -143,6 +222,12 @@ export function MarkdownEditor({ value, onChange }: Props) {
           ))}
         </div>
       </div>
+
+      {uploadErr && (
+        <div className="border-b border-red-200 bg-red-50 px-3 py-1.5 text-[11px] text-red-700">
+          {uploadErr}
+        </div>
+      )}
 
       {mode === "visual" ? (
         <EditorContent editor={editor} />
@@ -172,6 +257,8 @@ export function MarkdownEditor({ value, onChange }: Props) {
         .mdedit .mdedit-content li { margin: 0 0 0.2em; }
         .mdedit .mdedit-content blockquote { margin: 0 0 0.5em; padding: 0.1em 0 0.1em 0.8em; border-left: 3px solid #d4d4d8; color: #52525b; }
         .mdedit .mdedit-content hr { border: none; border-top: 1px solid #e4e4e7; margin: 1em 0; }
+        .mdedit .mdedit-content img { max-width: 100%; height: auto; display: block; margin: 0.5em 0; border-radius: 4px; }
+        .mdedit .mdedit-content img.ProseMirror-selectednode { outline: 2px solid #18181b; outline-offset: 2px; }
         .mdedit .mdedit-content code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85em; background: #f4f4f5; border: 1px solid #ececee; border-radius: 4px; padding: 0 3px; }
         .mdedit .mdedit-content pre { background: #f4f4f5; border: 1px solid #e4e4e7; border-radius: 6px; padding: 8px 10px; margin: 0 0 0.6em; }
         .mdedit .mdedit-content pre code { background: none; border: none; padding: 0; }
@@ -221,4 +308,13 @@ function ToolBtn({
 
 function Divider() {
   return <span aria-hidden className="mx-0.5 h-4 w-px bg-zinc-200" />;
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
 }

@@ -420,11 +420,37 @@ model ProdSpec {
   suppliers    ProdSpecSupplier[]
   styles       Style[]
   jobs         Job[]
+  images       ProdSpecImage[]
 
   @@unique([customerId, businessAreaId])
   @@index([customerId])
   @@index([businessAreaId])
   @@map("prod_specs")
+}
+
+// Images uploaded for the "General information" page. Bytes live in Postgres
+// — same pattern as JobAsset.pdf — so they travel with the DB and need no
+// external storage. The general-info markdown (ProdSpec.generalInfoMd)
+// references each image by a short serve URL
+// (/api/admin/prod-specs/<id>/images/<imageId>): the browser editor + preview
+// resolve that path directly, and the PDF renderer inlines it to a data URL at
+// render time (page.setContent has no base URL, so a bare path won't load).
+// See src/lib/pdf/inline-images.ts.
+model ProdSpecImage {
+  id         String   @id @default(cuid())
+  prodSpecId String
+  // Raw image bytes (PNG/JPEG/WebP/GIF/SVG), decoded from the upload's data
+  // URL; re-emitted as a data URL only at PDF render time.
+  data       Bytes
+  mimeType   String
+  fileName   String
+  byteSize   Int
+  createdAt  DateTime @default(now())
+
+  prodSpec ProdSpec @relation(fields: [prodSpecId], references: [id], onDelete: Cascade)
+
+  @@index([prodSpecId])
+  @@map("prod_spec_images")
 }
 
 model ProdSpecSupplier {
