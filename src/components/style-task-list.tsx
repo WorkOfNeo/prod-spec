@@ -13,6 +13,10 @@ const OUTPUT_CHIP: Record<ReviewTaskOutput["state"], { cls: string; label: strin
   REJECTED: { cls: "border-red-200 bg-red-50 text-red-700", label: "rejected" },
   BLOCKED: { cls: "border-amber-200 bg-amber-50 text-amber-800", label: "blocked" },
   TO_REVIEW: { cls: "border-blue-200 bg-blue-50 text-blue-700", label: "to review" },
+  // Still-coming states — muted, no action; the document doesn't exist yet.
+  GENERATING: { cls: "border-zinc-200 bg-zinc-50 text-zinc-500", label: "generating…" },
+  READY_TO_GENERATE: { cls: "border-zinc-200 bg-zinc-50 text-zinc-500", label: "queued" },
+  AWAITING_DATA: { cls: "border-zinc-200 bg-zinc-50 text-zinc-500", label: "awaiting data" },
 };
 
 function StyleTaskAction({ t }: { t: ReviewTask }) {
@@ -93,25 +97,55 @@ export function StyleTaskList({ tasks, activityPrefix }: { tasks: ReviewTask[]; 
                 {t.decided}/{t.total}
               </span>
             </span>
+            {t.generatedSlots < t.totalSlots ? (
+              <span
+                className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-amber-800"
+                title={`${t.generatedSlots} of ${t.totalSlots} outputs generated — the remaining ${t.totalSlots - t.generatedSlots} ${t.totalSlots - t.generatedSlots === 1 ? "is" : "are"} still awaiting data or being generated, and appear here automatically when ready.`}
+              >
+                {t.generatedSlots}/{t.totalSlots} generated
+              </span>
+            ) : null}
             <StyleTaskAction t={t} />
           </summary>
           <div className="border-t border-zinc-100 px-3 py-2">
+            {t.stillComing > 0 ? (
+              <p className="mb-2 rounded-md bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+                {t.stillComing} of {t.outputs.length} output{t.outputs.length === 1 ? "" : "s"}{" "}
+                {t.stillComing === 1 ? "isn't" : "aren't"} generated yet — they appear here
+                automatically as their data lands or rendering finishes. Nothing is sent to the
+                supplier until every output is decided.
+              </p>
+            ) : null}
             <ul className="space-y-1">
               {t.outputs.map((o) => {
                 const chip = OUTPUT_CHIP[o.state];
                 return (
                   <li key={o.variantKey} className="flex items-center justify-between gap-3 text-xs">
-                    <span className="min-w-0 truncate text-zinc-700">{o.name}</span>
+                    <span
+                      className={`min-w-0 truncate ${o.generated ? "text-zinc-700" : "text-zinc-400"}`}
+                    >
+                      {o.name}
+                      {!o.generated && o.state === "AWAITING_DATA" && o.missing.length > 0 ? (
+                        <span className="ml-1 text-amber-700">· missing {o.missing.join(", ")}</span>
+                      ) : null}
+                    </span>
                     <span className="flex shrink-0 items-center gap-2">
                       <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${chip.cls}`}>
                         {chip.label}
                       </span>
-                      <Link
-                        href={`/styles/${t.styleId}/review#${outputAnchor(o.variantKey)}`}
-                        className="text-blue-700 hover:underline"
-                      >
-                        Review
-                      </Link>
+                      {o.generated ? (
+                        <Link
+                          href={`/styles/${t.styleId}/review#${outputAnchor(o.variantKey)}`}
+                          className="text-blue-700 hover:underline"
+                        >
+                          Review
+                        </Link>
+                      ) : (
+                        // No document yet — keep the column aligned, no action.
+                        <span className="text-zinc-300" aria-hidden="true">
+                          —
+                        </span>
+                      )}
                     </span>
                   </li>
                 );

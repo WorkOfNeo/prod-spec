@@ -6,13 +6,14 @@
 // still reported in `parts` for context, but deliberately NOT counted —
 // neither is your committed to-do. The global queue lives on /reviews.
 //
-// Same derived queries as /dashboard (lib/dashboard/review-tasks.ts), so
-// the badge and the page can never disagree. The sidebar polls every 60s,
-// mirroring the import notification bell.
+// Same per-style bucketing as /dashboard (lib/dashboard/review-tasks.ts), so
+// the badge and the page can never disagree. Uses getReviewCounts — the
+// lightweight (one-query, no cross-job output rollup) sibling of getReviewWork
+// — because the sidebar polls every 60s and only needs the counts.
 
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth-server";
-import { getReviewWork } from "@/lib/dashboard/review-tasks";
+import { getReviewCounts } from "@/lib/dashboard/review-tasks";
 import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
 
 export const runtime = "nodejs";
@@ -27,13 +28,13 @@ export async function GET() {
     return NextResponse.json({ badge: 0, parts: { mine: 0, queue: 0, others: 0 } });
   }
 
-  const work = await getReviewWork(auth.userId);
+  const counts = await getReviewCounts(auth.userId);
   return NextResponse.json({
-    badge: work.mine.length,
+    badge: counts.mine,
     parts: {
-      mine: work.mine.length,
-      queue: work.untouched.length,
-      others: work.others.length,
+      mine: counts.mine,
+      queue: counts.untouched,
+      others: counts.others,
     },
   });
 }

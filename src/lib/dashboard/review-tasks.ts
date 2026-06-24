@@ -1,4 +1,10 @@
 import { db } from "@/lib/db";
+import {
+  getCurrentOutputsForStyle,
+  rollupOutputSlots,
+  type CurrentOutput,
+  type OutputState,
+} from "@/lib/outputs/current-outputs";
 
 // Derived review work — powers /dashboard and the sidebar badge. Nothing
 // here is event-sourced: an unfinished review is a fact already sitting in
@@ -14,28 +20,50 @@ export type ReviewTask = {
   customerName: string;
   businessArea: string | null;
   poNumber: string | null;
+  // Review progress over outputs that already have a document (CROSS-JOB — the
+  // same model the review PAGE uses): `decided` of `total` reviewable. Outputs
+  // still being generated aren't counted here; they live in `stillComing`.
   total: number;
   decided: number;
+  // Declared outputs with no reviewable document yet — awaiting data, queued,
+  // or mid-render. > 0 ⇒ this batch is INCOMPLETE: more documents are on their
+  // way, so a reviewer who sees only 1 of 3 knows the rest are still coming.
+  stillComing: number;
+  // Generation coverage, SLOT-based (a multi-document output counts once) —
+  // the same metric the review page header shows: generatedSlots of totalSlots
+  // produced. Lets the queue card say "3/5 generated" at a glance.
+  generatedSlots: number;
+  totalSlots: number;
   // Every remaining pending document carries placeholder artifacts —
   // approval is ship-gated, so the review can't be finished until the data
   // is fixed and the output re-run from the style page.
   blocked: boolean;
-  // All documents decided but the job is still AWAITING_REVIEW — the
-  // post-approval publish (SharePoint + supplier email) failed and the
+  // All of the newest job's documents decided but it's still AWAITING_REVIEW —
+  // the post-approval publish (SharePoint + supplier email) failed and the
   // review screen's "Approve all & publish" is the retry.
   needsPublishRetry: boolean;
-  // Newest decision for partial reviews; job creation for untouched ones.
+  // Newest decision/generation for partial reviews; job creation for untouched.
   lastActivityAt: Date;
   // Who decided so far — labels the "in review by others" rows.
   reviewerEmails: string[];
-  // Per-output breakdown for the dashboard accordion (this job's documents).
+  // Per-output breakdown, CROSS-JOB: every current output for the style — the
+  // reviewable ones (with a document) and the still-coming ones together.
   outputs: ReviewTaskOutput[];
 };
 
 export type ReviewTaskOutput = {
   variantKey: string;
   name: string;
-  state: "APPROVED" | "REJECTED" | "TO_REVIEW" | "BLOCKED";
+  // Cross-job output state (lib/outputs/current-outputs): generated states
+  // (TO_REVIEW / BLOCKED / APPROVED / REJECTED) plus the still-coming ones
+  // (AWAITING_DATA / READY_TO_GENERATE / GENERATING).
+  state: OutputState;
+  // true ⇒ a document exists to review now. false ⇒ still coming — rendered
+  // muted with its reason, no "Review" link.
+  generated: boolean;
+  // For AWAITING_DATA rows: the field labels still missing, so the card can
+  // say WHY it hasn't generated ("missing: EANs").
+  missing: string[];
 };
 
 export type ReviewWork = {
@@ -83,40 +111,105 @@ function queryAwaitingReviewJobs() {
 
 type AwaitingReviewJob = Awaited<ReturnType<typeof queryAwaitingReviewJobs>>[number];
 
-async function awaitingReviewEntries(): Promise<{ job: AwaitingReviewJob; task: ReviewTask }[]> {
-  const jobs = await queryAwaitingReviewJobs();
-
-  // One task per STYLE: the review screen always shows the NEWEST awaiting
-  // job (take 1, newest first), so that is the only actionable unit — a
-  // style re-run can leave older jobs stranded in AWAITING_REVIEW, and
-  // listing those would produce duplicate rows whose CTA opens a different
-  // job than the row described. Newest job per style wins; superseded jobs
-  // (and any partial decisions on them) are deliberately invisible here.
-  const latestPerStyle = new Map<string, AwaitingReviewJob>();
+// Newest awaiting-review job per STYLE. The review screen always opens the
+// newest awaiting job, so that is the actionable unit — a style re-run can
+// strand older jobs in AWAITING_REVIEW, and listing those would duplicate the
+// row with a CTA that opens a different job. Drops jobs that rendered nothing.
+function latestPerStyle(jobs: AwaitingReviewJob[]): AwaitingReviewJob[] {
+  const latest = new Map<string, AwaitingReviewJob>();
   for (const job of jobs) {
-    if (!latestPerStyle.has(job.styleId)) latestPerStyle.set(job.styleId, job);
+    if (!latest.has(job.styleId)) latest.set(job.styleId, job);
   }
-
-  const entries: { job: AwaitingReviewJob; task: ReviewTask }[] = [];
-  for (const job of latestPerStyle.values()) {
-    if (job.assets.length === 0) continue;
-    entries.push({ job, task: buildTask(job) });
-  }
-  return entries;
+  return [...latest.values()].filter((j) => j.assets.length > 0);
 }
 
-function buildTask(job: AwaitingReviewJob): ReviewTask {
-  const decidedAssets = job.assets.filter((a) => a.reviewStatus !== "PENDING_REVIEW");
-  const pendingAssets = job.assets.filter((a) => a.reviewStatus === "PENDING_REVIEW");
+// Which bucket a style falls in, read off its NEWEST job — unchanged from the
+// per-job model: ownership/claim is a property of the actionable job, not the
+// style's whole cross-job history. Deliberately cheap (no cross-job rollup) so
+// the badge poller (getReviewCounts) can stay one query.
+function bucketOf(job: AwaitingReviewJob, userId: string): "mine" | "others" | "untouched" {
+  const decided = job.assets.filter((a) => a.reviewStatus !== "PENDING_REVIEW");
+  const touched = decided.length > 0 || job.reviewClaimedById != null;
+  if (!touched) return "untouched";
+  if (job.reviewClaimedById === userId || decided.some((a) => a.reviewedById === userId)) {
+    return "mine";
+  }
+  return "others";
+}
 
-  // Activity = the newest of: a decision, or the claim itself ("Start
-  // review" with no clicks yet is still activity worth surfacing).
+// Bucket COUNTS only — for the sidebar badge poller. No cross-job output
+// fetch: the numbers come straight off the newest job per style, one query.
+export async function getReviewCounts(
+  userId: string,
+): Promise<{ mine: number; others: number; untouched: number }> {
+  const jobs = latestPerStyle(await queryAwaitingReviewJobs());
+  let mine = 0;
+  let others = 0;
+  let untouched = 0;
+  for (const job of jobs) {
+    const b = bucketOf(job, userId);
+    if (b === "mine") mine++;
+    else if (b === "others") others++;
+    else untouched++;
+  }
+  return { mine, others, untouched };
+}
+
+// Full per-style tasks for the CARDS (/dashboard + /reviews). Each task's
+// output list, completeness and review progress are CROSS-JOB — resolved via
+// getCurrentOutputsForStyle, the same source the review page renders — so a
+// style whose documents landed across several runs shows its true "1 of 3
+// ready, 2 still coming" picture instead of just the newest job's slice.
+async function awaitingReviewEntries(): Promise<{ job: AwaitingReviewJob; task: ReviewTask }[]> {
+  const jobs = latestPerStyle(await queryAwaitingReviewJobs());
+  // One cross-job rollup per style. N+1 by style, but the review queue is a
+  // small admin surface and parity with the review page matters more; the
+  // frequent badge poll uses getReviewCounts, which skips this entirely.
+  const outputsByStyle = await Promise.all(jobs.map((j) => getCurrentOutputsForStyle(j.styleId)));
+  return jobs.map((job, i) => ({ job, task: buildTask(job, outputsByStyle[i]) }));
+}
+
+// A current output is "reviewable" when a document exists AND no fresh render
+// is in flight — mirrors the review page's reviewable/notReady split exactly.
+const isReviewable = (o: CurrentOutput) => o.jobAssetId != null && o.state !== "GENERATING";
+
+function buildTask(job: AwaitingReviewJob, currentOutputs: CurrentOutput[]): ReviewTask {
+  const reviewable = currentOutputs.filter(isReviewable);
+  const decided = reviewable.filter(
+    (o) => o.reviewStatus === "APPROVED" || o.reviewStatus === "REJECTED",
+  );
+  const stillComing = currentOutputs.filter((o) => !isReviewable(o));
+  // Slot-based coverage (collapses multi-document outputs) — parity with the
+  // review page's "X/Y generated" header.
+  const slots = rollupOutputSlots(currentOutputs);
+  const pending = reviewable.filter((o) => o.state === "TO_REVIEW" || o.state === "BLOCKED");
+
+  // Activity = the newest of any decision, any document's generation, or the
+  // claim — so "ready 2h ago" tracks the latest thing that happened.
   const lastActivity = [
-    ...decidedAssets.map((a) => a.reviewedAt),
+    ...currentOutputs.map((o) => o.reviewedAt),
+    ...currentOutputs.map((o) => o.generatedAt),
     job.reviewClaimedAt,
   ]
     .filter((d): d is Date => d != null)
     .sort((a, b) => b.getTime() - a.getTime())[0];
+
+  // Reviewer labels + the publish-retry signal stay NEWEST-JOB properties:
+  // both describe the actionable job, not the cross-job history.
+  const newestDecided = job.assets.filter((a) => a.reviewStatus !== "PENDING_REVIEW");
+  const newestPending = job.assets.filter((a) => a.reviewStatus === "PENDING_REVIEW");
+
+  const outputs = currentOutputs.map(
+    (o): ReviewTaskOutput => ({
+      variantKey: o.variantKey,
+      name: o.name,
+      state: o.state,
+      generated: isReviewable(o),
+      missing: o.missing.map((m) => m.label),
+    }),
+  );
+  // Reviewable documents first, still-coming ones last.
+  outputs.sort((a, b) => Number(b.generated) - Number(a.generated));
 
   return {
     jobId: job.id,
@@ -125,32 +218,22 @@ function buildTask(job: AwaitingReviewJob): ReviewTask {
     customerName: job.style.customer.name,
     businessArea: job.style.businessAreaRef?.name ?? job.style.businessArea ?? null,
     poNumber: job.style.poNumber ?? null,
-    total: job.assets.length,
-    decided: decidedAssets.length,
-    blocked: pendingAssets.length > 0 && pendingAssets.every((a) => a.placeholderCount > 0),
-    needsPublishRetry: pendingAssets.length === 0,
+    total: reviewable.length,
+    decided: decided.length,
+    stillComing: stillComing.length,
+    generatedSlots: slots.generated,
+    totalSlots: slots.total,
+    blocked: pending.length > 0 && pending.every((o) => o.state === "BLOCKED"),
+    needsPublishRetry: newestPending.length === 0,
     lastActivityAt: lastActivity ?? job.createdAt,
     reviewerEmails: Array.from(
       new Set(
-        [...decidedAssets.map((a) => a.reviewedBy?.email), job.reviewClaimedBy?.email].filter(
+        [...newestDecided.map((a) => a.reviewedBy?.email), job.reviewClaimedBy?.email].filter(
           (e): e is string => !!e,
         ),
       ),
     ),
-    outputs: job.assets.map(
-      (a): ReviewTaskOutput => ({
-        variantKey: a.variantKey ?? `doc:${a.docType}`,
-        name: a.displayName ?? a.docType,
-        state:
-          a.reviewStatus === "APPROVED"
-            ? "APPROVED"
-            : a.reviewStatus === "REJECTED"
-              ? "REJECTED"
-              : a.placeholderCount > 0
-                ? "BLOCKED"
-                : "TO_REVIEW",
-      }),
-    ),
+    outputs,
   };
 }
 
@@ -167,18 +250,10 @@ export async function getReviewWork(userId: string): Promise<ReviewWork> {
   const untouched: ReviewTask[] = [];
 
   for (const { job, task } of entries) {
-    const decidedAssets = job.assets.filter((a) => a.reviewStatus !== "PENDING_REVIEW");
-    const touched = decidedAssets.length > 0 || job.reviewClaimedById != null;
-    if (!touched) {
-      untouched.push(task);
-    } else if (
-      job.reviewClaimedById === userId ||
-      decidedAssets.some((a) => a.reviewedById === userId)
-    ) {
-      mine.push(task);
-    } else {
-      others.push(task);
-    }
+    const b = bucketOf(job, userId);
+    if (b === "mine") mine.push(task);
+    else if (b === "others") others.push(task);
+    else untouched.push(task);
   }
 
   mine.sort(byAge);
