@@ -25,19 +25,21 @@ export async function notifyUser(userId: string, data: NotificationData): Promis
   }
 }
 
-// Reviewer inbox fan-out for "documents ready for review" (T2): every
-// reviewer/admin gets the in-app entry so the inbox is the shared source of
-// truth for who can pick up a review — matching the dashboard's global queue
-// ("shown to everyone until reviewer assignment exists"). Any configured
-// notification address that maps to an account is unioned in too, so a
-// non-reviewer recipient still sees it. Deduped by user; fail-soft like the
-// rest — a missing inbox row must never break the runner.
-export async function notifyReviewers(emails: string[], data: NotificationData): Promise<number> {
+// "Documents ready for review" in-app fan-out (T2). Goes to every ADMIN —
+// they own the pipeline and triage the global queue — plus any configured
+// notification address that maps to an account. REVIEWERs are deliberately
+// EXCLUDED: a fresh output landing in the queue isn't something a reviewer
+// can act on until they pick it up, so this firehose was just noise to them.
+// They work from /reviews and from reviews they've started, and still get
+// the notices they CAN act on (e.g. a rejection they filed being fixed) via
+// notifyUser. Deduped by user; fail-soft like the rest — a missing inbox row
+// must never break the runner.
+export async function notifyReviewReady(emails: string[], data: NotificationData): Promise<number> {
   try {
     const users = await db.user.findMany({
       where: {
         OR: [
-          { role: { in: ["ADMIN", "REVIEWER"] } },
+          { role: "ADMIN" },
           ...(emails.length > 0 ? [{ email: { in: emails } }] : []),
         ],
       },

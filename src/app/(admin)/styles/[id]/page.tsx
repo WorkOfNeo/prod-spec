@@ -11,6 +11,7 @@ import {
 } from "@/lib/styles/resolved-fields";
 import type { MondayItem } from "@/lib/monday/client";
 import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
+import { getSessionWithRole } from "@/lib/auth-server";
 import { shareUrl } from "@/lib/supplier-share/share";
 import { findMissingDetailFields } from "@/lib/styles/detail-fields";
 import { computeReadiness, type Readiness, type ReadinessTone } from "@/lib/styles/readiness";
@@ -25,6 +26,7 @@ import { StyleOutputCard, type StyleOutputCardProps } from "./style-output-card"
 import { ProdSpecTab } from "./prod-spec-tab";
 import { ReviewTab } from "./review-tab";
 import { EanPanel } from "./ean-panel";
+import { PoPreview } from "./po-preview";
 import type { EanView } from "@/lib/po/ean-view";
 import type { AssetReviewStatus } from "@/generated/prisma/enums";
 import { colorFromVariantLabel } from "@/lib/po/ean-format";
@@ -39,6 +41,7 @@ import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
+import { LogStyleView } from "@/components/log-style-view";
 import { applyFieldOverrides } from "@/lib/pdf/pins";
 import { parseFieldOverrides, PINNABLE_FIELD_LABELS, type PinnableField } from "@/lib/pdf/pins-meta";
 import { findFieldRule } from "@/lib/pdf/spec-fields";
@@ -137,6 +140,12 @@ export default async function StyleDetail({
   const tabParam = (await searchParams).tab;
   const tab: TabKey =
     tabParam === "prod-spec" ? "prod-spec" : tabParam === "review" ? "review" : "details";
+
+  // Generation actions (Re-run, per-output Run, carton prints) are ADMIN-only
+  // — the API enforces it, and REVIEWERs (who can reach this page) must not see
+  // buttons that would only 403. Threaded into the output cards below.
+  const { role } = await getSessionWithRole();
+  const isAdmin = role === "ADMIN";
 
   const style = await db.style.findUnique({
     where: { id },
@@ -395,6 +404,8 @@ export default async function StyleDetail({
     );
     return {
       styleId: style.id,
+      // Gates the per-output Run + carton-print buttons inside the card.
+      isAdmin,
       variantKey: o.variantKey,
       name: o.name,
       ready: o.ready,
@@ -550,6 +561,7 @@ export default async function StyleDetail({
 
   return (
     <div className="px-8 py-8">
+      <LogStyleView styleId={id} surface="STYLE" />
       <Link href="/styles" className="text-xs text-zinc-500 underline">
         ← All styles
       </Link>
@@ -576,10 +588,12 @@ export default async function StyleDetail({
           >
             Edit
           </Link>
-          <RerunButton
-            styleId={style.id}
-            disabled={latestJob?.status === "RUNNING" || latestJob?.status === "QUEUED"}
-          />
+          {isAdmin && (
+            <RerunButton
+              styleId={style.id}
+              disabled={latestJob?.status === "RUNNING" || latestJob?.status === "QUEUED"}
+            />
+          )}
         </div>
       </div>
 
@@ -1024,6 +1038,11 @@ function DetailsTab({
           <h2 className="text-sm font-semibold text-zinc-700">EAN barcodes</h2>
           <span className="text-xs text-zinc-400">Read from the PO PDF — per size, in size order</span>
         </div>
+        {style.poNumber && (
+          <div className="mt-3">
+            <PoPreview styleId={style.id} poNumber={style.poNumber} status={style.eanStatus} />
+          </div>
+        )}
         <div className="mt-2">
           <EanPanel styleId={style.id} hasPo={Boolean(style.poNumber)} initial={eanView} />
         </div>

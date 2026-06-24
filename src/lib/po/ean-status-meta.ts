@@ -23,11 +23,14 @@ export const MAX_EAN_ATTEMPTS = 3;
 
 // The non-resolved statuses the sweep retries — i.e. the ones that can float
 // once attempts run out. Keep in sync with RETRYABLE in ean-runner.ts.
-const FLOATABLE_STATUSES = new Set(["PO_FOUND_NO_EANS", "PO_NOT_FOUND", "ERROR"]);
+// Exported so server pages can build the same "floated" Prisma filter the
+// /automation badge counts with (eanStatus in here + attempts >= MAX).
+export const FLOATABLE_STATUSES = ["PO_FOUND_NO_EANS", "PO_NOT_FOUND", "ERROR"] as const;
+const FLOATABLE_SET = new Set<string>(FLOATABLE_STATUSES);
 
 // A row has "floated" when it's in a retryable-but-unresolved state and has
 // burned its attempt budget — the sweep will no longer pick it up, so a human
 // must re-trigger it (the per-row Re-resolve, which resets the counter).
 export function eanFloated(status: string, attempts: number): boolean {
-  return attempts >= MAX_EAN_ATTEMPTS && FLOATABLE_STATUSES.has(status);
+  return attempts >= MAX_EAN_ATTEMPTS && FLOATABLE_SET.has(status);
 }

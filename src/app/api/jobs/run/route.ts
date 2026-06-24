@@ -4,6 +4,7 @@ import { runPendingJobs } from "@/lib/queue/runner";
 import { sweepReadyStyleGenerations } from "@/lib/queue/generation-sweep";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin } from "@/lib/roles";
+import { triggerRunner } from "@/lib/queue/trigger";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -37,13 +38,31 @@ function timingSafeEqual(a: string, b: string): boolean {
   return mismatch === 0;
 }
 
+// In-process single-flight guard. Only one drain runs per server process at a
+// time, so the self-chain re-trigger below and the Railway cron tick can't
+// stack concurrent Puppeteer renders (the memory blow-up the bulk "Run all
+// outputs" action would otherwise risk). In-memory on purpose: it self-clears
+// on restart (no stuck lock), and a hand-off that lands while busy simply
+// no-ops — the cron is the backstop. Assumes the usual single web instance;
+// with replicas it still bounds renders to one PER instance, which is what
+// matters for memory.
+let draining = false;
+
 export async function POST(req: NextRequest) {
   const startedAt = Date.now();
   const authz = await authorize(req);
   if (!authz.ok) {
     return NextResponse.json({ error: authz.error }, { status: authz.status });
   }
-  const limit = Number(req.nextUrl.searchParams.get("limit") ?? "5");
+
+  // A drain is already in flight in this process — don't spin up a second
+  // concurrent renderer. The active drain self-chains (below) until the queue
+  // is empty, so nothing is dropped; this tick just steps aside.
+  if (draining) {
+    return NextResponse.json({ ok: true, skipped: true, reason: "runner busy" });
+  }
+
+  const limit = Math.min(Math.max(Number(req.nextUrl.searchParams.get("limit") ?? "5"), 1), 20);
   const sweep = req.nextUrl.searchParams.get("sweep") === "1";
 
   // ?sweep=1 (Railway cron / "Run now") first pulls the backlog of ready-but-
@@ -51,13 +70,20 @@ export async function POST(req: NextRequest) {
   // just drains the job it enqueued.
   let sweepEnqueued = 0;
   let sweepStyleIds: string[] = [];
-  if (sweep) {
-    const swept = await sweepReadyStyleGenerations(10);
-    sweepEnqueued = swept.enqueued;
-    sweepStyleIds = swept.styleIds;
+  let summary: Awaited<ReturnType<typeof runPendingJobs>> = { processed: 0, failed: 0, jobIds: [] };
+  draining = true;
+  try {
+    if (sweep) {
+      const swept = await sweepReadyStyleGenerations(10);
+      sweepEnqueued = swept.enqueued;
+      sweepStyleIds = swept.styleIds;
+    }
+    summary = await runPendingJobs(limit);
+  } finally {
+    // Always release the guard, even if a render throws, so the queue can't
+    // wedge itself shut.
+    draining = false;
   }
-
-  const summary = await runPendingJobs(Math.min(Math.max(limit, 1), 20));
 
   // Record cron ticks (sweep) + operator "Run now" (session); skip the
   // high-frequency inline webhook triggers (secret without sweep).
@@ -74,6 +100,16 @@ export async function POST(req: NextRequest) {
         durationMs: Date.now() - startedAt,
       },
     });
+  }
+
+  // Self-chain: a full batch (we claimed `limit` jobs) almost certainly means
+  // more are queued, so kick the next drain immediately instead of waiting for
+  // the next ~5-min cron tick — this is what makes a bulk "Run all" drain
+  // continuously. Fired AFTER releasing the guard so the next invocation can
+  // claim it. The chain ends on its own when a drain comes up short (queue
+  // emptied → fewer than `limit` claimed → no re-trigger).
+  if (summary.jobIds.length >= limit) {
+    void triggerRunner();
   }
 
   return NextResponse.json({ ...summary, sweepEnqueued });

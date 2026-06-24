@@ -63,6 +63,34 @@ export async function setPoEanAutoRunEnabled(enabled: boolean): Promise<void> {
   });
 }
 
+const AUTOMATION_MIN_PO_KEY = "automationMinPo";
+
+// PO-number cutoff for automation — the delimiter for "from this PO onward".
+// Auto-scrape AND the generation sweep only act on styles whose PO sequence
+// (Style.poSeq, the numeric part of the PO — see parsePoNumberValue) is >= this
+// value. Orders before the cutoff are parked: never auto-processed, but still
+// scrape-able per-row from /po-eans. Stored as the numeric part (e.g. 63144 for
+// "C-PO63144"). null / unset = no cutoff (process everything). Mirrors the
+// /styles done-group PO cutoff; manual actions ignore it.
+export async function getAutomationMinPo(): Promise<number | null> {
+  const row = await db.appSetting.findUnique({ where: { key: AUTOMATION_MIN_PO_KEY } });
+  const value = typeof row?.value === "number" ? row.value : null;
+  return value !== null && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export async function setAutomationMinPo(cutoff: number | null): Promise<void> {
+  if (cutoff === null) {
+    // Cleared — drop the row (Prisma's Json type has no plain null write).
+    await db.appSetting.deleteMany({ where: { key: AUTOMATION_MIN_PO_KEY } });
+    return;
+  }
+  await db.appSetting.upsert({
+    where: { key: AUTOMATION_MIN_PO_KEY },
+    create: { key: AUTOMATION_MIN_PO_KEY, value: cutoff },
+    update: { value: cutoff },
+  });
+}
+
 const DONE_GROUP_PO_CUTOFF_KEY = "doneGroupPoCutoff";
 
 // Done-group visibility cutoff for /styles.

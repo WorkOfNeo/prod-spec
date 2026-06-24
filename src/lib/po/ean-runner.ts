@@ -7,6 +7,7 @@ import { parseProdSpecRequiredFields, parseProdSpecColumnMapping } from "@/lib/p
 import { formatEanMap } from "@/lib/styles/resolved-fields";
 import { triggerRunner } from "@/lib/queue/trigger";
 import { maybeEnqueueStyleGeneration } from "@/lib/queue/generation-sweep";
+import { getAutomationMinPo } from "@/lib/settings/app-settings";
 import { resolveStyleEans, type StyleEanStatus as ResolveStatus } from "./resolve-style-eans";
 import { MAX_EAN_ATTEMPTS } from "./ean-status-meta";
 import type { EanView } from "./ean-view";
@@ -53,11 +54,17 @@ export async function runPendingEanResolutions(
 ): Promise<EanRunSummary> {
   const summary: EanRunSummary = { processed: 0, failed: 0, requeued: 0, styleIds: [] };
 
+  // PO cutoff: auto-processing only touches styles whose PO is at/above the
+  // configured minimum (Style.poSeq >= minPo). null = no cutoff (whole
+  // backlog). Manual /po-eans resolves bypass this — they call
+  // resolveAndPersistStyleEans directly, never the claim/sweep below.
+  const minPo = await getAutomationMinPo();
+
   await releaseStaleResolving();
-  if (opts.sweep) summary.requeued = await requeueRetryable();
+  if (opts.sweep) summary.requeued = await requeueRetryable(minPo);
 
   for (let i = 0; i < limit; i++) {
-    const claimed = await claimNextPendingStyle();
+    const claimed = await claimNextPendingStyle(minPo);
     if (!claimed) break;
     summary.styleIds.push(claimed.id);
     try {
@@ -73,20 +80,35 @@ export async function runPendingEanResolutions(
 }
 
 // Atomically claim the oldest PENDING style and flip it to RESOLVING so a
-// second runner pass can't pick up the same row mid-download.
-async function claimNextPendingStyle(): Promise<{ id: string } | null> {
-  const rows = await db.$queryRaw<Array<{ id: string }>>`
-    UPDATE styles
-    SET "eanStatus" = 'RESOLVING', "eanResolveStartedAt" = NOW(), "updatedAt" = NOW()
-    WHERE id = (
-      SELECT id FROM styles
-      WHERE "eanStatus" = 'PENDING'
-      ORDER BY "updatedAt" ASC
-      FOR UPDATE SKIP LOCKED
-      LIMIT 1
-    )
-    RETURNING id
-  `;
+// second runner pass can't pick up the same row mid-download. When a PO cutoff
+// is set, only claim rows at/above it (poSeq >= minPo) — the parked backlog
+// (lower PO / null poSeq) is skipped.
+async function claimNextPendingStyle(minPo: number | null): Promise<{ id: string } | null> {
+  const rows = minPo !== null
+    ? await db.$queryRaw<Array<{ id: string }>>`
+        UPDATE styles
+        SET "eanStatus" = 'RESOLVING', "eanResolveStartedAt" = NOW(), "updatedAt" = NOW()
+        WHERE id = (
+          SELECT id FROM styles
+          WHERE "eanStatus" = 'PENDING' AND "poSeq" >= ${minPo}
+          ORDER BY "updatedAt" ASC
+          FOR UPDATE SKIP LOCKED
+          LIMIT 1
+        )
+        RETURNING id
+      `
+    : await db.$queryRaw<Array<{ id: string }>>`
+        UPDATE styles
+        SET "eanStatus" = 'RESOLVING', "eanResolveStartedAt" = NOW(), "updatedAt" = NOW()
+        WHERE id = (
+          SELECT id FROM styles
+          WHERE "eanStatus" = 'PENDING'
+          ORDER BY "updatedAt" ASC
+          FOR UPDATE SKIP LOCKED
+          LIMIT 1
+        )
+        RETURNING id
+      `;
   return rows[0] ?? null;
 }
 
@@ -106,24 +128,23 @@ async function releaseStaleResolving(): Promise<void> {
   }
 }
 
-// Re-queue PO'd styles that should still be resolved. Makes the cron
-// self-healing: it picks up styles that were never queued (NONE — e.g.
-// existing rows after the migration backfilled the column) and retries the
-// "didn't fully resolve yet" outcomes (no barcode page, PO not found,
-// transient error) once the retry window has passed. Terminal-good states
-// (RESOLVED / PARTIAL) and no-PO rows are left untouched.
-async function requeueRetryable(): Promise<number> {
+// Re-queue PO'd styles that didn't fully resolve yet (no barcode page, PO not
+// found, transient error) once the retry window has passed and while strikes
+// remain — at MAX_EAN_ATTEMPTS the row floats and waits for a manual Re-resolve.
+// Queueing is event-driven: we deliberately do NOT re-queue NONE rows here, so
+// the historical backlog stays parked — a style only (re-)enters via a new or
+// changed PO at ingest. The PO cutoff bounds even the retries: nothing below
+// the cutoff is auto-retried. Terminal-good states (RESOLVED / PARTIAL) and
+// no-PO rows are left untouched.
+async function requeueRetryable(minPo: number | null): Promise<number> {
   const cutoff = new Date(Date.now() - RETRY_AFTER_MS);
   const requeued = await db.style.updateMany({
     where: {
       poNumber: { not: null },
+      // PO cutoff: never auto-retry a parked (below-cutoff) backlog row.
+      ...(minPo !== null ? { poSeq: { gte: minPo } } : {}),
+      // eanResolvedAt is set on every terminal write; null = never attempted.
       OR: [
-        // Never queued — covers existing styles after the migration backfill.
-        { eanStatus: "NONE" },
-        // Non-terminal outcomes, retried once the window passes — but only
-        // while strikes remain. At MAX_EAN_ATTEMPTS the row floats (stops
-        // being re-queued) and waits for a manual Re-resolve.
-        // eanResolvedAt is set on every terminal write; null = never attempted.
         {
           eanStatus: { in: RETRYABLE },
           eanAttempts: { lt: MAX_EAN_ATTEMPTS },

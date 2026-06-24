@@ -117,6 +117,7 @@ export default async function StylesPage() {
         autoGenerateEnabled={autoGenerateEnabled}
         visibleColumns={visibleColumns}
         canConfigureColumns={role === "ADMIN"}
+        isAdmin={role === "ADMIN"}
         rows={styles.map((s) => {
           const ba = s.businessAreaRef?.name ?? s.businessArea ?? null;
           const requiredKeys = requiredFieldKeysFromOutputs(s.prodSpec?.outputs);

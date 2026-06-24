@@ -1,9 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { EanView } from "@/lib/po/ean-view";
 import { eanStatusMeta, eanFloated } from "@/lib/po/ean-status-meta";
 import { colorFromVariantLabel } from "@/lib/po/ean-format";
+import { PoPdfLink } from "@/components/po-pdf-preview";
+
+// Which slice of the queue the page is showing — driven by the URL
+// (?floated=1 / ?status=…) and deep-linked from the /automation chips.
+export type PoEanFilter =
+  | { kind: "status"; value: string }
+  | { kind: "floated" }
+  | null;
 
 export type PoEanRow = {
   id: string;
@@ -31,14 +40,30 @@ function StatusBadge({ status }: { status: string }) {
 export function PoEansTable({
   rows,
   counts,
+  floatedCount,
+  activeFilter,
+  scopeQuery = "",
 }: {
   rows: PoEanRow[];
+  // True per-status totals across all PO styles (not just the loaded rows).
   counts: Record<string, number>;
+  // Total rows the sweep has given up on, across all PO styles.
+  floatedCount: number;
+  activeFilter: PoEanFilter;
+  // Current PO-cutoff scope as a query fragment (e.g. "scope=parked"), so the
+  // status filters compose with the active/parked view instead of dropping it.
+  scopeQuery?: string;
 }) {
+  // Build a /po-eans href that keeps the current scope. "gave up" is global
+  // (triage across scopes), so it never carries the scope.
+  const scoped = (extra: string) =>
+    `/po-eans${scopeQuery || extra ? "?" : ""}${[scopeQuery, extra].filter(Boolean).join("&")}`;
   const [q, setQ] = useState("");
   // Per-row override after a manual re-resolve ("loading" while in flight).
   const [overrides, setOverrides] = useState<Record<string, EanView | "loading">>({});
   const [busy, setBusy] = useState(false);
+  // Live counter while a batch re-resolve runs.
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   const filtered = useMemo(() => {
     const n = q.trim().toLowerCase();
@@ -48,13 +73,16 @@ export function PoEansTable({
     );
   }, [rows, q]);
 
-  // Rows that have burned their attempt budget — the sweep has given up and a
-  // human must Re-resolve. Counted across all rows (not the current filter) so
-  // the banner is a stable "this many need attention" signal.
-  const floatedCount = useMemo(
-    () => rows.filter((r) => eanFloated(r.initial.status, r.eanAttempts)).length,
-    [rows],
-  );
+  // How many rows the active filter actually has in the DB — when it exceeds
+  // the loaded window we tell the user the view is truncated.
+  const activeTotal =
+    activeFilter == null
+      ? null
+      : activeFilter.kind === "floated"
+        ? floatedCount
+        : (counts[activeFilter.value] ?? 0);
+  const truncated = activeTotal != null && rows.length < activeTotal;
+  const isFloatedView = activeFilter?.kind === "floated";
 
   async function resolve(id: string) {
     setOverrides((p) => ({ ...p, [id]: "loading" }));
@@ -76,18 +104,38 @@ export function PoEansTable({
     }
   }
 
-  async function resolveAll() {
+  // Re-resolve a set of rows — each is a PDF download + parse, so run a few in
+  // parallel and surface a live count rather than freezing on one button.
+  async function resolveMany(ids: string[]) {
+    if (ids.length === 0) return;
     setBusy(true);
-    // Each resolve is a PDF download + parse, so cap the batch and run a few
-    // in parallel. Drive-wide search means a folder link isn't required.
-    const targets = filtered.slice(0, 20).map((r) => r.id);
+    setProgress({ done: 0, total: ids.length });
     let i = 0;
+    let done = 0;
     const worker = async () => {
-      while (i < targets.length) await resolve(targets[i++]);
+      while (i < ids.length) {
+        await resolve(ids[i++]);
+        done += 1;
+        setProgress({ done, total: ids.length });
+      }
     };
     await Promise.all([worker(), worker(), worker()]);
+    setProgress(null);
     setBusy(false);
   }
+
+  // On the floated view, drain the whole gave-up set; otherwise cap at the
+  // first 20 so the unfiltered list can't kick off hundreds of scrapes.
+  function runBulk() {
+    const targets = isFloatedView ? filtered : filtered.slice(0, 20);
+    return resolveMany(targets.map((r) => r.id));
+  }
+
+  const bulkLabel = progress
+    ? `Re-resolving ${progress.done}/${progress.total}…`
+    : isFloatedView
+      ? `Re-resolve all (${filtered.length})`
+      : "Re-resolve first 20";
 
   return (
     <div>
@@ -101,34 +149,62 @@ export function PoEansTable({
         />
         <button
           type="button"
-          onClick={resolveAll}
-          disabled={busy}
+          onClick={runBulk}
+          disabled={busy || filtered.length === 0}
           className="shrink-0 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-40"
         >
-          {busy ? "Resolving…" : "Re-resolve first 20"}
+          {bulkLabel}
         </button>
       </div>
 
-      <div className="mb-3 flex flex-wrap gap-2">
+      {/* Clickable filter chips — each narrows the list to that status (or the
+          gave-up set) via the URL, so deep links from /automation land here. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        {activeFilter && (
+          <Link
+            href={scoped("")}
+            className="inline-flex items-center gap-1 rounded-full border border-zinc-300 bg-white px-2 py-0.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+          >
+            ← all
+          </Link>
+        )}
         {floatedCount > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
-            needs attention <span className="tabular-nums">{floatedCount}</span>
-          </span>
+          <Link
+            href="/po-eans?floated=1"
+            aria-pressed={isFloatedView}
+            className={`inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-red-500 ${
+              isFloatedView ? "ring-2 ring-red-300 ring-offset-1" : ""
+            }`}
+          >
+            gave up <span className="tabular-nums">{floatedCount}</span>
+          </Link>
         )}
         {Object.entries(counts)
           .sort((a, b) => b[1] - a[1])
           .map(([status, n]) => {
             const m = eanStatusMeta(status);
+            const active = activeFilter?.kind === "status" && activeFilter.value === status;
             return (
-              <span
+              <Link
                 key={status}
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${m.cls}`}
+                href={scoped(`status=${status}`)}
+                aria-pressed={active}
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium hover:opacity-80 ${m.cls} ${
+                  active ? "ring-2 ring-zinc-400 ring-offset-1" : ""
+                }`}
               >
                 {m.label} <span className="tabular-nums opacity-70">{n}</span>
-              </span>
+              </Link>
             );
           })}
       </div>
+
+      {truncated && (
+        <p className="mb-3 -mt-1 text-xs text-zinc-400">
+          Showing the first {rows.length} of {activeTotal}. Narrow with search, or re-resolve in
+          batches.
+        </p>
+      )}
 
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
         <table className="w-full text-sm">
@@ -153,7 +229,9 @@ export function PoEansTable({
               return (
                 <tr key={r.id} className="border-t border-zinc-100 align-top">
                   <td className="px-4 py-3 font-medium">{r.name}</td>
-                  <td className="px-4 py-3 tabular-nums text-zinc-600">{r.poNumber}</td>
+                  <td className="px-4 py-3">
+                    <PoPdfLink styleId={r.id} poNumber={r.poNumber} />
+                  </td>
                   <td className="px-4 py-3 text-zinc-600">{r.supplierName ?? "—"}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={loading ? "RESOLVING" : view.status} />

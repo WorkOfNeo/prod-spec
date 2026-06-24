@@ -7,6 +7,7 @@ import { SignOutButton } from "@/components/sign-out-button";
 import { MyTasksLink } from "@/components/sidebar/my-tasks-link";
 import { NotificationBell } from "@/components/sidebar/notification-bell";
 import { SettingsNav } from "@/components/sidebar/settings-nav";
+import { PresencePing } from "@/components/presence-ping";
 
 // Primary, high-traffic destinations only. Config / admin surfaces
 // (Monday, catalogues, reference data) live under the Settings dropdown
@@ -20,6 +21,7 @@ const NAV: Array<{ href?: string; label?: string; divider?: true }> = [
   { href: "/combos", label: "New combos" },
   { href: "/jobs", label: "Jobs" },
   { href: "/automation", label: "Automation" },
+  { href: "/admin", label: "Admin" },
   { divider: true },
   { href: "/prod-specs", label: "Prod specs" },
   { href: "/output-builder", label: "Output builder" },
@@ -39,6 +41,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     // The guard provider lives at the layout so pages can intercept exits
     // through links they don't own (this sidebar). See navigation-guard.tsx.
     <NavigationGuardProvider>
+      <PresencePing />
       <div className="flex min-h-screen bg-zinc-50">
         <aside className="w-56 border-r border-zinc-200 bg-white px-4 py-6">
           <div className="flex items-center justify-between px-2">
@@ -101,6 +104,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                 Styles
               </Link>
             )}
+            {/* Reviewer guides — reference docs, available to everyone signed in
+                (not gated by the review-flow flag or the admin role). */}
+            <div className="my-2 border-t border-zinc-100" />
+            <Link
+              href="/guides"
+              className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+            >
+              Guides
+            </Link>
           </nav>
           <div className="mt-auto absolute bottom-6 left-4 right-4 w-48">
             <div className="border-t border-zinc-200 pt-4 text-xs text-zinc-500">

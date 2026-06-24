@@ -34,6 +34,8 @@ model User {
   invitesSent      Invite[]          @relation("InvitesSent")
   acceptedInvite   Invite?           @relation("InviteAccepted")
   claimedReviews   Job[]             @relation("ReviewClaimer")
+  styleViews       StyleView[]
+  presence         UserPresence?
 
   @@map("users")
 }
@@ -604,6 +606,20 @@ model Style {
   // MAX_EAN_ATTEMPTS (see src/lib/po/ean-status-meta.ts) the retry sweep stops
   // re-queuing the row and it "floats" on /po-eans for a human to re-trigger.
   eanAttempts         Int            @default(0)
+  // When this style's PO landed (newly filled or changed at ingest) — a STABLE
+  // "PO queued at" stamp, NOT bumped by unrelated re-syncs. The automation
+  // recent-window uses it: only PENDING rows whose eanQueuedAt is within the
+  // window auto-scrape, so the historical backlog (older / null) is parked and
+  // a bulk re-sync can't drag it back in. Backfilled to createdAt for existing
+  // rows. Null = never had a PO queued.
+  eanQueuedAt         DateTime?
+  // Numeric value of the PO reference (last digit run of poNumber, e.g. 63144
+  // for "C-PO63144") — see parsePoNumberValue in src/lib/po/po-number.ts. The
+  // automation cutoff uses it: auto-scrape + the generation sweep only touch
+  // styles whose poSeq >= the configured minimum PO, so orders before the
+  // cutoff are parked. Set at ingest whenever poNumber is written; null when
+  // there's no PO / no digits.
+  poSeq               Int?
   lastSyncedAt        DateTime?
   // Soft lifecycle from Monday. We never hard-delete a Style: an
   // item_archived / item_deleted webhook stamps these instead, so the row
@@ -622,6 +638,7 @@ model Style {
   eans             StyleEan[]
   rejectionTickets RejectionTicket[]
   supplierShare    SupplierShare?
+  views            StyleView[]
 
   @@index([customerId])
   @@index([status])
@@ -632,6 +649,10 @@ model Style {
   @@index([poNumber])
   @@index([groupTitle])
   @@index([eanStatus])
+  // Windowed EAN claim/sweep filters PENDING by eanQueuedAt.
+  @@index([eanStatus, eanQueuedAt])
+  // Automation PO cutoff filters PENDING by poSeq.
+  @@index([eanStatus, poSeq])
   @@index([archivedAt])
   @@index([deletedAt])
   @@map("styles")
@@ -828,6 +849,11 @@ enum TriggerSource {
   // by the Railway cron): pulls every active style with ready, ungenerated
   // outputs through generation, gradually. Email-suppressed like EAN_RESOLVED.
   CRON_SWEEP
+  // Job enqueued by the admin "Run all outputs" bulk action on /styles — one
+  // job per style in the operator's current filtered table view, tracked by a
+  // BulkRunBatch. Email-suppressed (a 200-style run mustn't blast 200 review
+  // emails); reviewers still get the in-app inbox entry per style.
+  MANUAL_BULK
 }
 
 model Log {
@@ -874,6 +900,40 @@ model CronRun {
   @@index([createdAt])
   @@index([kind, createdAt])
   @@map("cron_runs")
+}
+
+// One row per admin "Run all outputs" bulk action on /styles. The button
+// enqueues a MANUAL_BULK generation job per style in the operator's current
+// filtered table view; this row is the progress handle the page polls
+// (DONE/TOTAL) so the run survives navigating away and back. Mirrors the
+// SyncJob progress model the Fill flow already polls.
+//
+// Job linkage is denormalized as jobIds[] (same pattern as CronRun) rather
+// than a Job.batchId column — keeps this purely additive, so existing Job
+// reads never hit a not-yet-deployed column (the ColumnNotFound trap).
+model BulkRunBatch {
+  id String @id @default(cuid())
+  // Who pressed the button. Denormalized email so "Started by …" needs no
+  // join and survives the user being deleted; id kept for attribution.
+  createdById    String?
+  createdByEmail String?
+  // Human description of the filter that produced this batch, e.g.
+  // "Customer: Netto · Status: Ready to generate · 42 styles". Shown in the
+  // progress widget so a returning admin recognizes which run this is.
+  label String
+  // Stable denominator: jobs actually enqueued at creation. DONE is counted
+  // live over jobIds at poll time; TOTAL stays put even if a job row is later
+  // pruned (e.g. its style is deleted), so the bar can't exceed 100%.
+  total      Int       @default(0)
+  styleIds   Json      @default("[]")
+  jobIds     Json      @default("[]")
+  createdAt  DateTime  @default(now())
+  // Stamped the first time a poll finds nothing left in flight (all jobs left
+  // QUEUED/RUNNING). Drives the "complete" state + the recency window.
+  finishedAt DateTime?
+
+  @@index([createdAt])
+  @@map("bulk_run_batches")
 }
 
 enum LogLevel {
@@ -1063,6 +1123,55 @@ model SupplierShare {
   style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
 
   @@map("supplier_shares")
+}
+
+// =====================================================
+// Style view log — append-only audit trail of who opened a style and when.
+// One row per page open: surface = REVIEW (the /styles/<id>/review screen) or
+// STYLE (the /styles/<id> detail page). Distinct from Job.reviewClaimedAt
+// (which records who OWNS a review, once), this captures EVERY visit so the
+// admin oversight panel (/admin) can show a full chronological view log.
+// Written best-effort by a one-shot client beacon; reads tolerate the table
+// not being deployed yet (see /admin).
+// =====================================================
+model StyleView {
+  id        String           @id @default(cuid())
+  styleId   String
+  userId    String
+  surface   StyleViewSurface
+  createdAt DateTime         @default(now())
+
+  style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([styleId, createdAt])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("style_views")
+}
+
+enum StyleViewSurface {
+  REVIEW // the /styles/<id>/review screen
+  STYLE // the /styles/<id> detail page
+}
+
+// =====================================================
+// User presence — one row per user, refreshed by a client heartbeat (every
+// ~60s while any admin page tab is open; see PresencePing in the admin layout).
+// `lastSeenAt` is the single source for "online now" (seen within the window),
+// "last online", and the online count on the /admin Users tab. One row per user
+// (userId is the PK), upserted on each ping. Standalone table (no column on the
+// hot `users` row) so existing user reads never change; reads tolerate the table
+// not being deployed yet (see /admin Users tab).
+// =====================================================
+model UserPresence {
+  userId     String   @id
+  lastSeenAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([lastSeenAt])
+  @@map("user_presence")
 }
 
 // =====================================================
