@@ -94,6 +94,8 @@ export function ticketFixedEmail(input: {
   businessArea?: string | null;
   poNumber?: string | null;
   comment: string;
+  // Optional admin note added at "Mark fixed & notify" — what was changed.
+  fixNote?: string | null;
   rejectedAtLabel?: string | null;
   reviewUrl: string;
 }): { subject: string; html: string; text: string } {
@@ -105,6 +107,13 @@ export function ticketFixedEmail(input: {
     styleNumber: input.styleNumber,
   });
   const attribution = input.rejectedAtLabel ? `— rejected ${input.rejectedAtLabel}` : "— original rejection comment";
+  const fixNoteHtml = input.fixNote
+    ? `
+      <div style="margin: 0 0 4px;">
+        <div style="color: #71717a; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px;">What changed</div>
+        <p style="color: #18181b; font-size: 13px; margin: 0;">${escapeHtml(input.fixNote)}</p>
+      </div>`
+    : "";
   const text = [
     `The output you rejected has been reworked and re-generated:`,
     "",
@@ -112,6 +121,7 @@ export function ticketFixedEmail(input: {
     ...ctx.text,
     "",
     `Original comment: ${input.comment}`,
+    ...(input.fixNote ? ["", `What changed: ${input.fixNote}`] : []),
     "",
     `Re-review: ${input.reviewUrl}`,
     "",
@@ -125,6 +135,7 @@ export function ticketFixedEmail(input: {
         ${escapeHtml(input.comment)}
         <div style="color: #a1a1aa; font-size: 11px; margin-top: 4px;">${escapeHtml(attribution)}</div>
       </blockquote>
+      ${fixNoteHtml}
       ${ctx.html}
       ${ctaButton(input.reviewUrl, "Re-review now")}
       <p style="color: #999; font-size: 12px; margin-top: 16px;">Approving it closes the rejection ticket automatically. Rejecting it again reopens the ticket with your new comment.</p>

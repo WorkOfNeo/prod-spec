@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin } from "@/lib/roles";
@@ -17,12 +18,19 @@ const STAMP = new Intl.DateTimeFormat("en-GB", {
   day: "2-digit",
 });
 
+const SCHEMA = z.object({
+  // Optional note from the admin — "what I changed" — carried to the reviewer
+  // in the re-review notification + email and kept on the ticket. Empty or
+  // absent ⇒ no note (the reviewer just hears it's ready for another look).
+  comment: z.string().trim().max(500).optional(),
+});
+
 // "Mark fixed & notify": final re-run of the ticket's output (TICKET_FIX —
 // the generic review-ready email stays quiet), then ticket → FIXED and the
 // dedicated "fixed — ready for re-review" email goes to the internal
-// reviewer, quoting the original rejection comment. If the render fails
-// the ticket keeps its status and no email is sent.
-export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+// reviewer, quoting the original rejection comment and the admin's fix note.
+// If the render fails the ticket keeps its status and no email is sent.
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   if (!isAdmin(role)) {
@@ -30,6 +38,21 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
   }
 
   const { id } = await ctx.params;
+
+  // The fix note is optional, so an empty/absent body is fine — only reject a
+  // body that is present but malformed or oversized.
+  let raw: unknown = {};
+  try {
+    raw = await req.json();
+  } catch {
+    raw = {};
+  }
+  const parsed = SCHEMA.safeParse(raw);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid body", details: parsed.error.flatten() }, { status: 400 });
+  }
+  const fixNote = parsed.data.comment && parsed.data.comment.length > 0 ? parsed.data.comment : null;
+
   const ticket = await db.rejectionTicket.findUnique({
     where: { id },
     include: { reportedBy: { select: { name: true, email: true } } },
@@ -57,7 +80,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
 
   await db.rejectionTicket.update({
     where: { id: ticket.id },
-    data: { status: "FIXED", fixedAt: new Date() },
+    data: { status: "FIXED", fixedAt: new Date(), fixNote },
   });
 
   const recipients = await getReviewNotificationEmails();
@@ -70,6 +93,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     businessArea: ticket.businessArea,
     poNumber: ticket.poNumber,
     comment: ticket.comment,
+    fixNote,
     rejectedAtLabel: `${STAMP.format(ticket.createdAt)} · ${ticket.reportedBy.name || ticket.reportedBy.email}`,
     reviewUrl: `${base}/styles/${ticket.styleId}/review`,
   });
@@ -91,15 +115,22 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     },
   });
 
-  // In-app mirror for the reporter — they raised the rejection, the fix
+  // In-app mirror for the reporter — they raised the rejection, so the fix
   // lands back on their /dashboard regardless of who the email recipients
-  // are. Fail-soft; auto-resolved when the re-review settles the job.
+  // are, with the admin's note (if any) leading. Fail-soft; auto-resolved
+  // when the re-review settles the job.
+  const context = [
+    ticket.outputName,
+    ticket.styleName,
+    ticket.customerName,
+    ticket.poNumber ? `PO ${ticket.poNumber}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   await notifyUser(ticket.reportedById, {
     type: "TICKET_FIXED",
     title: "Fixed — ready for re-review",
-    body: [ticket.outputName, ticket.styleName, ticket.customerName, ticket.poNumber ? `PO ${ticket.poNumber}` : null]
-      .filter(Boolean)
-      .join(" · "),
+    body: [fixNote, context].filter(Boolean).join(" — "),
     href: `/styles/${ticket.styleId}/review`,
     jobId: run.jobId,
     styleId: ticket.styleId,

@@ -67,6 +67,7 @@ export default async function RejectionLogPage() {
       businessArea: t.businessArea,
       poNumber: t.poNumber,
       comment: t.comment,
+      fixNote: t.fixNote,
       reportedBy: t.reportedBy.name || t.reportedBy.email,
       reopenedCount: t.reopenedCount,
       createdAtLabel: DAY_FORMAT.format(t.createdAt),
@@ -92,7 +93,7 @@ export default async function RejectionLogPage() {
           }
         : null,
       searchBlob:
-        `${t.styleName} ${t.styleNumber} ${t.outputName} ${t.customerName} ${t.businessArea ?? ""} ${t.poNumber ?? ""} ${t.comment}`.toLowerCase(),
+        `${t.styleName} ${t.styleNumber} ${t.outputName} ${t.customerName} ${t.businessArea ?? ""} ${t.poNumber ?? ""} ${t.comment} ${t.fixNote ?? ""}`.toLowerCase(),
     };
   });
 

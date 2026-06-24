@@ -950,6 +950,11 @@ model RejectionTicket {
   reportedById  String
   reopenedCount Int    @default(0)
 
+  // The admin's note when marking the ticket fixed — what was changed. Sent
+  // to the reviewer with the "ready for re-review" notification + email and
+  // kept here for the log. Null when the admin re-notified without a note.
+  fixNote String?
+
   startedAt  DateTime? // → IN_PROGRESS
   fixedAt    DateTime? // → FIXED
   resolvedAt DateTime? // → RESOLVED

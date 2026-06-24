@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { EmailSimulationDialog, type EmailOutcomeView } from "@/components/email-simulation-dialog";
+import { FixModal } from "./fix-modal";
 
 export type TicketRow = {
   id: string;
@@ -17,6 +18,7 @@ export type TicketRow = {
   businessArea: string | null;
   poNumber: string | null;
   comment: string;
+  fixNote: string | null;
   reportedBy: string;
   reopenedCount: number;
   createdAtLabel: string;
@@ -52,6 +54,7 @@ export function TicketList({ rows }: { rows: TicketRow[] }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [email, setEmail] = useState<EmailOutcomeView | null>(null);
+  const [fixTarget, setFixTarget] = useState<TicketRow | null>(null);
 
   const counts = useMemo(() => {
     const c: Record<Status, number> = { OPEN: 0, IN_PROGRESS: 0, FIXED: 0, RESOLVED: 0 };
@@ -73,7 +76,7 @@ export function TicketList({ rows }: { rows: TicketRow[] }) {
     });
   }
 
-  async function act(row: TicketRow, action: "start" | "rerun" | "fix") {
+  async function act(row: TicketRow, action: "start" | "rerun") {
     setErrors((e) => ({ ...e, [row.id]: "" }));
     setNotes((n) => ({ ...n, [row.id]: "" }));
     setPending({ id: row.id, action });
@@ -81,7 +84,6 @@ export function TicketList({ rows }: { rows: TicketRow[] }) {
       const res = await fetch(`/api/admin/rejection-tickets/${row.id}/${action}`, { method: "POST" });
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
-        email?: EmailOutcomeView | null;
         latestAsset?: { placeholderCount: number } | null;
       };
       if (!res.ok) {
@@ -98,7 +100,36 @@ export function TicketList({ rows }: { rows: TicketRow[] }) {
               : "Re-generated — check the fresh preview below.",
         }));
       }
-      if (action === "fix" && body.email) setEmail(body.email);
+      router.refresh();
+    } finally {
+      setPending(null);
+    }
+  }
+
+  // "Mark fixed & notify" goes through the FixModal so the admin can attach an
+  // optional note for the reviewer. A re-run failure keeps the modal open with
+  // the error; success closes it and surfaces the email simulation.
+  async function confirmFix(note: string) {
+    const row = fixTarget;
+    if (!row) return;
+    setErrors((e) => ({ ...e, [row.id]: "" }));
+    setPending({ id: row.id, action: "fix" });
+    try {
+      const res = await fetch(`/api/admin/rejection-tickets/${row.id}/fix`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comment: note }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        email?: EmailOutcomeView | null;
+      };
+      if (!res.ok) {
+        setErrors((e) => ({ ...e, [row.id]: body.error ?? `HTTP ${res.status}` }));
+        return;
+      }
+      if (body.email) setEmail(body.email);
+      setFixTarget(null);
       router.refresh();
     } finally {
       setPending(null);
@@ -161,12 +192,31 @@ export function TicketList({ rows }: { rows: TicketRow[] }) {
                   error={errors[row.id] || null}
                   note={notes[row.id] || null}
                   onAct={(action) => act(row, action)}
+                  onRequestFix={() => setFixTarget(row)}
                 />
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      {fixTarget ? (
+        <FixModal
+          context={[
+            fixTarget.outputName,
+            fixTarget.styleName,
+            fixTarget.poNumber ? `PO ${fixTarget.poNumber}` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+          pending={pending?.id === fixTarget.id && pending.action === "fix"}
+          error={errors[fixTarget.id] || null}
+          onCancel={() => {
+            if (pending?.action !== "fix") setFixTarget(null);
+          }}
+          onConfirm={confirmFix}
+        />
+      ) : null}
 
       {email ? <EmailSimulationDialog outcome={email} onClose={() => setEmail(null)} /> : null}
     </div>
@@ -181,6 +231,7 @@ function Row({
   error,
   note,
   onAct,
+  onRequestFix,
 }: {
   row: TicketRow;
   expanded: boolean;
@@ -188,7 +239,8 @@ function Row({
   pendingAction: string | null;
   error: string | null;
   note: string | null;
-  onAct: (action: "start" | "rerun" | "fix") => void;
+  onAct: (action: "start" | "rerun") => void;
+  onRequestFix: () => void;
 }) {
   const actionable = row.status === "OPEN" || row.status === "IN_PROGRESS";
   return (
@@ -230,6 +282,14 @@ function Row({
                 </div>
                 <p className="mt-1 text-xs whitespace-pre-wrap text-zinc-700">{row.comment}</p>
                 <p className="mt-2 text-[11px] text-zinc-400">— {row.reportedBy}</p>
+                {row.fixNote ? (
+                  <div className="mt-3 border-t border-zinc-100 pt-2">
+                    <div className="text-[10px] font-bold tracking-wide text-zinc-400 uppercase">
+                      Fix note → reviewer
+                    </div>
+                    <p className="mt-1 text-xs whitespace-pre-wrap text-zinc-700">{row.fixNote}</p>
+                  </div>
+                ) : null}
               </div>
               <div className="rounded-lg border border-zinc-200 bg-white p-3">
                 <div className="text-[10px] font-bold tracking-wide text-zinc-400 uppercase">Context</div>
@@ -321,7 +381,7 @@ function Row({
                   </button>
                   <button
                     type="button"
-                    onClick={() => onAct("fix")}
+                    onClick={onRequestFix}
                     disabled={pendingAction !== null}
                     title="Final re-run + email the reviewer that it's ready for another look"
                     className="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50"
