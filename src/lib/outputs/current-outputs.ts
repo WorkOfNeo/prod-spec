@@ -108,6 +108,68 @@ export function outputAnchor(variantKey: string): string {
 
 const base = (variantKey: string) => variantKey.split("#")[0];
 
+// Most-actionable state first — used to summarise a multi-document slot by the
+// single state that best describes it (a rejection or an in-flight regen matters
+// more than a sibling that's already approved).
+const SLOT_STATE_PRIORITY: OutputState[] = [
+  "GENERATING",
+  "REJECTED",
+  "BLOCKED",
+  "TO_REVIEW",
+  "APPROVED",
+  "READY_TO_GENERATE",
+  "AWAITING_DATA",
+];
+
+// Pure: aggregate by OUTPUT SLOT (base variantKey) instead of per document. A
+// multi-document output ("<base>#<suffix>", e.g. a carton X-of-Y per size/colour)
+// collapses to ONE slot, so coverage reads "max outputs that will be generated"
+// — stable before and after generation — rather than ballooning as documents
+// land. A slot counts as generated when ANY of its documents has an asset; its
+// review bucket is the most-actionable state among its documents. For
+// single-document outputs this is identical to rollupOutputs.
+export function rollupOutputSlots(outputs: CurrentOutput[]): StyleOutputRollup {
+  const byBase = new Map<string, CurrentOutput[]>();
+  for (const o of outputs) {
+    const b = base(o.variantKey);
+    const arr = byBase.get(b);
+    if (arr) arr.push(o);
+    else byBase.set(b, [o]);
+  }
+
+  const bucket: Record<OutputState, number> = {
+    AWAITING_DATA: 0,
+    READY_TO_GENERATE: 0,
+    GENERATING: 0,
+    TO_REVIEW: 0,
+    BLOCKED: 0,
+    APPROVED: 0,
+    REJECTED: 0,
+  };
+  let generated = 0;
+  for (const docs of byBase.values()) {
+    if (docs.some((d) => d.jobAssetId != null)) generated += 1;
+    const slotState =
+      SLOT_STATE_PRIORITY.find((s) => docs.some((d) => d.state === s)) ?? "AWAITING_DATA";
+    bucket[slotState] += 1;
+  }
+
+  const total = byBase.size;
+  return {
+    total,
+    generated,
+    awaitingData: bucket.AWAITING_DATA,
+    readyToGenerate: bucket.READY_TO_GENERATE,
+    generating: bucket.GENERATING,
+    toReview: bucket.TO_REVIEW,
+    blocked: bucket.BLOCKED,
+    approved: bucket.APPROVED,
+    rejected: bucket.REJECTED,
+    complete: total > 0 && generated === total,
+    fullyApproved: total > 0 && bucket.APPROVED === total,
+  };
+}
+
 // DB read. Resolves the style's declared outputs + readiness, the newest asset
 // per output across all non-FAILED jobs, and any in-flight generation, then
 // derives each output's current state.
