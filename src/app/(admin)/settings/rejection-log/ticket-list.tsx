@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EmailSimulationDialog, type EmailOutcomeView } from "@/components/email-simulation-dialog";
 
 // A rendered PDF for a ticket's output (jobId + the preview query that
@@ -83,6 +83,30 @@ export function TicketList({ rows }: { rows: TicketRow[] }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [email, setEmail] = useState<EmailOutcomeView | null>(null);
+  // Bulk "mark fixed" selection (ticket ids) + in-flight progress + result.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
+  const [bulkSummary, setBulkSummary] = useState<{ fixed: number; failed: number } | null>(null);
+
+  // Only OPEN / IN_PROGRESS tickets can be marked fixed — FIXED/RESOLVED are done.
+  const actionableIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of rows) if (r.status === "OPEN" || r.status === "IN_PROGRESS") s.add(r.id);
+    return s;
+  }, [rows]);
+
+  // Keep the selection honest as tickets settle (a refresh may flip some to FIXED).
+  useEffect(() => {
+    setSelected((prev) => {
+      const next = new Set([...prev].filter((id) => actionableIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [actionableIds]);
+
+  const selectedCount = useMemo(
+    () => [...selected].filter((id) => actionableIds.has(id)).length,
+    [selected, actionableIds],
+  );
 
   const counts = useMemo(() => {
     const c: Record<Status, number> = { OPEN: 0, IN_PROGRESS: 0, FIXED: 0, RESOLVED: 0 };
@@ -198,6 +222,51 @@ export function TicketList({ rows }: { rows: TicketRow[] }) {
     }
   }
 
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function setManySelected(ids: string[], on: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  // Bulk "Mark fixed & notify": run the same per-ticket fix sequentially so each
+  // gets its own request budget (renders are slow) and commits independently —
+  // a mid-way stop still leaves the finished ones FIXED. Sequential also dodges
+  // runTicketJob's "a job is already in flight for this style" guard.
+  async function bulkFix() {
+    const ids = [...selected].filter((id) => actionableIds.has(id));
+    if (ids.length === 0 || bulk) return;
+    setBulkSummary(null);
+    setBulk({ done: 0, total: ids.length });
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        const res = await fetch(`/api/admin/rejection-tickets/${id}/fix`, { method: "POST" });
+        if (!res.ok) failed++;
+      } catch {
+        failed++;
+      }
+      setBulk((b) => (b ? { ...b, done: b.done + 1 } : b));
+    }
+    setBulk(null);
+    setSelected(new Set());
+    setBulkSummary({ fixed: ids.length - failed, failed });
+    router.refresh();
+  }
+
   return (
     <div className="mt-5">
       <div className="flex flex-wrap items-center gap-2">
@@ -222,6 +291,28 @@ export function TicketList({ rows }: { rows: TicketRow[] }) {
           </button>
         ))}
       </div>
+
+      {bulkSummary ? (
+        <div
+          className={`mt-3 flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${
+            bulkSummary.failed > 0
+              ? "border-amber-200 bg-amber-50 text-amber-800"
+              : "border-emerald-200 bg-emerald-50 text-emerald-800"
+          }`}
+        >
+          <span>
+            ✓ {bulkSummary.fixed} marked fixed &amp; reviewer notified
+            {bulkSummary.failed > 0 ? ` · ${bulkSummary.failed} failed (still open — try again)` : ""}.
+          </span>
+          <button
+            type="button"
+            onClick={() => setBulkSummary(null)}
+            className="ml-auto text-xs text-zinc-500 underline hover:text-zinc-800"
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       {groups.length === 0 ? (
         <p className="mt-4 rounded-lg border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-400">
@@ -249,11 +340,48 @@ export function TicketList({ rows }: { rows: TicketRow[] }) {
                 errors={errors}
                 notes={notes}
                 onAct={act}
+                selected={selected}
+                onToggleSelect={toggleSelect}
+                onSetManySelected={setManySelected}
+                bulkBusy={bulk !== null}
               />
             ))}
           </div>
         </>
       )}
+
+      {selectedCount > 0 || bulk ? (
+        <div className="fixed inset-x-0 bottom-5 z-20 flex justify-center px-4">
+          <div className="flex items-center gap-3 rounded-full border border-zinc-300 bg-white py-2 pr-3 pl-4 shadow-lg">
+            {bulk ? (
+              <span className="text-sm text-zinc-700">
+                Marking fixed &amp; notifying… {bulk.done}/{bulk.total}
+              </span>
+            ) : (
+              <>
+                <span className="text-sm font-medium text-zinc-700">
+                  {selectedCount} ticket{selectedCount === 1 ? "" : "s"} selected
+                </span>
+                <button
+                  type="button"
+                  onClick={bulkFix}
+                  className="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700"
+                  title="Re-run each selected output and notify the reviewer it's ready for re-review"
+                >
+                  ✓ Mark fixed &amp; notify
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelected(new Set())}
+                  className="text-xs text-zinc-500 underline hover:text-zinc-800"
+                >
+                  Clear
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {email ? <EmailSimulationDialog outcome={email} onClose={() => setEmail(null)} /> : null}
     </div>
@@ -271,6 +399,10 @@ function GroupSection({
   errors,
   notes,
   onAct,
+  selected,
+  onToggleSelect,
+  onSetManySelected,
+  bulkBusy,
 }: {
   group: StyleGroup;
   open: boolean;
@@ -282,7 +414,15 @@ function GroupSection({
   errors: Record<string, string>;
   notes: Record<string, string>;
   onAct: (row: TicketRow, action: "start" | "rerun" | "fix") => void;
+  selected: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onSetManySelected: (ids: string[], on: boolean) => void;
+  bulkBusy: boolean;
 }) {
+  const selectableIds = group.tickets
+    .filter((t) => t.status === "OPEN" || t.status === "IN_PROGRESS")
+    .map((t) => t.id);
+  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
   return (
     <div className="border-b border-zinc-200 last:border-b-0">
       <button
@@ -333,6 +473,16 @@ function GroupSection({
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-zinc-200 text-[11px] tracking-wide text-zinc-500 uppercase">
+                <th className="px-3 py-2">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 cursor-pointer align-middle accent-violet-600"
+                    checked={allSelected}
+                    disabled={selectableIds.length === 0 || bulkBusy}
+                    onChange={(e) => onSetManySelected(selectableIds, e.target.checked)}
+                    title={allSelected ? "Deselect all in this style" : "Select all open tickets in this style"}
+                  />
+                </th>
                 <th className="px-3 py-2 font-semibold">Created</th>
                 <th className="px-3 py-2 font-semibold">Output</th>
                 <th className="px-3 py-2 font-semibold">Customer · BA</th>
@@ -353,6 +503,9 @@ function GroupSection({
                   error={errors[row.id] || null}
                   note={notes[row.id] || null}
                   onAct={(action) => onAct(row, action)}
+                  selected={selected.has(row.id)}
+                  onToggleSelect={() => onToggleSelect(row.id)}
+                  bulkBusy={bulkBusy}
                 />
               ))}
             </tbody>
@@ -372,6 +525,9 @@ function Row({
   error,
   note,
   onAct,
+  selected,
+  onToggleSelect,
+  bulkBusy,
 }: {
   row: TicketRow;
   expanded: boolean;
@@ -381,6 +537,9 @@ function Row({
   error: string | null;
   note: string | null;
   onAct: (action: "start" | "rerun" | "fix") => void;
+  selected: boolean;
+  onToggleSelect: () => void;
+  bulkBusy: boolean;
 }) {
   const actionable = row.status === "OPEN" || row.status === "IN_PROGRESS";
   const data = asset && typeof asset === "object" ? asset : null;
@@ -395,6 +554,18 @@ function Row({
         onClick={onToggle}
         className={`cursor-pointer border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50 ${expanded ? "bg-zinc-50" : ""}`}
       >
+        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+          {actionable ? (
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 cursor-pointer align-middle accent-violet-600"
+              checked={selected}
+              disabled={bulkBusy}
+              onChange={onToggleSelect}
+              aria-label="Select ticket for bulk fix"
+            />
+          ) : null}
+        </td>
         <td className="px-3 py-2 whitespace-nowrap text-zinc-500">{row.createdAtLabel}</td>
         <td className="px-3 py-2 text-zinc-600">{row.outputName}</td>
         <td className="px-3 py-2 text-zinc-600">
@@ -416,7 +587,7 @@ function Row({
       </tr>
       {expanded ? (
         <tr className="border-b border-zinc-100 last:border-b-0">
-          <td colSpan={6} className="bg-zinc-50 px-4 py-4">
+          <td colSpan={7} className="bg-zinc-50 px-4 py-4">
             <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded-lg border border-zinc-200 bg-white p-3">
                 <div className="text-[10px] font-bold tracking-wide text-zinc-400 uppercase">
