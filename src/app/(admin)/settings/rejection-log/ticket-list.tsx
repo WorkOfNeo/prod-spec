@@ -5,6 +5,24 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { EmailSimulationDialog, type EmailOutcomeView } from "@/components/email-simulation-dialog";
 
+// A rendered PDF for a ticket's output (jobId + the preview query that
+// addresses it), with its review state.
+export type AssetView = {
+  jobId: string;
+  previewQuery: string;
+  placeholderCount: number;
+  reviewStatus: string;
+  jobStatus: string;
+  generatedAtLabel: string;
+};
+
+// Loaded on demand from /api/admin/rejection-tickets/[id]/assets when a ticket
+// is expanded: the originally-rejected PDF plus the latest one for the output.
+export type TicketAssets = {
+  rejected: AssetView | null;
+  latest: AssetView | null;
+};
+
 export type TicketRow = {
   id: string;
   status: "OPEN" | "IN_PROGRESS" | "FIXED" | "RESOLVED";
@@ -21,16 +39,17 @@ export type TicketRow = {
   reopenedCount: number;
   createdAtLabel: string;
   historyLabel: string;
-  latest: {
-    jobId: string;
-    previewQuery: string;
-    placeholderCount: number;
-    reviewStatus: string;
-    jobStatus: string;
-    generatedAtLabel: string;
-  } | null;
+  // Direct "edit this output" target: the Output Builder layout, or the
+  // style's Prod Spec cover/general tab. null = no in-app editor (coded
+  // template / print-spec catalogue output).
+  editHref: string | null;
+  editLabel: string;
   searchBlob: string;
 };
+
+// Per-ticket lazy-load state: undefined = not fetched, "loading"/"error"
+// = in-flight/failed, object = the fetched { rejected, latest }.
+type AssetState = TicketAssets | "loading" | "error" | undefined;
 
 const STATUSES = ["OPEN", "IN_PROGRESS", "FIXED", "RESOLVED"] as const;
 type Status = (typeof STATUSES)[number];
@@ -42,12 +61,24 @@ const STATUS_PILLS: Record<Status, string> = {
   RESOLVED: "border-emerald-200 bg-emerald-50 text-emerald-700",
 };
 
+type StyleGroup = {
+  styleId: string;
+  styleName: string;
+  styleNumber: string;
+  customerName: string;
+  tickets: TicketRow[];
+  counts: Record<Status, number>;
+  latestLabel: string;
+};
+
 export function TicketList({ rows }: { rows: TicketRow[] }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   // RESOLVED is hidden by default — the workbench shows actionable threads.
   const [enabled, setEnabled] = useState<Set<Status>>(new Set(["OPEN", "IN_PROGRESS", "FIXED"]));
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [assets, setAssets] = useState<Record<string, AssetState>>({});
   const [pending, setPending] = useState<{ id: string; action: string } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -64,6 +95,34 @@ export function TicketList({ rows }: { rows: TicketRow[] }) {
     return rows.filter((r) => enabled.has(r.status) && (q === "" || r.searchBlob.includes(q)));
   }, [rows, query, enabled]);
 
+  // Group the (already newest-first) filtered tickets by style. Insertion
+  // order = first-seen order = most-recently-rejected style first, and the
+  // first ticket in each group is that style's newest rejection.
+  const groups = useMemo<StyleGroup[]>(() => {
+    const map = new Map<string, StyleGroup>();
+    for (const r of filtered) {
+      let g = map.get(r.styleId);
+      if (!g) {
+        g = {
+          styleId: r.styleId,
+          styleName: r.styleName,
+          styleNumber: r.styleNumber,
+          customerName: r.customerName,
+          tickets: [],
+          counts: { OPEN: 0, IN_PROGRESS: 0, FIXED: 0, RESOLVED: 0 },
+          latestLabel: r.createdAtLabel,
+        };
+        map.set(r.styleId, g);
+      }
+      g.tickets.push(r);
+      g.counts[r.status]++;
+    }
+    return [...map.values()];
+  }, [filtered]);
+
+  // An active text search drills into every matching style automatically.
+  const searching = query.trim() !== "";
+
   function toggleStatus(s: Status) {
     setEnabled((prev) => {
       const next = new Set(prev);
@@ -71,6 +130,38 @@ export function TicketList({ rows }: { rows: TicketRow[] }) {
       else next.add(s);
       return next;
     });
+  }
+
+  function toggleGroup(styleId: string) {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(styleId)) next.delete(styleId);
+      else next.add(styleId);
+      return next;
+    });
+  }
+
+  async function loadAsset(id: string) {
+    setAssets((a) => ({ ...a, [id]: "loading" }));
+    try {
+      const res = await fetch(`/api/admin/rejection-tickets/${id}/assets`);
+      if (!res.ok) {
+        setAssets((a) => ({ ...a, [id]: "error" }));
+        return;
+      }
+      const body = (await res.json()) as TicketAssets;
+      setAssets((a) => ({ ...a, [id]: { rejected: body.rejected, latest: body.latest } }));
+    } catch {
+      setAssets((a) => ({ ...a, [id]: "error" }));
+    }
+  }
+
+  function toggleTicket(id: string) {
+    const willOpen = expanded !== id;
+    setExpanded(willOpen ? id : null);
+    // Side effect stays outside the state updater (which StrictMode
+    // double-invokes) so the asset is fetched exactly once on open.
+    if (willOpen) void loadAsset(id);
   }
 
   async function act(row: TicketRow, action: "start" | "rerun" | "fix") {
@@ -99,6 +190,8 @@ export function TicketList({ rows }: { rows: TicketRow[] }) {
         }));
       }
       if (action === "fix" && body.email) setEmail(body.email);
+      // A re-run replaces the asset (new job) — refresh the lazy preview too.
+      if (action === "rerun" || action === "fix") void loadAsset(row.id);
       router.refresh();
     } finally {
       setPending(null);
@@ -130,19 +223,117 @@ export function TicketList({ rows }: { rows: TicketRow[] }) {
         ))}
       </div>
 
-      {filtered.length === 0 ? (
+      {groups.length === 0 ? (
         <p className="mt-4 rounded-lg border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-400">
           {rows.length === 0
             ? "No rejections yet — when a reviewer rejects an output, its ticket lands here."
             : "Nothing matches the current filters."}
         </p>
       ) : (
-        <div className="mt-3 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+        <>
+          <p className="mt-3 text-xs text-zinc-400">
+            {groups.length} style{groups.length === 1 ? "" : "s"} · {filtered.length} rejection
+            {filtered.length === 1 ? "" : "s"}
+          </p>
+          <div className="mt-2 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+            {groups.map((g) => (
+              <GroupSection
+                key={g.styleId}
+                group={g}
+                open={searching || openGroups.has(g.styleId)}
+                onToggle={() => toggleGroup(g.styleId)}
+                expandedTicket={expanded}
+                onToggleTicket={toggleTicket}
+                assets={assets}
+                pending={pending}
+                errors={errors}
+                notes={notes}
+                onAct={act}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {email ? <EmailSimulationDialog outcome={email} onClose={() => setEmail(null)} /> : null}
+    </div>
+  );
+}
+
+function GroupSection({
+  group,
+  open,
+  onToggle,
+  expandedTicket,
+  onToggleTicket,
+  assets,
+  pending,
+  errors,
+  notes,
+  onAct,
+}: {
+  group: StyleGroup;
+  open: boolean;
+  onToggle: () => void;
+  expandedTicket: string | null;
+  onToggleTicket: (id: string) => void;
+  assets: Record<string, AssetState>;
+  pending: { id: string; action: string } | null;
+  errors: Record<string, string>;
+  notes: Record<string, string>;
+  onAct: (row: TicketRow, action: "start" | "rerun" | "fix") => void;
+}) {
+  return (
+    <div className="border-b border-zinc-200 last:border-b-0">
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-zinc-50 ${
+          open ? "bg-zinc-50" : ""
+        }`}
+        aria-expanded={open}
+      >
+        <svg
+          viewBox="0 0 20 20"
+          className={`h-4 w-4 shrink-0 text-zinc-400 transition-transform ${open ? "rotate-90" : ""}`}
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path d="M7 5l6 5-6 5V5z" />
+        </svg>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            <span className="truncate font-medium text-zinc-800">{group.styleName}</span>
+            <span className="shrink-0 font-mono text-[10px] text-zinc-400">{group.styleNumber}</span>
+          </div>
+          {group.customerName ? (
+            <div className="truncate text-xs text-zinc-500">{group.customerName}</div>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {STATUSES.map((s) =>
+            group.counts[s] > 0 ? (
+              <span
+                key={s}
+                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap ${STATUS_PILLS[s]}`}
+                title={`${group.counts[s]} ${s.replace("_", " ")}`}
+              >
+                {group.counts[s]} {s.replace("_", " ").toLowerCase()}
+              </span>
+            ) : null,
+          )}
+        </div>
+        <span className="hidden shrink-0 text-xs whitespace-nowrap text-zinc-400 sm:inline">
+          latest {group.latestLabel}
+        </span>
+      </button>
+
+      {open ? (
+        <div className="overflow-x-auto border-t border-zinc-100 bg-white">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-zinc-200 text-[11px] tracking-wide text-zinc-500 uppercase">
                 <th className="px-3 py-2 font-semibold">Created</th>
-                <th className="px-3 py-2 font-semibold">Style</th>
                 <th className="px-3 py-2 font-semibold">Output</th>
                 <th className="px-3 py-2 font-semibold">Customer · BA</th>
                 <th className="px-3 py-2 font-semibold">PO</th>
@@ -151,24 +342,23 @@ export function TicketList({ rows }: { rows: TicketRow[] }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row) => (
+              {group.tickets.map((row) => (
                 <Row
                   key={row.id}
                   row={row}
-                  expanded={expanded === row.id}
-                  onToggle={() => setExpanded((cur) => (cur === row.id ? null : row.id))}
+                  expanded={expandedTicket === row.id}
+                  onToggle={() => onToggleTicket(row.id)}
+                  asset={assets[row.id]}
                   pendingAction={pending?.id === row.id ? pending.action : null}
                   error={errors[row.id] || null}
                   note={notes[row.id] || null}
-                  onAct={(action) => act(row, action)}
+                  onAct={(action) => onAct(row, action)}
                 />
               ))}
             </tbody>
           </table>
         </div>
-      )}
-
-      {email ? <EmailSimulationDialog outcome={email} onClose={() => setEmail(null)} /> : null}
+      ) : null}
     </div>
   );
 }
@@ -177,6 +367,7 @@ function Row({
   row,
   expanded,
   onToggle,
+  asset,
   pendingAction,
   error,
   note,
@@ -185,12 +376,19 @@ function Row({
   row: TicketRow;
   expanded: boolean;
   onToggle: () => void;
+  asset: AssetState;
   pendingAction: string | null;
   error: string | null;
   note: string | null;
   onAct: (action: "start" | "rerun" | "fix") => void;
 }) {
   const actionable = row.status === "OPEN" || row.status === "IN_PROGRESS";
+  const data = asset && typeof asset === "object" ? asset : null;
+  const rejected = data?.rejected ?? null;
+  const latest = data?.latest ?? null;
+  // Surface the latest version separately only when a re-run produced a
+  // different job than the one that was rejected.
+  const latestDiffers = !!latest && (!rejected || latest.jobId !== rejected.jobId);
   return (
     <>
       <tr
@@ -198,10 +396,6 @@ function Row({
         className={`cursor-pointer border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50 ${expanded ? "bg-zinc-50" : ""}`}
       >
         <td className="px-3 py-2 whitespace-nowrap text-zinc-500">{row.createdAtLabel}</td>
-        <td className="px-3 py-2">
-          <div className="font-medium text-zinc-800">{row.styleName}</div>
-          <div className="font-mono text-[10px] text-zinc-400">{row.styleNumber}</div>
-        </td>
         <td className="px-3 py-2 text-zinc-600">{row.outputName}</td>
         <td className="px-3 py-2 text-zinc-600">
           {row.customerName}
@@ -222,7 +416,7 @@ function Row({
       </tr>
       {expanded ? (
         <tr className="border-b border-zinc-100 last:border-b-0">
-          <td colSpan={7} className="bg-zinc-50 px-4 py-4">
+          <td colSpan={6} className="bg-zinc-50 px-4 py-4">
             <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded-lg border border-zinc-200 bg-white p-3">
                 <div className="text-[10px] font-bold tracking-wide text-zinc-400 uppercase">
@@ -241,7 +435,18 @@ function Row({
                 <p className="mt-1 font-mono text-[11px] break-all text-zinc-500">
                   {row.variantKey || `(no variant key — full re-run)`}
                 </p>
-                <div className="mt-2 flex gap-3 text-xs">
+                <div className="mt-2 flex flex-wrap gap-3 text-xs">
+                  {row.editHref ? (
+                    <a
+                      href={row.editHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-violet-700 underline hover:text-violet-900"
+                      title="Edit the source of this output in a new tab, then come back and re-run"
+                    >
+                      {row.editLabel} →
+                    </a>
+                  ) : null}
                   <Link href={`/styles/${row.styleId}`} className="text-zinc-500 underline hover:text-zinc-800">
                     Open style →
                   </Link>
@@ -256,46 +461,33 @@ function Row({
               <div className="rounded-lg border border-zinc-200 bg-white p-3">
                 <div className="text-[10px] font-bold tracking-wide text-zinc-400 uppercase">History</div>
                 <p className="mt-1 text-xs text-zinc-700">{row.historyLabel}</p>
-                {row.latest ? (
-                  <p className="mt-2 text-xs text-zinc-500">
-                    Latest run {row.latest.generatedAtLabel} · {row.latest.reviewStatus.toLowerCase().replace("_", " ")}
-                    {row.latest.placeholderCount > 0 ? (
-                      <span className="text-amber-700">
-                        {" "}
-                        · ⚠ {row.latest.placeholderCount} placeholder(s)
-                      </span>
-                    ) : (
-                      <span className="text-emerald-700"> · no placeholders</span>
-                    )}
-                  </p>
-                ) : (
-                  <p className="mt-2 text-xs text-zinc-400">No generated asset for this output right now.</p>
-                )}
               </div>
             </div>
 
-            {row.latest ? (
-              <div className="mt-3 overflow-hidden rounded-lg border border-zinc-200 bg-white">
-                <div className="flex items-center justify-between border-b border-zinc-100 bg-zinc-50 px-3 py-1.5">
-                  <span className="text-[11px] font-semibold text-zinc-500">
-                    Latest PDF — generated {row.latest.generatedAtLabel}
-                  </span>
-                  <a
-                    href={`/api/admin/jobs/${row.latest.jobId}/preview?${row.latest.previewQuery}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-zinc-500 underline"
-                  >
-                    Open
-                  </a>
-                </div>
-                <iframe
-                  src={`/api/admin/jobs/${row.latest.jobId}/preview?${row.latest.previewQuery}`}
-                  className="block h-72 w-full bg-white"
-                  title={`Latest ${row.outputName}`}
-                />
-              </div>
-            ) : null}
+            {asset === "loading" || asset === undefined ? (
+              <p className="mt-3 text-xs text-zinc-400">Loading the rejected PDF…</p>
+            ) : asset === "error" ? (
+              <p className="mt-3 text-xs text-red-600">Couldn&apos;t load the PDF preview.</p>
+            ) : !rejected && !latest ? (
+              <p className="mt-3 text-xs text-zinc-400">No generated PDF for this output right now.</p>
+            ) : (
+              <>
+                {rejected ? (
+                  <PreviewBlock
+                    title="Rejected version — what the reviewer saw"
+                    asset={rejected}
+                    outputName={row.outputName}
+                  />
+                ) : (
+                  <p className="mt-3 text-xs text-amber-700">
+                    The originally rejected PDF is no longer stored — showing the latest version below.
+                  </p>
+                )}
+                {latestDiffers ? (
+                  <PreviewBlock title="Latest re-run" asset={latest!} outputName={row.outputName} />
+                ) : null}
+              </>
+            )}
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {row.status === "OPEN" ? (
@@ -346,5 +538,46 @@ function Row({
         </tr>
       ) : null}
     </>
+  );
+}
+
+// One labelled PDF preview (header + inline iframe). Used for both the
+// rejected original and, when a re-run exists, the latest version.
+function PreviewBlock({
+  title,
+  asset,
+  outputName,
+}: {
+  title: string;
+  asset: AssetView;
+  outputName: string;
+}) {
+  const previewUrl = `/api/admin/jobs/${asset.jobId}/preview?${asset.previewQuery}`;
+  return (
+    <div className="mt-3 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="flex items-center justify-between gap-3 border-b border-zinc-100 bg-zinc-50 px-3 py-1.5">
+        <span className="text-[11px] font-semibold text-zinc-600">
+          {title} · generated {asset.generatedAtLabel}
+          <span className="font-normal text-zinc-400">
+            {" · "}
+            {asset.reviewStatus.toLowerCase().replace("_", " ")}
+          </span>
+          {asset.placeholderCount > 0 ? (
+            <span className="font-normal text-amber-700"> · ⚠ {asset.placeholderCount} placeholder(s)</span>
+          ) : (
+            <span className="font-normal text-emerald-700"> · no placeholders</span>
+          )}
+        </span>
+        <a
+          href={previewUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0 text-xs text-zinc-500 underline"
+        >
+          Open
+        </a>
+      </div>
+      <iframe src={previewUrl} className="block h-72 w-full bg-white" title={`${title} — ${outputName}`} />
+    </div>
   );
 }

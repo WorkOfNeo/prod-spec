@@ -29,23 +29,16 @@ import { renderLayoutHtml, repetitionStyles } from "./render";
 // refreshLayoutVariants() so a publish is visible immediately in-process.
 // =====================================================
 
-export const LAYOUT_VARIANT_PREFIX = "layout:";
-
-export function layoutVariantKey(layoutId: string): string {
-  return `${LAYOUT_VARIANT_PREFIX}${layoutId}`;
-}
-
-export function isLayoutVariantKey(key: string): boolean {
-  return key.startsWith(LAYOUT_VARIANT_PREFIX);
-}
-
-// The OutputLayout id behind a layout variant key, or null for non-layout
-// keys. Strips the `#<suffix>` that multi-document (per-EAN split) assets
-// carry, so `layout:abc#m-blue` and `layout:abc` both resolve to `abc`.
-export function layoutIdFromVariantKey(key: string | null | undefined): string | null {
-  if (!key || !key.startsWith(LAYOUT_VARIANT_PREFIX)) return null;
-  return key.slice(LAYOUT_VARIANT_PREFIX.length).split("#")[0] || null;
-}
+// The pure `layout:<id>` key helpers live in variant-keys.ts (no Prisma /
+// render-pipeline imports). Imported for use below and re-exported so existing
+// call sites keep importing them from this module unchanged.
+import {
+  LAYOUT_VARIANT_PREFIX,
+  layoutVariantKey,
+  isLayoutVariantKey,
+  layoutIdFromVariantKey,
+} from "./variant-keys";
+export { LAYOUT_VARIANT_PREFIX, layoutVariantKey, isLayoutVariantKey, layoutIdFromVariantKey };
 
 type LayoutRow = {
   id: string;
