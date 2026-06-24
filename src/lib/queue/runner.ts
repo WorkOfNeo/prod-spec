@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { renderPdf } from "@/lib/pdf/renderer";
+import { inlineProdSpecImages } from "@/lib/pdf/inline-images";
 import { ensureLayoutVariantsLoaded, layoutIdFromVariantKey } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
@@ -390,7 +391,7 @@ export async function processJob(jobId: string): Promise<void> {
   const bundlePages: BundlePage[] = [];
   try {
     const generalInfoMd = prodSpec?.generalInfoMd?.trim();
-    const coverHtml = renderCoverPageHtml({
+    let coverHtml = renderCoverPageHtml({
       customerName: job.style.customer.name,
       businessArea: businessAreaName,
       styleName: job.style.name,
@@ -407,6 +408,9 @@ export async function processJob(jobId: string): Promise<void> {
         ? { markdown: generalInfoMd, settings: pageSettings.generalInfo }
         : null,
     });
+    // Resolve general-info image URLs to data URLs — the cover embeds the
+    // same markdown, and page.setContent() can't fetch a bare /api path.
+    if (prodSpec && generalInfoMd) coverHtml = await inlineProdSpecImages(coverHtml, prodSpec.id);
     bundlePages.push({
       docType: "COVER",
       variantKey: COVER_VARIANT_KEY,
@@ -415,13 +419,14 @@ export async function processJob(jobId: string): Promise<void> {
       pdf: await renderPdf({ html: coverHtml }),
     });
 
-    if (generalInfoMd) {
-      const infoHtml = renderGeneralInfoHtml({
+    if (generalInfoMd && prodSpec) {
+      let infoHtml = renderGeneralInfoHtml({
         markdown: generalInfoMd,
         customerName: job.style.customer.name,
         businessArea: businessAreaName,
         settings: pageSettings.generalInfo,
       });
+      infoHtml = await inlineProdSpecImages(infoHtml, prodSpec.id);
       bundlePages.push({
         docType: "GENERAL_INFO",
         variantKey: GENERAL_INFO_VARIANT_KEY,

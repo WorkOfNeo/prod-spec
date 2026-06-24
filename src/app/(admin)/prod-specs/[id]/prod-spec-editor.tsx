@@ -373,10 +373,15 @@ export function ProdSpecEditor(props: Props) {
                 non-empty, this page joins <strong>every bundle</strong> generated under this prod
                 spec as <code className="font-mono">01-…-general-information.pdf</code>. Type{" "}
                 <code className="font-mono">#</code> + space for a heading,{" "}
-                <code className="font-mono">-</code> + space for a list; tables insert from the
-                toolbar. Markdown under the hood — flip to the Markdown view to paste raw source.
+                <code className="font-mono">-</code> + space for a list; tables and images insert
+                from the toolbar. Markdown under the hood — flip to the Markdown view to paste raw
+                source.
               </p>
-              <MarkdownEditor value={generalInfoMd} onChange={setGeneralInfoMd} />
+              <MarkdownEditor
+                value={generalInfoMd}
+                onChange={setGeneralInfoMd}
+                uploadUrl={`/api/admin/prod-specs/${props.prodSpecId}/images`}
+              />
               <p className="mt-1 text-[11px] text-zinc-400">
                 Long content flows onto further A4 pages automatically. Preview refreshes after
                 each autosave.

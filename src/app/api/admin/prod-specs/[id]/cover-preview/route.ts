@@ -6,6 +6,7 @@ import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildSampleStyleData } from "@/lib/pdf/sample-data";
 import { parseBundlePageSettings, parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { renderCoverPageHtml, type BundleDocSummary } from "@/lib/pdf/bundle-pages";
+import { inlineProdSpecImages } from "@/lib/pdf/inline-images";
 
 export const runtime = "nodejs";
 
@@ -50,7 +51,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     const sample = buildSampleStyleData();
     const pageSettings = parseBundlePageSettings(prodSpec.bundlePageSettings);
     const generalInfoMd = prodSpec.generalInfoMd?.trim();
-    const html = renderCoverPageHtml({
+    let html = renderCoverPageHtml({
       customerName: prodSpec.customer.name,
       businessArea: prodSpec.businessArea.name,
       styleName: sample.styleName,
@@ -66,6 +67,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
         ? { markdown: generalInfoMd, settings: pageSettings.generalInfo }
         : null,
     });
+    // Inline any general-info image URLs to data URLs — same as the runner.
+    if (generalInfoMd) html = await inlineProdSpecImages(html, id);
 
     return new NextResponse(html, {
       status: 200,
