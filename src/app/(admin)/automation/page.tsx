@@ -27,6 +27,15 @@ const EAN_ORDER = [
 
 const JOB_ORDER = ["QUEUED", "RUNNING", "AWAITING_REVIEW", "APPROVED", "REJECTED", "FAILED"] as const;
 
+const STYLE_ORDER = [
+  "PENDING",
+  "READY",
+  "GENERATING",
+  "AWAITING_REVIEW",
+  "APPROVED",
+  "REJECTED",
+] as const;
+
 // Automation activity. Shows whether the Railway cron is actually landing
 // (recent runs + what each did), the current queue depths, and a "Run now"
 // button to drain on demand — the diagnostic home for "why are things still
@@ -64,6 +73,9 @@ export default async function AutomationPage({
     lastFired,
     activityCount,
     totalCount,
+    styleGroups,
+    readyToGen,
+    generatedStyles,
   ] = await Promise.all([
     getPoEanAutoRunEnabled(),
     getAutoGenerateEnabled(),
@@ -98,10 +110,27 @@ export default async function AutomationPage({
     db.cronRun.groupBy({ by: ["kind"], _max: { createdAt: true } }),
     db.cronRun.count({ where: activityWhere }),
     db.cronRun.count(),
+    db.style.groupBy({ by: ["status"], _count: { _all: true } }),
+    // "Ready to generate": complete styles on an active prod spec with no job
+    // in flight — the backlog the sweep would pick up next. (Partial styles
+    // whose own ready outputs trickle in are generated too, but counting those
+    // needs the per-output readiness walk, too costly for a page load.)
+    db.style.count({
+      where: {
+        status: "READY",
+        prodSpec: { is: { active: true } },
+        jobs: { none: { status: { in: ["QUEUED", "RUNNING"] } } },
+      },
+    }),
+    // "Styles generated": at least one output produced (a non-FAILED asset).
+    db.style.count({
+      where: { jobs: { some: { status: { not: "FAILED" }, assets: { some: {} } } } },
+    }),
   ]);
 
   const eanCounts = new Map(eanGroups.map((g) => [g.eanStatus as string, g._count._all]));
   const jobCounts = new Map(jobGroups.map((g) => [g.status as string, g._count._all]));
+  const styleCounts = new Map(styleGroups.map((g) => [g.status as string, g._count._all]));
   const queued = eanCounts.get("PENDING") ?? 0;
   // Below-cutoff PENDING — sitting parked, NOT auto-scraped.
   const parkedQueued = Math.max(queued - activeQueued, 0);
@@ -167,6 +196,30 @@ export default async function AutomationPage({
         <PoCutoffControl initialCutoff={minPo} parkedCount={parkedQueued} />
       </div>
 
+      {/* Generation backlog — how many styles are waiting vs. already produced */}
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="Ready to generate"
+          value={readyToGen}
+          hint="complete styles awaiting their first run"
+        />
+        <StatCard
+          label="Generating now"
+          value={styleCounts.get("GENERATING") ?? 0}
+          hint="a job is in flight"
+        />
+        <StatCard
+          label="In review"
+          value={styleCounts.get("AWAITING_REVIEW") ?? 0}
+          hint="generated, awaiting a decision"
+        />
+        <StatCard
+          label="Styles generated"
+          value={generatedStyles}
+          hint="≥ 1 output produced (first print done)"
+        />
+      </div>
+
       {/* Queue depths */}
       <div className="mb-6 grid gap-6 md:grid-cols-2">
         <div>
@@ -209,6 +262,22 @@ export default async function AutomationPage({
               </span>
             ))}
           </div>
+        </div>
+      </div>
+
+      {/* Styles by status — the whole pipeline at a glance */}
+      <div className="mb-6">
+        <h2 className="mb-2 text-sm font-semibold text-zinc-900">Styles by status</h2>
+        <div className="flex flex-wrap gap-2">
+          {STYLE_ORDER.filter((s) => (styleCounts.get(s) ?? 0) > 0).map((s) => (
+            <span
+              key={s}
+              className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700"
+            >
+              {s.toLowerCase().replace(/_/g, " ")}{" "}
+              <span className="tabular-nums opacity-70">{styleCounts.get(s)}</span>
+            </span>
+          ))}
         </div>
       </div>
 
@@ -292,6 +361,16 @@ export default async function AutomationPage({
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, hint }: { label: string; value: number; hint: string }) {
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-white p-4">
+      <div className="text-sm font-semibold text-zinc-900">{label}</div>
+      <div className="mt-1 text-2xl font-semibold tabular-nums text-zinc-900">{value}</div>
+      <div className="mt-1 text-xs text-zinc-400">{hint}</div>
     </div>
   );
 }

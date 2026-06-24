@@ -12,7 +12,7 @@ import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
 import {
   getCurrentOutputsForStyle,
-  rollupOutputs,
+  rollupOutputSlots,
   outputAnchor,
   type CurrentOutput,
   type OutputState,
@@ -56,7 +56,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     getCurrentOutputsForStyle(id),
     loadDocTypeLabels(),
   ]);
-  const rollup = rollupOutputs(outputs);
+  const rollup = rollupOutputSlots(outputs);
 
   const businessArea = style.businessAreaRef?.name ?? style.businessArea ?? null;
   const styleContext = [
@@ -79,6 +79,10 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const blockedCount = pendingReviewable.filter((o) => o.placeholderCount > 0).length;
 
   const notGeneratedCount = rollup.awaitingData + rollup.readyToGenerate;
+  // Generation coverage — how many of the declared output slots have been
+  // produced (e.g. 2/3 · 67%). rollupOutputSlots collapses multi-document
+  // outputs to one slot, so a carton X-of-Y counts once, not per sticker.
+  const genPct = rollup.total > 0 ? Math.round((rollup.generated / rollup.total) * 100) : 0;
   const tally = [
     rollup.approved > 0 ? `${rollup.approved} approved` : null,
     rollup.rejected > 0 ? `${rollup.rejected} rejected` : null,
@@ -153,6 +157,28 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             {rollup.total} output{rollup.total === 1 ? "" : "s"}
             {tally ? <> — {tally}</> : null}
           </p>
+          {/* Generation coverage — at-a-glance "is this style fully generated?" */}
+          <div className="mt-2 flex items-center gap-2">
+            <div
+              className="h-1.5 w-40 overflow-hidden rounded-full bg-zinc-100"
+              role="progressbar"
+              aria-valuenow={genPct}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Outputs generated"
+            >
+              <div
+                className={`h-full rounded-full ${rollup.complete ? "bg-emerald-500" : "bg-amber-500"}`}
+                style={{ width: `${genPct}%` }}
+              />
+            </div>
+            <span className="text-xs font-medium tabular-nums text-zinc-600">
+              {rollup.generated}/{rollup.total} generated · {genPct}%
+            </span>
+            {!rollup.complete && notGeneratedCount > 0 ? (
+              <span className="text-xs text-amber-700">{notGeneratedCount} not generated</span>
+            ) : null}
+          </div>
           {followThrough && pendingJob ? (
             <ReviewClaim
               jobId={pendingJob.id}
