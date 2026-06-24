@@ -10,6 +10,7 @@ import { findCertificate, loadCertificates, type CertificateMap } from "@/lib/pd
 import {
   TOKEN_RE,
   conditionalsInLine,
+  effectiveBorderPad,
   layoutSettings,
   pageGrid,
   type LayoutAnchor,
@@ -420,10 +421,14 @@ function blockBorder(block: LayoutBlock, fontScale: number): string {
   if (!block.border) return "";
   // Inner padding keeps text off the border. box-sizing is border-box
   // (base.ts), so it insets the content within the block's set size rather
-  // than growing the box past its grid cell.
-  const pad = block.border.padMm
-    ? `padding: ${(block.border.padMm * fontScale).toFixed(3)}mm; `
-    : "";
+  // than growing the box past its grid cell. Per-side via effectiveBorderPad
+  // (the legacy single padMm degrades to equal sides).
+  const p = effectiveBorderPad(block.border);
+  const mm = (v: number) => (v * fontScale).toFixed(3);
+  const pad =
+    p.topMm || p.rightMm || p.bottomMm || p.leftMm
+      ? `padding: ${mm(p.topMm)}mm ${mm(p.rightMm)}mm ${mm(p.bottomMm)}mm ${mm(p.leftMm)}mm; `
+      : "";
   return `border: ${(block.border.widthMm * fontScale).toFixed(3)}mm solid ${block.border.color}; ${pad}`;
 }
 

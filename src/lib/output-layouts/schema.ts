@@ -84,10 +84,24 @@ export const LayoutBlockSchema = z.object({
     .object({
       widthMm: z.number().min(0.1).max(5),
       color: z.string().regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "hex colour like #000 or #1a1a1a"),
-      // Inner padding (mm) between the border and the text so content isn't
-      // flush against the box. Scales with fontScale at render, like the
-      // border width. Absent / 0 = flush (previous behaviour).
+      // Legacy single inner-padding value (mm) — one pad on every side.
+      // Still accepted; parseLayoutDef migrates it into `pad` and the
+      // renderer falls back to it (effectiveBorderPad), so old layouts
+      // render unchanged.
       padMm: z.number().min(0).max(20).optional(),
+      // Per-side inner padding (mm) between the border and the text — the
+      // canonical shape, mirroring page `margins`. Edited in the builder
+      // with a link/unlink toggle (linked = one value for all sides).
+      // Resolve via effectiveBorderPad so an absent `pad` and the legacy
+      // `padMm` both degrade cleanly. Scales with fontScale at render.
+      pad: z
+        .object({
+          topMm: z.number().min(0).max(20).default(0),
+          rightMm: z.number().min(0).max(20).default(0),
+          bottomMm: z.number().min(0).max(20).default(0),
+          leftMm: z.number().min(0).max(20).default(0),
+        })
+        .optional(),
     })
     .optional(),
   // Free font sizing: floor 1 pt (≈0.35 mm — below any real wash-care text)
@@ -108,6 +122,19 @@ export const LayoutBlockSchema = z.object({
   lines: z.array(z.string().max(500)).max(100).default([]),
 });
 export type LayoutBlock = z.infer<typeof LayoutBlockSchema>;
+
+// Per-side inner padding for a block border, resolved from the canonical
+// `pad` if present, else the legacy single `padMm` expanded to all sides,
+// else zero. The ONE place this fallback lives — shared by the renderer and
+// the builder canvas/panel so they can never disagree (like pageGrid does
+// for the grid default).
+export function effectiveBorderPad(
+  border: LayoutBlock["border"],
+): { topMm: number; rightMm: number; bottomMm: number; leftMm: number } {
+  if (border?.pad) return border.pad;
+  const v = border?.padMm ?? 0;
+  return { topMm: v, rightMm: v, bottomMm: v, leftMm: v };
+}
 
 // A printed sewing-line guide: a full-width horizontal rule a fixed
 // distance from the top or bottom edge (the seam allowance). Fractional mm
@@ -460,6 +487,16 @@ export function parseLayoutDef(raw: unknown): LayoutDef {
         ...b,
         id: b.id ?? (b.anchor ? `b-${b.anchor}` : `b-r${i}`),
       };
+      // Legacy single border padding → per-side `pad` (only when `pad` is
+      // unset), then drop padMm so `pad` is canonical (mirrors marginMm).
+      if (withId.border && withId.border.padMm !== undefined && !withId.border.pad) {
+        const v = withId.border.padMm;
+        withId.border = {
+          ...withId.border,
+          pad: { topMm: v, rightMm: v, bottomMm: v, leftMm: v },
+          padMm: undefined,
+        };
+      }
       // Corner-anchor blocks are legacy (the editor is grid-only now) —
       // convert deterministically to an equivalent half-height rect:
       // left/right edge from the anchor side + block width; top/bottom

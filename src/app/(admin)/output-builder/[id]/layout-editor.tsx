@@ -11,6 +11,7 @@ import {
   LayoutDefSchema,
   TOKEN_RE,
   blockId,
+  effectiveBorderPad,
   gridFromCellMm,
   layoutSettings,
   pageGrid,
@@ -201,6 +202,9 @@ export function LayoutEditor({
     const m = layout.definition.pages[0]?.margins;
     return !m || (m.topMm === m.rightMm && m.topMm === m.bottomMm && m.topMm === m.leftMm);
   });
+  // Border-padding link/unlink for the selected block — mirrors marginsLinked.
+  // Linked = one value drives all four sides; unlink to edit each side.
+  const [padLinked, setPadLinked] = useState(true);
   // The cell size (mm) the "Regenerate grid" button uses. Defaults to 4 mm.
   const [gridCellMm, setGridCellMm] = useState(String(DEFAULT_GRID_CELL_MM));
   const [sel, setSel] = useState<string | null>(null);
@@ -2164,7 +2168,16 @@ export function LayoutEditor({
                         updateBlock(blockId(selBlock), {
                           border:
                             w > 0
-                              ? { widthMm: w, color: selBlock.border?.color ?? "#000000", padMm: selBlock.border?.padMm }
+                              ? {
+                                  widthMm: w,
+                                  color: selBlock.border?.color ?? "#000000",
+                                  // Keep existing padding; a brand-new border
+                                  // starts at 0.5 mm (linked) so it's never
+                                  // flush against the text.
+                                  pad: selBlock.border
+                                    ? effectiveBorderPad(selBlock.border)
+                                    : { topMm: 0.5, rightMm: 0.5, bottomMm: 0.5, leftMm: 0.5 },
+                                }
                               : undefined,
                         });
                       }}
@@ -2207,26 +2220,97 @@ export function LayoutEditor({
                   ) : null}
                 </div>
                 {selBlock.border ? (
-                  <label className="flex items-center gap-1.5 text-xs text-zinc-600">
-                    Padding
-                    <select
-                      value={selBlock.border.padMm ?? 0}
-                      onChange={(e) =>
-                        updateBlock(blockId(selBlock), {
-                          border: { ...selBlock.border!, padMm: Number(e.target.value) || undefined },
-                        })
-                      }
-                      className="rounded border border-zinc-200 px-1 py-0.5 text-xs"
-                      title="Inner padding between the border and the text"
-                    >
-                      <option value={0}>None</option>
-                      {[0.5, 1, 1.5, 2, 3, 4].map((p) => (
-                        <option key={p} value={p}>
-                          {p} mm
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <div className="text-xs text-zinc-600">
+                    <div className="flex items-center justify-between">
+                      <span>Padding mm</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (padLinked) {
+                            setPadLinked(false);
+                          } else {
+                            const v = effectiveBorderPad(selBlock.border).topMm;
+                            updateBlock(blockId(selBlock), {
+                              border: {
+                                ...selBlock.border!,
+                                pad: { topMm: v, rightMm: v, bottomMm: v, leftMm: v },
+                                padMm: undefined,
+                              },
+                            });
+                            setPadLinked(true);
+                          }
+                        }}
+                        className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${
+                          padLinked
+                            ? "border-zinc-900 bg-zinc-900 text-white"
+                            : "border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300"
+                        }`}
+                        title={
+                          padLinked
+                            ? "Linked — one value for all sides. Click to edit each side."
+                            : "Per side. Click to link all sides."
+                        }
+                      >
+                        {padLinked ? "🔗 linked" : "per side"}
+                      </button>
+                    </div>
+                    {padLinked ? (
+                      <input
+                        type="number"
+                        min={0}
+                        max={20}
+                        step={0.5}
+                        value={effectiveBorderPad(selBlock.border).topMm}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          if (Number.isFinite(v) && v >= 0 && v <= 20)
+                            updateBlock(blockId(selBlock), {
+                              border: {
+                                ...selBlock.border!,
+                                pad: { topMm: v, rightMm: v, bottomMm: v, leftMm: v },
+                                padMm: undefined,
+                              },
+                            });
+                        }}
+                        className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm tabular-nums"
+                        title="Inner padding between the border and the text"
+                      />
+                    ) : (
+                      <div className="mt-1 grid grid-cols-2 gap-1.5">
+                        {(
+                          [
+                            ["topMm", "Top"],
+                            ["rightMm", "Right"],
+                            ["bottomMm", "Bottom"],
+                            ["leftMm", "Left"],
+                          ] as const
+                        ).map(([k, label]) => (
+                          <div key={k}>
+                            <label className="text-[10px] text-zinc-400">{label}</label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={20}
+                              step={0.5}
+                              value={effectiveBorderPad(selBlock.border)[k]}
+                              onChange={(e) => {
+                                const v = Number(e.target.value);
+                                if (Number.isFinite(v) && v >= 0 && v <= 20)
+                                  updateBlock(blockId(selBlock), {
+                                    border: {
+                                      ...selBlock.border!,
+                                      pad: { ...effectiveBorderPad(selBlock.border), [k]: v },
+                                      padMm: undefined,
+                                    },
+                                  });
+                              }}
+                              className="w-full rounded-md border border-zinc-200 px-2 py-1 text-sm tabular-nums"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 ) : null}
                 <label className="flex items-center gap-2 text-xs text-zinc-600">
                   <input
@@ -2835,7 +2919,10 @@ function CanvasBlock({
     ...(block.border
       ? {
           border: `${Math.max(block.border.widthMm * scale, 1)}px solid ${block.border.color}`,
-          ...(block.border.padMm ? { padding: block.border.padMm * scale } : {}),
+          padding: (() => {
+            const p = effectiveBorderPad(block.border);
+            return `${p.topMm * scale}px ${p.rightMm * scale}px ${p.bottomMm * scale}px ${p.leftMm * scale}px`;
+          })(),
         }
       : {}),
   };
