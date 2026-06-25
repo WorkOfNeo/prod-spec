@@ -5,8 +5,9 @@
 // today (and growing slowly), client-side filtering is instant.
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
+import { useUrlSearchState } from "@/lib/use-url-search-state";
 
 export type ProdSpecRow = {
   id: string;
@@ -32,7 +33,8 @@ export type ProdSpecRow = {
 };
 
 export function ProdSpecsTable({ rows }: { rows: ProdSpecRow[] }) {
-  const [q, setQ] = useState("");
+  // Persisted in the URL (?q=…) so the search survives back-navigation.
+  const [q, setQ] = useUrlSearchState("q");
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
