@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { isOrphanedOutputKey } from "./orphan";
 
 // =====================================================
 // Rejection tickets — create/reopen on reviewer rejection, resolve on
@@ -119,6 +120,31 @@ export async function resolveRejectionTicketsFor(
   if (keys.length === 0) return 0;
   const res = await db.rejectionTicket.updateMany({
     where: { styleId, variantKey: { in: keys }, status: { not: "RESOLVED" } },
+    data: { status: "RESOLVED", resolvedAt: new Date() },
+  });
+  return res.count;
+}
+
+// Output-change cleanup: when a ProdSpec's outputs are edited, any still-open
+// ticket whose output was REMOVED (its base key is no longer declared) is
+// orphaned — re-running it could only NO_OUTPUTS-fail (see lib/tickets/orphan.ts).
+// Resolve those in place across every style on the spec. Framing / legacy-empty
+// keys are never touched. Best-effort by design — the PATCH route wraps this so
+// a cleanup miss never blocks the save. Returns the count resolved.
+export async function resolveTicketsForRemovedOutputs(
+  prodSpecId: string,
+  currentBaseKeys: Set<string>,
+): Promise<number> {
+  const open = await db.rejectionTicket.findMany({
+    where: { style: { prodSpecId }, status: { not: "RESOLVED" } },
+    select: { id: true, variantKey: true },
+  });
+  const orphanIds = open
+    .filter((t) => isOrphanedOutputKey(t.variantKey, currentBaseKeys))
+    .map((t) => t.id);
+  if (orphanIds.length === 0) return 0;
+  const res = await db.rejectionTicket.updateMany({
+    where: { id: { in: orphanIds } },
     data: { status: "RESOLVED", resolvedAt: new Date() },
   });
   return res.count;

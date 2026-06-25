@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { enqueueGenerationJob } from "@/lib/queue/enqueue";
 import { runPendingJobs } from "@/lib/queue/runner";
+import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
+import { currentOutputBaseKeys, isOrphanedOutputKey } from "./orphan";
 
 // =====================================================
 // Shared run path for the two ticket actions ("Re-run output" and "Mark
@@ -22,9 +24,13 @@ export class TicketRunError extends Error {
 }
 
 export type TicketRunResult = {
-  jobId: string;
+  // The ticket's output was REMOVED from the spec (swapped/deleted), so we
+  // resolved the ticket in place and ran NO job — there's nothing to
+  // regenerate. jobId/jobStatus are null in this case.
+  removedOutput: boolean;
+  jobId: string | null;
   // Terminal state of OUR job after the inline run loop.
-  jobStatus: string;
+  jobStatus: string | null;
   jobError: string | null;
   // The freshly generated asset for the ticket's output (when the run
   // succeeded) — lets the workbench jump straight to the new preview.
@@ -45,8 +51,23 @@ export async function runTicketJob(input: {
 }): Promise<TicketRunResult> {
   const { ticket } = input;
 
-  const style = await db.style.findUnique({ where: { id: ticket.styleId }, select: { id: true } });
+  const style = await db.style.findUnique({
+    where: { id: ticket.styleId },
+    select: { id: true, prodSpec: { select: { outputs: true } } },
+  });
   if (!style) throw new TicketRunError(404, "Style behind this ticket no longer exists");
+
+  // Orphaned ticket: its output was removed/replaced on the ProdSpec since the
+  // rejection. A scoped re-run would match no current output and NO_OUTPUTS-fail
+  // (which also poisons the auto-gen float cap), so resolve the ticket in place
+  // — nothing to regenerate. See lib/tickets/orphan.ts.
+  if (style.prodSpec && isOrphanedOutputKey(ticket.variantKey, currentOutputBaseKeys(parseProdSpecOutputs(style.prodSpec.outputs)))) {
+    await db.rejectionTicket.update({
+      where: { id: ticket.id },
+      data: { status: "RESOLVED", resolvedAt: new Date() },
+    });
+    return { removedOutput: true, jobId: null, jobStatus: null, jobError: null, latestAsset: null };
+  }
 
   const inflight = await db.job.count({
     where: { styleId: ticket.styleId, status: { in: ["QUEUED", "RUNNING"] } },
@@ -105,6 +126,7 @@ export async function runTicketJob(input: {
     job.assets.find((a) => (ticket.variantKey ? a.variantKey === ticket.variantKey : true)) ?? null;
 
   return {
+    removedOutput: false,
     jobId,
     jobStatus: job.status,
     jobError: job.error ?? null,

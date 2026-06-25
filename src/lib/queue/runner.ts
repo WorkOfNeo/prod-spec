@@ -344,7 +344,24 @@ export async function processJob(jobId: string): Promise<void> {
     }
   }
 
-  if (generated.length === 0) {
+  if (generated.length === 0 && scopedKeys.length > 0) {
+    // A SCOPED re-run that rendered nothing is NOT a misconfiguration — the
+    // targeted output was removed/replaced on the spec, or its required fields
+    // regressed since enqueue (logged above). Hard-failing here would poison
+    // the auto-gen float cap and flood the logs (this is what turned one
+    // orphaned-ticket bulk-fix into 90 FAILED jobs). Don't fail: fall through
+    // so the cover bundle still refreshes and the job settles AWAITING_REVIEW.
+    // Only a FULL run with nothing usable (below) is a real misconfig.
+    await db.log.create({
+      data: {
+        jobId: job.id,
+        level: "WARN",
+        message:
+          `scoped re-run produced no outputs — ${scopedKeys.join(", ")} no longer maps to a ` +
+          `ready output in "${prodSpec?.name ?? "this spec"}"; nothing regenerated (cover refreshed).`,
+      },
+    });
+  } else if (generated.length === 0) {
     // Three different reasons we land here — give the operator the right
     // next-action for each:
     //   (a) Style not linked to any ProdSpec     → set BusinessArea on the Style
@@ -526,19 +543,24 @@ export async function processJob(jobId: string): Promise<void> {
     throw new RunnerError("PERSIST_FAILED", `persisting assets failed: ${(err as Error).message}`);
   }
 
-  await notifyReviewer({
-    jobId: job.id,
-    styleId: job.styleId,
-    styleName: job.style.name,
-    styleNumber: styleData.styleNumber,
-    customerName: job.style.customer.name,
-    businessArea: job.style.businessAreaRef?.name ?? job.style.businessArea ?? null,
-    poNumber: job.style.poNumber ?? null,
-    triggerSource: job.triggerSource,
-    outputNames: generated.map(
-      (d) => `${d.variant.name} · ${d.output.widthMm}×${d.output.heightMm} mm`,
-    ),
-  });
+  // A scoped no-op run (nothing generated, only the cover refreshed — see the
+  // scoped-empty branch above) must not ping reviewers with a "0 documents"
+  // notice. Real runs (≥1 generated doc) notify as before.
+  if (generated.length > 0) {
+    await notifyReviewer({
+      jobId: job.id,
+      styleId: job.styleId,
+      styleName: job.style.name,
+      styleNumber: styleData.styleNumber,
+      customerName: job.style.customer.name,
+      businessArea: job.style.businessAreaRef?.name ?? job.style.businessArea ?? null,
+      poNumber: job.style.poNumber ?? null,
+      triggerSource: job.triggerSource,
+      outputNames: generated.map(
+        (d) => `${d.variant.name} · ${d.output.widthMm}×${d.output.heightMm} mm`,
+      ),
+    });
+  }
 }
 
 async function notifyReviewer(input: {
