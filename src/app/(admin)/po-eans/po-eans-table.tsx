@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useUrlSearchState } from "@/lib/use-url-search-state";
 import type { EanView } from "@/lib/po/ean-view";
 import { eanStatusMeta, eanFloated } from "@/lib/po/ean-status-meta";
 import { colorFromVariantLabel } from "@/lib/po/ean-format";
@@ -58,7 +59,9 @@ export function PoEansTable({
   // (triage across scopes), so it never carries the scope.
   const scoped = (extra: string) =>
     `/po-eans${scopeQuery || extra ? "?" : ""}${[scopeQuery, extra].filter(Boolean).join("&")}`;
-  const [q, setQ] = useState("");
+  // Persisted in the URL (?q=…), alongside the existing ?status / ?floated
+  // params, so the free-text search survives back-navigation too.
+  const [q, setQ] = useUrlSearchState("q");
   // Per-row override after a manual re-resolve ("loading" while in flight).
   const [overrides, setOverrides] = useState<Record<string, EanView | "loading">>({});
   const [busy, setBusy] = useState(false);

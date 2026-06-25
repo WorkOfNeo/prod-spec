@@ -184,11 +184,11 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
                   setQuery("");
                   inputRef.current?.focus();
                 }}
-                className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-xs text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+                className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
                 title="Clear search"
                 aria-label="Clear search"
               >
-                ✕
+                <XIcon />
               </button>
             ) : null}
           </div>
@@ -351,6 +351,24 @@ function FilterChip({
     >
       {children}
     </button>
+  );
+}
+
+function XIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
   );
 }
 

@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { layoutIdFromVariantKey } from "@/lib/output-layouts/variant-keys";
 import type { BundlePageSettings, PageSettings, ProdSpecOutput } from "@/lib/prod-spec/config";
 import {
   PINNABLE_FIELDS,
@@ -461,6 +463,10 @@ export function ProdSpecEditor(props: Props) {
                 {outputs.map((o, i) => {
                   const v = variantByKey.get(o.variantKey);
                   const pinCount = Object.keys(parseFieldOverrides(o.fieldOverrides)).length;
+                  // Output Builder layouts (variantKey `layout:<id>`) have their
+                  // own editor — let the row open it. Coded/built-in variants
+                  // have no per-output page, so they stay plain text.
+                  const layoutId = layoutIdFromVariantKey(o.variantKey);
                   return (
                     <li
                       key={`${o.variantKey}-${i}`}
@@ -476,10 +482,26 @@ export function ProdSpecEditor(props: Props) {
                           size="sm"
                         />
                         <div className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium" title={v?.description}>
-                            {v?.name ?? o.variantKey}
-                          </span>
-                          <span className="block truncate font-mono text-[10px] text-zinc-400">
+                          {layoutId ? (
+                            <Link
+                              href={`/output-builder/${layoutId}`}
+                              title={`Open “${v?.name ?? o.variantKey}” in Output Builder`}
+                              className="group/open inline-flex max-w-full items-center gap-1 text-sm font-medium text-zinc-900 hover:text-zinc-600"
+                            >
+                              <span className="truncate group-hover/open:underline">
+                                {v?.name ?? o.variantKey}
+                              </span>
+                              <ExternalLinkIcon className="h-3.5 w-3.5 shrink-0 text-zinc-400 group-hover/open:text-zinc-600" />
+                            </Link>
+                          ) : (
+                            <span className="block truncate text-sm font-medium" title={v?.description}>
+                              {v?.name ?? o.variantKey}
+                            </span>
+                          )}
+                          <span
+                            className="block truncate font-mono text-[10px] text-zinc-400"
+                            title={v?.description}
+                          >
                             {o.variantKey}
                             {v ? <> · {v.docType}</> : <> · <span className="text-red-700">unknown variant</span></>}
                           </span>
@@ -509,18 +531,18 @@ export function ProdSpecEditor(props: Props) {
                         <button
                           type="button"
                           onClick={() => removeOutput(i)}
-                          className="shrink-0 text-sm text-zinc-400 hover:text-red-700"
+                          className="shrink-0 rounded-md p-1 text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-700"
                           aria-label={`Remove ${v?.name ?? o.variantKey}`}
                           title="Remove output"
                         >
-                          ✕
+                          <XIcon className="h-4 w-4" />
                         </button>
                       </div>
 
                       <details className="mt-1.5">
                         <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-800">
-                          📌 {pinCount === 0 ? "no pins" : `${pinCount} pin${pinCount === 1 ? "" : "s"}`} ·
-                          preview
+                          <PinIcon className="mr-1 inline-block h-3.5 w-3.5 -translate-y-px align-middle text-zinc-400" />
+                          {pinCount === 0 ? "no pins" : `${pinCount} pin${pinCount === 1 ? "" : "s"}`} · preview
                         </summary>
                         <div className="mt-2 border-t border-zinc-100 pt-2">
                           {/* Carton barcode preference — CARTON_MARKING outputs
@@ -610,7 +632,7 @@ export function ProdSpecEditor(props: Props) {
             <summary className="flex cursor-pointer select-none flex-wrap items-center gap-2 px-4 py-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100/60">
               <span>Advanced print configuration</span>
               <span className="flex flex-wrap items-center gap-1.5 text-[11px] font-normal">
-                <SummaryChip>{logoSvg.trim() ? "Logo: set ✓" : "Logo: none"}</SummaryChip>
+                <SummaryChip>{logoSvg.trim() ? "Logo: set" : "Logo: none"}</SummaryChip>
                 <SummaryChip>
                   {outputLanguageList.length === 0
                     ? "Languages: template default"
@@ -790,10 +812,10 @@ export function ProdSpecEditor(props: Props) {
                   <SummaryChip>{props.attachedSupplierCount} supplier(s) attached</SummaryChip>
                 )}
                 {props.hasColumnMappingOverride && (
-                  <SummaryChip tone="warn">⚠ carries column-mapping override</SummaryChip>
+                  <SummaryChip tone="warn">Carries column-mapping override</SummaryChip>
                 )}
                 {props.hasRequiredFieldsOverride && (
-                  <SummaryChip tone="warn">⚠ carries required-fields override</SummaryChip>
+                  <SummaryChip tone="warn">Carries required-fields override</SummaryChip>
                 )}
               </span>{" "}
               Stored values still apply at render time.
@@ -811,7 +833,7 @@ export function ProdSpecEditor(props: Props) {
 }
 
 // Per-output pin editor: existing pins as chips with one-click unpin, plus
-// a field+value picker to add one. "📌 Customer name (printed) = Netto A/S"
+// a field+value picker to add one. E.g. "Customer name (printed) = Netto A/S"
 // — the constant wins over everything at render time and satisfies
 // readiness for that field.
 function PinControls({
@@ -852,14 +874,15 @@ function PinControls({
             className="inline-flex items-center gap-1 rounded-full border border-zinc-300 bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-700"
             title="Pinned — always this value on this output, regardless of the Monday row"
           >
-            📌 {PINNABLE_FIELD_LABELS[key]} = {pins[key]}
+            <PinIcon className="h-3 w-3 shrink-0 text-zinc-400" />
+            {PINNABLE_FIELD_LABELS[key]} = {pins[key]}
             <button
               type="button"
               onClick={() => remove(key)}
-              className="ml-0.5 text-zinc-400 hover:text-red-700"
+              className="ml-0.5 inline-flex text-zinc-400 hover:text-red-700"
               aria-label={`Unpin ${PINNABLE_FIELD_LABELS[key]}`}
             >
-              ×
+              <XIcon className="h-3 w-3" />
             </button>
           </span>
         ))}
@@ -1054,5 +1077,62 @@ function SummaryChip({
     >
       {children}
     </span>
+  );
+}
+
+// Inline icons — Lucide-style strokes, matching the SearchIcon/ChevronIcon
+// idiom used across the admin pages (no icon dependency in this project).
+function XIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
+function PinIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 17v5" />
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+    </svg>
+  );
+}
+
+function ExternalLinkIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M15 3h6v6" />
+      <path d="M10 14 21 3" />
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    </svg>
   );
 }

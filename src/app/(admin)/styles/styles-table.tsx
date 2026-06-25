@@ -7,7 +7,8 @@
 // (no per-row interactivity) so browsers handle it fine.
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   EFFECTIVE_STATUS_TONE_CLASSES,
   STATUS_FACET_KEYS,
@@ -91,6 +92,57 @@ function sameSet(a: string[], b: string[]): boolean {
   return b.every((v) => s.has(v));
 }
 
+// ── URL persistence ──────────────────────────────────────────────────────
+// The active filter (search + applied facets + attribute chips + archived)
+// round-trips through the query string so it survives back-navigation from a
+// style detail page — and is shareable / refreshable. Writing is *shallow*
+// (window.history.replaceState, see the effect in StylesTable) so the page's
+// ~4k-row server query never re-runs as the user types or picks facets.
+//
+// Facet values are real data (customer / BA / group names), so each selection
+// is its own repeated key (?customer=Netto&customer=Børn) — read with getAll,
+// no delimiter that a value could contain. Attribute chips are a fixed enum,
+// so they pack into with=/without= lists.
+type ParamReader = Pick<URLSearchParams, "get" | "getAll">;
+const ATTR_KEYS = new Set(ATTR_FILTERS.map((a) => a.key));
+
+function parseFacetsFromUrl(sp: ParamReader): Record<FacetKey, string[]> {
+  return {
+    customer: sp.getAll("customer"),
+    ba: sp.getAll("ba"),
+    group: sp.getAll("group"),
+    status: sp.getAll("status"),
+    ean: sp.getAll("ean"),
+  };
+}
+
+function parseAttrsFromUrl(sp: ParamReader): Record<string, TriState> {
+  const out: Record<string, TriState> = {};
+  for (const key of sp.getAll("with")) if (ATTR_KEYS.has(key)) out[key] = "has";
+  for (const key of sp.getAll("without")) if (ATTR_KEYS.has(key)) out[key] = "no";
+  return out;
+}
+
+// State → query string. Fixed key/value ordering keeps the URL stable (no
+// churn from re-serialising the same selection in a different order).
+function serializeFilters(state: {
+  q: string;
+  showArchived: boolean;
+  attrFilters: Record<string, TriState>;
+  appliedFacets: Record<FacetKey, string[]>;
+}): URLSearchParams {
+  const params = new URLSearchParams();
+  if (state.q.trim()) params.set("q", state.q);
+  for (const k of FACET_KEYS) for (const v of state.appliedFacets[k]) params.append(k, v);
+  for (const a of ATTR_FILTERS) {
+    const s = state.attrFilters[a.key];
+    if (s === "has") params.append("with", a.key);
+    else if (s === "no") params.append("without", a.key);
+  }
+  if (state.showArchived) params.set("archived", "1");
+  return params;
+}
+
 export type StyleRow = {
   id: string;
   name: string;
@@ -145,13 +197,28 @@ export function StylesTable({
   // REVIEWERs see the styles list but never the run controls.
   isAdmin: boolean;
 }) {
-  const [q, setQ] = useState("");
+  // Seed the filter state from the URL once, on mount. All later changes flow
+  // state → URL (the effect below), never URL → state, so we don't fight the
+  // user's typing. Read via useSearchParams (not window) to stay SSR-safe.
+  const searchParams = useSearchParams();
+  const seed = useMemo(
+    () => ({
+      q: searchParams.get("q") ?? "",
+      showArchived: searchParams.get("archived") === "1",
+      attrFilters: parseAttrsFromUrl(searchParams),
+      facets: parseFacetsFromUrl(searchParams),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only seed
+    [],
+  );
+
+  const [q, setQ] = useState(seed.q);
   // Live column set — seeded from the server-read setting, updated
   // optimistically by the Columns popover.
   const [visible, setVisible] = useState<StyleColumnKey[]>(visibleColumns);
-  const [showArchived, setShowArchived] = useState(false);
+  const [showArchived, setShowArchived] = useState(seed.showArchived);
   // Per-attribute tri-state presence filters (keyed by ATTR_FILTERS.key).
-  const [attrFilters, setAttrFilters] = useState<Record<string, TriState>>({});
+  const [attrFilters, setAttrFilters] = useState<Record<string, TriState>>(seed.attrFilters);
 
   const cycleAttr = (key: string) =>
     setAttrFilters((p) => ({ ...p, [key]: NEXT_STATE[p[key] ?? "any"] }));
@@ -160,8 +227,8 @@ export function StylesTable({
   // Value-picking facet filters. `draft` is what's checked in the dropdowns
   // right now; `applied` is what the table actually filters by. They diverge
   // until the user presses Apply (or Clear all) — see the filter bar below.
-  const [draftFacets, setDraftFacets] = useState<Record<FacetKey, string[]>>(EMPTY_FACETS);
-  const [appliedFacets, setAppliedFacets] = useState<Record<FacetKey, string[]>>(EMPTY_FACETS);
+  const [draftFacets, setDraftFacets] = useState<Record<FacetKey, string[]>>(seed.facets);
+  const [appliedFacets, setAppliedFacets] = useState<Record<FacetKey, string[]>>(seed.facets);
   const setFacet = (key: FacetKey, next: string[]) =>
     setDraftFacets((p) => ({ ...p, [key]: next }));
   const applyFacets = () => setAppliedFacets(draftFacets);
@@ -178,6 +245,21 @@ export function StylesTable({
     () => FACET_KEYS.some((k) => appliedFacets[k].length > 0 || draftFacets[k].length > 0),
     [appliedFacets, draftFacets],
   );
+
+  // Persist the active filter to the URL with a *shallow* replaceState — no
+  // router navigation, so the server query doesn't re-run on every keystroke,
+  // and (replace, not push) keystrokes don't each become a history entry. This
+  // is what makes the search + facets survive Back from a style detail page.
+  // Mirrors appliedFacets (what filters the table), not draftFacets (the
+  // in-dropdown selection awaiting Apply).
+  useEffect(() => {
+    const qs = serializeFilters({ q, showArchived, attrFilters, appliedFacets }).toString();
+    window.history.replaceState(
+      null,
+      "",
+      qs ? `${window.location.pathname}?${qs}` : window.location.pathname,
+    );
+  }, [q, showArchived, attrFilters, appliedFacets]);
 
   // Per-row live EAN resolve results (manual "Resolve" button). A row's
   // freshly-resolved view overrides its stored eanStatus badge in-place.
