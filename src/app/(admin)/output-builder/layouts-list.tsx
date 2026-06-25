@@ -1,8 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 type LayoutRow = {
   id: string;
@@ -58,10 +58,52 @@ export function LayoutsList({
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "PUBLISHED" | "DRAFT">("all");
-  const [autoApproveFilter, setAutoApproveFilter] = useState<"all" | "on" | "off">("all");
+
+  // Seed the search + filter dropdowns from the URL once, on mount, so they
+  // survive back-navigation (e.g. returning from a layout) and are shareable.
+  // All later changes flow state → URL via the effect below. Read through
+  // useSearchParams (not window) to stay SSR-safe. Mirrors the pattern on
+  // /styles · /prod-specs · /po-eans (see src/lib/use-url-search-state.ts).
+  const searchParams = useSearchParams();
+  const seed = useMemo(() => {
+    const rawStatus = searchParams.get("status");
+    const rawAuto = searchParams.get("auto");
+    const status: "all" | "PUBLISHED" | "DRAFT" =
+      rawStatus === "PUBLISHED" || rawStatus === "DRAFT" ? rawStatus : "all";
+    const auto: "all" | "on" | "off" =
+      rawAuto === "on" || rawAuto === "off" ? rawAuto : "all";
+    return {
+      q: searchParams.get("q") ?? "",
+      type: searchParams.get("type") ?? "all",
+      status,
+      auto,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only seed
+  }, []);
+
+  const [query, setQuery] = useState(seed.q);
+  const [typeFilter, setTypeFilter] = useState(seed.type);
+  const [statusFilter, setStatusFilter] = useState<"all" | "PUBLISHED" | "DRAFT">(seed.status);
+  const [autoApproveFilter, setAutoApproveFilter] = useState<"all" | "on" | "off">(seed.auto);
+
+  // Persist search + filters to the URL with a shallow replaceState — no
+  // router navigation, so the page's server query doesn't re-run and Back
+  // returns here with filters intact. Only non-default values are written, so
+  // a cleared view keeps a clean URL. `selected` (the delete multi-select) is
+  // transient interaction state and intentionally stays out of the URL.
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (query.trim()) params.set("q", query);
+    if (typeFilter !== "all") params.set("type", typeFilter);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (autoApproveFilter !== "all") params.set("auto", autoApproveFilter);
+    const qs = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      qs ? `${window.location.pathname}?${qs}` : window.location.pathname,
+    );
+  }, [query, typeFilter, statusFilter, autoApproveFilter]);
   // Multi-select + delete. `selected` holds ids across the full list (so a
   // selection survives filtering); `confirmRows` are the rows queued in the
   // delete confirmation modal (one row from the row button, or every selected
