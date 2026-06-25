@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { EmailSimulationDialog, type EmailOutcomeView } from "@/components/email-simulation-dialog";
+import { FilterSelect, outputTypeLabel } from "./rejection-filters";
 
 // A rendered PDF for a ticket's output (jobId + the preview query that
 // addresses it), with its review state.
@@ -30,6 +31,8 @@ export type TicketRow = {
   styleName: string;
   styleNumber: string;
   outputName: string;
+  // docType (e.g. CARTON_MARKING) — drives the "Output type" filter.
+  docType: string;
   variantKey: string;
   customerName: string;
   businessArea: string | null;
@@ -44,6 +47,12 @@ export type TicketRow = {
   // template / print-spec catalogue output).
   editHref: string | null;
   editLabel: string;
+  // Open the style's applied Prod Spec from the group header (new tab).
+  prodSpecHref: string | null;
+  // True when a non-FAILED asset for this output is newer than the rejection —
+  // i.e. it's been re-generated since (catches auto/full re-runs too).
+  regeneratedAfterRejection: boolean;
+  regeneratedAtLabel: string | null;
   searchBlob: string;
 };
 
@@ -91,8 +100,11 @@ type StyleGroup = {
   styleName: string;
   styleNumber: string;
   customerName: string;
+  prodSpecHref: string | null;
   tickets: TicketRow[];
   counts: Record<Status, number>;
+  // Non-resolved outputs in this style re-generated since they were rejected.
+  regeneratedCount: number;
   latestLabel: string;
 };
 
@@ -108,6 +120,11 @@ export function TicketList({
   // Per-style action state: which action is running, and its last result.
   const [styleBusy, setStyleBusy] = useState<Record<string, StyleAction | null>>({});
   const [styleResult, setStyleResult] = useState<Record<string, StyleResult | null>>({});
+  // Dynamic dimension filters ("" = All) — options derived from the tickets
+  // present, AND-ed with the search + status filters below.
+  const [customer, setCustomer] = useState("");
+  const [businessArea, setBusinessArea] = useState("");
+  const [outputType, setOutputType] = useState("");
   // RESOLVED is hidden by default — the workbench shows actionable threads.
   const [enabled, setEnabled] = useState<Set<Status>>(new Set(["OPEN", "IN_PROGRESS", "FIXED"]));
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
@@ -148,10 +165,32 @@ export function TicketList({
     return c;
   }, [rows]);
 
+  // Distinct filter options, derived from the tickets present (kept in sync as
+  // the backlog changes). Sorted for a stable dropdown order.
+  const customerOptions = useMemo(
+    () => [...new Set(rows.map((r) => r.customerName).filter(Boolean))].sort(),
+    [rows],
+  );
+  const businessAreaOptions = useMemo(
+    () => [...new Set(rows.map((r) => r.businessArea).filter((x): x is string => !!x))].sort(),
+    [rows],
+  );
+  const outputTypeOptions = useMemo(
+    () => [...new Set(rows.map((r) => r.docType).filter(Boolean))].sort(),
+    [rows],
+  );
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return rows.filter((r) => enabled.has(r.status) && (q === "" || r.searchBlob.includes(q)));
-  }, [rows, query, enabled]);
+    return rows.filter(
+      (r) =>
+        enabled.has(r.status) &&
+        (q === "" || r.searchBlob.includes(q)) &&
+        (customer === "" || r.customerName === customer) &&
+        (businessArea === "" || r.businessArea === businessArea) &&
+        (outputType === "" || r.docType === outputType),
+    );
+  }, [rows, query, enabled, customer, businessArea, outputType]);
 
   // Group the (already newest-first) filtered tickets by style. Insertion
   // order = first-seen order = most-recently-rejected style first, and the
@@ -166,14 +205,17 @@ export function TicketList({
           styleName: r.styleName,
           styleNumber: r.styleNumber,
           customerName: r.customerName,
+          prodSpecHref: r.prodSpecHref,
           tickets: [],
           counts: { OPEN: 0, IN_PROGRESS: 0, FIXED: 0, RESOLVED: 0 },
+          regeneratedCount: 0,
           latestLabel: r.createdAtLabel,
         };
         map.set(r.styleId, g);
       }
       g.tickets.push(r);
       g.counts[r.status]++;
+      if (r.regeneratedAfterRejection && r.status !== "RESOLVED") g.regeneratedCount++;
     }
     return [...map.values()];
   }, [filtered]);
@@ -395,6 +437,20 @@ export function TicketList({
             {s.replace("_", " ")} · {counts[s]}
           </button>
         ))}
+        <FilterSelect label="Customer" value={customer} options={customerOptions} onChange={setCustomer} />
+        <FilterSelect
+          label="Business area"
+          value={businessArea}
+          options={businessAreaOptions}
+          onChange={setBusinessArea}
+        />
+        <FilterSelect
+          label="Output type"
+          value={outputType}
+          options={outputTypeOptions}
+          onChange={setOutputType}
+          formatOption={outputTypeLabel}
+        />
       </div>
 
       {bulkSummary ? (
@@ -542,12 +598,11 @@ function GroupSection({
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
   return (
     <div className="border-b border-zinc-200 last:border-b-0">
+      <div className={`flex items-stretch ${open ? "bg-zinc-50" : ""}`}>
       <button
         type="button"
         onClick={onToggle}
-        className={`flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-zinc-50 ${
-          open ? "bg-zinc-50" : ""
-        }`}
+        className="flex flex-1 items-center gap-3 px-3 py-2.5 text-left transition hover:bg-zinc-50"
         aria-expanded={open}
       >
         <svg
@@ -568,6 +623,14 @@ function GroupSection({
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          {group.regeneratedCount > 0 ? (
+            <span
+              className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap text-emerald-700"
+              title={`${group.regeneratedCount} output(s) re-generated since rejected — open to review`}
+            >
+              ↻ {group.regeneratedCount} regenerated
+            </span>
+          ) : null}
           {STATUSES.map((s) =>
             group.counts[s] > 0 ? (
               <span
@@ -584,6 +647,25 @@ function GroupSection({
           latest {group.latestLabel}
         </span>
       </button>
+        {group.prodSpecHref ? (
+          <a
+            href={group.prodSpecHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open this style's Prod Spec (new tab)"
+            className="flex shrink-0 items-center px-3 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900"
+          >
+            <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+              <path
+                d="M8 4H5.5A1.5 1.5 0 004 5.5v9A1.5 1.5 0 005.5 16h9a1.5 1.5 0 001.5-1.5V12"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path d="M12 4h4v4M16 4l-6.5 6.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </a>
+        ) : null}
+      </div>
 
       {open ? (
         <>
@@ -807,7 +889,21 @@ function Row({
           ) : null}
         </td>
         <td className="px-3 py-2 whitespace-nowrap text-zinc-500">{row.createdAtLabel}</td>
-        <td className="px-3 py-2 text-zinc-600">{row.outputName}</td>
+        <td className="px-3 py-2 text-zinc-600">
+          {row.outputName}
+          {row.regeneratedAfterRejection && row.status !== "RESOLVED" ? (
+            <span
+              className="ml-2 inline-block rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap text-emerald-700"
+              title={
+                row.regeneratedAtLabel
+                  ? `Re-generated ${row.regeneratedAtLabel} — newer than this rejection`
+                  : "Re-generated after this rejection"
+              }
+            >
+              ↻ regenerated
+            </span>
+          ) : null}
+        </td>
         <td className="px-3 py-2 text-zinc-600">
           {row.customerName}
           {row.businessArea ? ` · ${row.businessArea}` : ""}
