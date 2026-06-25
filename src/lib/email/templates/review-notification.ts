@@ -133,6 +133,53 @@ export function ticketFixedEmail(input: {
   return { subject, html, text };
 }
 
+// Batched sibling of ticketFixedEmail — the rejection log's style-level
+// "Mark fixed & notify" / "Regenerate all & mark fixed" resolves several of a
+// style's rejected outputs at once and sends ONE re-review notice listing
+// them, rather than one email per output.
+export function ticketsFixedEmail(input: {
+  styleName: string;
+  styleNumber: string;
+  customerName: string;
+  businessArea?: string | null;
+  poNumber?: string | null;
+  // Human labels of the outputs just marked fixed, e.g. "Carton marking".
+  outputNames: string[];
+  reviewUrl: string;
+}): { subject: string; html: string; text: string } {
+  const n = input.outputNames.length;
+  const subject = `[Prod Spec] ${n} output${n === 1 ? "" : "s"} fixed on ${input.styleName}, ready for re-review`;
+  const ctx = contextRows({
+    customerName: input.customerName,
+    businessArea: input.businessArea,
+    poNumber: input.poNumber,
+    styleNumber: input.styleNumber,
+  });
+  const text = [
+    `${n} output${n === 1 ? "" : "s"} you rejected ${n === 1 ? "has" : "have"} been reworked and re-generated:`,
+    "",
+    ...input.outputNames.map((o) => `- ${o}`),
+    ...ctx.text,
+    "",
+    `Re-review: ${input.reviewUrl}`,
+    "",
+    "Approving each one closes its rejection ticket automatically. Rejecting again reopens the ticket with your new comment.",
+  ].join("\n");
+  const html = `
+    <div style="font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; max-width: 480px; padding: 20px;">
+      <h2 style="margin: 0 0 8px;">${escapeHtml(input.styleName)}</h2>
+      <p style="color: #444; margin: 0 0 12px;">${n} output${n === 1 ? "" : "s"} you rejected ${n === 1 ? "has" : "have"} been reworked and re-generated:</p>
+      <ul style="margin: 0 0 4px; padding-left: 20px; color: #52525b; font-size: 13px;">
+        ${input.outputNames.map((o) => `<li>${escapeHtml(o)}</li>`).join("\n        ")}
+      </ul>
+      ${ctx.html}
+      ${ctaButton(input.reviewUrl, "Re-review now")}
+      <p style="color: #999; font-size: 12px; margin-top: 16px;">Approving each one closes its rejection ticket automatically. Rejecting again reopens the ticket with your new comment.</p>
+    </div>
+  `;
+  return { subject, html, text };
+}
+
 export function supplierApprovalEmail(input: {
   supplierEmail: string;
   styleName: string;

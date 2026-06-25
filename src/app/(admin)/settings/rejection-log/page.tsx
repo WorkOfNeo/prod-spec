@@ -1,7 +1,9 @@
 import { db } from "@/lib/db";
-import { TicketList, type TicketRow } from "./ticket-list";
+import { TicketList, type TicketRow, type StyleOutputView } from "./ticket-list";
 import { requireAdminPage } from "@/lib/auth-server";
 import { outputEditLink } from "@/lib/outputs/output-edit-link";
+import { styleOutputBases } from "@/lib/rejection-log/style-outputs";
+import { baseVariantKey } from "@/lib/tickets/orphan";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +14,18 @@ const STAMP_FORMAT = new Intl.DateTimeFormat("en-GB", {
   hour: "2-digit",
   minute: "2-digit",
 });
+
+// "generated 12 min ago" — the at-a-glance freshness signal the operator wants
+// after a Prod Spec rerun. The page is force-dynamic so this recomputes every
+// load; anything older than a day falls back to the absolute stamp.
+function relativeStamp(d: Date, now: Date): string {
+  const mins = Math.round((now.getTime() - d.getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs} h ago`;
+  return STAMP_FORMAT.format(d);
+}
 
 // Safety bound on the backlog we render at once. The list groups by style, so
 // even a few thousand tickets collapse to a handful of rows — and with each
@@ -109,6 +123,57 @@ export default async function RejectionLogPage() {
     };
   });
 
+  // Newest open (OPEN/IN_PROGRESS) rejection per (style, output base) — the
+  // reference point for "has this output been regenerated since it was
+  // rejected?", plus the ticket's clean output name (used when an orphaned
+  // output's base no longer resolves to a registered variant).
+  const FRAMING_KEYS = new Set(["__cover__", "__general_info__"]);
+  const openRejection = new Map<string, Map<string, { at: Date; name: string }>>();
+  for (const t of tickets) {
+    if (t.status !== "OPEN" && t.status !== "IN_PROGRESS") continue;
+    const byBase = openRejection.get(t.styleId) ?? new Map();
+    const b = baseVariantKey(t.variantKey);
+    const prev = byBase.get(b);
+    if (!prev || t.createdAt > prev.at) byBase.set(b, { at: t.createdAt, name: t.outputName });
+    openRejection.set(t.styleId, byBase);
+  }
+
+  // Per-style output set + freshness, for the at-a-glance overview and the
+  // style-level regenerate / mark-fixed actions. One styleOutputBases read per
+  // style in the log (force-dynamic admin page; the backlog groups to a handful
+  // of styles). We show the CURRENT spec outputs + bundle framing + anything
+  // with an open rejection — never outputs that were swapped out and merely
+  // still carry old assets (those would clutter the list with stale rows).
+  const order = (o: { variantKey: string; declared: boolean }) =>
+    o.variantKey === "__cover__" ? 0 : o.variantKey === "__general_info__" ? 1 : o.declared ? 2 : 3;
+  const now = new Date();
+  const styleOutputs: Record<string, StyleOutputView[]> = {};
+  await Promise.all(
+    styleIds.map(async (sid) => {
+      const bases = await styleOutputBases(sid);
+      const rejected = openRejection.get(sid) ?? new Map();
+      styleOutputs[sid] = bases
+        .filter((o) => o.declared || FRAMING_KEYS.has(o.variantKey) || rejected.has(o.variantKey))
+        .map((o) => {
+          const rej = rejected.get(o.variantKey) ?? null;
+          return {
+            variantKey: o.variantKey,
+            // Orphaned outputs (removed from the spec, no registered variant)
+            // fall back to the rejection ticket's human name.
+            name: !o.declared && rej ? rej.name : o.name,
+            declared: o.declared,
+            ready: o.ready,
+            missing: o.missing,
+            lastGeneratedLabel: o.lastGeneratedAt ? relativeStamp(o.lastGeneratedAt, now) : null,
+            rejected: rej !== null,
+            regeneratedSinceRejection: !!(rej && o.lastGeneratedAt && o.lastGeneratedAt > rej.at),
+            reviewStatus: o.latestReviewStatus,
+          };
+        })
+        .sort((a, b) => order(a) - order(b));
+    }),
+  );
+
   return (
     <div className="px-8 py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Rejection log</h1>
@@ -124,7 +189,7 @@ export default async function RejectionLogPage() {
           rejections — resolve older threads to clear the backlog.
         </p>
       ) : null}
-      <TicketList rows={rows} />
+      <TicketList rows={rows} styleOutputs={styleOutputs} />
     </div>
   );
 }
