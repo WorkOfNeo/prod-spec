@@ -47,9 +47,34 @@ export type TicketRow = {
   searchBlob: string;
 };
 
+// One output of a style for the rejection workbench's at-a-glance overview:
+// its name, whether it can be (re)generated now, when it was last made, and —
+// for a rejected output — whether that's NEWER than the rejection ("fresh") or
+// still the version the reviewer saw. Built server-side in page.tsx.
+export type StyleOutputView = {
+  variantKey: string; // base key
+  name: string;
+  declared: boolean;
+  ready: boolean;
+  missing: string[];
+  lastGeneratedLabel: string | null;
+  rejected: boolean; // has an OPEN/IN_PROGRESS ticket
+  regeneratedSinceRejection: boolean;
+  reviewStatus: string | null;
+};
+
 // Per-ticket lazy-load state: undefined = not fetched, "loading"/"error"
 // = in-flight/failed, object = the fetched { rejected, latest }.
 type AssetState = TicketAssets | "loading" | "error" | undefined;
+
+// Which style-level action is mid-flight for a given style.
+type StyleAction =
+  | { kind: "regenAll" }
+  | { kind: "regenAllFix" }
+  | { kind: "markFixed" }
+  | { kind: "regenOutput"; variantKey: string };
+
+type StyleResult = { tone: "ok" | "warn" | "err"; msg: string };
 
 const STATUSES = ["OPEN", "IN_PROGRESS", "FIXED", "RESOLVED"] as const;
 type Status = (typeof STATUSES)[number];
@@ -71,9 +96,18 @@ type StyleGroup = {
   latestLabel: string;
 };
 
-export function TicketList({ rows }: { rows: TicketRow[] }) {
+export function TicketList({
+  rows,
+  styleOutputs,
+}: {
+  rows: TicketRow[];
+  styleOutputs: Record<string, StyleOutputView[]>;
+}) {
   const router = useRouter();
   const [query, setQuery] = useState("");
+  // Per-style action state: which action is running, and its last result.
+  const [styleBusy, setStyleBusy] = useState<Record<string, StyleAction | null>>({});
+  const [styleResult, setStyleResult] = useState<Record<string, StyleResult | null>>({});
   // RESOLVED is hidden by default — the workbench shows actionable threads.
   const [enabled, setEnabled] = useState<Set<Status>>(new Set(["OPEN", "IN_PROGRESS", "FIXED"]));
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
@@ -267,6 +301,77 @@ export function TicketList({ rows }: { rows: TicketRow[] }) {
     router.refresh();
   }
 
+  // Style-level actions. Regenerate (all / one output) hits the rerun route;
+  // mark-fixed (smart / regenerate-all-first) hits resolve-rejections, which
+  // re-renders only the stale outputs and sends ONE re-review notice.
+  async function styleAct(styleId: string, action: StyleAction) {
+    if (styleBusy[styleId]) return;
+    setStyleResult((r) => ({ ...r, [styleId]: null }));
+    setStyleBusy((b) => ({ ...b, [styleId]: action }));
+    try {
+      let res: Response;
+      if (action.kind === "regenAll" || action.kind === "regenOutput") {
+        res = await fetch(`/api/admin/styles/${styleId}/rerun`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(action.kind === "regenOutput" ? { variantKeys: [action.variantKey] } : {}),
+        });
+      } else {
+        res = await fetch(`/api/admin/styles/${styleId}/resolve-rejections`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ regenerateAll: action.kind === "regenAllFix" }),
+        });
+      }
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        email?: EmailOutcomeView | null;
+        jobsFailed?: number;
+        fixed?: unknown[];
+        awaitingData?: Array<{ outputName: string }>;
+        resolvedOrphan?: unknown[];
+        failed?: unknown[];
+      };
+      if (!res.ok) {
+        setStyleResult((r) => ({ ...r, [styleId]: { tone: "err", msg: body.error ?? `HTTP ${res.status}` } }));
+        return;
+      }
+      if (action.kind === "regenAll" || action.kind === "regenOutput") {
+        const failedN = body.jobsFailed ?? 0;
+        setStyleResult((r) => ({
+          ...r,
+          [styleId]:
+            failedN > 0
+              ? { tone: "warn", msg: `Regenerated with ${failedN} failure(s) — check the job log.` }
+              : { tone: "ok", msg: "Regenerated — see the fresh times below." },
+        }));
+      } else {
+        if (body.email) setEmail(body.email);
+        const fixed = body.fixed?.length ?? 0;
+        const waiting = body.awaitingData ?? [];
+        const orphan = body.resolvedOrphan?.length ?? 0;
+        const failedN = body.failed?.length ?? 0;
+        const parts: string[] = [];
+        if (fixed > 0) parts.push(`${fixed} marked fixed & reviewer notified`);
+        if (orphan > 0) parts.push(`${orphan} auto-resolved (output removed)`);
+        if (waiting.length > 0)
+          parts.push(`${waiting.length} awaiting data (${waiting.map((w) => w.outputName).join(", ")})`);
+        if (failedN > 0) parts.push(`${failedN} couldn't be regenerated`);
+        const tone: StyleResult["tone"] =
+          failedN > 0 || (waiting.length > 0 && fixed === 0) ? "warn" : "ok";
+        setStyleResult((r) => ({
+          ...r,
+          [styleId]: { tone, msg: parts.length ? parts.join(" · ") : "Nothing to mark fixed." },
+        }));
+      }
+      router.refresh();
+    } catch {
+      setStyleResult((r) => ({ ...r, [styleId]: { tone: "err", msg: "Request failed — try again." } }));
+    } finally {
+      setStyleBusy((b) => ({ ...b, [styleId]: null }));
+    }
+  }
+
   return (
     <div className="mt-5">
       <div className="flex flex-wrap items-center gap-2">
@@ -344,6 +449,10 @@ export function TicketList({ rows }: { rows: TicketRow[] }) {
                 onToggleSelect={toggleSelect}
                 onSetManySelected={setManySelected}
                 bulkBusy={bulk !== null}
+                outputs={styleOutputs[g.styleId] ?? []}
+                styleBusy={styleBusy[g.styleId] ?? null}
+                styleResult={styleResult[g.styleId] ?? null}
+                onStyleAct={(action) => styleAct(g.styleId, action)}
               />
             ))}
           </div>
@@ -403,6 +512,10 @@ function GroupSection({
   onToggleSelect,
   onSetManySelected,
   bulkBusy,
+  outputs,
+  styleBusy,
+  styleResult,
+  onStyleAct,
 }: {
   group: StyleGroup;
   open: boolean;
@@ -418,6 +531,10 @@ function GroupSection({
   onToggleSelect: (id: string) => void;
   onSetManySelected: (ids: string[], on: boolean) => void;
   bulkBusy: boolean;
+  outputs: StyleOutputView[];
+  styleBusy: StyleAction | null;
+  styleResult: StyleResult | null;
+  onStyleAct: (action: StyleAction) => void;
 }) {
   const selectableIds = group.tickets
     .filter((t) => t.status === "OPEN" || t.status === "IN_PROGRESS")
@@ -469,7 +586,93 @@ function GroupSection({
       </button>
 
       {open ? (
-        <div className="overflow-x-auto border-t border-zinc-100 bg-white">
+        <>
+          <div className="border-t border-zinc-100 bg-zinc-50/60 px-3 py-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onStyleAct({ kind: "regenAll" })}
+                disabled={styleBusy !== null || bulkBusy}
+                title="Re-render the whole style — cover, general info and every output"
+                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-50 disabled:opacity-50"
+              >
+                {styleBusy?.kind === "regenAll" ? "Regenerating all…" : "↻ Regenerate all"}
+              </button>
+              {selectableIds.length > 0 ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onStyleAct({ kind: "markFixed" })}
+                    disabled={styleBusy !== null || bulkBusy}
+                    title="Mark this style's rejected outputs fixed and notify the reviewer — re-renders only the ones not already refreshed since their rejection"
+                    className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-50 disabled:opacity-50"
+                  >
+                    {styleBusy?.kind === "markFixed" ? "Marking fixed…" : "✓ Mark fixed & notify"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onStyleAct({ kind: "regenAllFix" })}
+                    disabled={styleBusy !== null || bulkBusy}
+                    title="Re-render everything, then mark all rejected outputs fixed and notify the reviewer"
+                    className="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+                  >
+                    {styleBusy?.kind === "regenAllFix" ? "Regenerating & fixing…" : "↻ Regenerate all & mark fixed"}
+                  </button>
+                </>
+              ) : null}
+              {styleResult ? (
+                <span
+                  className={`text-xs ${
+                    styleResult.tone === "err"
+                      ? "text-red-600"
+                      : styleResult.tone === "warn"
+                        ? "text-amber-700"
+                        : "text-emerald-700"
+                  }`}
+                >
+                  {styleResult.msg}
+                </span>
+              ) : null}
+            </div>
+
+            {outputs.length > 0 ? (
+              <ul className="mt-2.5 divide-y divide-zinc-100 rounded-md border border-zinc-200 bg-white">
+                {outputs.map((o) => (
+                  <li
+                    key={o.variantKey}
+                    className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs"
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-zinc-700">{o.name}</span>
+                      {o.rejected ? (
+                        <span className="shrink-0 rounded-full border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                          rejected
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <OutputFreshness o={o} />
+                      {o.rejected && o.declared && o.ready && !o.regeneratedSinceRejection ? (
+                        <button
+                          type="button"
+                          onClick={() => onStyleAct({ kind: "regenOutput", variantKey: o.variantKey })}
+                          disabled={styleBusy !== null || bulkBusy}
+                          title="Regenerate just this output"
+                          className="rounded border border-zinc-300 bg-white px-2 py-0.5 text-[11px] font-medium hover:bg-zinc-50 disabled:opacity-50"
+                        >
+                          {styleBusy?.kind === "regenOutput" && styleBusy.variantKey === o.variantKey
+                            ? "…"
+                            : "↻ Regenerate"}
+                        </button>
+                      ) : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+
+          <div className="overflow-x-auto border-t border-zinc-100 bg-white">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-zinc-200 text-[11px] tracking-wide text-zinc-500 uppercase">
@@ -510,9 +713,46 @@ function GroupSection({
               ))}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       ) : null}
     </div>
+  );
+}
+
+// Freshness badge for one output in the style overview: green when it's been
+// regenerated since its rejection, amber for awaiting-data / still-rejected,
+// muted for non-rejected outputs (just "generated <when>").
+function OutputFreshness({ o }: { o: StyleOutputView }) {
+  if (o.rejected && o.regeneratedSinceRejection) {
+    return (
+      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap text-emerald-700">
+        ↻ regenerated since rejection{o.lastGeneratedLabel ? ` · ${o.lastGeneratedLabel}` : ""}
+      </span>
+    );
+  }
+  if (o.rejected && !o.declared) {
+    return (
+      <span className="whitespace-nowrap text-[11px] text-amber-700" title="This output was removed from the prod spec — Mark fixed resolves the ticket.">
+        ⚠ removed from spec — resolves on mark fixed
+      </span>
+    );
+  }
+  if (o.rejected && !o.ready) {
+    return (
+      <span className="whitespace-nowrap text-[11px] text-amber-700" title={o.missing.join(", ")}>
+        ⚠ awaiting data
+        {o.missing.length ? `: ${o.missing.slice(0, 3).join(", ")}${o.missing.length > 3 ? "…" : ""}` : ""}
+      </span>
+    );
+  }
+  if (o.rejected) {
+    return <span className="whitespace-nowrap text-[11px] text-amber-700">still the rejected version</span>;
+  }
+  return (
+    <span className="whitespace-nowrap text-[11px] text-zinc-400">
+      {o.lastGeneratedLabel ? `generated ${o.lastGeneratedLabel}` : "not generated"}
+    </span>
   );
 }
 
