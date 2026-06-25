@@ -8,6 +8,8 @@ import {
   parseProdSpecLanguages,
 } from "@/lib/prod-spec/config";
 import { ColumnMappingSchema, RequiredFieldSchema } from "@/lib/customers/config";
+import { resolveTicketsForRemovedOutputs } from "@/lib/tickets/rejection-tickets";
+import { currentOutputBaseKeys } from "@/lib/tickets/orphan";
 
 export const runtime = "nodejs";
 
@@ -137,5 +139,21 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     return updated;
   });
 
-  return NextResponse.json({ prodSpec: result });
+  // Output-set change → resolve tickets whose output was removed. Re-running
+  // such an orphaned ticket could only NO_OUTPUTS-fail (it scopes a job to a
+  // key no current output declares), so retire them here instead. Best-effort:
+  // a cleanup miss must never fail the save the operator just made.
+  let resolvedOrphanTickets = 0;
+  if (d.outputs !== undefined) {
+    try {
+      resolvedOrphanTickets = await resolveTicketsForRemovedOutputs(
+        id,
+        currentOutputBaseKeys(d.outputs),
+      );
+    } catch (err) {
+      console.warn(`[prod-specs] orphan-ticket cleanup skipped for ${id}: ${(err as Error).message}`);
+    }
+  }
+
+  return NextResponse.json({ prodSpec: result, resolvedOrphanTickets });
 }

@@ -32,6 +32,13 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       triggerSource: "TICKET_RERUN",
       userEmail: session.user.email,
     });
+    if (result.removedOutput) {
+      return NextResponse.json({
+        ok: true,
+        removedOutput: true,
+        message: "Output is no longer in the prod spec — ticket resolved; nothing to regenerate.",
+      });
+    }
     if (result.jobStatus === "FAILED") {
       return NextResponse.json(
         { error: `Re-run failed: ${result.jobError ?? "see job log"}`, jobId: result.jobId },

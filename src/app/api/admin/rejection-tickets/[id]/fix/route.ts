@@ -48,6 +48,15 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     }
     throw err;
   }
+  // The output was removed from the spec — the ticket is already resolved in
+  // place (no job, no re-review needed). Report it as a clean resolution.
+  if (run.removedOutput) {
+    return NextResponse.json({
+      ok: true,
+      removedOutput: true,
+      message: "Output is no longer in the prod spec — ticket resolved; nothing to regenerate.",
+    });
+  }
   if (run.jobStatus === "FAILED") {
     return NextResponse.json(
       { error: `Re-run failed — ticket NOT marked fixed: ${run.jobError ?? "see job log"}`, jobId: run.jobId },
@@ -101,7 +110,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       .filter(Boolean)
       .join(" · "),
     href: `/styles/${ticket.styleId}/review`,
-    jobId: run.jobId,
+    jobId: run.jobId ?? undefined,
     styleId: ticket.styleId,
     ticketId: ticket.id,
   });
