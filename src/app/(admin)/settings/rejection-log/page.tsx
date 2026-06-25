@@ -49,8 +49,30 @@ export default async function RejectionLogPage() {
         });
   const prodSpecByStyle = new Map(styles.map((s) => [s.id, s.prodSpec?.id ?? null]));
 
+  // "Re-generated since rejected" signal: the newest non-FAILED asset per
+  // (style × variantKey). A ticket is flagged when that asset is newer than the
+  // rejection — which also catches regenerations that never went through "Mark
+  // fixed" (auto-runs, full re-runs), the overview a superadmin wants. Lightweight
+  // (no PDF bytes); newest-first so the first hit per key is the latest.
+  const latestAssets =
+    styleIds.length === 0
+      ? []
+      : await db.jobAsset.findMany({
+          where: { job: { styleId: { in: styleIds }, status: { not: "FAILED" } } },
+          orderBy: { createdAt: "desc" },
+          select: { variantKey: true, createdAt: true, job: { select: { styleId: true } } },
+        });
+  const latestAssetAt = new Map<string, Date>();
+  for (const a of latestAssets) {
+    const key = `${a.job.styleId}|${a.variantKey ?? ""}`;
+    if (!latestAssetAt.has(key)) latestAssetAt.set(key, a.createdAt);
+  }
+
   const rows: TicketRow[] = tickets.map((t) => {
     const edit = outputEditLink(t.variantKey, prodSpecByStyle.get(t.styleId) ?? null);
+    const prodSpecId = prodSpecByStyle.get(t.styleId) ?? null;
+    const regenAt = latestAssetAt.get(`${t.styleId}|${t.variantKey}`);
+    const regeneratedAfterRejection = !!regenAt && regenAt > t.createdAt;
     return {
       id: t.id,
       status: t.status,
@@ -58,6 +80,7 @@ export default async function RejectionLogPage() {
       styleName: t.styleName,
       styleNumber: t.styleNumber,
       outputName: t.outputName,
+      docType: t.docType,
       variantKey: t.variantKey,
       customerName: t.customerName,
       businessArea: t.businessArea,
@@ -77,6 +100,10 @@ export default async function RejectionLogPage() {
         .join(" → "),
       editHref: edit?.href ?? null,
       editLabel: edit?.label ?? "",
+      // Open the style's applied Prod Spec from the group header (new tab).
+      prodSpecHref: prodSpecId ? `/prod-specs/${prodSpecId}` : null,
+      regeneratedAfterRejection,
+      regeneratedAtLabel: regeneratedAfterRejection && regenAt ? STAMP_FORMAT.format(regenAt) : null,
       searchBlob:
         `${t.styleName} ${t.styleNumber} ${t.outputName} ${t.customerName} ${t.businessArea ?? ""} ${t.poNumber ?? ""} ${t.comment}`.toLowerCase(),
     };
