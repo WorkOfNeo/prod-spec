@@ -179,9 +179,9 @@ export default async function RejectionLogPage() {
       <h1 className="text-2xl font-semibold tracking-tight">Rejection log</h1>
       <p className="mt-1 max-w-3xl text-sm text-zinc-500">
         Outputs rejected by the reviewer, with their comments. Work them here: <strong>Re-run</strong>{" "}
-        regenerates silently (no email), <strong>Mark fixed &amp; notify</strong> re-runs and tells the
-        reviewer to take another look. Approving the output on the review screen resolves its ticket
-        automatically.
+        regenerates silently, <strong>Mark fixed &amp; notify</strong> re-runs and posts an in-app
+        notification telling the reviewer to take another look. Approving the output on the review screen
+        resolves its ticket automatically.
       </p>
       {totalCount > rows.length ? (
         <p className="mt-2 text-xs text-amber-700">

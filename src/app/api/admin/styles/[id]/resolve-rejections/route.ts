@@ -3,10 +3,7 @@ import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin } from "@/lib/roles";
 import { resolveStyleRejections } from "@/lib/tickets/resolve-rejections";
-import { dispatchEmail } from "@/lib/email/dispatch";
-import { ticketsFixedEmail } from "@/lib/email/templates/review-notification";
 import { notifyUser } from "@/lib/notifications/user-notifications";
-import { getReviewNotificationEmails } from "@/lib/settings/app-settings";
 
 export const runtime = "nodejs";
 // A full-style rerun renders the cover + general info + every output, so give
@@ -17,7 +14,8 @@ export const maxDuration = 300;
 // every OPEN/IN_PROGRESS rejection for a style in one go. Re-renders only the
 // outputs that are stale (or all of them, with ?regenerateAll), marks the
 // re-rendered + already-fresh ones FIXED, leaves awaiting-data ones OPEN,
-// resolves orphaned ones in place, then sends ONE batched re-review notice.
+// resolves orphaned ones in place, then posts ONE batched in-app re-review
+// notice. Email is intentionally NOT sent — internal flow, wired up later.
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -39,11 +37,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     where: { id },
     select: {
       name: true,
-      mondayItemId: true,
       poNumber: true,
-      businessArea: true,
       customer: { select: { name: true } },
-      businessAreaRef: { select: { name: true } },
     },
   });
   if (!style) return NextResponse.json({ error: "Style not found" }, { status: 404 });
@@ -68,31 +63,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     },
   });
 
-  // ONE batched re-review notice for the whole style (not one per output).
-  let email = null;
+  // ONE batched in-app re-review notice per reviewer who raised a fixed
+  // rejection (not one per output). No email — this is an internal flow today;
+  // the email path will be wired up later.
   if (outcome.fixed.length > 0) {
-    const recipients = await getReviewNotificationEmails();
-    const base = process.env.PROD_SPEC_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
-    const tpl = ticketsFixedEmail({
-      styleName: style.name,
-      styleNumber: style.mondayItemId,
-      customerName: style.customer.name,
-      businessArea: style.businessAreaRef?.name ?? style.businessArea,
-      poNumber: style.poNumber,
-      outputNames: outcome.fixed.map((f) => f.outputName),
-      reviewUrl: `${base}/styles/${id}/review`,
-    });
-    email = await dispatchEmail({
-      type: "TICKET_FIXED",
-      to: recipients,
-      subject: tpl.subject,
-      html: tpl.html,
-      text: tpl.text,
-      jobId: outcome.jobId ?? undefined,
-      styleId: id,
-    });
-
-    // In-app mirror to each reviewer who raised one of the fixed rejections.
     const reporters = [...new Set(outcome.fixed.map((f) => f.reportedById))];
     const body = [style.name, style.customer.name, style.poNumber ? `PO ${style.poNumber}` : null]
       .filter(Boolean)
@@ -111,5 +85,5 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     );
   }
 
-  return NextResponse.json({ ok: true, ...outcome, email });
+  return NextResponse.json({ ok: true, ...outcome });
 }
