@@ -54,10 +54,15 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   });
   if (!style) notFound();
 
-  const [outputs, docTypeLabels] = await Promise.all([
+  const [allOutputs, docTypeLabels] = await Promise.all([
     getCurrentOutputsForStyle(id),
     loadDocTypeLabels(),
   ]);
+  // Hide swapped-out leftovers — generated outputs no longer declared on the
+  // ProdSpec (onSpec === false), e.g. an old carton layout replaced by a new
+  // one. Their assets still live on their jobs; they're just not part of the
+  // active review. Declared outputs + cover/general-info stay.
+  const outputs = allOutputs.filter((o) => o.onSpec !== false);
   const rollup = rollupOutputSlots(outputs);
 
   const businessArea = style.businessAreaRef?.name ?? style.businessArea ?? null;

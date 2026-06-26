@@ -42,6 +42,11 @@ export type CurrentOutput = {
   rejectReason: string | null;
   placeholderCount: number;
   generatedAt: Date | null; // asset.createdAt — when the output became available
+  // False ONLY for a GENERATED asset whose output is no longer declared on the
+  // ProdSpec (a swapped-out leftover) and isn't a framing page. Declared outputs
+  // and framing pages (cover / general info) are true. The per-style review
+  // screen hides onSpec === false; other surfaces may ignore it (absent ⇒ keep).
+  onSpec?: boolean;
 };
 
 export type StyleOutputRollup = {
@@ -273,6 +278,10 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
       rejectReason: a.rejectReason,
       placeholderCount: a.placeholderCount,
       generatedAt: a.createdAt,
+      // Declared on the spec, or a framing page (cover/general info) — those
+      // belong to every review. Anything else generated is a swapped-out
+      // leftover the review screen hides.
+      onSpec: declaredNameByBase.has(b) || a.docType === "COVER" || a.docType === "GENERAL_INFO",
     });
   }
 
@@ -297,6 +306,7 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
       rejectReason: null,
       placeholderCount: 0,
       generatedAt: null,
+      onSpec: true, // declared on the spec by construction (came from readiness)
     });
   }
 
