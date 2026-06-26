@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { getServerSession } from "@/lib/auth-server";
+import { getSessionWithRole } from "@/lib/auth-server";
+import { isAdmin } from "@/lib/roles";
 import { AssetActions } from "./asset-actions";
 import { OutputBulkActions } from "./output-bulk-actions";
+import { SupplierPushActions } from "./supplier-push-actions";
 import { ReviewClaim } from "./claim-review";
 import { ReviewLeaveGuard } from "./leave-guard";
 import { ReviewCartonCustomize } from "./review-carton-customize";
@@ -39,7 +41,10 @@ const NOT_READY_LABEL: Record<OutputState, string> = {
 
 export default async function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const session = await getServerSession();
+  const { session, role } = await getSessionWithRole();
+  // Push-to-supplier is an ADMIN-only action (no REVIEWER) — distinct from the
+  // approve/reject gate (canReview). The endpoints enforce the same.
+  const canPush = isAdmin(role);
 
   const style = await db.style.findUnique({
     where: { id },
@@ -79,6 +84,10 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     .map((o) => o.jobAssetId as string);
   const rejectAssetIds = pendingReviewable.map((o) => o.jobAssetId as string);
   const blockedCount = pendingReviewable.filter((o) => o.placeholderCount > 0).length;
+  // Admin push-to-supplier targets APPROVED, print-safe outputs only.
+  const pushableCount = reviewable.filter(
+    (o) => o.reviewStatus === "APPROVED" && o.placeholderCount === 0 && o.jobAssetId,
+  ).length;
 
   const notGeneratedCount = rollup.awaitingData + rollup.readyToGenerate;
   // Generation coverage — how many of the declared output slots have been
@@ -196,13 +205,18 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             />
           ) : null}
         </div>
-        <OutputBulkActions
-          styleId={style.id}
-          styleContext={styleContext}
-          approveAssetIds={approveAssetIds}
-          rejectAssetIds={rejectAssetIds}
-          blockedCount={blockedCount}
-        />
+        <div className="flex items-end gap-3">
+          {canPush ? (
+            <SupplierPushActions styleId={style.id} pushableCount={pushableCount} />
+          ) : null}
+          <OutputBulkActions
+            styleId={style.id}
+            styleContext={styleContext}
+            approveAssetIds={approveAssetIds}
+            rejectAssetIds={rejectAssetIds}
+            blockedCount={blockedCount}
+          />
+        </div>
       </div>
 
       {placeholderOutputs.length > 0 && (
@@ -300,6 +314,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                             placeholderCount={o.placeholderCount}
                             outputTitle={o.name}
                             styleContext={styleContext}
+                            canPush={canPush}
                           />
                         </div>
                       </div>

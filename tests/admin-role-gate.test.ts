@@ -31,12 +31,33 @@ function asAnon() {
 // ── Side-effect spies ───────────────────────────────────────────────────────
 const findRejectionTicket = mock.fn(async () => null as unknown);
 const findStyle = mock.fn(async () => null as unknown);
-const runPendingJobs = mock.fn(async () => ({ processed: 0, failed: 0 }));
+const runPendingJobs = mock.fn(async () => ({ processed: 0, failed: 0, jobIds: [] as string[] }));
 const runPendingEanResolutions = mock.fn(async () => ({ processed: 0, failed: 0, requeued: 0, styleIds: [] }));
 let autoRunEnabled = true;
 
 class TicketRunError extends Error {
   httpStatus = 500;
+}
+
+// push-to-supplier spies (the two ADMIN-only routes added with this feature).
+const findJobAsset = mock.fn(async () => null as unknown);
+const getOutputs = mock.fn(async () => [] as unknown[]);
+const pushApproved = mock.fn(async () => ({
+  dryRun: false,
+  supplierName: "",
+  folderName: "",
+  supplierFolderUrl: null,
+  targetFolderUrl: null,
+  pushed: [],
+  skipped: [],
+}));
+class SupplierPushError extends Error {
+  constructor(
+    public httpStatus: number,
+    message: string,
+  ) {
+    super(message);
+  }
 }
 
 before(() => {
@@ -52,8 +73,21 @@ before(() => {
       db: {
         rejectionTicket: { findUnique: findRejectionTicket },
         style: { findUnique: findStyle },
+        jobAsset: { findUnique: findJobAsset },
+        // cron-activity routes (jobs/run, po-eans/run) record a CronRun on the
+        // session/sweep path — stub it so the ADMIN happy-path tests pass.
+        cronRun: { create: mock.fn(async () => ({})) },
       },
     },
+  });
+  // push-to-supplier deps stubbed so the gate tests never load the Graph SDK
+  // or read the live DB. The ADMIN paths stop short of calling pushApproved
+  // (bogus id 404s; empty approved set 409s), so the stub return is unused.
+  mock.module("@/lib/outputs/current-outputs", {
+    namedExports: { getCurrentOutputsForStyle: getOutputs },
+  });
+  mock.module("@/lib/sharepoint/push-to-supplier", {
+    namedExports: { pushApprovedAssetsToSupplier: pushApproved, SupplierPushError },
   });
   // Happy-path executors → spies (also keeps Puppeteer/render stack unloaded).
   mock.module("@/lib/queue/runner", { namedExports: { runPendingJobs } });
@@ -76,6 +110,9 @@ beforeEach(() => {
   findStyle.mock.resetCalls();
   runPendingJobs.mock.resetCalls();
   runPendingEanResolutions.mock.resetCalls();
+  findJobAsset.mock.resetCalls();
+  getOutputs.mock.resetCalls();
+  pushApproved.mock.resetCalls();
   autoRunEnabled = true;
 });
 
@@ -126,6 +163,12 @@ const INTERACTIVE = [
     path: "@/app/api/admin/styles/[id]/rerun/route",
     url: "http://localhost/api/admin/styles/bogus-id/rerun",
     spy: findStyle,
+  },
+  {
+    name: "admin/job-assets/[id]/push-to-supplier",
+    path: "@/app/api/admin/job-assets/[id]/push-to-supplier/route",
+    url: "http://localhost/api/admin/job-assets/bogus-id/push-to-supplier",
+    spy: findJobAsset,
   },
 ] as const;
 
@@ -234,4 +277,40 @@ test("po-eans/run: no secret + no session → 401", async () => {
   const { status } = await call(POST, "http://localhost/api/po-eans/run");
   assert.equal(status, 401);
   assert.equal(runPendingEanResolutions.mock.callCount(), 0);
+});
+
+// ── admin/styles/[id]/push-to-supplier — ADMIN-only "Push all". Doesn't fit
+// the INTERACTIVE table (an ADMIN with no approved outputs is stopped at 409,
+// not 404), so it gets its own trio. The 409 still proves the gate let the
+// admin through, and that no push is attempted with nothing approved.
+const STYLE_PUSH = "@/app/api/admin/styles/[id]/push-to-supplier/route";
+const STYLE_PUSH_URL = "http://localhost/api/admin/styles/bogus-id/push-to-supplier";
+
+test("styles/[id]/push-to-supplier: REVIEWER is refused with 403 before any work", async () => {
+  const POST = await load(STYLE_PUSH);
+  asReviewer();
+  const { status, body } = await call(POST, STYLE_PUSH_URL);
+  assert.equal(status, 403, "reviewer must be forbidden");
+  assert.match(body?.error ?? "", /ADMIN/, "403 body names the required role");
+  assert.equal(getOutputs.mock.callCount(), 0, "gate blocks before reading outputs");
+  assert.equal(pushApproved.mock.callCount(), 0, "gate blocks before any push");
+});
+
+test("styles/[id]/push-to-supplier: ADMIN passes the gate (409 — nothing approved to push)", async () => {
+  const POST = await load(STYLE_PUSH);
+  asAdmin();
+  const { status } = await call(POST, STYLE_PUSH_URL);
+  assert.notEqual(status, 403, "admin must not be forbidden");
+  assert.notEqual(status, 401, "admin must not be unauthorized");
+  assert.equal(status, 409, "gate passed; empty approved set 409s");
+  assert.equal(getOutputs.mock.callCount(), 1, "admin reaches the outputs read");
+  assert.equal(pushApproved.mock.callCount(), 0, "no approved outputs → no push attempted");
+});
+
+test("styles/[id]/push-to-supplier: no session is rejected with 401", async () => {
+  const POST = await load(STYLE_PUSH);
+  asAnon();
+  const { status } = await call(POST, STYLE_PUSH_URL);
+  assert.equal(status, 401);
+  assert.equal(getOutputs.mock.callCount(), 0);
 });
