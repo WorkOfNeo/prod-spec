@@ -134,7 +134,7 @@ export function TicketList({
   const [notes, setNotes] = useState<Record<string, string>>({});
   // Bulk "mark fixed" selection (ticket ids) + in-flight progress + result.
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
+  const [bulk, setBulk] = useState<{ done: number; total: number; regenerate: boolean } | null>(null);
   const [bulkSummary, setBulkSummary] = useState<{ fixed: number; failed: number } | null>(null);
 
   // Only OPEN / IN_PROGRESS tickets can be marked fixed — FIXED/RESOLVED are done.
@@ -314,19 +314,25 @@ export function TicketList({
     });
   }
 
-  // Bulk "Mark fixed & notify": run the same per-ticket fix sequentially so each
-  // gets its own request budget (renders are slow) and commits independently —
-  // a mid-way stop still leaves the finished ones FIXED. Sequential also dodges
-  // runTicketJob's "a job is already in flight for this style" guard.
-  async function bulkFix() {
+  // Bulk action over the selected tickets, run sequentially so each gets its own
+  // request budget (renders are slow) and commits independently — a mid-way stop
+  // still leaves the finished ones FIXED. Sequential also dodges runTicketJob's
+  // "a job is already in flight for this style" guard.
+  //   • regenerate=false → "Mark fixed & notify": flip status + notify, NO re-render.
+  //   • regenerate=true  → "Regenerate, mark fixed & notify": re-render each output first.
+  async function bulkFix(regenerate: boolean) {
     const ids = [...selected].filter((id) => actionableIds.has(id));
     if (ids.length === 0 || bulk) return;
     setBulkSummary(null);
-    setBulk({ done: 0, total: ids.length });
+    setBulk({ done: 0, total: ids.length, regenerate });
     let failed = 0;
     for (const id of ids) {
       try {
-        const res = await fetch(`/api/admin/rejection-tickets/${id}/fix`, { method: "POST" });
+        const res = await fetch(`/api/admin/rejection-tickets/${id}/fix`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ regenerate }),
+        });
         if (!res.ok) failed++;
       } catch {
         failed++;
@@ -514,7 +520,8 @@ export function TicketList({
           <div className="flex items-center gap-3 rounded-full border border-zinc-300 bg-white py-2 pr-3 pl-4 shadow-lg">
             {bulk ? (
               <span className="text-sm text-zinc-700">
-                Marking fixed &amp; notifying… {bulk.done}/{bulk.total}
+                {bulk.regenerate ? "Regenerating & notifying…" : "Marking fixed & notifying…"} {bulk.done}/
+                {bulk.total}
               </span>
             ) : (
               <>
@@ -523,11 +530,19 @@ export function TicketList({
                 </span>
                 <button
                   type="button"
-                  onClick={bulkFix}
-                  className="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700"
-                  title="Re-run each selected output and notify the reviewer it's ready for re-review"
+                  onClick={() => bulkFix(false)}
+                  className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-50"
+                  title="Mark each selected ticket fixed and notify the reviewer — WITHOUT re-rendering (use when the outputs are already up to date)"
                 >
                   ✓ Mark fixed &amp; notify
+                </button>
+                <button
+                  type="button"
+                  onClick={() => bulkFix(true)}
+                  className="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700"
+                  title="Re-render each selected output, then mark it fixed and notify the reviewer"
+                >
+                  ↻ Regenerate, mark fixed &amp; notify
                 </button>
                 <button
                   type="button"
