@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { EmailSimulationDialog, type EmailOutcomeView } from "@/components/email-simulation-dialog";
 import { FilterSelect, outputTypeLabel } from "./rejection-filters";
 
 // A rendered PDF for a ticket's output (jobId + the preview query that
@@ -133,7 +132,6 @@ export function TicketList({
   const [pending, setPending] = useState<{ id: string; action: string } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const [email, setEmail] = useState<EmailOutcomeView | null>(null);
   // Bulk "mark fixed" selection (ticket ids) + in-flight progress + result.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
@@ -272,7 +270,6 @@ export function TicketList({
       const res = await fetch(`/api/admin/rejection-tickets/${row.id}/${action}`, { method: "POST" });
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
-        email?: EmailOutcomeView | null;
         latestAsset?: { placeholderCount: number } | null;
       };
       if (!res.ok) {
@@ -289,7 +286,6 @@ export function TicketList({
               : "Re-generated — check the fresh preview below.",
         }));
       }
-      if (action === "fix" && body.email) setEmail(body.email);
       // A re-run replaces the asset (new job) — refresh the lazy preview too.
       if (action === "rerun" || action === "fix") void loadAsset(row.id);
       router.refresh();
@@ -367,7 +363,6 @@ export function TicketList({
       }
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
-        email?: EmailOutcomeView | null;
         jobsFailed?: number;
         fixed?: unknown[];
         awaitingData?: Array<{ outputName: string }>;
@@ -388,7 +383,6 @@ export function TicketList({
               : { tone: "ok", msg: "Regenerated — see the fresh times below." },
         }));
       } else {
-        if (body.email) setEmail(body.email);
         const fixed = body.fixed?.length ?? 0;
         const waiting = body.awaitingData ?? [];
         const orphan = body.resolvedOrphan?.length ?? 0;
@@ -547,8 +541,6 @@ export function TicketList({
           </div>
         </div>
       ) : null}
-
-      {email ? <EmailSimulationDialog outcome={email} onClose={() => setEmail(null)} /> : null}
     </div>
   );
 }
@@ -1022,7 +1014,7 @@ function Row({
                     type="button"
                     onClick={() => onAct("fix")}
                     disabled={pendingAction !== null}
-                    title="Final re-run + email the reviewer that it's ready for another look"
+                    title="Final re-run + notify the reviewer that it's ready for another look"
                     className="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50"
                   >
                     {pendingAction === "fix" ? "Fixing…" : "✓ Mark fixed & notify reviewer"}
