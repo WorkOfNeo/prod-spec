@@ -9,6 +9,7 @@ export const EAN_STATUS_META: Record<string, { label: string; cls: string }> = {
   PARTIAL: { label: "partial", cls: "bg-amber-100 text-amber-800" },
   PO_FOUND_NO_EANS: { label: "PO has no barcodes", cls: "bg-orange-100 text-orange-800" },
   PO_NOT_FOUND: { label: "PO not found", cls: "bg-red-100 text-red-700" },
+  STYLE_NOT_IN_PO: { label: "style not in PO", cls: "bg-rose-100 text-rose-700" },
   ERROR: { label: "error", cls: "bg-red-100 text-red-700" },
 };
 
@@ -25,7 +26,13 @@ export const MAX_EAN_ATTEMPTS = 3;
 // once attempts run out. Keep in sync with RETRYABLE in ean-runner.ts.
 // Exported so server pages can build the same "floated" Prisma filter the
 // /automation badge counts with (eanStatus in here + attempts >= MAX).
-export const FLOATABLE_STATUSES = ["PO_FOUND_NO_EANS", "PO_NOT_FOUND", "ERROR"] as const;
+export const FLOATABLE_STATUSES = [
+  "PO_FOUND_NO_EANS",
+  "PO_NOT_FOUND",
+  // A re-issued PO may add the style later, so retry a few times, then float.
+  "STYLE_NOT_IN_PO",
+  "ERROR",
+] as const;
 const FLOATABLE_SET = new Set<string>(FLOATABLE_STATUSES);
 
 // A row has "floated" when it's in a retryable-but-unresolved state and has

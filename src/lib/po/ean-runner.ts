@@ -39,7 +39,13 @@ const RETRY_AFTER_MS = 12 * 60 * 60 * 1000;
 // Statuses the sweep re-queues — all "might succeed later" outcomes. After
 // MAX_EAN_ATTEMPTS strikes a row in one of these states stops being re-queued
 // and "floats" for manual attention (see eanFloated in ./ean-status-meta).
-const RETRYABLE: DbEanStatus[] = ["PO_FOUND_NO_EANS", "PO_NOT_FOUND", "ERROR"];
+const RETRYABLE: DbEanStatus[] = [
+  "PO_FOUND_NO_EANS",
+  "PO_NOT_FOUND",
+  // A re-issued PO may add the style later, so retry a few times, then float.
+  "STYLE_NOT_IN_PO",
+  "ERROR",
+];
 
 export type EanRunSummary = {
   processed: number;
@@ -296,6 +302,9 @@ function toDbStatus(s: ResolveStatus): DbEanStatus {
       return "PO_NOT_FOUND";
     case "no_supplier_folder":
       return "PO_NOT_FOUND";
+    case "style_not_in_po":
+      // PO found + parsed with barcodes, but no section matches this style.
+      return "STYLE_NOT_IN_PO";
     case "no_po":
       return "NONE";
     case "error":
