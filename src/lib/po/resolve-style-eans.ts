@@ -210,6 +210,7 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
         customerItemNoOnStyle: customerItemNo || null,
         styleNumberOnStyle: styleNumber || null,
         poStyleNumbers: [],
+        poSections: [],
         styleSizes: sizes,
         textSnippet: "",
       },
@@ -243,6 +244,7 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
         customerItemNoOnStyle: customerItemNo || null,
         styleNumberOnStyle: styleNumber || null,
         poStyleNumbers: [],
+        poSections: [],
         styleSizes: sizes,
         textSnippet: "",
       },
@@ -284,6 +286,7 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
         customerItemNoOnStyle: customerItemNo || null,
         styleNumberOnStyle: styleNumber || null,
         poStyleNumbers: [],
+        poSections: [],
         styleSizes: sizes,
         textSnippet: "",
       },
@@ -297,6 +300,18 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
   const selectedItems = selection.items;
   const variants = selectedItems.flatMap((i) => i.variants);
   const cartonEan = cartonEanFor(selectedItems, parsed.items);
+
+  // Every section the scrape saw, flagged with whether we selected it — for
+  // the "full scrape, green = used" panel. selectStyleItems returns the same
+  // PoItem references it filtered from parsed.items, so identity works.
+  const selectedSet = new Set(selectedItems);
+  const poSections = parsed.items.map((it) => ({
+    styleNumber: it.styleNumber,
+    contrastNo: it.contrastNo,
+    selected: selectedSet.has(it),
+    variants: it.variants.map((v) => ({ label: v.label, ean13: v.ean13 })),
+    cartonEan: it.assortmentEans[0] ?? null,
+  }));
 
   const diagnostics: EanDiagnostics = {
     poNumber: style.poNumber,
@@ -318,6 +333,7 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
     customerItemNoOnStyle: customerItemNo || null,
     styleNumberOnStyle: styleNumber || null,
     poStyleNumbers: selection.poStyleNumbers,
+    poSections,
     styleSizes: sizes,
     textSnippet: parsed.diagnostics.textSnippet,
   };

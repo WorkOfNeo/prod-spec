@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { EanView, EanDiagnostics } from "@/lib/po/ean-view";
 import { eanStatusMeta } from "@/lib/po/ean-status-meta";
 import { colorFromVariantLabel } from "@/lib/po/ean-format";
+import { ScrapePanel } from "./scrape-panel";
 
 // Details-tab EAN panel. Shows the persisted PO → EAN resolution (per-size
 // rows + carton) when present; when no EANs are resolved yet it surfaces a
@@ -106,6 +107,10 @@ export function EanPanel({
               ? "No EANs resolved yet — click Resolve to scrape the PO PDF for the per-size barcodes."
               : "No PO number on this style yet."}
         </p>
+      )}
+
+      {view.diagnostics?.poSections && view.diagnostics.poSections.length > 0 && (
+        <ScrapePanel sections={view.diagnostics.poSections} />
       )}
 
       {view.diagnostics && <Diagnostics d={view.diagnostics} />}

@@ -218,8 +218,12 @@ export async function resolveAndPersistStyleEans(styleId: string): Promise<EanVi
         // Full verification trail: chosen file + candidate list, barcode-page
         // detection, raw 13-digit token count, parsed items/variants and a
         // text snippet — so PO_FOUND_NO_EANS can be confirmed as "genuinely
-        // no barcode page" vs "wrong file" vs "parser miss".
-        payload: (result.diagnostics ?? undefined) as unknown as object,
+        // no barcode page" vs "wrong file" vs "parser miss". poSections (the
+        // per-section scrape dump) is a live-UI affordance only — strip it so
+        // it doesn't bloat every Log row.
+        payload: (result.diagnostics
+          ? { ...result.diagnostics, poSections: undefined }
+          : undefined) as unknown as object,
       },
     }),
   ]);
