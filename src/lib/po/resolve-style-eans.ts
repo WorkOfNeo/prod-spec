@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { downloadDriveItem } from "@/lib/sharepoint/shares";
 import { findPoPdfDetailed } from "./find-po-pdf";
-import { parsePoBarcodes, type PoVariant } from "./parse-barcodes";
+import { parsePoBarcodes, selectStyleItems, cartonEanFor, type PoVariant } from "./parse-barcodes";
 import type { EanDiagnostics } from "./ean-view";
 import { parseCustomerConfig, MANUAL_COLUMN_IDS, type ColumnMapping } from "@/lib/customers/config";
 import { parseProdSpecColumnMapping } from "@/lib/prod-spec/config";
@@ -11,9 +11,13 @@ import { parseProdSpecColumnMapping } from "@/lib/prod-spec/config";
 //   Style.poNumber (from Pre-Order) + Style.supplier.sharepointUrl
 //   → find "Purchase Order <PO>.pdf" in the supplier folder
 //   → parse the Barcodes page
-//   → match the item (single item, or by Customer Item No)
+//   → select the style's section(s): by Customer Item No, else by style number
 //   → place each per-colour/size Barcode EAN in the Style's size order
 //   → plus the carton/assortment EAN.
+//
+// A PO can carry many styles. We pick by the style number printed on each
+// section's header, and REJECT (STYLE_NOT_IN_PO) when the PO has style-number
+// sections but none is ours — guessing would write a different style's EANs.
 // =====================================================
 
 export type SizeEan = {
@@ -28,6 +32,9 @@ export type StyleEanStatus =
   | "no_po"
   | "no_supplier_folder"
   | "po_not_found"
+  // PO found + parsed and it carries style sections, but none matches this
+  // style's style number → we refuse to scrape another style's EANs.
+  | "style_not_in_po"
   | "no_eans"
   | "error";
 
@@ -155,6 +162,13 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
     mapping.customerItemNo ?? "text91__1",
     MANUAL_COLUMN_IDS.customerItemNo,
   );
+  // The style number printed on the PO section headers. Default maps to the
+  // Pre-Order row name (synthetic "__name__" column = Style.name, e.g.
+  // "PTQ60031"); fall back to Style.name directly so a missing mapping still
+  // resolves. This is the primary match key for multi-style POs.
+  const styleNumber =
+    readCol(style.rawData, mapping.styleNumber ?? "__name__", MANUAL_COLUMN_IDS.styleNumber) ||
+    style.name;
   const sizes = splitSizes(
     readCol(style.rawData, mapping.sizes ?? "sizes__1", MANUAL_COLUMN_IDS.sizes),
   );
@@ -192,7 +206,10 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
         parsedItemCount: 0,
         parsedVariantCount: 0,
         matchedByCustomerItemNo: false,
+        matchedByStyleNumber: false,
         customerItemNoOnStyle: customerItemNo || null,
+        styleNumberOnStyle: styleNumber || null,
+        poStyleNumbers: [],
         styleSizes: sizes,
         textSnippet: "",
       },
@@ -222,7 +239,10 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
         parsedItemCount: 0,
         parsedVariantCount: 0,
         matchedByCustomerItemNo: false,
+        matchedByStyleNumber: false,
         customerItemNoOnStyle: customerItemNo || null,
+        styleNumberOnStyle: styleNumber || null,
+        poStyleNumbers: [],
         styleSizes: sizes,
         textSnippet: "",
       },
@@ -260,27 +280,23 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
         parsedItemCount: 0,
         parsedVariantCount: 0,
         matchedByCustomerItemNo: false,
+        matchedByStyleNumber: false,
         customerItemNoOnStyle: customerItemNo || null,
+        styleNumberOnStyle: styleNumber || null,
+        poStyleNumbers: [],
         styleSizes: sizes,
         textSnippet: "",
       },
     };
   }
 
-  // Which PO sub-items belong to this style?
-  //  - Customer Item No match → that item alone (precise, single colourway).
-  //  - Otherwise aggregate EVERY item's variants. A per-style-order PO lists
-  //    the style's colourways (+ a 2-pack wrapper, which now carries only an
-  //    assortment/pack EAN and no size variants, so it contributes nothing).
-  //    This lets a combined 2-pack style (A+B) collect ALL colourways' per-
-  //    size EANs. Caveat: a PO mixing unrelated styles with no Customer Item
-  //    No match would over-include — acceptable for the no-match fallback.
-  const matchedItem = customerItemNo
-    ? parsed.items.find((i) => i.customerItemNo === customerItemNo) ?? null
-    : null;
-  const selectedItems = matchedItem ? [matchedItem] : parsed.items;
+  // Pick the PO section(s) for this style: Customer Item No → style number →
+  // reject (PO has style sections, none ours) → all-items fallback. See
+  // selectStyleItems for the full rationale.
+  const selection = selectStyleItems(parsed.items, { customerItemNo, styleNumber });
+  const selectedItems = selection.items;
   const variants = selectedItems.flatMap((i) => i.variants);
-  const cartonEan = selectedItems.map((i) => i.assortmentEans[0]).find(Boolean) ?? null;
+  const cartonEan = cartonEanFor(selectedItems, parsed.items);
 
   const diagnostics: EanDiagnostics = {
     poNumber: style.poNumber,
@@ -297,11 +313,30 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
     ean13TokensInFullText: parsed.diagnostics.ean13TokensInFullText,
     parsedItemCount: parsed.items.length,
     parsedVariantCount: variants.length,
-    matchedByCustomerItemNo: Boolean(matchedItem),
+    matchedByCustomerItemNo: selection.kind === "customerItemNo",
+    matchedByStyleNumber: selection.kind === "styleNumber",
     customerItemNoOnStyle: customerItemNo || null,
+    styleNumberOnStyle: styleNumber || null,
+    poStyleNumbers: selection.poStyleNumbers,
     styleSizes: sizes,
     textSnippet: parsed.diagnostics.textSnippet,
   };
+
+  // The PO carries style-number sections but none matches this style — reject
+  // rather than scrape another style's EANs (every style shares the same size
+  // run, so the old all-items fallback would silently mislabel them).
+  if (selection.kind === "reject") {
+    return {
+      ...base,
+      status: "style_not_in_po",
+      poFileName: po.name,
+      message: `Style "${styleNumber}" is not in PO ${po.name} — it lists ${
+        selection.poStyleNumbers.join(", ") || "(no style numbers)"
+      }.`,
+      cartonEan: null,
+      diagnostics,
+    };
+  }
 
   // Match each style size to EVERY variant whose label carries that size, so
   // a 2-pack style gets one row per (colour × size). Duplicate sizes across

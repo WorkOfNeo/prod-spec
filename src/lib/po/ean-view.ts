@@ -34,7 +34,14 @@ export type EanDiagnostics = {
   parsedItemCount: number;
   parsedVariantCount: number;
   matchedByCustomerItemNo: boolean;
+  /** Did we pick the PO section(s) by matching the style number? */
+  matchedByStyleNumber: boolean;
   customerItemNoOnStyle: string | null;
+  /** The style number we matched against (Style.name / styleNumber column). */
+  styleNumberOnStyle: string | null;
+  /** Distinct style numbers found across the PO's sections — the candidate
+   *  set a STYLE_NOT_IN_PO reject was checked against. */
+  poStyleNumbers: string[];
   styleSizes: string[];
   /** First ~600 chars of the Barcodes page (or whole doc) for eyeballing. */
   textSnippet: string;

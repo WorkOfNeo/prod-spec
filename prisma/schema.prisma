@@ -735,6 +735,12 @@ enum StyleEanStatus {
   PO_FOUND_NO_EANS
   // No PO PDF could be located in the SharePoint Suppliers library.
   PO_NOT_FOUND
+  // PO PDF was found and parsed and it DOES carry barcodes — but none of its
+  // style sections matches this style's style number. We refuse to guess: a
+  // multi-style PO would otherwise leak a different style's EANs, so the
+  // resolve is rejected and surfaced for manual attention. The sweep retries
+  // these (a re-issued PO may add the style later) until the float cap.
+  STYLE_NOT_IN_PO
   // SharePoint / download / parse failure.
   ERROR
 }

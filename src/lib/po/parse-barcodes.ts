@@ -15,10 +15,14 @@ import { PDFParse } from "pdf-parse";
 //     ("6937128542362  12/12") — polybag/carton-level EANs, captured
 //     separately in `assortmentEans`.
 //
-// Items are keyed by Customer Item No (e.g. "316-246-1024") which matches
-// the Pre-Order style's Customer Item No (column text91__1). The "No."
-// column ("C-27865") is Contrast's internal article number. One PO can
-// carry multiple items (styles).
+// Each style section opens with a "No." header line — Contrast's internal
+// article number ("C-33423") followed by the Description header
+// "<style number> - <name>" ("PTQ60031 - Pyjamas"). One PO can carry many
+// styles, so items are keyed by, in order of preference:
+//   • Customer Item No ("316-246-1024", column text91__1) when present, else
+//   • Style number ("PTQ60031"), matched against the Pre-Order style's name.
+// The style-number key is what makes a MULTI-style PO safe to scrape — without
+// it we can't tell which section's EANs belong to the style being resolved.
 // =====================================================
 
 export type PoVariant = {
@@ -35,6 +39,15 @@ export type PoItem = {
   contrastNo: string | null;
   /** Customer Item No, e.g. "316-246-1024" — the match key to a style. */
   customerItemNo: string | null;
+  /**
+   * Style number from the section's Description header, e.g. "PTQ60031".
+   * Every Contrast PO style section opens with "<No.> <style number> - <name>"
+   * (and repeats it on the ASS row), so this is the match key for the common
+   * case where the PO carries no Customer Item No — and what makes a
+   * multi-style PO safe to scrape. Null when the header had no
+   * style-number-shaped leading token (e.g. a Customer-Item-No layout).
+   */
+  styleNumber: string | null;
   /** Per colour/size Barcode EANs. */
   variants: PoVariant[];
   /** Assortment / polybag / carton-level EANs (not per-size). */
@@ -66,6 +79,26 @@ const RE_CONTRAST_NO = /\bC-\d{3,}\b/; // C-27865 (C-PO/C-SO have letters → ex
 const RE_STANDALONE_EAN = /^(\d{13})(?:\s+\d{1,4}\s*\/\s*\d{1,4})?\s*$/; // "693… 12/12"
 const RE_LABELED_EAN = /^(.+?)\s+(\d{13})(?:\s+(\d{1,4}\s*\/\s*\d{1,4}))?\s*$/;
 
+// Pull the style number off a Description header, e.g. "PTQ60031 - Pyjamas" →
+// "PTQ60031". The style number is the leading token before the " - <name>"
+// separator. Returns null for Customer-Item-No-shaped (316-246-1024) or bare
+// numeric tokens — those aren't style numbers, so a PO that leads with them has
+// no style-number header and must keep the legacy "use all items" path.
+function leadingStyleNumber(desc: string): string | null {
+  let d = desc.trim();
+  if (!d) return null;
+  const sep = d.search(/\s[–—-]\s/); // " - " / " – " / " — "
+  if (sep >= 0) d = d.slice(0, sep).trim();
+  const token = d.split(/\s+/)[0]?.trim() ?? "";
+  // Reject things that aren't style numbers: a Customer Item No (316-246-1024),
+  // a Contrast article no (C-33434 — what a bare pack/assortment line leads
+  // with), or a bare number. A PO that leads with these has no style header.
+  if (!token || RE_CUSTOMER_ITEM.test(token) || RE_CONTRAST_NO.test(token) || /^\d+$/.test(token)) {
+    return null;
+  }
+  return token;
+}
+
 export async function parsePoBarcodes(pdf: Buffer): Promise<ParsedPo> {
   const parser = new PDFParse({ data: new Uint8Array(pdf) });
   try {
@@ -83,66 +116,7 @@ export async function parsePoBarcodes(pdf: Buffer): Promise<ParsedPo> {
       fullText.match(/Purchase Order\s+(C-PO\w+)/i)?.[1] ??
       null;
 
-    const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    const items: PoItem[] = [];
-    let current: PoItem | null = null;
-    const ensure = (): PoItem => {
-      if (!current) {
-        current = { contrastNo: null, customerItemNo: null, variants: [], assortmentEans: [] };
-        items.push(current);
-      }
-      return current;
-    };
-
-    for (const line of lines) {
-      const standalone = line.match(RE_STANDALONE_EAN);
-      const labeled = standalone ? null : line.match(RE_LABELED_EAN);
-      const contrastNo = line.match(RE_CONTRAST_NO)?.[0] ?? null;
-      const custItem = line.match(RE_CUSTOMER_ITEM)?.[0] ?? null;
-
-      // A Contrast "No." header line (no EAN on it) opens a new item.
-      if (contrastNo && !standalone && !labeled) {
-        current = { contrastNo, customerItemNo: custItem, variants: [], assortmentEans: [] };
-        items.push(current);
-        continue;
-      }
-
-      // Skip noise lines (page header, wrapped description, carton codes)
-      // so they don't spawn empty items.
-      if (!standalone && !labeled && !custItem) continue;
-
-      const item = ensure();
-      if (custItem && !item.customerItemNo) item.customerItemNo = custItem;
-
-      // Standalone EAN line → assortment/carton-level.
-      if (standalone) {
-        item.assortmentEans.push(standalone[1]);
-        continue;
-      }
-
-      // Labeled EAN row → per-size/colour variant, unless it's an
-      // assortment ("ASS1"/"ASS2") line.
-      if (labeled) {
-        let label = labeled[1].trim();
-        const ci = label.match(RE_CUSTOMER_ITEM)?.[0];
-        if (ci) {
-          if (!item.customerItemNo) item.customerItemNo = ci;
-          label = label.replace(ci, "").trim();
-        }
-        const ean13 = labeled[2];
-        const unitsPer = labeled[3] ? labeled[3].replace(/\s/g, "") : null;
-        // A line that is "<EAN> <EAN> [ratio]" (the label is itself a bare
-        // 13-digit number) is a pack/assortment EAN row, not a per-size
-        // variant — e.g. a 2-pack wrapper's carton barcode.
-        const labelIsEan = /^\d{13}$/.test(label);
-        if (/^ASS\d*\b/i.test(label) || !label || labelIsEan) {
-          if (labelIsEan) item.assortmentEans.push(label);
-          item.assortmentEans.push(ean13);
-        } else {
-          item.variants.push({ label: label.replace(/\s+/g, " ").trim(), ean13, unitsPer });
-        }
-      }
-    }
+    const items = parseBarcodeItems(raw);
 
     const ean13Distinct = new Set(fullText.match(/(?<!\d)\d{13}(?!\d)/g) ?? []);
     return {
@@ -160,6 +134,194 @@ export async function parsePoBarcodes(pdf: Buffer): Promise<ParsedPo> {
   } finally {
     await parser.destroy();
   }
+}
+
+// Parse the flattened Barcodes-page text into per-style items. Split out from
+// parsePoBarcodes (which owns the PDF read) so it's unit-testable from raw text
+// without a PDF fixture. Each Contrast "No." header line ("C-33423 PTQ60031 -
+// Pyjamas") opens an item and carries the style number; the ASS row repeats it
+// as a backup; the per-size rows below it are the variants.
+export function parseBarcodeItems(raw: string): PoItem[] {
+  const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const items: PoItem[] = [];
+  let current: PoItem | null = null;
+  const ensure = (): PoItem => {
+    if (!current) {
+      current = {
+        contrastNo: null,
+        customerItemNo: null,
+        styleNumber: null,
+        variants: [],
+        assortmentEans: [],
+      };
+      items.push(current);
+    }
+    return current;
+  };
+
+  for (const line of lines) {
+    const standalone = line.match(RE_STANDALONE_EAN);
+    const labeled = standalone ? null : line.match(RE_LABELED_EAN);
+    const contrastNo = line.match(RE_CONTRAST_NO)?.[0] ?? null;
+    const custItem = line.match(RE_CUSTOMER_ITEM)?.[0] ?? null;
+
+    // A Contrast "No." header line (no EAN on it) opens a new item. The text
+    // after the "No." is the Description header — pull the style number off it.
+    if (contrastNo && !standalone && !labeled) {
+      current = {
+        contrastNo,
+        customerItemNo: custItem,
+        styleNumber: leadingStyleNumber(line.replace(contrastNo, "")),
+        variants: [],
+        assortmentEans: [],
+      };
+      items.push(current);
+      continue;
+    }
+
+    // Skip noise lines (page header, wrapped description, carton codes)
+    // so they don't spawn empty items.
+    if (!standalone && !labeled && !custItem) continue;
+
+    const item = ensure();
+    if (custItem && !item.customerItemNo) item.customerItemNo = custItem;
+
+    // Standalone EAN line → assortment/carton-level.
+    if (standalone) {
+      item.assortmentEans.push(standalone[1]);
+      continue;
+    }
+
+    // Labeled EAN row → per-size/colour variant, unless it's an
+    // assortment ("ASS1"/"ASS2") line.
+    if (labeled) {
+      let label = labeled[1].trim();
+      const ci = label.match(RE_CUSTOMER_ITEM)?.[0];
+      if (ci) {
+        if (!item.customerItemNo) item.customerItemNo = ci;
+        label = label.replace(ci, "").trim();
+      }
+      const ean13 = labeled[2];
+      const unitsPer = labeled[3] ? labeled[3].replace(/\s/g, "") : null;
+      // A line that is "<EAN> <EAN> [ratio]" (the label is itself a bare
+      // 13-digit number) is a pack/assortment EAN row, not a per-size
+      // variant — e.g. a 2-pack wrapper's carton barcode.
+      const labelIsEan = /^\d{13}$/.test(label);
+      if (/^ASS\d*\b/i.test(label) || !label || labelIsEan) {
+        if (labelIsEan) item.assortmentEans.push(label);
+        item.assortmentEans.push(ean13);
+        // Backup style-number capture: the ASS row also reads
+        // "ASS1 PTQ60031 - Pyjamas …" — use it if the header line had none.
+        if (!item.styleNumber) {
+          item.styleNumber = leadingStyleNumber(label.replace(/^ASS\d*\s*/i, ""));
+        }
+      } else {
+        item.variants.push({ label: label.replace(/\s+/g, " ").trim(), ean13, unitsPer });
+      }
+    }
+  }
+
+  return items;
+}
+
+// Case/punctuation-insensitive key for comparing style numbers ("PTQ-60031"
+// and "ptq60031" both → "ptq60031").
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+// Candidate match keys for a (possibly messy) Pre-Order style name. The PO
+// prints a CLEAN style number per section ("KH30109"), but Style.name often
+// carries a market suffix ("KH30109 - CZ", "KH10155- CZ" — note the missing
+// space) or is a multi-pack concatenation ("KH90051 E+KH90051 E…"). So we match
+// on: the whole name, the leading token before a " - "/"+", AND the leading
+// style-number-shaped run (letters→digits), which absorbs irregular suffixes.
+function styleKeys(name: string): Set<string> {
+  const keys = new Set<string>();
+  const add = (s: string | undefined) => {
+    const n = norm(s ?? "");
+    if (n) keys.add(n);
+  };
+  add(name);
+  add(name.split(/\s[-–—]\s|\+/)[0]);
+  add(name.match(/^[a-z]{1,5}\d{3,}[a-z]?/i)?.[0]);
+  return keys;
+}
+
+// Does a name look like a single, real style number ("PTQ60031", "KH10155 -
+// CZ") — as opposed to a multi-pack concatenation ("X+Y"), a descriptive label
+// ("JYSK [Espen small]"), or an assortment code? Only these are eligible to be
+// REJECTED when absent from a multi-style PO; bundles / descriptive names can't
+// be matched by style number at all, so they keep the take-all fallback and we
+// never regress them.
+function looksLikeStyleNumber(name: string): boolean {
+  return !name.includes("+") && !name.includes("[") && /^[a-z]{1,5}\d{3,}[a-z]?/i.test(name.trim());
+}
+
+export type StyleItemSelection =
+  | { kind: "customerItemNo" | "styleNumber" | "all"; items: PoItem[]; poStyleNumbers: string[] }
+  | { kind: "reject"; items: []; poStyleNumbers: string[] };
+
+// Which PO sub-items belong to this style, decided purely from the parsed PO
+// (no DB / PDF, so it's directly unit-testable). Priority:
+//   1. customerItemNo → that item alone (precise, where the PO carries it).
+//   2. styleNumber    → every section whose header style number matches; this
+//      is how Contrast POs identify styles and what makes a MULTI-style PO safe.
+//   3. reject         → the PO HAS style-number sections but none is ours; we
+//      must NOT fall through to "all items" (every style shares the same size
+//      run, so that silently leaks another style's EANs). The caller maps this
+//      to STYLE_NOT_IN_PO.
+//   4. all            → no style-number headers at all (a different/legacy PO
+//      layout): keep the old behaviour and aggregate every item's variants. A
+//      per-style-order PO lists one style's colourways (+ a 2-pack wrapper that
+//      carries only an assortment EAN), so this still collects a single style.
+export function selectStyleItems(
+  items: PoItem[],
+  opts: { customerItemNo?: string; styleNumber?: string },
+): StyleItemSelection {
+  const poStyleNumbers = [
+    ...new Set(items.map((i) => i.styleNumber).filter((s): s is string => Boolean(s))),
+  ];
+
+  const cust = (opts.customerItemNo ?? "").trim();
+  if (cust) {
+    const match = items.find((i) => i.customerItemNo === cust);
+    if (match) return { kind: "customerItemNo", items: [match], poStyleNumbers };
+  }
+
+  const keys = styleKeys(opts.styleNumber ?? "");
+  if (keys.size > 0) {
+    const matches = items.filter((i) => i.styleNumber && keys.has(norm(i.styleNumber)));
+    if (matches.length > 0) return { kind: "styleNumber", items: matches, poStyleNumbers };
+  }
+
+  // No match. Reject ONLY when ALL of:
+  //   • the PO has MULTIPLE style sections (genuinely ambiguous — picking the
+  //     wrong one would write another style's EANs), and
+  //   • this style is a single, real style number we'd expect to find there.
+  // A single-section PO is unambiguous → take it. A bundle / descriptive /
+  // assortment-coded style can't be matched by style number at all, so it also
+  // falls through to take-all — exactly the pre-change behaviour, no regression.
+  if (poStyleNumbers.length > 1 && looksLikeStyleNumber(opts.styleNumber ?? "")) {
+    return { kind: "reject", items: [], poStyleNumbers };
+  }
+
+  return { kind: "all", items, poStyleNumbers };
+}
+
+// The carton / assortment EAN for the selected section(s). Prefer the section's
+// own assortment EAN, but some POs put it on a SEPARATE pack/assortment line (a
+// 2-pack wrapper bundling several styles) that no style number matches — so
+// fall back to any other item's assortment EAN. This keeps the carton on
+// bundle POs identical to the pre-style-number behaviour; clean per-style POs
+// (each section has its own ASS row) always hit the first branch.
+export function cartonEanFor(selected: PoItem[], all: PoItem[]): string | null {
+  return (
+    selected.map((i) => i.assortmentEans[0]).find(Boolean) ??
+    all
+      .filter((i) => !selected.includes(i))
+      .map((i) => i.assortmentEans[0])
+      .find(Boolean) ??
+    null
+  );
 }
 
 // Flatten to (customerItemNo → per-size variants) for linking onto a style
