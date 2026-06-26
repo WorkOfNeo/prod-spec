@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { EmailSimulationDialog, type EmailOutcomeView } from "@/components/email-simulation-dialog";
 import { RejectModal } from "./reject-modal";
+import { type PreparedImage } from "@/lib/images/downscale-image";
 
 // Job-level bulk actions. The per-output buttons on each card are the
 // primary review interaction (see asset-actions.tsx); these two remain as
@@ -54,14 +55,14 @@ export function ReviewActions({
     }
   }
 
-  async function reject(comment: string) {
+  async function reject(comment: string, attachments: PreparedImage[]) {
     setError(null);
     setPending("reject");
     try {
       const res = await fetch(`/api/admin/jobs/${jobId}/reject`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: comment }),
+        body: JSON.stringify({ reason: comment, attachments }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));

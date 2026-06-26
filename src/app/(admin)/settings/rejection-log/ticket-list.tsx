@@ -53,6 +53,8 @@ export type TicketRow = {
   // i.e. it's been re-generated since (catches auto/full re-runs too).
   regeneratedAfterRejection: boolean;
   regeneratedAtLabel: string | null;
+  // Images the reviewer attached to the comment (served behind admin auth).
+  attachments: { id: string; fileName: string; mimeType: string; url: string }[];
   searchBlob: string;
 };
 
@@ -1004,6 +1006,14 @@ function Row({
         </td>
         <td className="px-3 py-2 whitespace-nowrap text-zinc-600">{row.poNumber ?? "—"}</td>
         <td className="max-w-56 truncate px-3 py-2 text-zinc-600" title={row.comment}>
+          {row.attachments.length > 0 ? (
+            <span
+              className="mr-1 align-middle text-[11px] text-zinc-400"
+              title={`${row.attachments.length} image${row.attachments.length === 1 ? "" : "s"} attached`}
+            >
+              📎{row.attachments.length}
+            </span>
+          ) : null}
           {row.comment}
         </td>
         <td className="px-3 py-2">
@@ -1024,6 +1034,23 @@ function Row({
                   Comment{row.reopenedCount > 0 ? " (incl. re-rejections)" : ""}
                 </div>
                 <p className="mt-1 text-xs whitespace-pre-wrap text-zinc-700">{row.comment}</p>
+                {row.attachments.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {row.attachments.map((a) => (
+                      <a
+                        key={a.id}
+                        href={a.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`${a.fileName} — open full size`}
+                        className="block h-16 w-16 overflow-hidden rounded border border-zinc-200 bg-zinc-50 transition hover:border-zinc-400"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element -- admin-only attachment thumbnail, served from our API */}
+                        <img src={a.url} alt={a.fileName} className="h-full w-full object-cover" />
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
                 <p className="mt-2 text-[11px] text-zinc-400">— {row.reportedBy}</p>
               </div>
               <div className="rounded-lg border border-zinc-200 bg-white p-3">

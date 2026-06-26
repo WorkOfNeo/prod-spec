@@ -7,6 +7,7 @@ import { resolveNotificationsForJob } from "@/lib/notifications/user-notificatio
 import { claimReviewIfUnclaimed } from "@/lib/review-flow/claim";
 import { createOrReopenRejectionTicket } from "@/lib/tickets/rejection-tickets";
 import { stampReviewEnded } from "@/lib/publish/publish-approved-job";
+import { decodeImageAttachments, MAX_IMAGE_DATA_URL_CHARS } from "@/lib/images/decode-data-url";
 
 export const runtime = "nodejs";
 
@@ -14,6 +15,17 @@ const SCHEMA = z.object({
   // Free-text reason for now. Analytics groups by docType + leading
   // words; categorisation comes later if reviewer volume justifies it.
   reason: z.string().min(1).max(500),
+  // Up to 4 images the reviewer attached to the comment (resized client-side),
+  // sent inline as base64 data URLs and decoded below.
+  attachments: z
+    .array(
+      z.object({
+        dataUrl: z.string().min(1).max(MAX_IMAGE_DATA_URL_CHARS, "Image too large — keep it under ~5 MB"),
+        fileName: z.string().max(255).optional(),
+      }),
+    )
+    .max(4)
+    .optional(),
 });
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -34,6 +46,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const parsed = SCHEMA.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid body", details: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const decodedAttachments = decodeImageAttachments(parsed.data.attachments);
+  if (!decodedAttachments.ok) {
+    return NextResponse.json({ error: decodedAttachments.error }, { status: 400 });
   }
 
   const asset = await db.jobAsset.findUnique({
@@ -78,6 +95,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     asset,
     comment: parsed.data.reason,
     reportedById: session.user.id,
+    attachments: decodedAttachments.attachments,
   });
   await db.log.create({
     data: {

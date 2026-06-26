@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { EmailSimulationDialog, type EmailOutcomeView } from "@/components/email-simulation-dialog";
 import { RejectModal } from "./reject-modal";
+import { type PreparedImage } from "@/lib/images/downscale-image";
 
 // Per-output decision UI on the review screen. Approve / Reject hit the
 // per-asset endpoints; approving the LAST pending output makes the server
@@ -80,14 +81,14 @@ export function AssetActions({
     }
   }
 
-  async function reject(comment: string) {
+  async function reject(comment: string, attachments: PreparedImage[]) {
     setError(null);
     setPending("reject");
     try {
       const res = await fetch(`/api/admin/job-assets/${assetId}/reject`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: comment }),
+        body: JSON.stringify({ reason: comment, attachments }),
       });
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
