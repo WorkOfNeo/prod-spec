@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { EmailSimulationDialog, type EmailOutcomeView } from "@/components/email-simulation-dialog";
 import { RejectModal } from "./reject-modal";
 import { type PreparedImage } from "@/lib/images/downscale-image";
@@ -20,6 +20,7 @@ export function AssetActions({
   outputTitle,
   styleContext,
   canPush,
+  customizeSlot,
 }: {
   assetId: string;
   styleId: string;
@@ -30,6 +31,10 @@ export function AssetActions({
   styleContext: string;
   // Admin-only: show the "Push to supplier" action for approved outputs.
   canPush: boolean;
+  // Optional carton "Customize" trigger, rendered as a quiet utility action
+  // in the footer's secondary row (the page passes <ReviewCartonCustomize/>
+  // for carton-capable outputs).
+  customizeSlot?: ReactNode;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState<"approve" | "reject" | null>(null);
@@ -41,6 +46,11 @@ export function AssetActions({
   const [pushNote, setPushNote] = useState<{ text: string; url: string | null } | null>(null);
 
   const blocked = placeholderCount > 0;
+  const blockedTitle = `${placeholderCount} placeholder(s) in this PDF (missing artwork / EAN) — fix the data and re-run before approving`;
+
+  const isApproved = reviewStatus === "APPROVED";
+  const isRejected = reviewStatus === "REJECTED";
+  const isPending = reviewStatus === "PENDING_REVIEW";
 
   async function approve() {
     setError(null);
@@ -137,64 +147,99 @@ export function AssetActions({
   }
 
   return (
-    <div className="flex flex-col items-end gap-1">
-      <div className="flex items-center gap-2">
-        {reviewStatus === "APPROVED" ? (
-          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
-            ✓ APPROVED
-          </span>
-        ) : reviewStatus === "REJECTED" ? (
-          <span
-            className="rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-700"
-            title={rejectReason ?? undefined}
-          >
-            ✗ REJECTED
-          </span>
-        ) : null}
+    <div className="flex flex-col gap-2 border-t border-zinc-100 px-3 py-2.5">
+      {/* Secondary row — the decided status pill (left) and quiet utility
+          actions (right): Customize for carton outputs, and a demoted Reject
+          once an output is already approved. Only rendered when it has
+          something to show, so a plain pending output skips straight to the
+          decision row below. */}
+      {isApproved || isRejected || customizeSlot ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            {isApproved ? (
+              <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                ✓ Approved
+              </span>
+            ) : isRejected ? (
+              <span
+                className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-700"
+                title={rejectReason ?? undefined}
+              >
+                ✗ Rejected
+              </span>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-1.5">
+            {customizeSlot}
+            {isApproved ? (
+              <button
+                type="button"
+                onClick={() => setRejecting(true)}
+                disabled={pending !== null}
+                className="rounded-md px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+              >
+                {pending === "reject" ? "Rejecting…" : "Reject"}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
-        {reviewStatus !== "APPROVED" ? (
-          <button
-            type="button"
-            onClick={approve}
-            disabled={pending !== null || blocked}
-            title={
-              blocked
-                ? `${placeholderCount} placeholder(s) in this PDF (missing artwork / EAN) — fix the data and re-run before approving`
-                : "Approve this output"
-            }
-            className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {pending === "approve" ? "Approving…" : "✓ Approve"}
-          </button>
-        ) : null}
-        {reviewStatus !== "REJECTED" ? (
+      {/* Primary row — the main call to action for this output's state. A
+          pending output gets the full Reject / Approve decision; an approved
+          one gets Push to supplier; a rejected one keeps a way back in. */}
+      {isPending ? (
+        <div className="flex gap-2">
           <button
             type="button"
             onClick={() => setRejecting(true)}
             disabled={pending !== null}
-            className="rounded-md border border-red-200 bg-white px-3 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+            className="flex-1 rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
           >
-            {pending === "reject" ? "Rejecting…" : "✗ Reject…"}
+            {pending === "reject" ? "Rejecting…" : "✗ Reject"}
           </button>
-        ) : null}
-        {canPush && reviewStatus === "APPROVED" ? (
           <button
             type="button"
-            onClick={push}
-            disabled={pushing}
-            title="Create the supplier's SharePoint subfolder and upload this approved PDF"
-            className="rounded-md border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700 hover:bg-sky-100 disabled:opacity-50"
+            onClick={approve}
+            disabled={pending !== null || blocked}
+            title={blocked ? blockedTitle : "Approve this output"}
+            className="flex-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {pushing ? "Pushing…" : "⬆ Push to supplier"}
+            {pending === "approve" ? "Approving…" : "✓ Approve"}
           </button>
-        ) : null}
-      </div>
-      {error ? <span className="max-w-64 text-right text-xs text-red-600">{error}</span> : null}
+        </div>
+      ) : null}
+
+      {isApproved && canPush ? (
+        <button
+          type="button"
+          onClick={push}
+          disabled={pushing}
+          title="Create the supplier's SharePoint subfolder and upload this approved PDF"
+          className="flex w-full items-center justify-center rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-100 disabled:opacity-50"
+        >
+          {pushing ? "Pushing…" : "⬆ Push to supplier"}
+        </button>
+      ) : null}
+
+      {isRejected ? (
+        <button
+          type="button"
+          onClick={approve}
+          disabled={pending !== null || blocked}
+          title={blocked ? blockedTitle : "Approve this output anyway"}
+          className="self-start rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {pending === "approve" ? "Approving…" : "✓ Approve anyway"}
+        </button>
+      ) : null}
+
+      {error ? <span className="text-xs text-red-600">{error}</span> : null}
       {publishNote && !email ? (
-        <span className="text-right text-xs text-emerald-700">{publishNote}</span>
+        <span className="text-xs text-emerald-700">{publishNote}</span>
       ) : null}
       {pushNote ? (
-        <span className="text-right text-xs text-sky-700">
+        <span className="text-xs text-sky-700">
           {pushNote.text}
           {pushNote.url ? (
             <>
