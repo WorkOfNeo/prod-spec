@@ -265,22 +265,40 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                       id={outputAnchor(o.variantKey)}
                       className="overflow-hidden rounded-lg border border-zinc-200 bg-white scroll-mt-4"
                     >
-                      <div className="flex items-center justify-between gap-3 border-b border-zinc-100 bg-zinc-50 px-3 py-2">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-zinc-800">{o.name}</div>
-                          {o.fileName ? (
-                            <div className="truncate font-mono text-[10px] text-zinc-500">{o.fileName}</div>
-                          ) : null}
-                        </div>
-                        <div className="flex shrink-0 items-center gap-3">
+                      <div className="border-b border-zinc-100 bg-zinc-50 px-3 py-2">
+                        {/* First line is the title, undisturbed — only the small
+                            Open icon shares it, so a long name isn't squeezed by
+                            the decision buttons (which moved to their own row). */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div
+                              className="truncate text-sm font-semibold text-zinc-800"
+                              title={o.name}
+                            >
+                              {o.name}
+                            </div>
+                            {o.fileName ? (
+                              <div
+                                className="truncate font-mono text-[10px] text-zinc-500"
+                                title={o.fileName}
+                              >
+                                {o.fileName}
+                              </div>
+                            ) : null}
+                          </div>
                           <a
                             href={previewUrl}
-                            className="text-xs text-zinc-500 underline"
                             target="_blank"
                             rel="noopener noreferrer"
+                            title="Open the PDF in a new tab"
+                            aria-label="Open the PDF in a new tab"
+                            className="shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700"
                           >
-                            Open
+                            <OpenIcon />
                           </a>
+                        </div>
+                        {/* Decision row — Customize / Approve / Reject. */}
+                        <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
                           {cartonCapable && variant ? (
                             <ReviewCartonCustomize
                               styleId={style.id}
@@ -356,5 +374,27 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         </div>
       ) : null}
     </div>
+  );
+}
+
+// "Open in new tab" affordance — an arrow leaving a box. Replaces the old
+// "Open" text link so the title line stays clean.
+function OpenIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-4 w-4"
+      aria-hidden="true"
+    >
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
   );
 }
