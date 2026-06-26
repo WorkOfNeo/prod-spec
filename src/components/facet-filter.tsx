@@ -4,13 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 export type FacetOption = { value: string; label: string; count: number };
 
-// A single faceted-filter dropdown for the /styles filter bar: a trigger
+// A single faceted-filter dropdown for a table filter bar: a trigger
 // button (facet name + selected-count badge) opening a popover with an
 // optional search-within box and a scrollable checkbox list. Each option
-// shows how many loaded rows currently carry that value.
+// shows how many loaded rows currently carry that value. Shared across the
+// /styles and /prod-specs lists.
 //
-// Selection is a DRAFT — toggling a box calls onChange, but the parent only
-// commits it to the table on an explicit Apply (see styles-table.tsx).
+// Selection is controlled by the parent: toggling a box calls onChange.
+// Some callers commit immediately to the table (/prod-specs); others hold a
+// DRAFT and only apply on an explicit Apply (see styles-table.tsx).
 // Click-outside / Escape just close the popover; they neither apply nor
 // revert. Built on the same lightweight popover idiom as ui/combobox.tsx.
 export function FacetFilter({

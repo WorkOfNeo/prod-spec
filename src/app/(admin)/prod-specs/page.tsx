@@ -98,6 +98,9 @@ export default async function ProdSpecsPage() {
             customerDeliversOwn: parseCustomerConfig(ps.customer.config).skipSupplierDelivery,
             businessAreaName: ps.businessArea.name,
             businessAreaMondayValue: ps.businessArea.mondayValue,
+            // Non-empty General information markdown ⇒ the spec emits a
+            // general-info page; drives the "General info" presence filter.
+            hasGeneralInfo: Boolean(ps.generalInfoMd && ps.generalInfoMd.trim()),
             outputs,
             supplierCount: ps._count.suppliers,
             styleCount: ps._count.styles,

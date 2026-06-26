@@ -21,7 +21,7 @@ import { BLANK_BA_VALUES } from "@/lib/import/heuristics";
 import type { EanView } from "@/lib/po/ean-view";
 import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
 import { ColumnsPopover } from "./columns-popover";
-import { FacetFilter, type FacetOption } from "./facet-filter";
+import { FacetFilter, type FacetOption } from "@/components/facet-filter";
 import { BulkRunOutputs } from "./bulk-run-outputs";
 
 // Hover hints on column headers.

@@ -3,6 +3,15 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { BLANK_BA_VALUES } from "@/lib/import/heuristics";
+
+// Collapse blank / "–" business-area names (live DB carries literal "–"
+// areas) into one selectable "(blank)" bucket. Plain ASCII sentinel.
+const BLANK_BA = "__blank__";
+const baKey = (name: string) => {
+  const t = name.trim();
+  return BLANK_BA_VALUES.has(t) ? BLANK_BA : t;
+};
 
 type LayoutRow = {
   id: string;
@@ -22,10 +31,10 @@ type LayoutRow = {
   generationCount: number;
   lastGeneratedAt: string | null;
   // Usage joins (computed server-side): the Prod Specs that carry this
-  // layout as an enabled output (+ their customer), and the styles
-  // currently resolved to those specs. `styles` is capped — `styleCount`
-  // is the exact total.
-  prodSpecs: Array<{ id: string; name: string; customerName: string }>;
+  // layout as an enabled output (+ their customer and business area), and
+  // the styles currently resolved to those specs. `styles` is capped —
+  // `styleCount` is the exact total.
+  prodSpecs: Array<{ id: string; name: string; customerName: string; businessAreaName: string }>;
   styleCount: number;
   styles: Array<{ id: string; name: string }>;
 };
@@ -72,11 +81,17 @@ export function LayoutsList({
       rawStatus === "PUBLISHED" || rawStatus === "DRAFT" ? rawStatus : "all";
     const auto: "all" | "on" | "off" =
       rawAuto === "on" || rawAuto === "off" ? rawAuto : "all";
+    const rawUsage = searchParams.get("inspec");
+    const usage: "all" | "used" | "unused" =
+      rawUsage === "used" || rawUsage === "unused" ? rawUsage : "all";
     return {
       q: searchParams.get("q") ?? "",
       type: searchParams.get("type") ?? "all",
       status,
       auto,
+      usage,
+      customer: searchParams.get("cust") ?? "all",
+      ba: searchParams.get("ba") ?? "all",
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only seed
   }, []);
@@ -85,6 +100,11 @@ export function LayoutsList({
   const [typeFilter, setTypeFilter] = useState(seed.type);
   const [statusFilter, setStatusFilter] = useState<"all" | "PUBLISHED" | "DRAFT">(seed.status);
   const [autoApproveFilter, setAutoApproveFilter] = useState<"all" | "on" | "off">(seed.auto);
+  // Usage-derived filters — keyed on where the layout is actually used in a
+  // Prod Spec (as an enabled output), NOT the test-data customer/BA binding.
+  const [usageFilter, setUsageFilter] = useState<"all" | "used" | "unused">(seed.usage);
+  const [customerFilter, setCustomerFilter] = useState(seed.customer);
+  const [baFilter, setBaFilter] = useState(seed.ba);
 
   // Persist search + filters to the URL with a shallow replaceState — no
   // router navigation, so the page's server query doesn't re-run and Back
@@ -97,13 +117,16 @@ export function LayoutsList({
     if (typeFilter !== "all") params.set("type", typeFilter);
     if (statusFilter !== "all") params.set("status", statusFilter);
     if (autoApproveFilter !== "all") params.set("auto", autoApproveFilter);
+    if (usageFilter !== "all") params.set("inspec", usageFilter);
+    if (customerFilter !== "all") params.set("cust", customerFilter);
+    if (baFilter !== "all") params.set("ba", baFilter);
     const qs = params.toString();
     window.history.replaceState(
       null,
       "",
       qs ? `${window.location.pathname}?${qs}` : window.location.pathname,
     );
-  }, [query, typeFilter, statusFilter, autoApproveFilter]);
+  }, [query, typeFilter, statusFilter, autoApproveFilter, usageFilter, customerFilter, baFilter]);
   // Multi-select + delete. `selected` holds ids across the full list (so a
   // selection survives filtering); `confirmRows` are the rows queued in the
   // delete confirmation modal (one row from the row button, or every selected
@@ -123,6 +146,32 @@ export function LayoutsList({
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [layouts]);
 
+  // Customer / business-area options for the usage filters — drawn from the
+  // Prod Specs that actually use each layout (l.prodSpecs), so a value only
+  // appears if some layout is used under it. This is deliberately the usage
+  // binding, not the layout's test-data customer/BA.
+  const customerOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of layouts) for (const ps of l.prodSpecs) {
+      const v = ps.customerName.trim();
+      if (v) set.add(v);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [layouts]);
+
+  const baOptions = useMemo(() => {
+    const map = new Map<string, string>(); // value → display label
+    for (const l of layouts) for (const ps of l.prodSpecs) {
+      const v = baKey(ps.businessAreaName);
+      if (!map.has(v)) map.set(v, v === BLANK_BA ? "(blank)" : ps.businessAreaName.trim());
+    }
+    return [...map.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) =>
+        a.value === BLANK_BA ? 1 : b.value === BLANK_BA ? -1 : a.label.localeCompare(b.label),
+      );
+  }, [layouts]);
+
   // Search across everything a row shows or links to: layout name/type,
   // test-data customer, the prod specs (+ their customers) using the
   // layout, and the (capped) style list — so "which layout prints style
@@ -133,6 +182,14 @@ export function LayoutsList({
     if (typeFilter !== "all" && l.docType !== typeFilter) return false;
     if (statusFilter !== "all" && l.status !== statusFilter) return false;
     if (autoApproveFilter !== "all" && l.autoApprove !== (autoApproveFilter === "on")) return false;
+    // "Used in a prod spec" = carried as an enabled output by ≥1 spec.
+    if (usageFilter === "used" && l.prodSpecs.length === 0) return false;
+    if (usageFilter === "unused" && l.prodSpecs.length > 0) return false;
+    // Customer / BA match if ANY using spec carries that value.
+    if (customerFilter !== "all" && !l.prodSpecs.some((s) => s.customerName.trim() === customerFilter))
+      return false;
+    if (baFilter !== "all" && !l.prodSpecs.some((s) => baKey(s.businessAreaName) === baFilter))
+      return false;
     if (
       q &&
       ![
@@ -141,7 +198,7 @@ export function LayoutsList({
         l.docTypeLabel,
         l.customerName ?? "",
         l.businessAreaName ?? "",
-        ...l.prodSpecs.flatMap((s) => [s.name, s.customerName]),
+        ...l.prodSpecs.flatMap((s) => [s.name, s.customerName, s.businessAreaName]),
         ...l.styles.map((s) => s.name),
       ]
         .join(" ")
@@ -152,7 +209,13 @@ export function LayoutsList({
     return true;
   });
   const filtersActive =
-    q !== "" || typeFilter !== "all" || statusFilter !== "all" || autoApproveFilter !== "all";
+    q !== "" ||
+    typeFilter !== "all" ||
+    statusFilter !== "all" ||
+    autoApproveFilter !== "all" ||
+    usageFilter !== "all" ||
+    customerFilter !== "all" ||
+    baFilter !== "all";
 
   function toggleOne(id: string) {
     setSelected((s) => {
@@ -359,6 +422,44 @@ export function LayoutsList({
               <option value="on">Auto-approve: on</option>
               <option value="off">Auto-approve: off</option>
             </select>
+            <select
+              value={usageFilter}
+              onChange={(e) => setUsageFilter(e.target.value as typeof usageFilter)}
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none"
+              title="Filter by whether the layout is used as an enabled output in a prod spec"
+            >
+              <option value="all">In a prod spec: any</option>
+              <option value="used">In a prod spec: yes</option>
+              <option value="unused">In a prod spec: no</option>
+            </select>
+            <select
+              value={customerFilter}
+              onChange={(e) => setCustomerFilter(e.target.value)}
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none disabled:opacity-50"
+              title="Filter by the customer of the prod specs using this layout"
+              disabled={customerOptions.length === 0}
+            >
+              <option value="all">All customers</option>
+              {customerOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <select
+              value={baFilter}
+              onChange={(e) => setBaFilter(e.target.value)}
+              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none disabled:opacity-50"
+              title="Filter by the business area of the prod specs using this layout"
+              disabled={baOptions.length === 0}
+            >
+              <option value="all">All business areas</option>
+              {baOptions.map((b) => (
+                <option key={b.value} value={b.value}>
+                  {b.label}
+                </option>
+              ))}
+            </select>
             {filtersActive ? (
               <button
                 type="button"
@@ -367,6 +468,9 @@ export function LayoutsList({
                   setTypeFilter("all");
                   setStatusFilter("all");
                   setAutoApproveFilter("all");
+                  setUsageFilter("all");
+                  setCustomerFilter("all");
+                  setBaFilter("all");
                 }}
                 className="text-xs text-zinc-400 hover:text-zinc-700"
               >

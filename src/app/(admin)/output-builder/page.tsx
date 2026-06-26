@@ -69,16 +69,30 @@ export default async function OutputBuilderPage() {
   // STYLE_CAP plus a "+N more" tail, the count is always exact.
   const STYLE_CAP = 30;
   const specs = await db.prodSpec.findMany({
-    select: { id: true, name: true, outputs: true, customer: { select: { name: true } } },
+    select: {
+      id: true,
+      name: true,
+      outputs: true,
+      customer: { select: { name: true } },
+      businessArea: { select: { name: true } },
+    },
   });
-  const specsByLayout = new Map<string, Array<{ id: string; name: string; customerName: string }>>();
+  const specsByLayout = new Map<
+    string,
+    Array<{ id: string; name: string; customerName: string; businessAreaName: string }>
+  >();
   for (const s of specs) {
     for (const o of parseProdSpecOutputs(s.outputs)) {
       if (o.enabled === false || !o.variantKey.startsWith(LAYOUT_VARIANT_PREFIX)) continue;
       const layoutId = o.variantKey.slice(LAYOUT_VARIANT_PREFIX.length);
       const list = specsByLayout.get(layoutId) ?? [];
       if (!list.some((x) => x.id === s.id)) {
-        list.push({ id: s.id, name: s.name, customerName: s.customer.name });
+        list.push({
+          id: s.id,
+          name: s.name,
+          customerName: s.customer.name,
+          businessAreaName: s.businessArea.name,
+        });
       }
       specsByLayout.set(layoutId, list);
     }
