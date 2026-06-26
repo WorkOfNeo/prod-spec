@@ -24,7 +24,9 @@ export default async function ReviewsPage({
   const { session } = await getSessionWithRole();
   if (!session) redirect("/login");
 
-  const tab = (await searchParams).tab === "in-progress" ? "in-progress" : "queue";
+  // In Progress is the default landing tab (the live worklist); Review is the
+  // secondary queue reached via ?tab=queue.
+  const tab = (await searchParams).tab === "queue" ? "queue" : "in-progress";
   const { groups, inProgress } = await getReviewBoard();
   const queueCount = groups.reduce((n, g) => n + g.tasks.length, 0);
 
