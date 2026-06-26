@@ -23,9 +23,10 @@ import {
 } from "./care-standard-panel";
 import { AddOutputPicker, type VariantInfo } from "./add-output-picker";
 import { RerunStylesPanel } from "./rerun-styles-panel";
+import { TestPanel, type TestStyle } from "./test-panel";
 
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
-type Tab = "general" | "cover" | "outputs";
+type Tab = "general" | "cover" | "outputs" | "test";
 
 // Debounce window before the auto-saver flushes a payload. Long enough
 // to coalesce rapid typing in the markdown / care-instruction textareas,
@@ -34,6 +35,8 @@ const AUTOSAVE_DEBOUNCE_MS = 1200;
 
 type Props = {
   prodSpecId: string;
+  // Styles linked to this prod spec — populate the Test tab's style picker.
+  styles: TestStyle[];
   initialTab: Tab;
   initialName: string;
   initialActive: boolean;
@@ -280,6 +283,14 @@ export function ProdSpecEditor(props: Props) {
     }
   }
 
+  // Flush any pending (debounced) autosave before a test generation so the
+  // rendered PDFs reflect the latest edits. No-op when already in sync.
+  async function flushIfDirty(): Promise<void> {
+    if (JSON.stringify(payload) !== lastSavedPayloadRef.current) {
+      await save();
+    }
+  }
+
   // Debounced auto-save. Watches the *serialised* payload; if it differs
   // from the last-saved snapshot, marks the form dirty and schedules a
   // save AUTOSAVE_DEBOUNCE_MS after the most recent change. setState
@@ -344,6 +355,7 @@ export function ProdSpecEditor(props: Props) {
               { key: "general" as const, label: "General information" },
               { key: "cover" as const, label: "Cover page" },
               { key: "outputs" as const, label: "Outputs", count: enabledCount },
+              { key: "test" as const, label: "Test" },
             ] satisfies Array<{ key: Tab; label: string; count?: number }>
           ).map((t) => (
             <li key={t.key}>
@@ -444,6 +456,14 @@ export function ProdSpecEditor(props: Props) {
             </div>
           </Section>
         </div>
+      ) : tab === "test" ? (
+        <TestPanel
+          prodSpecId={props.prodSpecId}
+          styles={props.styles}
+          enabledOutputCount={enabledCount}
+          hasGeneralInfo={generalInfoMd.trim().length > 0}
+          flush={flushIfDirty}
+        />
       ) : (
         <div className="flex flex-col gap-4">
           <Section title="Outputs">
