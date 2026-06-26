@@ -18,6 +18,7 @@ export function AssetActions({
   placeholderCount,
   outputTitle,
   styleContext,
+  canPush,
 }: {
   assetId: string;
   styleId: string;
@@ -26,6 +27,8 @@ export function AssetActions({
   placeholderCount: number;
   outputTitle: string;
   styleContext: string;
+  // Admin-only: show the "Push to supplier" action for approved outputs.
+  canPush: boolean;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState<"approve" | "reject" | null>(null);
@@ -33,6 +36,8 @@ export function AssetActions({
   const [rejecting, setRejecting] = useState(false);
   const [email, setEmail] = useState<EmailOutcomeView | null>(null);
   const [publishNote, setPublishNote] = useState<string | null>(null);
+  const [pushing, setPushing] = useState(false);
+  const [pushNote, setPushNote] = useState<{ text: string; url: string | null } | null>(null);
 
   const blocked = placeholderCount > 0;
 
@@ -104,6 +109,32 @@ export function AssetActions({
     }
   }
 
+  // Admin-only: push this approved output into the supplier's SharePoint
+  // folder (creates the "<style> – <customer>" subfolder, uploads the PDF).
+  async function push() {
+    setError(null);
+    setPushNote(null);
+    setPushing(true);
+    try {
+      const res = await fetch(`/api/admin/job-assets/${assetId}/push-to-supplier`, { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        folderName?: string;
+        targetFolderUrl?: string | null;
+      };
+      if (!res.ok) {
+        setError(body.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setPushNote({
+        text: `Pushed to ${body.folderName ?? "supplier folder"}`,
+        url: body.targetFolderUrl ?? null,
+      });
+    } finally {
+      setPushing(false);
+    }
+  }
+
   return (
     <div className="flex flex-col items-end gap-1">
       <div className="flex items-center gap-2">
@@ -145,10 +176,34 @@ export function AssetActions({
             {pending === "reject" ? "Rejecting…" : "✗ Reject…"}
           </button>
         ) : null}
+        {canPush && reviewStatus === "APPROVED" ? (
+          <button
+            type="button"
+            onClick={push}
+            disabled={pushing}
+            title="Create the supplier's SharePoint subfolder and upload this approved PDF"
+            className="rounded-md border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700 hover:bg-sky-100 disabled:opacity-50"
+          >
+            {pushing ? "Pushing…" : "⬆ Push to supplier"}
+          </button>
+        ) : null}
       </div>
       {error ? <span className="max-w-64 text-right text-xs text-red-600">{error}</span> : null}
       {publishNote && !email ? (
         <span className="text-right text-xs text-emerald-700">{publishNote}</span>
+      ) : null}
+      {pushNote ? (
+        <span className="text-right text-xs text-sky-700">
+          {pushNote.text}
+          {pushNote.url ? (
+            <>
+              {" · "}
+              <a href={pushNote.url} target="_blank" rel="noopener noreferrer" className="underline">
+                open folder
+              </a>
+            </>
+          ) : null}
+        </span>
       ) : null}
 
       {rejecting ? (

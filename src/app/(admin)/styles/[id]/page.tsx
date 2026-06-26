@@ -41,6 +41,7 @@ import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
+import { SupplierFolderStatus } from "./supplier-folder-status";
 import { LogStyleView } from "@/components/log-style-view";
 import { applyFieldOverrides } from "@/lib/pdf/pins";
 import { parseFieldOverrides, PINNABLE_FIELD_LABELS, type PinnableField } from "@/lib/pdf/pins-meta";
@@ -625,6 +626,10 @@ export default async function StyleDetail({
           missing={missing}
           resolvedFields={resolvedFields}
           recordFields={recordFields}
+          supplierFolder={{
+            supplierName: style.supplier?.name ?? null,
+            folderUrl: style.supplier?.sharepointUrl ?? null,
+          }}
           readiness={readiness}
           statusView={statusView}
           eanView={eanView}
@@ -675,6 +680,7 @@ function DetailsTab({
   missing,
   resolvedFields,
   recordFields,
+  supplierFolder,
   readiness,
   statusView,
   eanView,
@@ -696,6 +702,7 @@ function DetailsTab({
   missing: Array<{ id: string; label: string }>;
   resolvedFields: ResolvedSpecField[];
   recordFields: Array<{ label: string; value: string | null; href?: string }>;
+  supplierFolder: { supplierName: string | null; folderUrl: string | null };
   readiness: Readiness;
   statusView: EffectiveStatus;
   eanView: EanView;
@@ -946,6 +953,11 @@ function DetailsTab({
           </dl>
         </div>
       </section>
+
+      <SupplierFolderStatus
+        supplierName={supplierFolder.supplierName}
+        folderUrl={supplierFolder.folderUrl}
+      />
 
       <section className="mt-8">
         <div className="flex items-center justify-between">
