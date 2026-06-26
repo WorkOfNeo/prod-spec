@@ -547,7 +547,8 @@ async function prepareLayoutRender(
   // anything renders (idempotent — values already present are kept):
   // {{composition:<lang>}}, {{careInstructions:<lang>}} (standard
   // catalogue filtered by the style's wash icons), {{madeIn:<lang>}},
-  // {{madeInLabel:<lang>}}, {{country:<lang>}}, {{manufacturer:<lang>}}.
+  // {{madeInLabel:<lang>}}, {{country:<lang>}},
+  // {{countryOfOriginLabel:<lang>}}, {{manufacturer:<lang>}}.
   const compLangs = compositionLangsInDef(def);
   if (compLangs.length > 0) {
     style = await augmentCompositionTranslations(style, compLangs);
@@ -557,6 +558,7 @@ async function prepareLayoutRender(
     madeIn: langArgsInDef(def, "madeIn"),
     madeInLabel: langArgsInDef(def, "madeInLabel"),
     country: langArgsInDef(def, "country"),
+    countryOfOriginLabel: langArgsInDef(def, "countryOfOriginLabel"),
     manufacturer: langArgsInDef(def, "manufacturer"),
   });
 

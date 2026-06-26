@@ -104,6 +104,7 @@ export async function POST(req: NextRequest) {
     madeIn: [...new Set([...langArgsInDef(definition, "madeIn"), vl])],
     madeInLabel: [...new Set([...langArgsInDef(definition, "madeInLabel"), vl])],
     country: [...new Set([...langArgsInDef(definition, "country"), vl])],
+    countryOfOriginLabel: [...new Set([...langArgsInDef(definition, "countryOfOriginLabel"), vl])],
     manufacturer: [...new Set([...langArgsInDef(definition, "manufacturer"), vl])],
   });
 
