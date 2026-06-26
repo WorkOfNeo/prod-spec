@@ -138,6 +138,14 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     example: "Kina",
   },
   {
+    key: "countryOfOriginLabel",
+    label: 'Country of origin ("Country of origin" label, translated)',
+    group: "Per language",
+    kind: "text",
+    arg: "lang",
+    example: "Oprindelsesland",
+  },
+  {
     key: "manufacturer",
     label: "Manufacturer (label, translated)",
     group: "Per language",

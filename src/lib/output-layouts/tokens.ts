@@ -130,6 +130,14 @@ const RESOLVERS: Record<string, TextResolver> = {
     (s as StyleData & { countryByLang?: Record<string, string> }).countryByLang?.[
       (arg ?? "en").toLowerCase()
     ] ?? "",
+  // The "Country of origin" heading itself, translated per language (the
+  // board's "Country of origin" phrase → "Oprindelsesland" / "Herkunftsland"
+  // / …). A constant label like {{madeInLabel}} / {{manufacturer}} — no
+  // column gate; precomputed by augmentTranslatedFields.
+  countryOfOriginLabel: (s, arg) =>
+    (s as StyleData & { countryOfOriginLabelByLang?: Record<string, string> }).countryOfOriginLabelByLang?.[
+      (arg ?? "en").toLowerCase()
+    ] ?? "",
   manufacturer: (s, arg) =>
     (s as StyleData & { manufacturerByLang?: Record<string, string> }).manufacturerByLang?.[
       (arg ?? "en").toLowerCase()
@@ -509,6 +517,7 @@ export type TranslatedFieldLangs = {
   madeIn?: string[];
   madeInLabel?: string[];
   country?: string[];
+  countryOfOriginLabel?: string[];
   manufacturer?: string[];
 };
 
@@ -520,18 +529,21 @@ export async function augmentTranslatedFields(
   const madeInLangs = langs.madeIn ?? [];
   const madeInLabelLangs = langs.madeInLabel ?? [];
   const countryLangs = langs.country ?? [];
+  const countryOfOriginLabelLangs = langs.countryOfOriginLabel ?? [];
   const manufacturerLangs = langs.manufacturer ?? [];
 
   type Carried = StyleData & {
     madeInByLang?: Record<string, string>;
     madeInLabelByLang?: Record<string, string>;
     countryByLang?: Record<string, string>;
+    countryOfOriginLabelByLang?: Record<string, string>;
     manufacturerByLang?: Record<string, string>;
   };
   const carried = style as Carried;
   const carriedMadeIn = carried.madeInByLang ?? {};
   const carriedMadeInLabel = carried.madeInLabelByLang ?? {};
   const carriedCountry = carried.countryByLang ?? {};
+  const carriedCountryOfOriginLabel = carried.countryOfOriginLabelByLang ?? {};
   const carriedManufacturer = carried.manufacturerByLang ?? {};
 
   const country = (style.countryOfOrigin ?? "").trim();
@@ -540,8 +552,18 @@ export async function augmentTranslatedFields(
   const needsMadeIn = country !== "" && madeInLangs.some((l) => !(carriedMadeIn[l] ?? "").trim());
   const needsMadeInLabel = madeInLabelLangs.some((l) => !(carriedMadeInLabel[l] ?? "").trim());
   const needsCountry = country !== "" && countryLangs.some((l) => !(carriedCountry[l] ?? "").trim());
+  const needsCountryOfOriginLabel = countryOfOriginLabelLangs.some(
+    (l) => !(carriedCountryOfOriginLabel[l] ?? "").trim(),
+  );
   const needsManufacturer = manufacturerLangs.some((l) => !(carriedManufacturer[l] ?? "").trim());
-  if (!needsCare && !needsMadeIn && !needsMadeInLabel && !needsCountry && !needsManufacturer) {
+  if (
+    !needsCare &&
+    !needsMadeIn &&
+    !needsMadeInLabel &&
+    !needsCountry &&
+    !needsCountryOfOriginLabel &&
+    !needsManufacturer
+  ) {
     return style;
   }
 
@@ -598,6 +620,15 @@ export async function augmentTranslatedFields(
     }
   }
 
+  // The "Country of origin" heading — a constant label translated straight
+  // from the board (degrades to English when the board lacks the language),
+  // independent of whether the style carries a country value.
+  const countryOfOriginLabelByLang: Record<string, string> = { ...carriedCountryOfOriginLabel };
+  for (const lang of countryOfOriginLabelLangs) {
+    if ((countryOfOriginLabelByLang[lang] ?? "").trim()) continue;
+    countryOfOriginLabelByLang[lang] = translatePhrase(dict, "Country of origin", lang);
+  }
+
   const manufacturerByLang: Record<string, string> = { ...carriedManufacturer };
   for (const lang of manufacturerLangs) {
     if ((manufacturerByLang[lang] ?? "").trim()) continue;
@@ -610,6 +641,7 @@ export async function augmentTranslatedFields(
     madeInByLang,
     madeInLabelByLang,
     countryByLang,
+    countryOfOriginLabelByLang,
     manufacturerByLang,
   } as StyleData;
 }
