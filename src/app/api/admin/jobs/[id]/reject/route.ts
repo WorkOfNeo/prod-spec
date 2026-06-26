@@ -5,10 +5,24 @@ import { getServerSession } from "@/lib/auth-server";
 import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
 import { createOrReopenRejectionTicket } from "@/lib/tickets/rejection-tickets";
 import { stampReviewEnded } from "@/lib/publish/publish-approved-job";
+import { decodeImageAttachments, MAX_IMAGE_DATA_URL_CHARS } from "@/lib/images/decode-data-url";
 
 export const runtime = "nodejs";
 
-const SCHEMA = z.object({ reason: z.string().min(1).max(500) });
+const SCHEMA = z.object({
+  reason: z.string().min(1).max(500),
+  // Optional images attached to the bulk-reject comment — copied onto each
+  // cascaded ticket so the screenshot shows on every thread in the log.
+  attachments: z
+    .array(
+      z.object({
+        dataUrl: z.string().min(1).max(MAX_IMAGE_DATA_URL_CHARS, "Image too large — keep it under ~5 MB"),
+        fileName: z.string().max(255).optional(),
+      }),
+    )
+    .max(4)
+    .optional(),
+});
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const session = await getServerSession();
@@ -25,6 +39,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const parsed = SCHEMA.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid body", details: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const decodedAttachments = decodeImageAttachments(parsed.data.attachments);
+  if (!decodedAttachments.ok) {
+    return NextResponse.json({ error: decodedAttachments.error }, { status: 400 });
   }
 
   const job = await db.job.findUnique({
@@ -94,6 +113,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         asset: { ...asset, job: { styleId: job.styleId, style: job.style } },
         comment: parsed.data.reason,
         reportedById: session.user.id,
+        attachments: decodedAttachments.attachments,
       });
     } catch (err) {
       await db.log.create({

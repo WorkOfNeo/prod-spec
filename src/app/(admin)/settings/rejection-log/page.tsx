@@ -82,6 +82,29 @@ export default async function RejectionLogPage() {
     if (!latestAssetAt.has(key)) latestAssetAt.set(key, a.createdAt);
   }
 
+  // Comment attachments (images the reviewer added). Metadata only — never the
+  // bytes; each <img> in the log streams those from the serve route on demand.
+  // Guarded: the rejection_attachments table may not exist yet in the window
+  // before db:deploy runs, so a missing table degrades to "no attachments"
+  // rather than 500-ing the whole log.
+  const attachmentsByTicket = new Map<string, { id: string; fileName: string; mimeType: string }[]>();
+  if (tickets.length > 0) {
+    try {
+      const atts = await db.rejectionAttachment.findMany({
+        where: { ticketId: { in: tickets.map((t) => t.id) } },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, ticketId: true, fileName: true, mimeType: true },
+      });
+      for (const a of atts) {
+        const list = attachmentsByTicket.get(a.ticketId) ?? [];
+        list.push({ id: a.id, fileName: a.fileName, mimeType: a.mimeType });
+        attachmentsByTicket.set(a.ticketId, list);
+      }
+    } catch {
+      // rejection_attachments not deployed yet — render the log without images.
+    }
+  }
+
   const rows: TicketRow[] = tickets.map((t) => {
     const edit = outputEditLink(t.variantKey, prodSpecByStyle.get(t.styleId) ?? null);
     const prodSpecId = prodSpecByStyle.get(t.styleId) ?? null;
@@ -118,6 +141,12 @@ export default async function RejectionLogPage() {
       prodSpecHref: prodSpecId ? `/prod-specs/${prodSpecId}` : null,
       regeneratedAfterRejection,
       regeneratedAtLabel: regeneratedAfterRejection && regenAt ? STAMP_FORMAT.format(regenAt) : null,
+      attachments: (attachmentsByTicket.get(t.id) ?? []).map((a) => ({
+        id: a.id,
+        fileName: a.fileName,
+        mimeType: a.mimeType,
+        url: `/api/admin/rejection-tickets/${t.id}/attachments/${a.id}`,
+      })),
       searchBlob:
         `${t.styleName} ${t.styleNumber} ${t.outputName} ${t.customerName} ${t.businessArea ?? ""} ${t.poNumber ?? ""} ${t.comment}`.toLowerCase(),
     };

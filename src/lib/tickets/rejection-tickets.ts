@@ -48,10 +48,20 @@ function docTypeLabel(docType: string): string {
   return docType.toLowerCase().replace(/_/g, " ");
 }
 
+// A decoded image the reviewer attached to the rejection comment. Bytes are
+// already validated/decoded by the reject route (see lib/images/decode-data-url).
+export type RejectionAttachmentInput = {
+  data: Buffer<ArrayBuffer>;
+  mimeType: string;
+  fileName: string;
+  byteSize: number;
+};
+
 export async function createOrReopenRejectionTicket(input: {
   asset: AssetForTicket;
   comment: string;
   reportedById: string;
+  attachments?: RejectionAttachmentInput[];
 }): Promise<{ ticketId: string; reopened: boolean }> {
   const { asset } = input;
   const style = asset.job.style;
@@ -65,11 +75,13 @@ export async function createOrReopenRejectionTicket(input: {
     select: { id: true, comment: true, reopenedCount: true, status: true },
   });
 
+  let ticketId: string;
+  let reopened: boolean;
   if (existing) {
     // Same thread, new complaint. Only count it as a REOPEN when the
     // ticket had already been through a fix (FIXED) — piling a second
     // comment onto a still-open ticket is just more detail.
-    const reopened = existing.status === "FIXED";
+    reopened = existing.status === "FIXED";
     await db.rejectionTicket.update({
       where: { id: existing.id },
       data: {
@@ -84,29 +96,61 @@ export async function createOrReopenRejectionTicket(input: {
         outputName: asset.displayName ?? docTypeLabel(asset.docType),
       },
     });
-    return { ticketId: existing.id, reopened };
+    ticketId = existing.id;
+  } else {
+    const ticket = await db.rejectionTicket.create({
+      data: {
+        styleId: asset.job.styleId,
+        jobId: asset.jobId,
+        jobAssetId: asset.id,
+        variantKey,
+        docType: asset.docType,
+        outputName: asset.displayName ?? docTypeLabel(asset.docType),
+        fileName: asset.fileName,
+        customerName: style.customer.name,
+        businessArea: style.businessAreaRef?.name ?? style.businessArea ?? null,
+        poNumber: style.poNumber,
+        styleName: style.name,
+        styleNumber: style.mondayItemId,
+        comment: input.comment,
+        reportedById: input.reportedById,
+      },
+      select: { id: true },
+    });
+    ticketId = ticket.id;
+    reopened = false;
   }
 
-  const ticket = await db.rejectionTicket.create({
-    data: {
-      styleId: asset.job.styleId,
-      jobId: asset.jobId,
-      jobAssetId: asset.id,
-      variantKey,
-      docType: asset.docType,
-      outputName: asset.displayName ?? docTypeLabel(asset.docType),
-      fileName: asset.fileName,
-      customerName: style.customer.name,
-      businessArea: style.businessAreaRef?.name ?? style.businessArea ?? null,
-      poNumber: style.poNumber,
-      styleName: style.name,
-      styleNumber: style.mondayItemId,
-      comment: input.comment,
-      reportedById: input.reportedById,
-    },
-    select: { id: true },
-  });
-  return { ticketId: ticket.id, reopened: false };
+  // Persist any images the reviewer attached, against this ticket thread.
+  // Best-effort: a missing rejection_attachments table (the window before
+  // db:deploy runs) must never block the rejection itself — the comment is the
+  // record that matters; a dropped image is logged, not fatal.
+  if (input.attachments?.length) {
+    try {
+      await db.rejectionAttachment.createMany({
+        data: input.attachments.map((a) => ({
+          ticketId,
+          data: a.data,
+          mimeType: a.mimeType,
+          fileName: a.fileName,
+          byteSize: a.byteSize,
+          uploadedById: input.reportedById,
+        })),
+      });
+    } catch (err) {
+      await db.log
+        .create({
+          data: {
+            jobId: asset.jobId,
+            level: "WARN",
+            message: `rejection attachment save skipped: ${(err as Error).message}`,
+          },
+        })
+        .catch(() => {});
+    }
+  }
+
+  return { ticketId, reopened };
 }
 
 // Approving an output closes its ticket thread. Called from the per-asset

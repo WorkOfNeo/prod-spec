@@ -1048,16 +1048,38 @@ model RejectionTicket {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  style      Style     @relation(fields: [styleId], references: [id], onDelete: Cascade)
-  job        Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
-  jobAsset   JobAsset? @relation(fields: [jobAssetId], references: [id], onDelete: SetNull)
-  reportedBy User      @relation("TicketReporter", fields: [reportedById], references: [id])
+  style       Style                 @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  job         Job?                  @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  jobAsset    JobAsset?             @relation(fields: [jobAssetId], references: [id], onDelete: SetNull)
+  reportedBy  User                  @relation("TicketReporter", fields: [reportedById], references: [id])
+  // Image(s) the reviewer attached to the comment (screenshots / photos).
+  attachments RejectionAttachment[]
 
   @@index([status, createdAt])
   // Auto-resolve lookup: approving an output resolves the open ticket for
   // the same (style, variantKey) thread.
   @@index([styleId, variantKey])
   @@map("rejection_tickets")
+}
+
+// Image a reviewer attached to a rejection comment (a screenshot/photo of
+// what's wrong). Bytes live in Postgres — same pattern as prod_spec_images
+// and job_assets.pdf — resized client-side before upload, served back only
+// behind the admin rejection log. Cascade-deleted with the ticket thread.
+model RejectionAttachment {
+  id           String   @id @default(cuid())
+  ticketId     String
+  data         Bytes
+  mimeType     String
+  fileName     String
+  byteSize     Int
+  uploadedById String? // who attached it (audit) — scalar, no back-relation
+  createdAt    DateTime @default(now())
+
+  ticket RejectionTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@map("rejection_attachments")
 }
 
 // =====================================================
