@@ -6,9 +6,11 @@ import { AssetActions } from "./asset-actions";
 import { OutputBulkActions } from "./output-bulk-actions";
 import { ReviewClaim } from "./claim-review";
 import { ReviewLeaveGuard } from "./leave-guard";
+import { ReviewCartonCustomize } from "./review-carton-customize";
 import { LogStyleView } from "@/components/log-style-view";
 import { groupByDocType, DocTypeAccordion } from "../doc-type-groups";
 import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
+import { getVariant } from "@/lib/pdf/template-registry";
 import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
 import {
   getCurrentOutputsForStyle,
@@ -247,6 +249,16 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {group.items.map((o) => {
                   const previewUrl = `/api/admin/jobs/${o.jobId}/preview?variantKey=${encodeURIComponent(o.variantKey)}`;
+                  // Carton-capable outputs (numbering / multi-style) get an
+                  // in-review Customize action — regenerate the set in place and
+                  // re-review it. Capability + print dims come from the layout
+                  // variant; the registry is already loaded by
+                  // getCurrentOutputsForStyle, so getVariant resolves here.
+                  const baseKey = o.variantKey.split("#")[0];
+                  const variant = getVariant(baseKey);
+                  const cartonCapable = Boolean(
+                    variant && (variant.cartonNumbering || variant.multipleStyles),
+                  );
                   return (
                     <div
                       key={o.variantKey}
@@ -269,6 +281,17 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                           >
                             Open
                           </a>
+                          {cartonCapable && variant ? (
+                            <ReviewCartonCustomize
+                              styleId={style.id}
+                              variantKey={baseKey}
+                              name={o.name}
+                              widthMm={variant.defaultWidthMm}
+                              heightMm={variant.defaultHeightMm}
+                              cartonNumbering={variant.cartonNumbering ?? false}
+                              multipleStyles={variant.multipleStyles ?? false}
+                            />
+                          ) : null}
                           <AssetActions
                             assetId={o.jobAssetId as string}
                             styleId={style.id}
