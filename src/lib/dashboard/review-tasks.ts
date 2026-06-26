@@ -19,6 +19,10 @@ export type ReviewTask = {
   styleName: string;
   customerName: string;
   businessArea: string | null;
+  // The prod spec this style is on — the grouping key for the /reviews queue
+  // (null when the style has no active prod spec). prodSpecName labels the group.
+  prodSpecId: string | null;
+  prodSpecName: string | null;
   poNumber: string | null;
   // Review progress over outputs that already have a document (CROSS-JOB — the
   // same model the review PAGE uses): `decided` of `total` reviewable. Outputs
@@ -78,9 +82,23 @@ export type ReviewWork = {
   untouched: ReviewTask[];
 };
 
+// A group of styles awaiting their FIRST review, collected under the prod spec
+// they share. A ProdSpec is unique per customer × business area, so a group is
+// exactly a "category" (Netto · Private Label, …). Powers the /reviews "Review"
+// tab; "In Progress" is a flat list, not grouped.
+export type ReviewGroup = {
+  // prodSpecId, or a synthetic customer×BA key for styles with no prod spec.
+  key: string;
+  prodSpecId: string | null;
+  prodSpecName: string | null;
+  customerName: string;
+  businessArea: string | null;
+  tasks: ReviewTask[];
+};
+
 // The awaiting-review jobs, one entry per STYLE (newest job wins). Shared by
-// getReviewWork (per-user buckets) and getReviewQueue (the flat queue) so both
-// see the same collapse and the same task shape. The raw `job` is carried
+// getReviewWork (per-user buckets) and getReviewBoard (the /reviews two tabs)
+// so both see the same collapse and the same task shape. The raw `job` is carried
 // alongside the built task because the bucketing reads per-asset reviewer ids.
 function queryAwaitingReviewJobs() {
   return db.job.findMany({
@@ -90,7 +108,16 @@ function queryAwaitingReviewJobs() {
     // dashboard keeps working before the additive column is deployed.
     omit: { reviewEndedAt: true },
     include: {
-      style: { include: { customer: true, businessAreaRef: true } },
+      style: {
+        include: {
+          customer: true,
+          businessAreaRef: true,
+          // ProdSpec identity drives the /reviews grouping — a ProdSpec is
+          // unique per customer × business area, so grouping by it is exactly
+          // grouping by category (Netto · Private Label, …).
+          prodSpec: { select: { id: true, name: true } },
+        },
+      },
       reviewClaimedBy: { select: { email: true } },
       assets: {
         select: {
@@ -217,6 +244,8 @@ function buildTask(job: AwaitingReviewJob, currentOutputs: CurrentOutput[]): Rev
     styleName: job.style.name,
     customerName: job.style.customer.name,
     businessArea: job.style.businessAreaRef?.name ?? job.style.businessArea ?? null,
+    prodSpecId: job.style.prodSpecId ?? null,
+    prodSpecName: job.style.prodSpec?.name ?? null,
     poNumber: job.style.poNumber ?? null,
     total: reviewable.length,
     decided: decided.length,
@@ -242,6 +271,26 @@ function buildTask(job: AwaitingReviewJob, currentOutputs: CurrentOutput[]): Rev
 const byAge = (a: ReviewTask, b: ReviewTask) =>
   a.lastActivityAt.getTime() - b.lastActivityAt.getTime();
 
+// Most-recent activity first — In Progress is a live worklist, so the style
+// just regenerated or decided should surface at the top.
+const byRecency = (a: ReviewTask, b: ReviewTask) =>
+  b.lastActivityAt.getTime() - a.lastActivityAt.getTime();
+
+// "Started" = the global form of bucketOf's `touched`: a review is underway on
+// the newest job (claimed, or ≥1 document already decided), regardless of WHO
+// started it. Drives the Review → In Progress split.
+const isStarted = (job: AwaitingReviewJob) =>
+  job.reviewClaimedById != null ||
+  job.assets.some((a) => a.reviewStatus !== "PENDING_REVIEW");
+
+// Live DB has BusinessArea rows literally named "–" (and free-text blanks);
+// blank those out for the group LABEL so a category header never reads as junk.
+// Grouping keys on prodSpecId, so this is display-only.
+const normalizeBa = (ba: string | null): string | null => {
+  const t = (ba ?? "").trim();
+  return t === "" || t === "–" || t === "-" ? null : t;
+};
+
 export async function getReviewWork(userId: string): Promise<ReviewWork> {
   const entries = await awaitingReviewEntries();
 
@@ -263,13 +312,69 @@ export async function getReviewWork(userId: string): Promise<ReviewWork> {
   return { mine, others, untouched };
 }
 
-// The global review queue — every style currently awaiting review, regardless
-// of who (if anyone) has started it, as one flat per-style list. Powers
-// /reviews: the same collapse and card as the dashboard's "waiting for first
-// review", but un-bucketed so the whole queue is visible in one place.
-export async function getReviewQueue(): Promise<ReviewTask[]> {
+// The /reviews board — ONE fetch, both tabs. Splits the awaiting-review styles
+// into the untouched queue (grouped by prod spec) and the shared In Progress
+// list (any style whose review has been STARTED, or that still has an
+// unresolved rejection being reworked). Same per-style collapse and card shape
+// as the dashboard; the awaiting-review fetch is the same one the flat queue
+// used, so both tab counts come from a single pass.
+export async function getReviewBoard(): Promise<{
+  groups: ReviewGroup[];
+  inProgress: ReviewTask[];
+}> {
   const entries = await awaitingReviewEntries();
-  return entries.map((e) => e.task).sort(byAge);
+
+  // Durable rework signal: a rejected style's fix re-run creates a NEW, unclaimed
+  // job that on its own would look "untouched" and fall back to the queue. An
+  // open RejectionTicket (anything not RESOLVED) keeps the style in In Progress
+  // across that regeneration gap — approving the fix resolves the ticket and
+  // settles the job, so it leaves on its own. One indexed query, no Bytes.
+  const styleIds = entries.map((e) => e.job.styleId);
+  const reworkingRows = styleIds.length
+    ? await db.rejectionTicket.findMany({
+        where: { styleId: { in: styleIds }, status: { not: "RESOLVED" } },
+        select: { styleId: true },
+      })
+    : [];
+  const reworking = new Set(reworkingRows.map((r) => r.styleId));
+
+  const inProgress: ReviewTask[] = [];
+  const untouched: ReviewTask[] = [];
+  for (const { job, task } of entries) {
+    if (isStarted(job) || reworking.has(job.styleId)) inProgress.push(task);
+    else untouched.push(task);
+  }
+
+  // Group the untouched queue by prod spec (== customer × business area). Styles
+  // with no prod spec fall into a synthetic per-customer/BA group so the queue
+  // never silently drops a style.
+  const byKey = new Map<string, ReviewGroup>();
+  for (const task of untouched) {
+    const key = task.prodSpecId ?? `cust:${task.customerName}|ba:${task.businessArea ?? ""}`;
+    let group = byKey.get(key);
+    if (!group) {
+      group = {
+        key,
+        prodSpecId: task.prodSpecId,
+        prodSpecName: task.prodSpecName,
+        customerName: task.customerName,
+        businessArea: normalizeBa(task.businessArea),
+        tasks: [],
+      };
+      byKey.set(key, group);
+    }
+    group.tasks.push(task);
+  }
+
+  const groups = [...byKey.values()];
+  for (const g of groups) g.tasks.sort(byAge);
+  // Most-stuck category first: order groups by their oldest waiting style.
+  groups.sort(
+    (a, b) => a.tasks[0].lastActivityAt.getTime() - b.tasks[0].lastActivityAt.getTime(),
+  );
+
+  inProgress.sort(byRecency);
+  return { groups, inProgress };
 }
 
 // Relative-time formatting moved to lib/time so client components (the

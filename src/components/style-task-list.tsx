@@ -19,7 +19,7 @@ const OUTPUT_CHIP: Record<ReviewTaskOutput["state"], { cls: string; label: strin
   AWAITING_DATA: { cls: "border-zinc-200 bg-zinc-50 text-zinc-500", label: "awaiting data" },
 };
 
-function StyleTaskAction({ t }: { t: ReviewTask }) {
+function StyleTaskAction({ t, startedContext }: { t: ReviewTask; startedContext: boolean }) {
   if (t.needsPublishRetry) {
     return (
       <Link
@@ -47,7 +47,7 @@ function StyleTaskAction({ t }: { t: ReviewTask }) {
       href={`/styles/${t.styleId}/review`}
       className="inline-block rounded-md bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-800"
     >
-      {t.decided > 0 ? "Finish review" : "Start review"}
+      {t.decided > 0 ? "Finish review" : startedContext ? "Continue review" : "Start review"}
     </Link>
   );
 }
@@ -55,7 +55,18 @@ function StyleTaskAction({ t }: { t: ReviewTask }) {
 // Each style is an expandable row: the summary toggles the accordion of its
 // outputs; the action button and the per-output "Review" links navigate to
 // the uniform review page (clicking those leaves the page, so the toggle is moot).
-export function StyleTaskList({ tasks, activityPrefix }: { tasks: ReviewTask[]; activityPrefix: string }) {
+export function StyleTaskList({
+  tasks,
+  activityPrefix,
+  // When these rows are reviews already started (the /reviews "In Progress"
+  // tab), a claimed-but-undecided style reads "Continue review", not "Start
+  // review". Default false keeps the dashboard and the first-review queue as-is.
+  startedContext = false,
+}: {
+  tasks: ReviewTask[];
+  activityPrefix: string;
+  startedContext?: boolean;
+}) {
   return (
     <div className="mt-3 space-y-2">
       {tasks.map((t) => (
@@ -105,7 +116,7 @@ export function StyleTaskList({ tasks, activityPrefix }: { tasks: ReviewTask[]; 
                 {t.generatedSlots}/{t.totalSlots} generated
               </span>
             ) : null}
-            <StyleTaskAction t={t} />
+            <StyleTaskAction t={t} startedContext={startedContext} />
           </summary>
           <div className="border-t border-zinc-100 px-3 py-2">
             {t.stillComing > 0 ? (
