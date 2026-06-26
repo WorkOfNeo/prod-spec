@@ -105,11 +105,36 @@ export default async function RejectionLogPage() {
     }
   }
 
+  // Per-style current output set (one styleOutputBases read per style; the
+  // backlog groups to a handful of styles). Reused below for the at-a-glance
+  // overview, and here to tell whether a ticket's output is still in the spec.
+  const FRAMING_KEYS = new Set(["__cover__", "__general_info__"]);
+  const basesByStyle = new Map<string, Awaited<ReturnType<typeof styleOutputBases>>>();
+  await Promise.all(
+    styleIds.map(async (sid) => {
+      basesByStyle.set(sid, await styleOutputBases(sid));
+    }),
+  );
+  // A RESOLVED ticket was APPROVED by the reviewer (vs auto-resolved when its
+  // output was removed) iff its output base is still declared in the current
+  // spec — the only two resolution paths are reviewer-approval and removed-
+  // output cleanup. This survives re-runs (which delete/recreate assets and so
+  // wipe the per-asset approval history) where "latest asset approved" cannot.
+  const declaredBasesByStyle = new Map<string, Set<string>>();
+  for (const [sid, bases] of basesByStyle) {
+    declaredBasesByStyle.set(sid, new Set(bases.filter((o) => o.declared).map((o) => o.variantKey)));
+  }
+  const isOutputLive = (styleId: string, variantKey: string) => {
+    const base = baseVariantKey(variantKey);
+    return FRAMING_KEYS.has(base) || (declaredBasesByStyle.get(styleId)?.has(base) ?? false);
+  };
+
   const rows: TicketRow[] = tickets.map((t) => {
     const edit = outputEditLink(t.variantKey, prodSpecByStyle.get(t.styleId) ?? null);
     const prodSpecId = prodSpecByStyle.get(t.styleId) ?? null;
     const regenAt = latestAssetAt.get(`${t.styleId}|${t.variantKey}`);
     const regeneratedAfterRejection = !!regenAt && regenAt > t.createdAt;
+    const approved = t.status === "RESOLVED" && isOutputLive(t.styleId, t.variantKey);
     return {
       id: t.id,
       status: t.status,
@@ -141,6 +166,7 @@ export default async function RejectionLogPage() {
       prodSpecHref: prodSpecId ? `/prod-specs/${prodSpecId}` : null,
       regeneratedAfterRejection,
       regeneratedAtLabel: regeneratedAfterRejection && regenAt ? STAMP_FORMAT.format(regenAt) : null,
+      approved,
       attachments: (attachmentsByTicket.get(t.id) ?? []).map((a) => ({
         id: a.id,
         fileName: a.fileName,
@@ -156,7 +182,6 @@ export default async function RejectionLogPage() {
   // reference point for "has this output been regenerated since it was
   // rejected?", plus the ticket's clean output name (used when an orphaned
   // output's base no longer resolves to a registered variant).
-  const FRAMING_KEYS = new Set(["__cover__", "__general_info__"]);
   const openRejection = new Map<string, Map<string, { at: Date; name: string }>>();
   for (const t of tickets) {
     if (t.status !== "OPEN" && t.status !== "IN_PROGRESS") continue;
@@ -177,31 +202,29 @@ export default async function RejectionLogPage() {
     o.variantKey === "__cover__" ? 0 : o.variantKey === "__general_info__" ? 1 : o.declared ? 2 : 3;
   const now = new Date();
   const styleOutputs: Record<string, StyleOutputView[]> = {};
-  await Promise.all(
-    styleIds.map(async (sid) => {
-      const bases = await styleOutputBases(sid);
-      const rejected = openRejection.get(sid) ?? new Map();
-      styleOutputs[sid] = bases
-        .filter((o) => o.declared || FRAMING_KEYS.has(o.variantKey) || rejected.has(o.variantKey))
-        .map((o) => {
-          const rej = rejected.get(o.variantKey) ?? null;
-          return {
-            variantKey: o.variantKey,
-            // Orphaned outputs (removed from the spec, no registered variant)
-            // fall back to the rejection ticket's human name.
-            name: !o.declared && rej ? rej.name : o.name,
-            declared: o.declared,
-            ready: o.ready,
-            missing: o.missing,
-            lastGeneratedLabel: o.lastGeneratedAt ? relativeStamp(o.lastGeneratedAt, now) : null,
-            rejected: rej !== null,
-            regeneratedSinceRejection: !!(rej && o.lastGeneratedAt && o.lastGeneratedAt > rej.at),
-            reviewStatus: o.latestReviewStatus,
-          };
-        })
-        .sort((a, b) => order(a) - order(b));
-    }),
-  );
+  for (const sid of styleIds) {
+    const bases = basesByStyle.get(sid) ?? [];
+    const rejected = openRejection.get(sid) ?? new Map();
+    styleOutputs[sid] = bases
+      .filter((o) => o.declared || FRAMING_KEYS.has(o.variantKey) || rejected.has(o.variantKey))
+      .map((o) => {
+        const rej = rejected.get(o.variantKey) ?? null;
+        return {
+          variantKey: o.variantKey,
+          // Orphaned outputs (removed from the spec, no registered variant)
+          // fall back to the rejection ticket's human name.
+          name: !o.declared && rej ? rej.name : o.name,
+          declared: o.declared,
+          ready: o.ready,
+          missing: o.missing,
+          lastGeneratedLabel: o.lastGeneratedAt ? relativeStamp(o.lastGeneratedAt, now) : null,
+          rejected: rej !== null,
+          regeneratedSinceRejection: !!(rej && o.lastGeneratedAt && o.lastGeneratedAt > rej.at),
+          reviewStatus: o.latestReviewStatus,
+        };
+      })
+      .sort((a, b) => order(a) - order(b));
+  }
 
   return (
     <div className="px-8 py-8">

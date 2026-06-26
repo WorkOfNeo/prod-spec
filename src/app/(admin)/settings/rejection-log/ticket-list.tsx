@@ -53,6 +53,9 @@ export type TicketRow = {
   // i.e. it's been re-generated since (catches auto/full re-runs too).
   regeneratedAfterRejection: boolean;
   regeneratedAtLabel: string | null;
+  // True when the output's newest asset was APPROVED by a reviewer — the signal
+  // behind the "Approved" pill (distinct from a ticket auto-resolved on removal).
+  approved: boolean;
   // Images the reviewer attached to the comment (served behind admin auth).
   attachments: { id: string; fileName: string; mimeType: string; url: string }[];
   searchBlob: string;
@@ -87,14 +90,26 @@ type StyleAction =
 
 type StyleResult = { tone: "ok" | "warn" | "err"; msg: string };
 
-const STATUSES = ["OPEN", "IN_PROGRESS", "FIXED", "RESOLVED"] as const;
-type Status = (typeof STATUSES)[number];
+type Status = "OPEN" | "IN_PROGRESS" | "FIXED" | "RESOLVED";
 
-const STATUS_PILLS: Record<Status, string> = {
+// Display buckets for the pills. A RESOLVED ticket whose output a reviewer
+// APPROVED shows as "Approved" (the reviewer's action) rather than "Resolved"
+// (which then means only "closed without an approval", e.g. the output was
+// removed). An approval always resolves the ticket, so APPROVED stands in for
+// RESOLVED — it never collides with the actionable OPEN/IN_PROGRESS/FIXED.
+const DISPLAY_STATUSES = ["OPEN", "IN_PROGRESS", "FIXED", "APPROVED", "RESOLVED"] as const;
+type DisplayStatus = (typeof DISPLAY_STATUSES)[number];
+
+function displayStatusOf(r: { status: Status; approved: boolean }): DisplayStatus {
+  return r.status === "RESOLVED" && r.approved ? "APPROVED" : r.status;
+}
+
+const STATUS_PILLS: Record<DisplayStatus, string> = {
   OPEN: "border-red-200 bg-red-50 text-red-700",
   IN_PROGRESS: "border-amber-200 bg-amber-50 text-amber-700",
   FIXED: "border-blue-200 bg-blue-50 text-blue-700",
-  RESOLVED: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  APPROVED: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  RESOLVED: "border-zinc-200 bg-zinc-100 text-zinc-600",
 };
 
 type StyleGroup = {
@@ -104,7 +119,7 @@ type StyleGroup = {
   customerName: string;
   prodSpecHref: string | null;
   tickets: TicketRow[];
-  counts: Record<Status, number>;
+  counts: Record<DisplayStatus, number>;
   // Non-resolved outputs in this style re-generated since they were rejected.
   regeneratedCount: number;
   latestLabel: string;
@@ -132,8 +147,11 @@ export function TicketList({
   // comment does NOT filter the list — it bulk-selects every actionable ticket
   // carrying that comment across all styles (see onSelectComments).
   const [selectedComments, setSelectedComments] = useState<string[]>([]);
-  // RESOLVED is hidden by default — the workbench shows actionable threads.
-  const [enabled, setEnabled] = useState<Set<Status>>(new Set(["OPEN", "IN_PROGRESS", "FIXED"]));
+  // APPROVED + RESOLVED are hidden by default — the workbench shows actionable
+  // threads; their pill counts still give the at-a-glance overview.
+  const [enabled, setEnabled] = useState<Set<DisplayStatus>>(
+    new Set(["OPEN", "IN_PROGRESS", "FIXED"]),
+  );
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
   const [assets, setAssets] = useState<Record<string, AssetState>>({});
@@ -166,8 +184,14 @@ export function TicketList({
   );
 
   const counts = useMemo(() => {
-    const c: Record<Status, number> = { OPEN: 0, IN_PROGRESS: 0, FIXED: 0, RESOLVED: 0 };
-    for (const r of rows) c[r.status]++;
+    const c: Record<DisplayStatus, number> = {
+      OPEN: 0,
+      IN_PROGRESS: 0,
+      FIXED: 0,
+      APPROVED: 0,
+      RESOLVED: 0,
+    };
+    for (const r of rows) c[displayStatusOf(r)]++;
     return c;
   }, [rows]);
 
@@ -186,15 +210,18 @@ export function TicketList({
     [rows],
   );
 
-  // "Select by comment": group the actionable (OPEN/IN_PROGRESS) tickets by
-  // their exact comment text. Each option shows an excerpt + how many tickets
-  // share it; choosing it selects them all. Built over ALL rows so selection
-  // spans every style regardless of the other filters. Most-repeated comment
-  // first — that's the highest-value bulk action.
+  // "Select by comment": group the still-to-do tickets by their exact comment
+  // text. Each option shows an excerpt + how many tickets share it; choosing it
+  // selects them all. Built over ALL rows so selection spans every style
+  // regardless of the other filters. Most-repeated comment first — that's the
+  // highest-value bulk action. We only include OPEN/IN_PROGRESS tickets that
+  // have NOT already been regenerated since rejection: a fixed or regenerated
+  // output no longer needs a bulk re-fix, so it shouldn't pad the counts.
   const { commentOptions, commentTicketIds } = useMemo(() => {
     const byComment = new Map<string, string[]>();
     for (const r of rows) {
       if (r.status !== "OPEN" && r.status !== "IN_PROGRESS") continue;
+      if (r.regeneratedAfterRejection) continue;
       const key = r.comment.trim();
       if (!key) continue;
       const ids = byComment.get(key);
@@ -223,7 +250,7 @@ export function TicketList({
     const typeSet = new Set(outputTypes);
     return rows.filter(
       (r) =>
-        enabled.has(r.status) &&
+        enabled.has(displayStatusOf(r)) &&
         (q === "" || r.searchBlob.includes(q)) &&
         (customerSet.size === 0 || customerSet.has(r.customerName)) &&
         (baSet.size === 0 || (r.businessArea != null && baSet.has(r.businessArea))) &&
@@ -246,14 +273,14 @@ export function TicketList({
           customerName: r.customerName,
           prodSpecHref: r.prodSpecHref,
           tickets: [],
-          counts: { OPEN: 0, IN_PROGRESS: 0, FIXED: 0, RESOLVED: 0 },
+          counts: { OPEN: 0, IN_PROGRESS: 0, FIXED: 0, APPROVED: 0, RESOLVED: 0 },
           regeneratedCount: 0,
           latestLabel: r.createdAtLabel,
         };
         map.set(r.styleId, g);
       }
       g.tickets.push(r);
-      g.counts[r.status]++;
+      g.counts[displayStatusOf(r)]++;
       if (r.regeneratedAfterRejection && r.status !== "RESOLVED") g.regeneratedCount++;
     }
     return [...map.values()];
@@ -262,7 +289,7 @@ export function TicketList({
   // An active text search drills into every matching style automatically.
   const searching = query.trim() !== "";
 
-  function toggleStatus(s: Status) {
+  function toggleStatus(s: DisplayStatus) {
     setEnabled((prev) => {
       const next = new Set(prev);
       if (next.has(s)) next.delete(s);
@@ -494,7 +521,7 @@ export function TicketList({
           placeholder="Search style, PO, output, comment…"
           className="w-64 rounded-md border border-zinc-300 px-3 py-1.5 text-sm focus:ring-2 focus:ring-zinc-900 focus:outline-none"
         />
-        {STATUSES.map((s) => (
+        {DISPLAY_STATUSES.map((s) => (
           <button
             key={s}
             type="button"
@@ -727,7 +754,7 @@ function GroupSection({
               ↻ {group.regeneratedCount} regenerated
             </span>
           ) : null}
-          {STATUSES.map((s) =>
+          {DISPLAY_STATUSES.map((s) =>
             group.counts[s] > 0 ? (
               <span
                 key={s}
@@ -960,6 +987,7 @@ function Row({
   bulkBusy: boolean;
 }) {
   const actionable = row.status === "OPEN" || row.status === "IN_PROGRESS";
+  const ds = displayStatusOf(row);
   const data = asset && typeof asset === "object" ? asset : null;
   const rejected = data?.rejected ?? null;
   const latest = data?.latest ?? null;
@@ -1018,9 +1046,9 @@ function Row({
         </td>
         <td className="px-3 py-2">
           <span
-            className={`inline-block rounded-full border px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${STATUS_PILLS[row.status]}`}
+            className={`inline-block rounded-full border px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${STATUS_PILLS[ds]}`}
           >
-            {row.status.replace("_", " ")}
+            {ds.replace("_", " ")}
             {row.reopenedCount > 0 ? ` ×${row.reopenedCount + 1}` : ""}
           </span>
         </td>
@@ -1157,7 +1185,15 @@ function Row({
                 </span>
               ) : null}
               {row.status === "RESOLVED" ? (
-                <span className="text-xs text-emerald-700">Resolved — the re-generated output was approved.</span>
+                row.approved ? (
+                  <span className="text-xs text-emerald-700">
+                    Approved — the reviewer approved this output.
+                  </span>
+                ) : (
+                  <span className="text-xs text-zinc-500">
+                    Resolved — closed without a reviewer approval (e.g. the output was removed).
+                  </span>
+                )
               ) : null}
               {error ? <span className="text-xs text-red-600">{error}</span> : null}
               {note ? <span className="text-xs text-emerald-700">{note}</span> : null}
