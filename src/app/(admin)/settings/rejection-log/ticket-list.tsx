@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { FilterSelect, outputTypeLabel } from "./rejection-filters";
+import { outputTypeLabel } from "./rejection-filters";
+import { FacetFilter, type FacetOption } from "@/components/facet-filter";
 
 // A rendered PDF for a ticket's output (jobId + the preview query that
 // addresses it), with its review state.
@@ -119,11 +120,16 @@ export function TicketList({
   // Per-style action state: which action is running, and its last result.
   const [styleBusy, setStyleBusy] = useState<Record<string, StyleAction | null>>({});
   const [styleResult, setStyleResult] = useState<Record<string, StyleResult | null>>({});
-  // Dynamic dimension filters ("" = All) — options derived from the tickets
-  // present, AND-ed with the search + status filters below.
-  const [customer, setCustomer] = useState("");
-  const [businessArea, setBusinessArea] = useState("");
-  const [outputType, setOutputType] = useState("");
+  // Dynamic dimension filters (empty = All) — searchable multi-select facets
+  // whose options derive from the tickets present, AND-ed with the search +
+  // status filters below.
+  const [customers, setCustomers] = useState<string[]>([]);
+  const [businessAreas, setBusinessAreas] = useState<string[]>([]);
+  const [outputTypes, setOutputTypes] = useState<string[]>([]);
+  // "Select by comment" picker: the chosen comment-group keys. Choosing a
+  // comment does NOT filter the list — it bulk-selects every actionable ticket
+  // carrying that comment across all styles (see onSelectComments).
+  const [selectedComments, setSelectedComments] = useState<string[]>([]);
   // RESOLVED is hidden by default — the workbench shows actionable threads.
   const [enabled, setEnabled] = useState<Set<Status>>(new Set(["OPEN", "IN_PROGRESS", "FIXED"]));
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
@@ -163,32 +169,65 @@ export function TicketList({
     return c;
   }, [rows]);
 
-  // Distinct filter options, derived from the tickets present (kept in sync as
-  // the backlog changes). Sorted for a stable dropdown order.
-  const customerOptions = useMemo(
-    () => [...new Set(rows.map((r) => r.customerName).filter(Boolean))].sort(),
+  // Facet options (searchable dropdowns) with per-value counts over the whole
+  // backlog — same idiom as /styles and /prod-specs. Blank values are skipped.
+  const customerOptions = useMemo<FacetOption[]>(
+    () => facetOptionsFrom(rows, (r) => r.customerName),
     [rows],
   );
-  const businessAreaOptions = useMemo(
-    () => [...new Set(rows.map((r) => r.businessArea).filter((x): x is string => !!x))].sort(),
+  const businessAreaOptions = useMemo<FacetOption[]>(
+    () => facetOptionsFrom(rows, (r) => r.businessArea ?? ""),
     [rows],
   );
-  const outputTypeOptions = useMemo(
-    () => [...new Set(rows.map((r) => r.docType).filter(Boolean))].sort(),
+  const outputTypeOptions = useMemo<FacetOption[]>(
+    () => facetOptionsFrom(rows, (r) => r.docType, outputTypeLabel),
     [rows],
   );
 
+  // "Select by comment": group the actionable (OPEN/IN_PROGRESS) tickets by
+  // their exact comment text. Each option shows an excerpt + how many tickets
+  // share it; choosing it selects them all. Built over ALL rows so selection
+  // spans every style regardless of the other filters. Most-repeated comment
+  // first — that's the highest-value bulk action.
+  const { commentOptions, commentTicketIds } = useMemo(() => {
+    const byComment = new Map<string, string[]>();
+    for (const r of rows) {
+      if (r.status !== "OPEN" && r.status !== "IN_PROGRESS") continue;
+      const key = r.comment.trim();
+      if (!key) continue;
+      const ids = byComment.get(key);
+      if (ids) ids.push(r.id);
+      else byComment.set(key, [r.id]);
+    }
+    const options: FacetOption[] = [...byComment.entries()]
+      .map(([value, ids]) => ({ value, label: commentExcerpt(value), count: ids.length }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+    return { commentOptions: options, commentTicketIds: byComment };
+  }, [rows]);
+
+  // The comment checkmarks shown in the dropdown, derived (not stored) so they
+  // stay honest as the backlog settles: a refresh that resolves a comment
+  // group's last ticket drops its option, and intersecting here quietly clears
+  // its checkmark + trigger-badge count without a sync effect.
+  const validSelectedComments = useMemo(() => {
+    const valid = new Set(commentOptions.map((o) => o.value));
+    return selectedComments.filter((k) => valid.has(k));
+  }, [commentOptions, selectedComments]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const customerSet = new Set(customers);
+    const baSet = new Set(businessAreas);
+    const typeSet = new Set(outputTypes);
     return rows.filter(
       (r) =>
         enabled.has(r.status) &&
         (q === "" || r.searchBlob.includes(q)) &&
-        (customer === "" || r.customerName === customer) &&
-        (businessArea === "" || r.businessArea === businessArea) &&
-        (outputType === "" || r.docType === outputType),
+        (customerSet.size === 0 || customerSet.has(r.customerName)) &&
+        (baSet.size === 0 || (r.businessArea != null && baSet.has(r.businessArea))) &&
+        (typeSet.size === 0 || typeSet.has(r.docType)),
     );
-  }, [rows, query, enabled, customer, businessArea, outputType]);
+  }, [rows, query, enabled, customers, businessAreas, outputTypes]);
 
   // Group the (already newest-first) filtered tickets by style. Insertion
   // order = first-seen order = most-recently-rejected style first, and the
@@ -314,6 +353,35 @@ export function TicketList({
     });
   }
 
+  // Picking comment-groups in the "Select by comment" dropdown bulk-selects
+  // every actionable ticket carrying those comments (across all styles) for the
+  // existing bulk mark-fixed actions — it does NOT filter the list. We diff
+  // old→new so toggling a comment off releases exactly its tickets.
+  function onSelectComments(next: string[]) {
+    const nextSet = new Set(next);
+    const prev = validSelectedComments;
+    setSelected((prevSelected) => {
+      const out = new Set(prevSelected);
+      for (const key of next) {
+        if (prev.includes(key)) continue;
+        for (const id of commentTicketIds.get(key) ?? []) out.add(id);
+      }
+      for (const key of prev) {
+        if (nextSet.has(key)) continue;
+        for (const id of commentTicketIds.get(key) ?? []) out.delete(id);
+      }
+      return out;
+    });
+    setSelectedComments(next);
+  }
+
+  // Clear both the ticket selection and the comment-dropdown checkmarks that
+  // may have driven it (bottom-bar "Clear", and after a bulk action completes).
+  function clearSelection() {
+    setSelected(new Set());
+    setSelectedComments([]);
+  }
+
   // Bulk action over the selected tickets, run sequentially so each gets its own
   // request budget (renders are slow) and commits independently — a mid-way stop
   // still leaves the finished ones FIXED. Sequential also dodges runTicketJob's
@@ -340,7 +408,7 @@ export function TicketList({
       setBulk((b) => (b ? { ...b, done: b.done + 1 } : b));
     }
     setBulk(null);
-    setSelected(new Set());
+    clearSelection();
     setBulkSummary({ fixed: ids.length - failed, failed });
     router.refresh();
   }
@@ -437,20 +505,39 @@ export function TicketList({
             {s.replace("_", " ")} · {counts[s]}
           </button>
         ))}
-        <FilterSelect label="Customer" value={customer} options={customerOptions} onChange={setCustomer} />
-        <FilterSelect
+        <FacetFilter
+          label="Customer"
+          options={customerOptions}
+          selected={customers}
+          onChange={setCustomers}
+          searchable
+        />
+        <FacetFilter
           label="Business area"
-          value={businessArea}
           options={businessAreaOptions}
-          onChange={setBusinessArea}
+          selected={businessAreas}
+          onChange={setBusinessAreas}
+          searchable
         />
-        <FilterSelect
+        <FacetFilter
           label="Output type"
-          value={outputType}
           options={outputTypeOptions}
-          onChange={setOutputType}
-          formatOption={outputTypeLabel}
+          selected={outputTypes}
+          onChange={setOutputTypes}
+          searchable
         />
+        {commentOptions.length > 0 ? (
+          <>
+            <span className="mx-0.5 h-5 w-px shrink-0 self-center bg-zinc-200" aria-hidden="true" />
+            <FacetFilter
+              label="Select by comment"
+              options={commentOptions}
+              selected={validSelectedComments}
+              onChange={onSelectComments}
+              searchable
+            />
+          </>
+        ) : null}
       </div>
 
       {bulkSummary ? (
@@ -546,7 +633,7 @@ export function TicketList({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSelected(new Set())}
+                  onClick={clearSelection}
                   className="text-xs text-zinc-500 underline hover:text-zinc-800"
                 >
                   Clear
@@ -1094,4 +1181,30 @@ function PreviewBlock({
       <iframe src={previewUrl} className="block h-72 w-full bg-white" title={`${title} — ${outputName}`} />
     </div>
   );
+}
+
+// Build sorted FacetOptions (value + per-value count) from the rows, skipping
+// blank values. An optional formatter maps the raw value to a display label
+// (e.g. docType "CARTON_MARKING" → "Carton marking").
+function facetOptionsFrom(
+  rows: TicketRow[],
+  pick: (r: TicketRow) => string,
+  format?: (value: string) => string,
+): FacetOption[] {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const v = pick(r);
+    if (!v) continue;
+    counts.set(v, (counts.get(v) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([value, count]) => ({ value, label: format ? format(value) : value, count }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+// One-line excerpt of a (possibly long, multi-line) rejection comment, for the
+// "Select by comment" dropdown option labels.
+function commentExcerpt(s: string, max = 72): string {
+  const flat = s.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
