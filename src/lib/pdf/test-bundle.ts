@@ -1,0 +1,371 @@
+import { db } from "@/lib/db";
+import { renderPdf } from "@/lib/pdf/renderer";
+import { inlineProdSpecImages } from "@/lib/pdf/inline-images";
+import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
+import { buildStyleData } from "@/lib/styles/render-context";
+import { applyCartonBarcodePrefs, applyFieldOverrides } from "@/lib/pdf/pins";
+import { countPlaceholderMarkers } from "@/lib/pdf/placeholders";
+import { defaultArtifactFileName } from "@/lib/pdf/template-registry";
+import {
+  COVER_VARIANT_KEY,
+  GENERAL_INFO_VARIANT_KEY,
+  renderCoverPageHtml,
+  renderGeneralInfoHtml,
+  type BundleDocSummary,
+} from "@/lib/pdf/bundle-pages";
+import { parseCustomerConfig } from "@/lib/customers/config";
+import {
+  DEFAULT_OUTPUTS,
+  parseBundlePageSettings,
+  parseProdSpecOutputs,
+  resolveOutputVariant,
+  type ProdSpecOutput,
+} from "@/lib/prod-spec/config";
+import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
+
+// =====================================================
+// Test-bundle renderer — a DRY RUN of the job runner.
+//
+// Renders the exact PDFs a real generation would produce for ONE chosen
+// style under a prod spec — the cover (with general information also riding
+// inside it), the standalone general-information document, and one PDF per
+// enabled output — but creates NO Job, NO JobAssets, NO review tasks and
+// notifies NO ONE. It feeds the /prod-specs/<id> "Test" tab so an operator
+// can eyeball every document before committing to an actual rerun.
+//
+// The render path mirrors src/lib/queue/runner.ts#processJob deliberately:
+// same buildStyleData assembly, same output resolution + dims + pins +
+// carton prefs, same renderMany / static-pdf handling, same cover framing.
+// Keep the two in sync — if the runner's render loop changes, change this
+// loop too. The ONE intentional divergence: a single output that fails to
+// render becomes an error card here (so the operator sees WHICH output is
+// broken) instead of failing the whole bundle the way a job would.
+// =====================================================
+
+export type TestBundleDoc = {
+  kind: "cover" | "general-info" | "output";
+  // Variant key (synthetic COVER_VARIANT_KEY for the cover), suffixed
+  // "#<part>" for one file of a multi-document (repeat-per-EAN) output.
+  variantKey: string;
+  // Human label for the card header.
+  name: string;
+  // Suggested download name; null when the doc errored.
+  fileName: string | null;
+  widthMm: number;
+  heightMm: number;
+  // Static-pdf passthrough output (committed artwork shipped verbatim).
+  staticPdf: boolean;
+  // Placeholder artifacts found in the rendered HTML (missing artwork /
+  // "No carton EAN" tiles). Non-zero blocks approval on a real run — shown
+  // as a loud badge here so the test surfaces it too. 0 for static / errors.
+  placeholderCount: number;
+  // Rendered PDF bytes; null when this doc failed to render (see `error`).
+  pdf: Buffer | null;
+  // Per-doc render error — resilient: one bad output never sinks the rest.
+  error: string | null;
+};
+
+export type TestBundleResult = {
+  style: {
+    id: string;
+    name: string;
+    styleNumber: string;
+    poNumber: string | null;
+  };
+  docs: TestBundleDoc[];
+  // Non-fatal notes (e.g. an output referencing a stale variant key that
+  // was skipped) — surfaced to the operator above the document list.
+  warnings: string[];
+};
+
+// Render the full test bundle for (prodSpec × style). Throws only on
+// caller errors (missing rows, mismatched ownership); per-document render
+// failures are captured into the returned docs as error cards.
+export async function renderProdSpecTestBundle(
+  prodSpecId: string,
+  styleId: string,
+): Promise<TestBundleResult> {
+  // Published Output Builder layouts must be in the registry before any
+  // `layout:<id>` key resolves — same first step the runner takes.
+  await ensureLayoutVariantsLoaded();
+
+  // Load the style with the SAME include shape the runner uses, so the
+  // assembled StyleData is byte-for-byte what a real job would build.
+  const style = await db.style.findUnique({
+    where: { id: styleId },
+    include: {
+      customer: true,
+      qrImage: true,
+      supplier: { select: { country: true, name: true } },
+      businessAreaRef: { select: { name: true } },
+      eans: {
+        orderBy: { position: "asc" },
+        select: { size: true, ean13: true, variantLabel: true },
+      },
+    },
+  });
+  if (!style) throw new TestBundleError("Style not found");
+  // Guard: the picker only offers this spec's styles, but never trust the
+  // query param — a style's outputs/dims come from THIS prod spec.
+  if (style.prodSpecId !== prodSpecId) {
+    throw new TestBundleError("That style is not linked to this prod spec");
+  }
+
+  const prodSpec = await db.prodSpec.findUnique({ where: { id: prodSpecId } });
+  if (!prodSpec) throw new TestBundleError("Prod spec not found");
+
+  const warnings: string[] = [];
+
+  let config;
+  try {
+    config = parseCustomerConfig(style.customer.config);
+  } catch (err) {
+    throw new TestBundleError(`Customer config invalid: ${(err as Error).message}`);
+  }
+
+  const styleData = await buildStyleData(
+    {
+      id: style.id,
+      rawData: style.rawData,
+      poNumber: style.poNumber,
+      cartonEan: style.cartonEan,
+      mondayBoardId: style.mondayBoardId,
+      supplier: style.supplier,
+      eans: style.eans,
+      customer: { name: style.customer.name, config: style.customer.config },
+      qrImage: style.qrImage ? { image: style.qrImage.image } : null,
+    },
+    prodSpec,
+    config,
+  );
+
+  // Outputs: the prod spec's enabled outputs (the operator's explicit
+  // pick), falling back to DEFAULT_OUTPUTS for an unconfigured spec — the
+  // same selection rule the runner applies. No per-output scoping: a test
+  // always renders the full enabled set.
+  const outputs: ProdSpecOutput[] = (() => {
+    const parsed = parseProdSpecOutputs(prodSpec.outputs);
+    const enabled = parsed.filter((o) => o.enabled !== false);
+    return enabled.length > 0 ? enabled : DEFAULT_OUTPUTS;
+  })();
+
+  const infoAreaSizes = await loadInfoAreaSizeMap();
+  const outputDocs: TestBundleDoc[] = [];
+  // One row per OUTPUT for the cover's document table — built as we render
+  // so the cover reflects the real generated list (and real file counts).
+  const docSummaries: BundleDocSummary[] = [];
+
+  for (const output of outputs) {
+    const variant = resolveOutputVariant(output);
+    if (!variant) {
+      warnings.push(
+        `Output "${output.variantKey}" was skipped — it is no longer in the variant registry (a removed template or unpublished layout).`,
+      );
+      continue;
+    }
+    try {
+      // Per-output pins + carton barcode preference on a copy; the base
+      // StyleData is shared across this style's outputs (runner-identical).
+      const renderStyle = applyCartonBarcodePrefs(
+        applyFieldOverrides(styleData, output.fieldOverrides),
+        output,
+      );
+      // Printed size: info-area size override when applicable, else the
+      // output's own dims.
+      const dims = effectiveOutputDims(output, variant.isInfoArea ?? false, infoAreaSizes);
+
+      // Multi-document variant (Output Builder repeat-per-EAN): one PDF per
+      // returned doc.
+      if (!variant.staticPdf && variant.renderMany) {
+        const parts = await variant.renderMany(renderStyle, dims);
+        for (const doc of parts) {
+          const defaultName = defaultArtifactFileName(variant, styleData.styleNumber).replace(
+            /\.pdf$/,
+            `-${doc.suffix}.pdf`,
+          );
+          outputDocs.push({
+            kind: "output",
+            variantKey: parts.length > 1 ? `${variant.key}#${doc.suffix}` : variant.key,
+            name: parts.length > 1 ? `${variant.name} · ${doc.suffix}` : variant.name,
+            fileName: doc.fileName ?? defaultName,
+            widthMm: dims.widthMm,
+            heightMm: dims.heightMm,
+            staticPdf: false,
+            placeholderCount: countPlaceholderMarkers(doc.html),
+            pdf: await renderPdf({ html: doc.html }),
+            error: null,
+          });
+        }
+        docSummaries.push({
+          displayName: variant.name,
+          widthMm: dims.widthMm,
+          heightMm: dims.heightMm,
+          fileCount: parts.length,
+        });
+        continue;
+      }
+
+      // Single-document variant — static-pdf passthrough or HTML → PDF.
+      let pdf: Buffer;
+      let placeholderCount = 0;
+      if (variant.staticPdf) {
+        pdf = await variant.staticPdf();
+      } else {
+        const html = await variant.render(renderStyle, dims);
+        placeholderCount = countPlaceholderMarkers(html);
+        pdf = await renderPdf({ html });
+      }
+      outputDocs.push({
+        kind: "output",
+        variantKey: variant.key,
+        name: variant.name,
+        fileName:
+          variant.fileNameFor?.(renderStyle) ??
+          defaultArtifactFileName(variant, styleData.styleNumber),
+        widthMm: dims.widthMm,
+        heightMm: dims.heightMm,
+        staticPdf: Boolean(variant.staticPdf),
+        placeholderCount,
+        pdf,
+        error: null,
+      });
+      docSummaries.push({
+        displayName: variant.name,
+        widthMm: dims.widthMm,
+        heightMm: dims.heightMm,
+        fileCount: 1,
+      });
+    } catch (err) {
+      // Resilient: surface the broken output as a card, keep going.
+      outputDocs.push({
+        kind: "output",
+        variantKey: variant.key,
+        name: variant.name,
+        fileName: null,
+        widthMm: output.widthMm,
+        heightMm: output.heightMm,
+        staticPdf: Boolean(variant.staticPdf),
+        placeholderCount: 0,
+        pdf: null,
+        error: (err as Error).message,
+      });
+    }
+  }
+
+  // Cover (with general information appended inside it) — rendered AFTER
+  // the outputs so its document table reflects the final list, presented
+  // FIRST so it opens the bundle. Runner-identical framing.
+  const businessAreaName = style.businessAreaRef?.name ?? style.businessArea ?? null;
+  const slug = styleData.styleNumber.replace(/[^a-z0-9-]+/gi, "-").toLowerCase();
+  const pageSettings = parseBundlePageSettings(prodSpec.bundlePageSettings);
+  const generalInfoMd = prodSpec.generalInfoMd?.trim();
+  let coverDoc: TestBundleDoc;
+  try {
+    let coverHtml = renderCoverPageHtml({
+      customerName: style.customer.name,
+      businessArea: businessAreaName,
+      styleName: style.name,
+      styleNumber: styleData.styleNumber,
+      poNumber: style.poNumber ?? null,
+      supplierName: style.supplier?.name ?? null,
+      generatedAt: new Date(),
+      docs: docSummaries,
+      settings: pageSettings.cover,
+      generalInfo: generalInfoMd
+        ? { markdown: generalInfoMd, settings: pageSettings.generalInfo }
+        : null,
+    });
+    // Inline general-info image URLs to data URLs — page.setContent() can't
+    // fetch a bare /api path (same as the runner + cover preview).
+    if (generalInfoMd) coverHtml = await inlineProdSpecImages(coverHtml, prodSpec.id);
+    coverDoc = {
+      kind: "cover",
+      variantKey: COVER_VARIANT_KEY,
+      name: generalInfoMd ? "Cover page · incl. general information" : "Cover page",
+      fileName: `00-${slug}-cover-page.pdf`,
+      widthMm: 210,
+      heightMm: 297,
+      staticPdf: false,
+      placeholderCount: 0,
+      pdf: await renderPdf({ html: coverHtml }),
+      error: null,
+    };
+  } catch (err) {
+    coverDoc = {
+      kind: "cover",
+      variantKey: COVER_VARIANT_KEY,
+      name: "Cover page",
+      fileName: null,
+      widthMm: 210,
+      heightMm: 297,
+      staticPdf: false,
+      placeholderCount: 0,
+      pdf: null,
+      error: (err as Error).message,
+    };
+  }
+
+  // Standalone general-information document (01-…). The runner ships this as
+  // its own bundle asset IN ADDITION to the copy embedded inside the cover,
+  // so the test mirrors that. (If/when the cover-only GI refactor lands on
+  // this branch, drop this block to stay in sync with the runner.)
+  let giDoc: TestBundleDoc | null = null;
+  if (generalInfoMd) {
+    try {
+      let infoHtml = renderGeneralInfoHtml({
+        markdown: generalInfoMd,
+        customerName: style.customer.name,
+        businessArea: businessAreaName,
+        settings: pageSettings.generalInfo,
+      });
+      infoHtml = await inlineProdSpecImages(infoHtml, prodSpec.id);
+      giDoc = {
+        kind: "general-info",
+        variantKey: GENERAL_INFO_VARIANT_KEY,
+        name: "General information",
+        fileName: `01-${slug}-general-information.pdf`,
+        widthMm: 210,
+        heightMm: 297,
+        staticPdf: false,
+        placeholderCount: 0,
+        pdf: await renderPdf({ html: infoHtml }),
+        error: null,
+      };
+    } catch (err) {
+      giDoc = {
+        kind: "general-info",
+        variantKey: GENERAL_INFO_VARIANT_KEY,
+        name: "General information",
+        fileName: null,
+        widthMm: 210,
+        heightMm: 297,
+        staticPdf: false,
+        placeholderCount: 0,
+        pdf: null,
+        error: (err as Error).message,
+      };
+    }
+  }
+
+  return {
+    style: {
+      id: style.id,
+      name: style.name,
+      styleNumber: styleData.styleNumber,
+      poNumber: style.poNumber ?? null,
+    },
+    // Order mirrors the runner's bundle assets: 00 cover, 01 general info,
+    // then the outputs.
+    docs: [coverDoc, ...(giDoc ? [giDoc] : []), ...outputDocs],
+    warnings,
+  };
+}
+
+// Caller-error sentinel — the route maps this to a 400/404 with the
+// message, vs. an unexpected 500 for anything else.
+export class TestBundleError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TestBundleError";
+  }
+}

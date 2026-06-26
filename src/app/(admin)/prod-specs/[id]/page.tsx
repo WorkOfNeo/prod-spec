@@ -47,17 +47,26 @@ export default async function ProdSpecDetailPage({
   });
   if (!prodSpec) notFound();
 
-  const [languages, careLabels, washSymbolRows, dict, docTypeLabels] = await Promise.all([
-    listActiveLanguages(),
-    loadCareLabels(),
-    db.washSymbol.findMany({
-      where: { active: true },
-      orderBy: { code: "asc" },
-      select: { code: true, name: true, action: true, restrictive: true },
-    }),
-    loadTranslationDictionary(),
-    loadDocTypeLabels(),
-  ]);
+  const [languages, careLabels, washSymbolRows, dict, docTypeLabels, testStyles] =
+    await Promise.all([
+      listActiveLanguages(),
+      loadCareLabels(),
+      db.washSymbol.findMany({
+        where: { active: true },
+        orderBy: { code: "asc" },
+        select: { code: true, name: true, action: true, restrictive: true },
+      }),
+      loadTranslationDictionary(),
+      loadDocTypeLabels(),
+      // Styles linked to this prod spec — the Test tab's style picker. Most
+      // recent first; archived/deleted hidden to match the rest of the app.
+      db.style.findMany({
+        where: { prodSpecId: id, deletedAt: null, archivedAt: null },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true, name: true, poNumber: true, status: true, completionPct: true },
+        take: 500,
+      }),
+    ]);
 
   // Per care label: its Translation-board entry ({ lang → text }) so the
   // "generated from standard" panel can compose lines + flag coverage gaps
@@ -101,7 +110,16 @@ export default async function ProdSpecDetailPage({
 
       <ProdSpecEditor
         prodSpecId={prodSpec.id}
-        initialTab={tab === "outputs" ? "outputs" : tab === "cover" ? "cover" : "general"}
+        styles={testStyles}
+        initialTab={
+          tab === "outputs"
+            ? "outputs"
+            : tab === "cover"
+              ? "cover"
+              : tab === "test"
+                ? "test"
+                : "general"
+        }
         initialName={prodSpec.name}
         initialActive={prodSpec.active}
         initialThreshold={prodSpec.autoGenerateThresholdPct}
