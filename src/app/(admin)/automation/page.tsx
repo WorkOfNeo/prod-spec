@@ -10,6 +10,7 @@ import {
 import { eanStatusMeta, MAX_EAN_ATTEMPTS } from "@/lib/po/ean-status-meta";
 import { RunNowButton } from "./run-now-button";
 import { PoCutoffControl } from "./po-cutoff-control";
+import { RerunResolvedButton } from "./rerun-resolved-button";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +77,7 @@ export default async function AutomationPage({
     styleGroups,
     readyToGen,
     generatedStyles,
+    rerunnableResolved,
   ] = await Promise.all([
     getPoEanAutoRunEnabled(),
     getAutoGenerateEnabled(),
@@ -125,6 +127,15 @@ export default async function AutomationPage({
     // "Styles generated": at least one output produced (a non-FAILED asset).
     db.style.count({
       where: { jobs: { some: { status: { not: "FAILED" }, assets: { some: {} } } } },
+    }),
+    // Already-resolved styles the "Re-run resolved" button would re-queue —
+    // bounded by the PO cutoff so the count matches what actually re-runs.
+    db.style.count({
+      where: {
+        poNumber: { not: null },
+        eanStatus: { in: ["RESOLVED", "PARTIAL"] },
+        ...(minPo !== null ? { poSeq: { gte: minPo } } : {}),
+      },
     }),
   ]);
 
@@ -223,7 +234,13 @@ export default async function AutomationPage({
       {/* Queue depths */}
       <div className="mb-6 grid gap-6 md:grid-cols-2">
         <div>
-          <h2 className="mb-2 text-sm font-semibold text-zinc-900">EAN queue</h2>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-zinc-900">EAN queue</h2>
+            {/* Re-queue every resolved style so the runner re-scrapes it with
+                the latest matching logic (the sweep never re-touches resolved
+                rows). Bounded by the PO cutoff, same as auto-scrape. */}
+            <RerunResolvedButton count={rerunnableResolved} cutoff={minPo} />
+          </div>
           {/* Each chip deep-links to /po-eans filtered to that set, where the
               rows can be re-resolved (the gave-up set in bulk). */}
           <div className="flex flex-wrap gap-2">
