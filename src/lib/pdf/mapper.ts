@@ -77,6 +77,7 @@ export function mapMondayItemToStyleData(
       name: readField("colourName"),
       code: readField("colourCode"),
     },
+    productGroup: readField("productGroup") || undefined,
     price: parsePrice(readField("price")),
     supplierEmail: readField("supplierEmail") || undefined,
     poNumber: readField("poNumber") || undefined,

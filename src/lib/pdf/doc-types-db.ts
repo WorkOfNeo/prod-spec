@@ -1,5 +1,10 @@
 import { db } from "@/lib/db";
 import { DEFAULT_DOC_TYPES, type DocTypeEntry } from "./doc-types";
+import {
+  parseExclusionRules,
+  type DocTypeRulesMap,
+  type ExclusionRule,
+} from "@/lib/outputs/exclusion";
 
 // =====================================================
 // Doc-type catalogue loader (SERVER-ONLY — imports db).
@@ -40,6 +45,31 @@ export async function loadDocTypeLabels(): Promise<Record<string, string>> {
   return Object.fromEntries(types.map((t) => [t.value, t.label]));
 }
 
+// docType → its keyword exclusion rules. Same resilience as loadDocTypes:
+// the `exclusionRules` column is additive, so a read before db:deploy (or a
+// stale client) degrades to "no rules" — generation proceeds normally and
+// nothing is excluded until the migration lands.
+let warnedRulesUnavailable = false;
+export async function loadDocTypeExclusionRules(): Promise<DocTypeRulesMap> {
+  try {
+    const rows = await db.docTypeDef.findMany({ select: { value: true, exclusionRules: true } });
+    const out: DocTypeRulesMap = {};
+    for (const r of rows) {
+      const rules = parseExclusionRules(r.exclusionRules);
+      if (rules.length > 0) out[r.value] = rules;
+    }
+    return out;
+  } catch (err) {
+    if (!warnedRulesUnavailable) {
+      warnedRulesUnavailable = true;
+      console.warn(
+        `[doc-types] could not load exclusion rules (is the exclusionRules migration applied? npm run db:deploy): ${(err as Error).message}`,
+      );
+    }
+    return {};
+  }
+}
+
 export type DocTypeWithUsage = DocTypeEntry & {
   usage: {
     layouts: number; // Output Builder layouts typed with the value
@@ -47,6 +77,8 @@ export type DocTypeWithUsage = DocTypeEntry & {
     templates: number; // legacy coded-template rows
     builtinVariants: boolean; // a CODED registry variant uses it (code-pinned)
   };
+  // Keyword exclusion rules for this type, surfaced into the manager editor.
+  rules: ExclusionRule[];
 };
 
 // Catalogue + usage counts — drives the management card and its delete
@@ -54,7 +86,7 @@ export type DocTypeWithUsage = DocTypeEntry & {
 // never disagree). `codeValues` are the docTypes carried by coded
 // template variants; passed in to keep this module registry-agnostic.
 export async function loadDocTypesWithUsage(codeValues: Set<string>): Promise<DocTypeWithUsage[]> {
-  const types = await loadDocTypes();
+  const [types, rulesByType] = await Promise.all([loadDocTypes(), loadDocTypeExclusionRules()]);
   try {
     const [layoutCounts, assetCounts, templateCounts] = await Promise.all([
       db.outputLayout.groupBy({ by: ["docType"], _count: { _all: true } }),
@@ -71,12 +103,14 @@ export async function loadDocTypesWithUsage(codeValues: Set<string>): Promise<Do
         templates: count(templateCounts, t.value),
         builtinVariants: codeValues.has(t.value),
       },
+      rules: rulesByType[t.value] ?? [],
     }));
   } catch {
     // Counts are advisory (the DELETE route re-checks) — degrade to zeros.
     return types.map((t) => ({
       ...t,
       usage: { layouts: 0, assets: 0, templates: 0, builtinVariants: codeValues.has(t.value) },
+      rules: rulesByType[t.value] ?? [],
     }));
   }
 }

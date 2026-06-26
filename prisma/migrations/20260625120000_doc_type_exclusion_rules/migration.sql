@@ -1,0 +1,12 @@
+-- Keyword exclusion rules per document type. A rule says "don't generate any
+-- output of this type for a style when a synced field matches a keyword" — e.g.
+-- Wash care → Product group contains "shoes"/"sock" means sock/shoe styles
+-- skip wash-care (and the review shows why). Stored as a JSON array of
+--   { field, op: "contains"|"equals", keywords: string[] }
+-- on each doc_types row. See src/lib/outputs/exclusion.ts.
+--
+-- Purely additive — one defaulted column, no existing rows touched — so it
+-- applies cleanly to the already-live database via `prisma migrate deploy`.
+-- Written idempotently (IF NOT EXISTS) to match the repo convention and stay
+-- safe to re-run. Reads degrade to "no rules" until this is applied.
+ALTER TABLE "doc_types" ADD COLUMN IF NOT EXISTS "exclusionRules" JSONB NOT NULL DEFAULT '[]';

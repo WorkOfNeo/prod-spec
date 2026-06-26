@@ -45,6 +45,7 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   },
   { key: "colourName", label: "Colour name", group: "Style", kind: "text", example: "Navy" },
   { key: "colourCode", label: "Colour code", group: "Style", kind: "text", example: "19-3920" },
+  { key: "productGroup", label: "Product group", group: "Style", kind: "text", example: "3-Pack Socks" },
   { key: "campaignWeek", label: "Campaign week", group: "Style", kind: "text", example: "C182813" },
   { key: "sizes", label: "Sizes (all)", group: "Style", kind: "text", example: "86/92, 98/104, 110/116" },
   {

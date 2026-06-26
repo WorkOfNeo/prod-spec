@@ -23,7 +23,8 @@ export type OutputState =
   | "TO_REVIEW" // generated, pending a decision
   | "BLOCKED" // generated but a placeholder blocks approval
   | "APPROVED"
-  | "REJECTED";
+  | "REJECTED"
+  | "EXCLUDED"; // a doc-type keyword rule skips this output for this style — decided, not pending
 
 export type CurrentOutput = {
   variantKey: string;
@@ -49,6 +50,9 @@ export type CurrentOutput = {
   // Lets the review page tuck decided outputs from prior runs into a history
   // accordion without ever burying something still pending.
   fromLatestGeneration: boolean;
+  // Set when state === "EXCLUDED": why this output won't be generated for this
+  // style (the matched field, keyword and rule). Null otherwise.
+  exclusionReason: string | null;
 };
 
 export type StyleOutputRollup = {
@@ -61,8 +65,11 @@ export type StyleOutputRollup = {
   blocked: number;
   approved: number;
   rejected: number;
+  excluded: number;
   // Your definition: a Prod Spec is "complete" only when EVERY declared
   // output has been generated; "fully approved" when all are approved.
+  // Excluded outputs (skipped by a doc-type keyword rule) count as DECIDED for
+  // both — a sock style with wash-care excluded can still complete and ship.
   complete: boolean;
   fullyApproved: boolean;
 };
@@ -102,9 +109,13 @@ export function rollupOutputs(outputs: CurrentOutput[]): StyleOutputRollup {
     blocked: count("BLOCKED"),
     approved: count("APPROVED"),
     rejected: count("REJECTED"),
-    // "Complete" = every declared output has been generated (has an asset).
-    complete: outputs.length > 0 && outputs.every((o) => o.jobAssetId != null),
-    fullyApproved: outputs.length > 0 && outputs.every((o) => o.state === "APPROVED"),
+    excluded: count("EXCLUDED"),
+    // "Complete" = every declared output is decided: generated (has an asset)
+    // OR excluded by a doc-type rule (deliberately not generated).
+    complete:
+      outputs.length > 0 && outputs.every((o) => o.jobAssetId != null || o.state === "EXCLUDED"),
+    fullyApproved:
+      outputs.length > 0 && outputs.every((o) => o.state === "APPROVED" || o.state === "EXCLUDED"),
   };
 }
 
@@ -124,6 +135,10 @@ const SLOT_STATE_PRIORITY: OutputState[] = [
   "BLOCKED",
   "TO_REVIEW",
   "APPROVED",
+  // Excluded slots are decided (a doc-type rule skips them) — settled, like
+  // APPROVED. Listed so an all-excluded slot buckets as EXCLUDED rather than
+  // falling through to AWAITING_DATA and reading as still-pending.
+  "EXCLUDED",
   "READY_TO_GENERATE",
   "AWAITING_DATA",
 ];
@@ -152,6 +167,7 @@ export function rollupOutputSlots(outputs: CurrentOutput[]): StyleOutputRollup {
     BLOCKED: 0,
     APPROVED: 0,
     REJECTED: 0,
+    EXCLUDED: 0,
   };
   let generated = 0;
   for (const docs of byBase.values()) {
@@ -172,8 +188,12 @@ export function rollupOutputSlots(outputs: CurrentOutput[]): StyleOutputRollup {
     blocked: bucket.BLOCKED,
     approved: bucket.APPROVED,
     rejected: bucket.REJECTED,
-    complete: total > 0 && generated === total,
-    fullyApproved: total > 0 && bucket.APPROVED === total,
+    excluded: bucket.EXCLUDED,
+    // Excluded slots are decided (deliberately not generated), so they count
+    // toward complete / fully-approved alongside generated/approved ones — a
+    // sock style with wash-care excluded can still complete and ship.
+    complete: total > 0 && generated + bucket.EXCLUDED === total,
+    fullyApproved: total > 0 && bucket.APPROVED + bucket.EXCLUDED === total,
   };
 }
 
@@ -185,10 +205,18 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
   const { ensureLayoutVariantsLoaded } = await import("@/lib/output-layouts/variants");
   const { outputReadinessForStyle } = await import("@/lib/styles/output-readiness");
   const { getVariant } = await import("@/lib/pdf/template-registry");
+  const { loadDocTypeExclusionRules, loadDocTypeLabels } = await import("@/lib/pdf/doc-types-db");
 
   // ProdSpec.outputs may reference Output Builder layouts (`layout:<id>`) —
   // load them before the readiness walk resolves variants.
   await ensureLayoutVariantsLoaded();
+
+  // Doc-type keyword rules drive the EXCLUDED state below; labels flavour the
+  // reason text. Both degrade to empty before db:deploy (nothing excluded).
+  const [exclusionRules, docTypeLabels] = await Promise.all([
+    loadDocTypeExclusionRules(),
+    loadDocTypeLabels(),
+  ]);
 
   const style = await db.style.findUnique({
     where: { id: styleId },
@@ -204,7 +232,7 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
   });
   if (!style) return [];
 
-  const readiness = outputReadinessForStyle(style as ReadinessStyle);
+  const readiness = outputReadinessForStyle(style as ReadinessStyle, exclusionRules, docTypeLabels);
 
   // Every non-FAILED asset, newest job first.
   const assets = await db.jobAsset.findMany({
@@ -290,20 +318,26 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
       placeholderCount: a.placeholderCount,
       generatedAt: a.createdAt,
       fromLatestGeneration: latestJobId != null && a.jobId === latestJobId,
+      exclusionReason: null,
     });
   }
 
-  // 2. Declared outputs with nothing generated yet → one row each.
+  // 2. Declared outputs with nothing generated yet → one row each. An output
+  //    whose doc type matches a keyword rule for this style is EXCLUDED
+  //    (decided, with a reason) rather than "awaiting data" forever.
   for (const o of readiness) {
     const b = base(o.variantKey);
     if (generatedBases.has(b)) continue;
     const generating = generatingAll || generatingSet.has(b);
+    // Exclusion wins over generating/ready: a matched rule means we never
+    // render it, even mid-regen.
+    const excluded = o.excluded === true;
     outputs.push({
       variantKey: o.variantKey,
       name: o.name,
-      state: deriveOutputState({ ready: o.ready, generating, latest: null }),
+      state: excluded ? "EXCLUDED" : deriveOutputState({ ready: o.ready, generating, latest: null }),
       ready: o.ready,
-      missing: o.missing,
+      missing: excluded ? [] : o.missing,
       docType: getVariant(b)?.docType ?? "OTHER",
       jobId: null,
       fileName: null,
@@ -315,6 +349,7 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
       placeholderCount: 0,
       generatedAt: null,
       fromLatestGeneration: false,
+      exclusionReason: excluded ? (o.exclusionReason ?? null) : null,
     });
   }
 

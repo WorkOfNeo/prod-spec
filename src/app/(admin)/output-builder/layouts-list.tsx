@@ -4,6 +4,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { BLANK_BA_VALUES } from "@/lib/import/heuristics";
+import { DocTypesButton } from "./doc-types-dialog";
+import type { ManagedDocType, ExclusionFieldOption } from "./doc-types-manager";
 
 // Collapse blank / "–" business-area names (live DB carries literal "–"
 // areas) into one selectable "(blank)" bucket. Plain ASCII sentinel.
@@ -59,10 +61,19 @@ export function LayoutsList({
   layouts,
   contrastLogoFound,
   contrastAddressLogoFound,
+  docTypes,
+  exclusionFields,
+  openDocTypes = false,
 }: {
   layouts: LayoutRow[];
   contrastLogoFound: boolean;
   contrastAddressLogoFound: boolean;
+  // Doc-type catalogue (+ exclusion rules) and the synced fields rules can
+  // match on — drive the "Document types" popup next to "New layout".
+  docTypes: ManagedDocType[];
+  exclusionFields: ExclusionFieldOption[];
+  // Open the popup on mount (deep link from the editor's "Manage types").
+  openDocTypes?: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -320,14 +331,21 @@ export function LayoutsList({
             layouts appear in the Prod Spec output picker; they only generate once linked there.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={createLayout}
-          disabled={busy !== null}
-          className="rounded-md bg-zinc-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
-        >
-          {busy === "new" ? "Creating…" : "New layout"}
-        </button>
+        <div className="flex items-center gap-2">
+          <DocTypesButton
+            initialTypes={docTypes}
+            fields={exclusionFields}
+            defaultOpen={openDocTypes}
+          />
+          <button
+            type="button"
+            onClick={createLayout}
+            disabled={busy !== null}
+            className="rounded-md bg-zinc-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
+          >
+            {busy === "new" ? "Creating…" : "New layout"}
+          </button>
+        </div>
       </div>
 
       {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}

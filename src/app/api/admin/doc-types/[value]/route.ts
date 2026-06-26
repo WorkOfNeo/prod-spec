@@ -3,15 +3,27 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-server";
 import { TEMPLATE_VARIANTS } from "@/lib/pdf/template-registry";
+import { parseExclusionRules, type ExclusionRule } from "@/lib/outputs/exclusion";
 
 export const runtime = "nodejs";
 
-const PATCH_SCHEMA = z.object({
-  label: z.string().min(2).max(60),
+const RULE_SCHEMA = z.object({
+  field: z.string().min(1).max(60),
+  op: z.enum(["contains", "equals"]),
+  keywords: z.array(z.string().max(120)).max(50),
 });
 
-// Label rename — display-only, safe any time (the value is the storage
-// key and stays immutable).
+// Either a label rename, the exclusion rules, or both. Both are safe any time
+// (the `value` storage key stays immutable).
+const PATCH_SCHEMA = z
+  .object({
+    label: z.string().min(2).max(60).optional(),
+    exclusionRules: z.array(RULE_SCHEMA).max(50).optional(),
+  })
+  .refine((d) => d.label !== undefined || d.exclusionRules !== undefined, {
+    message: "Provide a label and/or exclusionRules",
+  });
+
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ value: string }> }) {
   const auth = await requireRole(["ADMIN"]);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -27,13 +39,30 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ value: st
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid body", details: parsed.error.flatten() }, { status: 400 });
   }
+
+  const data: { label?: string; exclusionRules?: ExclusionRule[] } = {};
+  if (parsed.data.label !== undefined) data.label = parsed.data.label.trim();
+  // Normalise through the shared parser (trims keywords, drops blanks/empties)
+  // so the stored JSON is always clean regardless of what the client sent.
+  if (parsed.data.exclusionRules !== undefined) {
+    data.exclusionRules = parseExclusionRules(parsed.data.exclusionRules);
+  }
+
   try {
-    const row = await db.docTypeDef.update({
-      where: { value },
-      data: { label: parsed.data.label.trim() },
+    const row = await db.docTypeDef.update({ where: { value }, data });
+    return NextResponse.json({
+      type: { value: row.value, label: row.label, rules: parseExclusionRules(row.exclusionRules) },
     });
-    return NextResponse.json({ type: { value: row.value, label: row.label } });
-  } catch {
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    // P2022 = column missing → the exclusionRules migration isn't applied yet.
+    if (code === "P2022") {
+      return NextResponse.json(
+        { error: "exclusionRules column missing — apply the pending migration (npm run db:deploy)" },
+        { status: 503 },
+      );
+    }
+    if (code === "P2025") return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 }

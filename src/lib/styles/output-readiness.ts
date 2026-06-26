@@ -4,6 +4,13 @@ import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config"
 import { parseProdSpecColumnMapping, parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { getVariant } from "@/lib/pdf/template-registry";
 import { pinnedColumnKeys } from "@/lib/pdf/pins-meta";
+import { docTypeLabel } from "@/lib/pdf/doc-types";
+import { loadDocTypeExclusionRules } from "@/lib/pdf/doc-types-db";
+import {
+  matchExclusionRules,
+  exclusionReasonText,
+  type DocTypeRulesMap,
+} from "@/lib/outputs/exclusion";
 import type { MondayItem } from "@/lib/monday/client";
 import { effectiveStyleItem, resolveMappedField, STYLE_FIELD_LABELS } from "./resolved-fields";
 import type { DetailFieldKey, MissingDetailField } from "./detail-fields";
@@ -21,6 +28,11 @@ export type OutputReadiness = {
   name: string;
   ready: boolean;
   missing: MissingDetailField[];
+  // A doc-type keyword rule matched this style → this output won't be
+  // generated (and that's intentional). When excluded, `ready`/`missing` are
+  // moot — callers treat the output as decided, not as pending work.
+  excluded?: boolean;
+  exclusionReason?: string;
 };
 
 // The minimal style shape readiness needs. Mirrors what the auto-enqueue
@@ -40,7 +52,8 @@ export type ReadinessStyle = {
 // The effective field mapping the runner actually reads through: the
 // ProdSpec.columnMapping override when it carries any keys, otherwise the
 // Customer mapping. Mirrors runner.ts so readiness and the real render agree.
-function effectiveMapping(style: ReadinessStyle): ColumnMapping {
+// Exported so the exclusion match resolves fields identically everywhere.
+export function effectiveMapping(style: ReadinessStyle): ColumnMapping {
   const customerMapping = parseCustomerConfig(style.customer.config).columnMapping;
   const psRaw = style.prodSpec?.columnMapping;
   const hasProdSpecMapping =
@@ -58,7 +71,14 @@ function effectiveMapping(style: ReadinessStyle): ColumnMapping {
 //   • Pins — a field pinned on the output entry (`fieldOverrides`, set in
 //     the ProdSpec editor) counts as satisfied: the pinned constant renders
 //     regardless of the row.
-export function outputReadinessForStyle(style: ReadinessStyle): OutputReadiness[] {
+export function outputReadinessForStyle(
+  style: ReadinessStyle,
+  // Doc-type keyword exclusion rules (loadDocTypeExclusionRules). Optional so
+  // existing callers stay exclusion-agnostic; pass them to mark outputs whose
+  // type matches as excluded. `docTypeLabels` only flavours the reason text.
+  rules?: DocTypeRulesMap,
+  docTypeLabels?: Record<string, string>,
+): OutputReadiness[] {
   const enabledOutputs = parseProdSpecOutputs(style.prodSpec?.outputs ?? []).filter(
     (o) => o.enabled !== false,
   );
@@ -67,6 +87,7 @@ export function outputReadinessForStyle(style: ReadinessStyle): OutputReadiness[
   const mapping = effectiveMapping(style);
   const item = effectiveStyleItem(style) as MondayItem | null;
   const resolve = (f: keyof ColumnMapping) => resolveMappedField(item, mapping, f);
+  const hasRules = rules != null && Object.keys(rules).length > 0;
 
   return enabledOutputs.map((output) => {
     const variant = getVariant(output.variantKey);
@@ -77,11 +98,29 @@ export function outputReadinessForStyle(style: ReadinessStyle): OutputReadiness[
     const missing = keys
       .filter((f) => !pinned.has(f) && !resolve(f).trim())
       .map((f) => ({ field: f, label: STYLE_FIELD_LABELS[f] }));
+    // Exclusion: does this output's document type carry a keyword rule that
+    // matches the style? Resolved through the SAME field resolver as
+    // readiness, so the runner (which also calls this) and the review page
+    // can never disagree on whether an output is skipped.
+    const docType = variant?.docType;
+    const hit =
+      hasRules && docType
+        ? matchExclusionRules(rules[docType], (f) => resolve(f as keyof ColumnMapping))
+        : null;
     return {
       variantKey: output.variantKey,
       name: variant?.name ?? output.variantKey,
       ready: missing.length === 0,
       missing,
+      ...(hit
+        ? {
+            excluded: true,
+            exclusionReason: exclusionReasonText(
+              hit,
+              docTypeLabel(docType ?? "", docTypeLabels),
+            ),
+          }
+        : {}),
     };
   });
 }
@@ -116,8 +155,13 @@ export async function pendingOutputKeysForStyle(
   });
   if (!style) return [];
 
-  const ready = outputReadinessForStyle(style)
-    .filter((o) => o.ready)
+  // Exclusion-aware: an excluded output is "ready" (its fields resolve) but
+  // must NEVER be enqueued — the runner would skip it, leaving it un-generated
+  // and forever "pending", which would re-trigger auto-runs (and NO_OUTPUTS
+  // failures when it's the only one left). Treat excluded as not-pending.
+  const rules = await loadDocTypeExclusionRules();
+  const ready = outputReadinessForStyle(style, rules)
+    .filter((o) => o.ready && !o.excluded)
     .map((o) => o.variantKey);
   if (ready.length === 0) return [];
 

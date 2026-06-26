@@ -118,6 +118,11 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
 
   // Reviewable = generated and not currently regenerating.
   const reviewable = outputs.filter((o) => o.jobAssetId != null && o.state !== "GENERATING");
+  // Excluded = deliberately skipped by a doc-type keyword rule (decided, not
+  // pending) — listed separately so they don't read as "still waiting". The
+  // readiness notice (PR #154) covers the missing-fields/queued/generating
+  // outputs, so there's no separate "not generated yet" list here anymore.
+  const excludedOutputs = outputs.filter((o) => o.state === "EXCLUDED");
   const pendingReviewable = reviewable.filter((o) => o.reviewStatus === "PENDING_REVIEW");
   const approveAssetIds = pendingReviewable
     .filter((o) => o.placeholderCount === 0 && o.jobAssetId)
@@ -137,6 +142,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     rollup.blocked > 0 ? `${rollup.blocked} blocked` : null,
     rollup.generating > 0 ? `${rollup.generating} generating` : null,
     notGeneratedCount > 0 ? `${notGeneratedCount} not generated` : null,
+    rollup.excluded > 0 ? `${rollup.excluded} excluded` : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -329,6 +335,32 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         </div>
       ) : null}
 
+      {excludedOutputs.length > 0 ? (
+        <div className="mt-3">
+          <DocTypeAccordion
+            label="Excluded — won't be generated"
+            count={excludedOutputs.length}
+            rightHint="skipped by a document-type keyword rule"
+            defaultOpen={false}
+          >
+            <ul className="divide-y divide-zinc-100 text-sm">
+              {excludedOutputs.map((o) => (
+                <li key={o.variantKey} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                  <span className="font-medium text-zinc-700">{o.name}</span>
+                  <span className="flex items-center gap-2 text-xs">
+                    {o.exclusionReason ? (
+                      <span className="text-amber-700">{o.exclusionReason}</span>
+                    ) : null}
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">
+                      Excluded
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </DocTypeAccordion>
+        </div>
+      ) : null}
     </div>
   );
 }
