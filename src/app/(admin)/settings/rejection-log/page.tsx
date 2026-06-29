@@ -38,17 +38,37 @@ const MAX_TICKETS = 2000;
 // Tickets carry snapshots (the runner deletes assets on every re-run); each
 // rejected + latest generated assets are fetched on demand when expanded (see
 // the /assets route) rather than enriched up front.
-export default async function RejectionLogPage() {
+// Two views over the same backlog, split by where the admin's work stands:
+//   • Active  = OPEN + IN_PROGRESS — rejections still needing work (the workbench).
+//   • History = FIXED + RESOLVED — marked fixed (now the reviewer's to re-review)
+//     or approved. A re-rejection flips a FIXED ticket back to OPEN, so it
+//     returns to Active on its own. Queried per view so the cap can't let
+//     resolved threads crowd out the open ones.
+const ACTIVE_STATUSES = ["OPEN", "IN_PROGRESS"] as const;
+const HISTORY_STATUSES = ["FIXED", "RESOLVED"] as const;
+
+export default async function RejectionLogPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
   await requireAdminPage();
 
-  const [tickets, totalCount] = await Promise.all([
+  const view = (await searchParams).view === "history" ? "history" : "active";
+  const statuses = view === "history" ? HISTORY_STATUSES : ACTIVE_STATUSES;
+
+  const [tickets, totalCount, activeCount, historyCount] = await Promise.all([
     db.rejectionTicket.findMany({
+      where: { status: { in: [...statuses] } },
       orderBy: { createdAt: "desc" },
       take: MAX_TICKETS,
       include: { reportedBy: { select: { name: true, email: true } } },
     }),
-    db.rejectionTicket.count(),
+    db.rejectionTicket.count({ where: { status: { in: [...statuses] } } }),
+    db.rejectionTicket.count({ where: { status: { in: [...ACTIVE_STATUSES] } } }),
+    db.rejectionTicket.count({ where: { status: { in: [...HISTORY_STATUSES] } } }),
   ]);
+  const isHistory = view === "history";
 
   // Resolve each involved style's applied Prod Spec so cover / general-info
   // tickets can deep-link to the right editor tab (layout outputs don't need
@@ -226,22 +246,65 @@ export default async function RejectionLogPage() {
       .sort((a, b) => order(a) - order(b));
   }
 
+  // Tabs: Active is the workbench (default); History is the read-only record of
+  // fixed/resolved threads. Plain links (?view=) keep this a server component.
+  const tabs = [
+    { key: "active", label: "Active", count: activeCount, href: "/settings/rejection-log" },
+    { key: "history", label: "History", count: historyCount, href: "/settings/rejection-log?view=history" },
+  ] as const;
+
   return (
     <div className="px-8 py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Rejection log</h1>
       <p className="mt-1 max-w-3xl text-sm text-zinc-500">
-        Outputs rejected by the reviewer, with their comments. Work them here: <strong>Re-run</strong>{" "}
-        regenerates silently, <strong>Mark fixed &amp; notify</strong> re-runs and posts an in-app
-        notification telling the reviewer to take another look. Approving the output on the review screen
-        resolves its ticket automatically.
+        {isHistory ? (
+          <>
+            Rejections that have been <strong>marked fixed</strong> (now awaiting the reviewer&apos;s
+            re-review) or <strong>approved</strong>. A re-rejection sends a thread back to Active. This
+            view is read-only — work open rejections on the Active tab.
+          </>
+        ) : (
+          <>
+            Outputs rejected by the reviewer, with their comments. Work them here:{" "}
+            <strong>Re-run</strong> regenerates silently, <strong>Mark fixed &amp; notify</strong>{" "}
+            re-runs and posts an in-app notification telling the reviewer to take another look.
+            Approving the output on the review screen resolves its ticket automatically, moving it to
+            History.
+          </>
+        )}
       </p>
+
+      <div className="mt-4 flex gap-1 border-b border-zinc-200">
+        {tabs.map((t) => {
+          const active = t.key === view;
+          return (
+            <a
+              key={t.key}
+              href={t.href}
+              className={`-mb-px border-b-2 px-3 py-1.5 text-sm font-medium transition ${
+                active
+                  ? "border-zinc-900 text-zinc-900"
+                  : "border-transparent text-zinc-500 hover:text-zinc-800"
+              }`}
+            >
+              {t.label}{" "}
+              <span className={`tabular-nums ${active ? "text-zinc-500" : "text-zinc-400"}`}>
+                {t.count}
+              </span>
+            </a>
+          );
+        })}
+      </div>
+
       {totalCount > rows.length ? (
         <p className="mt-2 text-xs text-amber-700">
           Showing the {rows.length.toLocaleString()} most recent of {totalCount.toLocaleString()}{" "}
-          rejections — resolve older threads to clear the backlog.
+          {isHistory ? "fixed / resolved threads" : "open rejections"} — resolve older threads to
+          clear the backlog.
         </p>
       ) : null}
-      <TicketList rows={rows} styleOutputs={styleOutputs} />
+
+      <TicketList rows={rows} styleOutputs={isHistory ? {} : styleOutputs} view={view} />
     </div>
   );
 }

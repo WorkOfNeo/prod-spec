@@ -128,10 +128,15 @@ type StyleGroup = {
 export function TicketList({
   rows,
   styleOutputs,
+  view = "active",
 }: {
   rows: TicketRow[];
   styleOutputs: Record<string, StyleOutputView[]>;
+  // "active" = the workbench (OPEN/IN_PROGRESS, full actions). "history" =
+  // read-only FIXED/RESOLVED record — no regenerate / mark-fixed surfaces.
+  view?: "active" | "history";
 }) {
+  const isHistory = view === "history";
   const router = useRouter();
   const [query, setQuery] = useState("");
   // Per-style action state: which action is running, and its last result.
@@ -147,11 +152,15 @@ export function TicketList({
   // comment does NOT filter the list — it bulk-selects every actionable ticket
   // carrying that comment across all styles (see onSelectComments).
   const [selectedComments, setSelectedComments] = useState<string[]>([]);
-  // APPROVED + RESOLVED are hidden by default — the workbench shows actionable
-  // threads; their pill counts still give the at-a-glance overview.
-  const [enabled, setEnabled] = useState<Set<DisplayStatus>>(
-    new Set(["OPEN", "IN_PROGRESS", "FIXED"]),
+  // Status pills are scoped to the view: Active workbenches OPEN/IN_PROGRESS;
+  // History shows FIXED + (RESOLVED split into APPROVED/RESOLVED for display).
+  // All of the view's statuses start enabled — the tab is the coarse filter,
+  // the pills the fine one.
+  const viewStatuses = useMemo<DisplayStatus[]>(
+    () => (isHistory ? ["FIXED", "APPROVED", "RESOLVED"] : ["OPEN", "IN_PROGRESS"]),
+    [isHistory],
   );
+  const [enabled, setEnabled] = useState<Set<DisplayStatus>>(new Set(viewStatuses));
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<string | null>(null);
   const [assets, setAssets] = useState<Record<string, AssetState>>({});
@@ -521,7 +530,7 @@ export function TicketList({
           placeholder="Search style, PO, output, comment…"
           className="w-64 rounded-md border border-zinc-300 px-3 py-1.5 text-sm focus:ring-2 focus:ring-zinc-900 focus:outline-none"
         />
-        {DISPLAY_STATUSES.map((s) => (
+        {viewStatuses.map((s) => (
           <button
             key={s}
             type="button"
@@ -594,7 +603,9 @@ export function TicketList({
       {groups.length === 0 ? (
         <p className="mt-4 rounded-lg border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-400">
           {rows.length === 0
-            ? "No rejections yet — when a reviewer rejects an output, its ticket lands here."
+            ? isHistory
+              ? "Nothing here yet — tickets land in History once they're marked fixed or approved."
+              : "No open rejections — when a reviewer rejects an output, its ticket lands here."
             : "Nothing matches the current filters."}
         </p>
       ) : (
@@ -625,6 +636,7 @@ export function TicketList({
                 styleBusy={styleBusy[g.styleId] ?? null}
                 styleResult={styleResult[g.styleId] ?? null}
                 onStyleAct={(action) => styleAct(g.styleId, action)}
+                readOnly={isHistory}
               />
             ))}
           </div>
@@ -695,6 +707,7 @@ function GroupSection({
   styleBusy,
   styleResult,
   onStyleAct,
+  readOnly,
 }: {
   group: StyleGroup;
   open: boolean;
@@ -714,10 +727,15 @@ function GroupSection({
   styleBusy: StyleAction | null;
   styleResult: StyleResult | null;
   onStyleAct: (action: StyleAction) => void;
+  // History view: render the group + tickets read-only (no regenerate /
+  // mark-fixed bar, no selection column).
+  readOnly: boolean;
 }) {
-  const selectableIds = group.tickets
-    .filter((t) => t.status === "OPEN" || t.status === "IN_PROGRESS")
-    .map((t) => t.id);
+  const selectableIds = readOnly
+    ? []
+    : group.tickets
+        .filter((t) => t.status === "OPEN" || t.status === "IN_PROGRESS")
+        .map((t) => t.id);
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
   return (
     <div className="border-b border-zinc-200 last:border-b-0">
@@ -792,6 +810,7 @@ function GroupSection({
 
       {open ? (
         <>
+          {readOnly ? null : (
           <div className="border-t border-zinc-100 bg-zinc-50/60 px-3 py-2.5">
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -876,21 +895,24 @@ function GroupSection({
               </ul>
             ) : null}
           </div>
+          )}
 
           <div className="overflow-x-auto border-t border-zinc-100 bg-white">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-zinc-200 text-[11px] tracking-wide text-zinc-500 uppercase">
-                <th className="px-3 py-2">
-                  <input
-                    type="checkbox"
-                    className="h-3.5 w-3.5 cursor-pointer align-middle accent-violet-600"
-                    checked={allSelected}
-                    disabled={selectableIds.length === 0 || bulkBusy}
-                    onChange={(e) => onSetManySelected(selectableIds, e.target.checked)}
-                    title={allSelected ? "Deselect all in this style" : "Select all open tickets in this style"}
-                  />
-                </th>
+                {readOnly ? null : (
+                  <th className="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 cursor-pointer align-middle accent-violet-600"
+                      checked={allSelected}
+                      disabled={selectableIds.length === 0 || bulkBusy}
+                      onChange={(e) => onSetManySelected(selectableIds, e.target.checked)}
+                      title={allSelected ? "Deselect all in this style" : "Select all open tickets in this style"}
+                    />
+                  </th>
+                )}
                 <th className="px-3 py-2 font-semibold">Created</th>
                 <th className="px-3 py-2 font-semibold">Output</th>
                 <th className="px-3 py-2 font-semibold">Customer · BA</th>
@@ -914,6 +936,7 @@ function GroupSection({
                   selected={selected.has(row.id)}
                   onToggleSelect={() => onToggleSelect(row.id)}
                   bulkBusy={bulkBusy}
+                  readOnly={readOnly}
                 />
               ))}
             </tbody>
@@ -973,6 +996,7 @@ function Row({
   selected,
   onToggleSelect,
   bulkBusy,
+  readOnly,
 }: {
   row: TicketRow;
   expanded: boolean;
@@ -985,8 +1009,9 @@ function Row({
   selected: boolean;
   onToggleSelect: () => void;
   bulkBusy: boolean;
+  readOnly: boolean;
 }) {
-  const actionable = row.status === "OPEN" || row.status === "IN_PROGRESS";
+  const actionable = !readOnly && (row.status === "OPEN" || row.status === "IN_PROGRESS");
   const ds = displayStatusOf(row);
   const data = asset && typeof asset === "object" ? asset : null;
   const rejected = data?.rejected ?? null;
@@ -1000,18 +1025,20 @@ function Row({
         onClick={onToggle}
         className={`cursor-pointer border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50 ${expanded ? "bg-zinc-50" : ""}`}
       >
-        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-          {actionable ? (
-            <input
-              type="checkbox"
-              className="h-3.5 w-3.5 cursor-pointer align-middle accent-violet-600"
-              checked={selected}
-              disabled={bulkBusy}
-              onChange={onToggleSelect}
-              aria-label="Select ticket for bulk fix"
-            />
-          ) : null}
-        </td>
+        {readOnly ? null : (
+          <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+            {actionable ? (
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 cursor-pointer align-middle accent-violet-600"
+                checked={selected}
+                disabled={bulkBusy}
+                onChange={onToggleSelect}
+                aria-label="Select ticket for bulk fix"
+              />
+            ) : null}
+          </td>
+        )}
         <td className="px-3 py-2 whitespace-nowrap text-zinc-500">{row.createdAtLabel}</td>
         <td className="px-3 py-2 text-zinc-600">
           {row.outputName}
@@ -1055,7 +1082,7 @@ function Row({
       </tr>
       {expanded ? (
         <tr className="border-b border-zinc-100 last:border-b-0">
-          <td colSpan={7} className="bg-zinc-50 px-4 py-4">
+          <td colSpan={readOnly ? 6 : 7} className="bg-zinc-50 px-4 py-4">
             <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded-lg border border-zinc-200 bg-white p-3">
                 <div className="text-[10px] font-bold tracking-wide text-zinc-400 uppercase">
