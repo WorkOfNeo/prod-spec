@@ -3,7 +3,11 @@ import { renderPdf } from "@/lib/pdf/renderer";
 import { inlineProdSpecImages } from "@/lib/pdf/inline-images";
 import { ensureLayoutVariantsLoaded, layoutIdFromVariantKey } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
-import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
+import { outputReadinessForStyle, effectiveMapping } from "@/lib/styles/output-readiness";
+import { effectiveStyleItem, resolveMappedField } from "@/lib/styles/resolved-fields";
+import { loadDocTypeExclusionRules, loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
+import { matchExclusionRules, exclusionReasonText } from "@/lib/outputs/exclusion";
+import { docTypeLabel } from "@/lib/pdf/doc-types";
 import { applyCartonBarcodePrefs, applyFieldOverrides } from "@/lib/pdf/pins";
 import { countPlaceholderMarkers } from "@/lib/pdf/placeholders";
 import type { StyleData } from "@/lib/pdf/types";
@@ -19,7 +23,7 @@ import {
   type BundleDocSummary,
 } from "@/lib/pdf/bundle-pages";
 import type { TriggerSource } from "@/generated/prisma/enums";
-import { parseCustomerConfig } from "@/lib/customers/config";
+import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
 import {
   DEFAULT_OUTPUTS,
   parseBundlePageSettings,
@@ -278,6 +282,36 @@ export async function processJob(jobId: string): Promise<void> {
   // output's per-style size pick to printed mm. Empty if the migration
   // isn't applied yet; outputs then fall back to their stored dims.
   const infoAreaSizes = await loadInfoAreaSizeMap();
+
+  // Output-exclusion: a doc-type keyword rule can skip EVERY output of that
+  // type for this style (e.g. socks/shoes → no wash-care). Resolved through the
+  // SAME field resolver readiness/render use, so the runner and the review page
+  // can never disagree on what's skipped. Empty before db:deploy ⇒ nothing
+  // excluded. `excludedOutputs` lets us tell "all outputs intentionally
+  // skipped" apart from a real misconfiguration below.
+  const exclusionRules = await loadDocTypeExclusionRules();
+  const exclusionActive = Object.keys(exclusionRules).length > 0;
+  const exclusionLabels = exclusionActive ? await loadDocTypeLabels() : {};
+  const resolveExclusionField: ((field: string) => string) | null = exclusionActive
+    ? (() => {
+        const rStyle = {
+          rawData: job.style.rawData,
+          poNumber: job.style.poNumber,
+          supplier: job.style.supplier,
+          eans: job.style.eans,
+          cartonEan: job.style.cartonEan,
+          customer: { config: job.style.customer.config },
+          prodSpec: prodSpec
+            ? { outputs: prodSpec.outputs, columnMapping: prodSpec.columnMapping }
+            : null,
+        };
+        const item = effectiveStyleItem(rStyle);
+        const mapping = effectiveMapping(rStyle);
+        return (f: string) => resolveMappedField(item, mapping, f as keyof ColumnMapping);
+      })()
+    : null;
+  const excludedOutputs: string[] = [];
+
   for (const output of outputs) {
     const variant = resolveOutputVariant(output);
     if (!variant) {
@@ -292,6 +326,19 @@ export async function processJob(jobId: string): Promise<void> {
         },
       });
       continue;
+    }
+    // Doc-type keyword exclusion — skip (don't render) and record WHY, so the
+    // review surfaces an "Excluded" reason instead of a perpetual "awaiting".
+    if (resolveExclusionField) {
+      const hit = matchExclusionRules(exclusionRules[variant.docType], resolveExclusionField);
+      if (hit) {
+        const reason = exclusionReasonText(hit, docTypeLabel(variant.docType, exclusionLabels));
+        excludedOutputs.push(variant.key);
+        await db.log.create({
+          data: { jobId: job.id, level: "INFO", message: `skipping output ${variant.key}: ${reason}` },
+        });
+        continue;
+      }
     }
     try {
       // Per-output pins ("customerName is ALWAYS …") and the carton barcode
@@ -369,17 +416,46 @@ export async function processJob(jobId: string): Promise<void> {
     }
   }
 
+  // FULL run where EVERY output is excluded by a doc-type keyword rule → this
+  // style needs no documents. Finish CLEANLY (terminal APPROVED; no assets,
+  // bundle pages or reviewer ping) so it settles instead of NO_OUTPUTS-failing
+  // (which reads as an error and poisons the bulk-run float). Scoped/partial
+  // runs fall through to the WARN path below — there `outputs` is only the
+  // targeted/ready subset, so an all-excluded subset isn't the whole style.
+  if (
+    generated.length === 0 &&
+    scopedKeys.length === 0 &&
+    excludedOutputs.length > 0 &&
+    excludedOutputs.length === outputs.length
+  ) {
+    await db.$transaction([
+      db.jobAsset.deleteMany({ where: { jobId: job.id } }),
+      db.job.update({ where: { id: job.id }, data: { status: "APPROVED", finishedAt: new Date() } }),
+      db.style.update({ where: { id: job.styleId }, data: { status: "APPROVED" } }),
+      db.log.create({
+        data: {
+          jobId: job.id,
+          level: "INFO",
+          message:
+            `no documents generated — all ${outputs.length} output(s) excluded by document-type ` +
+            `keyword rules (${excludedOutputs.join(", ")}); this style needs none`,
+        },
+      }),
+    ]);
+    return;
+  }
+
   if (generated.length === 0 && (scopedKeys.length > 0 || missingFieldSkips > 0)) {
     // A run that rendered nothing because its targeted/declared outputs had
-    // their required fields missing (or a scoped target was removed/replaced)
-    // is NOT a misconfiguration. Hard-failing here would poison the auto-gen
-    // float cap and flood the logs (this is what turned one orphaned-ticket
-    // bulk-fix into 90 FAILED jobs). Don't fail: fall through so the cover
-    // bundle still refreshes and the job settles AWAITING_REVIEW — the blocked
-    // outputs then surface as "can't generate — missing X" on /reviews and the
-    // style review tab, recomputed live from current Monday data. Only a FULL
-    // run with a genuine misconfig (no spec / no outputs / unknown keys, below)
-    // is a real failure.
+    // their required fields missing (or a scoped target was removed/replaced),
+    // or were excluded by a doc-type rule, is NOT a misconfiguration.
+    // Hard-failing here would poison the auto-gen float cap and flood the logs
+    // (this is what turned one orphaned-ticket bulk-fix into 90 FAILED jobs).
+    // Don't fail: fall through so the cover bundle still refreshes and the job
+    // settles AWAITING_REVIEW — the blocked outputs then surface as "can't
+    // generate — missing X" on /reviews and the style review tab, recomputed
+    // live from current Monday data. Only a FULL run with a genuine misconfig
+    // (no spec / no outputs / unknown keys, below) is a real failure.
     await db.log.create({
       data: {
         jobId: job.id,

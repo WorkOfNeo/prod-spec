@@ -53,6 +53,10 @@ export const ColumnMappingSchema = z.object({
   campaignWeek: z.string().optional(), // Product category / campaign week → 📅 Campaign Week
   salesUnit: z.string().optional(), // Sales unit → Sales unit
   trims: z.string().optional(), // Packaging and Labels → 👜 Trims (decides packaging materials)
+  // Product Group — the board's category dropdown (Socks / Shoes / T-Shirt /
+  // …). Synced so output-exclusion rules can match on it (a sock/shoe style
+  // skips wash-care etc.) and so it surfaces on the Details tab + as a token.
+  productGroup: z.string().optional(), // 🗂️ Product Group → dropdown9__1
   // PO number rendered on the back panel of long care labels (care-
   // label-02 "Sheet 3 FRONT"). Sourced from the Styles board's
   // po_number__1 column today; can be overridden per customer.
@@ -153,6 +157,7 @@ export const DEFAULT_COLUMN_MAPPING: Partial<ColumnMapping> = {
   campaignWeek: "text33__1", // 📅 Campaign Week
   salesUnit: "numeric_mkta4201", // Sales unit
   trims: "dropdown4__1", // 👜 Trims
+  productGroup: "dropdown9__1", // 🗂️ Product Group (Socks / Shoes / T-Shirt / …)
 };
 
 // Legacy alias — old import sites still reference this name. Kept as a
@@ -219,6 +224,7 @@ export const MANUAL_COLUMN_IDS = {
   campaignWeek: "manual.campaignWeek",
   salesUnit: "manual.salesUnit",
   trims: "manual.trims",
+  productGroup: "manual.productGroup",
   poNumber: "manual.poNumber",
   countryOfOrigin: "manual.countryOfOrigin",
   certificates: "manual.certificates",

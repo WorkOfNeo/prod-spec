@@ -9,7 +9,7 @@ import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { TEMPLATE_VARIANTS } from "@/lib/pdf/template-registry";
 import { getContrastAddressLogoDataUrl, getContrastLogoDataUrl } from "@/lib/output-layouts/logos";
 import { LayoutsList } from "./layouts-list";
-import { DocTypesManager } from "./doc-types-manager";
+import { EXCLUSION_FIELDS } from "@/lib/outputs/exclusion";
 import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
@@ -18,8 +18,15 @@ export const dynamic = "force-dynamic";
 // builder writes print-affecting config.
 export const metadata = { title: "Output builder" };
 
-export default async function OutputBuilderPage() {
+export default async function OutputBuilderPage({
+  searchParams,
+}: {
+  // ?docTypes=1 opens the Document types popup straight away — the layout
+  // editor's "Manage types" link deep-links here.
+  searchParams: Promise<{ docTypes?: string }>;
+}) {
   await requireAdminPage();
+  const { docTypes: openDocTypesParam } = await searchParams;
 
   const { role } = await getSessionWithRole();
   if (role !== "ADMIN") {
@@ -160,17 +167,15 @@ export default async function OutputBuilderPage() {
   });
 
   return (
-    <>
-      <LayoutsList
-        layouts={layouts}
-        contrastLogoFound={contrastLogo !== null}
-        contrastAddressLogoFound={contrastAddressLogo !== null}
-      />
-      {/* Document types — relocated from the retired Custom outputs page.
-          The editor's "Manage types" link jumps to #doc-types here. */}
-      <div className="px-8 pb-10">
-        <DocTypesManager initialTypes={docTypesUsage} />
-      </div>
-    </>
+    <LayoutsList
+      layouts={layouts}
+      contrastLogoFound={contrastLogo !== null}
+      contrastAddressLogoFound={contrastAddressLogo !== null}
+      // Document types + keyword-exclusion rules now live in a popup opened
+      // from the header (next to "New layout"), not a bottom-of-page card.
+      docTypes={docTypesUsage}
+      exclusionFields={[...EXCLUSION_FIELDS]}
+      openDocTypes={openDocTypesParam === "1"}
+    />
   );
 }

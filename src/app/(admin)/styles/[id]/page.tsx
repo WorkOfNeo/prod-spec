@@ -24,6 +24,7 @@ import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import { styleReadinessNotice } from "@/lib/styles/readiness-notice";
 import { OutputReadinessNotice, type ReadinessHrefs } from "@/components/output-readiness-notice";
 import { mondayItemUrl } from "@/lib/monday/url";
+import { loadDocTypeExclusionRules, loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { RerunButton } from "./rerun-button";
 import { StyleOutputCard, type StyleOutputCardProps } from "./style-output-card";
 import { ProdSpecTab } from "./prod-spec-tab";
@@ -271,18 +272,29 @@ export default async function StyleDetail({
     fields: requiredKeys.map((k) => ({ label: STYLE_FIELD_LABELS[k], ok: !reqMissing.has(k) })),
   };
 
+  // Doc-type keyword exclusion rules → mark outputs whose type is skipped for
+  // this style (e.g. socks/shoes → wash care), with a reason for the card.
+  const [exclusionRules, exclusionLabels] = await Promise.all([
+    loadDocTypeExclusionRules(),
+    loadDocTypeLabels(),
+  ]);
+
   // Per-output readiness for the banner — each output generates as soon as
   // its own fields land. Customer mapping (empty override) matches reqMapping.
   const outputReadiness = style.prodSpec
-    ? outputReadinessForStyle({
-        rawData: style.rawData,
-        poNumber: style.poNumber,
-        supplier: style.supplier,
-        eans: style.eans,
-        cartonEan: style.cartonEan,
-        customer: { config: style.customer.config },
-        prodSpec: { outputs: style.prodSpec.outputs, columnMapping: {} },
-      })
+    ? outputReadinessForStyle(
+        {
+          rawData: style.rawData,
+          poNumber: style.poNumber,
+          supplier: style.supplier,
+          eans: style.eans,
+          cartonEan: style.cartonEan,
+          customer: { config: style.customer.config },
+          prodSpec: { outputs: style.prodSpec.outputs, columnMapping: {} },
+        },
+        exclusionRules,
+        exclusionLabels,
+      )
     : [];
 
   // Pre-run files preview for the Prod Spec popover: per enabled output,
@@ -420,6 +432,8 @@ export default async function StyleDetail({
       name: o.name,
       ready: o.ready,
       missing: o.missing.map((m) => m.label),
+      excluded: o.excluded ?? false,
+      exclusionReason: o.exclusionReason ?? null,
       widthMm: dims.widthMm,
       heightMm: dims.heightMm,
       pins,

@@ -65,7 +65,13 @@ function out(state: OutputState, hasAsset: boolean): CurrentOutput {
     placeholderCount: 0,
     generatedAt: hasAsset ? new Date("2026-06-01T00:00:00Z") : null,
     fromLatestGeneration: hasAsset,
+    exclusionReason: null,
   };
+}
+
+// An output skipped by a doc-type keyword rule: no asset, decided by exclusion.
+function excluded(): CurrentOutput {
+  return { ...out("EXCLUDED", false), state: "EXCLUDED", exclusionReason: "Not generated — Product group contains “shoes” (Wash care rule)" };
 }
 
 test("rollupOutputs — mixed spec is not complete", () => {
@@ -96,6 +102,32 @@ test("rollupOutputs — all generated → complete; all approved → fullyApprov
 test("rollupOutputs — empty is neither complete nor fully approved", () => {
   const r = rollupOutputs([]);
   assert.equal(r.total, 0);
+  assert.equal(r.complete, false);
+  assert.equal(r.fullyApproved, false);
+});
+
+test("rollupOutputs — excluded outputs count as decided", () => {
+  // A sock style: wash-care excluded, the rest approved → complete + fully
+  // approved (nothing pending), with the excluded one tallied.
+  const r = rollupOutputs([out("APPROVED", true), excluded()]);
+  assert.equal(r.total, 2);
+  assert.equal(r.generated, 1);
+  assert.equal(r.approved, 1);
+  assert.equal(r.excluded, 1);
+  assert.equal(r.complete, true);
+  assert.equal(r.fullyApproved, true);
+});
+
+test("rollupOutputs — all excluded → complete + fully approved", () => {
+  const r = rollupOutputs([excluded(), excluded()]);
+  assert.equal(r.excluded, 2);
+  assert.equal(r.complete, true);
+  assert.equal(r.fullyApproved, true);
+});
+
+test("rollupOutputs — excluded + still-awaiting is not complete", () => {
+  const r = rollupOutputs([excluded(), out("AWAITING_DATA", false)]);
+  assert.equal(r.excluded, 1);
   assert.equal(r.complete, false);
   assert.equal(r.fullyApproved, false);
 });

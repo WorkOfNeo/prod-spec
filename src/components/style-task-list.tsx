@@ -24,6 +24,10 @@ const OUTPUT_CHIP: Record<ReviewTaskOutput["state"], { cls: string; label: strin
   // Required fields are missing — generation was deliberately skipped (not
   // queued). Amber, not muted: it needs data fixed on Monday before it can run.
   AWAITING_DATA: { cls: "border-amber-200 bg-amber-50 text-amber-800", label: "missing fields" },
+  // Decided by a doc-type keyword rule — won't generate. (Excluded outputs
+  // never become review assets, so this won't normally appear in the queue;
+  // present for type completeness over the full OutputState union.)
+  EXCLUDED: { cls: "border-amber-200 bg-amber-50 text-amber-700", label: "excluded" },
 };
 
 // Navigational hrefs for the readiness notice on a review card. Only the keys

@@ -937,9 +937,9 @@ export function LayoutEditor({
             )}
           </select>
           <Link
-            href="/output-builder#doc-types"
+            href="/output-builder?docTypes=1"
             className="text-[11px] text-zinc-400 underline-offset-2 hover:text-zinc-600 hover:underline"
-            title="Add or rename document types"
+            title="Add or rename document types, set keyword exclusion rules"
           >
             Manage types
           </Link>

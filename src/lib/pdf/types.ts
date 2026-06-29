@@ -79,6 +79,11 @@ export type StyleData = {
     code: string;
   };
 
+  // Product Group (board "🗂️ Product Group" dropdown — Socks / Shoes /
+  // T-Shirt / …). Drives output-exclusion rules and is available as the
+  // {{productGroup}} token. Empty when the column isn't mapped / populated.
+  productGroup?: string;
+
   price?: {
     amount: number;
     currency: "EUR" | "DKK" | "NOK" | "SEK" | "GBP";

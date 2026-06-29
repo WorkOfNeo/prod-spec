@@ -556,8 +556,16 @@ model DocTypeDef {
   value     String   @id
   label     String
   sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  // Keyword exclusion rules: skip generating EVERY output of this type for a
+  // style when one matches. JSON array of
+  //   { field: <synced ColumnMapping key>, op: "contains"|"equals", keywords: string[] }
+  // e.g. Wash care → [{ field: "productGroup", op: "contains", keywords: ["shoes","sock"] }]
+  // means a sock/shoe style generates no wash-care outputs (and the review
+  // surfaces WHY). Additive with a default so reads degrade to "no rules"
+  // until db:deploy. See src/lib/outputs/exclusion.ts.
+  exclusionRules Json     @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@map("doc_types")
 }

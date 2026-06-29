@@ -132,6 +132,7 @@ export const STYLE_FIELD_LABELS = {
   campaignWeek: "Campaign week",
   salesUnit: "Sales unit",
   trims: "Trims (packaging & labels)",
+  productGroup: "Product group",
 } as const satisfies Record<keyof ColumnMapping, string>;
 
 const FIELD_ORDER = Object.keys(STYLE_FIELD_LABELS) as Array<keyof ColumnMapping>;

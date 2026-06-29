@@ -41,6 +41,9 @@ export type StyleOutputCardProps = {
   name: string;
   ready: boolean;
   missing: string[];
+  // A doc-type keyword rule skips this output for this style — won't generate.
+  excluded?: boolean;
+  exclusionReason?: string | null;
   widthMm: number;
   heightMm: number;
   // Pinned fields on this output ("Customer name = Netto A/S").
@@ -76,7 +79,11 @@ export type StyleOutputCardProps = {
 
 export function StyleOutputCard(p: StyleOutputCardProps) {
   const [open, setOpen] = useState(false);
-  const hasChips = p.missing.length > 0 || p.pins.length > 0 || p.notes.length > 0;
+  const hasChips =
+    p.missing.length > 0 ||
+    p.pins.length > 0 ||
+    p.notes.length > 0 ||
+    Boolean(p.excluded && p.exclusionReason);
   const showSizeControl = p.isInfoArea && p.prodSpecId !== null;
   // A label for the header dims readout: "<size name> · W × H mm".
   const sizeLabel = p.isInfoArea ? (p.infoAreaSizeName ?? "Custom") : null;
@@ -98,12 +105,20 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           <span
             aria-hidden="true"
             className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${
-              p.ready ? "bg-emerald-500" : "bg-zinc-300"
+              p.excluded ? "bg-amber-400" : p.ready ? "bg-emerald-500" : "bg-zinc-300"
             }`}
           />
           <span className="truncate text-sm font-semibold text-zinc-900" title={p.name}>
             {p.name}
           </span>
+          {p.excluded && (
+            <span
+              title={p.exclusionReason ?? "Skipped by a document-type keyword rule"}
+              className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700"
+            >
+              Excluded
+            </span>
+          )}
           {p.reviewStatus === "APPROVED" && (
             <span
               title="This output was approved in review"
@@ -148,32 +163,46 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           {sizeLabel ? `${sizeLabel} · ` : ""}
           {fmtMm(p.widthMm)} × {fmtMm(p.heightMm)} mm
         </span>
-        {p.isAdmin && (p.cartonNumbering || p.multipleStyles) && (
-          <CartonPrintsButton
-            styleId={p.styleId}
-            variantKey={p.variantKey}
-            name={p.name}
-            ready={p.ready}
-            widthMm={p.widthMm}
-            heightMm={p.heightMm}
-            cartonNumbering={p.cartonNumbering}
-            multipleStyles={p.multipleStyles}
-          />
-        )}
-        {p.isAdmin && (
-          <RunOutputButton
-            styleId={p.styleId}
-            variantKey={p.variantKey}
-            ready={p.ready}
-            missingLabels={p.missing}
-          />
-        )}
+        {p.excluded ? (
+          // Skipped by a doc-type rule — running it would generate nothing, so
+          // offer no Run/Carton actions (for anyone), just a muted note (reason
+          // is on the badge + in the chips below).
+          <span className="flex-shrink-0 text-[11px] font-medium text-amber-600">Won’t generate</span>
+        ) : p.isAdmin ? (
+          // ADMIN-only generation actions (the API is ADMIN-gated) — REVIEWERs
+          // see the card without Run/Carton.
+          <>
+            {(p.cartonNumbering || p.multipleStyles) && (
+              <CartonPrintsButton
+                styleId={p.styleId}
+                variantKey={p.variantKey}
+                name={p.name}
+                ready={p.ready}
+                widthMm={p.widthMm}
+                heightMm={p.heightMm}
+                cartonNumbering={p.cartonNumbering}
+                multipleStyles={p.multipleStyles}
+              />
+            )}
+            <RunOutputButton
+              styleId={p.styleId}
+              variantKey={p.variantKey}
+              ready={p.ready}
+              missingLabels={p.missing}
+            />
+          </>
+        ) : null}
       </div>
 
       {open && (
         <div className="border-t border-zinc-100">
           {hasChips && (
             <div className="flex flex-wrap gap-1.5 px-4 pt-3">
+              {p.excluded && p.exclusionReason ? (
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                  {p.exclusionReason}
+                </span>
+              ) : null}
               {p.missing.map((label) => (
                 <span
                   key={`m-${label}`}

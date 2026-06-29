@@ -59,6 +59,7 @@ const RESOLVERS: Record<string, TextResolver> = {
   certificates: (s) => (s.certificates ?? []).join(", "),
   colourName: (s) => s.colour?.name ?? "",
   colourCode: (s) => s.colour?.code ?? "",
+  productGroup: (s) => s.productGroup ?? "",
   campaignWeek: (s) => s.campaignWeek ?? "",
   sizes: (s) => s.sizes.map((x) => x.label).filter(Boolean).join(", "),
   // First size label — inside a repeat-per-EAN repetition the renderer
@@ -251,6 +252,7 @@ const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   countryOfOrigin: ["countryOfOrigin"],
   colourName: ["colourName"],
   colourCode: ["colourCode"],
+  productGroup: ["productGroup"],
   campaignWeek: ["campaignWeek"],
   certificates: ["certificates"],
   sizes: ["sizes"],
