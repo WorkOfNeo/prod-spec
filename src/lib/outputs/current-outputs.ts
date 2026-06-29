@@ -157,10 +157,16 @@ export const SLOT_STATE_PRIORITY: OutputState[] = [
 //     (the operator removed/replaced that output) is not part of the current
 //     decision. Framing keys (cover) are never orphaned; legacy null-key assets
 //     (no variantKey) are kept rather than guessed-orphaned.
+//   • Drop EXCLUDED bases. A declared output whose doc-type keyword rule matches
+//     this style (e.g. socks → no wash care) is intentionally never generated;
+//     the runner skips it, so any stale asset from a prior run (before the rule,
+//     or rejected) must NOT surface as a current decision. Dropping it here lets
+//     the declared-output pass re-emit the base as an EXCLUDED row, so the rule
+//     is honoured on review and a re-run "clears" the old reject.
 // Retired __general_info__ assets are skipped entirely.
 export function selectCurrentAssets<
   A extends { jobId: string; variantKey: string | null; docType: string },
->(assetsNewestFirst: A[], declaredBaseKeys: Set<string>): A[] {
+>(assetsNewestFirst: A[], declaredBaseKeys: Set<string>, excludedBaseKeys?: Set<string>): A[] {
   const keyOf = (a: A) => a.variantKey ?? `doc:${a.docType}`;
   // Newest job per base — first asset seen wins (input is newest-job-first).
   const newestJobForBase = new Map<string, string>();
@@ -176,6 +182,7 @@ export function selectCurrentAssets<
     const key = keyOf(a);
     const b = base(key);
     if (a.jobId !== newestJobForBase.get(b)) continue; // older generation for this base
+    if (excludedBaseKeys?.has(b)) continue; // excluded by a doc-type rule — never current
     // Only a real (declared-style) key can be orphaned; keep legacy null keys.
     if (a.variantKey != null && isOrphanedOutputKey(a.variantKey, declaredBaseKeys)) continue;
     if (seen.has(key)) continue; // one row per full variantKey (newest wins)
@@ -312,7 +319,13 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
   const declaredBaseKeys = currentOutputBaseKeys(
     parseProdSpecOutputs(style.prodSpec?.outputs ?? []),
   );
-  const current = selectCurrentAssets(assets, declaredBaseKeys);
+  // Bases excluded by a doc-type keyword rule (socks → no wash care). Their
+  // stale assets must not surface; the declared-output pass below re-emits them
+  // as EXCLUDED so the rule is honoured and a re-run clears any prior reject.
+  const excludedBaseKeys = new Set(
+    readiness.filter((r) => r.excluded === true).map((r) => base(r.variantKey)),
+  );
+  const current = selectCurrentAssets(assets, declaredBaseKeys, excludedBaseKeys);
   const latestByVariant = new Map<string, (typeof assets)[number]>();
   for (const a of current) latestByVariant.set(a.variantKey ?? `doc:${a.docType}`, a);
 

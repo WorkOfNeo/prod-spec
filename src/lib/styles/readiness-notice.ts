@@ -135,6 +135,9 @@ type NormalizedOutputs = {
   total: number; // declared, EXCLUDING excluded outputs
   ready: number; // can generate / generated & not blocked
   excluded: number;
+  // Names of the excluded outputs, so the notice can tell reviewers WHICH
+  // outputs a doc-type rule skipped (e.g. "Wash care label").
+  excludedNames: string[];
   // Outputs waiting on Monday fields, with their exact missing fields.
   waitingOnFields: { name: string; fields: MissingDetailField[] }[];
   generating: number; // GENERATING / READY_TO_GENERATE
@@ -155,6 +158,7 @@ function normalizeFromCurrent(outputs: CurrentOutput[]): NormalizedOutputs {
     total: 0,
     ready: 0,
     excluded: 0,
+    excludedNames: [],
     waitingOnFields: [],
     generating: 0,
     toReview: 0,
@@ -178,6 +182,7 @@ function normalizeFromCurrent(outputs: CurrentOutput[]): NormalizedOutputs {
       SLOT_STATE_PRIORITY.find((s) => docs.some((d) => d.state === s)) ?? "AWAITING_DATA";
     if (isExcluded(slotState)) {
       n.excluded += 1;
+      n.excludedNames.push((docs.find((d) => isExcluded(d.state)) ?? docs[0]).name);
       continue;
     }
     n.total += 1;
@@ -219,6 +224,7 @@ function normalizeFromReadiness(
     total: readiness.length,
     ready: 0,
     excluded: 0,
+    excludedNames: [],
     waitingOnFields: [],
     generating: 0,
     toReview: 0,
@@ -544,6 +550,7 @@ function outputSteps(
           : `${n.excluded} outputs not applicable`,
       detail:
         "Skipped by a product rule (e.g. socks / shoes → no wash care). Counts out of the total, not a failure — nothing to review.",
+      outputs: n.excludedNames.map((name) => ({ name, fields: [] })),
       owner: "SYSTEM",
     });
   }
@@ -635,6 +642,7 @@ export function styleReadinessNotice(
     total: 0,
     ready: 0,
     excluded: 0,
+    excludedNames: [],
     waitingOnFields: [],
     generating: 0,
     toReview: 0,

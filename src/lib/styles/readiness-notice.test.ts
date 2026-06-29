@@ -178,7 +178,7 @@ test("excluded output counted out of the total", () => {
         output({ state: "TO_REVIEW", variantKey: "b" }),
         // EXCLUDED is not in the OutputState union but reaches the selector as
         // a string state; it must be counted OUT of the total.
-        output({ state: "EXCLUDED" as OutputState, variantKey: "hangtag" }),
+        output({ state: "EXCLUDED" as OutputState, variantKey: "hangtag", name: "Hangtag sticker" }),
       ],
     }),
     "ADMIN",
@@ -189,6 +189,11 @@ test("excluded output counted out of the total", () => {
   const ex = notice.steps.find((s) => s.key === "excluded");
   assert.ok(ex);
   assert.equal(ex!.tone, "zinc");
+  // The excluded output is NAMED so reviewers see which doc-type rule skipped it.
+  assert.deepEqual(
+    ex!.outputs?.map((o) => o.name),
+    ["Hangtag sticker"],
+  );
 });
 
 test("headline priority — blocked outranks waiting outranks running", () => {
