@@ -273,50 +273,84 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                   const cartonCapable = Boolean(
                     variant && (variant.cartonNumbering || variant.multipleStyles),
                   );
+                  const dotClass =
+                    o.reviewStatus === "APPROVED"
+                      ? "bg-emerald-500"
+                      : o.reviewStatus === "REJECTED"
+                        ? "bg-red-500"
+                        : "bg-zinc-300";
                   return (
                     <div
                       key={o.variantKey}
                       id={outputAnchor(o.variantKey)}
-                      className="overflow-hidden rounded-lg border border-zinc-200 bg-white scroll-mt-4"
+                      className="flex flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white scroll-mt-4"
                     >
-                      <div className="flex items-center justify-between gap-3 border-b border-zinc-100 bg-zinc-50 px-3 py-2">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-zinc-800">{o.name}</div>
-                          {o.fileName ? (
-                            <div className="truncate font-mono text-[10px] text-zinc-500">{o.fileName}</div>
-                          ) : null}
-                        </div>
-                        <div className="flex shrink-0 items-center gap-3">
-                          <a
-                            href={previewUrl}
-                            className="text-xs text-zinc-500 underline"
-                            target="_blank"
-                            rel="noopener noreferrer"
+                      {/* Header — identity only: status dot + name + file +
+                          capability chips, with Open as a quiet corner icon.
+                          Every decision lives in the footer bar below the
+                          preview, so nothing competes with the title for width. */}
+                      <div className="flex items-start gap-2.5 border-b border-zinc-100 bg-zinc-50 px-3 py-2.5">
+                        <span
+                          aria-hidden="true"
+                          className={`mt-1 inline-block h-2 w-2 flex-shrink-0 rounded-full ${dotClass}`}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div
+                            className="line-clamp-2 text-sm font-semibold leading-snug text-zinc-800"
+                            title={o.name}
                           >
-                            Open
-                          </a>
-                          {cartonCapable && variant ? (
-                            <ReviewCartonCustomize
-                              styleId={style.id}
-                              variantKey={baseKey}
-                              name={o.name}
-                              widthMm={variant.defaultWidthMm}
-                              heightMm={variant.defaultHeightMm}
-                              cartonNumbering={variant.cartonNumbering ?? false}
-                              multipleStyles={variant.multipleStyles ?? false}
-                            />
+                            {o.name}
+                          </div>
+                          {o.fileName ? (
+                            <div className="mt-0.5 truncate font-mono text-[10px] text-zinc-500">
+                              {o.fileName}
+                            </div>
                           ) : null}
-                          <AssetActions
-                            assetId={o.jobAssetId as string}
-                            styleId={style.id}
-                            reviewStatus={o.reviewStatus ?? "PENDING_REVIEW"}
-                            rejectReason={o.rejectReason}
-                            placeholderCount={o.placeholderCount}
-                            outputTitle={o.name}
-                            styleContext={styleContext}
-                            canPush={canPush}
-                          />
+                          {variant && (variant.cartonNumbering || variant.multipleStyles) ? (
+                            <div className="mt-1.5 flex flex-wrap gap-1">
+                              {variant.cartonNumbering ? (
+                                <span
+                                  title="Carton numbering — print a numbered set (X of Y)"
+                                  className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700"
+                                >
+                                  X of Y
+                                </span>
+                              ) : null}
+                              {variant.multipleStyles ? (
+                                <span
+                                  title="Multiple styles — place other same-PO styles on the box"
+                                  className="rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-700"
+                                >
+                                  Multi-style
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
+                        <a
+                          href={previewUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Open the full PDF in a new tab"
+                          aria-label="Open the full PDF in a new tab"
+                          className="flex-shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-200/70 hover:text-zinc-600"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-4 w-4"
+                            aria-hidden="true"
+                          >
+                            <path d="M15 3h6v6" />
+                            <path d="M10 14 21 3" />
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                          </svg>
+                        </a>
                       </div>
                       {o.reviewStatus === "REJECTED" && o.rejectReason ? (
                         <div className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs text-red-800">
@@ -333,6 +367,31 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                         </div>
                       ) : null}
                       <iframe src={previewUrl} className="block h-[600px] w-full bg-white" title={o.name} />
+                      {/* Footer action bar — Open is in the header; decisions,
+                          status and Customize all live here on their own rows. */}
+                      <AssetActions
+                        assetId={o.jobAssetId as string}
+                        styleId={style.id}
+                        reviewStatus={o.reviewStatus ?? "PENDING_REVIEW"}
+                        rejectReason={o.rejectReason}
+                        placeholderCount={o.placeholderCount}
+                        outputTitle={o.name}
+                        styleContext={styleContext}
+                        canPush={canPush}
+                        customizeSlot={
+                          cartonCapable && variant ? (
+                            <ReviewCartonCustomize
+                              styleId={style.id}
+                              variantKey={baseKey}
+                              name={o.name}
+                              widthMm={variant.defaultWidthMm}
+                              heightMm={variant.defaultHeightMm}
+                              cartonNumbering={variant.cartonNumbering ?? false}
+                              multipleStyles={variant.multipleStyles ?? false}
+                            />
+                          ) : null
+                        }
+                      />
                     </div>
                   );
                 })}
