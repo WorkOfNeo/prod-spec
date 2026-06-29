@@ -118,6 +118,12 @@ export const LayoutBlockSchema = z.object({
   // count. fontPt becomes the starting size; the renderer's fit script does
   // the scaling at render time (preview iframe + Puppeteer).
   fitWidth: z.boolean().default(false),
+  // Shrink to fit height: when the block's content is TALLER than its cell,
+  // scale the font DOWN until it fits — never up, so an in-bounds block keeps
+  // its authored size. Stops a variable-length block ({{careInstructions}})
+  // from overflowing its cell and colliding with the block below it. Same
+  // render-time fit script as fitWidth (preview iframe + Puppeteer).
+  fitHeight: z.boolean().default(false),
   lineHeight: z.number().min(1).max(3).default(1.4),
   lines: z.array(z.string().max(500)).max(100).default([]),
 });
