@@ -140,7 +140,17 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     );
   }
 
-  const groups = groupByDocType<CurrentOutput>(reviewable, docTypeLabels);
+  // History = outputs decided (approved/rejected) in an EARLIER run. They stay
+  // fully visible — same card, same actions — but collapse into the "Earlier
+  // generations" accordion so the main view shows only the current run. Going
+  // through the same style again and again no longer drowns in prior decisions.
+  // Anything still pending is NEVER history, even if it came from an older job.
+  const isSettled = (o: CurrentOutput) =>
+    o.reviewStatus === "APPROVED" || o.reviewStatus === "REJECTED";
+  const history = reviewable.filter((o) => isSettled(o) && !o.fromLatestGeneration);
+  const current = reviewable.filter((o) => !(isSettled(o) && !o.fromLatestGeneration));
+
+  const groups = groupByDocType<CurrentOutput>(current, docTypeLabels);
   const placeholderOutputs = reviewable.filter((o) => o.placeholderCount > 0);
 
   return (
@@ -261,145 +271,43 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
               rightHint={hint}
             >
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                {group.items.map((o) => {
-                  const previewUrl = `/api/admin/jobs/${o.jobId}/preview?variantKey=${encodeURIComponent(o.variantKey)}`;
-                  // Carton-capable outputs (numbering / multi-style) get an
-                  // in-review Customize action — regenerate the set in place and
-                  // re-review it. Capability + print dims come from the layout
-                  // variant; the registry is already loaded by
-                  // getCurrentOutputsForStyle, so getVariant resolves here.
-                  const baseKey = o.variantKey.split("#")[0];
-                  const variant = getVariant(baseKey);
-                  const cartonCapable = Boolean(
-                    variant && (variant.cartonNumbering || variant.multipleStyles),
-                  );
-                  const dotClass =
-                    o.reviewStatus === "APPROVED"
-                      ? "bg-emerald-500"
-                      : o.reviewStatus === "REJECTED"
-                        ? "bg-red-500"
-                        : "bg-zinc-300";
-                  return (
-                    <div
-                      key={o.variantKey}
-                      id={outputAnchor(o.variantKey)}
-                      className="flex flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white scroll-mt-4"
-                    >
-                      {/* Header — identity only: status dot + name + file +
-                          capability chips, with Open as a quiet corner icon.
-                          Every decision lives in the footer bar below the
-                          preview, so nothing competes with the title for width. */}
-                      <div className="flex items-start gap-2.5 border-b border-zinc-100 bg-zinc-50 px-3 py-2.5">
-                        <span
-                          aria-hidden="true"
-                          className={`mt-1 inline-block h-2 w-2 flex-shrink-0 rounded-full ${dotClass}`}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div
-                            className="line-clamp-2 text-sm font-semibold leading-snug text-zinc-800"
-                            title={o.name}
-                          >
-                            {o.name}
-                          </div>
-                          {o.fileName ? (
-                            <div className="mt-0.5 truncate font-mono text-[10px] text-zinc-500">
-                              {o.fileName}
-                            </div>
-                          ) : null}
-                          {variant && (variant.cartonNumbering || variant.multipleStyles) ? (
-                            <div className="mt-1.5 flex flex-wrap gap-1">
-                              {variant.cartonNumbering ? (
-                                <span
-                                  title="Carton numbering — print a numbered set (X of Y)"
-                                  className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700"
-                                >
-                                  X of Y
-                                </span>
-                              ) : null}
-                              {variant.multipleStyles ? (
-                                <span
-                                  title="Multiple styles — place other same-PO styles on the box"
-                                  className="rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-700"
-                                >
-                                  Multi-style
-                                </span>
-                              ) : null}
-                            </div>
-                          ) : null}
-                        </div>
-                        <a
-                          href={previewUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title="Open the full PDF in a new tab"
-                          aria-label="Open the full PDF in a new tab"
-                          className="flex-shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-200/70 hover:text-zinc-600"
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="h-4 w-4"
-                            aria-hidden="true"
-                          >
-                            <path d="M15 3h6v6" />
-                            <path d="M10 14 21 3" />
-                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                          </svg>
-                        </a>
-                      </div>
-                      {o.reviewStatus === "REJECTED" && o.rejectReason ? (
-                        <div className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs text-red-800">
-                          <span className="font-semibold">Rejected:</span> {o.rejectReason}{" "}
-                          <Link href="/settings/rejection-log" className="text-red-700 underline">
-                            view ticket →
-                          </Link>
-                        </div>
-                      ) : null}
-                      {o.placeholderCount > 0 ? (
-                        <div className="border-b border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                          ⚠ {o.placeholderCount} placeholder{o.placeholderCount === 1 ? "" : "s"} in this
-                          PDF — approval is blocked until the data is fixed and the output re-run.
-                        </div>
-                      ) : null}
-                      <iframe src={previewUrl} className="block h-[600px] w-full bg-white" title={o.name} />
-                      {/* Footer action bar — Open is in the header; decisions,
-                          status and Customize all live here on their own rows. */}
-                      <AssetActions
-                        assetId={o.jobAssetId as string}
-                        styleId={style.id}
-                        reviewStatus={o.reviewStatus ?? "PENDING_REVIEW"}
-                        rejectReason={o.rejectReason}
-                        placeholderCount={o.placeholderCount}
-                        outputTitle={o.name}
-                        styleContext={styleContext}
-                        canPush={canPush}
-                        customizeSlot={
-                          cartonCapable && variant ? (
-                            <ReviewCartonCustomize
-                              styleId={style.id}
-                              variantKey={baseKey}
-                              name={o.name}
-                              widthMm={variant.defaultWidthMm}
-                              heightMm={variant.defaultHeightMm}
-                              cartonNumbering={variant.cartonNumbering ?? false}
-                              multipleStyles={variant.multipleStyles ?? false}
-                            />
-                          ) : null
-                        }
-                      />
-                    </div>
-                  );
-                })}
+                {group.items.map((o) => (
+                  <OutputReviewCard
+                    key={o.variantKey}
+                    o={o}
+                    styleId={style.id}
+                    styleContext={styleContext}
+                    canPush={canPush}
+                  />
+                ))}
               </div>
             </DocTypeAccordion>
           );
         })}
       </div>
+
+      {history.length > 0 ? (
+        <div className="mt-3">
+          <DocTypeAccordion
+            label="Earlier generations"
+            count={history.length}
+            rightHint="decided in a previous run — kept for reference"
+            defaultOpen={false}
+          >
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {history.map((o) => (
+                <OutputReviewCard
+                  key={o.variantKey}
+                  o={o}
+                  styleId={style.id}
+                  styleContext={styleContext}
+                  canPush={canPush}
+                />
+              ))}
+            </div>
+          </DocTypeAccordion>
+        </div>
+      ) : null}
 
       {notReady.length > 0 ? (
         <div className="mt-3">
@@ -429,6 +337,148 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           </DocTypeAccordion>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// One reviewable output card — preview + identity header + decision footer.
+// Shared by the current-generation groups and the "Earlier generations"
+// history accordion so a prior-run decision renders identically (and stays
+// re-reviewable) without duplicating ~120 lines of markup.
+function OutputReviewCard({
+  o,
+  styleId,
+  styleContext,
+  canPush,
+}: {
+  o: CurrentOutput;
+  styleId: string;
+  styleContext: string;
+  canPush: boolean;
+}) {
+  const previewUrl = `/api/admin/jobs/${o.jobId}/preview?variantKey=${encodeURIComponent(o.variantKey)}`;
+  // Carton-capable outputs (numbering / multi-style) get an in-review Customize
+  // action — regenerate the set in place and re-review it. Capability + print
+  // dims come from the layout variant; the registry is already loaded by
+  // getCurrentOutputsForStyle, so getVariant resolves here.
+  const baseKey = o.variantKey.split("#")[0];
+  const variant = getVariant(baseKey);
+  const cartonCapable = Boolean(variant && (variant.cartonNumbering || variant.multipleStyles));
+  const dotClass =
+    o.reviewStatus === "APPROVED"
+      ? "bg-emerald-500"
+      : o.reviewStatus === "REJECTED"
+        ? "bg-red-500"
+        : "bg-zinc-300";
+  return (
+    <div
+      id={outputAnchor(o.variantKey)}
+      className="flex flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white scroll-mt-4"
+    >
+      {/* Header — identity only: status dot + name + file + capability chips,
+          with Open as a quiet corner icon. Every decision lives in the footer
+          bar below the preview, so nothing competes with the title for width. */}
+      <div className="flex items-start gap-2.5 border-b border-zinc-100 bg-zinc-50 px-3 py-2.5">
+        <span
+          aria-hidden="true"
+          className={`mt-1 inline-block h-2 w-2 flex-shrink-0 rounded-full ${dotClass}`}
+        />
+        <div className="min-w-0 flex-1">
+          <div
+            className="line-clamp-2 text-sm font-semibold leading-snug text-zinc-800"
+            title={o.name}
+          >
+            {o.name}
+          </div>
+          {o.fileName ? (
+            <div className="mt-0.5 truncate font-mono text-[10px] text-zinc-500">{o.fileName}</div>
+          ) : null}
+          {variant && (variant.cartonNumbering || variant.multipleStyles) ? (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {variant.cartonNumbering ? (
+                <span
+                  title="Carton numbering — print a numbered set (X of Y)"
+                  className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700"
+                >
+                  X of Y
+                </span>
+              ) : null}
+              {variant.multipleStyles ? (
+                <span
+                  title="Multiple styles — place other same-PO styles on the box"
+                  className="rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-700"
+                >
+                  Multi-style
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        <a
+          href={previewUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Open the full PDF in a new tab"
+          aria-label="Open the full PDF in a new tab"
+          className="flex-shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-200/70 hover:text-zinc-600"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-4 w-4"
+            aria-hidden="true"
+          >
+            <path d="M15 3h6v6" />
+            <path d="M10 14 21 3" />
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+          </svg>
+        </a>
+      </div>
+      {o.reviewStatus === "REJECTED" && o.rejectReason ? (
+        <div className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs text-red-800">
+          <span className="font-semibold">Rejected:</span> {o.rejectReason}{" "}
+          <Link href="/settings/rejection-log" className="text-red-700 underline">
+            view ticket →
+          </Link>
+        </div>
+      ) : null}
+      {o.placeholderCount > 0 ? (
+        <div className="border-b border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          ⚠ {o.placeholderCount} placeholder{o.placeholderCount === 1 ? "" : "s"} in this PDF —
+          approval is blocked until the data is fixed and the output re-run.
+        </div>
+      ) : null}
+      <iframe src={previewUrl} className="block h-[600px] w-full bg-white" title={o.name} />
+      {/* Footer action bar — Open is in the header; decisions, status and
+          Customize all live here on their own rows. */}
+      <AssetActions
+        assetId={o.jobAssetId as string}
+        styleId={styleId}
+        reviewStatus={o.reviewStatus ?? "PENDING_REVIEW"}
+        rejectReason={o.rejectReason}
+        placeholderCount={o.placeholderCount}
+        outputTitle={o.name}
+        styleContext={styleContext}
+        canPush={canPush}
+        customizeSlot={
+          cartonCapable && variant ? (
+            <ReviewCartonCustomize
+              styleId={styleId}
+              variantKey={baseKey}
+              name={o.name}
+              widthMm={variant.defaultWidthMm}
+              heightMm={variant.defaultHeightMm}
+              cartonNumbering={variant.cartonNumbering ?? false}
+              multipleStyles={variant.multipleStyles ?? false}
+            />
+          ) : null
+        }
+      />
     </div>
   );
 }

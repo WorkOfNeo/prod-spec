@@ -64,6 +64,7 @@ function out(state: OutputState, hasAsset: boolean): CurrentOutput {
     rejectReason: null,
     placeholderCount: 0,
     generatedAt: hasAsset ? new Date("2026-06-01T00:00:00Z") : null,
+    fromLatestGeneration: hasAsset,
   };
 }
 
