@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseBarcodeItems, selectStyleItems, cartonEanFor, type PoItem } from "./parse-barcodes";
+import {
+  parseBarcodeItems,
+  selectStyleItems,
+  cartonEanFor,
+  variantsWithSectionCarton,
+  type PoItem,
+} from "./parse-barcodes";
 
 // The flattened text of the Barcodes page of a real multi-style Contrast PO
 // (C-PO63315) — nine styles, each section opening with "<No.> <style number> -
@@ -261,4 +267,31 @@ test("selectStyleItems — still rejects a clean single style number absent from
     item({ contrastNo: "C-2", styleNumber: "PTQ60032", variants: [{ label: "M", ean13: "2", unitsPer: null }] }),
   ];
   assert.equal(selectStyleItems(po, { styleNumber: "PTQ99999" }).kind, "reject");
+});
+
+test("variantsWithSectionCarton — each colourway keeps its own section's carton", () => {
+  // A multi-colourway style is listed as one section per colour, each with its
+  // own carton EAN. The Blue rows must carry the Blue carton and the Pink rows
+  // the Pink carton — not both collapsed to the first section's carton.
+  const raw = [
+    "No. Variant Description Barcode EAN Polybag EAN Carton SU per",
+    "C-40001 PTQ77777 - Hoodie",
+    "ASS1 PTQ77777 - Hoodie 1111111111116 1111111111116 6/6",
+    ".B-S Blue, S 2222222222223",
+    ".B-M Blue, M 2222222222223",
+    "C-40002 PTQ77777 - Hoodie",
+    "ASS1 PTQ77777 - Hoodie 3333333333334 3333333333334 6/6",
+    "PI-S Pink, S 4444444444445",
+    "PI-M Pink, M 4444444444445",
+  ].join("\n");
+
+  const sel = selectStyleItems(parseBarcodeItems(raw), { styleNumber: "PTQ77777" });
+  assert.equal(sel.kind, "styleNumber");
+  assert.equal(sel.items.length, 2); // both colour sections
+
+  const tagged = variantsWithSectionCarton(sel.items);
+  const blue = tagged.filter((v) => v.label.includes("Blue"));
+  const pink = tagged.filter((v) => v.label.includes("Pink"));
+  assert.ok(blue.length === 2 && blue.every((v) => v.cartonEan === "1111111111116"));
+  assert.ok(pink.length === 2 && pink.every((v) => v.cartonEan === "3333333333334"));
 });

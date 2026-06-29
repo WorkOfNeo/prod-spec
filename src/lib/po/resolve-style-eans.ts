@@ -1,7 +1,13 @@
 import { db } from "@/lib/db";
 import { downloadDriveItem } from "@/lib/sharepoint/shares";
 import { findPoPdfDetailed } from "./find-po-pdf";
-import { parsePoBarcodes, selectStyleItems, cartonEanFor, type PoVariant } from "./parse-barcodes";
+import {
+  parsePoBarcodes,
+  selectStyleItems,
+  cartonEanFor,
+  variantsWithSectionCarton,
+  type PoVariant,
+} from "./parse-barcodes";
 import { labelHasSize } from "./size-match";
 import type { EanDiagnostics } from "./ean-view";
 import { parseCustomerConfig, MANUAL_COLUMN_IDS, type ColumnMapping } from "@/lib/customers/config";
@@ -25,6 +31,10 @@ export type SizeEan = {
   size: string;
   ean13: string | null;
   variantLabel: string | null;
+  // Carton EAN of the PO section this row's variant came from — per colourway,
+  // since each colour is its own section with its own carton. Null when the
+  // section carries no carton / no variant matched.
+  cartonEan: string | null;
 };
 
 export type StyleEanStatus =
@@ -280,7 +290,11 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
   // selectStyleItems for the full rationale.
   const selection = selectStyleItems(parsed.items, { customerItemNo, styleNumber });
   const selectedItems = selection.items;
-  const variants = selectedItems.flatMap((i) => i.variants);
+  // Carry each section's own carton EAN onto its variants so a multi-colourway
+  // style (one section per colour) keeps the carton paired with the right
+  // colour rather than collapsing to the first section's carton.
+  const variants = variantsWithSectionCarton(selectedItems);
+  // Single representative carton for non-repeating outputs + Style.cartonEan.
   const cartonEan = cartonEanFor(selectedItems, parsed.items);
 
   // Every section the scrape saw, flagged with whether we selected it — for
@@ -344,7 +358,7 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
   if (sizes.length === 0) {
     // Unknown style sizes → surface variants directly using their labels.
     variants.forEach((v, i) => {
-      sizeEans.push({ size: v.label, ean13: v.ean13, variantLabel: v.label });
+      sizeEans.push({ size: v.label, ean13: v.ean13, variantLabel: v.label, cartonEan: v.cartonEan });
       used.add(i);
     });
   } else {
@@ -352,18 +366,23 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
       let any = false;
       variants.forEach((v, i) => {
         if (labelHasSize(v.label, size)) {
-          sizeEans.push({ size, ean13: v.ean13, variantLabel: v.label });
+          sizeEans.push({ size, ean13: v.ean13, variantLabel: v.label, cartonEan: v.cartonEan });
           used.add(i);
           any = true;
         }
       });
       // Single size + single variant → pair them even if labels differ.
       if (!any && sizes.length === 1 && variants.length === 1) {
-        sizeEans.push({ size, ean13: variants[0].ean13, variantLabel: variants[0].label });
+        sizeEans.push({
+          size,
+          ean13: variants[0].ean13,
+          variantLabel: variants[0].label,
+          cartonEan: variants[0].cartonEan,
+        });
         used.add(0);
         any = true;
       }
-      if (!any) sizeEans.push({ size, ean13: null, variantLabel: null });
+      if (!any) sizeEans.push({ size, ean13: null, variantLabel: null, cartonEan: null });
     }
   }
   const unmatched = variants.filter((_, i) => !used.has(i));

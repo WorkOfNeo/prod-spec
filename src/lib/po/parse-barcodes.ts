@@ -324,6 +324,18 @@ export function cartonEanFor(selected: PoItem[], all: PoItem[]): string | null {
   );
 }
 
+// Flatten the selected sections' variants, tagging each with ITS OWN section's
+// carton EAN. A multi-colourway style is listed as one section per colour, each
+// with its own carton, so the carton must travel with the colour rather than
+// collapse to the first section's (what a single cartonEanFor would do).
+export function variantsWithSectionCarton(
+  items: PoItem[],
+): Array<PoVariant & { cartonEan: string | null }> {
+  return items.flatMap((i) =>
+    i.variants.map((v) => ({ ...v, cartonEan: i.assortmentEans[0] ?? null })),
+  );
+}
+
 // Flatten to (customerItemNo → per-size variants) for linking onto a style
 // by its Customer Item No.
 export function variantsByCustomerItemNo(parsed: ParsedPo): Map<string, PoVariant[]> {

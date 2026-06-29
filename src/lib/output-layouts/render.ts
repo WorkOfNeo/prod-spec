@@ -89,6 +89,10 @@ export function repetitionStyles(style: StyleData, repeatBy: "none" | "size" | "
         allSizes,
         eanVariants: [v],
         colour: v.colour ? { name: v.colour, code: style.colour?.code ?? "" } : style.colour,
+        // Bind this colourway's own carton EAN so {{cartonEan}} /
+        // {{barcode:cartonEan}} print the right carton per colour; fall back to
+        // the style's representative carton when the row carries none.
+        carton: { ...style.carton, ean13: v.cartonEan || style.carton.ean13 },
       }));
     }
     if (style.sizes.length > 0) {

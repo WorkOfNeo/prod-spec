@@ -9,6 +9,8 @@ export type EanSize = {
   size: string;
   ean13: string | null;
   variantLabel: string | null;
+  // Carton EAN of the PO section this row came from (per colourway).
+  cartonEan: string | null;
 };
 
 export type EanDiagnostics = {

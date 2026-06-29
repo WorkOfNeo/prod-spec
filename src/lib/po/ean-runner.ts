@@ -192,6 +192,7 @@ export async function resolveAndPersistStyleEans(styleId: string): Promise<EanVi
           position: i,
           size: s.size,
           ean13: s.ean13,
+          cartonEan: s.cartonEan,
           variantLabel: s.variantLabel,
         },
       }),
