@@ -20,8 +20,14 @@ import {
   rollupOutputSlots,
   outputAnchor,
   type CurrentOutput,
-  type OutputState,
 } from "@/lib/outputs/current-outputs";
+import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
+import { mondayItemUrl } from "@/lib/monday/url";
+import { styleReadinessNotice } from "@/lib/styles/readiness-notice";
+import {
+  OutputReadinessNotice,
+  type ReadinessHrefs,
+} from "@/components/output-readiness-notice";
 
 export const dynamic = "force-dynamic";
 
@@ -29,16 +35,6 @@ export const dynamic = "force-dynamic";
 // per (variantKey) across all jobs, lined up against the declared output set —
 // so outputs generated in different runs roll up here together. Decisions stay
 // per output; the bulk shortcuts loop the per-output endpoints.
-
-const NOT_READY_LABEL: Record<OutputState, string> = {
-  AWAITING_DATA: "Awaiting data",
-  READY_TO_GENERATE: "Ready to generate",
-  GENERATING: "Generating…",
-  TO_REVIEW: "To review",
-  BLOCKED: "Blocked",
-  APPROVED: "Approved",
-  REJECTED: "Rejected",
-};
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -59,9 +55,16 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
       id: true,
       name: true,
       poNumber: true,
+      poFileName: true,
+      eanStatus: true,
+      eanAttempts: true,
+      mondayBoardId: true,
+      mondayItemId: true,
       businessArea: true,
       customer: { select: { name: true } },
       businessAreaRef: { select: { name: true } },
+      supplier: { select: { sharepointUrl: true } },
+      prodSpec: { select: { id: true, outputs: true } },
     },
   });
   if (!style) notFound();
@@ -71,6 +74,37 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     loadDocTypeLabels(),
   ]);
   const rollup = rollupOutputSlots(outputs);
+
+  // The shared, role-aware Output Readiness Notice — one model that folds the
+  // whole pipeline (SharePoint → PO → EANs → fields → generation → review) into
+  // a headline pill + step ladder. Supersedes the ad-hoc progress bar, the
+  // placeholder-blocked alert, and the "Not generated yet" accordion below.
+  const prodSpecOutputs = parseProdSpecOutputs(style.prodSpec?.outputs ?? []);
+  const viewerRole = isAdmin(role) ? "ADMIN" : "REVIEWER";
+  const notice = styleReadinessNotice(
+    {
+      eanStatus: style.eanStatus,
+      eanAttempts: style.eanAttempts,
+      poNumber: style.poNumber,
+      poFileName: style.poFileName,
+      hasProdSpec: style.prodSpec != null,
+      prodSpecHasOutputs: prodSpecOutputs.some((o) => o.enabled !== false),
+      currentOutputs: outputs,
+    },
+    viewerRole,
+  );
+  const prodSpecHref = style.prodSpec ? `/prod-specs/${style.prodSpec.id}` : undefined;
+  const mondayHref = mondayItemUrl(style.mondayBoardId, style.mondayItemId);
+  const readinessHrefs: ReadinessHrefs = {
+    openPoEans: "/po-eans",
+    ...(mondayHref ? { openMonday: mondayHref } : {}),
+    ...(prodSpecHref
+      ? { openProdSpec: prodSpecHref, setBusinessArea: prodSpecHref, pinFieldInSpec: prodSpecHref }
+      : {}),
+    ...(style.supplier?.sharepointUrl
+      ? { openSuppliersDrive: style.supplier.sharepointUrl }
+      : {}),
+  };
 
   const businessArea = style.businessAreaRef?.name ?? style.businessArea ?? null;
   const styleContext = [
@@ -84,7 +118,6 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
 
   // Reviewable = generated and not currently regenerating.
   const reviewable = outputs.filter((o) => o.jobAssetId != null && o.state !== "GENERATING");
-  const notReady = outputs.filter((o) => o.jobAssetId == null || o.state === "GENERATING");
   const pendingReviewable = reviewable.filter((o) => o.reviewStatus === "PENDING_REVIEW");
   const approveAssetIds = pendingReviewable
     .filter((o) => o.placeholderCount === 0 && o.jobAssetId)
@@ -97,10 +130,6 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   ).length;
 
   const notGeneratedCount = rollup.awaitingData + rollup.readyToGenerate;
-  // Generation coverage — how many of the declared output slots have been
-  // produced (e.g. 2/3 · 67%). rollupOutputSlots collapses multi-document
-  // outputs to one slot, so a carton X-of-Y counts once, not per sticker.
-  const genPct = rollup.total > 0 ? Math.round((rollup.generated / rollup.total) * 100) : 0;
   const tally = [
     rollup.approved > 0 ? `${rollup.approved} approved` : null,
     rollup.rejected > 0 ? `${rollup.rejected} rejected` : null,
@@ -177,7 +206,6 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const current = reviewable.filter((o) => !isHistoryOutput(o));
 
   const groups = groupByDocType<CurrentOutput>(current, docTypeLabels);
-  const placeholderOutputs = reviewable.filter((o) => o.placeholderCount > 0);
 
   return (
     <div className="px-8 py-8">
@@ -204,28 +232,6 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             {rollup.total} output{rollup.total === 1 ? "" : "s"}
             {tally ? <> — {tally}</> : null}
           </p>
-          {/* Generation coverage — at-a-glance "is this style fully generated?" */}
-          <div className="mt-2 flex items-center gap-2">
-            <div
-              className="h-1.5 w-40 overflow-hidden rounded-full bg-zinc-100"
-              role="progressbar"
-              aria-valuenow={genPct}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label="Outputs generated"
-            >
-              <div
-                className={`h-full rounded-full ${rollup.complete ? "bg-emerald-500" : "bg-amber-500"}`}
-                style={{ width: `${genPct}%` }}
-              />
-            </div>
-            <span className="text-xs font-medium tabular-nums text-zinc-600">
-              {rollup.generated}/{rollup.total} generated · {genPct}%
-            </span>
-            {!rollup.complete && notGeneratedCount > 0 ? (
-              <span className="text-xs text-amber-700">{notGeneratedCount} not generated</span>
-            ) : null}
-          </div>
           {followThrough && pendingJob ? (
             <ReviewClaim
               jobId={pendingJob.id}
@@ -255,26 +261,14 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         </div>
       </div>
 
-      {placeholderOutputs.length > 0 && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
-          <div className="text-sm font-semibold text-red-800">
-            {placeholderOutputs.length} output
-            {placeholderOutputs.length > 1 ? "s contain" : " contains"} placeholder artifacts —
-            approval is blocked
-          </div>
-          <p className="mt-1 text-xs text-red-700">
-            Dashed “missing artwork” tiles or “No carton EAN” boxes are review-safe but must never
-            ship to print. Fix the gaps and re-run the output.
-          </p>
-          <ul className="mt-2 space-y-0.5 text-xs text-red-800">
-            {placeholderOutputs.map((o) => (
-              <li key={o.variantKey}>
-                · {o.name} — {o.placeholderCount} placeholder{o.placeholderCount > 1 ? "s" : ""}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {/* The shared Output Readiness Notice — folds the old progress bar, the
+          placeholder-blocked alert, and the "Not generated yet" accordion into
+          one role-aware ladder (source/PO/SharePoint → spec → fields →
+          generation → review). The blocked step + reviewer "don't approve"
+          banner preserve the old red alert's intent. */}
+      <div className="mt-4">
+        <OutputReadinessNotice notice={notice} role={viewerRole} hrefs={readinessHrefs} />
+      </div>
 
       {/* Generated outputs, grouped per document type. */}
       <div className="mt-6 flex flex-col gap-3">
@@ -335,43 +329,6 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         </div>
       ) : null}
 
-      {notReady.length > 0 ? (
-        <div className="mt-3">
-          <DocTypeAccordion
-            label="Not generated yet"
-            count={notReady.length}
-            rightHint="can't generate (missing fields), queued, or generating"
-            // Open by default when there's nothing reviewable, so a style whose
-            // outputs were all skipped for missing fields shows WHY up front.
-            defaultOpen={reviewable.length === 0}
-          >
-            <ul className="divide-y divide-zinc-100 text-sm">
-              {notReady.map((o) => {
-                // Required fields missing ⇒ generation was deliberately skipped.
-                // Say so plainly and name the fields — that's the actionable bit.
-                const missing = o.state === "AWAITING_DATA" && o.missing.length > 0;
-                return (
-                  <li key={o.variantKey} className="flex items-center justify-between gap-3 py-2">
-                    <span className="font-medium text-zinc-700">{o.name}</span>
-                    <span className="flex items-center gap-2 text-xs text-zinc-500">
-                      {missing ? (
-                        <span className="text-amber-700">
-                          missing: {o.missing.map((m) => m.label).join(", ")}
-                        </span>
-                      ) : null}
-                      <span
-                        className={`rounded-full px-2 py-0.5 font-medium ${missing ? "bg-amber-100 text-amber-800" : "bg-zinc-100 text-zinc-600"}`}
-                      >
-                        {missing ? "Can't generate" : NOT_READY_LABEL[o.state]}
-                      </span>
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </DocTypeAccordion>
-        </div>
-      ) : null}
     </div>
   );
 }

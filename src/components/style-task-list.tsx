@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { timeAgo, type ReviewTask, type ReviewTaskOutput } from "@/lib/dashboard/review-tasks";
 import { outputAnchor } from "@/lib/outputs/current-outputs";
+import {
+  OutputReadinessNotice,
+  type ReadinessHrefs,
+} from "@/components/output-readiness-notice";
 
 // The per-style review card. Shared by My tasks (/dashboard) and the review
 // queue (/reviews) so both render the identical "collected per style" unit —
@@ -21,6 +25,25 @@ const OUTPUT_CHIP: Record<ReviewTaskOutput["state"], { cls: string; label: strin
   // queued). Amber, not muted: it needs data fixed on Monday before it can run.
   AWAITING_DATA: { cls: "border-amber-200 bg-amber-50 text-amber-800", label: "missing fields" },
 };
+
+// Navigational hrefs for the readiness notice on a review card. Only the keys
+// that make sense here are wired: NO `rerun` (these cards have no RerunButton)
+// and NO `openSuppliersDrive` (the supplier URL isn't loaded for this surface).
+function readinessHrefs(t: ReviewTask): ReadinessHrefs {
+  const prodSpecHref = t.prodSpecId ? `/prod-specs/${t.prodSpecId}` : undefined;
+  return {
+    openMonday: t.mondayUrl,
+    openPoEans: "/po-eans",
+    review: `/styles/${t.styleId}/review`,
+    ...(prodSpecHref
+      ? {
+          openProdSpec: prodSpecHref,
+          setBusinessArea: prodSpecHref,
+          pinFieldInSpec: prodSpecHref,
+        }
+      : {}),
+  };
+}
 
 function StyleTaskAction({ t, startedContext }: { t: ReviewTask; startedContext: boolean }) {
   if (t.needsPublishRetry) {
@@ -105,25 +128,20 @@ export function StyleTaskList({
                 {t.total} to review
               </span>
             ) : null}
-            {t.generatedSlots < t.totalSlots ? (
-              <span
-                className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-amber-800"
-                title={`${t.generatedSlots} of ${t.totalSlots} outputs generated — the remaining ${t.totalSlots - t.generatedSlots} ${t.totalSlots - t.generatedSlots === 1 ? "is" : "are"} still awaiting data or being generated, and appear here automatically when ready.`}
-              >
-                {t.generatedSlots}/{t.totalSlots} generated
-              </span>
-            ) : null}
             <StyleTaskAction t={t} startedContext={startedContext} />
           </summary>
           <div className="border-t border-zinc-100 px-3 py-2">
-            {t.stillComing > 0 ? (
-              <p className="mb-2 rounded-md bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
-                {t.stillComing} of {t.outputs.length} output{t.outputs.length === 1 ? "" : "s"}{" "}
-                {t.stillComing === 1 ? "isn't" : "aren't"} generated yet — they appear here
-                automatically as their data lands or rendering finishes. Nothing is sent to the
-                supplier until every output is decided.
-              </p>
-            ) : null}
+            {/* The readiness notice supersedes the old "X/Y generated" badge, the
+                "still coming" paragraph and the per-output "missing …" text: it
+                folds the whole pipeline (PO/EANs → spec → fields → generation →
+                review) into one role-aware ladder. The per-output Review links
+                below are kept as the entry points into the review page. */}
+            <OutputReadinessNotice
+              notice={t.notice}
+              role="REVIEWER"
+              hrefs={readinessHrefs(t)}
+              className="mb-2"
+            />
             <ul className="space-y-1">
               {t.outputs.map((o) => {
                 const chip = OUTPUT_CHIP[o.state];
@@ -133,9 +151,6 @@ export function StyleTaskList({
                       className={`min-w-0 truncate ${o.generated ? "text-zinc-700" : "text-zinc-400"}`}
                     >
                       {o.name}
-                      {!o.generated && o.state === "AWAITING_DATA" && o.missing.length > 0 ? (
-                        <span className="ml-1 text-amber-700">· missing {o.missing.join(", ")}</span>
-                      ) : null}
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
                       <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${chip.cls}`}>

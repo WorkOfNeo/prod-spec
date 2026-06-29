@@ -20,7 +20,10 @@ import {
   EFFECTIVE_STATUS_TONE_CLASSES,
   type EffectiveStatus,
 } from "@/lib/styles/effective-status";
-import { outputReadinessForStyle, type OutputReadiness } from "@/lib/styles/output-readiness";
+import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
+import { styleReadinessNotice } from "@/lib/styles/readiness-notice";
+import { OutputReadinessNotice, type ReadinessHrefs } from "@/components/output-readiness-notice";
+import { mondayItemUrl } from "@/lib/monday/url";
 import { RerunButton } from "./rerun-button";
 import { StyleOutputCard, type StyleOutputCardProps } from "./style-output-card";
 import { ProdSpecTab } from "./prod-spec-tab";
@@ -475,6 +478,44 @@ export default async function StyleDetail({
     },
   });
 
+  // Full pipeline diagnostic (SharePoint → PO → EANs → fields → generation →
+  // review) as ONE role-aware notice — complements the job-status/rerun
+  // controls in the header. This is the LIGHT case: it reuses outputReadiness
+  // and the already-computed hasPdfs / latest job signals.
+  const readinessNoticeHasPdfs =
+    style.jobs.some((j) => j.status !== "FAILED" && j.assets.length > 0) ||
+    recentAssets.length > 0;
+  const readinessNotice = styleReadinessNotice(
+    {
+      eanStatus: style.eanStatus,
+      eanAttempts: style.eanAttempts,
+      poNumber: style.poNumber,
+      poFileName: style.poFileName,
+      hasProdSpec: Boolean(style.prodSpec),
+      prodSpecHasOutputs: enabledOutputs.length > 0,
+      outputReadiness,
+      hasPdfs: readinessNoticeHasPdfs,
+      latestJobStatus: latestJob?.status ?? null,
+    },
+    isAdmin ? "ADMIN" : "REVIEWER",
+  );
+  const mondayHref = mondayItemUrl(style.mondayBoardId, style.mondayItemId);
+  const readinessHrefs: ReadinessHrefs = {
+    openPoEans: "/po-eans",
+    review: `/styles/${style.id}/review`,
+    ...(mondayHref ? { openMonday: mondayHref } : {}),
+    ...(style.prodSpec
+      ? {
+          openProdSpec: `/prod-specs/${style.prodSpec.id}`,
+          setBusinessArea: `/prod-specs/${style.prodSpec.id}`,
+          pinFieldInSpec: `/prod-specs/${style.prodSpec.id}`,
+        }
+      : {}),
+    ...(style.supplier?.sharepointUrl
+      ? { openSuppliersDrive: style.supplier.sharepointUrl }
+      : {}),
+  };
+
   // Read-only resolved spec fields for the Details tab — same resolution
   // the editor uses, so reviewers can verify what will render without
   // opening Edit.
@@ -602,6 +643,14 @@ export default async function StyleDetail({
             />
           )}
         </div>
+      </div>
+
+      <div className="mt-4 max-w-2xl">
+        <OutputReadinessNotice
+          notice={readinessNotice}
+          role={isAdmin ? "ADMIN" : "REVIEWER"}
+          hrefs={readinessHrefs}
+        />
       </div>
 
       {customerConfig.skipSupplierDelivery && <SkipSupplierDeliveryBadge className="mt-4" />}
