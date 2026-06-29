@@ -21,6 +21,8 @@ const FILTERED_TAKE = 500;
 // matching Purchase Order PDF from the central Suppliers SharePoint library
 // and stores the per-size/colour Barcode EAN (in size order) + the carton EAN
 // on the style. "Re-resolve" forces a fresh read.
+export const metadata = { title: "PO barcodes" };
+
 export default async function PoEansPage({
   searchParams,
 }: {

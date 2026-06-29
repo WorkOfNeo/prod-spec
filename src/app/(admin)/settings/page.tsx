@@ -11,6 +11,8 @@ export const dynamic = "force-dynamic";
 // certificates, QR codes, Monday webhooks) lives under their own sidebar
 // entries; global, app-wide flags that don't belong to a catalogue land
 // here — starting with the auto-generate master switch.
+export const metadata = { title: "Settings" };
+
 export default async function SettingsPage() {
   await requireAdminPage();
 

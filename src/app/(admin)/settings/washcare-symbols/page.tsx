@@ -56,6 +56,8 @@ async function washCoverage(symbols: Array<{ code: string; mondayValue: string |
   return { unmappedLabels, missingArtwork, optionCount: options.length };
 }
 
+export const metadata = { title: "Washcare symbols" };
+
 export default async function WashSymbolsPage() {
   await requireAdminPage();
 

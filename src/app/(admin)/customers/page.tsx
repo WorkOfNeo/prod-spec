@@ -7,6 +7,8 @@ import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Customers" };
+
 export default async function CustomersPage() {
   await requireAdminPage();
 

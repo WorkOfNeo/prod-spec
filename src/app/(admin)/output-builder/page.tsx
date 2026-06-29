@@ -16,6 +16,8 @@ export const dynamic = "force-dynamic";
 
 // Output Builder — list of operator-built layouts. Admin-only: the
 // builder writes print-affecting config.
+export const metadata = { title: "Output builder" };
+
 export default async function OutputBuilderPage() {
   await requireAdminPage();
 

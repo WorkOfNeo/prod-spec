@@ -9,6 +9,12 @@ import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const customer = await db.customer.findUnique({ where: { id }, select: { name: true } });
+  return { title: customer?.name ?? "Customer" };
+}
+
 export default async function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAdminPage();
 

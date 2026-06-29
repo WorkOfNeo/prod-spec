@@ -13,7 +13,15 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Prod Spec",
+  // Every page should set its own `title` (see the per-page `metadata` /
+  // `generateMetadata` exports). This template wraps that page title so the
+  // browser tab reads e.g. "Styles · Prod Spec", which is what makes the app
+  // navigable across many open tabs. Pages that don't set a title fall back
+  // to `default`.
+  title: {
+    default: "Prod Spec",
+    template: "%s · Prod Spec",
+  },
   description: "Generate print-ready PDFs from Monday.com data",
 };
 

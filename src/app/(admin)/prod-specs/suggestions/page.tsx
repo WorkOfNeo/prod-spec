@@ -13,6 +13,8 @@ import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Prod spec suggestions" };
+
 export default async function SuggestionsPage() {
   await requireAdminPage();
 

@@ -47,6 +47,8 @@ const MAX_TICKETS = 2000;
 const ACTIVE_STATUSES = ["OPEN", "IN_PROGRESS"] as const;
 const HISTORY_STATUSES = ["FIXED", "RESOLVED"] as const;
 
+export const metadata = { title: "Rejection log" };
+
 export default async function RejectionLogPage({
   searchParams,
 }: {

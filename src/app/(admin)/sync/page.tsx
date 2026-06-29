@@ -3,6 +3,8 @@
 
 import { redirect } from "next/navigation";
 
+export const metadata = { title: "Sync" };
+
 export default function SyncRedirect() {
   redirect("/monday?tab=sync");
 }

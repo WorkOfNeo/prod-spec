@@ -5,6 +5,8 @@ import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Info area sizes" };
+
 export default async function InfoAreaSizesPage() {
   await requireAdminPage();
 

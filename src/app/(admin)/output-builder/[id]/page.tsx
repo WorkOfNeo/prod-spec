@@ -12,6 +12,12 @@ import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const layout = await db.outputLayout.findUnique({ where: { id }, select: { name: true } });
+  return { title: layout ? `${layout.name} · Output builder` : "Output builder" };
+}
+
 export default async function OutputLayoutEditorPage(props: { params: Promise<{ id: string }> }) {
   await requireAdminPage();
 

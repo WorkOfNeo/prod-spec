@@ -15,6 +15,8 @@ export const dynamic = "force-dynamic";
 // Job/JobAsset state (see lib/dashboard/review-tasks.ts): rows appear when
 // a review is left unfinished — even via a killed tab — and vanish on their
 // own the moment the job settles.
+export const metadata = { title: "Dashboard" };
+
 export default async function DashboardPage() {
   // Test-phase machinery — with the kill switch thrown the dashboard
   // doesn't exist; old links land on the styles list like before.
