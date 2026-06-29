@@ -518,6 +518,7 @@ export default async function StyleDetail({
       size: e.size,
       ean13: e.ean13,
       variantLabel: e.variantLabel,
+      cartonEan: e.cartonEan,
     })),
   };
 

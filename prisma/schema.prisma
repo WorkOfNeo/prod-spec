@@ -716,6 +716,11 @@ model StyleEan {
   size         String
   // 13-digit EAN, or null when no PO variant matched this size.
   ean13        String?
+  // Carton/assortment EAN of the PO SECTION this row came from. A multi-
+  // colourway style lists each colour as its own PO section with its own
+  // carton, so the carton is per-(size×colour) row, not one per style. The
+  // single Style.cartonEan stays as a representative for non-repeating outputs.
+  cartonEan    String?
   // The PO variant label we matched this size against (audit).
   variantLabel String?
   createdAt    DateTime @default(now())

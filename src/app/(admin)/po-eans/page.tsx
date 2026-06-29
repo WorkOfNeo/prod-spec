@@ -99,7 +99,7 @@ export default async function PoEansPage({
         supplier: { select: { name: true } },
         eans: {
           orderBy: { position: "asc" },
-          select: { size: true, ean13: true, variantLabel: true },
+          select: { size: true, ean13: true, variantLabel: true, cartonEan: true },
         },
       },
       orderBy: { updatedAt: "desc" },
@@ -133,6 +133,7 @@ export default async function PoEansPage({
         size: e.size,
         ean13: e.ean13,
         variantLabel: e.variantLabel,
+        cartonEan: e.cartonEan,
       })),
     },
   }));

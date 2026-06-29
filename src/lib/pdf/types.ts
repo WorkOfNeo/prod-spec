@@ -57,7 +57,14 @@ export type StyleData = {
   // (deduped by size via the ean map), this keeps every combo — the
   // Output Builder's repeat-per-EAN iterates these. Absent on styles
   // without scraped EANs.
-  eanVariants?: Array<{ size: string; ean13: string; colour: string | null }>;
+  eanVariants?: Array<{
+    size: string;
+    ean13: string;
+    colour: string | null;
+    // Carton EAN of this variant's PO section (per colourway) — set on the
+    // narrowed style by repetitionStyles so {{cartonEan}} is colour-correct.
+    cartonEan?: string | null;
+  }>;
 
   // The FULL size run, preserved across the Output Builder's per-size /
   // per-EAN repetition (which narrows `sizes` to the current row). Set by

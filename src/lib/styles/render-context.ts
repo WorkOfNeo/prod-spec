@@ -45,7 +45,12 @@ export type RenderableStyle = {
   cartonEan: string | null;
   mondayBoardId: string;
   supplier: { country: string | null } | null;
-  eans: ReadonlyArray<{ size: string; ean13: string | null; variantLabel?: string | null }>;
+  eans: ReadonlyArray<{
+    size: string;
+    ean13: string | null;
+    variantLabel?: string | null;
+    cartonEan?: string | null;
+  }>;
   customer: { name: string; config: unknown };
   qrImage: { image: string } | null;
 };
@@ -137,6 +142,7 @@ export async function buildStyleData(
       size: e.size,
       ean13: e.ean13!,
       colour: colourFromVariantLabel(e.variantLabel ?? null, e.size),
+      cartonEan: e.cartonEan ?? null,
     }));
 
   // Wash-care token repair: Monday dropdown labels can contain ", " and the
@@ -196,7 +202,7 @@ async function loadSiblingStyles(
       supplier: { select: { country: true } },
       eans: {
         orderBy: { position: "asc" },
-        select: { size: true, ean13: true, variantLabel: true },
+        select: { size: true, ean13: true, variantLabel: true, cartonEan: true },
       },
     },
   });
@@ -238,7 +244,10 @@ export async function loadStyleRenderContext(styleId: string): Promise<StyleRend
       customer: true,
       qrImage: true,
       supplier: { select: { country: true } },
-      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, variantLabel: true } },
+      eans: {
+        orderBy: { position: "asc" },
+        select: { size: true, ean13: true, variantLabel: true, cartonEan: true },
+      },
     },
   });
   if (!style) return null;
