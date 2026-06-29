@@ -4,9 +4,10 @@ import { outputAnchor } from "@/lib/outputs/current-outputs";
 
 // The per-style review card. Shared by My tasks (/dashboard) and the review
 // queue (/reviews) so both render the identical "collected per style" unit —
-// the style summary, the decided/total rating bar, the right CTA, and the
-// expandable list of its outputs. Server-renderable: <details>/<summary> are
-// native, so no "use client" is needed.
+// the style summary, the "N to review" badge, the right CTA, and the
+// expandable list of its FRESH outputs (settled approved/rejected ones are
+// hidden here and live on the review page). Server-renderable: <details>/
+// <summary> are native, so no "use client" is needed.
 
 const OUTPUT_CHIP: Record<ReviewTaskOutput["state"], { cls: string; label: string }> = {
   APPROVED: { cls: "border-emerald-200 bg-emerald-50 text-emerald-700", label: "approved" },
@@ -97,17 +98,11 @@ export function StyleTaskList({
                 {timeAgo(t.lastActivityAt)}
               </div>
             </div>
-            <span className="hidden items-center gap-2 sm:inline-flex">
-              <span className="inline-block h-1.5 w-14 overflow-hidden rounded-full bg-zinc-200">
-                <span
-                  className="block h-full rounded-full bg-amber-500"
-                  style={{ width: `${t.total ? Math.round((t.decided / t.total) * 100) : 0}%` }}
-                />
+            {t.total > 0 ? (
+              <span className="hidden shrink-0 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-blue-700 sm:inline-block">
+                {t.total} to review
               </span>
-              <span className="font-mono text-xs tabular-nums text-zinc-600">
-                {t.decided}/{t.total}
-              </span>
-            </span>
+            ) : null}
             {t.generatedSlots < t.totalSlots ? (
               <span
                 className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-amber-800"

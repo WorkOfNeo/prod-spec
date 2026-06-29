@@ -1,5 +1,6 @@
 import type { MissingDetailField } from "@/lib/styles/detail-fields";
 import type { ReadinessStyle } from "@/lib/styles/output-readiness";
+import { GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 
 // =====================================================
 // Current outputs — the single source of truth for "what outputs does this
@@ -42,6 +43,12 @@ export type CurrentOutput = {
   rejectReason: string | null;
   placeholderCount: number;
   generatedAt: Date | null; // asset.createdAt — when the output became available
+  // true ⇒ this output's latest asset was produced by the style's NEWEST
+  // generation job (the current run). false for outputs whose latest asset
+  // comes from an earlier run, and for still-coming outputs (no asset yet).
+  // Lets the review page tuck decided outputs from prior runs into a history
+  // accordion without ever burying something still pending.
+  fromLatestGeneration: boolean;
 };
 
 export type StyleOutputRollup = {
@@ -218,11 +225,20 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
       createdAt: true,
     },
   });
+  // The newest generation job = the job behind the most recent asset (assets
+  // are ordered job-createdAt desc, so the first one wins). Used to flag each
+  // output as belonging to the current run vs. an earlier one.
+  const latestJobId = assets[0]?.jobId ?? null;
+
   // Newest asset per FULL variantKey — one entry per actual document, so a
   // multi-document output (carton X-of-Y, per size/colour: "<base>#<suffix>")
   // stays individually reviewable. Assets are ordered newest job first.
   const latestByVariant = new Map<string, (typeof assets)[number]>();
   for (const a of assets) {
+    // The standalone "General information" framing PDF is retired — its pages
+    // now ride inside the cover. Old jobs still carry __general_info__ assets;
+    // skip them so they never surface as a current output anywhere.
+    if (a.variantKey === GENERAL_INFO_VARIANT_KEY) continue;
     const key = a.variantKey ?? `doc:${a.docType}`;
     if (!latestByVariant.has(key)) latestByVariant.set(key, a);
   }
@@ -273,6 +289,7 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
       rejectReason: a.rejectReason,
       placeholderCount: a.placeholderCount,
       generatedAt: a.createdAt,
+      fromLatestGeneration: latestJobId != null && a.jobId === latestJobId,
     });
   }
 
@@ -297,6 +314,7 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
       rejectReason: null,
       placeholderCount: 0,
       generatedAt: null,
+      fromLatestGeneration: false,
     });
   }
 

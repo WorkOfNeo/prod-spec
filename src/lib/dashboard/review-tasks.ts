@@ -24,9 +24,12 @@ export type ReviewTask = {
   prodSpecId: string | null;
   prodSpecName: string | null;
   poNumber: string | null;
-  // Review progress over outputs that already have a document (CROSS-JOB — the
-  // same model the review PAGE uses): `decided` of `total` reviewable. Outputs
-  // still being generated aren't counted here; they live in `stillComing`.
+  // Fresh worklist counts. `total` = documents still needing a decision now
+  // (to-review / blocked), the number the card shows as "N to review" — it
+  // EXCLUDES already-decided (approved/rejected) outputs so the list shrinks as
+  // you work. `decided` = decisions already made on the newest (actionable)
+  // job; used only to label the CTA ("Finish review" mid-pass). Still-coming
+  // documents aren't counted in `total`; they live in `stillComing`.
   total: number;
   decided: number;
   // Declared outputs with no reviewable document yet — awaiting data, queued,
@@ -201,15 +204,20 @@ async function awaitingReviewEntries(): Promise<{ job: AwaitingReviewJob; task: 
 const isReviewable = (o: CurrentOutput) => o.jobAssetId != null && o.state !== "GENERATING";
 
 function buildTask(job: AwaitingReviewJob, currentOutputs: CurrentOutput[]): ReviewTask {
-  const reviewable = currentOutputs.filter(isReviewable);
-  const decided = reviewable.filter(
-    (o) => o.reviewStatus === "APPROVED" || o.reviewStatus === "REJECTED",
-  );
-  const stillComing = currentOutputs.filter((o) => !isReviewable(o));
-  // Slot-based coverage (collapses multi-document outputs) — parity with the
-  // review page's "X/Y generated" header.
+  // The card is a FRESH worklist: it shows only what still needs a decision
+  // (to-review / blocked) plus what's still coming, and hides settled outputs
+  // (approved / rejected). So when a style is rerun for one fix, the reviewer
+  // sees that one — not the 34 already decided in a prior run. The settled
+  // history stays in full on the per-style review page. NOTE: this hides BOTH
+  // states regardless of run, so the list "gets less and less" as you decide.
+  const isSettled = (o: CurrentOutput) => o.state === "APPROVED" || o.state === "REJECTED";
+  const fresh = currentOutputs.filter((o) => !isSettled(o));
+  // Needs a decision now: a fresh document that exists and isn't regenerating.
+  const pending = fresh.filter(isReviewable);
+  const stillComing = fresh.filter((o) => !isReviewable(o));
+  // Slot-based generation coverage — kept over the FULL set so "3/5 generated"
+  // still reflects true coverage of the style's declared outputs.
   const slots = rollupOutputSlots(currentOutputs);
-  const pending = reviewable.filter((o) => o.state === "TO_REVIEW" || o.state === "BLOCKED");
 
   // Activity = the newest of any decision, any document's generation, or the
   // claim — so "ready 2h ago" tracks the latest thing that happened.
@@ -222,11 +230,13 @@ function buildTask(job: AwaitingReviewJob, currentOutputs: CurrentOutput[]): Rev
     .sort((a, b) => b.getTime() - a.getTime())[0];
 
   // Reviewer labels + the publish-retry signal stay NEWEST-JOB properties:
-  // both describe the actionable job, not the cross-job history.
+  // both describe the actionable job, not the cross-job history. `decided`
+  // counts the newest job's decisions so the CTA can read "Finish review"
+  // mid-pass even though those decided documents have dropped off the list.
   const newestDecided = job.assets.filter((a) => a.reviewStatus !== "PENDING_REVIEW");
   const newestPending = job.assets.filter((a) => a.reviewStatus === "PENDING_REVIEW");
 
-  const outputs = currentOutputs.map(
+  const outputs = fresh.map(
     (o): ReviewTaskOutput => ({
       variantKey: o.variantKey,
       name: o.name,
@@ -247,8 +257,8 @@ function buildTask(job: AwaitingReviewJob, currentOutputs: CurrentOutput[]): Rev
     prodSpecId: job.style.prodSpecId ?? null,
     prodSpecName: job.style.prodSpec?.name ?? null,
     poNumber: job.style.poNumber ?? null,
-    total: reviewable.length,
-    decided: decided.length,
+    total: pending.length,
+    decided: newestDecided.length,
     stillComing: stillComing.length,
     generatedSlots: slots.generated,
     totalSlots: slots.total,
