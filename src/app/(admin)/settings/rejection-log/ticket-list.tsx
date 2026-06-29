@@ -258,14 +258,16 @@ export function TicketList({
   }, [commentOptions, selectedComments]);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    // Split on commas / whitespace / newlines so a pasted list of POs (or
+    // styles) matches as an OR — enter many at once, resolve them together.
+    const terms = query.toLowerCase().split(/[\s,]+/).filter(Boolean);
     const customerSet = new Set(customers);
     const baSet = new Set(businessAreas);
     const typeSet = new Set(outputTypes);
     return rows.filter(
       (r) =>
         enabled.has(displayStatusOf(r)) &&
-        (q === "" || r.searchBlob.includes(q)) &&
+        (terms.length === 0 || terms.some((t) => r.searchBlob.includes(t))) &&
         (customerSet.size === 0 || customerSet.has(r.customerName)) &&
         (baSet.size === 0 || (r.businessArea != null && baSet.has(r.businessArea))) &&
         (typeSet.size === 0 || typeSet.has(r.docType)),
@@ -583,8 +585,8 @@ export function TicketList({
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search style, PO, output, comment…"
-          className="w-64 rounded-md border border-zinc-300 px-3 py-1.5 text-sm focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+          placeholder="Search style, PO, output, comment… (paste many, comma/space separated)"
+          className="w-96 rounded-md border border-zinc-300 px-3 py-1.5 text-sm focus:ring-2 focus:ring-zinc-900 focus:outline-none"
         />
         {viewStatuses.map((s) => (
           <button
