@@ -198,8 +198,12 @@ export default async function StylesPage() {
             eanStatus: s.eanStatus,
             groupTitle: s.groupTitle,
             // Soft-hidden behind "Show archived" — except Done-group styles
-            // re-admitted by the PO cutoff, which belong in the main view.
-            archived: isArchivedGroup(s.groupTitle) && !doneCutoffIds.has(s.id),
+            // re-admitted by the PO cutoff, AND styles manually pulled in for
+            // layout testing, both of which belong in the main view.
+            archived:
+              isArchivedGroup(s.groupTitle) &&
+              !doneCutoffIds.has(s.id) &&
+              s.pulledForTestAt == null,
             // Manually pulled in for layout testing (Settings ▸ Pull style by
             // PO) — shown via the "Pulled" attribute chip.
             pulledForTest: s.pulledForTestAt != null,
