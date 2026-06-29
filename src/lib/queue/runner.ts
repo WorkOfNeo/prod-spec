@@ -16,7 +16,6 @@ import {
   COVER_VARIANT_KEY,
   GENERAL_INFO_VARIANT_KEY,
   renderCoverPageHtml,
-  renderGeneralInfoHtml,
   type BundleDocSummary,
 } from "@/lib/pdf/bundle-pages";
 import type { TriggerSource } from "@/generated/prisma/enums";
@@ -390,11 +389,12 @@ export async function processJob(jobId: string): Promise<void> {
     throw new RunnerError("NO_OUTPUTS", reason);
   }
 
-  // Bundle framing pages — cover (always) + general information (when the
-  // ProdSpec carries markdown). Rendered AFTER the outputs so the cover
-  // reflects the final generated list, persisted FIRST (with 00-/01- file
-  // prefixes) so they open the bundle everywhere assets are listed. Both
-  // are placeholder-free by construction and reviewed like any other asset.
+  // Bundle framing — ONE cover document (always). When the ProdSpec carries
+  // general-info markdown, those pages ride INSIDE the cover, after the cover
+  // sheet — general info is never a standalone bundle PDF. Rendered AFTER the
+  // outputs so the cover reflects the final generated list, persisted FIRST
+  // (00- file prefix) so it opens the bundle everywhere assets are listed.
+  // Placeholder-free by construction and reviewed like any other asset.
   type BundlePage = {
     docType: string;
     variantKey: string;
@@ -418,9 +418,10 @@ export async function processJob(jobId: string): Promise<void> {
       generatedAt: new Date(),
       docs: docSummaries,
       settings: pageSettings.cover,
-      // General info rides inside the cover document too — own pages,
-      // own margins — so the requirements are seen even by someone who
-      // only opens/prints the cover. The standalone 01 doc still ships.
+      // General info rides inside the cover document — own pages, own
+      // margins, after the cover sheet. The cover is its ONLY home in the
+      // bundle, so the order is guaranteed: cover sheet first, then the
+      // requirements. No standalone general-information PDF is emitted.
       generalInfo: generalInfoMd
         ? { markdown: generalInfoMd, settings: pageSettings.generalInfo }
         : null,
@@ -435,23 +436,6 @@ export async function processJob(jobId: string): Promise<void> {
       fileName: `00-${slug}-cover-page.pdf`,
       pdf: await renderPdf({ html: coverHtml }),
     });
-
-    if (generalInfoMd && prodSpec) {
-      let infoHtml = renderGeneralInfoHtml({
-        markdown: generalInfoMd,
-        customerName: job.style.customer.name,
-        businessArea: businessAreaName,
-        settings: pageSettings.generalInfo,
-      });
-      infoHtml = await inlineProdSpecImages(infoHtml, prodSpec.id);
-      bundlePages.push({
-        docType: "GENERAL_INFO",
-        variantKey: GENERAL_INFO_VARIANT_KEY,
-        displayName: "General information",
-        fileName: `01-${slug}-general-information.pdf`,
-        pdf: await renderPdf({ html: infoHtml }),
-      });
-    }
   } catch (err) {
     throw new RunnerError(
       "BUNDLE_PAGES_FAILED",

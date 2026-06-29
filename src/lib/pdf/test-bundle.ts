@@ -8,9 +8,7 @@ import { countPlaceholderMarkers } from "@/lib/pdf/placeholders";
 import { defaultArtifactFileName } from "@/lib/pdf/template-registry";
 import {
   COVER_VARIANT_KEY,
-  GENERAL_INFO_VARIANT_KEY,
   renderCoverPageHtml,
-  renderGeneralInfoHtml,
   type BundleDocSummary,
 } from "@/lib/pdf/bundle-pages";
 import { parseCustomerConfig } from "@/lib/customers/config";
@@ -27,11 +25,11 @@ import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-a
 // Test-bundle renderer — a DRY RUN of the job runner.
 //
 // Renders the exact PDFs a real generation would produce for ONE chosen
-// style under a prod spec — the cover (with general information also riding
-// inside it), the standalone general-information document, and one PDF per
-// enabled output — but creates NO Job, NO JobAssets, NO review tasks and
-// notifies NO ONE. It feeds the /prod-specs/<id> "Test" tab so an operator
-// can eyeball every document before committing to an actual rerun.
+// style under a prod spec — the cover (with general information appended
+// inside it, runner-identical) plus one PDF per enabled output — but
+// creates NO Job, NO JobAssets, NO review tasks and notifies NO ONE. It
+// feeds the /prod-specs/<id> "Test" tab so an operator can eyeball every
+// document before committing to an actual rerun.
 //
 // The render path mirrors src/lib/queue/runner.ts#processJob deliberately:
 // same buildStyleData assembly, same output resolution + dims + pins +
@@ -43,7 +41,7 @@ import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-a
 // =====================================================
 
 export type TestBundleDoc = {
-  kind: "cover" | "general-info" | "output";
+  kind: "cover" | "output";
   // Variant key (synthetic COVER_VARIANT_KEY for the cover), suffixed
   // "#<part>" for one file of a multi-document (repeat-per-EAN) output.
   variantKey: string;
@@ -305,48 +303,6 @@ export async function renderProdSpecTestBundle(
     };
   }
 
-  // Standalone general-information document (01-…). The runner ships this as
-  // its own bundle asset IN ADDITION to the copy embedded inside the cover,
-  // so the test mirrors that. (If/when the cover-only GI refactor lands on
-  // this branch, drop this block to stay in sync with the runner.)
-  let giDoc: TestBundleDoc | null = null;
-  if (generalInfoMd) {
-    try {
-      let infoHtml = renderGeneralInfoHtml({
-        markdown: generalInfoMd,
-        customerName: style.customer.name,
-        businessArea: businessAreaName,
-        settings: pageSettings.generalInfo,
-      });
-      infoHtml = await inlineProdSpecImages(infoHtml, prodSpec.id);
-      giDoc = {
-        kind: "general-info",
-        variantKey: GENERAL_INFO_VARIANT_KEY,
-        name: "General information",
-        fileName: `01-${slug}-general-information.pdf`,
-        widthMm: 210,
-        heightMm: 297,
-        staticPdf: false,
-        placeholderCount: 0,
-        pdf: await renderPdf({ html: infoHtml }),
-        error: null,
-      };
-    } catch (err) {
-      giDoc = {
-        kind: "general-info",
-        variantKey: GENERAL_INFO_VARIANT_KEY,
-        name: "General information",
-        fileName: null,
-        widthMm: 210,
-        heightMm: 297,
-        staticPdf: false,
-        placeholderCount: 0,
-        pdf: null,
-        error: (err as Error).message,
-      };
-    }
-  }
-
   return {
     style: {
       id: style.id,
@@ -354,9 +310,9 @@ export async function renderProdSpecTestBundle(
       styleNumber: styleData.styleNumber,
       poNumber: style.poNumber ?? null,
     },
-    // Order mirrors the runner's bundle assets: 00 cover, 01 general info,
-    // then the outputs.
-    docs: [coverDoc, ...(giDoc ? [giDoc] : []), ...outputDocs],
+    // Order mirrors the runner's bundle assets: 00 cover (general info rides
+    // inside it), then the outputs.
+    docs: [coverDoc, ...outputDocs],
     warnings,
   };
 }
