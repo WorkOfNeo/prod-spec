@@ -1,6 +1,8 @@
 import type { MissingDetailField } from "@/lib/styles/detail-fields";
 import type { OutputReadiness } from "@/lib/styles/output-readiness";
 import type { CurrentOutput, OutputState } from "@/lib/outputs/current-outputs";
+import { SLOT_STATE_PRIORITY } from "@/lib/outputs/current-outputs";
+import { baseVariantKey } from "@/lib/tickets/orphan";
 import { MAX_EAN_ATTEMPTS, eanFloated } from "@/lib/po/ean-status-meta";
 
 // =====================================================
@@ -160,16 +162,31 @@ function normalizeFromCurrent(outputs: CurrentOutput[]): NormalizedOutputs {
     rejected: 0,
     blocked: 0,
   };
+  // Collapse to OUTPUT SLOTS (base variantKey) so a multi-document output
+  // (carton X-of-Y per size/colour) counts ONCE — matching rollupOutputSlots on
+  // the review page, so the notice's "X of Y" never balloons with documents. A
+  // slot's state is the most-actionable among its documents.
+  const byBase = new Map<string, CurrentOutput[]>();
   for (const o of outputs) {
-    if (isExcluded(o.state)) {
+    const b = baseVariantKey(o.variantKey);
+    const arr = byBase.get(b);
+    if (arr) arr.push(o);
+    else byBase.set(b, [o]);
+  }
+  for (const docs of byBase.values()) {
+    const slotState =
+      SLOT_STATE_PRIORITY.find((s) => docs.some((d) => d.state === s)) ?? "AWAITING_DATA";
+    if (isExcluded(slotState)) {
       n.excluded += 1;
       continue;
     }
     n.total += 1;
-    switch (o.state) {
-      case "AWAITING_DATA":
-        n.waitingOnFields.push({ name: o.name, fields: o.missing });
+    switch (slotState) {
+      case "AWAITING_DATA": {
+        const waiting = docs.find((d) => d.state === "AWAITING_DATA") ?? docs[0];
+        n.waitingOnFields.push({ name: waiting.name, fields: waiting.missing });
         break;
+      }
       case "READY_TO_GENERATE":
       case "GENERATING":
         n.generating += 1;

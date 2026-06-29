@@ -123,6 +123,13 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   // readiness notice (PR #154) covers the missing-fields/queued/generating
   // outputs, so there's no separate "not generated yet" list here anymore.
   const excludedOutputs = outputs.filter((o) => o.state === "EXCLUDED");
+  // Outputs that COULD NOT be generated because required fields are blank on
+  // Monday. Readiness-gating (PR #152) means these never produced a (blank)
+  // PDF, so there's no tile to show — instead of silently hiding them, we show
+  // a message in the output area naming the fields to fill in on Monday.
+  const missingFieldOutputs = outputs.filter(
+    (o) => o.state === "AWAITING_DATA" && o.missing.length > 0,
+  );
   const pendingReviewable = reviewable.filter((o) => o.reviewStatus === "PENDING_REVIEW");
   const approveAssetIds = pendingReviewable
     .filter((o) => o.placeholderCount === 0 && o.jobAssetId)
@@ -311,6 +318,53 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           );
         })}
       </div>
+
+      {missingFieldOutputs.length > 0 ? (
+        <div className="mt-3">
+          <DocTypeAccordion
+            label="Missing fields — could not be generated"
+            count={missingFieldOutputs.length}
+            rightHint="fill the fields on Monday, then they generate automatically"
+          >
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {missingFieldOutputs.map((o) => (
+                <div
+                  key={o.variantKey}
+                  className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4"
+                >
+                  <div className="text-sm font-semibold text-amber-900">{o.name}</div>
+                  <p className="mt-1 text-xs leading-relaxed text-amber-800">
+                    Missing fields, output could not be generated. Please fill these in{" "}
+                    {mondayHref ? (
+                      <a
+                        href={mondayHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium underline"
+                      >
+                        Monday
+                      </a>
+                    ) : (
+                      "Monday"
+                    )}
+                    :
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {o.missing.map((m) => (
+                      <span
+                        key={m.field}
+                        className="rounded-md border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                      >
+                        {m.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </DocTypeAccordion>
+        </div>
+      ) : null}
 
       {history.length > 0 ? (
         <div className="mt-3">

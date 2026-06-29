@@ -3,9 +3,74 @@ import assert from "node:assert/strict";
 import {
   deriveOutputState,
   rollupOutputs,
+  selectCurrentAssets,
   type CurrentOutput,
   type OutputState,
 } from "./current-outputs";
+
+// Minimal asset shape selectCurrentAssets needs (newest-job-first input).
+function asset(jobId: string, variantKey: string | null, docType = "CARTON") {
+  return { jobId, variantKey, docType };
+}
+const keys = (as: Array<{ variantKey: string | null }>) => as.map((a) => a.variantKey);
+
+test("selectCurrentAssets — supersedes a base by its newest job (changed suffix scheme drops)", () => {
+  // PTQ20029 shape: an old run rejected docs under "#<size>-<colour>"; a newer
+  // run re-generated the SAME declared base under "#<size><cm>-<colour>". The
+  // old-suffix rejects must drop — only the newest job's docs are current.
+  const declared = new Set(["layout:A"]);
+  const current = selectCurrentAssets(
+    [
+      asset("job2", "layout:A#122128cm-Pink"), // newest job
+      asset("job2", "layout:A#86cm-Pink"),
+      asset("job1", "layout:A#122128-Blue"), // older job, old scheme
+      asset("job1", "layout:A#86-Navy"),
+      asset("job1", "layout:A#86-Pink"),
+    ],
+    declared,
+  );
+  assert.deepEqual(keys(current).sort(), ["layout:A#122128cm-Pink", "layout:A#86cm-Pink"]);
+});
+
+test("selectCurrentAssets — drops orphaned bases, keeps declared + framing", () => {
+  const declared = new Set(["layout:A"]);
+  const current = selectCurrentAssets(
+    [
+      asset("job2", "layout:A#1"),
+      asset("job2", "__cover__"), // framing — never orphaned
+      asset("job1", "layout:GONE#1"), // removed-from-spec → orphan
+    ],
+    declared,
+  );
+  assert.deepEqual(keys(current).sort(), ["__cover__", "layout:A#1"]);
+});
+
+test("selectCurrentAssets — skips retired __general_info__, keeps legacy null keys", () => {
+  const current = selectCurrentAssets(
+    [
+      asset("job1", "__general_info__"),
+      asset("job1", null, "WASHCARE"), // legacy null variantKey → kept, not guessed-orphan
+      asset("job1", "layout:A"),
+    ],
+    new Set(["layout:A"]),
+  );
+  assert.equal(current.some((a) => a.variantKey === "__general_info__"), false);
+  assert.equal(current.some((a) => a.variantKey === null), true);
+  assert.equal(current.some((a) => a.variantKey === "layout:A"), true);
+});
+
+test("selectCurrentAssets — newest job is per-base (a scoped rerun of one base leaves others)", () => {
+  const declared = new Set(["layout:A", "layout:B"]);
+  const current = selectCurrentAssets(
+    [
+      asset("job3", "layout:A"), // newest job touched only A
+      asset("job2", "layout:B#x"), // B last generated in job2
+      asset("job2", "layout:B#y"),
+    ],
+    declared,
+  );
+  assert.deepEqual(keys(current).sort(), ["layout:A", "layout:B#x", "layout:B#y"]);
+});
 
 test("deriveOutputState — generation in flight wins over everything", () => {
   assert.equal(
