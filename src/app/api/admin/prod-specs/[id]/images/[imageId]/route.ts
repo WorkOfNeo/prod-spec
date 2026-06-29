@@ -1,16 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { getServerSession } from "@/lib/auth-server";
+import { getServerSession, requireRole } from "@/lib/auth-server";
 
 export const runtime = "nodejs";
 
-// Stream a stored General-information image inline. Powers the markdown
-// editor's <img> (visual mode) and the A4 preview iframe — both run in the
-// browser, where this same-origin URL resolves under the admin session. The
-// generated PDF never hits this route: the renderer inlines the bytes to a
-// data URL instead (src/lib/pdf/inline-images.ts).
+// Stream / delete a single stored General-information image. The serve route
+// powers the editor's "Images" tab thumbnails (browser, admin session). The
+// generated PDF never hits it — the renderer inlines the bytes to a data URL
+// instead (src/lib/prod-spec/general-images.ts).
 //
-//   GET /api/admin/prod-specs/<id>/images/<imageId>
+//   GET    /api/admin/prod-specs/<id>/images/<imageId>   → image bytes
+//   DELETE /api/admin/prod-specs/<id>/images/<imageId>   → { ok }
 export async function GET(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string; imageId: string }> },
@@ -34,4 +34,18 @@ export async function GET(
       "Cache-Control": "private, max-age=31536000, immutable",
     },
   });
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  ctx: { params: Promise<{ id: string; imageId: string }> },
+) {
+  const auth = await requireRole(["ADMIN"]);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+  const { id, imageId } = await ctx.params;
+  // Scoped to the prod spec so a mismatched id can't delete another spec's
+  // image; deleteMany is a no-op (count 0) if it's already gone.
+  const res = await db.prodSpecImage.deleteMany({ where: { id: imageId, prodSpecId: id } });
+  return NextResponse.json({ ok: true, deleted: res.count });
 }

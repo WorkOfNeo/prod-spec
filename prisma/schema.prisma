@@ -430,12 +430,11 @@ model ProdSpec {
 
 // Images uploaded for the "General information" page. Bytes live in Postgres
 // — same pattern as JobAsset.pdf — so they travel with the DB and need no
-// external storage. The general-info markdown (ProdSpec.generalInfoMd)
-// references each image by a short serve URL
-// (/api/admin/prod-specs/<id>/images/<imageId>): the browser editor + preview
-// resolve that path directly, and the PDF renderer inlines it to a data URL at
-// render time (page.setContent has no base URL, so a bare path won't load).
-// See src/lib/pdf/inline-images.ts.
+// external storage. Managed as an ordered collection in the prod spec editor's
+// "Images" tab (drag-and-drop); they render stacked, one after another, after
+// the general-info text on the General page. The PDF renderer inlines each as a
+// data URL at render time (page.setContent has no base URL, so a bare /api path
+// won't load). See src/lib/prod-spec/general-images.ts.
 model ProdSpecImage {
   id         String   @id @default(cuid())
   prodSpecId String
@@ -445,11 +444,15 @@ model ProdSpecImage {
   mimeType   String
   fileName   String
   byteSize   Int
+  // Display order on the General page — images render stacked, lowest
+  // sortOrder first (createdAt breaks ties). Set to max+1 on upload; rewritten
+  // by the reorder (drag-and-drop) endpoint.
+  sortOrder  Int      @default(0)
   createdAt  DateTime @default(now())
 
   prodSpec ProdSpec @relation(fields: [prodSpecId], references: [id], onDelete: Cascade)
 
-  @@index([prodSpecId])
+  @@index([prodSpecId, sortOrder])
   @@map("prod_spec_images")
 }
 

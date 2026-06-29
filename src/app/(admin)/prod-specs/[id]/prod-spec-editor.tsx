@@ -15,6 +15,7 @@ import { Toggle } from "@/components/toggle";
 import { Combobox } from "@/components/ui/combobox";
 import { LazyOutputPreview } from "@/components/output-preview";
 import { MarkdownEditor } from "@/components/markdown-editor";
+import { GeneralImagesPanel } from "./general-images-panel";
 import { PageSettingsFields } from "./page-settings-fields";
 import {
   CareStandardPanel,
@@ -26,7 +27,7 @@ import { RerunStylesPanel } from "./rerun-styles-panel";
 import { TestPanel, type TestStyle } from "./test-panel";
 
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
-type Tab = "general" | "cover" | "outputs" | "test";
+type Tab = "general" | "images" | "cover" | "outputs" | "test";
 
 // Debounce window before the auto-saver flushes a payload. Long enough
 // to coalesce rapid typing in the markdown / care-instruction textareas,
@@ -353,6 +354,7 @@ export function ProdSpecEditor(props: Props) {
           {(
             [
               { key: "general" as const, label: "General information" },
+              { key: "images" as const, label: "Images" },
               { key: "cover" as const, label: "Cover page" },
               { key: "outputs" as const, label: "Outputs", count: enabledCount },
               { key: "test" as const, label: "Test" },
@@ -388,15 +390,11 @@ export function ProdSpecEditor(props: Props) {
                 <strong>cover page of every bundle</strong> generated under this prod spec, right
                 after the cover sheet (<code className="font-mono">00-…-cover-page.pdf</code>). Type{" "}
                 <code className="font-mono">#</code> + space for a heading,{" "}
-                <code className="font-mono">-</code> + space for a list; tables and images insert
-                from the toolbar. Markdown under the hood — flip to the Markdown view to paste raw
-                source.
+                <code className="font-mono">-</code> + space for a list; tables insert from the
+                toolbar. Add images on the <strong>Images</strong> tab. Markdown under the hood — flip
+                to the Markdown view to paste raw source.
               </p>
-              <MarkdownEditor
-                value={generalInfoMd}
-                onChange={setGeneralInfoMd}
-                uploadUrl={`/api/admin/prod-specs/${props.prodSpecId}/images`}
-              />
+              <MarkdownEditor value={generalInfoMd} onChange={setGeneralInfoMd} />
               <p className="mt-1 text-[11px] text-zinc-400">
                 Long content flows onto further A4 pages automatically. Preview refreshes after
                 each autosave.
@@ -424,6 +422,8 @@ export function ProdSpecEditor(props: Props) {
             </div>
           </Section>
         </div>
+      ) : tab === "images" ? (
+        <GeneralImagesPanel prodSpecId={props.prodSpecId} />
       ) : tab === "cover" ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div className="flex flex-col gap-4">

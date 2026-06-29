@@ -69,14 +69,21 @@ export type CoverPageInput = {
   // rules keep each section's own margins and type scale. The standalone
   // 01 document still ships alongside; the cover carries the requirements
   // so they can't be missed by someone who only opens/prints the cover.
-  generalInfo?: { markdown: string; settings?: PageSettings } | null;
+  generalInfo?: { markdown: string; settings?: PageSettings; images?: GeneralInfoImage[] } | null;
 };
+
+// One General-information image, pre-inlined as a self-contained data URL (the
+// PDF renderer's page.setContent has no base URL, so a bare /api path won't
+// load). Loaded in display order via src/lib/prod-spec/general-images.ts.
+export type GeneralInfoImage = { dataUrl: string; alt: string };
 
 export type GeneralInfoInput = {
   markdown: string;
   customerName: string;
   businessArea: string | null;
   settings?: PageSettings;
+  // Ordered images rendered stacked, one after another, after the markdown.
+  images?: GeneralInfoImage[];
 };
 
 export function renderCoverPageHtml(input: CoverPageInput): string {
@@ -142,12 +149,15 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
   // Requirements ride along in the cover document itself, on their own
   // sheets with the general-info section's margins and type scale.
   const giMd = input.generalInfo?.markdown.trim();
-  if (giMd) {
+  const giImages = input.generalInfo?.images ?? [];
+  if (giMd || giImages.length) {
     sections.push(
-      generalInfoSection(giMd, input.generalInfo?.settings ?? DEFAULT_PAGE_SETTINGS, {
-        customerName: input.customerName,
-        businessArea: input.businessArea,
-      }),
+      generalInfoSection(
+        giMd ?? "",
+        input.generalInfo?.settings ?? DEFAULT_PAGE_SETTINGS,
+        { customerName: input.customerName, businessArea: input.businessArea },
+        giImages,
+      ),
     );
   }
 
@@ -159,29 +169,41 @@ export function renderGeneralInfoHtml(input: GeneralInfoInput): string {
   return a4Document({
     title: "General information",
     sections: [
-      generalInfoSection(input.markdown, settings, {
-        customerName: input.customerName,
-        businessArea: input.businessArea,
-      }),
+      generalInfoSection(
+        input.markdown,
+        settings,
+        { customerName: input.customerName, businessArea: input.businessArea },
+        input.images,
+      ),
     ],
   });
 }
 
-// The general-info content as a section — identical whether it ships as
-// the standalone 01 document or appended inside the cover document.
+// The general-info content as a section — the text first, then any uploaded
+// images stacked one after another. Identical whether it ships standalone or
+// appended inside the cover document.
 function generalInfoSection(
   markdown: string,
   settings: PageSettings,
   ctx: { customerName: string; businessArea: string | null },
+  images?: GeneralInfoImage[],
 ): A4Section {
   // gfm (tables, strikethrough, autolinks) is marked's default profile;
   // async:false guarantees a string return and would throw loudly if an
   // async extension ever sneaks into the marked config.
   const rendered = marked.parse(markdown, { async: false });
+  // Images stack after the text, one per row, each kept whole on a single
+  // sheet (break-inside: avoid). Order is the editor's Images-tab order.
+  const gallery =
+    images && images.length
+      ? `<div class="gi-gallery">${images
+          .map((img) => `<figure class="gi-fig"><img src="${img.dataUrl}" alt="${esc(img.alt)}"></figure>`)
+          .join("")}</div>`
+      : "";
   return {
     pageName: "gi",
     mode: "flow",
-    body: `<div class="md">${rendered}</div>`,
+    body: `<div class="md">${rendered}</div>${gallery}`,
     extraCss: MARKDOWN_CSS,
     settings,
     footerLeft: "General information · applies to all styles under this prod spec",
@@ -400,6 +422,11 @@ const MARKDOWN_CSS = `
   }
   .md hr { border: none; border-top: 0.2mm solid #e4e4e7; margin: 5mm 0; }
   .md img { max-width: 100%; }
+  /* Uploaded images, stacked one after another (own rows). Scoped to the
+     general-info section, so it never leaks into the cover table. */
+  .gi-gallery { margin-top: 3mm; }
+  .gi-fig { margin: 0 0 4mm; break-inside: avoid; text-align: center; }
+  .gi-fig img { max-width: 100%; height: auto; display: inline-block; }
 `;
 
 function esc(s: string): string {

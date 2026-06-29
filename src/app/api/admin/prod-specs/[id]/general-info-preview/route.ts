@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getServerSession } from "@/lib/auth-server";
 import { renderGeneralInfoHtml } from "@/lib/pdf/bundle-pages";
-import { inlineProdSpecImages } from "@/lib/pdf/inline-images";
+import { loadGeneralInfoImages } from "@/lib/prod-spec/general-images";
 import { parseBundlePageSettings } from "@/lib/prod-spec/config";
 
 export const runtime = "nodejs";
@@ -30,17 +30,19 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   const markdown = (prodSpec.generalInfoMd ?? "").trim();
 
   try {
-    let html = markdown
-      ? renderGeneralInfoHtml({
-          markdown,
-          customerName: prodSpec.customer.name,
-          businessArea: prodSpec.businessArea.name,
-          settings: parseBundlePageSettings(prodSpec.bundlePageSettings).generalInfo,
-        })
-      : emptyStateHtml();
-    // Inline uploaded images to data URLs so the preview is byte-for-byte the
-    // print truth (and independent of the iframe's base-URL resolution).
-    if (markdown) html = await inlineProdSpecImages(html, id);
+    // Ordered images, inlined to data URLs — the preview is byte-for-byte the
+    // print truth: the text first, then the stacked images.
+    const images = await loadGeneralInfoImages(id);
+    const html =
+      markdown || images.length
+        ? renderGeneralInfoHtml({
+            markdown,
+            customerName: prodSpec.customer.name,
+            businessArea: prodSpec.businessArea.name,
+            settings: parseBundlePageSettings(prodSpec.bundlePageSettings).generalInfo,
+            images,
+          })
+        : emptyStateHtml();
 
     return new NextResponse(html, {
       status: 200,
@@ -70,7 +72,8 @@ function emptyStateHtml(): string {
   }
   p { max-width: 120mm; text-align: center; font-size: 11pt; line-height: 1.6; }
 </style></head>
-<body><p>No general information yet — write markdown in the editor and this page
-joins every generated bundle. Headings, lists and tables all render.</p></body>
+<body><p>No general information yet — write text here, or add images on the
+Images tab. The text (then the stacked images) rides inside the cover page of
+every generated bundle.</p></body>
 </html>`;
 }

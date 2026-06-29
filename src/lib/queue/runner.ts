@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { renderPdf } from "@/lib/pdf/renderer";
-import { inlineProdSpecImages } from "@/lib/pdf/inline-images";
+import { loadGeneralInfoImages } from "@/lib/prod-spec/general-images";
 import { ensureLayoutVariantsLoaded, layoutIdFromVariantKey } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { outputReadinessForStyle, effectiveMapping } from "@/lib/styles/output-readiness";
@@ -515,7 +515,10 @@ export async function processJob(jobId: string): Promise<void> {
   const bundlePages: BundlePage[] = [];
   try {
     const generalInfoMd = prodSpec?.generalInfoMd?.trim();
-    let coverHtml = renderCoverPageHtml({
+    // Uploaded General-page images, ordered + inlined to data URLs (the
+    // renderer's page.setContent has no base URL). They stack after the text.
+    const generalInfoImages = prodSpec ? await loadGeneralInfoImages(prodSpec.id) : [];
+    const coverHtml = renderCoverPageHtml({
       customerName: job.style.customer.name,
       businessArea: businessAreaName,
       styleName: job.style.name,
@@ -528,14 +531,12 @@ export async function processJob(jobId: string): Promise<void> {
       // General info rides inside the cover document — own pages, own
       // margins, after the cover sheet. The cover is its ONLY home in the
       // bundle, so the order is guaranteed: cover sheet first, then the
-      // requirements. No standalone general-information PDF is emitted.
-      generalInfo: generalInfoMd
-        ? { markdown: generalInfoMd, settings: pageSettings.generalInfo }
-        : null,
+      // requirements (text, then images). No standalone general-info PDF.
+      generalInfo:
+        generalInfoMd || generalInfoImages.length
+          ? { markdown: generalInfoMd ?? "", settings: pageSettings.generalInfo, images: generalInfoImages }
+          : null,
     });
-    // Resolve general-info image URLs to data URLs — the cover embeds the
-    // same markdown, and page.setContent() can't fetch a bare /api path.
-    if (prodSpec && generalInfoMd) coverHtml = await inlineProdSpecImages(coverHtml, prodSpec.id);
     bundlePages.push({
       docType: "COVER",
       variantKey: COVER_VARIANT_KEY,
