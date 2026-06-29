@@ -5,6 +5,8 @@ import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "QR codes" };
+
 export default async function QrCodesPage() {
   await requireAdminPage();
 

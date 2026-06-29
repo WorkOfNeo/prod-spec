@@ -42,6 +42,8 @@ const STYLE_ORDER = [
 // button to drain on demand — the diagnostic home for "why are things still
 // queued?". The cron pokes POST /api/po-eans/run?sweep=1 and
 // POST /api/jobs/run?sweep=1; both record a row here when run by cron or "Run now".
+export const metadata = { title: "Automation" };
+
 export default async function AutomationPage({
   searchParams,
 }: {

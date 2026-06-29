@@ -14,6 +14,12 @@ type WashSymbolLite = { code: string; name: string; mondayValue: string | null }
 
 export const dynamic = "force-dynamic";
 
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const style = await db.style.findUnique({ where: { id }, select: { name: true } });
+  return { title: style ? `Edit ${style.name}` : "Edit style" };
+}
+
 export default async function EditStylePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 

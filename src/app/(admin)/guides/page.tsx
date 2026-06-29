@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { GUIDES, HANDBOOK_PDF, guideHref } from "@/lib/guides";
 
-export const metadata = { title: "Guides · Prod Spec" };
+export const metadata = { title: "Guides" };
 
 // Reviewer guides index. Content is static HTML in public/guides/ — see
 // src/lib/guides.ts for how to add or edit a guide.

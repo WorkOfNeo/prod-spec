@@ -23,6 +23,8 @@ function enabledOutputCount(outputs: unknown): number {
 // carries at least one enabled output, then it's Ready — there's no manual
 // review flag. A newly-detected combo still stages a heads-up email (see
 // src/lib/combos/reconcile.ts; that alert is gated on notifiedAt, not status).
+export const metadata = { title: "New combos" };
+
 export default async function CombosPage() {
   await requireAdminPage();
 

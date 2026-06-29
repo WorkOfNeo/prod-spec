@@ -5,6 +5,8 @@ import { ManualStyleForm } from "./manual-style-form";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "New style" };
+
 export default async function NewManualStylePage() {
   // Make sure at least one customer exists so the form has a target.
   await ensureNettoGermany();

@@ -5,6 +5,8 @@
 import { redirect } from "next/navigation";
 import { requireAdminPage } from "@/lib/auth-server";
 
+export const metadata = { title: "Monday inspector" };
+
 export default async function MondayInspectRedirect({
   searchParams,
 }: {

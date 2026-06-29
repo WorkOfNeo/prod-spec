@@ -3,6 +3,8 @@ import { requireAdminPage } from "@/lib/auth-server";
 import { NETTO_GERMANY_DEFAULT_CONFIG } from "@/lib/customers/config";
 import { CustomerForm } from "../[id]/customer-form";
 
+export const metadata = { title: "New customer" };
+
 export default async function NewCustomerPage() {
   await requireAdminPage();
   return (

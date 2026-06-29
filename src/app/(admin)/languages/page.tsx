@@ -4,6 +4,8 @@ import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Languages" };
+
 export default async function LanguagesPage() {
   await requireAdminPage();
 

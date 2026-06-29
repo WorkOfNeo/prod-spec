@@ -3,6 +3,12 @@ import { notFound } from "next/navigation";
 import { getGuide, guideHtmlSrc, guidePdfSrc } from "@/lib/guides";
 import { GuideFrame } from "./guide-frame";
 
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const guide = getGuide(slug);
+  return { title: guide?.title ?? "Guide" };
+}
+
 export default async function GuidePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const guide = getGuide(slug);

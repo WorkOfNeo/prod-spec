@@ -40,6 +40,12 @@ const NOT_READY_LABEL: Record<OutputState, string> = {
   REJECTED: "Rejected",
 };
 
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const style = await db.style.findUnique({ where: { id }, select: { name: true } });
+  return { title: style ? `Review ${style.name}` : "Review" };
+}
+
 export default async function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { session, role } = await getSessionWithRole();

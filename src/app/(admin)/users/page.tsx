@@ -13,6 +13,8 @@ import { InvitesTable, type InviteRow } from "./invites-table";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Users" };
+
 export default async function UsersPage() {
   const auth = await requireRole(["ADMIN"]);
   if (!auth.ok) {

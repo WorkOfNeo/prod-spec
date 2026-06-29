@@ -7,6 +7,15 @@ import { ShareDocuments } from "./share-documents";
 
 export const dynamic = "force-dynamic";
 
+export async function generateMetadata({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  const share = await db.supplierShare.findUnique({
+    where: { token },
+    select: { style: { select: { name: true } } },
+  });
+  return { title: share ? `${share.style.name} — documents` : "Shared documents" };
+}
+
 // Supplier-facing approved-PDF viewer. Public route (outside the admin
 // matcher in src/proxy.ts). The token in the URL is the primary gate; the
 // supplier additionally enters email + PIN to unlock. Once unlocked (cookie

@@ -25,6 +25,8 @@ import { ManualImportTables } from "./manual-import-tables";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Import" };
+
 export default async function ImportPage() {
   await requireAdminPage();
   return (

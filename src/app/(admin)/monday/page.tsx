@@ -35,6 +35,8 @@ function parseTab(raw: string | undefined): TabKey {
   return "inspector";
 }
 
+export const metadata = { title: "Monday" };
+
 export default async function MondayPage({
   searchParams,
 }: {

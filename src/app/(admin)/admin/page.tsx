@@ -39,6 +39,8 @@ function blankCheck(value: string | null | undefined): string | null {
   return v;
 }
 
+export const metadata = { title: "Admin" };
+
 export default async function AdminPanelPage({
   searchParams,
 }: {

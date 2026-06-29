@@ -42,6 +42,8 @@ function endLabel(row: ReviewActivityRow): string {
   return row.status === "AWAITING_REVIEW" ? "in progress" : "—";
 }
 
+export const metadata = { title: "Review activity" };
+
 export default async function ReviewActivityPage() {
   await requireAdminPage();
   const { rows, endColumnMissing } = await getReviewActivity();

@@ -19,6 +19,8 @@ import { eanStatusMeta } from "@/lib/po/ean-status-meta";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Styles" };
+
 export default async function StylesPage() {
   // Output Builder layouts resolve as variants in the readiness walks below.
   await ensureLayoutVariantsLoaded();

@@ -47,6 +47,8 @@ function reviewerLabel(r: { reviewerName: string | null; reviewerEmail: string |
   return r.reviewerName ?? r.reviewerEmail ?? "—";
 }
 
+export const metadata = { title: "Statistics" };
+
 export default async function StatisticsPage({
   searchParams,
 }: {

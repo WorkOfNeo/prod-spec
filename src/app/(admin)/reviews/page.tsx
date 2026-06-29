@@ -16,6 +16,8 @@ export const dynamic = "force-dynamic";
 //    fix → regenerate → approve loop lives here.
 // Visible to reviewers and admins alike — it sits under "My tasks" in the
 // sidebar — so it gates on a session, not the admin role.
+export const metadata = { title: "Reviews" };
+
 export default async function ReviewsPage({
   searchParams,
 }: {

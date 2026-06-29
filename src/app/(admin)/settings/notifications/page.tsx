@@ -22,6 +22,8 @@ const WHEN_FORMAT = new Intl.DateTimeFormat("en-GB", {
 // live or simulated (RESEND_EMAILS), and the activity log of every email
 // attempt. Background generations (webhook / cron) have no UI to pop a
 // simulation dialog in; this table is where those sends surface.
+export const metadata = { title: "Notifications" };
+
 export default async function NotificationsSettingsPage() {
   await requireAdminPage();
 

@@ -24,6 +24,8 @@ function summariseOutputs(raw: unknown): Array<{ key: string; name: string; enab
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Prod specs" };
+
 export default async function ProdSpecsPage() {
   await requireAdminPage();
 

@@ -12,6 +12,8 @@ const LEVEL_STYLES: Record<string, string> = {
   ERROR: "text-red-700",
 };
 
+export const metadata = { title: "Jobs" };
+
 export default async function JobsPage() {
   await requireAdminPage();
 
