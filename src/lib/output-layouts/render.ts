@@ -474,7 +474,7 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
       `text-align: ${block.align ?? "left"}; ` +
       blockBorder(block, ctx.fontScale) +
       blockTypography(block, ctx.fontScale);
-    return `<div class="ol-block ol-rect${block.invert ? " ol-binvert" : ""}${block.fitWidth ? " ol-fit" : ""}" style="${styleAttr}">${lines}</div>`;
+    return `<div class="ol-block ol-rect${block.invert ? " ol-binvert" : ""}${block.fitWidth ? " ol-fit" : ""}${block.fitHeight ? " ol-fith" : ""}" style="${styleAttr}">${lines}</div>`;
   }
 
   const anchor = block.anchor ?? "top-left";
@@ -485,7 +485,7 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
     blockBorder(block, ctx.fontScale) +
     blockTypography(block, ctx.fontScale) +
     ANCHOR_CSS[anchor];
-  return `<div class="ol-block ol-${anchor}${block.invert ? " ol-binvert" : ""}${block.fitWidth ? " ol-fit" : ""}" style="${styleAttr}">${lines}</div>`;
+  return `<div class="ol-block ol-${anchor}${block.invert ? " ol-binvert" : ""}${block.fitWidth ? " ol-fit" : ""}${block.fitHeight ? " ol-fith" : ""}" style="${styleAttr}">${lines}</div>`;
 }
 
 type PreparedLayoutRender = {
@@ -592,15 +592,24 @@ async function prepareLayoutRender(
   return { pages, repStyles, ctx, barcodeFont: style.barcodeFont };
 }
 
-// Fit-to-width: scale every line inside an .ol-fit block so it fills the
-// line's width on ONE line, regardless of character count (scales up AND
-// down). Pure CSS can't size a font to a line's content, so we measure in
-// the page: the line's content width (Range) vs its own clientWidth (which
-// already accounts for the block's border padding), set font-size by the
-// ratio, one correction pass for font-metric non-linearity. Exposed as
-// window.__olFitWidth so renderPdf can re-run it after fonts settle; it
-// also self-runs on load and on fonts.ready for the (script-enabled,
-// un-sandboxed) preview iframe. Blank/whitespace lines are skipped.
+// Fit scripts — pure CSS can't size a font to its content, so we measure in
+// the page and set font-size. Exposed as window.__olFitWidth (kept name for
+// renderPdf) which runs WIDTH-fit then HEIGHT-fit; both also self-run on load
+// and on fonts.ready for the (script-enabled, un-sandboxed) preview iframe.
+//
+//   • Width  (.ol-fit)  — scale every line so it fills the line width on ONE
+//     line, regardless of character count (scales up AND down). Per line: the
+//     content width (Range) vs the line's clientWidth (which already accounts
+//     for the block's border padding), set font-size by the ratio, one
+//     correction pass for font-metric non-linearity. Blank lines skipped.
+//   • Height (.ol-fith) — when a block's content is TALLER than its cell,
+//     scale the block font DOWN until it fits — never up, so an in-bounds
+//     block keeps its authored size. Content height is summed from the line
+//     boxes (alignment-independent — valign middle/bottom would defeat
+//     scrollHeight); available height is clientHeight minus vertical padding.
+//     Iterated (padding is constant, so the shrink is slightly non-linear)
+//     with a floor of 1 px. Stops a long {{careInstructions}} block from
+//     overflowing onto the wash-symbols block below it.
 const FIT_SCRIPT = `<script>
 (function () {
   function fitLine(el) {
@@ -622,9 +631,31 @@ const FIT_SCRIPT = `<script>
       el.style.fontSize = size + "px";
     }
   }
+  function contentHeight(el) {
+    var ch = el.children, h = 0;
+    for (var i = 0; i < ch.length; i++) h += ch[i].getBoundingClientRect().height;
+    return h;
+  }
+  function fitBlockHeight(el) {
+    var cs = getComputedStyle(el);
+    var padV = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    var avail = el.clientHeight - padV;
+    if (avail <= 0) return;
+    for (var pass = 0; pass < 8; pass++) {
+      var content = contentHeight(el);
+      if (content <= avail + 0.5) break;
+      var cur = parseFloat(getComputedStyle(el).fontSize) || 12;
+      var next = cur * (avail / content);
+      if (next < 1) next = 1;
+      el.style.fontSize = next + "px";
+      if (next <= 1) break;
+    }
+  }
   function fitAll() {
     var lines = document.querySelectorAll(".ol-fit .ol-line");
     for (var i = 0; i < lines.length; i++) fitLine(lines[i]);
+    var blocks = document.querySelectorAll(".ol-fith");
+    for (var j = 0; j < blocks.length; j++) fitBlockHeight(blocks[j]);
   }
   window.__olFitWidth = fitAll;
   fitAll();
@@ -680,7 +711,7 @@ function emitLayoutDocument(
     })
     .join("\n");
   // Append the fit-to-width script only when a block opts in.
-  const usesFit = emitted.some(({ page }) => page.blocks.some((b) => b.fitWidth));
+  const usesFit = emitted.some(({ page }) => page.blocks.some((b) => b.fitWidth || b.fitHeight));
   const body = usesFit ? `${pagesHtml}\n${FIT_SCRIPT}` : pagesHtml;
 
   return htmlDocument({

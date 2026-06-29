@@ -408,6 +408,7 @@ export function LayoutEditor({
       bold: false,
       invert: false,
       fitWidth: false,
+      fitHeight: false,
       lineHeight: 1.4,
       lines: ["New text"],
     };
@@ -2329,6 +2330,15 @@ export function LayoutEditor({
                     className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
                   />
                   Fit width (one line, auto-scale to fill)
+                </label>
+                <label className="flex items-center gap-2 text-xs text-zinc-600">
+                  <input
+                    type="checkbox"
+                    checked={selBlock.fitHeight ?? false}
+                    onChange={(e) => updateBlock(blockId(selBlock), { fitHeight: e.target.checked })}
+                    className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                  />
+                  Shrink text to fit cell (no overflow onto other blocks)
                 </label>
 
                 <div>
