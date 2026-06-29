@@ -296,16 +296,27 @@ export async function loadStyleRenderContext(styleId: string): Promise<StyleRend
 //   "PI-35/38 Pink, 35/38"            → "Pink"
 //   "A-XL Black w silver lurex, XL"   → "Black w silver lurex"
 //   "A-S/M Colour A, S/M"             → "Colour A"
+//   ".B-86/92 Blue, 86/92"            → "Blue"
 // (<code>-<size> <colour>, <size>) — strip the trailing ", <size>" and the
-// leading "<code>-<size> ". Anything unparseable returns the label trimmed
-// (better a verbose colour than a lost one); null/empty → null.
+// leading "<code>-<size> ". When the style's `size` is written differently
+// from the PO's own size token (e.g. "86–92 cm / 1½–2 år" vs the PO's "86/92")
+// those strips miss, so fall back to the structural shape. Anything
+// unparseable returns the label trimmed (better a verbose colour than a lost
+// one); null/empty → null.
 export function colourFromVariantLabel(label: string | null, size: string): string | null {
   if (!label || !label.trim()) return null;
-  let s = label.trim();
+  const orig = label.trim();
+  let s = orig;
   const tail = `, ${size}`;
   if (s.endsWith(tail)) s = s.slice(0, -tail.length).trim();
   const marker = `-${size} `;
   const at = s.indexOf(marker);
   if (at > -1) s = s.slice(at + marker.length).trim();
+  // Size didn't match the label's own size token → strips were no-ops. Pull
+  // the colour from "<code>-<size> <colour>, <size>" without needing the size.
+  if (s === orig) {
+    const m = orig.match(/^\S+-\S+\s+(.+?),\s*[^,]+$/);
+    if (m) return m[1].trim() || null;
+  }
   return s || null;
 }
