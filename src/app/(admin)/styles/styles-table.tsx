@@ -10,7 +10,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
-  EFFECTIVE_STATUS_TONE_CLASSES,
   STATUS_FACET_KEYS,
   STATUS_FACET_LABELS,
   type EffectiveStatus,
@@ -20,6 +19,8 @@ import { eanStatusMeta, EAN_STATUS_META } from "@/lib/po/ean-status-meta";
 import { BLANK_BA_VALUES } from "@/lib/import/heuristics";
 import type { EanView } from "@/lib/po/ean-view";
 import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
+import { ReadinessPill } from "@/components/output-readiness-notice";
+import type { ReadinessNotice } from "@/lib/styles/readiness-notice";
 import { ColumnsPopover } from "./columns-popover";
 import { FacetFilter, type FacetOption } from "@/components/facet-filter";
 import { BulkRunOutputs } from "./bulk-run-outputs";
@@ -169,8 +170,13 @@ export type StyleRow = {
   requiredFilled: number;
   requiredTotal: number;
   // The Status pill — computed: review flow when PDFs/jobs exist, otherwise
-  // the field-readiness ladder. See computeEffectiveStatus().
+  // the field-readiness ladder. See computeEffectiveStatus(). Drives the
+  // Status facet filter + searchBlob; the *visible* pill now renders `notice`.
   statusView: EffectiveStatus;
+  // Cause-aware readiness notice (harder-blocker-wins headline + count). This
+  // is what the Status cell renders via <ReadinessPill>. statusView remains the
+  // filtering/sorting key — do not swap that.
+  notice: ReadinessNotice;
   // PO → EAN resolution state (StyleEanStatus). Badge via eanStatusMeta.
   eanStatus: string;
   groupTitle: string | null;
@@ -184,6 +190,17 @@ export type StyleRow = {
   lastSyncedAt: string;
   searchBlob: string;
 };
+
+// Hover text for the status pill: the count (which moves out of the headline
+// when a harder blocker wins) plus the top blocking step's detail, so the row
+// still explains itself on hover. Falls back to the headline when nothing
+// blocks.
+function statusTitle(notice: ReadinessNotice): string {
+  const blocking = notice.steps.find((s) => s.tone === "red" || s.tone === "amber");
+  const count = notice.total > 0 ? `${notice.ready} of ${notice.total} ready` : null;
+  const detail = blocking ? `${blocking.title} — ${blocking.detail}` : notice.headline;
+  return count && detail !== count ? `${count}\n${detail}` : detail;
+}
 
 export function StylesTable({
   rows,
@@ -512,11 +529,8 @@ export function StylesTable({
       case "status":
         return (
           <td key={key} className="px-4 py-3">
-            <span
-              title={s.statusView.hint}
-              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${EFFECTIVE_STATUS_TONE_CLASSES[s.statusView.tone]}`}
-            >
-              {s.statusView.label}
+            <span title={statusTitle(s.notice)}>
+              <ReadinessPill notice={s.notice} />
             </span>
           </td>
         );

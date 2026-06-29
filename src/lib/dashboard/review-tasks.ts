@@ -5,6 +5,12 @@ import {
   type CurrentOutput,
   type OutputState,
 } from "@/lib/outputs/current-outputs";
+import { mondayItemUrl } from "@/lib/monday/url";
+import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
+import {
+  styleReadinessNotice,
+  type ReadinessNotice,
+} from "@/lib/styles/readiness-notice";
 
 // Derived review work — powers /dashboard and the sidebar badge. Nothing
 // here is event-sourced: an unfinished review is a fact already sitting in
@@ -24,6 +30,11 @@ export type ReviewTask = {
   prodSpecId: string | null;
   prodSpecName: string | null;
   poNumber: string | null;
+  // Deep link to the style's Monday item — the reviewer's remedy for the
+  // readiness notice's "add it on Monday" steps (missing required fields, no PO
+  // number). Both ids are always present on a Style (mondayItemId is unique,
+  // mondayBoardId required), so this is never null.
+  mondayUrl: string;
   // Fresh worklist counts. `total` = documents still needing a decision now
   // (to-review / blocked), the number the card shows as "N to review" — it
   // EXCLUDES already-decided (approved/rejected) outputs so the list shrinks as
@@ -56,6 +67,13 @@ export type ReviewTask = {
   // Per-output breakdown, CROSS-JOB: every current output for the style — the
   // reviewable ones (with a document) and the still-coming ones together.
   outputs: ReviewTaskOutput[];
+  // The role-aware Output Readiness Notice — the single model that folds the
+  // whole pipeline (SharePoint → PO → EANs → fields → generation → review) into
+  // a headline pill + step ladder. Computed server-side from the SAME cross-job
+  // currentOutputs the card already renders, so it supersedes the ad-hoc
+  // "X/Y generated" badge, the "still coming" paragraph and the per-output
+  // "missing …" text. Plain data → safe to pass into the client card.
+  notice: ReadinessNotice;
 };
 
 export type ReviewTaskOutput = {
@@ -117,8 +135,10 @@ function queryAwaitingReviewJobs() {
           businessAreaRef: true,
           // ProdSpec identity drives the /reviews grouping — a ProdSpec is
           // unique per customer × business area, so grouping by it is exactly
-          // grouping by category (Netto · Private Label, …).
-          prodSpec: { select: { id: true, name: true } },
+          // grouping by category (Netto · Private Label, …). `outputs` is
+          // widened in additionally so the readiness notice can tell whether
+          // the spec has any enabled outputs (prodSpecHasOutputs).
+          prodSpec: { select: { id: true, name: true, outputs: true } },
         },
       },
       reviewClaimedBy: { select: { email: true } },
@@ -248,6 +268,25 @@ function buildTask(job: AwaitingReviewJob, currentOutputs: CurrentOutput[]): Rev
   // Reviewable documents first, still-coming ones last.
   outputs.sort((a, b) => Number(b.generated) - Number(a.generated));
 
+  // Role-aware readiness notice. These cards are the reviewer inbox, so the
+  // REVIEWER role is the correct default (missing required fields read as Monday
+  // data the reviewer adds themselves). Built from the FULL cross-job output set
+  // — not `fresh` — so the source/spec/generation/review/excluded ladder reflects
+  // the style's whole picture, matching the per-style review page.
+  const prodSpecOutputs = parseProdSpecOutputs(job.style.prodSpec?.outputs ?? []);
+  const notice = styleReadinessNotice(
+    {
+      eanStatus: job.style.eanStatus,
+      eanAttempts: job.style.eanAttempts,
+      poNumber: job.style.poNumber,
+      poFileName: job.style.poFileName,
+      hasProdSpec: job.style.prodSpec != null,
+      prodSpecHasOutputs: prodSpecOutputs.some((o) => o.enabled !== false),
+      currentOutputs,
+    },
+    "REVIEWER",
+  );
+
   return {
     jobId: job.id,
     styleId: job.styleId,
@@ -257,6 +296,7 @@ function buildTask(job: AwaitingReviewJob, currentOutputs: CurrentOutput[]): Rev
     prodSpecId: job.style.prodSpecId ?? null,
     prodSpecName: job.style.prodSpec?.name ?? null,
     poNumber: job.style.poNumber ?? null,
+    mondayUrl: mondayItemUrl(job.style.mondayBoardId, job.style.mondayItemId) ?? "",
     total: pending.length,
     decided: newestDecided.length,
     stillComing: stillComing.length,
@@ -273,6 +313,7 @@ function buildTask(job: AwaitingReviewJob, currentOutputs: CurrentOutput[]): Rev
       ),
     ),
     outputs,
+    notice,
   };
 }
 

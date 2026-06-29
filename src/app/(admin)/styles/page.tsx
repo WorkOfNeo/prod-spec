@@ -7,6 +7,7 @@ import { computeReadiness } from "@/lib/styles/readiness";
 import { computeEffectiveStatus } from "@/lib/styles/effective-status";
 import { findMissingDetailFields, requiredFieldKeysFromOutputs } from "@/lib/styles/detail-fields";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
+import { styleReadinessNotice } from "@/lib/styles/readiness-notice";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { effectiveStyleItem } from "@/lib/styles/resolved-fields";
 import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
@@ -166,12 +167,35 @@ export default async function StylesPage() {
           });
           // The Status pill: review flow when PDFs/jobs exist, otherwise the
           // field-readiness ladder. Never the raw stored Style.status.
+          // NOTE: still computed — status filtering/sorting keys off
+          // statusView.key (see facetOptions/filtered in styles-table.tsx), so
+          // the underlying model stays intact even though the *visible* pill
+          // now shows the cause-aware readiness notice headline.
           const statusView = computeEffectiveStatus({
             readiness: r,
             hasPdfs: stylesWithPdfs.has(s.id),
             latestJobStatus: s.jobs[0]?.status ?? null,
             outputs: { ready: outputsReady, total: outputReadiness.length },
           });
+          // The cause-aware readiness notice — the new visible pill. The list
+          // is the LIGHT case: per-output readiness (no full generation state),
+          // upgraded with hasPdfs + the newest job's status. ADMIN view.
+          const notice = styleReadinessNotice(
+            {
+              eanStatus: s.eanStatus,
+              eanAttempts: s.eanAttempts,
+              poNumber: s.poNumber,
+              poFileName: s.poFileName,
+              hasProdSpec: Boolean(s.prodSpec),
+              // outputReadinessForStyle returns one entry per *enabled* output,
+              // so a non-empty list IS "spec has enabled outputs".
+              prodSpecHasOutputs: outputReadiness.length > 0,
+              outputReadiness,
+              hasPdfs: stylesWithPdfs.has(s.id),
+              latestJobStatus: s.jobs[0]?.status ?? null,
+            },
+            "ADMIN",
+          );
           return {
             id: s.id,
             name: s.name,
@@ -197,6 +221,9 @@ export default async function StylesPage() {
             requiredTotal: requiredKeys.length,
             requiredFilled: requiredKeys.length - missingDetailFields.length,
             statusView,
+            // Cause-aware readiness pill (replaces the visible statusView pill
+            // in the table). statusView is kept for filtering/sorting.
+            notice,
             eanStatus: s.eanStatus,
             groupTitle: s.groupTitle,
             // Soft-hidden behind "Show archived" — except Done-group styles
