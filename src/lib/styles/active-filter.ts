@@ -59,6 +59,10 @@ export async function activeStylesWhere(opts?: {
         })),
       },
       ...(doneCutoffIds.size > 0 ? [{ id: { in: [...doneCutoffIds] } }] : []),
+      // Manually pulled-in styles (Settings ▸ Pull style by PO) are surfaced
+      // regardless of their Monday group — that's the whole point of pulling a
+      // historical (typically Done-group) PO in to test its output layouts.
+      { pulledForTestAt: { not: null } },
     ],
   };
 }

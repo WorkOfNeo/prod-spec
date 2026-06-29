@@ -50,6 +50,8 @@ const ATTR_FILTERS: ReadonlyArray<{ key: string; label: string; has: (r: StyleRo
   // working spec (see prodSpecActive in page.tsx).
   { key: "prodSpec", label: "Prod spec", has: (r) => r.prodSpecActive },
   { key: "supplier", label: "Supplier", has: (r) => r.hasSupplier },
+  // Manually pulled in for layout testing (Settings ▸ Pull style by PO).
+  { key: "pulled", label: "Pulled", has: (r) => r.pulledForTest },
 ];
 
 // The five value-picking facet dropdowns. Within a facet selections are OR'd
@@ -176,6 +178,9 @@ export type StyleRow = {
   // groups — except Done-group styles re-admitted by the PO cutoff, which
   // stay in the main view (see /styles page query).
   archived: boolean;
+  // Manually pulled into the styleboard for layout testing — surfaced via the
+  // "Pulled" attribute chip (Settings ▸ Pull style by PO).
+  pulledForTest: boolean;
   lastSyncedAt: string;
   searchBlob: string;
 };

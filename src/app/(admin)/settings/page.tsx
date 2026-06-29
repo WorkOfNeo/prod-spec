@@ -1,6 +1,8 @@
 import { getAutoGenerateEnabled, getSupplierReviewCcEmails } from "@/lib/settings/app-settings";
+import { listPulledStyles } from "@/lib/po/pull-by-po";
 import { AutoGenerateSetting } from "./auto-generate-setting";
 import { SupplierContactEmailSetting } from "./supplier-contact-email-setting";
+import { PullStyleByPo } from "./pull-style-by-po";
 import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
@@ -12,9 +14,10 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage() {
   await requireAdminPage();
 
-  const [autoGenerateEnabled, supplierReviewCcEmails] = await Promise.all([
+  const [autoGenerateEnabled, supplierReviewCcEmails, pulledStyles] = await Promise.all([
     getAutoGenerateEnabled(),
     getSupplierReviewCcEmails(),
+    listPulledStyles(),
   ]);
 
   return (
@@ -27,6 +30,7 @@ export default async function SettingsPage() {
       <div className="mt-6 grid max-w-2xl gap-4">
         <AutoGenerateSetting initialEnabled={autoGenerateEnabled} />
         <SupplierContactEmailSetting initialEmails={supplierReviewCcEmails.join(", ")} />
+        <PullStyleByPo initialPulled={pulledStyles} />
       </div>
 
       <p className="mt-6 max-w-2xl text-xs text-zinc-500">
