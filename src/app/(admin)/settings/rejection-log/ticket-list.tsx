@@ -737,9 +737,18 @@ function GroupSection({
         .filter((t) => t.status === "OPEN" || t.status === "IN_PROGRESS")
         .map((t) => t.id);
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
+  // Any ticket inside this style picked for the bulk "Mark fixed" bar — flag
+  // the parent header so a comment-driven selection that lands deep in a
+  // collapsed group is still visible at a glance.
+  const anySelected = selectableIds.some((id) => selected.has(id));
   return (
     <div className="border-b border-zinc-200 last:border-b-0">
-      <div className={`flex items-stretch ${open ? "bg-zinc-50" : ""}`}>
+      <div className={`flex items-stretch ${anySelected ? "bg-violet-50" : open ? "bg-zinc-50" : ""}`}>
+      {/* Left accent bar — always reserves width to avoid layout shift. */}
+      <span
+        className={`w-[3px] shrink-0 ${anySelected ? "bg-violet-500" : "bg-transparent"}`}
+        aria-hidden="true"
+      />
       <button
         type="button"
         onClick={onToggle}
