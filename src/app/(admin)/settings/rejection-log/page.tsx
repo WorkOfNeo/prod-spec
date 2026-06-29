@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { TicketList, type TicketRow, type StyleOutputView } from "./ticket-list";
 import { requireAdminPage } from "@/lib/auth-server";
 import { outputEditLink } from "@/lib/outputs/output-edit-link";
-import { styleOutputBases } from "@/lib/rejection-log/style-outputs";
+import { styleOutputBases, notGeneratedReason } from "@/lib/rejection-log/style-outputs";
 import { baseVariantKey } from "@/lib/tickets/orphan";
 
 export const dynamic = "force-dynamic";
@@ -157,6 +157,13 @@ export default async function RejectionLogPage({
     const regenAt = latestAssetAt.get(`${t.styleId}|${t.variantKey}`);
     const regeneratedAfterRejection = !!regenAt && regenAt > t.createdAt;
     const approved = t.status === "RESOLVED" && isOutputLive(t.styleId, t.variantKey);
+    // If this ticket's output can't currently be generated — excluded by a
+    // doc-type rule, or missing required Monday fields — surface the SAME
+    // reason the review screens show, so the admin knows re-running won't help.
+    const outputBase = (basesByStyle.get(t.styleId) ?? []).find(
+      (o) => o.variantKey === baseVariantKey(t.variantKey),
+    );
+    const notGeneratedText = outputBase ? notGeneratedReason(outputBase) : null;
     return {
       id: t.id,
       status: t.status,
@@ -189,6 +196,7 @@ export default async function RejectionLogPage({
       regeneratedAfterRejection,
       regeneratedAtLabel: regeneratedAfterRejection && regenAt ? STAMP_FORMAT.format(regenAt) : null,
       approved,
+      notGeneratedText,
       attachments: (attachmentsByTicket.get(t.id) ?? []).map((a) => ({
         id: a.id,
         fileName: a.fileName,
@@ -239,6 +247,8 @@ export default async function RejectionLogPage({
           declared: o.declared,
           ready: o.ready,
           missing: o.missing,
+          excluded: o.excluded,
+          exclusionReason: o.exclusionReason,
           lastGeneratedLabel: o.lastGeneratedAt ? relativeStamp(o.lastGeneratedAt, now) : null,
           rejected: rej !== null,
           regeneratedSinceRejection: !!(rej && o.lastGeneratedAt && o.lastGeneratedAt > rej.at),
