@@ -3,7 +3,7 @@ import { parsePoNumberValue } from "@/lib/po/po-number";
 import { columnText, findItemsByColumnValues, type MondayItem } from "@/lib/monday/client";
 import { MONDAY_BOARDS, MONDAY_PRE_ORDER_COLS } from "@/lib/monday/boards";
 import { ingestMondayItem, IngestSkip } from "@/lib/monday/ingest";
-import { triggerEanRunner } from "@/lib/queue/trigger";
+import { resolveAndPersistStyleEans } from "@/lib/po/ean-runner";
 
 // "Pull style by PO" (Settings) — pull a historical/hidden style into the
 // styleboard for layout testing. Two-step: a preview (DB-first, Monday as the
@@ -147,13 +147,19 @@ export type PullResult = {
 // Refresh each selected Monday item, (re)ingest it, and pin it onto the
 // styleboard. Refresh-from-Monday is deliberate: the operator is testing
 // layouts and wants the freshest field/EAN state. Output generation is NOT
-// triggered here — the operator runs that from /styles. EAN resolution IS
-// queued (ingest sets eanStatus PENDING when a PO is present), so we kick the
-// EAN runner once at the end so barcodes resolve before they generate.
+// triggered here — the operator runs that from /styles.
+//
+// EAN resolution is run DIRECTLY here, not left to the queue. The passive
+// ingest path only queues PENDING when a PO is newly filled or *changed*, and
+// the cron runner/sweep deliberately skips the parked backlog (lower PO / null
+// poSeq) and short-circuits when the auto-run toggle is off. Pulled styles are
+// almost always historical rows with an unchanged PO below the cutoff, so none
+// of those would ever fire — they'd sit unresolved. Pulling is an explicit
+// operator action (like clicking "Re-resolve" per row), so we resolve each
+// pulled style end-to-end on the spot, bypassing the toggle and the cutoff.
 export async function pullStylesByPo(mondayItemIds: string[]): Promise<PullResult> {
   const ids = [...new Set(mondayItemIds.map((s) => s.trim()).filter(Boolean))];
   const result: PullResult = { pulled: [], skipped: [], errors: [] };
-  let anyEanQueued = false;
 
   for (const itemId of ids) {
     try {
@@ -162,12 +168,31 @@ export async function pullStylesByPo(mondayItemIds: string[]): Promise<PullResul
         where: { id: ingest.styleId },
         data: { pulledForTestAt: new Date() },
       });
-      if (ingest.eanQueued) anyEanQueued = true;
       const style = await db.style.findUnique({
         where: { id: ingest.styleId },
-        select: { name: true },
+        select: { name: true, poNumber: true },
       });
       result.pulled.push({ styleId: ingest.styleId, name: style?.name ?? itemId });
+
+      // Resolve the barcodes now. Mirrors the per-row "Re-resolve" override:
+      // clear the strike counter so a floated row un-floats and gets a fresh
+      // budget, then resolve + persist. A scrape failure must NOT fail the
+      // pull — the style is already pulled; its EANs just stay where they were.
+      if (style?.poNumber) {
+        try {
+          await db.style.update({ where: { id: ingest.styleId }, data: { eanAttempts: 0 } });
+          await resolveAndPersistStyleEans(ingest.styleId);
+        } catch (eanErr) {
+          await db.log.create({
+            data: {
+              level: "WARN",
+              message: `pull-by-PO: EAN resolve failed for ${ingest.styleId}: ${
+                eanErr instanceof Error ? eanErr.message : "unknown"
+              }`,
+            },
+          });
+        }
+      }
     } catch (e) {
       if (e instanceof IngestSkip) {
         const reason =
@@ -184,7 +209,6 @@ export async function pullStylesByPo(mondayItemIds: string[]): Promise<PullResul
     }
   }
 
-  if (anyEanQueued) await triggerEanRunner();
   return result;
 }
 
