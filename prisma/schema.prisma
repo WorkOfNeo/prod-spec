@@ -646,6 +646,12 @@ model Style {
   // cutoff are parked. Set at ingest whenever poNumber is written; null when
   // there's no PO / no digits.
   poSeq               Int?
+  // Manually "pulled into the styleboard" for layout testing (Settings ▸ Pull
+  // style by PO). When set, the style stays visible on /styles regardless of
+  // its Monday group — overriding the Templates/Done hide in activeStylesWhere
+  // — so an operator can pull a historical PO in to test every output layout.
+  // Null = not pulled (normal visibility rules apply). Cleared by "un-pull".
+  pulledForTestAt     DateTime?
   lastSyncedAt        DateTime?
   // Soft lifecycle from Monday. We never hard-delete a Style: an
   // item_archived / item_deleted webhook stamps these instead, so the row
@@ -681,6 +687,9 @@ model Style {
   @@index([eanStatus, poSeq])
   @@index([archivedAt])
   @@index([deletedAt])
+  // Pulled-for-test styles are surfaced regardless of group — small set, looked
+  // up directly in activeStylesWhere and the Settings management list.
+  @@index([pulledForTestAt])
   @@map("styles")
 }
 

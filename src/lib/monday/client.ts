@@ -256,6 +256,36 @@ export async function findItemByName(
   );
 }
 
+// Look up items on a board BY A TEXT COLUMN VALUE — used by the "pull style by
+// PO" tool to find Pre-Order items whose PO column matches. Monday's
+// items_page_by_column_values does an EXACT text match, but operators type the
+// PO in varying forms ("C-62498", "62498", "C-PO62498"), so the caller passes
+// every variant worth trying and we merge the hits, deduped by id. Returns []
+// when none match.
+export async function findItemsByColumnValues(
+  boardId: string | number,
+  columnId: string,
+  values: string[],
+): Promise<MondayItem[]> {
+  const cleaned = Array.from(new Set(values.map((v) => v.trim()).filter(Boolean)));
+  if (cleaned.length === 0) return [];
+  const data = await gql<{ items_page_by_column_values: { items: MondayItem[] } | null }>(
+    `query ($boardId: ID!, $columnId: String!, $values: [String]!) {
+      items_page_by_column_values (
+        board_id: $boardId,
+        columns: [{ column_id: $columnId, column_values: $values }],
+        limit: 100
+      ) {
+        items { ${ITEM_FIELDS} }
+      }
+    }`,
+    { boardId: String(boardId), columnId, values: cleaned },
+  );
+  const items = data.items_page_by_column_values?.items ?? [];
+  const seen = new Set<string>();
+  return items.filter((i) => (seen.has(i.id) ? false : (seen.add(i.id), true)));
+}
+
 export type MondayUser = { id: string; name: string | null; email: string | null };
 
 // Resolve Monday user ids → their profiles (id/name/email). Used to turn a
