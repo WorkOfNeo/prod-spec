@@ -171,6 +171,11 @@ export function TicketList({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<{ done: number; total: number; regenerate: boolean } | null>(null);
   const [bulkSummary, setBulkSummary] = useState<{ fixed: number; failed: number } | null>(null);
+  // List-level "Regenerate all & mark fixed" progress + result.
+  const [listRun, setListRun] = useState<{ done: number; total: number } | null>(null);
+  const [listSummary, setListSummary] = useState<
+    { styles: number; fixed: number; failed: number; awaiting: number } | null
+  >(null);
 
   // Only OPEN / IN_PROGRESS tickets can be marked fixed — FIXED/RESOLVED are done.
   const actionableIds = useMemo(() => {
@@ -451,6 +456,57 @@ export function TicketList({
     router.refresh();
   }
 
+  // List-level "Regenerate all & mark fixed": run the per-style regenerate-all
+  // resolve over EVERY style currently in the list (so it respects the active
+  // filters — what you see is what runs). Sequential per style: concurrent jobs
+  // for one style are guarded and each slow render needs its own budget. Uses
+  // the same resolve-rejections path as the per-style button, which re-renders
+  // every rejected output and posts ONE re-review notice per style — and is
+  // status-aware, so FIXED tickets get re-done too.
+  async function regenerateAllInList() {
+    if (listRun || bulk) return;
+    const styleIds = groups.map((g) => g.styleId);
+    if (styleIds.length === 0) return;
+    if (
+      !window.confirm(
+        `Regenerate every rejected output across ${styleIds.length} style${styleIds.length === 1 ? "" : "s"} in this list and send them back for review?\n\n` +
+          `This re-renders all rejected outputs and posts a re-review notice to the reviewer (one per style). It can take a while.`,
+      )
+    )
+      return;
+    setListSummary(null);
+    setListRun({ done: 0, total: styleIds.length });
+    let fixed = 0;
+    let failed = 0;
+    let awaiting = 0;
+    for (const styleId of styleIds) {
+      try {
+        const res = await fetch(`/api/admin/styles/${styleId}/resolve-rejections`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ regenerateAll: true }),
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          fixed?: unknown[];
+          awaitingData?: unknown[];
+          failed?: unknown[];
+        };
+        if (!res.ok) failed++;
+        else {
+          fixed += body.fixed?.length ?? 0;
+          awaiting += body.awaitingData?.length ?? 0;
+          failed += body.failed?.length ?? 0;
+        }
+      } catch {
+        failed++;
+      }
+      setListRun((s) => (s ? { ...s, done: s.done + 1 } : s));
+    }
+    setListRun(null);
+    setListSummary({ styles: styleIds.length, fixed, failed, awaiting });
+    router.refresh();
+  }
+
   // Style-level actions. Regenerate (all / one output) hits the rerun route;
   // mark-fixed (smart / regenerate-all-first) hits resolve-rejections, which
   // re-renders only the stale outputs and sends ONE re-review notice.
@@ -610,10 +666,48 @@ export function TicketList({
         </p>
       ) : (
         <>
-          <p className="mt-3 text-xs text-zinc-400">
-            {groups.length} style{groups.length === 1 ? "" : "s"} · {filtered.length} rejection
-            {filtered.length === 1 ? "" : "s"}
-          </p>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <p className="text-xs text-zinc-400">
+              {groups.length} style{groups.length === 1 ? "" : "s"} · {filtered.length} rejection
+              {filtered.length === 1 ? "" : "s"}
+            </p>
+            {!isHistory ? (
+              <button
+                type="button"
+                onClick={regenerateAllInList}
+                disabled={listRun !== null || bulk !== null}
+                className="shrink-0 rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Re-render every rejected output across all styles in this list and send them back to the reviewer"
+              >
+                {listRun
+                  ? `Regenerating… ${listRun.done}/${listRun.total} styles`
+                  : `↻ Regenerate all & mark fixed (${groups.length})`}
+              </button>
+            ) : null}
+          </div>
+          {listSummary ? (
+            <div
+              className={`mt-2 flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${
+                listSummary.failed > 0
+                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-800"
+              }`}
+            >
+              <span>
+                ✓ {listSummary.styles} style{listSummary.styles === 1 ? "" : "s"} processed ·{" "}
+                {listSummary.fixed} output{listSummary.fixed === 1 ? "" : "s"} re-rendered &amp; sent for review
+                {listSummary.awaiting > 0 ? ` · ${listSummary.awaiting} awaiting data` : ""}
+                {listSummary.failed > 0 ? ` · ${listSummary.failed} failed (still open — retry)` : ""}.
+              </span>
+              <button
+                type="button"
+                onClick={() => setListSummary(null)}
+                className="ml-auto text-xs text-zinc-500 underline hover:text-zinc-800"
+              >
+                Dismiss
+              </button>
+            </div>
+          ) : null}
           <div className="mt-2 overflow-hidden rounded-lg border border-zinc-200 bg-white">
             {groups.map((g) => (
               <GroupSection
