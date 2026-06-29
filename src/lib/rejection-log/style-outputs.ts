@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
+import { loadDocTypeExclusionRules, loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { outputReadinessForStyle, type ReadinessStyle } from "@/lib/styles/output-readiness";
 import { baseVariantKey } from "@/lib/tickets/orphan";
 
@@ -31,6 +32,10 @@ export type StyleOutputBase = {
   ready: boolean;
   // Missing field labels when not ready (e.g. "Description", "KL number").
   missing: string[];
+  // Skipped by a doc-type keyword rule (e.g. socks → no wash care). When true
+  // the output is intentionally never generated; `exclusionReason` is the rule.
+  excluded: boolean;
+  exclusionReason: string | null;
   // Part of the ProdSpec's current output set (false ⇒ framing or an output
   // that's since been removed but still has assets).
   declared: boolean;
@@ -39,6 +44,25 @@ export type StyleOutputBase = {
   // Review state of that newest asset (APPROVED / REJECTED / PENDING_REVIEW).
   latestReviewStatus: string | null;
 };
+
+// The "why isn't this output generated" line — the SAME text the review screens
+// show, reused wherever the rejection log lists an output. Excluded wins (it's a
+// hard rule); otherwise a not-ready output lists its missing Monday fields.
+// Returns null when the output generates fine.
+export function notGeneratedReason(o: {
+  excluded: boolean;
+  exclusionReason: string | null;
+  ready: boolean;
+  missing: string[];
+}): string | null {
+  if (o.excluded) {
+    return o.exclusionReason ?? "Not generated — skipped by a document-type rule for this product.";
+  }
+  if (!o.ready && o.missing.length > 0) {
+    return `Missing fields, output could not be generated. Please fill these in Monday: ${o.missing.join(", ")}`;
+  }
+  return null;
+}
 
 export async function styleOutputBases(styleId: string): Promise<StyleOutputBase[]> {
   // `layout:<id>` outputs resolve their readiness from the variant registry.
@@ -58,7 +82,14 @@ export async function styleOutputBases(styleId: string): Promise<StyleOutputBase
   });
   if (!style) return [];
 
-  const readiness = outputReadinessForStyle(style as ReadinessStyle);
+  // Pass the doc-type keyword rules so excluded outputs (socks → no wash care)
+  // carry their `excluded`/`exclusionReason` — the rejection log surfaces the
+  // SAME "not generated — <rule>" text the review screens show.
+  const [exclusionRules, docTypeLabels] = await Promise.all([
+    loadDocTypeExclusionRules(),
+    loadDocTypeLabels(),
+  ]);
+  const readiness = outputReadinessForStyle(style as ReadinessStyle, exclusionRules, docTypeLabels);
   const readinessByBase = new Map(readiness.map((r) => [baseVariantKey(r.variantKey), r]));
 
   // Newest non-FAILED asset per base. Assets are ordered newest-first, so the
@@ -92,6 +123,8 @@ export async function styleOutputBases(styleId: string): Promise<StyleOutputBase
       docType: a?.docType ?? null,
       ready: r?.ready ?? true,
       missing: (r?.missing ?? []).map((m) => m.label),
+      excluded: r?.excluded === true,
+      exclusionReason: r?.exclusionReason ?? null,
       declared: r !== undefined,
       lastGeneratedAt: a?.createdAt ?? null,
       latestReviewStatus: a?.reviewStatus ?? null,

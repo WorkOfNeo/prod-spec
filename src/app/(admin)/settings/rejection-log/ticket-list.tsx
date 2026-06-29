@@ -56,6 +56,11 @@ export type TicketRow = {
   // True when the output's newest asset was APPROVED by a reviewer — the signal
   // behind the "Approved" pill (distinct from a ticket auto-resolved on removal).
   approved: boolean;
+  // "Not generated — <rule>" / "Missing fields … fill in Monday: …" when this
+  // ticket's output can't currently be generated (excluded by a doc-type rule
+  // or missing required fields). null when it generates fine. Same text the
+  // review screens show, so the admin knows re-running won't help.
+  notGeneratedText: string | null;
   // Images the reviewer attached to the comment (served behind admin auth).
   attachments: { id: string; fileName: string; mimeType: string; url: string }[];
   searchBlob: string;
@@ -71,6 +76,9 @@ export type StyleOutputView = {
   declared: boolean;
   ready: boolean;
   missing: string[];
+  // Skipped by a doc-type keyword rule (socks → no wash care); reason is the rule.
+  excluded: boolean;
+  exclusionReason: string | null;
   lastGeneratedLabel: string | null;
   rejected: boolean; // has an OPEN/IN_PROGRESS ticket
   regeneratedSinceRejection: boolean;
@@ -1057,6 +1065,15 @@ function GroupSection({
 // regenerated since its rejection, amber for awaiting-data / still-rejected,
 // muted for non-rejected outputs (just "generated <when>").
 function OutputFreshness({ o }: { o: StyleOutputView }) {
+  // Excluded by a doc-type rule wins — it's never generated, so show the rule
+  // (the same text the review screens show) rather than freshness.
+  if (o.excluded) {
+    return (
+      <span className="text-[11px] text-amber-700" title={o.exclusionReason ?? undefined}>
+        ⚠ {o.exclusionReason ?? "Not generated — skipped by a document-type rule for this product."}
+      </span>
+    );
+  }
   if (o.rejected && o.regeneratedSinceRejection) {
     return (
       <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap text-emerald-700">
@@ -1071,10 +1088,12 @@ function OutputFreshness({ o }: { o: StyleOutputView }) {
       </span>
     );
   }
-  if (o.rejected && !o.ready) {
+  // Missing required fields → can't generate. Surfaced for ANY not-ready output
+  // (not just rejected ones), naming the Monday fields to fill in.
+  if (!o.ready) {
     return (
-      <span className="whitespace-nowrap text-[11px] text-amber-700" title={o.missing.join(", ")}>
-        ⚠ awaiting data
+      <span className="text-[11px] text-amber-700" title={`Please fill these in Monday: ${o.missing.join(", ")}`}>
+        ⚠ missing fields
         {o.missing.length ? `: ${o.missing.slice(0, 3).join(", ")}${o.missing.length > 3 ? "…" : ""}` : ""}
       </span>
     );
@@ -1159,6 +1178,14 @@ function Row({
               ↻ regenerated
             </span>
           ) : null}
+          {row.notGeneratedText ? (
+            <span
+              className="ml-2 inline-block rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap text-amber-700"
+              title={row.notGeneratedText}
+            >
+              ⚠ not generated
+            </span>
+          ) : null}
         </td>
         <td className="px-3 py-2 text-zinc-600">
           {row.customerName}
@@ -1223,6 +1250,11 @@ function Row({
                 <p className="mt-1 font-mono text-[11px] break-all text-zinc-500">
                   {row.variantKey || `(no variant key — full re-run)`}
                 </p>
+                {row.notGeneratedText ? (
+                  <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] leading-relaxed text-amber-800">
+                    {row.notGeneratedText}
+                  </p>
+                ) : null}
                 <div className="mt-2 flex flex-wrap gap-3 text-xs">
                   {row.editHref ? (
                     <a
