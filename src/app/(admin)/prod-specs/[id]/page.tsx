@@ -120,11 +120,13 @@ export default async function ProdSpecDetailPage({
         initialTab={
           tab === "outputs"
             ? "outputs"
-            : tab === "cover"
-              ? "cover"
-              : tab === "test"
-                ? "test"
-                : "general"
+            : tab === "images"
+              ? "images"
+              : tab === "cover"
+                ? "cover"
+                : tab === "test"
+                  ? "test"
+                  : "general"
         }
         initialName={prodSpec.name}
         initialActive={prodSpec.active}

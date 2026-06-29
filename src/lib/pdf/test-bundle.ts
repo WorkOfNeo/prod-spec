@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { renderPdf } from "@/lib/pdf/renderer";
-import { inlineProdSpecImages } from "@/lib/pdf/inline-images";
+import { loadGeneralInfoImages } from "@/lib/prod-spec/general-images";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { applyCartonBarcodePrefs, applyFieldOverrides } from "@/lib/pdf/pins";
@@ -259,7 +259,11 @@ export async function renderProdSpecTestBundle(
   const generalInfoMd = prodSpec.generalInfoMd?.trim();
   let coverDoc: TestBundleDoc;
   try {
-    let coverHtml = renderCoverPageHtml({
+    // Ordered General-page images, inlined to data URLs (same as the runner +
+    // cover preview) — page.setContent() can't fetch a bare /api path.
+    const generalInfoImages = await loadGeneralInfoImages(prodSpec.id);
+    const hasGeneralInfo = Boolean(generalInfoMd) || generalInfoImages.length > 0;
+    const coverHtml = renderCoverPageHtml({
       customerName: style.customer.name,
       businessArea: businessAreaName,
       styleName: style.name,
@@ -269,17 +273,14 @@ export async function renderProdSpecTestBundle(
       generatedAt: new Date(),
       docs: docSummaries,
       settings: pageSettings.cover,
-      generalInfo: generalInfoMd
-        ? { markdown: generalInfoMd, settings: pageSettings.generalInfo }
+      generalInfo: hasGeneralInfo
+        ? { markdown: generalInfoMd ?? "", settings: pageSettings.generalInfo, images: generalInfoImages }
         : null,
     });
-    // Inline general-info image URLs to data URLs — page.setContent() can't
-    // fetch a bare /api path (same as the runner + cover preview).
-    if (generalInfoMd) coverHtml = await inlineProdSpecImages(coverHtml, prodSpec.id);
     coverDoc = {
       kind: "cover",
       variantKey: COVER_VARIANT_KEY,
-      name: generalInfoMd ? "Cover page · incl. general information" : "Cover page",
+      name: hasGeneralInfo ? "Cover page · incl. general information" : "Cover page",
       fileName: `00-${slug}-cover-page.pdf`,
       widthMm: 210,
       heightMm: 297,
