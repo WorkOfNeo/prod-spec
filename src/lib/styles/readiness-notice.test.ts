@@ -249,3 +249,34 @@ test("3-strike float → red 'Needs attention' admin step", () => {
   assert.equal(notice.headline, "Needs attention");
   assert.ok(notice.steps.some((s) => s.key === "po-floated"));
 });
+
+test("multi-document output collapses to ONE slot (counts match the review page)", () => {
+  // A single declared carton base generated as 4 per-size/colour documents,
+  // all pending review. The notice must read "1 of 1 ready / 1 to review",
+  // not 4 — matching rollupOutputSlots on the review page.
+  const docs: ReturnType<typeof output>[] = ["#86-Pink", "#98-Pink", "#110-Blue", "#122-Navy"].map(
+    (suffix) => output({ state: "TO_REVIEW", variantKey: `layout:A${suffix}`, jobAssetId: "x" }),
+  );
+  const notice = styleReadinessNotice(input({ currentOutputs: docs }), "REVIEWER");
+  assert.equal(notice.total, 1);
+  assert.equal(notice.ready, 1);
+  const reviewStep = notice.steps.find((s) => s.key === "to-review");
+  assert.ok(reviewStep);
+  assert.match(reviewStep!.title, /1 output ready for review/);
+});
+
+test("a slot with both rejected and pending documents buckets as rejected (most-actionable)", () => {
+  // Mixed documents under one base: most-actionable wins, so the slot reads
+  // rejected — one slot, counted once.
+  const notice = styleReadinessNotice(
+    input({
+      currentOutputs: [
+        output({ state: "REJECTED", variantKey: "layout:A#1", jobAssetId: "x" }),
+        output({ state: "TO_REVIEW", variantKey: "layout:A#2", jobAssetId: "y" }),
+      ],
+    }),
+    "ADMIN",
+  );
+  assert.equal(notice.total, 1);
+  assert.ok(notice.steps.some((s) => s.key === "rejected"));
+});

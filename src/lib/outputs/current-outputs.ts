@@ -1,6 +1,7 @@
 import type { MissingDetailField } from "@/lib/styles/detail-fields";
 import type { ReadinessStyle } from "@/lib/styles/output-readiness";
 import { GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
+import { currentOutputBaseKeys, isOrphanedOutputKey } from "@/lib/tickets/orphan";
 
 // =====================================================
 // Current outputs — the single source of truth for "what outputs does this
@@ -128,8 +129,9 @@ const base = (variantKey: string) => variantKey.split("#")[0];
 
 // Most-actionable state first — used to summarise a multi-document slot by the
 // single state that best describes it (a rejection or an in-flight regen matters
-// more than a sibling that's already approved).
-const SLOT_STATE_PRIORITY: OutputState[] = [
+// more than a sibling that's already approved). Exported so the readiness notice
+// collapses the same way the review page does.
+export const SLOT_STATE_PRIORITY: OutputState[] = [
   "GENERATING",
   "REJECTED",
   "BLOCKED",
@@ -142,6 +144,46 @@ const SLOT_STATE_PRIORITY: OutputState[] = [
   "READY_TO_GENERATE",
   "AWAITING_DATA",
 ];
+
+// Pure: from all non-FAILED assets (ORDERED NEWEST JOB FIRST), pick the
+// "current" set of documents — the decision set the review surfaces act on.
+// Two rules, both keyed by BASE (so a renamed "#suffix" scheme can't leave
+// stale documents behind):
+//   • Supersede per base by its newest generating job. Once a re-run produces
+//     ANY document for a base, only THAT generation's documents are current;
+//     earlier runs' documents for the same base (including a changed suffix
+//     scheme, or colours/sizes no longer produced) drop to history.
+//   • Drop orphaned bases. A generated base the ProdSpec no longer declares
+//     (the operator removed/replaced that output) is not part of the current
+//     decision. Framing keys (cover) are never orphaned; legacy null-key assets
+//     (no variantKey) are kept rather than guessed-orphaned.
+// Retired __general_info__ assets are skipped entirely.
+export function selectCurrentAssets<
+  A extends { jobId: string; variantKey: string | null; docType: string },
+>(assetsNewestFirst: A[], declaredBaseKeys: Set<string>): A[] {
+  const keyOf = (a: A) => a.variantKey ?? `doc:${a.docType}`;
+  // Newest job per base — first asset seen wins (input is newest-job-first).
+  const newestJobForBase = new Map<string, string>();
+  for (const a of assetsNewestFirst) {
+    if (a.variantKey === GENERAL_INFO_VARIANT_KEY) continue;
+    const b = base(keyOf(a));
+    if (!newestJobForBase.has(b)) newestJobForBase.set(b, a.jobId);
+  }
+  const seen = new Set<string>();
+  const out: A[] = [];
+  for (const a of assetsNewestFirst) {
+    if (a.variantKey === GENERAL_INFO_VARIANT_KEY) continue;
+    const key = keyOf(a);
+    const b = base(key);
+    if (a.jobId !== newestJobForBase.get(b)) continue; // older generation for this base
+    // Only a real (declared-style) key can be orphaned; keep legacy null keys.
+    if (a.variantKey != null && isOrphanedOutputKey(a.variantKey, declaredBaseKeys)) continue;
+    if (seen.has(key)) continue; // one row per full variantKey (newest wins)
+    seen.add(key);
+    out.push(a);
+  }
+  return out;
+}
 
 // Pure: aggregate by OUTPUT SLOT (base variantKey) instead of per document. A
 // multi-document output ("<base>#<suffix>", e.g. a carton X-of-Y per size/colour)
@@ -206,6 +248,7 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
   const { outputReadinessForStyle } = await import("@/lib/styles/output-readiness");
   const { getVariant } = await import("@/lib/pdf/template-registry");
   const { loadDocTypeExclusionRules, loadDocTypeLabels } = await import("@/lib/pdf/doc-types-db");
+  const { parseProdSpecOutputs } = await import("@/lib/prod-spec/config");
 
   // ProdSpec.outputs may reference Output Builder layouts (`layout:<id>`) —
   // load them before the readiness walk resolves variants.
@@ -258,18 +301,20 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
   // output as belonging to the current run vs. an earlier one.
   const latestJobId = assets[0]?.jobId ?? null;
 
-  // Newest asset per FULL variantKey — one entry per actual document, so a
-  // multi-document output (carton X-of-Y, per size/colour: "<base>#<suffix>")
-  // stays individually reviewable. Assets are ordered newest job first.
+  // The CURRENT decision set — one entry per actual document (so a
+  // multi-document output "<base>#<suffix>" stays individually reviewable),
+  // but superseded per base by its newest generating job and with orphaned
+  // (removed-from-spec) bases dropped. This is what stops a changed suffix
+  // scheme or a swapped-out output from leaving stale REJECTED documents on the
+  // review forever — pressing Re-run now clears the prior run's documents from
+  // the "to decide" list. Base keys come from ALL declared outputs (enabled or
+  // not), matching the rejection-ticket orphan check.
+  const declaredBaseKeys = currentOutputBaseKeys(
+    parseProdSpecOutputs(style.prodSpec?.outputs ?? []),
+  );
+  const current = selectCurrentAssets(assets, declaredBaseKeys);
   const latestByVariant = new Map<string, (typeof assets)[number]>();
-  for (const a of assets) {
-    // The standalone "General information" framing PDF is retired — its pages
-    // now ride inside the cover. Old jobs still carry __general_info__ assets;
-    // skip them so they never surface as a current output anywhere.
-    if (a.variantKey === GENERAL_INFO_VARIANT_KEY) continue;
-    const key = a.variantKey ?? `doc:${a.docType}`;
-    if (!latestByVariant.has(key)) latestByVariant.set(key, a);
-  }
+  for (const a of current) latestByVariant.set(a.variantKey ?? `doc:${a.docType}`, a);
 
   // Bases with an in-flight (QUEUED/RUNNING) job. Empty variantKeys = full run.
   const inflight = await db.job.findMany({
