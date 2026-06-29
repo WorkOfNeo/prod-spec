@@ -14,6 +14,7 @@ import { groupByDocType, DocTypeAccordion } from "../doc-type-groups";
 import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { getVariant } from "@/lib/pdf/template-registry";
 import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
+import { baseVariantKey } from "@/lib/tickets/orphan";
 import {
   getCurrentOutputsForStyle,
   rollupOutputSlots,
@@ -140,15 +141,34 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     );
   }
 
+  // Outputs the admin marked FIXED on the rejection log ("ready for re-review").
+  // These must stay in the MAIN view so the reviewer can act on them even if the
+  // latest asset is an older-generation rejection that wasn't re-rendered — the
+  // "locate on /review when marked fixed" guard (the rejection-log History split
+  // relies on this so a fixed thread is always findable here).
+  const fixedTicketBases = new Set(
+    (
+      await db.rejectionTicket.findMany({
+        where: { styleId: id, status: "FIXED" },
+        select: { variantKey: true },
+      })
+    ).map((t) => baseVariantKey(t.variantKey)),
+  );
+  const hasFixedTicket = (o: CurrentOutput) =>
+    fixedTicketBases.has(baseVariantKey(o.variantKey));
+
   // History = outputs decided (approved/rejected) in an EARLIER run. They stay
   // fully visible — same card, same actions — but collapse into the "Earlier
   // generations" accordion so the main view shows only the current run. Going
   // through the same style again and again no longer drowns in prior decisions.
-  // Anything still pending is NEVER history, even if it came from an older job.
+  // Anything still pending — or marked fixed and awaiting re-review — is NEVER
+  // history, even if it came from an older job.
   const isSettled = (o: CurrentOutput) =>
     o.reviewStatus === "APPROVED" || o.reviewStatus === "REJECTED";
-  const history = reviewable.filter((o) => isSettled(o) && !o.fromLatestGeneration);
-  const current = reviewable.filter((o) => !(isSettled(o) && !o.fromLatestGeneration));
+  const isHistoryOutput = (o: CurrentOutput) =>
+    isSettled(o) && !o.fromLatestGeneration && !hasFixedTicket(o);
+  const history = reviewable.filter(isHistoryOutput);
+  const current = reviewable.filter((o) => !isHistoryOutput(o));
 
   const groups = groupByDocType<CurrentOutput>(current, docTypeLabels);
   const placeholderOutputs = reviewable.filter((o) => o.placeholderCount > 0);
