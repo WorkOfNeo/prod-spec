@@ -17,7 +17,9 @@ const OUTPUT_CHIP: Record<ReviewTaskOutput["state"], { cls: string; label: strin
   // Still-coming states — muted, no action; the document doesn't exist yet.
   GENERATING: { cls: "border-zinc-200 bg-zinc-50 text-zinc-500", label: "generating…" },
   READY_TO_GENERATE: { cls: "border-zinc-200 bg-zinc-50 text-zinc-500", label: "queued" },
-  AWAITING_DATA: { cls: "border-zinc-200 bg-zinc-50 text-zinc-500", label: "awaiting data" },
+  // Required fields are missing — generation was deliberately skipped (not
+  // queued). Amber, not muted: it needs data fixed on Monday before it can run.
+  AWAITING_DATA: { cls: "border-amber-200 bg-amber-50 text-amber-800", label: "missing fields" },
 };
 
 function StyleTaskAction({ t, startedContext }: { t: ReviewTask; startedContext: boolean }) {

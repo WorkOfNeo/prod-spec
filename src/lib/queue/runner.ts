@@ -193,36 +193,61 @@ export async function processJob(jobId: string): Promise<void> {
       ? (job.variantKeys as unknown[]).filter((x): x is string => typeof x === "string")
       : []
   ).filter((k) => k !== COVER_VARIANT_KEY && k !== GENERAL_INFO_VARIANT_KEY);
+
+  // Required-field gate (the source of truth: outputReadinessForStyle). An
+  // output never renders unless every required Monday field it needs is
+  // present — a blank/incomplete PDF must not ship. Skipped outputs surface on
+  // the review surfaces as "can't generate — missing X" (AWAITING_DATA),
+  // recomputed live from current data, so the operator sees exactly what's
+  // blocking them. Applies to EVERY run, including a manual full regen, which
+  // brings the runner in line with the auto-enqueue gate. Per-output required
+  // fields are defined by the ProdSpec, so the gate engages only when one is
+  // present (see the conditional below).
+  const readyKeys = new Set(
+    (prodSpec
+      ? outputReadinessForStyle({
+          rawData: job.style.rawData,
+          poNumber: job.style.poNumber,
+          supplier: job.style.supplier,
+          eans: job.style.eans,
+          cartonEan: job.style.cartonEan,
+          customer: { config: job.style.customer.config },
+          prodSpec: { outputs: prodSpec.outputs, columnMapping: prodSpec.columnMapping },
+        })
+      : []
+    )
+      .filter((r) => r.ready)
+      .map((r) => r.variantKey),
+  );
+
+  // Scoped re-runs (auto-enqueue / ticket fixes) narrow to specific outputs;
+  // an empty scope is a full regen of every enabled output. Tickets reference
+  // per-document asset keys ("layout:<id>#<size>"); ProdSpec outputs carry the
+  // BASE key — match on the base so a per-document rejection re-runs its whole
+  // variant.
   if (scopedKeys.length > 0) {
-    // Tickets reference per-document asset keys ("layout:<id>#<size>");
-    // ProdSpec outputs carry the BASE key — match on the base so a
-    // per-document rejection re-runs its whole variant.
     const want = new Set(scopedKeys.map((k) => k.split("#")[0]));
-    const readyKeys = new Set(
-      (prodSpec
-        ? outputReadinessForStyle({
-            rawData: job.style.rawData,
-            poNumber: job.style.poNumber,
-            supplier: job.style.supplier,
-            eans: job.style.eans,
-            cartonEan: job.style.cartonEan,
-            customer: { config: job.style.customer.config },
-            prodSpec: { outputs: prodSpec.outputs, columnMapping: prodSpec.columnMapping },
-          })
-        : []
-      )
-        .filter((r) => r.ready)
-        .map((r) => r.variantKey),
-    );
+    outputs = outputs.filter((o) => want.has(o.variantKey));
+  }
+
+  // Drop outputs whose required fields aren't all present — skip (logged), not
+  // fail, so the rest of the run proceeds and the cover still refreshes. Gated
+  // when a ProdSpec exists (the source of required-field rules), OR for any
+  // scoped run: a no-ProdSpec scoped run keeps its historical "skip all"
+  // behaviour (readyKeys is empty), since scoped keys originate from ProdSpec
+  // readiness. A no-ProdSpec FULL regen has no rules to apply and renders as
+  // before (manual/default outputs).
+  let missingFieldSkips = 0;
+  if (prodSpec || scopedKeys.length > 0) {
     const next: ProdSpecOutput[] = [];
     for (const o of outputs) {
-      if (!want.has(o.variantKey)) continue;
       if (!readyKeys.has(o.variantKey)) {
+        missingFieldSkips++;
         await db.log.create({
           data: {
             jobId: job.id,
             level: "WARN",
-            message: `skipping output ${o.variantKey}: its required fields are no longer all present`,
+            message: `skipping output ${o.variantKey}: required fields missing — not generated, surfaced as "awaiting data" on review`,
           },
         });
         continue;
@@ -344,21 +369,27 @@ export async function processJob(jobId: string): Promise<void> {
     }
   }
 
-  if (generated.length === 0 && scopedKeys.length > 0) {
-    // A SCOPED re-run that rendered nothing is NOT a misconfiguration — the
-    // targeted output was removed/replaced on the spec, or its required fields
-    // regressed since enqueue (logged above). Hard-failing here would poison
-    // the auto-gen float cap and flood the logs (this is what turned one
-    // orphaned-ticket bulk-fix into 90 FAILED jobs). Don't fail: fall through
-    // so the cover bundle still refreshes and the job settles AWAITING_REVIEW.
-    // Only a FULL run with nothing usable (below) is a real misconfig.
+  if (generated.length === 0 && (scopedKeys.length > 0 || missingFieldSkips > 0)) {
+    // A run that rendered nothing because its targeted/declared outputs had
+    // their required fields missing (or a scoped target was removed/replaced)
+    // is NOT a misconfiguration. Hard-failing here would poison the auto-gen
+    // float cap and flood the logs (this is what turned one orphaned-ticket
+    // bulk-fix into 90 FAILED jobs). Don't fail: fall through so the cover
+    // bundle still refreshes and the job settles AWAITING_REVIEW — the blocked
+    // outputs then surface as "can't generate — missing X" on /reviews and the
+    // style review tab, recomputed live from current Monday data. Only a FULL
+    // run with a genuine misconfig (no spec / no outputs / unknown keys, below)
+    // is a real failure.
     await db.log.create({
       data: {
         jobId: job.id,
         level: "WARN",
         message:
-          `scoped re-run produced no outputs — ${scopedKeys.join(", ")} no longer maps to a ` +
-          `ready output in "${prodSpec?.name ?? "this spec"}"; nothing regenerated (cover refreshed).`,
+          missingFieldSkips > 0
+            ? `no outputs generated — ${missingFieldSkips} output(s) missing required fields; ` +
+              `surfaced as "awaiting data" for review (cover refreshed).`
+            : `scoped re-run produced no outputs — ${scopedKeys.join(", ")} no longer maps to a ` +
+              `ready output in "${prodSpec?.name ?? "this spec"}"; nothing regenerated (cover refreshed).`,
       },
     });
   } else if (generated.length === 0) {

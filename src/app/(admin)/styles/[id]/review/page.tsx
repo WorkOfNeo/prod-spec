@@ -334,25 +334,34 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           <DocTypeAccordion
             label="Not generated yet"
             count={notReady.length}
-            rightHint="awaiting data, queued, or generating"
-            defaultOpen={false}
+            rightHint="can't generate (missing fields), queued, or generating"
+            // Open by default when there's nothing reviewable, so a style whose
+            // outputs were all skipped for missing fields shows WHY up front.
+            defaultOpen={reviewable.length === 0}
           >
             <ul className="divide-y divide-zinc-100 text-sm">
-              {notReady.map((o) => (
-                <li key={o.variantKey} className="flex items-center justify-between gap-3 py-2">
-                  <span className="font-medium text-zinc-700">{o.name}</span>
-                  <span className="flex items-center gap-2 text-xs text-zinc-500">
-                    {o.state === "AWAITING_DATA" && o.missing.length > 0 ? (
-                      <span className="text-amber-700">
-                        missing: {o.missing.map((m) => m.label).join(", ")}
+              {notReady.map((o) => {
+                // Required fields missing ⇒ generation was deliberately skipped.
+                // Say so plainly and name the fields — that's the actionable bit.
+                const missing = o.state === "AWAITING_DATA" && o.missing.length > 0;
+                return (
+                  <li key={o.variantKey} className="flex items-center justify-between gap-3 py-2">
+                    <span className="font-medium text-zinc-700">{o.name}</span>
+                    <span className="flex items-center gap-2 text-xs text-zinc-500">
+                      {missing ? (
+                        <span className="text-amber-700">
+                          missing: {o.missing.map((m) => m.label).join(", ")}
+                        </span>
+                      ) : null}
+                      <span
+                        className={`rounded-full px-2 py-0.5 font-medium ${missing ? "bg-amber-100 text-amber-800" : "bg-zinc-100 text-zinc-600"}`}
+                      >
+                        {missing ? "Can't generate" : NOT_READY_LABEL[o.state]}
                       </span>
-                    ) : null}
-                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-600">
-                      {NOT_READY_LABEL[o.state]}
                     </span>
-                  </span>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           </DocTypeAccordion>
         </div>
