@@ -42,6 +42,17 @@ export type EanDiagnostics = {
   /** Distinct style numbers found across the PO's sections — the candidate
    *  set a STYLE_NOT_IN_PO reject was checked against. */
   poStyleNumbers: string[];
+  /** Every section parsed from the PO's Barcodes page, each flagged with
+   *  whether this resolve selected it (`selected`). Powers the "full scrape,
+   *  green = used" panel. Live-only: trimmed from the persisted Log payload to
+   *  keep logs lean, so it's present after a fresh resolve, not on page load. */
+  poSections: Array<{
+    styleNumber: string | null;
+    contrastNo: string | null;
+    selected: boolean;
+    variants: Array<{ label: string; ean13: string }>;
+    cartonEan: string | null;
+  }>;
   styleSizes: string[];
   /** First ~600 chars of the Barcodes page (or whole doc) for eyeballing. */
   textSnippet: string;
