@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { downloadDriveItem } from "@/lib/sharepoint/shares";
 import { findPoPdfDetailed } from "./find-po-pdf";
 import { parsePoBarcodes, selectStyleItems, cartonEanFor, type PoVariant } from "./parse-barcodes";
+import { labelHasSize } from "./size-match";
 import type { EanDiagnostics } from "./ean-view";
 import { parseCustomerConfig, MANUAL_COLUMN_IDS, type ColumnMapping } from "@/lib/customers/config";
 import { parseProdSpecColumnMapping } from "@/lib/prod-spec/config";
@@ -79,25 +80,6 @@ function splitSizes(s: string): string[] {
     .split(/[,;]/)
     .map((x) => x.trim())
     .filter(Boolean);
-}
-
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-// True if a style `size` appears as a distinct token in a PO variant `label`
-// — e.g. "S/M" in "A-S/M Colour A Black-Black, S/M". Boundaries treat "/" as
-// part of a size token so "S" doesn't falsely match "S/M". Falls back to a
-// normalised substring for distinctive (≥3-char) sizes.
-function labelHasSize(label: string, size: string): boolean {
-  const s = size.toLowerCase().trim();
-  if (!s) return false;
-  const re = new RegExp(`(^|[^a-z0-9/])${escapeRe(s)}([^a-z0-9/]|$)`, "i");
-  if (re.test(label.toLowerCase())) return true;
-  const ns = norm(size);
-  return ns.length >= 3 && norm(label).includes(ns);
 }
 
 export async function resolveStyleEans(styleId: string): Promise<StyleEanResult> {
