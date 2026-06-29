@@ -59,6 +59,24 @@ test("selectCurrentAssets — skips retired __general_info__, keeps legacy null 
   assert.equal(current.some((a) => a.variantKey === "layout:A"), true);
 });
 
+test("selectCurrentAssets — drops EXCLUDED bases so a stale reject doesn't surface", () => {
+  // LS90058 shape: the Care Label is excluded (socks product), but old rejected
+  // docs linger because the re-run skipped it. The excluded base's assets must
+  // drop so the declared-output pass re-emits it as EXCLUDED.
+  const declared = new Set(["layout:CARE", "layout:OK"]);
+  const excluded = new Set(["layout:CARE"]);
+  const current = selectCurrentAssets(
+    [
+      asset("job2", "layout:OK"),
+      asset("job1", "layout:CARE#86-Pink"), // old rejected care-label docs
+      asset("job1", "layout:CARE#98-Pink"),
+    ],
+    declared,
+    excluded,
+  );
+  assert.deepEqual(keys(current).sort(), ["layout:OK"]);
+});
+
 test("selectCurrentAssets — newest job is per-base (a scoped rerun of one base leaves others)", () => {
   const declared = new Set(["layout:A", "layout:B"]);
   const current = selectCurrentAssets(

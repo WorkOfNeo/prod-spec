@@ -162,6 +162,7 @@ function Step({
             {step.outputs.map((o) => (
               <div key={o.name}>
                 <div className="text-[12px] font-medium text-zinc-700">{o.name}</div>
+                {o.note ? <div className="text-[12px] text-amber-700">{o.note}</div> : null}
                 <FieldChips fields={o.fields} />
               </div>
             ))}
