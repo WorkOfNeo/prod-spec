@@ -251,7 +251,9 @@ export function TicketList({
       else byComment.set(key, [r.id]);
     }
     const options: FacetOption[] = [...byComment.entries()]
-      .map(([value, ids]) => ({ value, label: commentExcerpt(value), count: ids.length }))
+      // Full comment as the label — the dropdown wraps it (and search matches
+      // the whole text), so no need to pre-truncate.
+      .map(([value, ids]) => ({ value, label: value, count: ids.length }))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
     return { commentOptions: options, commentTicketIds: byComment };
   }, [rows]);
@@ -642,6 +644,8 @@ export function TicketList({
               selected={validSelectedComments}
               onChange={onSelectComments}
               searchable
+              wide
+              wrapOptions
             />
           </>
         ) : null}
@@ -1430,11 +1434,4 @@ function facetOptionsFrom(
   return [...counts.entries()]
     .map(([value, count]) => ({ value, label: format ? format(value) : value, count }))
     .sort((a, b) => a.label.localeCompare(b.label));
-}
-
-// One-line excerpt of a (possibly long, multi-line) rejection comment, for the
-// "Select by comment" dropdown option labels.
-function commentExcerpt(s: string, max = 72): string {
-  const flat = s.replace(/\s+/g, " ").trim();
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
