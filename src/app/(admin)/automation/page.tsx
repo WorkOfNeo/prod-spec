@@ -6,10 +6,13 @@ import {
   getPoEanAutoRunEnabled,
   getAutoGenerateEnabled,
   getAutomationMinPo,
+  getGenerationMinPo,
+  getGenerationMinPoExplicit,
 } from "@/lib/settings/app-settings";
 import { eanStatusMeta, MAX_EAN_ATTEMPTS } from "@/lib/po/ean-status-meta";
 import { RunNowButton } from "./run-now-button";
 import { PoCutoffControl } from "./po-cutoff-control";
+import { GenerationCutoffControl } from "./generation-cutoff-control";
 import { RerunResolvedButton } from "./rerun-resolved-button";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +55,8 @@ export default async function AutomationPage({
   await requireAdminPage();
 
   const minPo = await getAutomationMinPo();
+  const genMinPo = await getGenerationMinPo();
+  const genMinPoExplicit = await getGenerationMinPoExplicit();
   const showAll = (await searchParams).show === "all";
 
   // A run "did something" when any counter moved. The default log shows only
@@ -116,14 +121,17 @@ export default async function AutomationPage({
     db.cronRun.count(),
     db.style.groupBy({ by: ["status"], _count: { _all: true } }),
     // "Ready to generate": complete styles on an active prod spec with no job
-    // in flight — the backlog the sweep would pick up next. (Partial styles
-    // whose own ready outputs trickle in are generated too, but counting those
-    // needs the per-output readiness walk, too costly for a page load.)
+    // in flight, AND in the generation sweep's actual scope (>= generation
+    // cutoff, or no PO) — so the headline matches what the sweep will really
+    // pick up rather than over-promising parked styles. (Partial styles whose
+    // own ready outputs trickle in are generated too, but counting those needs
+    // the per-output readiness walk, too costly for a page load.)
     db.style.count({
       where: {
         status: "READY",
         prodSpec: { is: { active: true } },
         jobs: { none: { status: { in: ["QUEUED", "RUNNING"] } } },
+        ...(genMinPo !== null ? { OR: [{ poSeq: { gte: genMinPo } }, { poSeq: null }] } : {}),
       },
     }),
     // "Styles generated": at least one output produced (a non-FAILED asset).
@@ -204,9 +212,13 @@ export default async function AutomationPage({
         </div>
       </div>
 
-      {/* PO cutoff control */}
-      <div className="mb-6">
+      {/* PO cutoff controls — scrape and generation are tuned separately */}
+      <div className="mb-6 grid gap-3 lg:grid-cols-2">
         <PoCutoffControl initialCutoff={minPo} parkedCount={parkedQueued} />
+        <GenerationCutoffControl
+          explicitCutoff={genMinPoExplicit}
+          effectiveCutoff={genMinPo}
+        />
       </div>
 
       {/* Generation backlog — how many styles are waiting vs. already produced */}
