@@ -124,9 +124,10 @@ export function PullStyleByPo({ initialPulled }: { initialPulled: Pulled[] }) {
     <div className="rounded-lg border border-zinc-200 bg-white p-5">
       <h2 className="text-sm font-semibold text-zinc-900">Pull style by PO</h2>
       <p className="mt-1 text-sm text-zinc-500">
-        Pull a style into the styleboard by its Contrast PO number (e.g.{" "}
-        <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs">C-62498</code>) — useful for testing
-        every output layout. Pulled styles stay visible on{" "}
+        Pull styles into the styleboard by Contrast PO number (e.g.{" "}
+        <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs">C-62498</code>) — paste a single PO
+        or a comma/space-separated list to look up many at once. Useful for testing every output
+        layout. Pulled styles stay visible on{" "}
         <Link href="/styles" className="underline hover:text-zinc-700">
           /styles
         </Link>{" "}
@@ -141,8 +142,8 @@ export function PullStyleByPo({ initialPulled }: { initialPulled: Pulled[] }) {
           onKeyDown={(e) => {
             if (e.key === "Enter") lookup();
           }}
-          placeholder="C-62498"
-          className="w-48 rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+          placeholder="C-62498, C-62499, 62500…"
+          className="w-96 rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
         />
         <button
           type="button"

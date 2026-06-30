@@ -5,7 +5,8 @@ import { previewStylesByPo } from "@/lib/po/pull-by-po";
 
 export const runtime = "nodejs";
 
-const BODY = z.object({ po: z.string().min(1).max(100) });
+// `po` accepts a single PO or a comma/space-separated list of them.
+const BODY = z.object({ po: z.string().min(1).max(2000) });
 
 // Preview the styles matching a PO — DB + Monday Pre-Order board, merged. No
 // DB writes. ADMIN only (the import it leads to creates/repins styles).
@@ -19,8 +20,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { poSeq, candidates } = await previewStylesByPo(parsed.data.po);
-    return NextResponse.json({ poSeq, candidates });
+    const { poSeqs, candidates } = await previewStylesByPo(parsed.data.po);
+    return NextResponse.json({ poSeqs, candidates });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Lookup failed" },
