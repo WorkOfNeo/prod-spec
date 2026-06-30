@@ -65,13 +65,17 @@ export async function setPoEanAutoRunEnabled(enabled: boolean): Promise<void> {
 
 const AUTOMATION_MIN_PO_KEY = "automationMinPo";
 
-// PO-number cutoff for automation — the delimiter for "from this PO onward".
-// Auto-scrape AND the generation sweep only act on styles whose PO sequence
-// (Style.poSeq, the numeric part of the PO — see parsePoNumberValue) is >= this
-// value. Orders before the cutoff are parked: never auto-processed, but still
-// scrape-able per-row from /po-eans. Stored as the numeric part (e.g. 63144 for
-// "C-PO63144"). null / unset = no cutoff (process everything). Mirrors the
+// PO-number cutoff for the EAN SCRAPE — the delimiter for "scrape from this PO
+// onward". Auto-scrape only acts on styles whose PO sequence (Style.poSeq, the
+// numeric part of the PO — see parsePoNumberValue) is >= this value. Orders
+// before the cutoff are parked: never auto-scraped, but still scrape-able
+// per-row from /po-eans. Stored as the numeric part (e.g. 63144 for
+// "C-PO63144"). null / unset = no cutoff (scrape everything). Mirrors the
 // /styles done-group PO cutoff; manual actions ignore it.
+//
+// NOTE: generation has its OWN cutoff (generationMinPo, below) — keeping a tight
+// scrape cutoff (don't re-pull ancient SharePoint POs) no longer forces the
+// generation backlog to stay parked too.
 export async function getAutomationMinPo(): Promise<number | null> {
   const row = await db.appSetting.findUnique({ where: { key: AUTOMATION_MIN_PO_KEY } });
   const value = typeof row?.value === "number" ? row.value : null;
@@ -87,6 +91,52 @@ export async function setAutomationMinPo(cutoff: number | null): Promise<void> {
   await db.appSetting.upsert({
     where: { key: AUTOMATION_MIN_PO_KEY },
     create: { key: AUTOMATION_MIN_PO_KEY, value: cutoff },
+    update: { value: cutoff },
+  });
+}
+
+const GENERATION_MIN_PO_KEY = "generationMinPo";
+
+// PO-number cutoff for the GENERATION backlog sweep — "auto-generate ready
+// outputs from this PO onward". Decoupled from the scrape cutoff so the two can
+// be tuned independently: a tight scrape cutoff (don't re-pull old POs) without
+// parking the generation backlog.
+//
+// Fallback: when this is UNSET, generation follows the scrape cutoff
+// (getAutomationMinPo) — so adding this feature changes nothing until an admin
+// sets a generation cutoff explicitly. Set it lower than the scrape cutoff to
+// reach further back for generation; clear it to fall back to the scrape value.
+//
+// Applies to the bounded BACKLOG sweep only (sweepReadyStyleGenerations). The
+// event-driven paths (Monday webhook, EAN→generation handoff) generate
+// newly-ready styles regardless of this cutoff. Styles with no parseable PO
+// (poSeq IS NULL) are NOT parked by it — they can't be placed on the PO
+// timeline, and a ready output should still generate.
+export async function getGenerationMinPo(): Promise<number | null> {
+  const row = await db.appSetting.findUnique({ where: { key: GENERATION_MIN_PO_KEY } });
+  const value = typeof row?.value === "number" ? row.value : null;
+  if (value !== null && Number.isFinite(value) && value > 0) return value;
+  // Unset — follow the scrape cutoff so behaviour is unchanged until set.
+  return getAutomationMinPo();
+}
+
+// Whether a generation cutoff is set EXPLICITLY (vs. following the scrape
+// cutoff). Lets the UI show "following scrape cutoff" instead of a bare number.
+export async function getGenerationMinPoExplicit(): Promise<number | null> {
+  const row = await db.appSetting.findUnique({ where: { key: GENERATION_MIN_PO_KEY } });
+  const value = typeof row?.value === "number" ? row.value : null;
+  return value !== null && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export async function setGenerationMinPo(cutoff: number | null): Promise<void> {
+  if (cutoff === null) {
+    // Cleared — drop the row (falls back to the scrape cutoff via the getter).
+    await db.appSetting.deleteMany({ where: { key: GENERATION_MIN_PO_KEY } });
+    return;
+  }
+  await db.appSetting.upsert({
+    where: { key: GENERATION_MIN_PO_KEY },
+    create: { key: GENERATION_MIN_PO_KEY, value: cutoff },
     update: { value: cutoff },
   });
 }
