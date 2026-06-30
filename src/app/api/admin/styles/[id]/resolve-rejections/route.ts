@@ -59,7 +59,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       message:
         `style-level ${regenerateAll ? "regenerate-all + " : ""}mark-fixed by ${session.user.email} — ` +
         `${outcome.fixed.length} fixed, ${outcome.awaitingData.length} awaiting data, ` +
-        `${outcome.resolvedOrphan.length} orphan resolved, ${outcome.failed.length} failed`,
+        `${outcome.resolvedOrphan.length} orphan resolved, ${outcome.resolvedExcluded.length} excluded resolved, ` +
+        `${outcome.failed.length} failed`,
     },
   });
 
