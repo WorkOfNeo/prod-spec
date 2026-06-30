@@ -16,6 +16,9 @@ import { baseVariantKey, currentOutputBaseKeys, isOrphanedOutputKey } from "./or
 //     rejection (e.g. by that Prod Spec rerun) — no redundant second render,
 //   • re-renders only the STALE ones (or everything, when regenerateAll),
 //   • resolves orphaned tickets in place (output removed from the spec),
+//   • resolves EXCLUDED tickets in place (a doc-type / product-group rule now
+//     skips this output, so it can never regenerate — clearing the rejection
+//     is the right outcome, NOT a "couldn't be regenerated" failure),
 //   • leaves AWAITING-DATA outputs OPEN (can't fix a PDF that can't build yet),
 //   • marks the rest FIXED.
 // The caller (route) sends ONE re-review notification for the whole batch.
@@ -40,6 +43,9 @@ export type ResolveOutcome = {
   awaitingData: Array<{ ticketId: string; variantKey: string; outputName: string; missing: string[] }>;
   // Resolved in place — the output was removed/replaced on the ProdSpec.
   resolvedOrphan: Array<{ ticketId: string; variantKey: string; outputName: string }>;
+  // Resolved in place — the output is excluded by a doc-type / product-group
+  // rule, so it's intentionally never generated. The rejection is cleared.
+  resolvedExcluded: Array<{ ticketId: string; variantKey: string; outputName: string; reason: string }>;
   // Re-render ran but produced no newer asset (left OPEN).
   failed: Array<{ ticketId: string; variantKey: string; outputName: string; error: string }>;
   // The generation job we ran, if any.
@@ -50,6 +56,7 @@ const empty = (): ResolveOutcome => ({
   fixed: [],
   awaitingData: [],
   resolvedOrphan: [],
+  resolvedExcluded: [],
   failed: [],
   jobId: null,
 });
@@ -89,6 +96,23 @@ export async function resolveStyleRejections(input: {
       continue;
     }
     const o = byBase.get(baseVariantKey(t.variantKey));
+    if (o?.excluded) {
+      // Still declared on the spec (so not orphaned), but a doc-type /
+      // product-group rule now skips it — a full rerun would never produce an
+      // asset for it. Clear the rejection rather than leaving it OPEN as a
+      // phantom "couldn't be regenerated".
+      await db.rejectionTicket.update({
+        where: { id: t.id },
+        data: { status: "RESOLVED", resolvedAt: new Date() },
+      });
+      outcome.resolvedExcluded.push({
+        ticketId: t.id,
+        variantKey: t.variantKey,
+        outputName: t.outputName,
+        reason: o.exclusionReason ?? "Skipped by a document-type rule for this product.",
+      });
+      continue;
+    }
     if (o && !o.ready) {
       outcome.awaitingData.push({ ticketId: t.id, variantKey: t.variantKey, outputName: t.outputName, missing: o.missing });
       continue;

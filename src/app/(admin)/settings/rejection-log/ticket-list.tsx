@@ -545,6 +545,7 @@ export function TicketList({
         fixed?: unknown[];
         awaitingData?: Array<{ outputName: string }>;
         resolvedOrphan?: unknown[];
+        resolvedExcluded?: unknown[];
         failed?: unknown[];
       };
       if (!res.ok) {
@@ -564,10 +565,12 @@ export function TicketList({
         const fixed = body.fixed?.length ?? 0;
         const waiting = body.awaitingData ?? [];
         const orphan = body.resolvedOrphan?.length ?? 0;
+        const excluded = body.resolvedExcluded?.length ?? 0;
         const failedN = body.failed?.length ?? 0;
         const parts: string[] = [];
         if (fixed > 0) parts.push(`${fixed} marked fixed & reviewer notified`);
         if (orphan > 0) parts.push(`${orphan} auto-resolved (output removed)`);
+        if (excluded > 0) parts.push(`${excluded} auto-resolved (excluded by rule)`);
         if (waiting.length > 0)
           parts.push(`${waiting.length} awaiting data (${waiting.map((w) => w.outputName).join(", ")})`);
         if (failedN > 0) parts.push(`${failedN} couldn't be regenerated`);
