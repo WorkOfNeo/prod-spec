@@ -46,28 +46,46 @@ function poQueryVariants(input: string): string[] {
   return [...variants];
 }
 
-// Look up every style matching a PO, merging our DB and the Monday Pre-Order
-// board so the operator sees both already-synced styles (possibly hidden) and
-// any board item not yet ingested. Keyed/deduped by Monday item id.
+// Operators paste either one PO or a whole list at once — split on commas,
+// whitespace, and newlines and dedupe, so "C-62498, 62499 62500" looks up all
+// three in a single pass.
+function splitPoInputs(raw: string): string[] {
+  return [...new Set(raw.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean))];
+}
+
+// Look up every style matching one or more POs, merging our DB and the
+// Monday Pre-Order board so the operator sees both already-synced styles
+// (possibly hidden) and any board item not yet ingested. Accepts a single PO or
+// a comma/space-separated list. Keyed/deduped by Monday item id.
 export async function previewStylesByPo(input: string): Promise<{
-  poSeq: number | null;
+  poSeqs: number[];
   candidates: PullCandidate[];
 }> {
-  const poSeq = parsePoNumberValue(input);
-  const variants = poQueryVariants(input);
+  const tokens = splitPoInputs(input);
+
+  // Fan each PO token out into its Monday exact-match variants and DB clauses,
+  // then fire ONE merged query per source — the board search and the DB OR both
+  // take the whole set at once.
+  const variantSet = new Set<string>();
+  const dbOr: Array<{ poSeq: number } | { poNumber: { contains: string } }> = [];
+  const poSeqs = new Set<number>();
+  for (const token of tokens) {
+    for (const v of poQueryVariants(token)) variantSet.add(v);
+    const seq = parsePoNumberValue(token);
+    if (seq != null) {
+      poSeqs.add(seq);
+      dbOr.push({ poSeq: seq });
+      dbOr.push({ poNumber: { contains: String(seq) } });
+    }
+  }
+  const variants = [...variantSet];
 
   // DB-first: match on the numeric poSeq when present, plus a poNumber substring
   // fallback for rows whose poSeq was never backfilled.
-  const digits = poSeq != null ? String(poSeq) : null;
   const dbRows =
-    variants.length > 0
+    dbOr.length > 0
       ? await db.style.findMany({
-          where: {
-            OR: [
-              ...(poSeq != null ? [{ poSeq }] : []),
-              ...(digits ? [{ poNumber: { contains: digits } }] : []),
-            ],
-          },
+          where: { OR: dbOr },
           select: {
             id: true,
             mondayItemId: true,
@@ -135,7 +153,7 @@ export async function previewStylesByPo(input: string): Promise<{
     });
   }
 
-  return { poSeq, candidates: [...byId.values()] };
+  return { poSeqs: [...poSeqs], candidates: [...byId.values()] };
 }
 
 export type PullResult = {
