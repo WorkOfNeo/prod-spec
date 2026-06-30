@@ -761,11 +761,30 @@ async function markFailed(jobId: string, error: string): Promise<void> {
   // Print to stderr too — `next dev` only shows the prisma query stream by
   // default, so otherwise the actual exception never reaches the terminal.
   console.error(`[runner] job ${jobId} FAILED: ${error}`);
-  await db.job.update({
+  const job = await db.job.update({
     where: { id: jobId },
     data: { status: "FAILED", error, finishedAt: new Date() },
+    select: { styleId: true },
   });
   await db.log.create({ data: { jobId, level: "ERROR", message: `job failed: ${error}` } });
+
+  // A failed render must not strand the style in GENERATING — bulk-run flips the
+  // style to GENERATING before enqueue (see bulk-run.ts), and the success path
+  // moves it to AWAITING_REVIEW, but a failure used to leave it stuck there
+  // forever (the sweep skips GENERATING styles). Reset to a pre-generation
+  // status so it can be retried; the 3-strike float cap is the backstop against
+  // a perpetually-failing render. Only touch GENERATING — never downgrade a
+  // style that already moved on.
+  const style = await db.style.findUnique({
+    where: { id: job.styleId },
+    select: { status: true, completionPct: true },
+  });
+  if (style?.status === "GENERATING") {
+    await db.style.update({
+      where: { id: job.styleId },
+      data: { status: style.completionPct === 100 ? "READY" : "PENDING" },
+    });
+  }
 }
 
 export class RunnerError extends Error {
