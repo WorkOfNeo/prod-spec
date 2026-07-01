@@ -139,6 +139,44 @@ model OutputDelivery {
   @@map("output_deliveries")
 }
 
+// Nightly supplier-send queue (WS2). One row per approved (style, output).
+// Populated the moment an output is approved (manual or auto) — ALWAYS, even
+// while sending is flag-gated off — so /settings/approved can show exactly
+// what WOULD be pushed + emailed. The midnight cron (WS2b) groups unsent rows
+// by supplier → customer, sends one digest per supplier, and stamps sentAt.
+// Loose styleId ref (no FK), matching OutputDelivery — rows survive style
+// deletes and carry denormalized routing for fast grouping.
+model SupplierSendQueueItem {
+  id               String    @id @default(cuid())
+  styleId          String
+  variantKey       String
+  jobAssetId       String? // the approved asset carrying the PDF at enqueue time
+  docType          String
+  displayName      String?
+  // Denormalized routing, resolved at enqueue. supplierId null when the style
+  // has no linked supplier yet (surfaced as "no supplier" on the overview).
+  customerId       String
+  supplierId       String?
+  poSeq            Int? // numeric PO for the per-customer C-PO cutoff (WS7)
+  // Eager SharePoint push result (WS2b). PENDING until pushed; UPLOADED with a
+  // webUrl; FAILED (retryable) or SKIPPED (e.g. below PO cutoff / no config).
+  sharePointStatus String    @default("PENDING")
+  sharePointUrl    String?
+  // Send lifecycle. sentAt stamped by the midnight batch; null = still pending.
+  queuedAt         DateTime  @default(now())
+  sentAt           DateTime?
+  emailLogId       String?
+  batchId          String? // links to SupplierSendBatch (added in WS2b)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([styleId, variantKey])
+  @@index([supplierId, sentAt])
+  @@index([sentAt])
+  @@index([customerId])
+  @@map("supplier_send_queue_items")
+}
+
 // =====================================================
 // Domain — Monday mirrors + ProdSpec
 //

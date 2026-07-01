@@ -35,6 +35,35 @@ export async function setAutoGenerateEnabled(enabled: boolean): Promise<void> {
   });
 }
 
+const SUPPLIER_BATCH_SEND_KEY = "supplierBatchSendEnabled";
+
+// Master switch for the nightly supplier-send system (WS2).
+//
+// When OFF (the default): the send-queue still POPULATES as outputs are
+// approved and /settings/approved shows exactly what would be pushed +
+// emailed — but NOTHING is pushed to SharePoint and NO supplier email is
+// sent. The midnight cron runs in dry-run (records a batch, sends nothing).
+//
+// When ON: approved outputs eagerly push to the supplier's SharePoint folder,
+// and the midnight cron sends one digest email per supplier. (Real email still
+// additionally requires RESEND_EMAILS — this flag gates the batch behaviour,
+// RESEND_EMAILS gates whether any email actually leaves the building.)
+//
+// Defaults to FALSE so the whole pipeline can ship + be watched safely before
+// an admin flips it on here once they trust the queue.
+export async function getSupplierBatchSendEnabled(): Promise<boolean> {
+  const row = await db.appSetting.findUnique({ where: { key: SUPPLIER_BATCH_SEND_KEY } });
+  return row?.value === true;
+}
+
+export async function setSupplierBatchSendEnabled(enabled: boolean): Promise<void> {
+  await db.appSetting.upsert({
+    where: { key: SUPPLIER_BATCH_SEND_KEY },
+    create: { key: SUPPLIER_BATCH_SEND_KEY, value: enabled },
+    update: { value: enabled },
+  });
+}
+
 const PO_EAN_AUTO_RUN_KEY = "poEanAutoRunEnabled";
 
 // Master switch for AUTOMATIC PO→EAN resolution (the barcode scrape).

@@ -8,6 +8,7 @@ import { claimReviewIfUnclaimed } from "@/lib/review-flow/claim";
 import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
 import { deliverOutput } from "@/lib/publish/deliver-output";
 import { perOutputDeliveryEnabled } from "@/lib/review-flow/flags";
+import { enqueueApprovedAsset } from "@/lib/publish/supplier-send-queue";
 
 export const runtime = "nodejs";
 // Approving the LAST pending asset rolls the job up and publishes —
@@ -76,6 +77,20 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       message: `asset ${asset.docType} approved by ${session.user.email}`,
     },
   });
+
+  // Capture the approval into the supplier-send queue (WS2) — fail-soft, and
+  // ALWAYS (queue populates even while batch sending is flag-gated off).
+  try {
+    await enqueueApprovedAsset({
+      id: asset.id,
+      styleId: asset.job.styleId,
+      variantKey: asset.variantKey,
+      docType: asset.docType,
+      displayName: asset.displayName,
+    });
+  } catch (err) {
+    console.warn(`[supplier-send-queue] enqueue failed for asset ${asset.id}:`, err);
+  }
 
   // Approving an output closes its rejection-ticket thread (if any).
   const resolved = await resolveRejectionTicketsFor(asset.job.styleId, [asset.variantKey]);
