@@ -109,6 +109,7 @@ export default async function ProdSpecsPage() {
             jobCount: ps._count.jobs,
             autoGenerateThresholdPct: ps.autoGenerateThresholdPct,
             active: ps.active,
+            fullyApproved: ps.fullyApproved,
             updatedAt: formatDate(ps.updatedAt),
             // Pre-built lower-case search blob — keeps the client-side
             // filter a single string check regardless of which field

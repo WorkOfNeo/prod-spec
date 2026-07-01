@@ -192,6 +192,49 @@ export function selectCurrentAssets<
   return out;
 }
 
+// Pure: the set of BASE variantKeys whose CURRENT documents are ALL approved
+// and print-safe (placeholderCount === 0). This is the "durable approval" set —
+// a FULL regen must NOT regenerate these, so a reviewer's approval survives an
+// operator's "Run all outputs" instead of being superseded by a fresh
+// PENDING_REVIEW asset.
+//
+// Built on selectCurrentAssets so it uses the SAME "latest asset per base"
+// decision the review page shows: superseded-by-newest-job, orphaned bases
+// dropped, excluded bases dropped, retired __general_info__ skipped. Framing
+// keys (__cover__) never carry a reviewStatus we treat as durable — they're
+// regenerated every run by design — so they never land here (their
+// reviewStatus is PENDING and they're filtered out below anyway).
+//
+// A multi-document base ("<base>#<suffix>") is approved ONLY when EVERY one of
+// its current documents is approved and clean: a partially-rejected carton set
+// must still fully regenerate on a full re-run.
+export function approvedBaseVariantKeys<
+  A extends {
+    jobId: string;
+    variantKey: string | null;
+    docType: string;
+    reviewStatus: "PENDING_REVIEW" | "APPROVED" | "REJECTED";
+    placeholderCount: number;
+  },
+>(assetsNewestFirst: A[], declaredBaseKeys: Set<string>, excludedBaseKeys?: Set<string>): Set<string> {
+  const current = selectCurrentAssets(assetsNewestFirst, declaredBaseKeys, excludedBaseKeys);
+  // Group the current documents by base and require every one approved + clean.
+  const byBase = new Map<string, A[]>();
+  for (const a of current) {
+    const b = base(a.variantKey ?? `doc:${a.docType}`);
+    const arr = byBase.get(b);
+    if (arr) arr.push(a);
+    else byBase.set(b, [a]);
+  }
+  const approved = new Set<string>();
+  for (const [b, docs] of byBase) {
+    if (docs.every((d) => d.reviewStatus === "APPROVED" && d.placeholderCount === 0)) {
+      approved.add(b);
+    }
+  }
+  return approved;
+}
+
 // Pure: aggregate by OUTPUT SLOT (base variantKey) instead of per document. A
 // multi-document output ("<base>#<suffix>", e.g. a carton X-of-Y per size/colour)
 // collapses to ONE slot, so coverage reads "max outputs that will be generated"
@@ -412,4 +455,64 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
   }
 
   return outputs;
+}
+
+// DB read. The style's currently-approved base variantKeys — the "durable
+// approval" set the runner uses to skip regenerating already-approved outputs
+// on a FULL re-run. Uses the SAME current-asset selection as the review page
+// (selectCurrentAssets: superseded-by-newest-job, orphans + excluded bases
+// dropped), so what the runner refuses to regenerate lines up exactly with what
+// the review screen shows as approved. Empty for styles with no approvals (all
+// outputs regenerate as before). See approvedBaseVariantKeys for the per-base
+// "all documents approved + clean" rule.
+export async function approvedOutputBaseKeysForStyle(styleId: string): Promise<Set<string>> {
+  const { db } = await import("@/lib/db");
+  const { ensureLayoutVariantsLoaded } = await import("@/lib/output-layouts/variants");
+  const { outputReadinessForStyle } = await import("@/lib/styles/output-readiness");
+  const { loadDocTypeExclusionRules, loadDocTypeLabels } = await import("@/lib/pdf/doc-types-db");
+  const { parseProdSpecOutputs } = await import("@/lib/prod-spec/config");
+
+  await ensureLayoutVariantsLoaded();
+
+  const [exclusionRules, docTypeLabels] = await Promise.all([
+    loadDocTypeExclusionRules(),
+    loadDocTypeLabels(),
+  ]);
+
+  const style = await db.style.findUnique({
+    where: { id: styleId },
+    select: {
+      rawData: true,
+      poNumber: true,
+      cartonEan: true,
+      supplier: { select: { country: true } },
+      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
+      customer: { select: { config: true } },
+      prodSpec: { select: { outputs: true, columnMapping: true } },
+    },
+  });
+  if (!style) return new Set();
+
+  const readiness = outputReadinessForStyle(style as ReadinessStyle, exclusionRules, docTypeLabels);
+
+  const assets = await db.jobAsset.findMany({
+    where: { job: { styleId, status: { not: "FAILED" } } },
+    orderBy: { job: { createdAt: "desc" } },
+    select: {
+      jobId: true,
+      variantKey: true,
+      docType: true,
+      reviewStatus: true,
+      placeholderCount: true,
+    },
+  });
+
+  const declaredBaseKeys = currentOutputBaseKeys(
+    parseProdSpecOutputs(style.prodSpec?.outputs ?? []),
+  );
+  const excludedBaseKeys = new Set(
+    readiness.filter((r) => r.excluded === true).map((r) => base(r.variantKey)),
+  );
+
+  return approvedBaseVariantKeys(assets, declaredBaseKeys, excludedBaseKeys);
 }

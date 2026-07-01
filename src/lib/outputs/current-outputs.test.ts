@@ -4,9 +4,22 @@ import {
   deriveOutputState,
   rollupOutputs,
   selectCurrentAssets,
+  approvedBaseVariantKeys,
   type CurrentOutput,
   type OutputState,
 } from "./current-outputs";
+
+// Asset shape approvedBaseVariantKeys needs (adds review fields to `asset`).
+function ra(
+  jobId: string,
+  variantKey: string | null,
+  reviewStatus: "PENDING_REVIEW" | "APPROVED" | "REJECTED",
+  placeholderCount = 0,
+  docType = "CARTON",
+) {
+  return { jobId, variantKey, docType, reviewStatus, placeholderCount };
+}
+const sorted = (s: Set<string>) => [...s].sort();
 
 // Minimal asset shape selectCurrentAssets needs (newest-job-first input).
 function asset(jobId: string, variantKey: string | null, docType = "CARTON") {
@@ -213,4 +226,69 @@ test("rollupOutputs — excluded + still-awaiting is not complete", () => {
   assert.equal(r.excluded, 1);
   assert.equal(r.complete, false);
   assert.equal(r.fullyApproved, false);
+});
+
+// ---- approvedBaseVariantKeys (durable-approval render-set) ----
+
+test("approvedBaseVariantKeys — a clean approved single-doc base is durable", () => {
+  const got = approvedBaseVariantKeys(
+    [ra("job1", "layout:A", "APPROVED"), ra("job1", "layout:B", "PENDING_REVIEW")],
+    new Set(["layout:A", "layout:B"]),
+  );
+  assert.deepEqual(sorted(got), ["layout:A"]);
+});
+
+test("approvedBaseVariantKeys — an approved-but-placeholdered doc is NOT durable", () => {
+  const got = approvedBaseVariantKeys(
+    [ra("job1", "layout:A", "APPROVED", 2)],
+    new Set(["layout:A"]),
+  );
+  assert.deepEqual(sorted(got), []);
+});
+
+test("approvedBaseVariantKeys — rejected / pending bases are not durable", () => {
+  const got = approvedBaseVariantKeys(
+    [ra("job1", "layout:A", "REJECTED"), ra("job1", "layout:B", "PENDING_REVIEW")],
+    new Set(["layout:A", "layout:B"]),
+  );
+  assert.deepEqual(sorted(got), []);
+});
+
+test("approvedBaseVariantKeys — multi-doc base durable only when ALL docs approved+clean", () => {
+  // One suffix rejected → whole base must regenerate.
+  const partial = approvedBaseVariantKeys(
+    [ra("job1", "layout:A#Red", "APPROVED"), ra("job1", "layout:A#Blue", "REJECTED")],
+    new Set(["layout:A"]),
+  );
+  assert.deepEqual(sorted(partial), []);
+  // All suffixes approved → durable.
+  const all = approvedBaseVariantKeys(
+    [ra("job1", "layout:A#Red", "APPROVED"), ra("job1", "layout:A#Blue", "APPROVED")],
+    new Set(["layout:A"]),
+  );
+  assert.deepEqual(sorted(all), ["layout:A"]);
+});
+
+test("approvedBaseVariantKeys — only the NEWEST job's assets decide (supersede)", () => {
+  // Older job approved the base; a newer job re-generated it as PENDING —
+  // the current asset is pending, so the base is NOT durable anymore.
+  const got = approvedBaseVariantKeys(
+    [ra("job2", "layout:A", "PENDING_REVIEW"), ra("job1", "layout:A", "APPROVED")],
+    new Set(["layout:A"]),
+  );
+  assert.deepEqual(sorted(got), []);
+});
+
+test("approvedBaseVariantKeys — orphaned + excluded bases never durable", () => {
+  const orphan = approvedBaseVariantKeys(
+    [ra("job1", "layout:GONE", "APPROVED")],
+    new Set(["layout:A"]),
+  );
+  assert.deepEqual(sorted(orphan), []);
+  const excluded = approvedBaseVariantKeys(
+    [ra("job1", "layout:A", "APPROVED")],
+    new Set(["layout:A"]),
+    new Set(["layout:A"]),
+  );
+  assert.deepEqual(sorted(excluded), []);
 });

@@ -120,7 +120,6 @@ export function RejectModal({
           onChange={(e) => setComment(e.target.value)}
           placeholder="What's wrong with this output?"
           rows={4}
-          maxLength={500}
           className="mt-3 w-full resize-y rounded-md border border-zinc-300 px-3 py-2 text-sm focus:ring-2 focus:ring-zinc-900 focus:outline-none"
         />
         <p className="mt-2 text-xs text-zinc-500">
