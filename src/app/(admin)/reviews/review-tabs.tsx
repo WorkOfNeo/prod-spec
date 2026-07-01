@@ -8,6 +8,7 @@ import Link from "next/link";
 const TABS = [
   { key: "in-progress", label: "In Progress", href: "/reviews", accent: "blue" },
   { key: "queue", label: "Review", href: "/reviews?tab=queue", accent: "zinc" },
+  { key: "needs-input", label: "Needs input", href: "/reviews?tab=needs-input", accent: "amber" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -18,24 +19,29 @@ type Accent = (typeof TABS)[number]["accent"];
 const ACTIVE: Record<Accent, { tab: string; badge: string }> = {
   blue: { tab: "bg-blue-600 text-white shadow-sm", badge: "bg-white/25 text-white" },
   zinc: { tab: "bg-zinc-900 text-white shadow-sm", badge: "bg-white/25 text-white" },
+  amber: { tab: "bg-amber-500 text-white shadow-sm", badge: "bg-white/25 text-white" },
 };
 const INACTIVE: Record<Accent, { tab: string; badge: string }> = {
   blue: { tab: "text-blue-700 hover:bg-blue-100", badge: "bg-blue-100 text-blue-700" },
   zinc: { tab: "text-zinc-600 hover:bg-zinc-200", badge: "bg-zinc-200 text-zinc-600" },
+  amber: { tab: "text-amber-700 hover:bg-amber-100", badge: "bg-amber-100 text-amber-700" },
 };
 
 export function ReviewTabs({
   active,
   queueCount,
   inProgressCount,
+  needsInputCount,
 }: {
   active: TabKey;
   queueCount: number;
   inProgressCount: number;
+  needsInputCount: number;
 }) {
   const counts: Record<TabKey, number> = {
     queue: queueCount,
     "in-progress": inProgressCount,
+    "needs-input": needsInputCount,
   };
   return (
     <nav className="mt-6">
