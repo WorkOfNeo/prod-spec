@@ -33,6 +33,7 @@ import {
   type ProdSpecOutput,
 } from "@/lib/prod-spec/config";
 import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
+import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
 import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
 
 const STALE_RUNNING_MS = 15 * 60 * 1000;
@@ -725,6 +726,15 @@ export async function processJob(jobId: string): Promise<void> {
     ]);
   } catch (err) {
     throw new RunnerError("PERSIST_FAILED", `persisting assets failed: ${(err as Error).message}`);
+  }
+
+  // Auto-approved docs skip the manual review queue, so capture them into the
+  // supplier-send queue here (the manual path captures at approve time). WS2 —
+  // fail-soft, always runs; the queue only records intent, never sends.
+  try {
+    await enqueueApprovedAssetsForJob(job.id);
+  } catch (err) {
+    console.warn(`[supplier-send-queue] runner enqueue failed for ${job.id}:`, err);
   }
 
   // A scoped no-op run (nothing generated, only the cover refreshed — see the

@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { uploadJobAssets, type UploadResult } from "@/lib/sharepoint/upload";
 import { getFile } from "@/lib/sharepoint/client";
 import { dispatchEmail, type EmailOutcome } from "@/lib/email/dispatch";
+import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
 import {
   customerApprovalEmail,
   supplierApprovalEmail,
@@ -354,6 +355,16 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
     supplierEmail: skipDelivery ? null : supplierEmail,
     skipExternal: skipDelivery,
   });
+
+  // Capture every approved output of this job into the supplier-send queue
+  // (WS2) — additive to the existing publish above, fail-soft, and independent
+  // of whether batch sending is enabled. The queue is what /settings/approved
+  // reads; the midnight cron (WS2b) is what actually sends from it.
+  try {
+    await enqueueApprovedAssetsForJob(job.id);
+  } catch (err) {
+    console.warn(`[supplier-send-queue] job enqueue failed for ${job.id}:`, err);
+  }
 
   return { uploaded, folderUrl, sharepointConfigured, notification, email: emailOutcome };
 }
