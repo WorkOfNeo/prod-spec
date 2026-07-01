@@ -33,6 +33,7 @@ import {
   type ProdSpecOutput,
 } from "@/lib/prod-spec/config";
 import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
+import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
 
 const STALE_RUNNING_MS = 15 * 60 * 1000;
 
@@ -225,6 +226,12 @@ export async function processJob(jobId: string): Promise<void> {
       .map((r) => r.variantKey),
   );
 
+  // Count of outputs dropped from a FULL regen because they're already
+  // approved (durable approval, below). Lets the settle logic tell "empty
+  // render set because everything is approved" (→ settle APPROVED, keep the
+  // carried-forward approved assets) apart from a real misconfiguration.
+  let approvedSkips = 0;
+
   // Scoped re-runs (auto-enqueue / ticket fixes) narrow to specific outputs;
   // an empty scope is a full regen of every enabled output. Tickets reference
   // per-document asset keys ("layout:<id>#<size>"); ProdSpec outputs carry the
@@ -233,6 +240,40 @@ export async function processJob(jobId: string): Promise<void> {
   if (scopedKeys.length > 0) {
     const want = new Set(scopedKeys.map((k) => k.split("#")[0]));
     outputs = outputs.filter((o) => want.has(o.variantKey));
+  } else {
+    // FULL regen (no scope) — durable approval. An output the reviewer already
+    // APPROVED must NOT be regenerated: a fresh PENDING_REVIEW asset would
+    // supersede the approved one in the review view (which reads the latest
+    // asset per base across all jobs), re-opening a decision that was closed.
+    // So exclude the style's currently-approved bases from the render set;
+    // their existing approved assets stay the latest and keep showing approved.
+    //
+    // Scoped re-runs (variantKeys set) never reach here — an EXPLICIT scoped
+    // re-run of an approved output SHOULD regenerate it (reviewer intent),
+    // exactly as before. approvedOutputBaseKeysForStyle uses the same
+    // current-asset selection as the review page, so what we skip lines up with
+    // what the reviewer sees as approved.
+    const approvedBases = await approvedOutputBaseKeysForStyle(job.styleId);
+    if (approvedBases.size > 0) {
+      const skipped: string[] = [];
+      outputs = outputs.filter((o) => {
+        if (approvedBases.has(o.variantKey)) {
+          skipped.push(o.variantKey);
+          return false;
+        }
+        return true;
+      });
+      approvedSkips = skipped.length;
+      if (skipped.length > 0) {
+        await db.log.create({
+          data: {
+            jobId: job.id,
+            level: "INFO",
+            message: `skipping ${skipped.length} already-approved output(s) — not regenerated (approval preserved): ${skipped.join(", ")}`,
+          },
+        });
+      }
+    }
   }
 
   // Drop outputs whose required fields aren't all present — skip (logged), not
@@ -444,6 +485,42 @@ export async function processJob(jobId: string): Promise<void> {
           message:
             `no documents generated — all ${outputs.length} output(s) excluded by document-type ` +
             `keyword rules (${excludedOutputs.join(", ")}); this style needs none`,
+        },
+      }),
+    ]);
+    return;
+  }
+
+  // FULL run where every renderable output was carried forward as
+  // already-approved (durable approval) and nothing else was left to generate.
+  // The style is fully approved — settle it that way WITHOUT deleting any
+  // assets (this job produced none; the approved assets live on PRIOR jobs and
+  // must survive) and WITHOUT superseding tickets (there's nothing to re-review;
+  // an approved output has no open ticket). This finishes cleanly instead of
+  // NO_OUTPUTS-failing. Guarded to the pure-approval case: if fields were also
+  // missing / outputs excluded, fall through to the WARN path below so those
+  // still surface as "awaiting data" / excluded on review.
+  if (
+    generated.length === 0 &&
+    scopedKeys.length === 0 &&
+    approvedSkips > 0 &&
+    missingFieldSkips === 0 &&
+    excludedOutputs.length === 0
+  ) {
+    await db.$transaction([
+      // Scoped to THIS job's own assets — this job generated none, so it's a
+      // no-op; the carried-forward approved assets belong to earlier jobs and
+      // are untouched.
+      db.jobAsset.deleteMany({ where: { jobId: job.id } }),
+      db.job.update({ where: { id: job.id }, data: { status: "APPROVED", finishedAt: new Date() } }),
+      db.style.update({ where: { id: job.styleId }, data: { status: "APPROVED" } }),
+      db.log.create({
+        data: {
+          jobId: job.id,
+          level: "INFO",
+          message:
+            `no new documents generated — all ${approvedSkips} output(s) already approved and ` +
+            `carried forward; approvals preserved, style settled APPROVED`,
         },
       }),
     ]);
