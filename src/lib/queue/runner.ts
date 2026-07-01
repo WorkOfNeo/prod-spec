@@ -15,6 +15,7 @@ import { defaultArtifactFileName, type TemplateVariant } from "@/lib/pdf/templat
 import { dispatchEmail } from "@/lib/email/dispatch";
 import { reviewNotificationEmail } from "@/lib/email/templates/review-notification";
 import { notifyReviewReady } from "@/lib/notifications/user-notifications";
+import { supersedeOpenTicketsForStyleOp } from "@/lib/tickets/rejection-tickets";
 import { getReviewNotificationEmails } from "@/lib/settings/app-settings";
 import {
   COVER_VARIANT_KEY,
@@ -432,6 +433,10 @@ export async function processJob(jobId: string): Promise<void> {
       db.jobAsset.deleteMany({ where: { jobId: job.id } }),
       db.job.update({ where: { id: job.id }, data: { status: "APPROVED", finishedAt: new Date() } }),
       db.style.update({ where: { id: job.styleId }, data: { status: "APPROVED" } }),
+      // Full round, now needs no documents → any prior rejection is moot; clear
+      // its threads to history so an excluded output can't pin the style to the
+      // active rejection log.
+      supersedeOpenTicketsForStyleOp(job.styleId),
       db.log.create({
         data: {
           jobId: job.id,
@@ -621,6 +626,12 @@ export async function processJob(jobId: string): Promise<void> {
         where: { id: job.styleId },
         data: { status: "AWAITING_REVIEW" },
       }),
+      // A FULL re-run is a fresh review round: the whole style regenerated, so
+      // every prior open rejection ticket is superseded and moves to history in
+      // the same commit as the asset swap. Scoped/partial runs (ticket re-runs,
+      // carton customize, auto-sweeps) carry variantKeys and skip this — they
+      // only ever touched the outputs they targeted.
+      ...(scopedKeys.length === 0 ? [supersedeOpenTicketsForStyleOp(job.styleId)] : []),
       db.log.create({
         data: {
           jobId: job.id,

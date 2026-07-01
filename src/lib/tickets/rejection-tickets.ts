@@ -169,6 +169,23 @@ export async function resolveRejectionTicketsFor(
   return res.count;
 }
 
+// Fresh-round supersede: a FULL re-run regenerates the whole style, so it
+// opens a brand-new review round — every prior still-open ticket is stale and
+// moves to history (RESOLVED). Returns the Prisma op UN-awaited so the runner
+// can embed it in its settle transaction (atomic with the asset swap: the log
+// never shows fresh outputs alongside a lingering "rejected" badge). Clears
+// ALL of the style's open threads regardless of variant — including outputs
+// that couldn't regenerate this round (excluded by a doc-type rule, or missing
+// data), which is exactly what keeps an excluded output from pinning the style
+// to the active log forever. A later re-rejection opens a fresh ticket. Only
+// FULL rounds call this; scoped/partial re-runs touch only what they targeted.
+export function supersedeOpenTicketsForStyleOp(styleId: string) {
+  return db.rejectionTicket.updateMany({
+    where: { styleId, status: { not: "RESOLVED" } },
+    data: { status: "RESOLVED", resolvedAt: new Date() },
+  });
+}
+
 // Output-change cleanup: when a ProdSpec's outputs are edited, any still-open
 // ticket whose output was REMOVED (its base key is no longer declared) is
 // orphaned — re-running it could only NO_OUTPUTS-fail (see lib/tickets/orphan.ts).
