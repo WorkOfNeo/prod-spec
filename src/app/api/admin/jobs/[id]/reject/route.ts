@@ -10,7 +10,8 @@ import { decodeImageAttachments, MAX_IMAGE_DATA_URL_CHARS } from "@/lib/images/d
 export const runtime = "nodejs";
 
 const SCHEMA = z.object({
-  reason: z.string().min(1).max(500),
+  // No max length — reviewers need room to explain (DB column is unbounded text).
+  reason: z.string().min(1),
   // Optional images attached to the bulk-reject comment — copied onto each
   // cascaded ticket so the screenshot shows on every thread in the log.
   attachments: z

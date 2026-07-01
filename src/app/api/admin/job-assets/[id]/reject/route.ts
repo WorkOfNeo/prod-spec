@@ -14,7 +14,8 @@ export const runtime = "nodejs";
 const SCHEMA = z.object({
   // Free-text reason for now. Analytics groups by docType + leading
   // words; categorisation comes later if reviewer volume justifies it.
-  reason: z.string().min(1).max(500),
+  // No max length — reviewers need room to explain (DB column is unbounded text).
+  reason: z.string().min(1),
   // Up to 4 images the reviewer attached to the comment (resized client-side),
   // sent inline as base64 data URLs and decoded below.
   attachments: z
