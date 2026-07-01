@@ -10,6 +10,7 @@ type ProdSpec = {
   name: string;
   autoGenerateThresholdPct: number;
   active: boolean;
+  fullyApproved: boolean;
   businessArea: { id: string; name: string; mondayValue: string };
   suppliers: Array<{ supplier: { id: string; name: string; country: string | null } }>;
 };
@@ -104,6 +105,7 @@ export function ProdSpecTab({
             businessAreaLabel={businessAreaLabel}
             autoGenerateThresholdPct={prodSpec.autoGenerateThresholdPct}
             active={prodSpec.active}
+            fullyApproved={prodSpec.fullyApproved}
             poNumber={poNumber}
             supplierName={supplier?.name ?? null}
             suppliers={prodSpec.suppliers.map(({ supplier: s }) => ({

@@ -412,6 +412,12 @@ model ProdSpec {
   // Inactive ProdSpecs are excluded from Job auto-enqueue — a Style at
   // 100% completion still stays PENDING until its ProdSpec is active.
   active                   Boolean  @default(false)
+  // Admin "Fully approved" toggle — OFF by default and INDEPENDENT of `active`
+  // (a spec can be active but not fully approved). When true, this spec is
+  // cleared for spec-wide auto-approval of its outputs (that runner wiring is a
+  // separate workstream). NB: distinct from the per-STYLE computed
+  // `fullyApproved` coverage flag in lib/outputs/current-outputs.ts.
+  fullyApproved            Boolean  @default(false)
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
 

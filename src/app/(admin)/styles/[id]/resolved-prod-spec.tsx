@@ -12,6 +12,7 @@ export type ResolvedProdSpecProps = {
   businessAreaLabel: string | null;
   autoGenerateThresholdPct: number;
   active: boolean;
+  fullyApproved: boolean;
   poNumber: string | null;
   supplierName: string | null;
   // Suppliers attached to the ProdSpec itself (distinct from the style's
@@ -56,6 +57,11 @@ export function ResolvedProdSpecButton(props: ResolvedProdSpecProps) {
           filled={props.requiredReadiness.filled}
           total={props.requiredReadiness.total}
         />
+        {props.fullyApproved && (
+          <span className="inline-flex whitespace-nowrap rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+            Fully approved
+          </span>
+        )}
         <span className="whitespace-nowrap text-xs text-zinc-400">View details →</span>
       </button>
 

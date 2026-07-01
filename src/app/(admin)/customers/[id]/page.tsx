@@ -87,13 +87,14 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                 <th className="px-4 py-2">Business area</th>
                 <th className="px-4 py-2">Threshold</th>
                 <th className="px-4 py-2">Active?</th>
+                <th className="px-4 py-2">Fully approved?</th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {customer.prodSpecs.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-zinc-500">
+                  <td colSpan={5} className="px-4 py-6 text-center text-zinc-500">
                     No prod specs yet. They auto-create when a Style ingests with a known business area.
                   </td>
                 </tr>
@@ -103,6 +104,15 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                     <td className="px-4 py-2">{ps.businessArea.name}</td>
                     <td className="px-4 py-2 tabular-nums text-zinc-600">{ps.autoGenerateThresholdPct}%</td>
                     <td className="px-4 py-2 text-zinc-600">{ps.active ? "yes" : "no"}</td>
+                    <td className="px-4 py-2">
+                      {ps.fullyApproved ? (
+                        <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                          Approved
+                        </span>
+                      ) : (
+                        <span className="text-zinc-400">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2 text-right">
                       <Link href={`/prod-specs/${ps.id}`} className="text-xs text-zinc-700 underline">
                         Edit

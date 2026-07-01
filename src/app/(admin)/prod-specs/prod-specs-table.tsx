@@ -37,6 +37,7 @@ export type ProdSpecRow = {
   jobCount: number;
   autoGenerateThresholdPct: number;
   active: boolean;
+  fullyApproved: boolean;
   updatedAt: string;
   // Pre-built lower-case search blob so filtering is one substring check
   // per row regardless of how many fields we include in the search.
@@ -228,6 +229,7 @@ export function ProdSpecsTable({ rows }: { rows: ProdSpecRow[] }) {
               </th>
               <th className="px-4 py-3">Threshold</th>
               <th className="px-4 py-3">Active</th>
+              <th className="px-4 py-3">Fully approved</th>
               <th className="px-4 py-3">Updated</th>
             </tr>
           </thead>
@@ -300,6 +302,15 @@ export function ProdSpecsTable({ rows }: { rows: ProdSpecRow[] }) {
                   </td>
                   <td className="px-4 py-3 text-zinc-600">
                     {ps.active ? "yes" : "no"}
+                  </td>
+                  <td className="px-4 py-3">
+                    {ps.fullyApproved ? (
+                      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                        Approved
+                      </span>
+                    ) : (
+                      <span className="text-zinc-400">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-xs text-zinc-500">{ps.updatedAt}</td>
                 </tr>

@@ -16,6 +16,10 @@ export const runtime = "nodejs";
 const PATCH_SCHEMA = z.object({
   name: z.string().min(1).max(200).optional(),
   active: z.boolean().optional(),
+  // "Fully approved" admin toggle — its own explicit control, deliberately
+  // excluded from `hasOtherChange` below so flipping it never auto-activates
+  // the spec (approval readiness and active/enqueue-eligibility are separate).
+  fullyApproved: z.boolean().optional(),
   autoGenerateThresholdPct: z.number().int().min(0).max(100).optional(),
   outputs: ProdSpecOutputsSchema.optional(),
   // Logo: either raw SVG markup (typically <10 KB) or a raster data URL
@@ -91,6 +95,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       data: {
         ...(d.name !== undefined ? { name: d.name } : {}),
         ...(resolvedActive !== undefined ? { active: resolvedActive } : {}),
+        ...(d.fullyApproved !== undefined ? { fullyApproved: d.fullyApproved } : {}),
         ...(d.autoGenerateThresholdPct !== undefined ? { autoGenerateThresholdPct: d.autoGenerateThresholdPct } : {}),
         ...(d.outputs !== undefined ? { outputs: d.outputs as unknown as object } : {}),
         ...(d.logoSvg !== undefined ? { logoSvg: d.logoSvg } : {}),
