@@ -40,6 +40,7 @@ type Props = {
   initialTab: Tab;
   initialName: string;
   initialActive: boolean;
+  initialFullyApproved: boolean;
   initialThreshold: number;
   initialOutputs: ProdSpecOutput[];
   initialLogoSvg: string | null;
@@ -77,6 +78,7 @@ export function ProdSpecEditor(props: Props) {
   const [tab, setTab] = useState<Tab>(props.initialTab);
   const [name, setName] = useState(props.initialName);
   const [active, setActive] = useState(props.initialActive);
+  const [fullyApproved, setFullyApproved] = useState(props.initialFullyApproved);
   const [threshold, setThreshold] = useState(props.initialThreshold);
   const [outputs, setOutputs] = useState<ProdSpecOutput[]>(props.initialOutputs);
   const [logoSvg, setLogoSvg] = useState<string>(props.initialLogoSvg ?? "");
@@ -220,6 +222,7 @@ export function ProdSpecEditor(props: Props) {
     () => ({
       name,
       active,
+      fullyApproved,
       autoGenerateThresholdPct: threshold,
       outputs,
       logoSvg: logoSvg.trim() ? logoSvg : null,
@@ -231,6 +234,7 @@ export function ProdSpecEditor(props: Props) {
     [
       name,
       active,
+      fullyApproved,
       threshold,
       outputs,
       logoSvg,
@@ -346,6 +350,8 @@ export function ProdSpecEditor(props: Props) {
         onThreshold={setThreshold}
         active={active}
         onActive={setActive}
+        fullyApproved={fullyApproved}
+        onFullyApproved={setFullyApproved}
       />
 
       <nav className="border-b border-zinc-200">
@@ -973,6 +979,8 @@ function HeaderBar({
   onThreshold,
   active,
   onActive,
+  fullyApproved,
+  onFullyApproved,
 }: {
   status: SaveStatus;
   savedAt: string | null;
@@ -984,6 +992,8 @@ function HeaderBar({
   onThreshold: (v: number) => void;
   active: boolean;
   onActive: (v: boolean) => void;
+  fullyApproved: boolean;
+  onFullyApproved: (v: boolean) => void;
 }) {
   const label = (() => {
     switch (status) {
@@ -1043,6 +1053,12 @@ function HeaderBar({
         %
       </label>
       <Toggle checked={active} onChange={onActive} label={active ? "Active" : "Disabled"} size="sm" />
+      <Toggle
+        checked={fullyApproved}
+        onChange={onFullyApproved}
+        label={fullyApproved ? "Fully approved" : "Not approved"}
+        size="sm"
+      />
       <div className="ml-auto flex shrink-0 items-center gap-2 text-xs">
         <span
           aria-hidden="true"
