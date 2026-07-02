@@ -21,6 +21,7 @@ export function AssetActions({
   outputTitle,
   styleContext,
   canPush,
+  canIgnore = true,
   customizeSlot,
 }: {
   assetId: string;
@@ -32,6 +33,9 @@ export function AssetActions({
   styleContext: string;
   // Admin-only: show the "Push to supplier" action for approved outputs.
   canPush: boolean;
+  // False for bundle framing (cover / general info) — those regenerate with
+  // every run and can't be ignored per style.
+  canIgnore?: boolean;
   // Optional carton "Customize" trigger, rendered as a quiet utility action
   // in the footer's secondary row (the page passes <ReviewCartonCustomize/>
   // for carton-capable outputs).
@@ -245,15 +249,17 @@ export function AssetActions({
           >
             {pending === "reject" ? "Rejecting…" : "✗ Reject"}
           </button>
-          <button
-            type="button"
-            onClick={() => setIgnoring(true)}
-            disabled={pending !== null}
-            title="Not wanted for this style — skip it in generation, SharePoint and the nightly email"
-            className="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
-          >
-            {pending === "ignore" ? "Ignoring…" : "⊘ Ignore"}
-          </button>
+          {canIgnore ? (
+            <button
+              type="button"
+              onClick={() => setIgnoring(true)}
+              disabled={pending !== null}
+              title="Not wanted for this style — skip it in generation, SharePoint and the nightly email"
+              className="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+            >
+              {pending === "ignore" ? "Ignoring…" : "⊘ Ignore"}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={approve}
@@ -291,15 +297,17 @@ export function AssetActions({
           </button>
           {/* A rejected output that turns out to be "shouldn't exist for this
               style" resolves via Ignore — closes the ticket, stops re-runs. */}
-          <button
-            type="button"
-            onClick={() => setIgnoring(true)}
-            disabled={pending !== null}
-            title="Not wanted for this style — skip it in generation, SharePoint and the nightly email"
-            className="rounded-md px-2 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 disabled:opacity-50"
-          >
-            {pending === "ignore" ? "Ignoring…" : "⊘ Ignore"}
-          </button>
+          {canIgnore ? (
+            <button
+              type="button"
+              onClick={() => setIgnoring(true)}
+              disabled={pending !== null}
+              title="Not wanted for this style — skip it in generation, SharePoint and the nightly email"
+              className="rounded-md px-2 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 disabled:opacity-50"
+            >
+              {pending === "ignore" ? "Ignoring…" : "⊘ Ignore"}
+            </button>
+          ) : null}
         </div>
       ) : null}
 

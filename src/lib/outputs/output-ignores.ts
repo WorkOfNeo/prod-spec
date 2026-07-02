@@ -30,12 +30,38 @@ export function ignoreBaseKey(variantKey: string | null, docType: string): strin
   return v || `doc:${docType}`;
 }
 
-// The style's ignored base keys. Empty set on any failure (table not deployed
-// yet, transient DB hiccup) — never let the ignore lookup break its caller.
+// Availability probe. Fail-soft must not mean fail-often: the dashboards call
+// the loaders for ~200 styles CONCURRENTLY, and a missing-table error on every
+// one of those queries takes the whole pg adapter down (RangeError + hung
+// pool, observed on the dev server). So the first caller issues ONE probe that
+// every concurrent caller shares: table there → remembered for the process
+// lifetime (tables don't un-deploy); table missing → remembered for a minute,
+// so a pre-db:deploy server stays fast and starts working the moment the
+// migration lands (next probe).
+let availability: Promise<boolean> | null = null;
+let recheckAt = 0;
+
+function tableAvailable(): Promise<boolean> {
+  if (availability == null || Date.now() >= recheckAt) {
+    recheckAt = Number.MAX_SAFE_INTEGER; // in-flight probe holds the slot
+    availability = db.styleOutputIgnore
+      .findFirst({ select: { id: true } })
+      .then(() => true) // recheckAt stays MAX — never probe again
+      .catch(() => {
+        recheckAt = Date.now() + 60_000;
+        return false;
+      });
+  }
+  return availability;
+}
+
+// The style's ignored base keys. Empty set when the table isn't deployed yet
+// or on any transient failure — never let the ignore lookup break its caller.
 export async function loadIgnoredOutputKeys(
   styleId: string,
   client: DbClient = db,
 ): Promise<Set<string>> {
+  if (!(await tableAvailable())) return new Set();
   try {
     const rows = await client.styleOutputIgnore.findMany({
       where: { styleId },
@@ -55,6 +81,7 @@ export async function loadIgnoredOutputKeysByStyle(
 ): Promise<Map<string, Set<string>>> {
   const map = new Map<string, Set<string>>();
   if (styleIds.length === 0) return map;
+  if (!(await tableAvailable())) return map;
   try {
     const rows = await db.styleOutputIgnore.findMany({
       where: { styleId: { in: styleIds } },
@@ -66,7 +93,7 @@ export async function loadIgnoredOutputKeysByStyle(
       else map.set(r.styleId, new Set([r.variantKey]));
     }
   } catch {
-    // Table not deployed yet — nothing is ignored.
+    // Transient failure — nothing ignored this render.
   }
   return map;
 }

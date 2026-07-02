@@ -16,12 +16,14 @@ export function OutputBulkActions({
   styleContext,
   approveAssetIds,
   rejectAssetIds,
+  ignoreAssetIds,
   blockedCount,
 }: {
   styleId: string;
   styleContext: string;
   approveAssetIds: string[]; // pending and NOT placeholder-blocked
   rejectAssetIds: string[]; // all pending (blocked can still be rejected)
+  ignoreAssetIds: string[]; // all pending minus bundle framing (cover / GI)
   blockedCount: number;
 }) {
   const router = useRouter();
@@ -95,7 +97,7 @@ export function OutputBulkActions({
     setPending("ignore");
     try {
       const { ok, failed } = await runAll(
-        rejectAssetIds,
+        ignoreAssetIds,
         (id) => fetch(`/api/admin/job-assets/${id}/ignore`, { method: "POST" }),
         "Ignoring",
       );
@@ -128,13 +130,13 @@ export function OutputBulkActions({
         <button
           type="button"
           onClick={() => setIgnoring(true)}
-          disabled={pending !== null || nothingToReject}
+          disabled={pending !== null || ignoreAssetIds.length === 0}
           title="Ignore every pending output for this style — skipped in generation, SharePoint and the nightly email"
           className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
         >
           {pending === "ignore"
             ? "Ignoring…"
-            : `Ignore all${rejectAssetIds.length ? ` (${rejectAssetIds.length})` : ""}…`}
+            : `Ignore all${ignoreAssetIds.length ? ` (${ignoreAssetIds.length})` : ""}…`}
         </button>
         <button
           type="button"
@@ -171,7 +173,7 @@ export function OutputBulkActions({
         <IgnoreConfirmModal
           title="Ignore all pending outputs for this style?"
           context={styleContext}
-          countNote={`${rejectAssetIds.length} pending output${rejectAssetIds.length === 1 ? "" : "s"} will be ignored.`}
+          countNote={`${ignoreAssetIds.length} pending output${ignoreAssetIds.length === 1 ? "" : "s"} will be ignored.`}
           pending={pending === "ignore"}
           error={error}
           onCancel={() => setIgnoring(false)}

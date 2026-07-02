@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ReviewCartonCustomize } from "./review/review-carton-customize";
 import { IgnoreConfirmModal } from "./review/ignore-confirm-modal";
+import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 
 type CartonInfo = {
   variantKey: string;
@@ -61,6 +62,9 @@ export function DeliveredCard({
   const [err, setErr] = useState<string | null>(null);
   const [showReject, setShowReject] = useState(false);
   const [showIgnore, setShowIgnore] = useState(false);
+  // Framing pages (cover / general info) regenerate every run — not ignorable.
+  const ignoreBase = (asset.variantKey ?? "").split("#")[0];
+  const canIgnore = ignoreBase !== COVER_VARIANT_KEY && ignoreBase !== GENERAL_INFO_VARIANT_KEY;
 
   async function ignore() {
     setBusy(true);
@@ -174,16 +178,18 @@ export function DeliveredCard({
           >
             <CheckIcon />
           </button>
-          <button
-            type="button"
-            onClick={() => setShowIgnore(true)}
-            disabled={busy}
-            title="Ignore for this style — skipped in generation, SharePoint and the nightly email"
-            aria-label="Ignore for this style"
-            className="inline-flex items-center justify-center rounded-md border border-zinc-300 bg-white p-1.5 text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
-          >
-            <IgnoreIcon />
-          </button>
+          {canIgnore ? (
+            <button
+              type="button"
+              onClick={() => setShowIgnore(true)}
+              disabled={busy}
+              title="Ignore for this style — skipped in generation, SharePoint and the nightly email"
+              aria-label="Ignore for this style"
+              className="inline-flex items-center justify-center rounded-md border border-zinc-300 bg-white p-1.5 text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+            >
+              <IgnoreIcon />
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => setShowReject(true)}

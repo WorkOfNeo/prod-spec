@@ -17,6 +17,7 @@ import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { getVariant } from "@/lib/pdf/template-registry";
 import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
 import { baseVariantKey } from "@/lib/tickets/orphan";
+import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import {
   getCurrentOutputsForStyle,
   rollupOutputSlots,
@@ -137,6 +138,16 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     .filter((o) => o.placeholderCount === 0 && o.jobAssetId)
     .map((o) => o.jobAssetId as string);
   const rejectAssetIds = pendingReviewable.map((o) => o.jobAssetId as string);
+  // Bundle framing (cover / general info) regenerates with every run — it
+  // can't be ignored per style, so it's excluded from "Ignore all" and its
+  // card hides the Ignore button.
+  const ignorableOutput = (o: CurrentOutput) => {
+    const b = baseVariantKey(o.variantKey);
+    return b !== COVER_VARIANT_KEY && b !== GENERAL_INFO_VARIANT_KEY;
+  };
+  const ignoreAssetIds = pendingReviewable
+    .filter(ignorableOutput)
+    .map((o) => o.jobAssetId as string);
   const blockedCount = pendingReviewable.filter((o) => o.placeholderCount > 0).length;
   // Admin push-to-supplier targets APPROVED, print-safe outputs only.
   const pushableCount = reviewable.filter(
@@ -276,6 +287,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             styleContext={styleContext}
             approveAssetIds={approveAssetIds}
             rejectAssetIds={rejectAssetIds}
+            ignoreAssetIds={ignoreAssetIds}
             blockedCount={blockedCount}
           />
         </div>
@@ -463,6 +475,8 @@ function OutputReviewCard({
   const baseKey = o.variantKey.split("#")[0];
   const variant = getVariant(baseKey);
   const cartonCapable = Boolean(variant && (variant.cartonNumbering || variant.multipleStyles));
+  // Framing pages (cover / general info) regenerate every run — not ignorable.
+  const canIgnore = baseKey !== COVER_VARIANT_KEY && baseKey !== GENERAL_INFO_VARIANT_KEY;
   const dotClass =
     o.reviewStatus === "APPROVED"
       ? "bg-emerald-500"
@@ -564,6 +578,7 @@ function OutputReviewCard({
         outputTitle={o.name}
         styleContext={styleContext}
         canPush={canPush}
+        canIgnore={canIgnore}
         customizeSlot={
           cartonCapable && variant ? (
             <ReviewCartonCustomize

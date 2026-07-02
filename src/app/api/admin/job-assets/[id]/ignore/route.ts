@@ -6,6 +6,7 @@ import { claimReviewIfUnclaimed } from "@/lib/review-flow/claim";
 import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
 import { maybeSettleJob } from "@/lib/publish/settle-job";
 import { ignoreBaseKey } from "@/lib/outputs/output-ignores";
+import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 
 export const runtime = "nodejs";
 // Ignoring the LAST open asset rolls the job up and publishes the remaining
@@ -40,6 +41,17 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
 
   const styleId = asset.job.styleId;
   const variantKey = ignoreBaseKey(asset.variantKey, asset.docType);
+
+  // Bundle framing (cover / general info) is derived from the real outputs and
+  // regenerated with every run — it isn't a declared output, so an ignore on it
+  // would never round-trip through readiness and the card would sit pending
+  // forever. The UI hides the button for these; refuse direct calls too.
+  if (variantKey === COVER_VARIANT_KEY || variantKey === GENERAL_INFO_VARIANT_KEY) {
+    return NextResponse.json(
+      { error: "Framing pages (cover / general info) can't be ignored — they regenerate with every run." },
+      { status: 400 },
+    );
+  }
 
   try {
     await db.styleOutputIgnore.upsert({
