@@ -2,6 +2,15 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ReviewCartonCustomize } from "./review/review-carton-customize";
+
+type CartonInfo = {
+  variantKey: string;
+  widthMm: number;
+  heightMm: number;
+  cartonNumbering: boolean;
+  multipleStyles: boolean;
+};
 
 type Asset = {
   id: string;
@@ -36,9 +45,15 @@ const BORDER_BY_STATUS: Record<Asset["reviewStatus"], string> = {
 export function DeliveredCard({
   jobId,
   asset,
+  styleId,
+  carton,
 }: {
   jobId: string;
   asset: Asset;
+  // Present only on the Review tab's latest run → enables the carton Customize
+  // action right here (same as the /review decide page).
+  styleId?: string;
+  carton?: CartonInfo | null;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -151,6 +166,22 @@ export function DeliveredCard({
             <XIcon />
           </button>
         </div>
+
+        {/* Carton customize — same action as the /review decide page, available
+            here on the Review tab for carton-capable outputs. */}
+        {carton && styleId ? (
+          <div className="mt-2 border-t border-zinc-100 pt-2">
+            <ReviewCartonCustomize
+              styleId={styleId}
+              variantKey={carton.variantKey}
+              name={asset.displayName}
+              widthMm={carton.widthMm}
+              heightMm={carton.heightMm}
+              cartonNumbering={carton.cartonNumbering}
+              multipleStyles={carton.multipleStyles}
+            />
+          </div>
+        ) : null}
       </div>
 
       {showReject && (
