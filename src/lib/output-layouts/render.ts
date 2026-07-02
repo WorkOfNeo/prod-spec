@@ -19,12 +19,14 @@ import {
   type LayoutPage,
 } from "./schema";
 import { tokenMeta, type BarcodeSource, type LogoSource } from "./token-meta";
+import { CALC_RE, fieldsInCalcExpression } from "./calc";
 import { getContrastAddressLogoDataUrl, getContrastLogoDataUrl } from "./logos";
 import {
   applyConditionalsForStyle,
   augmentTranslatedFields,
   augmentCompositionTranslations,
   compositionLangsInDef,
+  evaluateCalcForStyle,
   langArgsInDef,
   resolveBarcodeValue,
   resolveTextToken,
@@ -283,6 +285,15 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx): string | nu
     for (const m of line.matchAll(new RegExp(TOKEN_RE.source, "g"))) {
       if (m[1] === "cartonNo" || m[1] === "cartonTotal" || m[1] === "cartonNoPadded") return null;
     }
+    // Same rule for a calc that READS a carton serial field — a line like
+    // "Run total: {{= qtyPerCarton * cartonTotal }}" belongs only on a
+    // numbered print.
+    for (const m of line.matchAll(new RegExp(CALC_RE.source, "g"))) {
+      const { fields } = fieldsInCalcExpression(m[1]);
+      if (fields.some((k) => k === "cartonNo" || k === "cartonTotal" || k === "cartonNoPadded")) {
+        return null;
+      }
+    }
   }
 
   let html = "";
@@ -291,7 +302,16 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx): string | nu
   let hadValue = false;
   let literal = "";
 
-  for (const m of line.matchAll(new RegExp(TOKEN_RE.source, "g"))) {
+  // One left-to-right pass over plain tokens AND calc tokens. The two
+  // grammars can't overlap (TOKEN_RE requires a letter after "{{", a calc
+  // body carries no braces), so a sorted merge of both match sets walks
+  // every substitution site exactly once.
+  const matches = [
+    ...[...line.matchAll(new RegExp(TOKEN_RE.source, "g"))].map((m) => ({ m, isCalc: false })),
+    ...[...line.matchAll(new RegExp(CALC_RE.source, "g"))].map((m) => ({ m, isCalc: true })),
+  ].sort((a, b) => (a.m.index ?? 0) - (b.m.index ?? 0));
+
+  for (const { m, isCalc } of matches) {
     hadToken = true;
     const [raw, key, argRaw] = m;
     const arg = argRaw || undefined;
@@ -299,6 +319,20 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx): string | nu
     literal += before;
     html += escapeHtml(before);
     lastIndex = (m.index ?? 0) + raw.length;
+
+    // Calculated field — group 1 is the expression body. Resolved → the
+    // number as literal text; unresolved → amber chip in preview, nothing
+    // in production (line-drop accounting matches plain tokens).
+    if (isCalc) {
+      const value = evaluateCalcForStyle(key, style);
+      if (value !== null) {
+        html += escapeHtml(value);
+        hadValue = true;
+      } else if (ctx.mode === "preview") {
+        html += `<span class="ol-miss">= ${escapeHtml(key)}?</span>`;
+      }
+      continue;
+    }
 
     const meta = tokenMeta(key);
     if (!meta) {
