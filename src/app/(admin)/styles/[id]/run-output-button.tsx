@@ -17,11 +17,14 @@ export function RunOutputButton({
   variantKey,
   ready,
   missingLabels,
+  label = "Run",
 }: {
   styleId: string;
   variantKey: string;
   ready: boolean;
   missingLabels: string[];
+  // Button caption — "Run" on the style tab, "Rerun this output" in review.
+  label?: string;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -73,7 +76,7 @@ export function RunOutputButton({
             : "cursor-not-allowed border-zinc-200 bg-zinc-50 text-zinc-300"
         } disabled:opacity-60`}
       >
-        {pending ? "Running…" : "Run"}
+        {pending ? "Running…" : label}
       </button>
       {email ? <EmailSimulationDialog outcome={email} onClose={() => setEmail(null)} /> : null}
     </div>

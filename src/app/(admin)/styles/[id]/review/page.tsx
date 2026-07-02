@@ -9,6 +9,7 @@ import { SupplierPushActions } from "./supplier-push-actions";
 import { ReviewClaim } from "./claim-review";
 import { ReviewLeaveGuard } from "./leave-guard";
 import { ReviewCartonCustomize } from "./review-carton-customize";
+import { RunOutputButton } from "../run-output-button";
 import { LogStyleView } from "@/components/log-style-view";
 import { groupByDocType, DocTypeAccordion } from "../doc-type-groups";
 import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
@@ -205,16 +206,21 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const hasFixedTicket = (o: CurrentOutput) =>
     fixedTicketBases.has(baseVariantKey(o.variantKey));
 
-  // History = outputs decided (approved/rejected) in an EARLIER run. They stay
-  // fully visible — same card, same actions — but collapse into the "Earlier
-  // generations" accordion so the main view shows only the current run. Going
-  // through the same style again and again no longer drowns in prior decisions.
-  // Anything still pending — or marked fixed and awaiting re-review — is NEVER
-  // history, even if it came from an older job.
-  const isSettled = (o: CurrentOutput) =>
-    o.reviewStatus === "APPROVED" || o.reviewStatus === "REJECTED";
+  // History = REJECTED outputs from an EARLIER run only. They stay fully
+  // visible — same card — but collapse into the "Earlier generations" accordion
+  // so the main view isn't cluttered by stale rejections.
+  //
+  // APPROVED outputs are NEVER history: with durable approval a full re-run
+  // preserves them instead of regenerating (so their latest asset is from an
+  // earlier job — fromLatestGeneration is false), but they are the CURRENT
+  // approved state and must stay in the main view so the reviewer can always
+  // see them (read-only badge, no decide buttons). Before, they vanished into
+  // the accordion the moment the rest of the style was re-run.
+  //
+  // Anything still pending — or marked fixed and awaiting re-review — is also
+  // never history, even from an older job.
   const isHistoryOutput = (o: CurrentOutput) =>
-    isSettled(o) && !o.fromLatestGeneration && !hasFixedTicket(o);
+    o.reviewStatus === "REJECTED" && !o.fromLatestGeneration && !hasFixedTicket(o);
   const history = reviewable.filter(isHistoryOutput);
   const current = reviewable.filter((o) => !isHistoryOutput(o));
 
@@ -557,6 +563,20 @@ function OutputReviewCard({
           ) : null
         }
       />
+      {/* Single-output re-run (WS8) — change the data (wash-care, care label)
+          then re-run just this output without touching the rest of the review.
+          A scoped re-run regenerates even an approved output (explicit intent),
+          so it comes back for a fresh decision. */}
+      <div className="flex items-center justify-between gap-2 border-t border-zinc-100 px-3 py-2">
+        <span className="text-[11px] text-zinc-400">Changed the data? Re-run just this output.</span>
+        <RunOutputButton
+          styleId={styleId}
+          variantKey={baseKey}
+          ready={o.missing.length === 0}
+          missingLabels={o.missing.map((m) => m.label)}
+          label="Re-run this output"
+        />
+      </div>
     </div>
   );
 }
