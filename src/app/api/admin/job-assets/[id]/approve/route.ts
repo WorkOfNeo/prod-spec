@@ -8,6 +8,7 @@ import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
 import { deliverOutput } from "@/lib/publish/deliver-output";
 import { perOutputDeliveryEnabled } from "@/lib/review-flow/flags";
 import { enqueueApprovedAsset } from "@/lib/publish/supplier-send-queue";
+import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
 
 export const runtime = "nodejs";
 // Approving the LAST pending asset rolls the job up and publishes —
@@ -89,6 +90,15 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     });
   } catch (err) {
     console.warn(`[supplier-send-queue] enqueue failed for asset ${asset.id}:`, err);
+  }
+
+  // Land the approved PDF in the supplier's own SharePoint folder right away
+  // (flag-gated + fail-soft inside the lib; the midnight sweep retries any
+  // FAILED rows before the digest email goes out).
+  try {
+    await pushQueuedSupplierUploads({ styleIds: [asset.job.styleId] });
+  } catch (err) {
+    console.warn(`[supplier-upload] approve push failed for asset ${asset.id}:`, err);
   }
 
   // Approving an output closes its rejection-ticket thread (if any).

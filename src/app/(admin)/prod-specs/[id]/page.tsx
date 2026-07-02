@@ -21,7 +21,12 @@ import {
   normaliseTranslationKey,
 } from "@/lib/translations/lookup";
 import { ProdSpecEditor } from "./prod-spec-editor";
-import type { AwaitingApprovalStyle } from "./approve-styles-panel";
+import type { ApprovalPanelStyle } from "./approve-styles-panel";
+import {
+  getCurrentOutputsForStyle,
+  rollupOutputSlots,
+  type StyleOutputRollup,
+} from "@/lib/outputs/current-outputs";
 import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +59,7 @@ export default async function ProdSpecDetailPage({
   });
   if (!prodSpec) notFound();
 
-  const [languages, careLabels, washSymbolRows, dict, docTypeLabels, testStyles, awaitingApproval] =
+  const [languages, careLabels, washSymbolRows, dict, docTypeLabels, testStyles, approvalPanel] =
     await Promise.all([
       listActiveLanguages(),
       loadCareLabels(),
@@ -73,7 +78,7 @@ export default async function ProdSpecDetailPage({
         select: { id: true, name: true, poNumber: true, status: true, completionPct: true },
         take: 500,
       }),
-      loadAwaitingApproval(id),
+      loadApprovalPanelStyles(id),
     ]);
 
   // Per care label: its Translation-board entry ({ lang → text }) so the
@@ -142,7 +147,8 @@ export default async function ProdSpecDetailPage({
         hasColumnMappingOverride={hasColumnMappingOverride}
         hasRequiredFieldsOverride={hasRequiredFieldsOverride}
         attachedSupplierCount={prodSpec.suppliers.length}
-        awaitingApproval={awaitingApproval}
+        approvalStyles={approvalPanel.styles}
+        approvalStylesTotal={approvalPanel.totalCount}
         variantCatalogue={allVariants().map((v) => ({
           key: v.key,
           docType: v.docType,
@@ -172,51 +178,73 @@ export default async function ProdSpecDetailPage({
   );
 }
 
-// Styles under this prod spec whose LATEST job is AWAITING_REVIEW — the
-// retroactive-approval candidates surfaced in the "Styles awaiting approval"
-// card. We fetch each live style's newest job (with a pending/total asset
-// count) and keep only those still awaiting review; a newer QUEUED/RUNNING/
-// APPROVED job means there's nothing to retroactively approve.
-async function loadAwaitingApproval(prodSpecId: string): Promise<AwaitingApprovalStyle[]> {
-  const styles = await db.style.findMany({
-    where: {
-      prodSpecId,
-      deletedAt: null,
-      archivedAt: null,
-      // Cheap pre-filter so we only inspect styles that have at least one
-      // review-ready job; the latest-job check below is the authority.
-      jobs: { some: { status: "AWAITING_REVIEW" } },
-    },
-    select: {
-      id: true,
-      name: true,
-      poNumber: true,
-      jobs: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        select: {
-          status: true,
-          _count: { select: { assets: true } },
-          assets: { where: { reviewStatus: "PENDING_REVIEW" }, select: { id: true } },
-        },
-      },
-    },
-    orderBy: { updatedAt: "desc" },
-  });
+// How many of the spec's live styles the approval panel loads rollups for.
+// Each rollup is a handful of queries (getCurrentOutputsForStyle), so the list
+// is capped at the most recently updated styles; the panel shows the cap.
+const APPROVAL_PANEL_LIMIT = 300;
 
-  const out: AwaitingApprovalStyle[] = [];
-  for (const s of styles) {
-    const latest = s.jobs[0];
-    if (!latest || latest.status !== "AWAITING_REVIEW") continue;
-    out.push({
-      id: s.id,
-      name: s.name,
-      poNumber: s.poNumber,
-      outputCount: latest._count.assets,
-      pendingCount: latest.assets.length,
-    });
-  }
-  return out;
+// Every live style on this prod spec, grouped by supplier in the panel, with
+// the SAME cross-job slot rollup the review page shows (getCurrentOutputsFor-
+// Style → rollupOutputSlots) so "outputs ready" here matches what a reviewer
+// sees. `approvable` mirrors the approve-styles route's rule: the retroactive
+// bulk publish only applies while the style's LATEST job is AWAITING_REVIEW.
+async function loadApprovalPanelStyles(
+  prodSpecId: string,
+): Promise<{ styles: ApprovalPanelStyle[]; totalCount: number }> {
+  const where = { prodSpecId, deletedAt: null, archivedAt: null };
+  const [styles, totalCount] = await Promise.all([
+    db.style.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        poNumber: true,
+        supplier: { select: { name: true } },
+        jobs: { orderBy: { createdAt: "desc" }, take: 1, select: { status: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+      take: APPROVAL_PANEL_LIMIT,
+    }),
+    db.style.count({ where }),
+  ]);
+  if (styles.length === 0) return { styles: [], totalCount };
+
+  // Rollups with bounded concurrency — hundreds of sequential per-style walks
+  // would crawl, hundreds in parallel would swamp the pg pool.
+  const rollups = new Map<string, StyleOutputRollup>();
+  const pending = [...styles];
+  await Promise.all(
+    Array.from({ length: 8 }, async () => {
+      for (let s = pending.shift(); s; s = pending.shift()) {
+        try {
+          rollups.set(s.id, rollupOutputSlots(await getCurrentOutputsForStyle(s.id)));
+        } catch {
+          // Row renders without counts rather than sinking the whole page.
+        }
+      }
+    }),
+  );
+
+  return {
+    totalCount,
+    styles: styles.map((s) => {
+      const r = rollups.get(s.id);
+      return {
+        id: s.id,
+        name: s.name,
+        poNumber: s.poNumber,
+        supplierName: s.supplier?.name ?? null,
+        approvable: s.jobs[0]?.status === "AWAITING_REVIEW",
+        toApprove: r?.toReview ?? 0,
+        approved: r?.approved ?? 0,
+        blocked: r?.blocked ?? 0,
+        rejected: r?.rejected ?? 0,
+        coming: (r?.awaitingData ?? 0) + (r?.readyToGenerate ?? 0) + (r?.generating ?? 0),
+        excluded: r?.excluded ?? 0,
+        total: r?.total ?? 0,
+      };
+    }),
+  };
 }
 
 function safeParse<T>(fn: () => T, fallback: T): T {

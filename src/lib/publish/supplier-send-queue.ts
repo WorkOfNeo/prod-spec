@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
+import { parseCustomerConfig } from "@/lib/customers/config";
 
 // Nightly supplier-send queue (WS2). One row per approved (style, output slot).
 //
@@ -37,9 +38,19 @@ function baseKey(variantKey: string | null, docType: string): string {
 export async function enqueueApprovedAsset(asset: ApprovableAsset): Promise<void> {
   const style = await db.style.findUnique({
     where: { id: asset.styleId },
-    select: { customerId: true, supplierId: true, poSeq: true },
+    select: {
+      customerId: true,
+      supplierId: true,
+      poSeq: true,
+      customer: { select: { config: true } },
+    },
   });
   if (!style) return;
+
+  // Customers who deliver their own goods (config.skipSupplierDelivery) get no
+  // supplier delivery at all — keep their approvals out of the nightly queue
+  // (and thereby out of the digest email and the supplier-folder push).
+  if (parseCustomerConfig(style.customer.config).skipSupplierDelivery) return;
 
   const variantKey = baseKey(asset.variantKey, asset.docType);
 

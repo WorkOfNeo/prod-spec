@@ -4,6 +4,8 @@ import { getSupplierBatchSendEnabled } from "@/lib/settings/app-settings";
 import { loadIgnoredOutputKeysByStyle } from "@/lib/outputs/output-ignores";
 import { combineSupplierRecipients } from "@/lib/suppliers/recipients";
 import { loadContactEmailsBySupplier } from "@/lib/suppliers/contact-emails";
+import { parseCustomerConfig } from "@/lib/customers/config";
+import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
 
 // Nightly supplier-send batch (WS2b). Groups the unsent send-queue by supplier
 // → customer and sends ONE digest email per supplier. Replaces the old
@@ -143,11 +145,52 @@ export async function runSupplierSendBatch(opts?: { source?: "midnight" | "manua
     pending = pending.filter((p) => !ignoredByStyle.get(p.styleId)?.has(p.variantKey));
   }
 
+  // Customers who deliver their own goods (config.skipSupplierDelivery) must
+  // never reach a supplier digest. publishApprovedJob skips their delivery,
+  // but the enqueue paths predate that gate — drop any of their rows here,
+  // exactly like the ignored-output guard above.
+  if (pending.length > 0) {
+    const configs = await db.customer.findMany({
+      where: { id: { in: [...new Set(pending.map((p) => p.customerId))] } },
+      select: { id: true, config: true },
+    });
+    const skipDeliveryCustomers = new Set(
+      configs.filter((c) => parseCustomerConfig(c.config).skipSupplierDelivery).map((c) => c.id),
+    );
+    const skipDeliveryItems = pending.filter((p) => skipDeliveryCustomers.has(p.customerId));
+    if (skipDeliveryItems.length > 0) {
+      await db.supplierSendQueueItem.deleteMany({
+        where: { id: { in: skipDeliveryItems.map((i) => i.id) } },
+      });
+      console.warn(
+        `[supplier-batch-send] dropped ${skipDeliveryItems.length} queued item(s) for skip-delivery customers`,
+      );
+      pending = pending.filter((p) => !skipDeliveryCustomers.has(p.customerId));
+    }
+  }
+
   if (pending.length === 0) {
     const batch = await db.supplierSendBatch.create({
       data: { source, status: "EMPTY", finishedAt: new Date() },
     });
     return { batchId: batch.id, status: "EMPTY", dryRun: !enabled, supplierCount: 0, outputCount: 0, sentCount: 0, perSupplier: [] };
+  }
+
+  // Make the digest's "files are in your SharePoint folder" line true before
+  // any email leaves: push every still-pending upload into the suppliers' own
+  // folders (retries FAILED/SKIPPED rows from approve-time pushes; flag-gated
+  // + fail-soft inside the lib). The email still goes out if a folder push
+  // fails — the portal link always works — and the row stays visible as
+  // FAILED on /settings/approved.
+  if (enabled) {
+    const swept = await pushQueuedSupplierUploads({
+      styleIds: [...new Set(pending.map((p) => p.styleId))],
+    });
+    if (swept.styles > 0) {
+      console.log(
+        `[supplier-batch-send] supplier-folder sweep: ${swept.uploaded} uploaded, ${swept.failed} failed, ${swept.skipped} skipped across ${swept.styles} style(s)`,
+      );
+    }
   }
 
   const styleIds = [...new Set(pending.map((p) => p.styleId))];

@@ -25,7 +25,7 @@ export class SupplierPushError extends Error {
   }
 }
 
-export type PushedFile = { fileName: string; webUrl: string | null };
+export type PushedFile = { assetId: string; fileName: string; webUrl: string | null };
 
 export type SupplierPushResult = {
   dryRun: boolean;
@@ -34,7 +34,7 @@ export type SupplierPushResult = {
   supplierFolderUrl: string | null; // the supplier's root folder
   targetFolderUrl: string | null; // the subfolder (null on dry run)
   pushed: PushedFile[];
-  skipped: Array<{ fileName: string; reason: string }>;
+  skipped: Array<{ assetId: string; fileName: string; reason: string }>;
 };
 
 export async function pushApprovedAssetsToSupplier(input: {
@@ -95,6 +95,7 @@ export async function pushApprovedAssetsToSupplier(input: {
   const skipped = assets
     .filter((a) => !(a.reviewStatus === "APPROVED" && a.placeholderCount === 0))
     .map((a) => ({
+      assetId: a.id,
       fileName: a.fileName,
       reason: a.placeholderCount > 0 ? "contains placeholders" : `not approved (${a.reviewStatus.toLowerCase()})`,
     }));
@@ -127,7 +128,7 @@ export async function pushApprovedAssetsToSupplier(input: {
       folderName,
       supplierFolderUrl: folder.webUrl,
       targetFolderUrl: null,
-      pushed: pushable.map((a) => ({ fileName: a.fileName, webUrl: null })),
+      pushed: pushable.map((a) => ({ assetId: a.id, fileName: a.fileName, webUrl: null })),
       skipped,
     };
   }
@@ -144,7 +145,7 @@ export async function pushApprovedAssetsToSupplier(input: {
   for (const a of pushable) {
     try {
       const up = await uploadIntoFolder(folder.driveId, subfolder.id, a.fileName, Buffer.from(a.pdf));
-      pushed.push({ fileName: up.name, webUrl: up.webUrl });
+      pushed.push({ assetId: a.id, fileName: up.name, webUrl: up.webUrl });
     } catch (err) {
       throw toPushError(err);
     }
