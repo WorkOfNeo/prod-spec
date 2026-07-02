@@ -8,6 +8,7 @@ import {
   MONDAY_BOARDS,
   MONDAY_CUSTOMER_COLS,
   MONDAY_SUPPLIER_COLS,
+  MONDAY_SUPPLIER_CONTACT_COLS,
   MONDAY_STYLE_COLS,
   MONDAY_PRE_ORDER_COLS,
 } from "./boards";
@@ -323,6 +324,112 @@ export async function syncSuppliers(): Promise<SyncResult> {
 }
 
 // -----------------------------------------------------
+// Supplier Contacts (board 3363269178) — contact PEOPLE at each supplier
+// company. The board-relation column links each contact to its Supplier
+// Company on the Suppliers board; we resolve that link through the local
+// Supplier mirror, so this MUST run after syncSuppliers. Contacts whose
+// company link is unset or points at an unmirrored item keep
+// supplierId = null (still synced, just unlinked).
+// -----------------------------------------------------
+
+export async function upsertSupplierContactFromMondayItem(
+  item: MondayItem,
+  supplierIdByMondayId: Map<string, string>,
+): Promise<void> {
+  const readCol = (id: string) => (id ? columnText(item, id) || null : null);
+  const linkedSupplierMondayId = MONDAY_SUPPLIER_CONTACT_COLS.supplierLink
+    ? extractLinkedItemId(columnValue(item, MONDAY_SUPPLIER_CONTACT_COLS.supplierLink))
+    : null;
+  const supplierId = linkedSupplierMondayId
+    ? (supplierIdByMondayId.get(linkedSupplierMondayId) ?? null)
+    : null;
+
+  const data = {
+    name: item.name,
+    title: readCol(MONDAY_SUPPLIER_CONTACT_COLS.title),
+    email: readCol(MONDAY_SUPPLIER_CONTACT_COLS.email),
+    phone: readCol(MONDAY_SUPPLIER_CONTACT_COLS.phone),
+    contactType: readCol(MONDAY_SUPPLIER_CONTACT_COLS.contactType),
+    status: readCol(MONDAY_SUPPLIER_CONTACT_COLS.status),
+    supplierId,
+    lastSyncedAt: new Date(),
+    active: true,
+  };
+  await db.supplierContact.upsert({
+    where: { mondayItemId: item.id },
+    create: { mondayItemId: item.id, ...data },
+    update: data,
+  });
+}
+
+export async function syncSupplierContacts(): Promise<SyncResult> {
+  return withSyncJob("SUPPLIER_CONTACTS", async (recordProgress) => {
+    const board = await getGhostBoardOrThrow(
+      MONDAY_BOARDS.supplierContacts,
+      "Supplier Contacts",
+    );
+    const ghostItems = await db.mondayGhostItem.findMany({
+      where: { boardId: board.id },
+      select: {
+        mondayItemId: true,
+        name: true,
+        groupId: true,
+        groupTitle: true,
+        columnValues: true,
+      },
+    });
+    // Resolve company links through the Supplier mirror in one shot —
+    // inactive suppliers included so a contact never loses its link just
+    // because the company row is currently flagged inactive.
+    const suppliers = await db.supplier.findMany({
+      select: { id: true, mondayItemId: true },
+    });
+    const supplierIdByMondayId = new Map(suppliers.map((s) => [s.mondayItemId, s.id]));
+
+    let synced = 0;
+    let failed = 0;
+    const remoteIds = new Set<string>();
+    const errs = errorSampler("fill:supplier-contacts");
+    slog("fill:supplier-contacts", "items", { total: ghostItems.length });
+
+    await recordProgress(0, 0, ghostItems.length, 0);
+
+    for (const ghost of ghostItems) {
+      try {
+        const item = ghostItemToMondayItem(ghost, MONDAY_BOARDS.supplierContacts);
+        await upsertSupplierContactFromMondayItem(item, supplierIdByMondayId);
+        remoteIds.add(item.id);
+        synced++;
+      } catch (err) {
+        failed++;
+        errs.record(`supplier contact ${ghost.mondayItemId} (${ghost.name})`, err);
+      }
+      await recordProgress(synced, failed, ghostItems.length);
+      if ((synced + failed) % 500 === 0) {
+        slog("fill:supplier-contacts", "progress", {
+          done: synced + failed,
+          total: ghostItems.length,
+          failed,
+        });
+      }
+    }
+    errs.done();
+
+    await db.supplierContact.updateMany({
+      where: { NOT: { mondayItemId: { in: Array.from(remoteIds) } } },
+      data: { active: false },
+    });
+
+    return {
+      itemsTotal: ghostItems.length,
+      itemsSynced: synced,
+      itemsFailed: failed,
+      itemsSkipped: 0,
+    };
+  });
+}
+
+// -----------------------------------------------------
 // Business Areas — dropdown column on the Styles board.
 //
 // Two sources, in priority order:
@@ -500,6 +607,7 @@ export type SyncAllResult = {
   syncJobId: string;
   customers: SyncResult;
   suppliers: SyncResult;
+  supplierContacts: SyncResult;
   businessAreas: SyncResult;
   styles: SyncResult;
   prodSpecsCreated: number;
@@ -665,11 +773,22 @@ export async function syncAll(): Promise<SyncAllResult> {
   try {
     const customers = await syncCustomers();
     const suppliers = await syncSuppliers();
+    // Contacts resolve their company link through the Supplier mirror, so
+    // they run right after suppliers. A missing ghost mirror (board never
+    // sunk yet) must not fail the whole sync-all — degrade to a zero result.
+    let supplierContacts: SyncResult;
+    try {
+      supplierContacts = await syncSupplierContacts();
+    } catch (err) {
+      serr("fill:all", "supplier contacts failed (sync-all continues)", err);
+      supplierContacts = { syncJobId: "", itemsTotal: 0, itemsSynced: 0, itemsFailed: 0, itemsSkipped: 0 };
+    }
     const businessAreas = await syncBusinessAreas();
     const styles = await syncStyles();
     slog("fill:all", "domains done", {
       customers: customers.itemsSynced,
       suppliers: suppliers.itemsSynced,
+      supplierContacts: supplierContacts.itemsSynced,
       businessAreas: businessAreas.itemsSynced,
       styles: styles.itemsSynced,
     });
@@ -702,20 +821,20 @@ export async function syncAll(): Promise<SyncAllResult> {
       data: {
         status: "COMPLETED",
         finishedAt: new Date(),
-        itemsTotal: customers.itemsTotal + suppliers.itemsTotal + businessAreas.itemsTotal + styles.itemsTotal,
-        itemsSynced: customers.itemsSynced + suppliers.itemsSynced + businessAreas.itemsSynced + styles.itemsSynced,
-        itemsFailed: customers.itemsFailed + suppliers.itemsFailed + businessAreas.itemsFailed + styles.itemsFailed,
-        itemsSkipped: customers.itemsSkipped + suppliers.itemsSkipped + businessAreas.itemsSkipped + styles.itemsSkipped,
+        itemsTotal: customers.itemsTotal + suppliers.itemsTotal + supplierContacts.itemsTotal + businessAreas.itemsTotal + styles.itemsTotal,
+        itemsSynced: customers.itemsSynced + suppliers.itemsSynced + supplierContacts.itemsSynced + businessAreas.itemsSynced + styles.itemsSynced,
+        itemsFailed: customers.itemsFailed + suppliers.itemsFailed + supplierContacts.itemsFailed + businessAreas.itemsFailed + styles.itemsFailed,
+        itemsSkipped: customers.itemsSkipped + suppliers.itemsSkipped + supplierContacts.itemsSkipped + businessAreas.itemsSkipped + styles.itemsSkipped,
       },
     });
 
     slog("fill:all", "done", {
       synced:
-        customers.itemsSynced + suppliers.itemsSynced + businessAreas.itemsSynced + styles.itemsSynced,
+        customers.itemsSynced + suppliers.itemsSynced + supplierContacts.itemsSynced + businessAreas.itemsSynced + styles.itemsSynced,
       failed:
-        customers.itemsFailed + suppliers.itemsFailed + businessAreas.itemsFailed + styles.itemsFailed,
+        customers.itemsFailed + suppliers.itemsFailed + supplierContacts.itemsFailed + businessAreas.itemsFailed + styles.itemsFailed,
       skipped:
-        customers.itemsSkipped + suppliers.itemsSkipped + businessAreas.itemsSkipped + styles.itemsSkipped,
+        customers.itemsSkipped + suppliers.itemsSkipped + supplierContacts.itemsSkipped + businessAreas.itemsSkipped + styles.itemsSkipped,
       prodSpecs: prodSpecsCreated,
     });
 
@@ -723,6 +842,7 @@ export async function syncAll(): Promise<SyncAllResult> {
       syncJobId: overall.id,
       customers,
       suppliers,
+      supplierContacts,
       businessAreas,
       styles,
       prodSpecsCreated,

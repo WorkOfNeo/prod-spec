@@ -288,9 +288,42 @@ model Supplier {
 
   styles            Style[]
   prodSpecSuppliers ProdSpecSupplier[]
+  contacts          SupplierContact[]
 
   @@index([active])
   @@map("suppliers")
+}
+
+// Contact PEOPLE at a supplier, mirrored from the Monday "Supplier Contacts"
+// board (3363269178). Each contact links to its Supplier Company via the
+// board-relation column; contacts whose linked company isn't mirrored (or
+// who have no link) keep supplierId null. Email sending resolves recipients
+// through these rows (see src/lib/suppliers/recipients.ts): Active
+// "Product Supplier" contacts receive the supplier emails; the legacy
+// Supplier.email/contactEmail fields stay as fallback.
+model SupplierContact {
+  id           String    @id @default(cuid())
+  mondayItemId String    @unique
+  name         String
+  // "Title" text column (job title, e.g. "Merchandiser"). Often blank.
+  title        String?
+  email        String?
+  phone        String?
+  // "Type" status column — "Product Supplier" | "Cost Supplier" | "–".
+  contactType  String?
+  // "Status" status column — "Active" | "Passive".
+  status       String?
+  supplierId   String?
+  supplier     Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  lastSyncedAt DateTime?
+  // false = the Monday item disappeared from the board (never deleted).
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([supplierId])
+  @@index([active])
+  @@map("supplier_contacts")
 }
 
 // Mirrored options from the BusinessArea dropdown on the Styles board.
@@ -1448,6 +1481,7 @@ model SyncJob {
 enum SyncKind {
   CUSTOMERS
   SUPPLIERS
+  SUPPLIER_CONTACTS
   BUSINESS_AREAS
   STYLES
   ALL

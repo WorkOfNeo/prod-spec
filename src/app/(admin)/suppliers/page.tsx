@@ -15,6 +15,28 @@ export default async function SuppliersPage() {
     include: { _count: { select: { styles: true, prodSpecSuppliers: true } } },
   });
 
+  // Synced contact people (Supplier Contacts board 3363269178), grouped per
+  // supplier. Additive table — degrade to "no contacts" until db:deploy has
+  // run rather than 500ing the page.
+  const contactsBySupplier = new Map<
+    string,
+    Array<{ name: string; email: string | null; contactType: string | null; status: string | null }>
+  >();
+  try {
+    const contacts = await db.supplierContact.findMany({
+      where: { active: true, supplierId: { not: null } },
+      orderBy: [{ status: "asc" }, { name: "asc" }],
+      select: { supplierId: true, name: true, email: true, contactType: true, status: true },
+    });
+    for (const c of contacts) {
+      const arr = contactsBySupplier.get(c.supplierId!) ?? [];
+      arr.push(c);
+      contactsBySupplier.set(c.supplierId!, arr);
+    }
+  } catch {
+    // table not migrated yet
+  }
+
   return (
     <div className="px-8 py-8">
       <div className="mb-6">
@@ -32,6 +54,7 @@ export default async function SuppliersPage() {
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Purchaser</th>
               <th className="px-4 py-3">Email / contact</th>
+              <th className="px-4 py-3">Contacts</th>
               <th className="px-4 py-3">Country</th>
               <th className="px-4 py-3">Location</th>
               <th className="px-4 py-3">Folder</th>
@@ -44,7 +67,7 @@ export default async function SuppliersPage() {
           <tbody>
             {suppliers.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-4 py-12 text-center text-zinc-500">
+                <td colSpan={11} className="px-4 py-12 text-center text-zinc-500">
                   No suppliers yet. Run the Supplier sync from <a href="/sync" className="underline">/sync</a>.
                 </td>
               </tr>
@@ -63,6 +86,22 @@ export default async function SuppliersPage() {
                         cc {s.contactName ? `${s.contactName} · ` : ""}
                         {s.contactEmail}
                       </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-zinc-600">
+                    {(contactsBySupplier.get(s.id) ?? []).length === 0 ? (
+                      <span className="text-zinc-400">—</span>
+                    ) : (
+                      (contactsBySupplier.get(s.id) ?? []).map((c, i) => (
+                        <div
+                          key={i}
+                          className={c.status === "Active" ? "" : "text-zinc-400 line-through"}
+                          title={`${c.contactType ?? "—"} · ${c.status ?? "—"}`}
+                        >
+                          {c.name}
+                          {c.email ? ` · ${c.email}` : ""}
+                        </div>
+                      ))
                     )}
                   </td>
                   <td className="px-4 py-3 text-zinc-600">{s.country ?? "—"}</td>

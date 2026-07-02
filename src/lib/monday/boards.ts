@@ -6,6 +6,10 @@ export const MONDAY_BOARDS = {
   styles: process.env.MONDAY_STYLES_BOARD_ID ?? "6979419195",
   customers: process.env.MONDAY_CUSTOMERS_BOARD_ID ?? "3317892788",
   suppliers: process.env.MONDAY_SUPPLIERS_BOARD_ID ?? "3363275451",
+  // Supplier Contacts board — contact PEOPLE at each supplier company,
+  // linked to the Suppliers board via a board-relation column. Mirrored so
+  // email sending can resolve real contact recipients per supplier.
+  supplierContacts: process.env.MONDAY_SUPPLIER_CONTACTS_BOARD_ID ?? "3363269178",
   // Pre Order board — added for the ghost-DB sink only. Ingest/webhook
   // semantics aren't wired against this board yet; the Monday page can
   // introspect and sink it via the generic /api/admin/monday/sink route.
@@ -22,6 +26,7 @@ export const MONDAY_BOARD_LABELS: Record<keyof typeof MONDAY_BOARDS, string> = {
   styles: "Styles",
   customers: "Customers",
   suppliers: "Suppliers",
+  supplierContacts: "Supplier Contacts",
   preOrder: "Pre Order",
   translations: "Translations",
 };
@@ -52,6 +57,22 @@ export const MONDAY_SUPPLIER_COLS = {
   email: process.env.MONDAY_SUPPLIER_COL_EMAIL ?? "",
   contactEmail: process.env.MONDAY_SUPPLIER_COL_CONTACT_EMAIL ?? "",
   contactName: process.env.MONDAY_SUPPLIER_COL_CONTACT_NAME ?? "",
+} as const;
+
+// Column IDs on the Supplier Contacts board (3363269178). Defaults are the
+// live ids confirmed against the board on 2026-07-02. `supplierLink` is a
+// board-relation column pointing at the Suppliers board (3363275451);
+// sync resolves its linked item id through the local Supplier mirror.
+export const MONDAY_SUPPLIER_CONTACT_COLS = {
+  supplierLink: process.env.MONDAY_SUPPLIER_CONTACT_COL_SUPPLIER_LINK ?? "board_relation__1",
+  email: process.env.MONDAY_SUPPLIER_CONTACT_COL_EMAIL ?? "contact_email",
+  phone: process.env.MONDAY_SUPPLIER_CONTACT_COL_PHONE ?? "contact_phone",
+  // "Title" is a TEXT column despite its id ("dropdown").
+  title: process.env.MONDAY_SUPPLIER_CONTACT_COL_TITLE ?? "dropdown",
+  // "Type" status column — "Product Supplier" / "Cost Supplier" / "–".
+  contactType: process.env.MONDAY_SUPPLIER_CONTACT_COL_TYPE ?? "status",
+  // "Status" status column — "Active" / "Passive".
+  status: process.env.MONDAY_SUPPLIER_CONTACT_COL_STATUS ?? "status9",
 } as const;
 
 // Column IDs on the Styles board (6979419195).

@@ -4,13 +4,23 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { formatDate } from "@/lib/utils";
 
-type DomainKind = "customers" | "suppliers" | "business-areas" | "styles" | "all";
+type DomainKind =
+  | "customers"
+  | "suppliers"
+  | "supplier-contacts"
+  | "business-areas"
+  | "styles"
+  | "all";
 
 // Map the client-side kebab kind to the SyncJob enum value used by
 // /api/admin/sync/progress.
-const DOMAIN_ENUM_KIND: Record<DomainKind, "CUSTOMERS" | "SUPPLIERS" | "BUSINESS_AREAS" | "STYLES" | "ALL"> = {
+const DOMAIN_ENUM_KIND: Record<
+  DomainKind,
+  "CUSTOMERS" | "SUPPLIERS" | "SUPPLIER_CONTACTS" | "BUSINESS_AREAS" | "STYLES" | "ALL"
+> = {
   customers: "CUSTOMERS",
   suppliers: "SUPPLIERS",
+  "supplier-contacts": "SUPPLIER_CONTACTS",
   "business-areas": "BUSINESS_AREAS",
   styles: "STYLES",
   all: "ALL",
@@ -34,6 +44,11 @@ const DOMAIN_KINDS: Array<{ kind: DomainKind; label: string; hint: string }> = [
   { kind: "customers", label: "Customers", hint: "Board 3317892788 — Account / Country / Priority." },
   { kind: "suppliers", label: "Suppliers", hint: "Board 3363275451 — Purchaser / Address / Folder." },
   {
+    kind: "supplier-contacts",
+    label: "Supplier contacts",
+    hint: "Board 3363269178 — contact people + emails, linked to Suppliers.",
+  },
+  {
     kind: "business-areas",
     label: "Business areas",
     hint: "Dropdown values + values seen in Styles.",
@@ -42,7 +57,7 @@ const DOMAIN_KINDS: Array<{ kind: DomainKind; label: string; hint: string }> = [
   {
     kind: "all",
     label: "All (in order)",
-    hint: "Customers → Suppliers → BAs → Styles → auto-create prod specs.",
+    hint: "Customers → Suppliers → Contacts → BAs → Styles → auto-create prod specs.",
   },
 ];
 
@@ -80,7 +95,7 @@ export function SyncTab({
   knownBoards,
 }: {
   recent: SyncJobRow[];
-  counts: { customers: number; suppliers: number; businessAreas: number; styles: number };
+  counts: { customers: number; suppliers: number; supplierContacts: number; businessAreas: number; styles: number };
   ghostBoards: GhostBoardRow[];
   knownBoards: KnownBoard[];
 }) {
@@ -160,7 +175,7 @@ export function SyncTab({
       }
       const summary =
         kind === "all"
-          ? `done · customers ${body.customers?.itemsSynced ?? 0}, suppliers ${body.suppliers?.itemsSynced ?? 0}, BAs ${body.businessAreas?.itemsSynced ?? 0}, styles ${body.styles?.itemsSynced ?? 0}, +${body.prodSpecsCreated ?? 0} prod specs`
+          ? `done · customers ${body.customers?.itemsSynced ?? 0}, suppliers ${body.suppliers?.itemsSynced ?? 0}, contacts ${body.supplierContacts?.itemsSynced ?? 0}, BAs ${body.businessAreas?.itemsSynced ?? 0}, styles ${body.styles?.itemsSynced ?? 0}, +${body.prodSpecsCreated ?? 0} prod specs`
           : `done · ${body.itemsSynced ?? 0}/${body.itemsTotal ?? 0}${body.itemsSkipped ? ` (${body.itemsSkipped} skipped)` : ""}${body.itemsFailed ? ` (${body.itemsFailed} failed)` : ""}`;
       setDomainResults((r) => ({ ...r, [kind]: summary }));
       router.refresh();
@@ -342,9 +357,10 @@ export function SyncTab({
             the ghost from Monday; Fill processes whatever&apos;s there.
           </p>
         </div>
-        <div className="mb-4 grid grid-cols-4 gap-3">
+        <div className="mb-4 grid grid-cols-5 gap-3">
           <Stat label="Customers (active)" value={counts.customers} />
           <Stat label="Suppliers (active)" value={counts.suppliers} />
+          <Stat label="Contacts (active)" value={counts.supplierContacts} />
           <Stat label="Business areas (active)" value={counts.businessAreas} />
           <Stat label="Styles" value={counts.styles} />
         </div>

@@ -16,6 +16,7 @@ export const runtime = "nodejs";
 const KIND_SCHEMA = z.enum([
   "CUSTOMERS",
   "SUPPLIERS",
+  "SUPPLIER_CONTACTS",
   "BUSINESS_AREAS",
   "STYLES",
   "ALL",
