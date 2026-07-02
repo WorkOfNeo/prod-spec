@@ -3,10 +3,7 @@ import { uploadJobAssets, type UploadResult } from "@/lib/sharepoint/upload";
 import { getFile } from "@/lib/sharepoint/client";
 import { dispatchEmail, type EmailOutcome } from "@/lib/email/dispatch";
 import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
-import {
-  customerApprovalEmail,
-  supplierApprovalEmail,
-} from "@/lib/email/templates/review-notification";
+import { customerApprovalEmail } from "@/lib/email/templates/review-notification";
 import { getSupplierReviewCcEmails } from "@/lib/settings/app-settings";
 import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
 import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
@@ -273,63 +270,25 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
     notification.to = supplierEmail;
     notification.cc = ccDisplay;
 
-    const email = supplierApprovalEmail({
-      supplierEmail: supplierEmail ?? "",
-      styleName: job.style.name,
-      styleNumber: job.style.mondayItemId,
-      customerName: job.style.customer.name,
-      businessArea: job.style.businessAreaRef?.name ?? job.style.businessArea ?? null,
-      poNumber: job.style.poNumber,
-      files,
-      shareUrl: share.url,
-      sharePin: share.pin,
-      folderUrl,
-      certificates: requiredCerts,
-      isCorrection,
-    });
-    // Attach the generated PDFs so the supplier can review them directly,
-    // not only via the SharePoint link.
-    const attachments = job.assets.map((a) => ({
-      filename: a.fileName,
-      content: Buffer.from(a.pdf),
-    }));
-    // Always dispatch — even with no recipient. The dispatcher records a
-    // SKIPPED EmailLog row so the activity table shows "we wanted to send a
-    // supplier email but had nowhere to send it", same as the review-ready
-    // path. (Empty `to` → SKIPPED, never an actual send.)
-    emailOutcome = await dispatchEmail({
-      type: "SUPPLIER_APPROVAL",
-      to: supplierEmail ?? "",
-      cc: ccList.length > 0 ? ccList : undefined,
-      subject: email.subject,
-      html: email.html,
-      text: email.text,
-      attachments,
-      jobId: job.id,
-      styleId: job.styleId,
-    });
-    notification.attachments = supplierEmail ? attachments.length : 0;
-    notification.sent = emailOutcome.status === "SENT";
-    if (emailOutcome.status !== "SENT") {
-      notification.note = supplierEmail
-        ? (emailOutcome.note ?? undefined)
-        : "No supplier email resolved — set the Monday supplier email column (MONDAY_SUPPLIER_COL_EMAIL) + re-sync, or set SUPPLIER_NOTIFICATION_EMAIL.";
-    }
-    const verb =
-      emailOutcome.status === "SENT"
-        ? "sent"
-        : emailOutcome.status === "SIMULATED"
-          ? "SIMULATED (RESEND_EMAILS off) — would send"
-          : emailOutcome.status === "FAILED"
-            ? `FAILED (${emailOutcome.note ?? "Resend error"}) — would send`
-            : supplierEmail
-              ? "skipped — would send"
-              : "skipped — no supplier recipient resolved";
+    // Supplier email is DEFERRED to the nightly batch (WS2). Per-approval
+    // emails were the OLD mechanism — one email per approval. Now approving an
+    // output only (a) uploads to SharePoint (above), (b) refreshes the durable
+    // share link (above), and (c) queues the output (enqueue below). The
+    // midnight cron then sends ONE digest per supplier covering everything
+    // queued for them. So we do NOT dispatch a supplier email here;
+    // `emailOutcome` stays null and the review screen shows "queued", not
+    // "sent". Reference the still-relevant bits so they read as intentional.
+    void files;
+    void requiredCerts;
+    void isCorrection;
+    notification.note = supplierEmail
+      ? "Queued for the nightly supplier batch — the supplier is emailed once at midnight, not per approval."
+      : "No supplier email on file — output still queued; set the Monday supplier email + re-sync before the nightly send.";
     await db.log.create({
       data: {
         jobId: job.id,
-        level: emailOutcome.status === "FAILED" ? "WARN" : emailOutcome.status === "SKIPPED" ? "WARN" : "INFO",
-        message: `supplier review email ${verb} · To: ${supplierEmail ?? "(none)"}${ccDisplay ? ` · CC: ${ccDisplay}` : ""} · ${attachments.length} attachment(s)${folderUrl ? ` · folder: ${folderUrl}` : ""}${isCorrection ? " · correction" : ""}`,
+        level: "INFO",
+        message: `supplier email deferred to nightly batch (output queued) · To: ${supplierEmail ?? "(none)"}${ccDisplay ? ` · CC: ${ccDisplay}` : ""}${folderUrl ? ` · folder: ${folderUrl}` : ""}`,
       },
     });
   }

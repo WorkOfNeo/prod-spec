@@ -177,6 +177,30 @@ model SupplierSendQueueItem {
   @@map("supplier_send_queue_items")
 }
 
+// One row per nightly supplier-send run (or a manual retry). Records what the
+// batch did — how many suppliers/outputs, sent vs simulated vs skipped — so the
+// /settings/approved history tab and any retry can read it back. Per-supplier
+// detail lives in perSupplier JSON. Mirrors the CronRun/BulkRunBatch pattern.
+model SupplierSendBatch {
+  id             String    @id @default(cuid())
+  // "midnight" (cron) | "manual" (admin retry button)
+  source         String    @default("midnight")
+  // How the run resolved overall: DRY_RUN (flag off), SENT, PARTIAL, FAILED, EMPTY.
+  status         String    @default("DRY_RUN")
+  supplierCount  Int       @default(0)
+  outputCount    Int       @default(0)
+  sentCount      Int       @default(0)
+  // [{ supplierId, supplierName, email, styleCount, outputCount, status, emailLogId?, error? }]
+  perSupplier    Json      @default("[]")
+  note           String?
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([createdAt])
+  @@map("supplier_send_batches")
+}
+
 // =====================================================
 // Domain — Monday mirrors + ProdSpec
 //
@@ -1194,6 +1218,22 @@ model EmailLog {
   @@index([createdAt])
   @@index([jobId])
   @@map("email_logs")
+}
+
+// Resend delivery events (delivered / opened / clicked / bounced) for sent
+// emails, captured via the Resend webhook. Matched to EmailLog by providerId
+// (the Resend message id). Loose refs like EmailLog so it outlives jobs.
+model EmailEvent {
+  id         String   @id @default(cuid())
+  providerId String // Resend message id — matches EmailLog.providerId
+  emailLogId String? // resolved at ingest when the EmailLog is found
+  type       String // delivered | opened | clicked | bounced | complained | ...
+  occurredAt DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([providerId])
+  @@index([emailLogId])
+  @@map("email_events")
 }
 
 // =====================================================

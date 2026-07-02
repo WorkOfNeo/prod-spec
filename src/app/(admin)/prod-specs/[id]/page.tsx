@@ -21,6 +21,7 @@ import {
   normaliseTranslationKey,
 } from "@/lib/translations/lookup";
 import { ProdSpecEditor } from "./prod-spec-editor";
+import type { AwaitingApprovalStyle } from "./approve-styles-panel";
 import { requireAdminPage } from "@/lib/auth-server";
 
 export const dynamic = "force-dynamic";
@@ -53,7 +54,7 @@ export default async function ProdSpecDetailPage({
   });
   if (!prodSpec) notFound();
 
-  const [languages, careLabels, washSymbolRows, dict, docTypeLabels, testStyles] =
+  const [languages, careLabels, washSymbolRows, dict, docTypeLabels, testStyles, awaitingApproval] =
     await Promise.all([
       listActiveLanguages(),
       loadCareLabels(),
@@ -72,6 +73,7 @@ export default async function ProdSpecDetailPage({
         select: { id: true, name: true, poNumber: true, status: true, completionPct: true },
         take: 500,
       }),
+      loadAwaitingApproval(id),
     ]);
 
   // Per care label: its Translation-board entry ({ lang → text }) so the
@@ -140,6 +142,7 @@ export default async function ProdSpecDetailPage({
         hasColumnMappingOverride={hasColumnMappingOverride}
         hasRequiredFieldsOverride={hasRequiredFieldsOverride}
         attachedSupplierCount={prodSpec.suppliers.length}
+        awaitingApproval={awaitingApproval}
         variantCatalogue={allVariants().map((v) => ({
           key: v.key,
           docType: v.docType,
@@ -167,6 +170,53 @@ export default async function ProdSpecDetailPage({
       />
     </div>
   );
+}
+
+// Styles under this prod spec whose LATEST job is AWAITING_REVIEW — the
+// retroactive-approval candidates surfaced in the "Styles awaiting approval"
+// card. We fetch each live style's newest job (with a pending/total asset
+// count) and keep only those still awaiting review; a newer QUEUED/RUNNING/
+// APPROVED job means there's nothing to retroactively approve.
+async function loadAwaitingApproval(prodSpecId: string): Promise<AwaitingApprovalStyle[]> {
+  const styles = await db.style.findMany({
+    where: {
+      prodSpecId,
+      deletedAt: null,
+      archivedAt: null,
+      // Cheap pre-filter so we only inspect styles that have at least one
+      // review-ready job; the latest-job check below is the authority.
+      jobs: { some: { status: "AWAITING_REVIEW" } },
+    },
+    select: {
+      id: true,
+      name: true,
+      poNumber: true,
+      jobs: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: {
+          status: true,
+          _count: { select: { assets: true } },
+          assets: { where: { reviewStatus: "PENDING_REVIEW" }, select: { id: true } },
+        },
+      },
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  const out: AwaitingApprovalStyle[] = [];
+  for (const s of styles) {
+    const latest = s.jobs[0];
+    if (!latest || latest.status !== "AWAITING_REVIEW") continue;
+    out.push({
+      id: s.id,
+      name: s.name,
+      poNumber: s.poNumber,
+      outputCount: latest._count.assets,
+      pendingCount: latest.assets.length,
+    });
+  }
+  return out;
 }
 
 function safeParse<T>(fn: () => T, fallback: T): T {

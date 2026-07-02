@@ -22,6 +22,14 @@ export type ReviewTabAsset = {
   rejectReason: string | null;
   reviewedAt: string | null;
   reviewerEmail: string | null;
+  // Set for carton-capable outputs → the card shows a "Customize" action.
+  carton?: {
+    variantKey: string;
+    widthMm: number;
+    heightMm: number;
+    cartonNumbering: boolean;
+    multipleStyles: boolean;
+  } | null;
 };
 
 export type ReviewTabJob = {
@@ -93,6 +101,8 @@ export function ReviewTab({ styleId, jobs }: { styleId: string; jobs: ReviewTabJ
                     <DeliveredCard
                       key={asset.id}
                       jobId={latestJob.id}
+                      styleId={styleId}
+                      carton={asset.carton ?? null}
                       asset={{
                         id: asset.id,
                         docType: asset.docType,

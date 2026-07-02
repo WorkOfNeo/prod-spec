@@ -609,17 +609,35 @@ export default async function StyleDetail({
     createdAt: j.createdAt.toISOString(),
     claimedByName: j.reviewClaimedBy ? j.reviewClaimedBy.name || j.reviewClaimedBy.email : null,
     claimedAtLabel: j.reviewClaimedAt ? formatDate(j.reviewClaimedAt) : null,
-    assets: j.assets.map((a) => ({
-      id: a.id,
-      docType: a.docType,
-      variantKey: a.variantKey,
-      displayName: a.displayName,
-      fileName: a.fileName,
-      reviewStatus: a.reviewStatus,
-      rejectReason: a.rejectReason,
-      reviewedAt: a.reviewedAt?.toISOString() ?? null,
-      reviewerEmail: a.reviewedBy?.email ?? null,
-    })),
+    assets: j.assets.map((a) => {
+      // Carton-capable outputs get an in-tab "Customize" action (same as the
+      // /review decide page). Capability + print dims come from the layout
+      // variant; the registry is already loaded above (ensureLayoutVariantsLoaded).
+      const baseKey = (a.variantKey ?? "").split("#")[0];
+      const variant = baseKey ? getVariant(baseKey) : undefined;
+      const carton =
+        variant && (variant.cartonNumbering || variant.multipleStyles)
+          ? {
+              variantKey: baseKey,
+              widthMm: variant.defaultWidthMm,
+              heightMm: variant.defaultHeightMm,
+              cartonNumbering: variant.cartonNumbering ?? false,
+              multipleStyles: variant.multipleStyles ?? false,
+            }
+          : null;
+      return {
+        id: a.id,
+        docType: a.docType,
+        variantKey: a.variantKey,
+        displayName: a.displayName,
+        fileName: a.fileName,
+        reviewStatus: a.reviewStatus,
+        rejectReason: a.rejectReason,
+        reviewedAt: a.reviewedAt?.toISOString() ?? null,
+        reviewerEmail: a.reviewedBy?.email ?? null,
+        carton,
+      };
+    }),
   }));
 
   return (
