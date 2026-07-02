@@ -1220,6 +1220,22 @@ model EmailLog {
   @@map("email_logs")
 }
 
+// Resend delivery events (delivered / opened / clicked / bounced) for sent
+// emails, captured via the Resend webhook. Matched to EmailLog by providerId
+// (the Resend message id). Loose refs like EmailLog so it outlives jobs.
+model EmailEvent {
+  id         String   @id @default(cuid())
+  providerId String // Resend message id — matches EmailLog.providerId
+  emailLogId String? // resolved at ingest when the EmailLog is found
+  type       String // delivered | opened | clicked | bounced | complained | ...
+  occurredAt DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([providerId])
+  @@index([emailLogId])
+  @@map("email_events")
+}
+
 // =====================================================
 // Supplier share — the per-approval, supplier-facing link. Created when a
 // job is published (approved); the supplier email carries its URL (/s/<token>)

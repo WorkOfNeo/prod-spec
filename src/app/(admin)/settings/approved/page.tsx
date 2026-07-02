@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireAdminPage } from "@/lib/auth-server";
 import { getSupplierBatchSendEnabled } from "@/lib/settings/app-settings";
 import { SupplierSendSetting } from "./supplier-send-setting";
+import { SupplierPreviewButton, RunBatchNowButton } from "./supplier-send-actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Approved & delivery" };
@@ -15,14 +16,34 @@ export const metadata = { title: "Approved & delivery" };
 export default async function ApprovedDeliveryPage() {
   await requireAdminPage();
 
-  const [enabled, pending] = await Promise.all([
+  const [enabled, pending, batches] = await Promise.all([
     getSupplierBatchSendEnabled(),
     db.supplierSendQueueItem.findMany({
       where: { sentAt: null },
       orderBy: { queuedAt: "desc" },
       take: 500,
     }),
+    db.supplierSendBatch.findMany({ orderBy: { createdAt: "desc" }, take: 15 }),
   ]);
+
+  // "Opened" tracking: collect the emailLogIds referenced by recent batches'
+  // per-supplier outcomes, then find which have an "opened" Resend event.
+  type PerSup = { supplierName?: string; email?: string | null; status?: string; emailLogId?: string | null; outputCount?: number; styleCount?: number };
+  const batchLogIds = [
+    ...new Set(
+      batches.flatMap((b) => (b.perSupplier as PerSup[]).map((p) => p.emailLogId).filter((x): x is string => !!x)),
+    ),
+  ];
+  const openedLogIds = new Set(
+    batchLogIds.length > 0
+      ? (
+          await db.emailEvent.findMany({
+            where: { emailLogId: { in: batchLogIds }, type: "opened" },
+            select: { emailLogId: true },
+          })
+        ).map((e) => e.emailLogId as string)
+      : [],
+  );
 
   // Resolve the loose refs (styleId / customerId / supplierId) in bulk.
   const styleIds = [...new Set(pending.map((p) => p.styleId))];
@@ -97,6 +118,10 @@ export default async function ApprovedDeliveryPage() {
         <SupplierSendSetting initialEnabled={enabled} />
       </div>
 
+      <div className="mt-4">
+        <RunBatchNowButton enabled={enabled} />
+      </div>
+
       {/* Per-supplier summary — who gets what tonight, and to which email. */}
       <h2 className="mt-8 mb-2 text-sm font-semibold text-zinc-700">By supplier</h2>
       <div className="overflow-hidden rounded-lg border border-zinc-200">
@@ -106,12 +131,13 @@ export default async function ApprovedDeliveryPage() {
               <th className="px-4 py-2">Supplier</th>
               <th className="px-4 py-2">Email</th>
               <th className="px-4 py-2">Outputs queued</th>
+              <th className="px-4 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {groupList.length === 0 ? (
               <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-zinc-500">
+                <td colSpan={4} className="px-4 py-6 text-center text-zinc-500">
                   Nothing queued yet. Outputs appear here as soon as they&rsquo;re approved.
                 </td>
               </tr>
@@ -129,6 +155,9 @@ export default async function ApprovedDeliveryPage() {
                     )}
                   </td>
                   <td className="px-4 py-2 tabular-nums text-zinc-700">{g.count}</td>
+                  <td className="px-4 py-2 text-right">
+                    <SupplierPreviewButton supplierId={g.supplierId} supplierName={g.name} />
+                  </td>
                 </tr>
               ))
             )}
@@ -203,9 +232,77 @@ export default async function ApprovedDeliveryPage() {
         </table>
       </div>
 
+      {/* Sent / history — recent nightly (or manual) batch runs. */}
+      <h2 className="mt-8 mb-2 text-sm font-semibold text-zinc-700">Recent sends</h2>
+      <div className="overflow-hidden rounded-lg border border-zinc-200">
+        <table className="w-full text-sm">
+          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+            <tr>
+              <th className="px-4 py-2">When</th>
+              <th className="px-4 py-2">Source</th>
+              <th className="px-4 py-2">Result</th>
+              <th className="px-4 py-2">Suppliers</th>
+              <th className="px-4 py-2">Per-supplier</th>
+            </tr>
+          </thead>
+          <tbody>
+            {batches.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-6 text-center text-zinc-500">
+                  No batch has run yet. Use “Run batch now” above, or wait for the midnight cron.
+                </td>
+              </tr>
+            ) : (
+              batches.map((b) => {
+                const per = (b.perSupplier as PerSup[]) ?? [];
+                return (
+                  <tr key={b.id} className="border-t border-zinc-100 align-top">
+                    <td className="px-4 py-2 text-xs text-zinc-500">
+                      {b.createdAt.toISOString().slice(0, 16).replace("T", " ")}
+                    </td>
+                    <td className="px-4 py-2 text-zinc-600">{b.source}</td>
+                    <td className="px-4 py-2">
+                      <span className="inline-flex rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-700">
+                        {b.status}
+                      </span>
+                      <div className="mt-0.5 text-[11px] text-zinc-400">
+                        {b.sentCount}/{b.outputCount} output(s) sent
+                      </div>
+                    </td>
+                    <td className="px-4 py-2 tabular-nums text-zinc-700">{b.supplierCount}</td>
+                    <td className="px-4 py-2">
+                      {per.length === 0 ? (
+                        <span className="text-zinc-400">—</span>
+                      ) : (
+                        <ul className="space-y-0.5">
+                          {per.map((p, i) => (
+                            <li key={i} className="text-[11px] text-zinc-600">
+                              <span className="font-medium text-zinc-700">{p.supplierName ?? "—"}</span>{" "}
+                              <span className="text-zinc-400">·</span> {p.status}
+                              {p.status === "SENT" && p.emailLogId ? (
+                                openedLogIds.has(p.emailLogId) ? (
+                                  <span className="ml-1 rounded-full bg-emerald-50 px-1.5 text-emerald-700">opened</span>
+                                ) : (
+                                  <span className="ml-1 text-zinc-400">not yet opened</span>
+                                )
+                              ) : null}
+                              {p.status === "NO_EMAIL" ? <span className="ml-1 text-red-500">(no email)</span> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
       <p className="mt-6 max-w-2xl text-xs text-zinc-400">
-        The nightly send, the sent-email log, and supplier open-tracking (Resend) arrive with the
-        next delivery PR. Missing supplier emails resolve once the Monday supplier sync is updated.
+        Missing supplier emails resolve once the Monday supplier sync is updated. Open-tracking needs
+        the Resend webhook pointed at <span className="font-mono">/api/webhooks/resend</span>.
       </p>
     </div>
   );
