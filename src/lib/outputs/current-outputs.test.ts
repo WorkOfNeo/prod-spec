@@ -19,7 +19,7 @@ function ra(
 ) {
   return { jobId, variantKey, docType, reviewStatus, placeholderCount };
 }
-const sorted = (s: Set<string>) => [...s].sort();
+const sorted = (s: Set<string> | Map<string, number>) => [...s.keys()].sort();
 
 // Minimal asset shape selectCurrentAssets needs (newest-job-first input).
 function asset(jobId: string, variantKey: string | null, docType = "CARTON") {
@@ -267,6 +267,8 @@ test("approvedBaseVariantKeys — multi-doc base durable only when ALL docs appr
     new Set(["layout:A"]),
   );
   assert.deepEqual(sorted(all), ["layout:A"]);
+  // Map value = the base's current file count (both suffixes) — feeds the cover.
+  assert.equal(all.get("layout:A"), 2);
 });
 
 test("approvedBaseVariantKeys — only the NEWEST job's assets decide (supersede)", () => {
