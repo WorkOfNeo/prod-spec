@@ -34,6 +34,7 @@ import {
 } from "@/lib/prod-spec/config";
 import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
+import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
 import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
 import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 
@@ -752,6 +753,15 @@ export async function processJob(jobId: string): Promise<void> {
     await enqueueApprovedAssetsForJob(job.id);
   } catch (err) {
     console.warn(`[supplier-send-queue] runner enqueue failed for ${job.id}:`, err);
+  }
+
+  // …and land them in the supplier's own SharePoint folder like a manual
+  // approval would (flag-gated + fail-soft inside the lib; the midnight sweep
+  // retries anything that failed here).
+  try {
+    await pushQueuedSupplierUploads({ styleIds: [job.styleId] });
+  } catch (err) {
+    console.warn(`[supplier-upload] runner push failed for ${job.id}:`, err);
   }
 
   // A scoped no-op run (nothing generated, only the cover refreshed — see the

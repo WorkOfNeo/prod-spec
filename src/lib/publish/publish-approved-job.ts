@@ -3,6 +3,7 @@ import { uploadJobAssets, type UploadResult } from "@/lib/sharepoint/upload";
 import { getFile } from "@/lib/sharepoint/client";
 import { dispatchEmail, type EmailOutcome } from "@/lib/email/dispatch";
 import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
+import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
 import { customerApprovalEmail } from "@/lib/email/templates/review-notification";
 import { getSupplierReviewCcEmails } from "@/lib/settings/app-settings";
 import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
@@ -251,7 +252,7 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
     folderUrl,
     sent: false,
   };
-  let emailOutcome: EmailOutcome | null = null;
+  const emailOutcome: EmailOutcome | null = null;
 
   if (skipDelivery) {
     // Customer delivers own — no supplier email, no share link created.
@@ -347,6 +348,19 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
     await enqueueApprovedAssetsForJob(job.id);
   } catch (err) {
     console.warn(`[supplier-send-queue] job enqueue failed for ${job.id}:`, err);
+  }
+
+  // Push the just-queued outputs into the supplier's OWN SharePoint folder
+  // (Supplier.sharepointUrl → "<style> – <customer>") so the files are in
+  // place before the nightly digest references them. Fail-soft and flag-gated
+  // inside the lib — a folder hiccup surfaces on /settings/approved (FAILED,
+  // retried by the midnight sweep), never unwinds the publish.
+  if (!skipDelivery) {
+    try {
+      await pushQueuedSupplierUploads({ styleIds: [job.styleId] });
+    } catch (err) {
+      console.warn(`[supplier-upload] publish push failed for ${job.id}:`, err);
+    }
   }
 
   return { uploaded, folderUrl, sharepointConfigured, notification, email: emailOutcome };
