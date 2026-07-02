@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ReviewCartonCustomize } from "./review/review-carton-customize";
+import { IgnoreConfirmModal } from "./review/ignore-confirm-modal";
+import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 
 type CartonInfo = {
   variantKey: string;
@@ -59,6 +61,27 @@ export function DeliveredCard({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showReject, setShowReject] = useState(false);
+  const [showIgnore, setShowIgnore] = useState(false);
+  // Framing pages (cover / general info) regenerate every run — not ignorable.
+  const ignoreBase = (asset.variantKey ?? "").split("#")[0];
+  const canIgnore = ignoreBase !== COVER_VARIANT_KEY && ignoreBase !== GENERAL_INFO_VARIANT_KEY;
+
+  async function ignore() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/admin/job-assets/${asset.id}/ignore`, { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErr(body.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setShowIgnore(false);
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function approve() {
     setBusy(true);
@@ -155,6 +178,18 @@ export function DeliveredCard({
           >
             <CheckIcon />
           </button>
+          {canIgnore ? (
+            <button
+              type="button"
+              onClick={() => setShowIgnore(true)}
+              disabled={busy}
+              title="Ignore for this style — skipped in generation, SharePoint and the nightly email"
+              aria-label="Ignore for this style"
+              className="inline-flex items-center justify-center rounded-md border border-zinc-300 bg-white p-1.5 text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+            >
+              <IgnoreIcon />
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => setShowReject(true)}
@@ -192,6 +227,17 @@ export function DeliveredCard({
             setShowReject(false);
             router.refresh();
           }}
+        />
+      )}
+
+      {showIgnore && (
+        <IgnoreConfirmModal
+          title={`Ignore “${asset.displayName}” for this style?`}
+          context={asset.fileName}
+          pending={busy}
+          error={err}
+          onCancel={() => setShowIgnore(false)}
+          onConfirm={ignore}
         />
       )}
     </>
@@ -246,6 +292,16 @@ function XIcon() {
     <svg {...iconProps()}>
       <line x1="18" y1="6" x2="6" y2="18" />
       <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+// lucide "ban" — circle with a diagonal slash.
+function IgnoreIcon() {
+  return (
+    <svg {...iconProps()}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="m4.9 4.9 14.2 14.2" />
     </svg>
   );
 }

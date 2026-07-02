@@ -11,6 +11,7 @@ import {
   exclusionReasonText,
   type DocTypeRulesMap,
 } from "@/lib/outputs/exclusion";
+import { IGNORED_EXCLUSION_REASON, loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 import type { MondayItem } from "@/lib/monday/client";
 import { effectiveStyleItem, resolveMappedField, STYLE_FIELD_LABELS } from "./resolved-fields";
 import type { DetailFieldKey, MissingDetailField } from "./detail-fields";
@@ -28,11 +29,16 @@ export type OutputReadiness = {
   name: string;
   ready: boolean;
   missing: MissingDetailField[];
-  // A doc-type keyword rule matched this style → this output won't be
-  // generated (and that's intentional). When excluded, `ready`/`missing` are
-  // moot — callers treat the output as decided, not as pending work.
+  // A doc-type keyword rule matched this style — OR the operator ignored the
+  // output for this style — so it won't be generated (and that's intentional).
+  // When excluded, `ready`/`missing` are moot — callers treat the output as
+  // decided, not as pending work.
   excluded?: boolean;
   exclusionReason?: string;
+  // Set alongside `excluded` when the exclusion is a per-style operator ignore
+  // (StyleOutputIgnore) rather than a doc-type rule — the UI shows a distinct
+  // "Ignored" pill with an undo, everything else treats both the same.
+  ignored?: boolean;
 };
 
 // The minimal style shape readiness needs. Mirrors what the auto-enqueue
@@ -78,6 +84,10 @@ export function outputReadinessForStyle(
   // type matches as excluded. `docTypeLabels` only flavours the reason text.
   rules?: DocTypeRulesMap,
   docTypeLabels?: Record<string, string>,
+  // Per-style operator ignores (loadIgnoredOutputKeys) — base variantKeys the
+  // operator marked "not wanted for this style". Marked excluded like a rule
+  // hit, plus `ignored: true` so the UI can tell them apart.
+  ignoredKeys?: ReadonlySet<string>,
 ): OutputReadiness[] {
   const enabledOutputs = parseProdSpecOutputs(style.prodSpec?.outputs ?? []).filter(
     (o) => o.enabled !== false,
@@ -107,20 +117,25 @@ export function outputReadinessForStyle(
       hasRules && docType
         ? matchExclusionRules(rules[docType], (f) => resolve(f as keyof ColumnMapping))
         : null;
+    // An explicit per-style ignore wins over (and reads clearer than) a rule
+    // hit — both mark the output excluded either way.
+    const isIgnored = ignoredKeys?.has(output.variantKey) === true;
     return {
       variantKey: output.variantKey,
       name: variant?.name ?? output.variantKey,
       ready: missing.length === 0,
       missing,
-      ...(hit
-        ? {
-            excluded: true,
-            exclusionReason: exclusionReasonText(
-              hit,
-              docTypeLabel(docType ?? "", docTypeLabels),
-            ),
-          }
-        : {}),
+      ...(isIgnored
+        ? { excluded: true, ignored: true, exclusionReason: IGNORED_EXCLUSION_REASON }
+        : hit
+          ? {
+              excluded: true,
+              exclusionReason: exclusionReasonText(
+                hit,
+                docTypeLabel(docType ?? "", docTypeLabels),
+              ),
+            }
+          : {}),
     };
   });
 }
@@ -159,8 +174,12 @@ export async function pendingOutputKeysForStyle(
   // must NEVER be enqueued — the runner would skip it, leaving it un-generated
   // and forever "pending", which would re-trigger auto-runs (and NO_OUTPUTS
   // failures when it's the only one left). Treat excluded as not-pending.
-  const rules = await loadDocTypeExclusionRules();
-  const ready = outputReadinessForStyle(style, rules)
+  // Per-style operator ignores are excluded the same way.
+  const [rules, ignoredKeys] = await Promise.all([
+    loadDocTypeExclusionRules(),
+    loadIgnoredOutputKeys(styleId, client),
+  ]);
+  const ready = outputReadinessForStyle(style, rules, undefined, ignoredKeys)
     .filter((o) => o.ready && !o.excluded)
     .map((o) => o.variantKey);
   if (ready.length === 0) return [];

@@ -162,6 +162,7 @@ function out(state: OutputState, hasAsset: boolean): CurrentOutput {
     generatedAt: hasAsset ? new Date("2026-06-01T00:00:00Z") : null,
     fromLatestGeneration: hasAsset,
     exclusionReason: null,
+    ignored: false,
   };
 }
 

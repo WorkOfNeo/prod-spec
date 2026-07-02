@@ -25,6 +25,7 @@ import { styleReadinessNotice } from "@/lib/styles/readiness-notice";
 import { OutputReadinessNotice, type ReadinessHrefs } from "@/components/output-readiness-notice";
 import { mondayItemUrl } from "@/lib/monday/url";
 import { loadDocTypeExclusionRules, loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
+import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 import { RerunButton } from "./rerun-button";
 import { StyleOutputCard, type StyleOutputCardProps } from "./style-output-card";
 import { ProdSpecTab } from "./prod-spec-tab";
@@ -272,11 +273,13 @@ export default async function StyleDetail({
     fields: requiredKeys.map((k) => ({ label: STYLE_FIELD_LABELS[k], ok: !reqMissing.has(k) })),
   };
 
-  // Doc-type keyword exclusion rules → mark outputs whose type is skipped for
-  // this style (e.g. socks/shoes → wash care), with a reason for the card.
-  const [exclusionRules, exclusionLabels] = await Promise.all([
+  // Doc-type keyword exclusion rules + per-style operator ignores → mark
+  // outputs skipped for this style (rule hit, or ignored from the review
+  // surfaces), with a reason for the card.
+  const [exclusionRules, exclusionLabels, ignoredOutputKeys] = await Promise.all([
     loadDocTypeExclusionRules(),
     loadDocTypeLabels(),
+    loadIgnoredOutputKeys(id),
   ]);
 
   // Per-output readiness for the banner — each output generates as soon as
@@ -294,6 +297,7 @@ export default async function StyleDetail({
         },
         exclusionRules,
         exclusionLabels,
+        ignoredOutputKeys,
       )
     : [];
 

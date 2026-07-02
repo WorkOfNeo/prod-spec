@@ -35,6 +35,7 @@ import {
 import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
 import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
+import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 
 const STALE_RUNNING_MS = 15 * 60 * 1000;
 
@@ -333,6 +334,10 @@ export async function processJob(jobId: string): Promise<void> {
   // excluded. `excludedOutputs` lets us tell "all outputs intentionally
   // skipped" apart from a real misconfiguration below.
   const exclusionRules = await loadDocTypeExclusionRules();
+  // Per-style operator ignores — skipped exactly like a rule hit, and counted
+  // into excludedOutputs so an all-ignored run reads as intentionally empty
+  // rather than NO_OUTPUTS.
+  const ignoredKeys = await loadIgnoredOutputKeys(job.styleId);
   const exclusionActive = Object.keys(exclusionRules).length > 0;
   const exclusionLabels = exclusionActive ? await loadDocTypeLabels() : {};
   const resolveExclusionField: ((field: string) => string) | null = exclusionActive
@@ -366,6 +371,18 @@ export async function processJob(jobId: string): Promise<void> {
           jobId: job.id,
           level: "WARN",
           message: `skipping output: variant "${output.variantKey}" not in registry`,
+        },
+      });
+      continue;
+    }
+    // Per-style operator ignore — never render this output for this style.
+    if (ignoredKeys.has(variant.key)) {
+      excludedOutputs.push(variant.key);
+      await db.log.create({
+        data: {
+          jobId: job.id,
+          level: "INFO",
+          message: `skipping output ${variant.key}: ignored for this style`,
         },
       });
       continue;

@@ -7,6 +7,7 @@ import { resolveNotificationsForJob } from "@/lib/notifications/user-notificatio
 import { claimReviewIfUnclaimed } from "@/lib/review-flow/claim";
 import { createOrReopenRejectionTicket } from "@/lib/tickets/rejection-tickets";
 import { stampReviewEnded } from "@/lib/publish/publish-approved-job";
+import { ignoreBaseKey, loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 import { decodeImageAttachments, MAX_IMAGE_DATA_URL_CHARS } from "@/lib/images/decode-data-url";
 
 export const runtime = "nodejs";
@@ -108,12 +109,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   // Roll the job up if every asset has been decided. The all-approved
   // branch can't happen from here (this asset just got rejected), so the
-  // roll-up is always to REJECTED.
+  // roll-up is always to REJECTED. Assets of outputs ignored for this style
+  // don't hold the review open — they count as decided.
   const assets = await db.jobAsset.findMany({
     where: { jobId: asset.jobId },
-    select: { reviewStatus: true },
+    select: { reviewStatus: true, variantKey: true, docType: true },
   });
-  const stillPending = assets.some((a) => a.reviewStatus === "PENDING_REVIEW");
+  const ignoredKeys = await loadIgnoredOutputKeys(asset.job.styleId);
+  const stillPending = assets.some(
+    (a) =>
+      a.reviewStatus === "PENDING_REVIEW" &&
+      !ignoredKeys.has(ignoreBaseKey(a.variantKey, a.docType)),
+  );
   let settled: "REJECTED" | undefined;
   if (!stillPending && asset.job.status !== "APPROVED" && asset.job.status !== "REJECTED") {
     settled = "REJECTED";

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { outputReadinessForStyle, type ReadinessStyle } from "@/lib/styles/output-readiness";
+import { loadIgnoredOutputKeysByStyle } from "@/lib/outputs/output-ignores";
 import type { RunnableStyle } from "@/lib/queue/bulk-run";
 
 // =====================================================
@@ -127,6 +128,10 @@ export async function computeProdSpecRerunPlan(prodSpecId: string): Promise<Prod
   });
   const inflightSet = new Set(inflight.map((j) => j.styleId));
 
+  // Per-style operator ignores — an ignored output must not count as "missing"
+  // (it would re-enqueue on every rerun and never render).
+  const ignoredByStyle = await loadIgnoredOutputKeysByStyle(styleIds);
+
   const toRerun: RunnableStyle[] = [];
   const sample: AffectedStyle[] = [];
   let withMissing = 0;
@@ -152,8 +157,13 @@ export async function computeProdSpecRerunPlan(prodSpecId: string): Promise<Prod
     const variantKeys: string[] = [];
     let missingN = 0;
     let rejectedN = 0;
-    for (const o of outputReadinessForStyle(c as ReadinessStyle)) {
-      if (!o.ready) continue;
+    for (const o of outputReadinessForStyle(
+      c as ReadinessStyle,
+      undefined,
+      undefined,
+      ignoredByStyle.get(c.id),
+    )) {
+      if (!o.ready || o.excluded) continue;
       const b = base(o.variantKey);
       if (!hasAsset.has(b)) {
         variantKeys.push(o.variantKey); // new / missing

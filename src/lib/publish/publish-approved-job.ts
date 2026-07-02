@@ -7,6 +7,7 @@ import { customerApprovalEmail } from "@/lib/email/templates/review-notification
 import { getSupplierReviewCcEmails } from "@/lib/settings/app-settings";
 import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
 import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
+import { ignoreBaseKey, loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 import { upsertShareForStyle } from "@/lib/supplier-share/share";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { resolveStyleCertificates } from "@/lib/styles/resolved-fields";
@@ -77,11 +78,20 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
     throw new PublishError(400, `Cannot approve job in status ${job.status}`);
   }
 
+  // Outputs the operator ignored for this style are dropped from EVERYTHING a
+  // publish does externally: the SharePoint upload, the approval cascade, the
+  // supplier-send queue and the email file list. `publishable` is the asset
+  // set every step below works from.
+  const ignoredKeys = await loadIgnoredOutputKeys(job.styleId);
+  const isIgnoredAsset = (a: { variantKey: string | null; docType: string }) =>
+    ignoredKeys.has(ignoreBaseKey(a.variantKey, a.docType));
+  const publishable = job.assets.filter((a) => !isIgnoredAsset(a));
+
   // Ship-gate (lives here so BOTH approval paths enforce it): placeholder
   // artifacts (dashed missing-artwork tiles, "No carton EAN configured")
   // are review-safe but must never reach print. Rejected assets are
   // excluded — their gaps are already being handled via tickets.
-  const placeholderAssets = job.assets.filter(
+  const placeholderAssets = publishable.filter(
     (a) => a.placeholderCount > 0 && a.reviewStatus !== "REJECTED",
   );
   if (placeholderAssets.length > 0) {
@@ -115,7 +125,7 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
   const uploaded: UploadResult[] = sharepointConfigured
     ? await uploadJobAssets({
         folderPath,
-        assets: job.assets.map((a) => ({
+        assets: publishable.map((a) => ({
           fileName: a.fileName,
           docType: a.docType,
           pdf: Buffer.from(a.pdf),
@@ -133,9 +143,15 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
       data: { status: "APPROVED" },
     }),
     // Cascade the approval to any assets that were still pending. Assets
-    // already individually decided (approved or rejected) keep their state.
+    // already individually decided (approved or rejected) keep their state;
+    // ignored outputs' assets stay PENDING — approving them would re-arm the
+    // supplier-send queue for an output that must never ship.
     db.jobAsset.updateMany({
-      where: { jobId: job.id, reviewStatus: "PENDING_REVIEW" },
+      where: {
+        jobId: job.id,
+        reviewStatus: "PENDING_REVIEW",
+        id: { in: publishable.map((a) => a.id) },
+      },
       data: {
         reviewStatus: "APPROVED",
         reviewedAt: new Date(),
@@ -163,7 +179,7 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
 
   // Close the rejection-ticket threads of every output that is approved
   // after the cascade (individually rejected assets keep their tickets).
-  const approvedKeys = job.assets
+  const approvedKeys = publishable
     .filter((a) => a.reviewStatus !== "REJECTED")
     .map((a) => a.variantKey);
   const resolvedTickets = await resolveRejectionTicketsFor(job.styleId, approvedKeys);
@@ -211,7 +227,7 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
   const files =
     uploaded.length > 0
       ? uploaded.map((f) => ({ name: f.name, webUrl: f.webUrl as string | null }))
-      : job.assets.map((a) => ({ name: a.fileName, webUrl: null }));
+      : publishable.map((a) => ({ name: a.fileName, webUrl: null }));
 
   // Recipient: the supplier's mirrored inbox (To), CC the named contact
   // person. Both come from the Monday suppliers board. When the board

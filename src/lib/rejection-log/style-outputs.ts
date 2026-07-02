@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { loadDocTypeExclusionRules, loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { outputReadinessForStyle, type ReadinessStyle } from "@/lib/styles/output-readiness";
+import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 import { baseVariantKey } from "@/lib/tickets/orphan";
 
 // =====================================================
@@ -82,14 +83,21 @@ export async function styleOutputBases(styleId: string): Promise<StyleOutputBase
   });
   if (!style) return [];
 
-  // Pass the doc-type keyword rules so excluded outputs (socks → no wash care)
-  // carry their `excluded`/`exclusionReason` — the rejection log surfaces the
-  // SAME "not generated — <rule>" text the review screens show.
-  const [exclusionRules, docTypeLabels] = await Promise.all([
+  // Pass the doc-type keyword rules + per-style operator ignores so excluded
+  // outputs (socks → no wash care, or an output ignored for this style) carry
+  // their `excluded`/`exclusionReason` — the rejection log surfaces the SAME
+  // "not generated — <reason>" text the review screens show.
+  const [exclusionRules, docTypeLabels, ignoredKeys] = await Promise.all([
     loadDocTypeExclusionRules(),
     loadDocTypeLabels(),
+    loadIgnoredOutputKeys(styleId),
   ]);
-  const readiness = outputReadinessForStyle(style as ReadinessStyle, exclusionRules, docTypeLabels);
+  const readiness = outputReadinessForStyle(
+    style as ReadinessStyle,
+    exclusionRules,
+    docTypeLabels,
+    ignoredKeys,
+  );
   const readinessByBase = new Map(readiness.map((r) => [baseVariantKey(r.variantKey), r]));
 
   // Newest non-FAILED asset per base. Assets are ordered newest-first, so the

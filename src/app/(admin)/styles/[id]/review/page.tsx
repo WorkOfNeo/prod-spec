@@ -9,6 +9,7 @@ import { SupplierPushActions } from "./supplier-push-actions";
 import { ReviewClaim } from "./claim-review";
 import { ReviewLeaveGuard } from "./leave-guard";
 import { ReviewCartonCustomize } from "./review-carton-customize";
+import { UndoIgnoreButton } from "./undo-ignore-button";
 import { RunOutputButton } from "../run-output-button";
 import { LogStyleView } from "@/components/log-style-view";
 import { groupByDocType, DocTypeAccordion } from "../doc-type-groups";
@@ -16,6 +17,7 @@ import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { getVariant } from "@/lib/pdf/template-registry";
 import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
 import { baseVariantKey } from "@/lib/tickets/orphan";
+import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import {
   getCurrentOutputsForStyle,
   rollupOutputSlots,
@@ -136,6 +138,16 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     .filter((o) => o.placeholderCount === 0 && o.jobAssetId)
     .map((o) => o.jobAssetId as string);
   const rejectAssetIds = pendingReviewable.map((o) => o.jobAssetId as string);
+  // Bundle framing (cover / general info) regenerates with every run — it
+  // can't be ignored per style, so it's excluded from "Ignore all" and its
+  // card hides the Ignore button.
+  const ignorableOutput = (o: CurrentOutput) => {
+    const b = baseVariantKey(o.variantKey);
+    return b !== COVER_VARIANT_KEY && b !== GENERAL_INFO_VARIANT_KEY;
+  };
+  const ignoreAssetIds = pendingReviewable
+    .filter(ignorableOutput)
+    .map((o) => o.jobAssetId as string);
   const blockedCount = pendingReviewable.filter((o) => o.placeholderCount > 0).length;
   // Admin push-to-supplier targets APPROVED, print-safe outputs only.
   const pushableCount = reviewable.filter(
@@ -275,6 +287,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             styleContext={styleContext}
             approveAssetIds={approveAssetIds}
             rejectAssetIds={rejectAssetIds}
+            ignoreAssetIds={ignoreAssetIds}
             blockedCount={blockedCount}
           />
         </div>
@@ -398,9 +411,9 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
       {excludedOutputs.length > 0 ? (
         <div className="mt-3">
           <DocTypeAccordion
-            label="Excluded — won't be generated"
+            label="Excluded / ignored — won't be generated"
             count={excludedOutputs.length}
-            rightHint="skipped by a document-type keyword rule"
+            rightHint="skipped by a doc-type rule, or ignored for this style"
             defaultOpen={false}
           >
             <ul className="divide-y divide-zinc-100 text-sm">
@@ -409,11 +422,25 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                   <span className="font-medium text-zinc-700">{o.name}</span>
                   <span className="flex items-center gap-2 text-xs">
                     {o.exclusionReason ? (
-                      <span className="text-amber-700">{o.exclusionReason}</span>
+                      <span className={o.ignored ? "text-zinc-500" : "text-amber-700"}>
+                        {o.exclusionReason}
+                      </span>
                     ) : null}
-                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">
-                      Excluded
-                    </span>
+                    {o.ignored ? (
+                      <>
+                        <span className="rounded-full border border-zinc-300 bg-zinc-100 px-2 py-0.5 font-semibold text-zinc-600">
+                          ⊘ Ignored
+                        </span>
+                        <UndoIgnoreButton
+                          styleId={style.id}
+                          variantKey={o.variantKey.split("#")[0]}
+                        />
+                      </>
+                    ) : (
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">
+                        Excluded
+                      </span>
+                    )}
                   </span>
                 </li>
               ))}
@@ -448,6 +475,8 @@ function OutputReviewCard({
   const baseKey = o.variantKey.split("#")[0];
   const variant = getVariant(baseKey);
   const cartonCapable = Boolean(variant && (variant.cartonNumbering || variant.multipleStyles));
+  // Framing pages (cover / general info) regenerate every run — not ignorable.
+  const canIgnore = baseKey !== COVER_VARIANT_KEY && baseKey !== GENERAL_INFO_VARIANT_KEY;
   const dotClass =
     o.reviewStatus === "APPROVED"
       ? "bg-emerald-500"
@@ -549,6 +578,7 @@ function OutputReviewCard({
         outputTitle={o.name}
         styleContext={styleContext}
         canPush={canPush}
+        canIgnore={canIgnore}
         customizeSlot={
           cartonCapable && variant ? (
             <ReviewCartonCustomize

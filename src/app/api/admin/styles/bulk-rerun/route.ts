@@ -7,6 +7,7 @@ import { isAdmin } from "@/lib/roles";
 import { triggerRunner } from "@/lib/queue/trigger";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
+import { loadIgnoredOutputKeysByStyle } from "@/lib/outputs/output-ignores";
 import type { JobStatus } from "@/generated/prisma/enums";
 
 export const runtime = "nodejs";
@@ -102,11 +103,15 @@ export async function POST(req: NextRequest) {
   // pending (no ready outputs, or all already done) or one mid-flight is
   // skipped — running it would render placeholders or redo finished work.
   const runnable: Array<{ id: string; prodSpecId: string | null; variantKeys: string[] }> = [];
+  // Per-style operator ignores — never enqueue those outputs (the runner
+  // would skip them anyway; filtering here keeps the runnable set honest).
+  const ignoredByStyle = await loadIgnoredOutputKeysByStyle(candidateIds);
+
   for (const c of candidates) {
     if (inflightSet.has(c.id)) continue;
     const generated = generatedByStyle.get(c.id);
-    const pending = outputReadinessForStyle(c)
-      .filter((o) => o.ready)
+    const pending = outputReadinessForStyle(c, undefined, undefined, ignoredByStyle.get(c.id))
+      .filter((o) => o.ready && !o.excluded)
       .map((o) => o.variantKey)
       .filter((k) => !generated?.has(k));
     if (pending.length === 0) continue;

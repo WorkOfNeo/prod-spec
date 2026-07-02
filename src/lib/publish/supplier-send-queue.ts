@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 
 // Nightly supplier-send queue (WS2). One row per approved (style, output slot).
 //
@@ -41,6 +42,12 @@ export async function enqueueApprovedAsset(asset: ApprovableAsset): Promise<void
   if (!style) return;
 
   const variantKey = baseKey(asset.variantKey, asset.docType);
+
+  // Choke point for the per-style operator ignore: an ignored output must
+  // never (re)enter the nightly queue, whichever approval path enqueued it
+  // (per-asset approve, job publish cascade, runner auto-approve).
+  const ignoredKeys = await loadIgnoredOutputKeys(asset.styleId);
+  if (ignoredKeys.has(variantKey)) return;
   const existing = await db.supplierSendQueueItem.findUnique({
     where: { styleId_variantKey: { styleId: asset.styleId, variantKey } },
     select: { jobAssetId: true },

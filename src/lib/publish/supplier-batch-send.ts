@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { dispatchEmail } from "@/lib/email/dispatch";
 import { getSupplierBatchSendEnabled } from "@/lib/settings/app-settings";
+import { loadIgnoredOutputKeysByStyle } from "@/lib/outputs/output-ignores";
 
 // Nightly supplier-send batch (WS2b). Groups the unsent send-queue by supplier
 // → customer and sends ONE digest email per supplier. Replaces the old
@@ -109,7 +110,7 @@ export async function runSupplierSendBatch(opts?: { source?: "midnight" | "manua
   const enabled = await getSupplierBatchSendEnabled();
   const baseUrl = (process.env.PROD_SPEC_BASE_URL ?? "").replace(/\/$/, "");
 
-  const pending = (await db.supplierSendQueueItem.findMany({
+  let pending = (await db.supplierSendQueueItem.findMany({
     where: { sentAt: null },
     orderBy: { queuedAt: "asc" },
     select: {
@@ -122,6 +123,25 @@ export async function runSupplierSendBatch(opts?: { source?: "midnight" | "manua
       supplierId: true,
     },
   })) as QueueItem[];
+
+  // Send-time guard for the per-style operator ignore. The ignore endpoint
+  // already deletes unsent rows, so this only catches items that slipped in
+  // between (a re-approval race, or an enqueue path predating the ignore) —
+  // drop them from the queue so they neither send tonight nor linger as
+  // forever-pending on /settings/approved.
+  const ignoredByStyle = await loadIgnoredOutputKeysByStyle([
+    ...new Set(pending.map((p) => p.styleId)),
+  ]);
+  const ignoredItems = pending.filter((p) => ignoredByStyle.get(p.styleId)?.has(p.variantKey));
+  if (ignoredItems.length > 0) {
+    await db.supplierSendQueueItem.deleteMany({
+      where: { id: { in: ignoredItems.map((i) => i.id) } },
+    });
+    console.warn(
+      `[supplier-batch-send] dropped ${ignoredItems.length} queued item(s) whose output is ignored for the style`,
+    );
+    pending = pending.filter((p) => !ignoredByStyle.get(p.styleId)?.has(p.variantKey));
+  }
 
   if (pending.length === 0) {
     const batch = await db.supplierSendBatch.create({
