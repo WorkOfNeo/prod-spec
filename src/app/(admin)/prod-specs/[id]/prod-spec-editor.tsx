@@ -23,6 +23,7 @@ import {
 } from "./care-standard-panel";
 import { AddOutputPicker, type VariantInfo } from "./add-output-picker";
 import { RerunStylesPanel } from "./rerun-styles-panel";
+import { ApproveStylesPanel, type AwaitingApprovalStyle } from "./approve-styles-panel";
 import { TestPanel, type TestStyle } from "./test-panel";
 
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
@@ -71,6 +72,9 @@ type Props = {
   careLabels: PanelCareLabel[];
   washSymbols: PanelSymbol[];
   careTranslationsByLabel: Record<string, Record<string, string>>;
+  // Styles under this spec whose latest job is still AWAITING_REVIEW —
+  // the retroactive bulk-approve card on the General tab.
+  awaitingApproval: AwaitingApprovalStyle[];
 };
 
 export function ProdSpecEditor(props: Props) {
@@ -416,6 +420,10 @@ export function ProdSpecEditor(props: Props) {
                   setPageSettings((prev) => ({ ...prev, generalInfo }))
                 }
               />
+            </Section>
+
+            <Section title="Styles awaiting approval">
+              <ApproveStylesPanel prodSpecId={props.prodSpecId} styles={props.awaitingApproval} />
             </Section>
           </div>
 
