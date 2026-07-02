@@ -7,6 +7,7 @@ import { uploadJobAssets } from "@/lib/sharepoint/upload";
 import { getFile } from "@/lib/sharepoint/client";
 import { upsertShareForStyle } from "@/lib/supplier-share/share";
 import { perOutputDeliveryEnabled } from "@/lib/review-flow/flags";
+import { ignoreBaseKey, loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 
 // =====================================================
 // Per-output supplier delivery (per-output refactor, phase 3).
@@ -38,7 +39,11 @@ export async function deliverOutput(jobAssetId: string): Promise<EmailOutcome | 
   });
   if (!asset || asset.reviewStatus !== "APPROVED") return null;
   const style = asset.job.style;
-  const variantBase = (asset.variantKey ?? `doc:${asset.docType}`).split("#")[0];
+  const variantBase = ignoreBaseKey(asset.variantKey, asset.docType);
+
+  // Ignored for this style — never deliver (no upload, no supplier email).
+  const ignoredKeys = await loadIgnoredOutputKeys(style.id);
+  if (ignoredKeys.has(variantBase)) return null;
 
   // Upload just this one asset (best-effort; publish continues without it).
   const sharepointConfigured = isSharepointConfigured();

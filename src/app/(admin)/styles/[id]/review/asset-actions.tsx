@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { EmailSimulationDialog, type EmailOutcomeView } from "@/components/email-simulation-dialog";
 import { RejectModal } from "./reject-modal";
+import { IgnoreConfirmModal } from "./ignore-confirm-modal";
 import { type PreparedImage } from "@/lib/images/downscale-image";
 
 // Per-output decision UI on the review screen. Approve / Reject hit the
@@ -37,9 +38,10 @@ export function AssetActions({
   customizeSlot?: ReactNode;
 }) {
   const router = useRouter();
-  const [pending, setPending] = useState<"approve" | "reject" | null>(null);
+  const [pending, setPending] = useState<"approve" | "reject" | "ignore" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
+  const [ignoring, setIgnoring] = useState(false);
   const [email, setEmail] = useState<EmailOutcomeView | null>(null);
   const [publishNote, setPublishNote] = useState<string | null>(null);
   const [pushing, setPushing] = useState(false);
@@ -112,6 +114,51 @@ export function AssetActions({
       if (body.settled === "REJECTED") {
         // Last open output rejected — the job settled. Same exit as the
         // job-level reject: back to the style page.
+        router.push(`/styles/${styleId}`);
+      }
+      router.refresh();
+    } finally {
+      setPending(null);
+    }
+  }
+
+  // Ignore — the third decision: this output isn't wanted for THIS style.
+  // Confirmed via IgnoreConfirmModal (scope + consequences spelled out).
+  // Ignoring the last open output settles the job like a decision would, so
+  // the response mirrors approve's settle handling.
+  async function ignore() {
+    setError(null);
+    setPending("ignore");
+    try {
+      const res = await fetch(`/api/admin/job-assets/${assetId}/ignore`, { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        settled?: "APPROVED" | "REJECTED";
+        email?: EmailOutcomeView | null;
+        publishError?: string;
+      };
+      if (!res.ok) {
+        setError(body.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setIgnoring(false);
+      if (body.publishError) {
+        setError(`Ignored, but publish failed: ${body.publishError}`);
+        router.refresh();
+        return;
+      }
+      if (body.settled === "APPROVED") {
+        // The remaining outputs were all approved → the job just published.
+        setPublishNote("Output ignored — remaining outputs published.");
+        if (body.email) {
+          setEmail(body.email);
+        } else {
+          router.push(`/styles/${styleId}`);
+          router.refresh();
+        }
+        return;
+      }
+      if (body.settled === "REJECTED") {
         router.push(`/styles/${styleId}`);
       }
       router.refresh();
@@ -200,6 +247,15 @@ export function AssetActions({
           </button>
           <button
             type="button"
+            onClick={() => setIgnoring(true)}
+            disabled={pending !== null}
+            title="Not wanted for this style — skip it in generation, SharePoint and the nightly email"
+            className="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+          >
+            {pending === "ignore" ? "Ignoring…" : "⊘ Ignore"}
+          </button>
+          <button
+            type="button"
             onClick={approve}
             disabled={pending !== null || blocked}
             title={blocked ? blockedTitle : "Approve this output"}
@@ -223,15 +279,28 @@ export function AssetActions({
       ) : null}
 
       {isRejected ? (
-        <button
-          type="button"
-          onClick={approve}
-          disabled={pending !== null || blocked}
-          title={blocked ? blockedTitle : "Approve this output anyway"}
-          className="self-start rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {pending === "approve" ? "Approving…" : "✓ Approve anyway"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={approve}
+            disabled={pending !== null || blocked}
+            title={blocked ? blockedTitle : "Approve this output anyway"}
+            className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {pending === "approve" ? "Approving…" : "✓ Approve anyway"}
+          </button>
+          {/* A rejected output that turns out to be "shouldn't exist for this
+              style" resolves via Ignore — closes the ticket, stops re-runs. */}
+          <button
+            type="button"
+            onClick={() => setIgnoring(true)}
+            disabled={pending !== null}
+            title="Not wanted for this style — skip it in generation, SharePoint and the nightly email"
+            className="rounded-md px-2 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 disabled:opacity-50"
+          >
+            {pending === "ignore" ? "Ignoring…" : "⊘ Ignore"}
+          </button>
+        </div>
       ) : null}
 
       {error ? <span className="text-xs text-red-600">{error}</span> : null}
@@ -260,6 +329,17 @@ export function AssetActions({
           error={error}
           onCancel={() => setRejecting(false)}
           onConfirm={reject}
+        />
+      ) : null}
+
+      {ignoring ? (
+        <IgnoreConfirmModal
+          title={`Ignore “${outputTitle}” for this style?`}
+          context={styleContext}
+          pending={pending === "ignore"}
+          error={error}
+          onCancel={() => setIgnoring(false)}
+          onConfirm={ignore}
         />
       ) : null}
 

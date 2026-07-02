@@ -35,6 +35,7 @@ function output(over: Partial<CurrentOutput> & { state: OutputState }): CurrentO
     generatedAt: null,
     fromLatestGeneration: false,
     exclusionReason: null,
+    ignored: false,
     ...over,
   };
 }

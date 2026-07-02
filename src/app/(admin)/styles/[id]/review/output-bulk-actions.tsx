@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { RejectModal } from "./reject-modal";
+import { IgnoreConfirmModal } from "./ignore-confirm-modal";
 
 // Per-output bulk shortcuts. Unlike the old job-level buttons, these act on
 // the STYLE's current to-review outputs — which can span multiple generation
@@ -24,8 +25,9 @@ export function OutputBulkActions({
   blockedCount: number;
 }) {
   const router = useRouter();
-  const [pending, setPending] = useState<"approve" | "reject" | null>(null);
+  const [pending, setPending] = useState<"approve" | "reject" | "ignore" | null>(null);
   const [rejecting, setRejecting] = useState(false);
+  const [ignoring, setIgnoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
 
@@ -85,6 +87,27 @@ export function OutputBulkActions({
     }
   }
 
+  // Ignore all — every pending output (blocked ones included: ignoring is
+  // exactly how a placeholder-blocked output that shouldn't exist gets
+  // resolved). Confirmed via the same dialog as the per-output button.
+  async function ignoreAll() {
+    setError(null);
+    setPending("ignore");
+    try {
+      const { ok, failed } = await runAll(
+        rejectAssetIds,
+        (id) => fetch(`/api/admin/job-assets/${id}/ignore`, { method: "POST" }),
+        "Ignoring",
+      );
+      setIgnoring(false);
+      if (failed > 0) setError(`Ignored ${ok}, ${failed} failed.`);
+      router.refresh();
+    } finally {
+      setPending(null);
+      setProgress(null);
+    }
+  }
+
   const nothingToApprove = approveAssetIds.length === 0;
   const nothingToReject = rejectAssetIds.length === 0;
   if (nothingToApprove && nothingToReject) return null;
@@ -101,6 +124,17 @@ export function OutputBulkActions({
           {pending === "reject"
             ? "Rejecting…"
             : `Reject all${rejectAssetIds.length ? ` (${rejectAssetIds.length})` : ""}…`}
+        </button>
+        <button
+          type="button"
+          onClick={() => setIgnoring(true)}
+          disabled={pending !== null || nothingToReject}
+          title="Ignore every pending output for this style — skipped in generation, SharePoint and the nightly email"
+          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+        >
+          {pending === "ignore"
+            ? "Ignoring…"
+            : `Ignore all${rejectAssetIds.length ? ` (${rejectAssetIds.length})` : ""}…`}
         </button>
         <button
           type="button"
@@ -130,6 +164,18 @@ export function OutputBulkActions({
           error={error}
           onCancel={() => setRejecting(false)}
           onConfirm={rejectAll}
+        />
+      ) : null}
+
+      {ignoring ? (
+        <IgnoreConfirmModal
+          title="Ignore all pending outputs for this style?"
+          context={styleContext}
+          countNote={`${rejectAssetIds.length} pending output${rejectAssetIds.length === 1 ? "" : "s"} will be ignored.`}
+          pending={pending === "ignore"}
+          error={error}
+          onCancel={() => setIgnoring(false)}
+          onConfirm={ignoreAll}
         />
       ) : null}
     </div>

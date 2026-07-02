@@ -139,6 +139,27 @@ model OutputDelivery {
   @@map("output_deliveries")
 }
 
+// Per-(style × output) operator ignore — "this output is not wanted for THIS
+// style". Set from the review surfaces (the Ignore button between Reject and
+// Approve). An ignored output behaves like a doc-type exclusion scoped to one
+// style: never (re)generated, never uploaded to SharePoint, never in the
+// nightly supplier email; it counts as decided, not pending. Undoable (row
+// delete) — any existing asset resurfaces for review. Loose styleId ref and no
+// relations (matching OutputDelivery) so adding it never changes existing
+// model selects; all reads are fail-soft until db:deploy lands the table.
+model StyleOutputIgnore {
+  id          String   @id @default(cuid())
+  styleId     String
+  variantKey  String // BASE key ("care-label-02", "layout:<id>") or "doc:<TYPE>" for legacy null-key assets
+  outputName  String? // display snapshot for logs / the undo UI
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@unique([styleId, variantKey])
+  @@index([styleId])
+  @@map("style_output_ignores")
+}
+
 // Nightly supplier-send queue (WS2). One row per approved (style, output).
 // Populated the moment an output is approved (manual or auto) — ALWAYS, even
 // while sending is flag-gated off — so /settings/approved can show exactly

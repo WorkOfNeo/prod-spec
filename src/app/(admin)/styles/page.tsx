@@ -7,6 +7,7 @@ import { computeReadiness } from "@/lib/styles/readiness";
 import { computeEffectiveStatus } from "@/lib/styles/effective-status";
 import { findMissingDetailFields, requiredFieldKeysFromOutputs } from "@/lib/styles/detail-fields";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
+import { loadIgnoredOutputKeysByStyle } from "@/lib/outputs/output-ignores";
 import { styleReadinessNotice } from "@/lib/styles/readiness-notice";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { effectiveStyleItem } from "@/lib/styles/resolved-fields";
@@ -93,6 +94,10 @@ export default async function StylesPage() {
   const mappingFor = (customerId: string, config: unknown): ColumnMapping =>
     configFor(customerId, config).columnMapping;
 
+  // Per-style operator ignores — ignored outputs drop out of the readiness
+  // counts below (they're decided, not pending work).
+  const ignoredByStyle = await loadIgnoredOutputKeysByStyle(styles.map((s) => s.id));
+
   return (
     <div className="px-8 py-8">
       <div className="mb-6 flex items-end justify-between">
@@ -135,17 +140,24 @@ export default async function StylesPage() {
           // Per-output readiness: each output generates as soon as its own
           // fields land. Uses the customer mapping (empty override) to match
           // mappingFor above.
-          const outputReadiness = s.prodSpec
-            ? outputReadinessForStyle({
-                rawData: s.rawData,
-                poNumber: s.poNumber,
-                supplier: s.supplier,
-                eans: s.eans,
-                cartonEan: s.cartonEan,
-                customer: { config: s.customer.config },
-                prodSpec: { outputs: s.prodSpec.outputs, columnMapping: {} },
-              })
-            : [];
+          const outputReadiness = (
+            s.prodSpec
+              ? outputReadinessForStyle(
+                  {
+                    rawData: s.rawData,
+                    poNumber: s.poNumber,
+                    supplier: s.supplier,
+                    eans: s.eans,
+                    cartonEan: s.cartonEan,
+                    customer: { config: s.customer.config },
+                    prodSpec: { outputs: s.prodSpec.outputs, columnMapping: {} },
+                  },
+                  undefined,
+                  undefined,
+                  ignoredByStyle.get(s.id),
+                )
+              : []
+          ).filter((o) => !o.excluded);
           const outputsReady = outputReadiness.filter((o) => o.ready).length;
           const r = computeReadiness({
             completionPct: s.completionPct,

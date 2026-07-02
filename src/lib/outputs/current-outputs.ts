@@ -54,6 +54,10 @@ export type CurrentOutput = {
   // Set when state === "EXCLUDED": why this output won't be generated for this
   // style (the matched field, keyword and rule). Null otherwise.
   exclusionReason: string | null;
+  // true when the EXCLUDED state comes from a per-style operator ignore
+  // (StyleOutputIgnore) rather than a doc-type rule — the review page shows an
+  // "Ignored" pill with an undo for these.
+  ignored: boolean;
 };
 
 export type StyleOutputRollup = {
@@ -298,17 +302,20 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
   const { outputReadinessForStyle } = await import("@/lib/styles/output-readiness");
   const { getVariant } = await import("@/lib/pdf/template-registry");
   const { loadDocTypeExclusionRules, loadDocTypeLabels } = await import("@/lib/pdf/doc-types-db");
+  const { loadIgnoredOutputKeys } = await import("@/lib/outputs/output-ignores");
   const { parseProdSpecOutputs } = await import("@/lib/prod-spec/config");
 
   // ProdSpec.outputs may reference Output Builder layouts (`layout:<id>`) —
   // load them before the readiness walk resolves variants.
   await ensureLayoutVariantsLoaded();
 
-  // Doc-type keyword rules drive the EXCLUDED state below; labels flavour the
-  // reason text. Both degrade to empty before db:deploy (nothing excluded).
-  const [exclusionRules, docTypeLabels] = await Promise.all([
+  // Doc-type keyword rules + per-style operator ignores drive the EXCLUDED
+  // state below; labels flavour the reason text. All degrade to empty before
+  // db:deploy (nothing excluded).
+  const [exclusionRules, docTypeLabels, ignoredKeys] = await Promise.all([
     loadDocTypeExclusionRules(),
     loadDocTypeLabels(),
+    loadIgnoredOutputKeys(styleId),
   ]);
 
   const style = await db.style.findUnique({
@@ -325,7 +332,12 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
   });
   if (!style) return [];
 
-  const readiness = outputReadinessForStyle(style as ReadinessStyle, exclusionRules, docTypeLabels);
+  const readiness = outputReadinessForStyle(
+    style as ReadinessStyle,
+    exclusionRules,
+    docTypeLabels,
+    ignoredKeys,
+  );
 
   // Every non-FAILED asset, newest job first.
   const assets = await db.jobAsset.findMany({
@@ -420,6 +432,7 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
       generatedAt: a.createdAt,
       fromLatestGeneration: latestJobId != null && a.jobId === latestJobId,
       exclusionReason: null,
+      ignored: false,
     });
   }
 
@@ -451,6 +464,7 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
       generatedAt: null,
       fromLatestGeneration: false,
       exclusionReason: excluded ? (o.exclusionReason ?? null) : null,
+      ignored: o.ignored === true,
     });
   }
 
@@ -470,13 +484,15 @@ export async function approvedOutputBaseKeysForStyle(styleId: string): Promise<S
   const { ensureLayoutVariantsLoaded } = await import("@/lib/output-layouts/variants");
   const { outputReadinessForStyle } = await import("@/lib/styles/output-readiness");
   const { loadDocTypeExclusionRules, loadDocTypeLabels } = await import("@/lib/pdf/doc-types-db");
+  const { loadIgnoredOutputKeys } = await import("@/lib/outputs/output-ignores");
   const { parseProdSpecOutputs } = await import("@/lib/prod-spec/config");
 
   await ensureLayoutVariantsLoaded();
 
-  const [exclusionRules, docTypeLabels] = await Promise.all([
+  const [exclusionRules, docTypeLabels, ignoredKeys] = await Promise.all([
     loadDocTypeExclusionRules(),
     loadDocTypeLabels(),
+    loadIgnoredOutputKeys(styleId),
   ]);
 
   const style = await db.style.findUnique({
@@ -493,7 +509,12 @@ export async function approvedOutputBaseKeysForStyle(styleId: string): Promise<S
   });
   if (!style) return new Set();
 
-  const readiness = outputReadinessForStyle(style as ReadinessStyle, exclusionRules, docTypeLabels);
+  const readiness = outputReadinessForStyle(
+    style as ReadinessStyle,
+    exclusionRules,
+    docTypeLabels,
+    ignoredKeys,
+  );
 
   const assets = await db.jobAsset.findMany({
     where: { job: { styleId, status: { not: "FAILED" } } },

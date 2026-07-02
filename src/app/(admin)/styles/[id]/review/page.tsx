@@ -9,6 +9,7 @@ import { SupplierPushActions } from "./supplier-push-actions";
 import { ReviewClaim } from "./claim-review";
 import { ReviewLeaveGuard } from "./leave-guard";
 import { ReviewCartonCustomize } from "./review-carton-customize";
+import { UndoIgnoreButton } from "./undo-ignore-button";
 import { RunOutputButton } from "../run-output-button";
 import { LogStyleView } from "@/components/log-style-view";
 import { groupByDocType, DocTypeAccordion } from "../doc-type-groups";
@@ -398,9 +399,9 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
       {excludedOutputs.length > 0 ? (
         <div className="mt-3">
           <DocTypeAccordion
-            label="Excluded — won't be generated"
+            label="Excluded / ignored — won't be generated"
             count={excludedOutputs.length}
-            rightHint="skipped by a document-type keyword rule"
+            rightHint="skipped by a doc-type rule, or ignored for this style"
             defaultOpen={false}
           >
             <ul className="divide-y divide-zinc-100 text-sm">
@@ -409,11 +410,25 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                   <span className="font-medium text-zinc-700">{o.name}</span>
                   <span className="flex items-center gap-2 text-xs">
                     {o.exclusionReason ? (
-                      <span className="text-amber-700">{o.exclusionReason}</span>
+                      <span className={o.ignored ? "text-zinc-500" : "text-amber-700"}>
+                        {o.exclusionReason}
+                      </span>
                     ) : null}
-                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">
-                      Excluded
-                    </span>
+                    {o.ignored ? (
+                      <>
+                        <span className="rounded-full border border-zinc-300 bg-zinc-100 px-2 py-0.5 font-semibold text-zinc-600">
+                          ⊘ Ignored
+                        </span>
+                        <UndoIgnoreButton
+                          styleId={style.id}
+                          variantKey={o.variantKey.split("#")[0]}
+                        />
+                      </>
+                    ) : (
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">
+                        Excluded
+                      </span>
+                    )}
                   </span>
                 </li>
               ))}
