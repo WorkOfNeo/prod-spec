@@ -187,14 +187,41 @@
 </ul>
 <p>This reuses the existing gate, so calculated fields can never leak sibling data into standard generation.</p>
 
+<h3>Missing styles never break an equation</h3>
+<p>A hard requirement: an expression that mentions style 2 (or 3, 4…) must <strong>not fail when that slot is empty</strong>. Two ways to get there, both supported:</p>
+<div class="example-box">
+  <div class="lbl">Implicit — the recommended way</div>
+  <pre><code>{{= sum(qtyPerCarton) }}</code></pre>
+  <p class="muted" style="margin:8px 0 0"><code>sum()</code> walks the slots that are actually filled. No style 2 → it contributes nothing. You never have to say "if style two" — the aggregate <em>is</em> the if.</p>
+</div>
+<div class="example-box">
+  <div class="lbl">Explicit — direct slot references are safe too</div>
+  <pre><code>{{= qtyPerCarton + style2QtyPerCarton + style3QtyPerCarton }}</code></pre>
+  <p class="muted" style="margin:8px 0 0">An empty <em>sibling</em> reference coerces to <strong>0</strong> inside an expression — the equation still evaluates. Only an empty <em>base-style</em> field (a real data gap, e.g. no carton qty mapped) makes the calc unresolved.</p>
+</div>
+
 <h3>When is a calc "unresolved"?</h3>
 <table>
   <tr><th>Situation</th><th>Result</th></tr>
   <tr><td>All referenced base-style fields resolve to numbers</td><td>Prints the value</td></tr>
   <tr><td>A referenced <em>base</em> field is empty (e.g. no carton qty mapped)</td><td>Whole calc resolves empty → line-drop rules apply in production; amber chip <code>= sum(qtyPerCarton)?</code> in preview — same behaviour as a plain empty token</td></tr>
   <tr><td>A referenced field resolves to non-numeric text (e.g. <code>sum(colourName)</code>)</td><td>Caught at <em>build/publish time</em> by validation where possible (field kind check); at render time a non-numeric value counts as empty</td></tr>
-  <tr><td>An empty <em>sibling</em> slot inside <code>sum()/count()</code></td><td>Skipped silently (not a gap)</td></tr>
+  <tr><td>An empty <em>sibling</em> slot — inside <code>sum()/count()</code> <em>or</em> referenced directly (<code>style2QtyPerCarton</code>)</td><td>Skipped / counts as 0 — never a gap, never an error</td></tr>
 </table>
+
+<h3>Composing with <code>{{if …}}</code> conditionals</h3>
+<p>Conditionals evaluate <em>first</em>, calcs second, plain tokens last — so a calc inside a conditional branch only runs when that branch is taken. This is guaranteed by the pipeline order and covered by tests:</p>
+<div class="flow">
+  <span class="step">{{if …}} branches picked</span><span class="arr">→</span>
+  <span class="step new">{{= …}} evaluated</span><span class="arr">→</span>
+  <span class="step">tokens substituted</span>
+</div>
+<div class="example-box">
+  <div class="lbl">Example — different equation per mode</div>
+  <pre><code>{{if multipleStyles == true}}Total: {{= sum(qtyPerCarton) }} PCS{{else}}Qty: {{qtyPerCarton}} PCS{{endif}}</code></pre>
+  <p class="muted" style="margin:8px 0 0">Multi-style print → the summed Total; standard print → the plain per-style qty line. And because conditionals can already check sibling fields, <code>{{if style2 != ""}}…{{endif}}</code> works for showing a whole line only when a second style is on the box.</p>
+</div>
+<p class="muted">Nesting a conditional <em>inside</em> an expression (<code>{{= if(…) }}</code>) is deliberately out of scope for v1 — the branch-outside/calc-inside pattern above plus 0-coercing sibling refs covers every case we've seen, without inventing a second conditional syntax.</p>
 
 <h3>Readiness (the "ready to generate" gate)</h3>
 <p>Fields referenced inside an expression contribute their mapped columns exactly like the bare token would: <code>sum(qtyPerCarton)</code> ⇒ requires the <code>cartonQty</code> column, via the existing <code>REQUIRED_COLUMNS</code> table. Sibling references contribute nothing (they depend on other styles, mirroring current sibling-token rules).</p>
@@ -243,7 +270,8 @@
 <h2 id="testing"><span class="num">7</span>Testing &amp; verification</h2>
 <ul>
   <li><strong>Unit — parser/evaluator</strong> (<code>tests/</code>): literals, precedence, parentheses, each function, division by zero → empty, malformed syntax → precise error strings, unknown identifier rejection.</li>
-  <li><strong>Unit — resolver integration</strong>: <code>sum(qtyPerCarton)</code> on a single-style <code>StyleData</code>, on a multi-style one with 2 siblings, with an empty sibling slot, with a missing base value (→ unresolved); readiness columns include <code>cartonQty</code>; <code>unresolvedTokens</code> lists the calc when the base input is missing.</li>
+  <li><strong>Unit — resolver integration</strong>: <code>sum(qtyPerCarton)</code> on a single-style <code>StyleData</code>, on a multi-style one with 2 siblings, with an empty sibling slot, with a missing base value (→ unresolved); direct <code>style2QtyPerCarton</code> reference with no style 2 → coerces to 0, never errors; readiness columns include <code>cartonQty</code>; <code>unresolvedTokens</code> lists the calc when the base input is missing.</li>
+  <li><strong>Unit — conditional composition</strong>: a calc inside <code>{{if multipleStyles == true}}…</code> only evaluates in the taken branch; <code>{{if style2 != ""}}</code> gating a calc line renders it exactly when a sibling is picked.</li>
   <li><strong>Render proof</strong>: <code>buildSampleStyleData()</code> → <code>renderLayoutHtml</code> → PDF for a layout using the Total line, in both single and multi-style mode (the same path the guide's "verify before publish" prescribes).</li>
   <li><strong>Regression</strong>: an existing published layout renders byte-identically (no calc syntax present → new pass is a no-op).</li>
 </ul>
