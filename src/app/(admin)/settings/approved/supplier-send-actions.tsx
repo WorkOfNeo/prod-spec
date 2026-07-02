@@ -6,6 +6,8 @@ import { useState } from "react";
 type Preview = {
   empty: boolean;
   to: string | null;
+  // Synced supplier-contact emails CC'd on the digest.
+  cc?: string[];
   subject: string | null;
   html: string | null;
   text: string | null;
@@ -72,7 +74,7 @@ export function SupplierPreviewButton({
                     : preview?.empty
                       ? "Nothing queued for this supplier."
                       : preview
-                        ? `To: ${preview.to ?? "— no email on file"}`
+                        ? `To: ${preview.to ?? "— no email on file"}${preview.cc?.length ? ` · CC: ${preview.cc.join(", ")}` : ""}`
                         : ""}
                 </p>
                 {!loading && preview && !preview.empty ? (

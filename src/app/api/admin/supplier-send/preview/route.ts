@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-server";
 import { buildSupplierDigest } from "@/lib/publish/supplier-batch-send";
+import { combineSupplierRecipients } from "@/lib/suppliers/recipients";
+import { loadContactEmailsBySupplier } from "@/lib/suppliers/contact-emails";
 
 export const runtime = "nodejs";
 
@@ -31,7 +33,7 @@ export async function GET(req: NextRequest) {
   });
 
   if (items.length === 0) {
-    return NextResponse.json({ empty: true, to: null, subject: null, html: null, text: null });
+    return NextResponse.json({ empty: true, to: null, cc: [], subject: null, html: null, text: null });
   }
 
   const styleIds = [...new Set(items.map((i) => i.styleId))];
@@ -61,7 +63,12 @@ export async function GET(req: NextRequest) {
   const customerById = new Map(customers.map((c) => [c.id, { name: c.name }]));
   const shareByStyle = new Map(shares.map((s) => [s.styleId, { token: s.token, pin: s.pin }]));
   const baseUrl = (process.env.PROD_SPEC_BASE_URL ?? "").replace(/\/$/, "");
-  const to = supplier?.email?.trim() || supplier?.contactEmail?.trim() || null;
+  // Same recipient resolution as the nightly batch (supplier inbox → synced
+  // contacts → legacy contactEmail) so preview == what sends.
+  const contactEmails = noSupplier
+    ? []
+    : ((await loadContactEmailsBySupplier([supplierIdParam!])).get(supplierIdParam!) ?? []);
+  const { to, cc } = combineSupplierRecipients(supplier, contactEmails);
 
   const digest = buildSupplierDigest({
     supplierName: supplier?.name ?? "— no supplier linked",
@@ -72,5 +79,5 @@ export async function GET(req: NextRequest) {
     baseUrl,
   });
 
-  return NextResponse.json({ empty: false, to, subject: digest.subject, html: digest.html, text: digest.text });
+  return NextResponse.json({ empty: false, to, cc, subject: digest.subject, html: digest.html, text: digest.text });
 }

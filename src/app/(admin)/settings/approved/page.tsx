@@ -2,6 +2,8 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { requireAdminPage } from "@/lib/auth-server";
 import { getSupplierBatchSendEnabled } from "@/lib/settings/app-settings";
+import { combineSupplierRecipients } from "@/lib/suppliers/recipients";
+import { loadContactEmailsBySupplier } from "@/lib/suppliers/contact-emails";
 import { SupplierSendSetting } from "./supplier-send-setting";
 import { SupplierPreviewButton, RunBatchNowButton } from "./supplier-send-actions";
 
@@ -72,10 +74,13 @@ export default async function ApprovedDeliveryPage() {
   const customerById = new Map(customers.map((c) => [c.id, c]));
   const supplierById = new Map(suppliers.map((s) => [s.id, s]));
 
+  // Same resolution as the nightly batch (supplier inbox → synced contacts
+  // → legacy contactEmail) so the summary shows the real recipient.
+  const contactEmailsBySupplier = await loadContactEmailsBySupplier(supplierIds);
   const resolveEmail = (supplierId: string | null): string | null => {
     if (!supplierId) return null;
     const s = supplierById.get(supplierId);
-    return s?.email?.trim() || s?.contactEmail?.trim() || null;
+    return combineSupplierRecipients(s, contactEmailsBySupplier.get(supplierId) ?? []).to;
   };
 
   // Group by supplier for the summary.

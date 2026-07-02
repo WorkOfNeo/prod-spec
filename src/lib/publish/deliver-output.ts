@@ -7,6 +7,8 @@ import { uploadJobAssets } from "@/lib/sharepoint/upload";
 import { getFile } from "@/lib/sharepoint/client";
 import { upsertShareForStyle } from "@/lib/supplier-share/share";
 import { perOutputDeliveryEnabled } from "@/lib/review-flow/flags";
+import { combineSupplierRecipients } from "@/lib/suppliers/recipients";
+import { loadContactEmailsBySupplier } from "@/lib/suppliers/contact-emails";
 import { ignoreBaseKey, loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 
 // =====================================================
@@ -70,10 +72,16 @@ export async function deliverOutput(jobAssetId: string): Promise<EmailOutcome | 
   }
 
   const supplier = style.supplier;
-  const supplierEmail = supplier?.email?.trim() || process.env.SUPPLIER_NOTIFICATION_EMAIL || null;
+  // Shared recipient resolution (Supplier inbox → synced contacts → legacy
+  // contactEmail), then the env fallback + admin review-CC list on top.
+  const contactEmails = supplier
+    ? ((await loadContactEmailsBySupplier([supplier.id])).get(supplier.id) ?? [])
+    : [];
+  const recipients = combineSupplierRecipients(supplier, contactEmails);
+  const supplierEmail = recipients.to || process.env.SUPPLIER_NOTIFICATION_EMAIL || null;
   const reviewCc = await getSupplierReviewCcEmails();
   const ccList = Array.from(
-    new Set([...reviewCc, supplier?.contactEmail ?? ""].map((e) => e.trim()).filter(Boolean)),
+    new Set([...reviewCc, ...recipients.cc].map((e) => e.trim()).filter(Boolean)),
   );
   const share = await upsertShareForStyle({ styleId: style.id, email: supplierEmail ?? "" });
 

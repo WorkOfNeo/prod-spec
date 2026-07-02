@@ -9,6 +9,8 @@ import { resolveNotificationsForJob } from "@/lib/notifications/user-notificatio
 import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
 import { ignoreBaseKey, loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 import { upsertShareForStyle } from "@/lib/supplier-share/share";
+import { combineSupplierRecipients } from "@/lib/suppliers/recipients";
+import { loadContactEmailsBySupplier } from "@/lib/suppliers/contact-emails";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { resolveStyleCertificates } from "@/lib/styles/resolved-fields";
 import { applyStyleApprovalToMonday } from "@/lib/monday/style-approval";
@@ -229,12 +231,18 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
       ? uploaded.map((f) => ({ name: f.name, webUrl: f.webUrl as string | null }))
       : publishable.map((a) => ({ name: a.fileName, webUrl: null }));
 
-  // Recipient: the supplier's mirrored inbox (To), CC the named contact
-  // person. Both come from the Monday suppliers board. When the board
-  // carries no supplier email yet, fall back to SUPPLIER_NOTIFICATION_EMAIL
-  // so approval still surfaces to an operator who can forward manually.
+  // Recipient: the supplier's mirrored inbox (To), then the synced contacts
+  // from the Supplier Contacts board, then the legacy contactEmail — shared
+  // resolution in combineSupplierRecipients. When nothing resolves, fall back
+  // to SUPPLIER_NOTIFICATION_EMAIL so approval still surfaces to an operator
+  // who can forward manually.
   const supplier = job.style.supplier;
-  const supplierEmail = supplier?.email?.trim() || process.env.SUPPLIER_NOTIFICATION_EMAIL || null;
+  const supplierContactEmails = supplier
+    ? ((await loadContactEmailsBySupplier([supplier.id])).get(supplier.id) ?? [])
+    : [];
+  const supplierRecipients = combineSupplierRecipients(supplier, supplierContactEmails);
+  const supplierEmail =
+    supplierRecipients.to || process.env.SUPPLIER_NOTIFICATION_EMAIL || null;
 
   const notification: PublishNotificationSummary = {
     to: null,
@@ -259,10 +267,10 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
     });
   } else {
     // CC = the admin-typed review CC list (from /settings) plus the supplier's
-    // own synced contact email if present, de-duplicated.
+    // synced contact emails, de-duplicated.
     const reviewCc = await getSupplierReviewCcEmails();
     const ccList = Array.from(
-      new Set([...reviewCc, supplier?.contactEmail ?? ""].map((e) => e.trim()).filter(Boolean)),
+      new Set([...reviewCc, ...supplierRecipients.cc].map((e) => e.trim()).filter(Boolean)),
     );
     const ccDisplay = ccList.length > 0 ? ccList.join(", ") : null;
 

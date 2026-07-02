@@ -2,6 +2,8 @@ import { db } from "@/lib/db";
 import { dispatchEmail } from "@/lib/email/dispatch";
 import { getSupplierBatchSendEnabled } from "@/lib/settings/app-settings";
 import { loadIgnoredOutputKeysByStyle } from "@/lib/outputs/output-ignores";
+import { combineSupplierRecipients } from "@/lib/suppliers/recipients";
+import { loadContactEmailsBySupplier } from "@/lib/suppliers/contact-emails";
 
 // Nightly supplier-send batch (WS2b). Groups the unsent send-queue by supplier
 // → customer and sends ONE digest email per supplier. Replaces the old
@@ -25,6 +27,9 @@ export type PerSupplierOutcome = {
   supplierId: string | null;
   supplierName: string;
   email: string | null;
+  // Synced supplier-contact emails (plus the legacy contactEmail) CC'd on
+  // the digest — resolved via combineSupplierRecipients.
+  cc?: string[];
   styleCount: number;
   outputCount: number;
   status: "DRY_RUN" | "NO_EMAIL" | "SENT" | "SIMULATED" | "SKIPPED" | "FAILED";
@@ -41,11 +46,6 @@ export type BatchResult = {
   sentCount: number;
   perSupplier: PerSupplierOutcome[];
 };
-
-function resolveEmail(s: { email: string | null; contactEmail: string | null } | undefined): string | null {
-  if (!s) return null;
-  return s.email?.trim() || s.contactEmail?.trim() || null;
-}
 
 // Build the digest for one supplier: grouped by customer → style → outputs,
 // with the durable portal link + PIN per style. Preview and cron share this.
@@ -173,6 +173,10 @@ export async function runSupplierSendBatch(opts?: { source?: "midnight" | "manua
   const customerById = new Map(customers.map((c) => [c.id, { name: c.name }]));
   const supplierById = new Map(suppliers.map((s) => [s.id, s]));
   const shareByStyle = new Map(shares.map((s) => [s.styleId, { token: s.token, pin: s.pin }]));
+  // Synced supplier-contact emails (Supplier Contacts board) — the digest
+  // goes To the company inbox (or the first contact when none) and CCs the
+  // remaining contacts.
+  const contactEmailsBySupplier = await loadContactEmailsBySupplier(supplierIds);
 
   // Group by supplier.
   const bySupplier = new Map<string, QueueItem[]>();
@@ -198,9 +202,12 @@ export async function runSupplierSendBatch(opts?: { source?: "midnight" | "manua
   for (const [key, items] of bySupplier) {
     const supplier = key === "__none__" ? undefined : supplierById.get(key);
     const supplierName = supplier?.name ?? "— no supplier linked";
-    const email = resolveEmail(supplier);
+    const { to: email, cc } = combineSupplierRecipients(
+      supplier,
+      supplier ? (contactEmailsBySupplier.get(supplier.id) ?? []) : [],
+    );
     const styleCount = new Set(items.map((i) => i.styleId)).size;
-    const base = { supplierId: supplier?.id ?? null, supplierName, email, styleCount, outputCount: items.length };
+    const base = { supplierId: supplier?.id ?? null, supplierName, email, cc, styleCount, outputCount: items.length };
 
     if (!enabled) {
       perSupplier.push({ ...base, status: "DRY_RUN" });
@@ -217,6 +224,7 @@ export async function runSupplierSendBatch(opts?: { source?: "midnight" | "manua
       outcome = await dispatchEmail({
         type: "SUPPLIER_APPROVAL",
         to: email,
+        cc: cc.length > 0 ? cc : undefined,
         subject: digest.subject,
         html: digest.html,
         text: digest.text,

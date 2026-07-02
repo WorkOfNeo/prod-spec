@@ -321,11 +321,15 @@ async function SyncTabAsync() {
     Promise.all([
       db.customer.count({ where: { active: true } }),
       db.supplier.count({ where: { active: true } }),
+      // supplier_contacts is an additive migration — don't 500 the page
+      // if the table isn't deployed yet.
+      db.supplierContact.count({ where: { active: true } }).catch(() => 0),
       db.businessArea.count({ where: { active: true } }),
       db.style.count(),
-    ]).then(([customers, suppliers, businessAreas, styles]) => ({
+    ]).then(([customers, suppliers, supplierContacts, businessAreas, styles]) => ({
       customers,
       suppliers,
+      supplierContacts,
       businessAreas,
       styles,
     })),
