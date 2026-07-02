@@ -915,6 +915,11 @@ model JobAsset {
   rejectReason     String?
   reviewedAt       DateTime?
   reviewedById     String?
+  // Stable hash of the inputs that produced this asset (currently only set for
+  // the COVER framing page — see computeCoverHash). Lets a re-run carry forward
+  // an APPROVED cover unchanged instead of regenerating it, unless its real
+  // inputs (general info, logo, doc list, settings, identity) actually change.
+  contentHash      String?
   createdAt        DateTime          @default(now())
 
   job              Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)

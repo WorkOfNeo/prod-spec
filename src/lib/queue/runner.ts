@@ -35,6 +35,7 @@ import {
 import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
 import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
+import { computeCoverHash } from "@/lib/pdf/cover-hash";
 
 const STALE_RUNNING_MS = 15 * 60 * 1000;
 
@@ -233,6 +234,13 @@ export async function processJob(jobId: string): Promise<void> {
   // carried-forward approved assets) apart from a real misconfiguration.
   let approvedSkips = 0;
 
+  // Outputs carried forward by durable approval (skipped below) + their current
+  // file counts. Needed so the cover's document table still lists them (the
+  // cover would otherwise under-list the bundle) and so its content hash stays
+  // stable across re-runs (WS9 Phase 4, cover persistence).
+  const carriedForwardOutputs: ProdSpecOutput[] = [];
+  let approvedBaseCounts = new Map<string, number>();
+
   // Scoped re-runs (auto-enqueue / ticket fixes) narrow to specific outputs;
   // an empty scope is a full regen of every enabled output. Tickets reference
   // per-document asset keys ("layout:<id>#<size>"); ProdSpec outputs carry the
@@ -254,12 +262,13 @@ export async function processJob(jobId: string): Promise<void> {
     // exactly as before. approvedOutputBaseKeysForStyle uses the same
     // current-asset selection as the review page, so what we skip lines up with
     // what the reviewer sees as approved.
-    const approvedBases = await approvedOutputBaseKeysForStyle(job.styleId);
-    if (approvedBases.size > 0) {
+    approvedBaseCounts = await approvedOutputBaseKeysForStyle(job.styleId);
+    if (approvedBaseCounts.size > 0) {
       const skipped: string[] = [];
       outputs = outputs.filter((o) => {
-        if (approvedBases.has(o.variantKey)) {
+        if (approvedBaseCounts.has(o.variantKey)) {
           skipped.push(o.variantKey);
+          carriedForwardOutputs.push(o);
           return false;
         }
         return true;
@@ -591,46 +600,110 @@ export async function processJob(jobId: string): Promise<void> {
     displayName: string;
     fileName: string;
     pdf: Buffer;
+    contentHash?: string;
   };
   const businessAreaName = job.style.businessAreaRef?.name ?? job.style.businessArea ?? null;
   const slug = styleSlug(styleData.styleNumber);
   const pageSettings = parseBundlePageSettings(prodSpec?.bundlePageSettings);
+
+  // Carried-forward approved outputs (skipped above by durable approval) still
+  // belong in the cover's document table — without this the cover would
+  // under-list the bundle, and its content hash would collapse to the
+  // regenerated subset (breaking cover persistence below).
+  for (const output of carriedForwardOutputs) {
+    const cfVariant = resolveOutputVariant(output);
+    if (!cfVariant) continue;
+    const cfDims = effectiveOutputDims(output, cfVariant.isInfoArea ?? false, infoAreaSizes);
+    docSummaries.push({
+      displayName: cfVariant.name,
+      widthMm: cfDims.widthMm,
+      heightMm: cfDims.heightMm,
+      fileCount: approvedBaseCounts.get(output.variantKey) ?? null,
+    });
+  }
+
   const bundlePages: BundlePage[] = [];
-  try {
-    const generalInfoMd = prodSpec?.generalInfoMd?.trim();
-    let coverHtml = renderCoverPageHtml({
-      customerName: job.style.customer.name,
-      businessArea: businessAreaName,
-      styleName: job.style.name,
-      styleNumber: styleData.styleNumber,
-      poNumber: job.style.poNumber ?? null,
-      supplierName: job.style.supplier?.name ?? null,
-      generatedAt: new Date(),
-      docs: docSummaries,
-      settings: pageSettings.cover,
-      // General info rides inside the cover document — own pages, own
-      // margins, after the cover sheet. The cover is its ONLY home in the
-      // bundle, so the order is guaranteed: cover sheet first, then the
-      // requirements. No standalone general-information PDF is emitted.
-      generalInfo: generalInfoMd
-        ? { markdown: generalInfoMd, settings: pageSettings.generalInfo }
-        : null,
-    });
-    // Resolve general-info image URLs to data URLs — the cover embeds the
-    // same markdown, and page.setContent() can't fetch a bare /api path.
-    if (prodSpec && generalInfoMd) coverHtml = await inlineProdSpecImages(coverHtml, prodSpec.id);
-    bundlePages.push({
-      docType: "COVER",
+  const generalInfoMd = prodSpec?.generalInfoMd?.trim();
+
+  // Cover/GI persistence (WS9 Phase 4). Hash everything the cover RENDERS FROM
+  // (excluding the generatedAt timestamp). If the style's CURRENT cover is
+  // already APPROVED with this exact hash, carry it forward — don't regenerate —
+  // so an approved cover/general-info survives a partial re-run of other
+  // outputs. Only on a FULL regen (scoped re-runs keep refreshing the cover as
+  // before, so we don't interfere with their partial doc list).
+  const coverHash = computeCoverHash({
+    customerName: job.style.customer.name,
+    businessArea: businessAreaName,
+    styleName: job.style.name,
+    styleNumber: styleData.styleNumber,
+    poNumber: job.style.poNumber ?? null,
+    supplierName: job.style.supplier?.name ?? null,
+    docs: docSummaries,
+    coverSettings: pageSettings.cover ?? null,
+    generalInfo: generalInfoMd
+      ? { markdown: generalInfoMd, settings: pageSettings.generalInfo ?? null }
+      : null,
+  });
+  const latestCover = await db.jobAsset.findFirst({
+    where: {
+      job: { styleId: job.styleId, status: { not: "FAILED" } },
       variantKey: COVER_VARIANT_KEY,
-      displayName: "Cover page",
-      fileName: `00-${slug}-cover-page.pdf`,
-      pdf: await renderPdf({ html: coverHtml }),
+    },
+    orderBy: { job: { createdAt: "desc" } },
+    select: { reviewStatus: true, contentHash: true },
+  });
+  const coverIsDurable =
+    scopedKeys.length === 0 &&
+    latestCover?.reviewStatus === "APPROVED" &&
+    latestCover.contentHash != null &&
+    latestCover.contentHash === coverHash;
+
+  if (coverIsDurable) {
+    await db.log.create({
+      data: {
+        jobId: job.id,
+        level: "INFO",
+        message:
+          "cover/general-info unchanged + already approved — carried forward, not regenerated (WS9)",
+      },
     });
-  } catch (err) {
-    throw new RunnerError(
-      "BUNDLE_PAGES_FAILED",
-      `cover/general-info page render failed: ${(err as Error).message}`,
-    );
+  } else {
+    try {
+      let coverHtml = renderCoverPageHtml({
+        customerName: job.style.customer.name,
+        businessArea: businessAreaName,
+        styleName: job.style.name,
+        styleNumber: styleData.styleNumber,
+        poNumber: job.style.poNumber ?? null,
+        supplierName: job.style.supplier?.name ?? null,
+        generatedAt: new Date(),
+        docs: docSummaries,
+        settings: pageSettings.cover,
+        // General info rides inside the cover document — own pages, own
+        // margins, after the cover sheet. The cover is its ONLY home in the
+        // bundle, so the order is guaranteed: cover sheet first, then the
+        // requirements. No standalone general-information PDF is emitted.
+        generalInfo: generalInfoMd
+          ? { markdown: generalInfoMd, settings: pageSettings.generalInfo }
+          : null,
+      });
+      // Resolve general-info image URLs to data URLs — the cover embeds the
+      // same markdown, and page.setContent() can't fetch a bare /api path.
+      if (prodSpec && generalInfoMd) coverHtml = await inlineProdSpecImages(coverHtml, prodSpec.id);
+      bundlePages.push({
+        docType: "COVER",
+        variantKey: COVER_VARIANT_KEY,
+        displayName: "Cover page",
+        fileName: `00-${slug}-cover-page.pdf`,
+        pdf: await renderPdf({ html: coverHtml }),
+        contentHash: coverHash,
+      });
+    } catch (err) {
+      throw new RunnerError(
+        "BUNDLE_PAGES_FAILED",
+        `cover/general-info page render failed: ${(err as Error).message}`,
+      );
+    }
   }
 
   // Auto-approve resolution. A generated doc skips the manual review queue
@@ -675,6 +748,7 @@ export async function processJob(jobId: string): Promise<void> {
             fileName: p.fileName,
             pdf: toPlainBytes(p.pdf),
             placeholderCount: 0,
+            ...(p.contentHash ? { contentHash: p.contentHash } : {}),
           },
         }),
       ),

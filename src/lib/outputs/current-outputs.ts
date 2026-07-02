@@ -216,7 +216,7 @@ export function approvedBaseVariantKeys<
     reviewStatus: "PENDING_REVIEW" | "APPROVED" | "REJECTED";
     placeholderCount: number;
   },
->(assetsNewestFirst: A[], declaredBaseKeys: Set<string>, excludedBaseKeys?: Set<string>): Set<string> {
+>(assetsNewestFirst: A[], declaredBaseKeys: Set<string>, excludedBaseKeys?: Set<string>): Map<string, number> {
   const current = selectCurrentAssets(assetsNewestFirst, declaredBaseKeys, excludedBaseKeys);
   // Group the current documents by base and require every one approved + clean.
   const byBase = new Map<string, A[]>();
@@ -226,10 +226,12 @@ export function approvedBaseVariantKeys<
     if (arr) arr.push(a);
     else byBase.set(b, [a]);
   }
-  const approved = new Set<string>();
+  // Map value = the base's current file count — used by the cover doc-list so a
+  // carried-forward approved output still lists its file count on the cover.
+  const approved = new Map<string, number>();
   for (const [b, docs] of byBase) {
     if (docs.every((d) => d.reviewStatus === "APPROVED" && d.placeholderCount === 0)) {
-      approved.add(b);
+      approved.set(b, docs.length);
     }
   }
   return approved;
@@ -464,8 +466,9 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
 // dropped), so what the runner refuses to regenerate lines up exactly with what
 // the review screen shows as approved. Empty for styles with no approvals (all
 // outputs regenerate as before). See approvedBaseVariantKeys for the per-base
-// "all documents approved + clean" rule.
-export async function approvedOutputBaseKeysForStyle(styleId: string): Promise<Set<string>> {
+// "all documents approved + clean" rule. Returns base → current file count (the
+// count feeds the cover doc-list for carried-forward outputs).
+export async function approvedOutputBaseKeysForStyle(styleId: string): Promise<Map<string, number>> {
   const { db } = await import("@/lib/db");
   const { ensureLayoutVariantsLoaded } = await import("@/lib/output-layouts/variants");
   const { outputReadinessForStyle } = await import("@/lib/styles/output-readiness");
@@ -491,7 +494,7 @@ export async function approvedOutputBaseKeysForStyle(styleId: string): Promise<S
       prodSpec: { select: { outputs: true, columnMapping: true } },
     },
   });
-  if (!style) return new Set();
+  if (!style) return new Map();
 
   const readiness = outputReadinessForStyle(style as ReadinessStyle, exclusionRules, docTypeLabels);
 
