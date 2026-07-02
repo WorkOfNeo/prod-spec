@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-server";
 import { CONTROL_RE, IF_RE, LayoutDefSchema, tokensInDef } from "@/lib/output-layouts/schema";
 import { validateLineConditionals, validateTokenRef } from "@/lib/output-layouts/token-meta";
+import { validateLineCalcs } from "@/lib/output-layouts/calc";
 import { refreshLayoutVariants } from "@/lib/output-layouts/variants";
 
 export const runtime = "nodejs";
@@ -34,11 +35,13 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     problems.push(...validateTokenRef(ref.key, ref.arg));
   }
   // Conditional syntax — malformed {{if}}/{{else}}/{{endif}} is a publish
-  // blocker, not just a preview oddity.
+  // blocker, not just a preview oddity. Same for calculated fields
+  // ({{= …}}): bad syntax or an unknown/unusable field never reaches print.
   for (const page of def.pages) {
     for (const block of page.blocks) {
       for (const line of block.lines) {
         problems.push(...validateLineConditionals(line, IF_RE, CONTROL_RE));
+        problems.push(...validateLineCalcs(line));
       }
     }
   }

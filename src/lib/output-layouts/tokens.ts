@@ -9,6 +9,13 @@ import { ruleRequiredColumns } from "@/lib/pdf/spec-fields";
 import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-marking";
 import { tokenMeta, parseSiblingTokenKey, type BarcodeSource } from "./token-meta";
 import {
+  calcsInLine,
+  evaluateCalc,
+  fieldsInCalcExpression,
+  parseCalcExpression,
+  type CalcFieldCtx,
+} from "./calc";
+import {
   applyConditionals,
   conditionalsInDef,
   lineWithoutConditionals,
@@ -236,6 +243,35 @@ export function applyConditionalsForStyle(line: string, style: StyleData): strin
 }
 
 // ---------------------------------------------------------------------
+// Calculated fields ({{= …}}) against StyleData. Direct field references
+// go through resolveTextToken (so sibling slot keys keep their multi-style
+// gate); aggregates walk the base style + the ACTIVE siblings via the SAME
+// per-slot projection the {{styleN…}} tokens use, so sum(qtyPerCarton) can
+// never disagree with what {{style2QtyPerCarton}} would print.
+// ---------------------------------------------------------------------
+
+function calcCtxForStyle(style: StyleData): CalcFieldCtx {
+  return {
+    field: (key) => resolveTextToken(style, key),
+    aggregate: (suffix) => {
+      const fn = SIBLING_FIELD_RESOLVERS[suffix.toLowerCase()];
+      if (!fn) return { base: "", siblings: [] };
+      const base = (fn(projectSiblingStyle(style, "self")) ?? "").trim();
+      const pool = style.multipleStyles ? (style.siblings ?? []) : [];
+      return { base, siblings: pool.map((s) => (fn(s) ?? "").trim()) };
+    },
+  };
+}
+
+// Formatted result of one calc expression on this style, or null =
+// unresolved (missing base data, bad expression, division by zero).
+export function evaluateCalcForStyle(expr: string, style: StyleData): string | null {
+  const parsed = parseCalcExpression(expr);
+  if (!parsed.ast) return null;
+  return evaluateCalc(parsed.ast, calcCtxForStyle(style));
+}
+
+// ---------------------------------------------------------------------
 // Readiness: which mapped columns a token needs before an output that
 // uses it counts as "ready" (template-registry requiredFields /
 // readiness semantics — see output-readiness.ts).
@@ -313,6 +349,22 @@ function staticTokenRefs(def: LayoutDef): TokenRef[] {
   return out;
 }
 
+// Mapped columns one calc expression's inputs need. Direct base fields
+// and aggregate base fields gate like the bare token would (sum(
+// qtyPerCarton) needs the cartonQty column); sibling references depend on
+// OTHER styles, never on this style's columns — same rule as the
+// {{styleN…}} tokens. {{orderNo}} is branch-dependent and excluded here,
+// mirroring the plain-token walks (it's non-numeric anyway).
+function calcRequiredColumns(expr: string): Array<keyof ColumnMapping> {
+  const { fields, aggregates } = fieldsInCalcExpression(expr);
+  const out: Array<keyof ColumnMapping> = [];
+  for (const key of [...fields, ...aggregates]) {
+    if (parseSiblingTokenKey(key) || key === "orderNo") continue;
+    out.push(...(REQUIRED_COLUMNS[key] ?? []));
+  }
+  return out;
+}
+
 // Static required columns across a whole definition — the layout
 // variant's `requiredFields`. Branch-dependent content ({{orderNo}},
 // anything inside {{if}}…{{endif}}) is excluded here;
@@ -322,6 +374,15 @@ export function staticRequiredColumns(def: LayoutDef): Array<keyof ColumnMapping
   for (const ref of staticTokenRefs(def)) {
     if (ref.key === "orderNo") continue;
     for (const c of columnsForToken(ref)) out.add(c);
+  }
+  for (const page of def.pages) {
+    for (const block of page.blocks) {
+      for (const line of block.lines) {
+        for (const expr of calcsInLine(lineWithoutConditionals(line))) {
+          for (const c of calcRequiredColumns(expr)) out.add(c);
+        }
+      }
+    }
   }
   return [...out];
 }
@@ -370,6 +431,9 @@ export function layoutReadinessColumns(
           }
           for (const c of columnsForToken(ref)) out.add(c);
         }
+        for (const expr of calcsInLine(effective)) {
+          for (const c of calcRequiredColumns(expr)) out.add(c);
+        }
       }
     }
   }
@@ -392,6 +456,19 @@ export function unresolvedTokens(def: LayoutDef, style: StyleData): string[] {
     for (const block of page.blocks) {
       for (const line of block.lines) {
         const effective = applyConditionalsForStyle(line, style);
+        // Calcs surface as one amber gap when they can't produce a value —
+        // a missing BASE input (empty sibling slots coerce to 0 and never
+        // trip this). Malformed expressions land here too, but publish
+        // validation catches those with a precise message first.
+        for (const expr of calcsInLine(effective)) {
+          if (evaluateCalcForStyle(expr, style) === null) {
+            const printable = `{{= ${expr} }}`;
+            if (!seen.has(printable)) {
+              seen.add(printable);
+              out.push(printable);
+            }
+          }
+        }
         for (const ref of tokensInLine(effective)) {
           const meta = tokenMeta(ref.key);
           if (!meta) continue;

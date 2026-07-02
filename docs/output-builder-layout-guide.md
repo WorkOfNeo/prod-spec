@@ -54,6 +54,31 @@ Use `invert` (white text on solid black) for highlight fields — e.g. the carto
 - **Symbols / logos / certs**: `{{washSymbols}}`, `{{logo:contrastAddress}}` / `{{logo:custom}}`, `{{cert:oekotex}}` / `{{cert:fsc}}`.
 - **Order / size**: `{{size}}` (the current row inside a repeat), `{{sizes}}`, `{{poNumber}}`, `{{orderNo}}` (FOB → customer order, else PO), `{{qtyPerCarton}}`, `{{lot}}`, `{{customerItemNo}}`, `{{customerOrderNo}}`, `{{description}}`, `{{campaignWeek}}`.
 - **Conditionals**: `{{if deliveryTerm == FOB}}…{{else}}…{{endif}}` (one line, text tokens only).
+- **Calculated**: `{{= sum(qtyPerCarton) }}` — arithmetic over field values; see "Calculated fields" below.
+
+## Calculated fields
+
+`{{= expression }}` computes a number from field values, evaluated after
+conditionals and before plain tokens (so a calc inside an `{{if}}` branch only
+runs when that branch is taken). One line, like conditionals.
+
+- **Arithmetic**: `+ - * /`, parentheses, numeric literals — `{{= qtyPerCarton * 2 }}`.
+- **Aggregates across the styles on the carton**: `sum(field)`, `count(field)`,
+  `min(field)`, `max(field)` — the base style plus the siblings picked in the
+  carton dialog (standard generation = base only, same gate as `{{style2}}`).
+  `{{= sum(qtyPerCarton) }}` is the canonical carton **Total**: one style → its
+  own qty; a multi-style print → all of them summed. Aggregate fields are the
+  sibling-projected ones (qtyPerCarton, styleNumber, description, …).
+- **Rounding**: `round(expr, decimals)` (0–6, default 0). Integers print bare,
+  fractions trimmed.
+- **Missing styles never break the equation**: a direct sibling reference
+  (`{{= qtyPerCarton + style2QtyPerCarton }}`) counts as 0 when the slot is
+  empty; aggregates skip empty slots. Only a missing **base** value (e.g. no
+  carton qty mapped) makes the calc unresolved — amber chip in preview, empty
+  in production, and it gates readiness through the same columns the bare
+  token would (`qtyPerCarton` → cartonQty).
+- Bad syntax / unknown fields are **publish blockers** (and red chips on the
+  canvas), like malformed conditionals.
 
 ## Repeat & split
 

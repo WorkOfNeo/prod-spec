@@ -30,6 +30,7 @@ import {
   SIBLING_FIELDS,
   MAX_SIBLING_SLOTS,
 } from "@/lib/output-layouts/token-meta";
+import { validateCalcExpression } from "@/lib/output-layouts/calc";
 import { PreviewFrame } from "@/components/output-preview";
 
 // =====================================================
@@ -2500,6 +2501,35 @@ export function LayoutEditor({
               </div>
             </div>
             <div className="mt-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">Calculated</div>
+              <p className="mt-1 text-[11px] text-zinc-400">
+                Arithmetic over field values: <code className="rounded bg-zinc-100 px-1 text-[10px]">+ − × ÷</code>,{" "}
+                <code className="rounded bg-zinc-100 px-1 text-[10px]">sum/count/min/max(field)</code> across the
+                styles on the carton (base + picked siblings — an empty slot counts as 0), and{" "}
+                <code className="rounded bg-zinc-100 px-1 text-[10px]">round(…, decimals)</code>.
+              </p>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                <TokenChip
+                  token="{{= sum(qtyPerCarton) }}"
+                  title="Total pcs in the carton — every style's qty per carton summed (just the base style's on a standard print)"
+                  disabled={!selBlock}
+                  onClick={() => insertToken("{{= sum(qtyPerCarton) }}")}
+                />
+                <TokenChip
+                  token="{{= count(styleNumber) }}"
+                  title="How many styles are on the carton"
+                  disabled={!selBlock}
+                  onClick={() => insertToken("{{= count(styleNumber) }}")}
+                />
+                <TokenChip
+                  token="{{= }}"
+                  title="Empty calculation — write your own expression, e.g. {{= qtyPerCarton * 2 }}"
+                  disabled={!selBlock}
+                  onClick={() => insertToken("{{= }}")}
+                />
+              </div>
+            </div>
+            <div className="mt-3">
               <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">Graphics</div>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 <TokenChip
@@ -2988,9 +3018,10 @@ function CanvasBlock({
 }
 
 // Literal text plain, {{tokens}} as muted mono chips, {{if}}/{{else}}/
-// {{endif}} control tags as italic chips, unknown tokens red.
+// {{endif}} control tags as italic chips, {{= …}} calcs as sky chips
+// (red when the expression doesn't validate), unknown tokens red.
 const CANVAS_CHIP_RE =
-  /\{\{(?:if\b[^{}]*|else|endif)\}\}|\{\{[a-zA-Z][a-zA-Z0-9]*(?::[a-zA-Z0-9-]+)?\}\}/g;
+  /\{\{=[^{}]*\}\}|\{\{(?:if\b[^{}]*|else|endif)\}\}|\{\{[a-zA-Z][a-zA-Z0-9]*(?::[a-zA-Z0-9-]+)?\}\}/g;
 
 function CanvasLine({ line }: { line: string }) {
   const parts: React.ReactNode[] = [];
@@ -3002,8 +3033,12 @@ function CanvasLine({ line }: { line: string }) {
     if (m.index > last) parts.push(<span key={`t${i++}`}>{line.slice(last, m.index)}</span>);
     const raw = m[0];
     const isControl = /^\{\{(if\b|else\}\}|endif\}\})/.test(raw);
+    const calcMatch = /^\{\{=\s*([^{}]*?)\s*\}\}$/.exec(raw);
     let cls: string;
-    if (isControl) {
+    if (calcMatch) {
+      const ok = validateCalcExpression(calcMatch[1]).length === 0;
+      cls = ok ? "border-sky-200 bg-sky-50 text-sky-700" : "border-red-200 bg-red-50 text-red-600";
+    } else if (isControl) {
       cls = "border-zinc-200 bg-white italic text-zinc-400";
     } else {
       const keyMatch = /^\{\{([a-zA-Z][a-zA-Z0-9]*)/.exec(raw);
