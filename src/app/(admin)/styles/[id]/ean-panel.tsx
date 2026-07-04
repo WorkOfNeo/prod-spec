@@ -160,6 +160,14 @@ function Diagnostics({ d }: { d: EanDiagnostics }) {
         <Row k="PDF pages / text length" v={`${d.pdfPageCount} / ${d.pdfTextLength}`} />
         <Row k="Queries tried" v={d.queriesTried.join(", ") || "—"} />
         <Row k="Customer Item No (style)" v={d.customerItemNoOnStyle ?? "—"} />
+        <Row
+          k="Colour scope"
+          v={
+            d.colourScopeApplied
+              ? `${d.colourLetters.map((l) => `*${l}`).join(", ")} — ${d.variantsExcludedByColour} other-colour row${d.variantsExcludedByColour === 1 ? "" : "s"} excluded`
+              : (d.colourCodeOnStyle ?? "—")
+          }
+        />
       </dl>
 
       {d.candidates.length > 1 && (

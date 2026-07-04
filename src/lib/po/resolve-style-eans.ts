@@ -9,6 +9,7 @@ import {
   type PoVariant,
 } from "./parse-barcodes";
 import { labelHasSize } from "./size-match";
+import { colourLettersFromCode, scopeVariantsByColour, variantMatchesColour } from "./colour-scope";
 import type { EanDiagnostics } from "./ean-view";
 import { parseCustomerConfig, MANUAL_COLUMN_IDS, type ColumnMapping } from "@/lib/customers/config";
 import { parseProdSpecColumnMapping } from "@/lib/prod-spec/config";
@@ -164,6 +165,16 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
   const sizes = splitSizes(
     readCol(style.rawData, mapping.sizes ?? "sizes__1", MANUAL_COLUMN_IDS.sizes),
   );
+  // The 🎨 Colour code column sometimes carries a "*A" / "*B" marker naming
+  // which of a PO section's colourways belongs to THIS style — two Pre-Order
+  // rows can order against ONE section that lists both colourways. See
+  // colour-scope.ts for the convention.
+  const colourCode = readCol(
+    style.rawData,
+    mapping.colourCode ?? "dropdown__1",
+    MANUAL_COLUMN_IDS.colourCode,
+  );
+  const colourLetters = colourLettersFromCode(colourCode);
 
   // Find the PO PDF by searching the central Suppliers drive for the
   // (unique) PO number — robust to messy per-supplier folder URLs. We keep
@@ -203,6 +214,10 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
         styleNumberOnStyle: styleNumber || null,
         poStyleNumbers: [],
         poSections: [],
+        colourCodeOnStyle: colourCode || null,
+        colourLetters,
+        colourScopeApplied: false,
+        variantsExcludedByColour: 0,
         styleSizes: sizes,
         textSnippet: "",
       },
@@ -237,6 +252,10 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
         styleNumberOnStyle: styleNumber || null,
         poStyleNumbers: [],
         poSections: [],
+        colourCodeOnStyle: colourCode || null,
+        colourLetters,
+        colourScopeApplied: false,
+        variantsExcludedByColour: 0,
         styleSizes: sizes,
         textSnippet: "",
       },
@@ -279,6 +298,10 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
         styleNumberOnStyle: styleNumber || null,
         poStyleNumbers: [],
         poSections: [],
+        colourCodeOnStyle: colourCode || null,
+        colourLetters,
+        colourScopeApplied: false,
+        variantsExcludedByColour: 0,
         styleSizes: sizes,
         textSnippet: "",
       },
@@ -293,7 +316,13 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
   // Carry each section's own carton EAN onto its variants so a multi-colourway
   // style (one section per colour) keeps the carton paired with the right
   // colour rather than collapsing to the first section's carton.
-  const variants = variantsWithSectionCarton(selectedItems);
+  const allVariants = variantsWithSectionCarton(selectedItems);
+  // Scope to this style's own colourway when the Colour code carries a "*X"
+  // letter and the PO rows are letter-marked — one selected section can list
+  // SEVERAL colourways that belong to DIFFERENT Pre-Order rows, and without
+  // this every size collects the other colour's EAN too.
+  const colourScope = scopeVariantsByColour(allVariants, colourCode);
+  const variants = colourScope.variants;
   // Single representative carton for non-repeating outputs + Style.cartonEan.
   const cartonEan = cartonEanFor(selectedItems, parsed.items);
 
@@ -305,7 +334,15 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
     styleNumber: it.styleNumber,
     contrastNo: it.contrastNo,
     selected: selectedSet.has(it),
-    variants: it.variants.map((v) => ({ label: v.label, ean13: v.ean13 })),
+    // `used` mirrors the colour scope: on a selected section, a row of another
+    // colourway is shown but flagged as not feeding EAN-13 (per size).
+    variants: it.variants.map((v) => ({
+      label: v.label,
+      ean13: v.ean13,
+      used:
+        selectedSet.has(it) &&
+        (!colourScope.applied || variantMatchesColour(v.label, colourScope.letters)),
+    })),
     cartonEan: it.assortmentEans[0] ?? null,
   }));
 
@@ -330,6 +367,10 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
     styleNumberOnStyle: styleNumber || null,
     poStyleNumbers: selection.poStyleNumbers,
     poSections,
+    colourCodeOnStyle: colourCode || null,
+    colourLetters,
+    colourScopeApplied: colourScope.applied,
+    variantsExcludedByColour: colourScope.excluded,
     styleSizes: sizes,
     textSnippet: parsed.diagnostics.textSnippet,
   };
@@ -397,6 +438,13 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
   return {
     ...base,
     poFileName: po.name,
+    // The PO is letter-marked but no row carries this style's letter — a data
+    // mismatch worth naming, since the safe alternative (grabbing the other
+    // colourway's EANs) is exactly what scoping exists to prevent.
+    message:
+      colourScope.applied && variants.length === 0
+        ? `Colour code ${colourLetters.map((l) => `*${l}`).join(", ")} matched none of the PO's colourway rows.`
+        : undefined,
     sizeEans,
     cartonEan,
     unmatchedVariants: unmatched,
