@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
-import { isAdmin } from "@/lib/roles";
+import { canReview } from "@/lib/roles";
 import { enqueueGenerationJob } from "@/lib/queue/enqueue";
 import { runPendingJobs } from "@/lib/queue/runner";
 
@@ -12,8 +12,11 @@ export const maxDuration = 300;
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  if (!isAdmin(role)) {
-    return NextResponse.json({ error: "Requires role: ADMIN" }, { status: 403 });
+  // canReview, not isAdmin: re-running outputs is part of the review loop — a
+  // REVIEWER who changed the underlying data needs fresh PDFs without waiting
+  // for an admin. Same deliberate exception as carton-customize (PR #132).
+  if (!canReview(role)) {
+    return NextResponse.json({ error: "Requires role: ADMIN or REVIEWER" }, { status: 403 });
   }
 
   const { id } = await ctx.params;

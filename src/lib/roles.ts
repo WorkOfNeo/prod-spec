@@ -9,10 +9,12 @@ export function canReview(role: UserRole | null): boolean {
   return role === "ADMIN" || role === "REVIEWER";
 }
 
-// Who may trigger ADMIN-only mutations (queue drains, manual re-runs, the
-// rejection-ticket workbench). REVIEWERs can approve/reject but must not be
-// able to kick off generation or fix tickets — gated at the API, not merely
-// hidden in the UI. Kept pure for the same unit-testable reasons as canReview.
+// Who may trigger ADMIN-only mutations (queue drains, the rejection-ticket
+// workbench, supplier pushes). REVIEWERs can approve/reject — and, as
+// deliberate exceptions, regenerate outputs in review (styles/[id]/rerun,
+// carton-customize) — but must not fix tickets or drain queues — gated at
+// the API, not merely hidden in the UI. Kept pure for the same
+// unit-testable reasons as canReview.
 export function isAdmin(role: UserRole | null): boolean {
   return role === "ADMIN";
 }

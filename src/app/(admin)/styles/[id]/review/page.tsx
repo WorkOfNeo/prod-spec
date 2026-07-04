@@ -10,6 +10,7 @@ import { ReviewClaim } from "./claim-review";
 import { ReviewLeaveGuard } from "./leave-guard";
 import { ReviewCartonCustomize } from "./review-carton-customize";
 import { UndoIgnoreButton } from "./undo-ignore-button";
+import { RerunOutputsButton } from "./rerun-outputs-button";
 import { RunOutputButton } from "../run-output-button";
 import { LogStyleView } from "@/components/log-style-view";
 import { groupByDocType, DocTypeAccordion } from "../doc-type-groups";
@@ -279,6 +280,16 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           ) : null}
         </div>
         <div className="flex items-end gap-3">
+          {/* Style-level rerun — reviewer-accessible fresh PDFs after a data
+              change. Full re-run semantics: durable approval keeps approved
+              outputs; pending/rejected regenerate. */}
+          <RerunOutputsButton
+            styleId={style.id}
+            variantKeys={[]}
+            label="Rerun all"
+            title="Regenerate this style's outputs after a data change — approved outputs are kept, everything else comes back fresh for review"
+            emphasis
+          />
           {canPush ? (
             <SupplierPushActions styleId={style.id} pushableCount={pushableCount} />
           ) : null}
@@ -315,12 +326,26 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           ]
             .filter(Boolean)
             .join(" · ");
+          // Group rerun is SCOPED (explicit base keys), so unlike the full
+          // re-run it regenerates approved outputs in the group too — the
+          // reviewer is explicitly asking for this set fresh.
+          const groupKeys = [...new Set(group.items.map((o) => baseVariantKey(o.variantKey)))];
           return (
             <DocTypeAccordion
               key={group.docType}
               label={group.label}
               count={group.items.length}
-              rightHint={hint}
+              rightHint={
+                <span className="inline-flex items-center gap-3">
+                  {hint ? <span>{hint}</span> : null}
+                  <RerunOutputsButton
+                    styleId={style.id}
+                    variantKeys={groupKeys}
+                    label="Rerun"
+                    title={`Regenerate all ${group.items.length > 1 ? `${group.items.length} outputs` : "outputs"} in “${group.label}” — including approved ones, which come back for a fresh decision`}
+                  />
+                </span>
+              }
             >
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {group.items.map((o) => (
