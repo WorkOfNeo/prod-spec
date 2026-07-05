@@ -56,12 +56,27 @@ function SectionRow({ s }: { s: PoSection }) {
         </div>
         {s.variants.length > 0 ? (
           <ul className="mt-1.5 space-y-0.5">
-            {s.variants.map((v, i) => (
-              <li key={i} className="flex justify-between gap-3 text-xs tabular-nums">
-                <span className="text-zinc-600">{v.label}</span>
-                <span className="font-medium text-zinc-800">{v.ean13}</span>
-              </li>
-            ))}
+            {s.variants.map((v, i) =>
+              // A selected section can still carry rows that are NOT this
+              // style's — another colourway's, excluded by the Colour code
+              // "*X" scope. Show them dimmed so the exclusion is auditable.
+              v.used ? (
+                <li key={i} className="flex justify-between gap-3 text-xs tabular-nums">
+                  <span className="text-zinc-600">{v.label}</span>
+                  <span className="font-medium text-zinc-800">{v.ean13}</span>
+                </li>
+              ) : (
+                <li key={i} className="flex justify-between gap-3 text-xs tabular-nums text-zinc-400">
+                  <span>
+                    {v.label}
+                    <span className="ml-1.5 rounded bg-zinc-100 px-1 py-px text-[10px] text-zinc-500">
+                      other colourway — not used
+                    </span>
+                  </span>
+                  <span>{v.ean13}</span>
+                </li>
+              ),
+            )}
           </ul>
         ) : (
           <p className="mt-1 text-xs text-zinc-500">No per-size barcodes in this section.</p>

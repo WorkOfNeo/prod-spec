@@ -10,7 +10,7 @@ const SECTIONS: PoSection[] = [
     styleNumber: "PTQ60032",
     contrastNo: "C-33418",
     selected: false,
-    variants: [{ label: "PI-86/92 Pink, 86/92", ean13: "5706323598907" }],
+    variants: [{ label: "PI-86/92 Pink, 86/92", ean13: "5706323598907", used: false }],
     cartonEan: "5706323598945",
   },
   {
@@ -18,8 +18,8 @@ const SECTIONS: PoSection[] = [
     contrastNo: "C-33423",
     selected: true,
     variants: [
-      { label: ".B-86/92 Blue, 86/92", ean13: "5706323599140" },
-      { label: ".B-98/104 Blue, 98/104", ean13: "5706323599140" },
+      { label: ".B-86/92 Blue, 86/92", ean13: "5706323599140", used: true },
+      { label: ".B-98/104 Blue, 98/104", ean13: "5706323599140", used: true },
     ],
     cartonEan: "5706323599188",
   },
@@ -27,7 +27,7 @@ const SECTIONS: PoSection[] = [
     styleNumber: "PTQ10046",
     contrastNo: "C-33426",
     selected: false,
-    variants: [{ label: ".B-86/92 Blue, 86/92", ean13: "5706323599294" }],
+    variants: [{ label: ".B-86/92 Blue, 86/92", ean13: "5706323599294", used: false }],
     cartonEan: "5706323599331",
   },
 ];
@@ -49,6 +49,28 @@ test("ScrapePanel — highlights the matched section, its per-size EANs + carton
   // resolved barcodes for this style.
   assert.match(html, /PTQ10046/);
   assert.match(html, /1 size ·/);
+});
+
+test("ScrapePanel — colour-scoped section dims the other colourway's rows", () => {
+  // Real C-PO63293 shape: ONE section, two colourways, style is "*A" — the
+  // B rows stay visible for auditing but are flagged as not used.
+  const scoped: PoSection[] = [
+    {
+      styleNumber: "IL36494",
+      contrastNo: "C-33396",
+      selected: true,
+      variants: [
+        { label: "A-M Colour A black/white, M", ean13: "5706323597832", used: true },
+        { label: "B-M Colour B navy/white, M", ean13: "5706323597870", used: false },
+      ],
+      cartonEan: "5706323597917",
+    },
+  ];
+  const html = renderToStaticMarkup(createElement(ScrapePanel, { sections: scoped }));
+  assert.match(html, /5706323597832/);
+  assert.match(html, /other colourway — not used/);
+  // The excluded row's EAN is still shown (audit), just not styled as used.
+  assert.match(html, /5706323597870/);
 });
 
 test("ScrapePanel — reject case: none matched, nothing stored", () => {

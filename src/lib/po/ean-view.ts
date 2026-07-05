@@ -44,6 +44,17 @@ export type EanDiagnostics = {
   /** Distinct style numbers found across the PO's sections — the candidate
    *  set a STYLE_NOT_IN_PO reject was checked against. */
   poStyleNumbers: string[];
+  /** The style's 🎨 Colour code column value, e.g. "*A" — the colourway
+   *  marker used to scope a multi-colourway section's rows. */
+  colourCodeOnStyle: string | null;
+  /** PO colour letters parsed off the Colour code ("*A" → ["A"]). Empty when
+   *  the column carries no starred letter (colour names etc.). */
+  colourLetters: string[];
+  /** True when the variants were scoped to the style's colour letter(s) —
+   *  i.e. the Colour code has "*X" AND the PO rows are letter-marked. */
+  colourScopeApplied: boolean;
+  /** Variant rows dropped as other colourways' (0 when scoping not applied). */
+  variantsExcludedByColour: number;
   /** Every section parsed from the PO's Barcodes page, each flagged with
    *  whether this resolve selected it (`selected`). Powers the "full scrape,
    *  green = used" panel. Live-only: trimmed from the persisted Log payload to
@@ -52,7 +63,9 @@ export type EanDiagnostics = {
     styleNumber: string | null;
     contrastNo: string | null;
     selected: boolean;
-    variants: Array<{ label: string; ean13: string }>;
+    /** `used` = this row actually fed EAN-13 (per size); false on rows of a
+     *  selected section that colour scoping excluded as another colourway's. */
+    variants: Array<{ label: string; ean13: string; used: boolean }>;
     cartonEan: string | null;
   }>;
   styleSizes: string[];
