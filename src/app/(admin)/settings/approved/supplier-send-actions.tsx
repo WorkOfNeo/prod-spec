@@ -156,3 +156,98 @@ export function RunBatchNowButton({ enabled }: { enabled: boolean }) {
     </div>
   );
 }
+
+// "Upload to SharePoint now" — the recurring sweep (?uploadOnly=1) on demand:
+// reconcile the backfill window, push every pending upload, send NO email.
+// Same session auth as "Run batch now"; a no-op while sending is off.
+export function UploadNowButton({ enabled }: { enabled: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function run() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch(`/api/cron/supplier-send?uploadOnly=1&manual=1`, { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        enabled?: boolean;
+        uploaded?: number;
+        failed?: number;
+        skipped?: number;
+        reconciled?: { outputsEnqueued?: number; stylesEnqueued?: number };
+      };
+      if (!res.ok) {
+        setMsg(body.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      const backfilled = body.reconciled?.outputsEnqueued ?? 0;
+      setMsg(
+        body.enabled === false
+          ? `Sending is off — ${backfilled} output(s) reconciled into the queue, nothing pushed.`
+          : `Done — ${body.uploaded ?? 0} uploaded, ${body.failed ?? 0} failed, ${body.skipped ?? 0} skipped` +
+              (backfilled > 0 ? ` (+${backfilled} backfilled into the queue)` : "") +
+              `.`,
+      );
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onClick={run}
+        disabled={busy}
+        className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
+      >
+        {busy ? "Uploading…" : enabled ? "Upload to SharePoint now" : "Upload to SharePoint now (off — reconcile only)"}
+      </button>
+      {msg ? <span className="text-xs text-zinc-500">{msg}</span> : null}
+    </div>
+  );
+}
+
+// Reset "gave up" uploads (3 failed pushes) back to PENDING so the next sweep
+// retries them — e.g. after FLC fixes folder permissions.
+export function RetryFloatedButton({ floatedCount }: { floatedCount: number }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  if (floatedCount === 0 && !msg) return null;
+
+  async function run() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch(`/api/admin/supplier-send/retry-floated`, { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; reset?: number };
+      if (!res.ok) {
+        setMsg(body.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setMsg(`${body.reset ?? 0} upload(s) re-armed — the next sweep retries them.`);
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onClick={run}
+        disabled={busy}
+        className="rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+      >
+        {busy ? "Re-arming…" : `Retry ${floatedCount} gave-up upload${floatedCount === 1 ? "" : "s"}`}
+      </button>
+      {msg ? <span className="text-xs text-zinc-500">{msg}</span> : null}
+    </div>
+  );
+}

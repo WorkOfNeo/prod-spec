@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
   const [styles, customers, shares, supplier] = await Promise.all([
     db.style.findMany({
       where: { id: { in: styleIds } },
-      select: { id: true, name: true, poNumber: true, businessArea: true, businessAreaRef: { select: { name: true } } },
+      select: { id: true, name: true, poNumber: true, businessArea: true, supplierFolderUrl: true, businessAreaRef: { select: { name: true } } },
     }),
     db.customer.findMany({ where: { id: { in: customerIds } }, select: { id: true, name: true } }),
     db.supplierShare.findMany({ where: { styleId: { in: styleIds } }, select: { styleId: true, token: true, pin: true } }),
@@ -57,7 +57,13 @@ export async function GET(req: NextRequest) {
   const styleById = new Map(
     styles.map((s) => [
       s.id,
-      { name: s.name, poNumber: s.poNumber, businessArea: s.businessArea, businessAreaRefName: s.businessAreaRef?.name ?? null },
+      {
+        name: s.name,
+        poNumber: s.poNumber,
+        businessArea: s.businessArea,
+        businessAreaRefName: s.businessAreaRef?.name ?? null,
+        supplierFolderUrl: s.supplierFolderUrl,
+      },
     ]),
   );
   const customerById = new Map(customers.map((c) => [c.id, { name: c.name }]));

@@ -1,11 +1,22 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { requireAdminPage } from "@/lib/auth-server";
-import { getSupplierBatchSendEnabled } from "@/lib/settings/app-settings";
+import {
+  getGenerationMinPo,
+  getSupplierBatchSendEnabled,
+  getSupplierSendMinPo,
+  getSupplierSendMinPoExplicit,
+} from "@/lib/settings/app-settings";
 import { combineSupplierRecipients } from "@/lib/suppliers/recipients";
 import { loadContactEmailsBySupplier } from "@/lib/suppliers/contact-emails";
-import { SupplierSendSetting } from "./supplier-send-setting";
-import { SupplierPreviewButton, RunBatchNowButton } from "./supplier-send-actions";
+import { MAX_PUSH_ATTEMPTS } from "@/lib/sharepoint/push-queued-to-supplier";
+import { SupplierSendSetting, SupplierSendCutoff } from "./supplier-send-setting";
+import {
+  SupplierPreviewButton,
+  RunBatchNowButton,
+  UploadNowButton,
+  RetryFloatedButton,
+} from "./supplier-send-actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Approved & delivery" };
@@ -18,15 +29,59 @@ export const metadata = { title: "Approved & delivery" };
 export default async function ApprovedDeliveryPage() {
   await requireAdminPage();
 
-  const [enabled, pending, batches] = await Promise.all([
+  const [
+    enabled,
+    cutoffExplicit,
+    cutoffEffective,
+    generationCutoff,
+    pending,
+    batches,
+    statusGroups,
+    floatedCount,
+    queuedRefs,
+  ] = await Promise.all([
     getSupplierBatchSendEnabled(),
+    getSupplierSendMinPoExplicit(),
+    getSupplierSendMinPo(),
+    getGenerationMinPo(),
     db.supplierSendQueueItem.findMany({
       where: { sentAt: null },
       orderBy: { queuedAt: "desc" },
       take: 500,
     }),
     db.supplierSendBatch.findMany({ orderBy: { createdAt: "desc" }, take: 15 }),
+    // Exact totals for the summary cards — independent of the 500-row display cap.
+    db.supplierSendQueueItem.groupBy({
+      by: ["sharePointStatus"],
+      where: { sentAt: null },
+      _count: { _all: true },
+    }),
+    db.supplierSendQueueItem.count({
+      where: { sentAt: null, sharePointStatus: "FAILED", pushAttempts: { gte: MAX_PUSH_ATTEMPTS } },
+    }),
+    db.supplierSendQueueItem.findMany({ where: { sentAt: null }, select: { styleId: true, customerId: true } }),
   ]);
+
+  // Tonight's batch, summed up: outputs / styles / customers / business areas,
+  // and where the files stand on SharePoint. BA resolves via the mirror ref
+  // with the free-text fallback; blank or "–" placeholder names don't count.
+  const totalOutputs = queuedRefs.length;
+  const totalStyleIds = [...new Set(queuedRefs.map((q) => q.styleId))];
+  const totalCustomers = new Set(queuedRefs.map((q) => q.customerId)).size;
+  const baRows =
+    totalStyleIds.length > 0
+      ? await db.style.findMany({
+          where: { id: { in: totalStyleIds } },
+          select: { businessArea: true, businessAreaRef: { select: { name: true } } },
+        })
+      : [];
+  const baNames = new Set(
+    baRows
+      .map((s) => (s.businessAreaRef?.name?.trim() || s.businessArea?.trim()) ?? "")
+      .filter((n) => n !== "" && n !== "–" && n !== "-"),
+  );
+  const spCounts = { UPLOADED: 0, PENDING: 0, FAILED: 0, SKIPPED: 0 } as Record<string, number>;
+  for (const g of statusGroups) spCounts[g.sharePointStatus] = g._count._all;
 
   // "Opened" tracking: collect the emailLogIds referenced by recent batches'
   // per-supplier outcomes, then find which have an "opened" Resend event.
@@ -114,17 +169,60 @@ export default async function ApprovedDeliveryPage() {
     <div className="px-8 py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Approved &amp; delivery</h1>
       <p className="mt-1 max-w-2xl text-sm text-zinc-500">
-        Approved outputs waiting to reach their supplier. {pending.length} output
-        {pending.length === 1 ? "" : "s"} queued across {groupList.length} supplier
-        {groupList.length === 1 ? "" : "s"}.
+        Approved outputs waiting to reach their supplier — what goes out in tonight&rsquo;s digest,
+        and where each file stands on SharePoint.
       </p>
 
-      <div className="mt-6 max-w-3xl">
-        <SupplierSendSetting initialEnabled={enabled} />
+      {/* Tonight's batch, summed up. */}
+      <div className="mt-6 grid max-w-4xl grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          { label: "Outputs tonight", value: totalOutputs },
+          { label: "Styles", value: totalStyleIds.length },
+          { label: "Customers", value: totalCustomers },
+          { label: "Business areas", value: baNames.size },
+        ].map((c) => (
+          <div key={c.label} className="rounded-lg border border-zinc-200 px-4 py-3">
+            <div className="text-2xl font-semibold tabular-nums text-zinc-900">{c.value}</div>
+            <div className="mt-0.5 text-xs uppercase tracking-wide text-zinc-500">{c.label}</div>
+          </div>
+        ))}
       </div>
 
-      <div className="mt-4">
+      {/* SharePoint upload state across the queue. */}
+      <div className="mt-3 flex max-w-4xl flex-wrap items-center gap-2 text-xs">
+        <span className="text-zinc-500">SharePoint:</span>
+        <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
+          {spCounts.UPLOADED} uploaded
+        </span>
+        <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
+          {spCounts.PENDING} pending
+        </span>
+        <span className="inline-flex rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-medium text-red-700">
+          {spCounts.FAILED} failed{floatedCount > 0 ? ` (${floatedCount} gave up)` : ""}
+        </span>
+        <span className="inline-flex rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 font-medium text-zinc-500">
+          {spCounts.SKIPPED} skipped
+        </span>
+        {!enabled && (spCounts.PENDING > 0 || spCounts.FAILED > 0) ? (
+          <span className="text-amber-600">
+            — uploads wait for &ldquo;Automatic supplier sending&rdquo; to be switched on
+          </span>
+        ) : null}
+      </div>
+
+      <div className="mt-6 grid max-w-5xl gap-4 lg:grid-cols-2">
+        <SupplierSendSetting initialEnabled={enabled} />
+        <SupplierSendCutoff
+          initialExplicit={cutoffExplicit}
+          effective={cutoffEffective}
+          generation={generationCutoff}
+        />
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-4">
         <RunBatchNowButton enabled={enabled} />
+        <UploadNowButton enabled={enabled} />
+        <RetryFloatedButton floatedCount={floatedCount} />
       </div>
 
       {/* Per-supplier summary — who gets what tonight, and to which email. */}
@@ -223,7 +321,11 @@ export default async function ApprovedDeliveryPage() {
                       <span
                         className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${spPill(item.sharePointStatus)}`}
                       >
-                        {item.sharePointStatus.toLowerCase()}
+                        {item.sharePointStatus === "FAILED" && item.pushAttempts >= MAX_PUSH_ATTEMPTS
+                          ? `failed · gave up (${item.pushAttempts}×)`
+                          : item.sharePointStatus === "FAILED" && item.pushAttempts > 0
+                            ? `failed (${item.pushAttempts}×)`
+                            : item.sharePointStatus.toLowerCase()}
                       </span>
                     </td>
                     <td className="px-4 py-2 text-xs text-zinc-500">

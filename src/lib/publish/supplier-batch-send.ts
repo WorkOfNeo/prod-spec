@@ -6,6 +6,7 @@ import { combineSupplierRecipients } from "@/lib/suppliers/recipients";
 import { loadContactEmailsBySupplier } from "@/lib/suppliers/contact-emails";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
+import { buildSupplierDigest } from "./supplier-digest";
 
 // Nightly supplier-send batch (WS2b). Groups the unsent send-queue by supplier
 // → customer and sends ONE digest email per supplier. Replaces the old
@@ -49,63 +50,10 @@ export type BatchResult = {
   perSupplier: PerSupplierOutcome[];
 };
 
-// Build the digest for one supplier: grouped by customer → style → outputs,
-// with the durable portal link + PIN per style. Preview and cron share this.
-export function buildSupplierDigest(input: {
-  supplierName: string;
-  items: QueueItem[];
-  styleById: Map<string, { name: string; poNumber: string | null; businessArea: string | null; businessAreaRefName: string | null }>;
-  customerById: Map<string, { name: string }>;
-  shareByStyle: Map<string, { token: string; pin: string }>;
-  baseUrl: string;
-}): { subject: string; html: string; text: string } {
-  const { supplierName, items, styleById, customerById, shareByStyle, baseUrl } = input;
-
-  // customerId -> styleId -> items
-  const byCustomer = new Map<string, Map<string, QueueItem[]>>();
-  for (const it of items) {
-    const byStyle = byCustomer.get(it.customerId) ?? new Map<string, QueueItem[]>();
-    const arr = byStyle.get(it.styleId) ?? [];
-    arr.push(it);
-    byStyle.set(it.styleId, arr);
-    byCustomer.set(it.customerId, byStyle);
-  }
-
-  const styleCount = new Set(items.map((i) => i.styleId)).size;
-  const customerNames = [...byCustomer.keys()].map((cid) => customerById.get(cid)?.name ?? "—");
-  const subject = `Approved production specs — ${styleCount} style${styleCount === 1 ? "" : "s"} ready (${customerNames.join(", ")})`;
-
-  const htmlParts: string[] = [`<p>Hi ${supplierName},</p>`, `<p>The following approved production specs are ready for you:</p>`];
-  const textParts: string[] = [`Hi ${supplierName},`, ``, `The following approved production specs are ready for you:`, ``];
-
-  for (const [customerId, byStyle] of byCustomer) {
-    const cName = customerById.get(customerId)?.name ?? "—";
-    htmlParts.push(`<h3 style="margin:16px 0 4px">${cName}</h3>`);
-    textParts.push(`== ${cName} ==`);
-    for (const [styleId, styleItems] of byStyle) {
-      const s = styleById.get(styleId);
-      const share = shareByStyle.get(styleId);
-      const portal = share ? `${baseUrl}/s/${share.token}` : null;
-      const outputs = styleItems.map((i) => i.displayName ?? i.docType).join(", ");
-      const poBit = s?.poNumber ? ` · ${s.poNumber}` : "";
-      const ba = s?.businessAreaRefName ?? s?.businessArea ?? "";
-      htmlParts.push(
-        `<p style="margin:6px 0"><strong>${s?.name ?? styleId}</strong>${ba ? ` <span style="color:#888">(${ba})</span>` : ""}${poBit}<br/>` +
-          `Outputs: ${outputs}` +
-          (portal ? `<br/>Portal: <a href="${portal}">${portal}</a>${share ? ` — PIN ${share.pin}` : ""}` : "") +
-          `</p>`,
-      );
-      textParts.push(
-        `- ${s?.name ?? styleId}${ba ? ` (${ba})` : ""}${poBit}\n  Outputs: ${outputs}` +
-          (portal ? `\n  Portal: ${portal}${share ? ` — PIN ${share.pin}` : ""}` : ""),
-      );
-    }
-  }
-  htmlParts.push(`<p style="color:#888;font-size:12px">Sent by Prod Spec. Files are also in your SharePoint folder.</p>`);
-  textParts.push(``, `Sent by Prod Spec. Files are also in your SharePoint folder.`);
-
-  return { subject, html: htmlParts.join("\n"), text: textParts.join("\n") };
-}
+// The digest builder lives in the DB-free leaf module supplier-digest.ts so
+// tests and the preview route can import it without the Prisma client.
+// Re-exported here for callers that still import it from this module.
+export { buildSupplierDigest } from "./supplier-digest";
 
 export async function runSupplierSendBatch(opts?: { source?: "midnight" | "manual" }): Promise<BatchResult> {
   const source = opts?.source ?? "midnight";
@@ -185,6 +133,8 @@ export async function runSupplierSendBatch(opts?: { source?: "midnight" | "manua
   if (enabled) {
     const swept = await pushQueuedSupplierUploads({
       styleIds: [...new Set(pending.map((p) => p.styleId))],
+      // Midnight retries even rows that used up their day-time strikes.
+      includeFloated: true,
     });
     if (swept.styles > 0) {
       console.log(
@@ -200,7 +150,7 @@ export async function runSupplierSendBatch(opts?: { source?: "midnight" | "manua
   const [styles, suppliers, customers, shares] = await Promise.all([
     db.style.findMany({
       where: { id: { in: styleIds } },
-      select: { id: true, name: true, poNumber: true, businessArea: true, businessAreaRef: { select: { name: true } } },
+      select: { id: true, name: true, poNumber: true, businessArea: true, supplierFolderUrl: true, businessAreaRef: { select: { name: true } } },
     }),
     db.supplier.findMany({
       where: { id: { in: supplierIds } },
@@ -211,7 +161,16 @@ export async function runSupplierSendBatch(opts?: { source?: "midnight" | "manua
   ]);
 
   const styleById = new Map(
-    styles.map((s) => [s.id, { name: s.name, poNumber: s.poNumber, businessArea: s.businessArea, businessAreaRefName: s.businessAreaRef?.name ?? null }]),
+    styles.map((s) => [
+      s.id,
+      {
+        name: s.name,
+        poNumber: s.poNumber,
+        businessArea: s.businessArea,
+        businessAreaRefName: s.businessAreaRef?.name ?? null,
+        supplierFolderUrl: s.supplierFolderUrl,
+      },
+    ]),
   );
   const customerById = new Map(customers.map((c) => [c.id, { name: c.name }]));
   const supplierById = new Map(suppliers.map((s) => [s.id, s]));

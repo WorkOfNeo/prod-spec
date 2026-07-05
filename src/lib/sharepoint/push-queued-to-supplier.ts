@@ -12,9 +12,10 @@ import { getSupplierBatchSendEnabled } from "@/lib/settings/app-settings";
 //
 // Called fail-soft from every approval path (job publish, per-asset approve,
 // runner auto-approve) so files land in the supplier folder the moment an
-// output is approved, and again by the midnight cron as a retry sweep so
-// everything is in place before the digest email claims "files are in your
-// SharePoint folder".
+// output is approved; by the RECURRING upload sweep (?uploadOnly=1 cron, WS3)
+// so retries + backfilled rows drain during the day; and again by the midnight
+// cron (includeFloated) so everything is in place before the digest email
+// claims "files are in your SharePoint folder".
 //
 // Gated behind the same supplierBatchSendEnabled master flag as the batch
 // send — the /settings/approved toggle promises "nothing is pushed and no
@@ -23,12 +24,28 @@ import { getSupplierBatchSendEnabled } from "@/lib/settings/app-settings";
 //
 // Status semantics per queue row:
 //   UPLOADED — in the supplier folder (sharePointUrl set); not retried.
-//   FAILED   — transient/permission error (e.g. write 403); retried next sweep.
+//   FAILED   — transient/permission error (e.g. write 403); retried until
+//              pushAttempts hits MAX_PUSH_ATTEMPTS, then it "floats" for the
+//              recurring sweep (surfaced on /settings/approved). The midnight
+//              sweep passes includeFloated and still retries once nightly, so
+//              a fixed permission self-heals within a day.
 //   SKIPPED  — data-shaped gap (no supplier, no folder link, asset no longer
-//              approved, customer delivers own). Also retried nightly, so
-//              fixing the data (e.g. setting the Monday folder link) self-heals
-//              without anyone re-triggering.
+//              approved, customer delivers own). Also retried each sweep —
+//              these fail fast before any Graph write — so fixing the data
+//              (e.g. setting the Monday folder link) self-heals without anyone
+//              re-triggering.
+//
+// A queue row is one output SLOT (base variantKey) holding a representative
+// jobAssetId. A multi-document slot (carton X-of-Y) has several PDFs — the
+// sweep re-expands each slot to ALL of its current approved documents via
+// current-outputs, so the whole set lands in the folder, not just the
+// representative.
 // =====================================================
+
+// Consecutive FAILED pushes before the recurring sweep stops retrying a row
+// (mirrors MAX_EAN_ATTEMPTS / MAX_GEN_ATTEMPTS). The midnight sweep ignores
+// the cap; a new approved render resets it (see enqueueApprovedAsset).
+export const MAX_PUSH_ATTEMPTS = 3;
 
 export type SupplierUploadSweep = {
   styles: number;
@@ -41,6 +58,10 @@ const EMPTY_SWEEP: SupplierUploadSweep = { styles: 0, uploaded: 0, failed: 0, sk
 
 export async function pushQueuedSupplierUploads(opts?: {
   styleIds?: string[];
+  // Midnight retry sweep: also retry rows that already used up their
+  // MAX_PUSH_ATTEMPTS strikes. The recurring day-time sweep leaves them
+  // floated so a persistent 403 can't hammer Graph every tick.
+  includeFloated?: boolean;
 }): Promise<SupplierUploadSweep> {
   if (!(await getSupplierBatchSendEnabled())) return EMPTY_SWEEP;
 
@@ -49,8 +70,11 @@ export async function pushQueuedSupplierUploads(opts?: {
       sentAt: null,
       sharePointStatus: { not: "UPLOADED" },
       ...(opts?.styleIds && opts.styleIds.length > 0 ? { styleId: { in: opts.styleIds } } : {}),
+      ...(opts?.includeFloated
+        ? {}
+        : { NOT: { sharePointStatus: "FAILED", pushAttempts: { gte: MAX_PUSH_ATTEMPTS } } }),
     },
-    select: { id: true, styleId: true, jobAssetId: true },
+    select: { id: true, styleId: true, variantKey: true, jobAssetId: true },
     orderBy: { queuedAt: "asc" },
   });
   if (items.length === 0) return EMPTY_SWEEP;
@@ -74,12 +98,22 @@ export async function pushQueuedSupplierUploads(opts?: {
   );
 
   const sweep: SupplierUploadSweep = { styles: byStyle.size, uploaded: 0, failed: 0, skipped: 0 };
+  const now = () => new Date();
 
   for (const [styleId, styleItems] of byStyle) {
+    // FAILED counts a strike (pushAttempts++); SKIPPED is a data gap that
+    // failed fast — stamped without a strike so it keeps self-healing.
     const stamp = async (ids: string[], status: "FAILED" | "SKIPPED") => {
       if (ids.length === 0) return;
       await db.supplierSendQueueItem
-        .updateMany({ where: { id: { in: ids } }, data: { sharePointStatus: status } })
+        .updateMany({
+          where: { id: { in: ids } },
+          data: {
+            sharePointStatus: status,
+            lastPushAt: now(),
+            ...(status === "FAILED" ? { pushAttempts: { increment: 1 } } : {}),
+          },
+        })
         .catch(() => {});
       sweep[status === "FAILED" ? "failed" : "skipped"] += ids.length;
     };
@@ -101,21 +135,49 @@ export async function pushQueuedSupplierUploads(opts?: {
     );
     if (withAsset.length === 0) continue;
 
+    // Expand each slot to ALL of its current approved + print-safe documents
+    // (a carton X-of-Y is several PDFs behind one queue row). Falls back to
+    // the stored representative when current-outputs can't resolve the slot —
+    // the old behaviour, still correct for single-document outputs.
+    const docIdsByItem = new Map<string, string[]>();
     try {
-      const res = await pushApprovedAssetsToSupplier({
-        styleId,
-        assetIds: withAsset.map((i) => i.jobAssetId as string),
-      });
-      const byAsset = new Map<string, { uploaded: boolean; url: string | null }>();
-      for (const f of res.pushed) byAsset.set(f.assetId, { uploaded: true, url: f.webUrl });
-      for (const s of res.skipped) byAsset.set(s.assetId, { uploaded: false, url: null });
+      const { getCurrentOutputsForStyle } = await import("@/lib/outputs/current-outputs");
+      const outputs = await getCurrentOutputsForStyle(styleId);
+      const approvedByBase = new Map<string, string[]>();
+      for (const o of outputs) {
+        if (o.jobAssetId == null) continue;
+        if (o.reviewStatus !== "APPROVED" || o.placeholderCount > 0) continue;
+        const b = o.variantKey.split("#")[0] || `doc:${o.docType}`;
+        const arr = approvedByBase.get(b) ?? [];
+        arr.push(o.jobAssetId);
+        approvedByBase.set(b, arr);
+      }
       for (const item of withAsset) {
-        const hit = byAsset.get(item.jobAssetId as string);
-        if (hit?.uploaded) {
+        const docs = approvedByBase.get(item.variantKey);
+        docIdsByItem.set(item.id, docs && docs.length > 0 ? docs : [item.jobAssetId as string]);
+      }
+    } catch {
+      for (const item of withAsset) docIdsByItem.set(item.id, [item.jobAssetId as string]);
+    }
+
+    const allAssetIds = [...new Set([...docIdsByItem.values()].flat())];
+
+    try {
+      const res = await pushApprovedAssetsToSupplier({ styleId, assetIds: allAssetIds });
+      const uploadedByAsset = new Map<string, string | null>();
+      for (const f of res.pushed) uploadedByAsset.set(f.assetId, f.webUrl);
+      for (const item of withAsset) {
+        const docIds = docIdsByItem.get(item.id) ?? [];
+        // The slot is UPLOADED only when EVERY one of its documents landed.
+        if (docIds.length > 0 && docIds.every((id) => uploadedByAsset.has(id))) {
           await db.supplierSendQueueItem
             .update({
               where: { id: item.id },
-              data: { sharePointStatus: "UPLOADED", sharePointUrl: hit.url },
+              data: {
+                sharePointStatus: "UPLOADED",
+                sharePointUrl: uploadedByAsset.get(docIds[0]) ?? res.targetFolderUrl,
+                lastPushAt: now(),
+              },
             })
             .catch(() => {});
           sweep.uploaded += 1;
