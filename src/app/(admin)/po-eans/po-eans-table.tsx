@@ -127,16 +127,21 @@ export function PoEansTable({
     setBusy(false);
   }
 
-  // On the floated view, drain the whole gave-up set; otherwise cap at the
-  // first 20 so the unfiltered list can't kick off hundreds of scrapes.
+  // Any deliberately-filtered view (a status chip or the floated "gave up"
+  // set) is explicit operator intent — drain the whole loaded set, e.g.
+  // "Resolved" after a scrape-logic fix to refresh every stored row. Only the
+  // unfiltered list keeps the first-20 cap, so the default view can't kick
+  // off hundreds of scrapes by accident. Repeat-clicking "first 20" can't
+  // drain a set anyway: re-resolved rows float back to the top of the list.
+  const drainAll = activeFilter != null;
   function runBulk() {
-    const targets = isFloatedView ? filtered : filtered.slice(0, 20);
+    const targets = drainAll ? filtered : filtered.slice(0, 20);
     return resolveMany(targets.map((r) => r.id));
   }
 
   const bulkLabel = progress
     ? `Re-resolving ${progress.done}/${progress.total}…`
-    : isFloatedView
+    : drainAll
       ? `Re-resolve all (${filtered.length})`
       : "Re-resolve first 20";
 
