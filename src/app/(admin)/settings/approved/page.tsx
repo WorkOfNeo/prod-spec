@@ -17,6 +17,7 @@ import {
   UploadNowButton,
   RetryFloatedButton,
 } from "./supplier-send-actions";
+import { UploadProgress } from "./upload-progress";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Approved & delivery" };
@@ -36,7 +37,6 @@ export default async function ApprovedDeliveryPage() {
     generationCutoff,
     pending,
     batches,
-    statusGroups,
     floatedCount,
     queuedRefs,
   ] = await Promise.all([
@@ -50,15 +50,11 @@ export default async function ApprovedDeliveryPage() {
       take: 500,
     }),
     db.supplierSendBatch.findMany({ orderBy: { createdAt: "desc" }, take: 15 }),
-    // Exact totals for the summary cards — independent of the 500-row display cap.
-    db.supplierSendQueueItem.groupBy({
-      by: ["sharePointStatus"],
-      where: { sentAt: null },
-      _count: { _all: true },
-    }),
     db.supplierSendQueueItem.count({
       where: { sentAt: null, sharePointStatus: "FAILED", pushAttempts: { gte: MAX_PUSH_ATTEMPTS } },
     }),
+    // Exact totals for the summary cards — independent of the 500-row display
+    // cap. (Live upload-status counts moved into the UploadProgress widget.)
     db.supplierSendQueueItem.findMany({ where: { sentAt: null }, select: { styleId: true, customerId: true } }),
   ]);
 
@@ -80,8 +76,6 @@ export default async function ApprovedDeliveryPage() {
       .map((s) => (s.businessAreaRef?.name?.trim() || s.businessArea?.trim()) ?? "")
       .filter((n) => n !== "" && n !== "–" && n !== "-"),
   );
-  const spCounts = { UPLOADED: 0, PENDING: 0, FAILED: 0, SKIPPED: 0 } as Record<string, number>;
-  for (const g of statusGroups) spCounts[g.sharePointStatus] = g._count._all;
 
   // "Opened" tracking: collect the emailLogIds referenced by recent batches'
   // per-supplier outcomes, then find which have an "opened" Resend event.
@@ -188,26 +182,11 @@ export default async function ApprovedDeliveryPage() {
         ))}
       </div>
 
-      {/* SharePoint upload state across the queue. */}
-      <div className="mt-3 flex max-w-4xl flex-wrap items-center gap-2 text-xs">
-        <span className="text-zinc-500">SharePoint:</span>
-        <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">
-          {spCounts.UPLOADED} uploaded
-        </span>
-        <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
-          {spCounts.PENDING} pending
-        </span>
-        <span className="inline-flex rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-medium text-red-700">
-          {spCounts.FAILED} failed{floatedCount > 0 ? ` (${floatedCount} gave up)` : ""}
-        </span>
-        <span className="inline-flex rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 font-medium text-zinc-500">
-          {spCounts.SKIPPED} skipped
-        </span>
-        {!enabled && (spCounts.PENDING > 0 || spCounts.FAILED > 0) ? (
-          <span className="text-amber-600">
-            — uploads wait for &ldquo;Automatic supplier sending&rdquo; to be switched on
-          </span>
-        ) : null}
+      {/* Live SharePoint upload progress — polls while the cron sweeps drain
+          the queue (segmented bar + rate + ETA). Replaces the static chip row;
+          the server-rendered tables refresh automatically when it settles. */}
+      <div className="mt-3 max-w-4xl">
+        <UploadProgress enabled={enabled} />
       </div>
 
       <div className="mt-6 grid max-w-5xl gap-4 lg:grid-cols-2">
