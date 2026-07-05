@@ -90,23 +90,19 @@ export function BulkRunOutputs({
     };
   }, [active]);
 
-  async function runAll() {
+  // Shared submit for both bulk actions — they differ only in endpoint,
+  // confirm copy, and how a "nothing to do" response is explained.
+  async function start(input: { url: string; confirmMsg: string; label: string; nothingMsg: (skipped: number) => string }) {
     if (styleIds.length === 0 || submitting || active) return;
-    const n = styleIds.length;
-    const ok = window.confirm(
-      `Generate outputs for ${n} style${n === 1 ? "" : "s"} in the current view?\n\n` +
-        `Runs only each style's ready, not-yet-generated outputs, in the background — ` +
-        `it may take a while. Styles with nothing ready are skipped.`,
-    );
-    if (!ok) return;
+    if (!window.confirm(input.confirmMsg)) return;
     setSubmitting(true);
     setError(null);
     setDismissed(false);
     try {
-      const res = await fetch("/api/admin/styles/bulk-rerun", {
+      const res = await fetch(input.url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ styleIds, label: filterLabel }),
+        body: JSON.stringify({ styleIds, label: input.label }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         batchId?: string | null;
@@ -119,12 +115,7 @@ export function BulkRunOutputs({
         return;
       }
       if (!data.batchId) {
-        const skipped = data.skipped ?? n;
-        setError(
-          `Nothing to run — ${skipped} style${skipped === 1 ? "" : "s"} skipped ` +
-            `(no ready, un-generated outputs — already generated, not ready, ` +
-            `already running, or no active prod spec).`,
-        );
+        setError(input.nothingMsg(data.skipped ?? styleIds.length));
         return;
       }
       // Pick up the new batch and let the poll effect take over.
@@ -136,6 +127,39 @@ export function BulkRunOutputs({
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function runAll() {
+    const n = styleIds.length;
+    void start({
+      url: "/api/admin/styles/bulk-rerun",
+      label: filterLabel,
+      confirmMsg:
+        `Generate outputs for ${n} style${n === 1 ? "" : "s"} in the current view?\n\n` +
+        `Runs only each style's ready, not-yet-generated outputs, in the background — ` +
+        `it may take a while. Styles with nothing ready are skipped.`,
+      nothingMsg: (skipped) =>
+        `Nothing to run — ${skipped} style${skipped === 1 ? "" : "s"} skipped ` +
+        `(no ready, un-generated outputs — already generated, not ready, ` +
+        `already running, or no active prod spec).`,
+    });
+  }
+
+  function regenerateAll() {
+    const n = styleIds.length;
+    void start({
+      url: "/api/admin/styles/bulk-regen",
+      label: `Regenerate · ${filterLabel}`,
+      confirmMsg:
+        `Regenerate outputs for ${n} style${n === 1 ? "" : "s"} in the current view?\n\n` +
+        `Re-renders every style that already has generated outputs (e.g. after a data fix). ` +
+        `Approved outputs are kept as-is — only pending / rejected ones come back fresh ` +
+        `for review. Runs in the background; styles with nothing generated yet are skipped ` +
+        `(use "Run all outputs" for those).`,
+      nothingMsg: (skipped) =>
+        `Nothing to regenerate — ${skipped} style${skipped === 1 ? "" : "s"} skipped ` +
+        `(no generated outputs yet, already running, or no active prod spec).`,
+    });
   }
 
   const showCompleted = !active && finishedFresh && !dismissed;
@@ -201,12 +225,26 @@ export function BulkRunOutputs({
       )}
       <button
         type="button"
+        onClick={regenerateAll}
+        disabled={styleIds.length === 0 || submitting}
+        title={
+          styleIds.length === 0
+            ? "No styles in the current view"
+            : "Re-render every already-generated style in the view (e.g. after a data fix) — approved outputs stay approved"
+        }
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300"
+      >
+        <RegenerateIcon />
+        {submitting ? "Starting…" : `Regenerate all (${styleIds.length})`}
+      </button>
+      <button
+        type="button"
         onClick={runAll}
         disabled={styleIds.length === 0 || submitting}
         title={
           styleIds.length === 0
             ? "No styles in the current view"
-            : "Enqueue a full re-run for every style in the current filtered view"
+            : "Generate each style's ready, not-yet-generated outputs (fills gaps; never re-renders)"
         }
         className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
       >
@@ -227,6 +265,20 @@ function Spinner() {
     >
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+    </svg>
+  );
+}
+
+function RegenerateIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className="h-3.5 w-3.5"
+      aria-hidden="true"
+    >
+      <path d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.75 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
     </svg>
   );
 }
