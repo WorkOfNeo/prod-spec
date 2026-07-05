@@ -183,6 +183,13 @@ model SupplierSendQueueItem {
   // webUrl; FAILED (retryable) or SKIPPED (e.g. below PO cutoff / no config).
   sharePointStatus String    @default("PENDING")
   sharePointUrl    String?
+  // Consecutive FAILED folder pushes (WS3). Mirrors Style.eanAttempts: the
+  // recurring upload sweep stops retrying a row at MAX_PUSH_ATTEMPTS and it
+  // "floats" on /settings/approved; the midnight sweep still retries nightly.
+  // Reset when a NEW render re-arms the row. lastPushAt = most recent attempt
+  // (any outcome), for the overview.
+  pushAttempts     Int       @default(0)
+  lastPushAt       DateTime?
   // Send lifecycle. sentAt stamped by the midnight batch; null = still pending.
   queuedAt         DateTime  @default(now())
   sentAt           DateTime?
@@ -729,6 +736,12 @@ model Style {
   // are still synced but hidden from the print queue by default.
   poNumber            String?
   styleFolderUrl      String?
+  // The style's "<style> – <customer>" subfolder in the SUPPLIER's own
+  // SharePoint folder (Contrast-Suppliers), captured on the first successful
+  // push. Distinct from styleFolderUrl (the Monday style-folder with source
+  // files). The nightly digest links this so suppliers land directly on
+  // their files; null until something has been pushed.
+  supplierFolderUrl   String?
   // Monday group this item lives in (e.g. "✅ Done", "⏰ Behind
   // Schedule", "Cancelled"). Captured from MondayItem.group on every
   // ingest so list views / scans can default-hide archived items

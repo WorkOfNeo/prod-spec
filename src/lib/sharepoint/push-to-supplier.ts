@@ -151,6 +151,15 @@ export async function pushApprovedAssetsToSupplier(input: {
     }
   }
 
+  // Remember the style's supplier-folder location (WS3) — the nightly digest
+  // links it so the supplier lands directly on their files. Best-effort; a
+  // failed write here must not fail a push that already succeeded.
+  if (subfolder.webUrl) {
+    await db.style
+      .update({ where: { id: style.id }, data: { supplierFolderUrl: subfolder.webUrl } })
+      .catch(() => {});
+  }
+
   // Audit: one log line against the asset's job so it shows in the style's
   // activity feed alongside generation/approval/publish events.
   await db.log.create({

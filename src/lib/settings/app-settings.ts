@@ -64,6 +64,47 @@ export async function setSupplierBatchSendEnabled(enabled: boolean): Promise<voi
   });
 }
 
+const SUPPLIER_SEND_MIN_PO_KEY = "supplierSendMinPo";
+
+// PO-number cutoff for the supplier-send BACKFILL (WS3) — "reconcile
+// previously-approved outputs into the send queue from this PO onward".
+// Styles approved before the queue existed have no queue rows; the recurring
+// reconcile sweep enqueues them, but ONLY at/above this cutoff so flipping the
+// system on can't blast suppliers with years-old styles.
+//
+// Fallback: when UNSET, follows the generation cutoff (getGenerationMinPo,
+// which itself falls back to the scrape cutoff). When the WHOLE chain is
+// unset the reconciler does NOTHING — the backfill never runs uncapped; an
+// explicit cutoff somewhere up the chain is the opt-in. Event-driven capture
+// at approve time is unaffected by this cutoff.
+export async function getSupplierSendMinPo(): Promise<number | null> {
+  const row = await db.appSetting.findUnique({ where: { key: SUPPLIER_SEND_MIN_PO_KEY } });
+  const value = typeof row?.value === "number" ? row.value : null;
+  if (value !== null && Number.isFinite(value) && value > 0) return value;
+  return getGenerationMinPo();
+}
+
+// Whether a supplier-send cutoff is set EXPLICITLY (vs. following the
+// generation cutoff) — lets the UI show "following generation cutoff".
+export async function getSupplierSendMinPoExplicit(): Promise<number | null> {
+  const row = await db.appSetting.findUnique({ where: { key: SUPPLIER_SEND_MIN_PO_KEY } });
+  const value = typeof row?.value === "number" ? row.value : null;
+  return value !== null && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export async function setSupplierSendMinPo(cutoff: number | null): Promise<void> {
+  if (cutoff === null) {
+    // Cleared — drop the row (falls back to the generation cutoff via the getter).
+    await db.appSetting.deleteMany({ where: { key: SUPPLIER_SEND_MIN_PO_KEY } });
+    return;
+  }
+  await db.appSetting.upsert({
+    where: { key: SUPPLIER_SEND_MIN_PO_KEY },
+    create: { key: SUPPLIER_SEND_MIN_PO_KEY, value: cutoff },
+    update: { value: cutoff },
+  });
+}
+
 const PO_EAN_AUTO_RUN_KEY = "poEanAutoRunEnabled";
 
 // Master switch for AUTOMATIC PO→EAN resolution (the barcode scrape).
