@@ -30,6 +30,7 @@ import { RerunButton } from "./rerun-button";
 import { StyleOutputCard, type StyleOutputCardProps } from "./style-output-card";
 import { ProdSpecTab } from "./prod-spec-tab";
 import { ReviewTab } from "./review-tab";
+import { HistoryTab } from "./history-tab";
 import { EanPanel } from "./ean-panel";
 import { PoPreview } from "./po-preview";
 import type { EanView } from "@/lib/po/ean-view";
@@ -128,7 +129,7 @@ function outputDataNotes(
   return [`delivery term ${term} → prints ${branch}`];
 }
 
-type TabKey = "details" | "prod-spec" | "review";
+type TabKey = "details" | "prod-spec" | "review" | "history";
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "details", label: "Details" },
@@ -136,6 +137,9 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   // Review = the files themselves (grids up to 4 across).
   { key: "prod-spec", label: "Prod Spec" },
   { key: "review", label: "Review" },
+  // History = the automation trace: sync → PO/EANs → jobs → review decisions
+  // → supplier uploads → digest, one chronological timeline (self-fetching).
+  { key: "history", label: "History" },
 ];
 
 export default async function StyleDetail({
@@ -151,7 +155,13 @@ export default async function StyleDetail({
   const { id } = await params;
   const tabParam = (await searchParams).tab;
   const tab: TabKey =
-    tabParam === "prod-spec" ? "prod-spec" : tabParam === "review" ? "review" : "details";
+    tabParam === "prod-spec"
+      ? "prod-spec"
+      : tabParam === "review"
+        ? "review"
+        : tabParam === "history"
+          ? "history"
+          : "details";
 
   // Generation actions (Re-run, per-output Run, carton prints) are ADMIN-only
   // — the API enforces it, and REVIEWERs (who can reach this page) must not see
@@ -763,6 +773,7 @@ export default async function StyleDetail({
       )}
 
       {tab === "review" && <ReviewTab styleId={style.id} jobs={reviewJobs} />}
+      {tab === "history" && <HistoryTab styleId={style.id} />}
     </div>
   );
 }

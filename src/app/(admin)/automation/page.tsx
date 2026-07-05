@@ -3,21 +3,36 @@ import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import { requireAdminPage } from "@/lib/auth-server";
 import {
-  getPoEanAutoRunEnabled,
-  getAutoGenerateEnabled,
   getAutomationMinPo,
   getGenerationMinPo,
   getGenerationMinPoExplicit,
+  getSupplierSendMinPo,
 } from "@/lib/settings/app-settings";
-import { eanStatusMeta, MAX_EAN_ATTEMPTS } from "@/lib/po/ean-status-meta";
+import { eanStatusMeta } from "@/lib/po/ean-status-meta";
+import { getPipelineSnapshot } from "@/lib/automation/pipeline";
+import {
+  FEED_KIND_LABELS,
+  getAutomationFeed,
+  type FeedEvent,
+  type FeedKind,
+} from "@/lib/automation/feed";
 import { RunNowButton } from "./run-now-button";
 import { PoCutoffControl } from "./po-cutoff-control";
 import { GenerationCutoffControl } from "./generation-cutoff-control";
 import { RerunResolvedButton } from "./rerun-resolved-button";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Automation" };
 
-// Display order for the EAN queue chips.
+// The automation control tower, three tabs:
+//   Pipeline — the funnel: where every style sits between "PO landed" and
+//              "sent to the supplier", with the gave-up floats per stage.
+//   Activity — one chronological feed over every run record (crons, Monday
+//              syncs, digest batches, bulk runs, emails).
+//   Settings — the cutoffs + master-switch overview (the supplier toggle
+//              itself lives on /settings/approved, linked).
+// "Run now" fires the scrape + generation sweep immediately, as before.
+
 const EAN_ORDER = [
   "PENDING",
   "RESOLVING",
@@ -40,232 +55,164 @@ const STYLE_ORDER = [
   "REJECTED",
 ] as const;
 
-// Automation activity. Shows whether the Railway cron is actually landing
-// (recent runs + what each did), the current queue depths, and a "Run now"
-// button to drain on demand — the diagnostic home for "why are things still
-// queued?". The cron pokes POST /api/po-eans/run?sweep=1 and
-// POST /api/jobs/run?sweep=1; both record a row here when run by cron or "Run now".
-export const metadata = { title: "Automation" };
+const FEED_KINDS = Object.keys(FEED_KIND_LABELS) as FeedKind[];
+
+type TabKey = "pipeline" | "activity" | "settings";
 
 export default async function AutomationPage({
   searchParams,
 }: {
-  searchParams: Promise<{ show?: string }>;
+  searchParams: Promise<{ tab?: string; show?: string; feed?: string }>;
 }) {
   await requireAdminPage();
-
-  const minPo = await getAutomationMinPo();
-  const genMinPo = await getGenerationMinPo();
-  const genMinPoExplicit = await getGenerationMinPoExplicit();
-  const showAll = (await searchParams).show === "all";
-
-  // A run "did something" when any counter moved. The default log shows only
-  // these — hiding the idle/skipped cron ticks that otherwise read "0 0 0".
-  const activityWhere = {
-    OR: [
-      { processed: { gt: 0 } },
-      { failed: { gt: 0 } },
-      { requeued: { gt: 0 } },
-      { enqueued: { gt: 0 } },
-    ],
-  };
-
-  const [
-    autoScrape,
-    autoGen,
-    eanGroups,
-    floatedEan,
-    jobGroups,
-    runs,
-    activeQueued,
-    lastFired,
-    activityCount,
-    totalCount,
-    styleGroups,
-    readyToGen,
-    generatedStyles,
-    rerunnableResolved,
-  ] = await Promise.all([
-    getPoEanAutoRunEnabled(),
-    getAutoGenerateEnabled(),
-    db.style.groupBy({
-      by: ["eanStatus"],
-      where: { poNumber: { not: null } },
-      _count: { _all: true },
-    }),
-    db.style.count({
-      where: {
-        poNumber: { not: null },
-        eanStatus: { in: ["ERROR", "PO_NOT_FOUND", "PO_FOUND_NO_EANS"] },
-        eanAttempts: { gte: MAX_EAN_ATTEMPTS },
-      },
-    }),
-    db.job.groupBy({ by: ["status"], _count: { _all: true } }),
-    db.cronRun.findMany({
-      where: showAll ? undefined : activityWhere,
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    }),
-    // PENDING at/above the PO cutoff — what auto-scrape will actually touch.
-    db.style.count({
-      where: {
-        poNumber: { not: null },
-        eanStatus: "PENDING",
-        ...(minPo !== null ? { poSeq: { gte: minPo } } : {}),
-      },
-    }),
-    // Heartbeat: when each kind last fired at all (incl. idle ticks), so the
-    // activity-only log still proves the cron is reaching the app.
-    db.cronRun.groupBy({ by: ["kind"], _max: { createdAt: true } }),
-    db.cronRun.count({ where: activityWhere }),
-    db.cronRun.count(),
-    db.style.groupBy({ by: ["status"], _count: { _all: true } }),
-    // "Ready to generate": complete styles on an active prod spec with no job
-    // in flight, AND in the generation sweep's actual scope (>= generation
-    // cutoff, or no PO) — so the headline matches what the sweep will really
-    // pick up rather than over-promising parked styles. (Partial styles whose
-    // own ready outputs trickle in are generated too, but counting those needs
-    // the per-output readiness walk, too costly for a page load.)
-    db.style.count({
-      where: {
-        status: "READY",
-        prodSpec: { is: { active: true } },
-        jobs: { none: { status: { in: ["QUEUED", "RUNNING"] } } },
-        ...(genMinPo !== null ? { OR: [{ poSeq: { gte: genMinPo } }, { poSeq: null }] } : {}),
-      },
-    }),
-    // "Styles generated": at least one output produced (a non-FAILED asset).
-    db.style.count({
-      where: { jobs: { some: { status: { not: "FAILED" }, assets: { some: {} } } } },
-    }),
-    // Already-resolved styles the "Re-run resolved" button would re-queue —
-    // bounded by the PO cutoff so the count matches what actually re-runs.
-    db.style.count({
-      where: {
-        poNumber: { not: null },
-        eanStatus: { in: ["RESOLVED", "PARTIAL"] },
-        ...(minPo !== null ? { poSeq: { gte: minPo } } : {}),
-      },
-    }),
-  ]);
-
-  const eanCounts = new Map(eanGroups.map((g) => [g.eanStatus as string, g._count._all]));
-  const jobCounts = new Map(jobGroups.map((g) => [g.status as string, g._count._all]));
-  const styleCounts = new Map(styleGroups.map((g) => [g.status as string, g._count._all]));
-  const queued = eanCounts.get("PENDING") ?? 0;
-  // Below-cutoff PENDING — sitting parked, NOT auto-scraped.
-  const parkedQueued = Math.max(queued - activeQueued, 0);
-  // Last-fired per kind from the heartbeat query (independent of the activity
-  // filter, so it stays accurate even when every recent tick was a no-op).
-  const lastFiredByKind = new Map(lastFired.map((g) => [g.kind, g._max.createdAt]));
-  const lastEan = lastFiredByKind.get("po-eans") ?? null;
-  const lastGen = lastFiredByKind.get("jobs") ?? null;
-  const hiddenCount = totalCount - activityCount;
+  const params = await searchParams;
+  const tab: TabKey =
+    params.tab === "activity" ? "activity" : params.tab === "settings" ? "settings" : "pipeline";
 
   return (
     <div className="px-8 py-8">
-      <div className="mb-6 flex items-start justify-between gap-4">
+      <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Automation</h1>
           <p className="mt-1 max-w-3xl text-sm text-zinc-500">
-            What the cron has done and the current queue depth. The Railway cron pokes the EAN
-            scrape and the generation sweep on a schedule; if barcodes or outputs are stuck, this is
-            where to look. <strong>Run now</strong> fires the same work immediately (signed-in, so it
-            ignores the auto-run switch for scraping).
+            The full pipeline — Monday sync → barcodes → generation → review → SharePoint → supplier
+            digest. <strong>Run now</strong> fires the scrape and generation sweep immediately.
           </p>
         </div>
         <RunNowButton />
       </div>
 
-      {/* Switch + headline state */}
+      <nav className="mb-6 border-b border-zinc-200">
+        <ul className="flex gap-1">
+          {(
+            [
+              { key: "pipeline", label: "Pipeline" },
+              { key: "activity", label: "Activity" },
+              { key: "settings", label: "Settings" },
+            ] as { key: TabKey; label: string }[]
+          ).map((t) => (
+            <li key={t.key}>
+              <Link
+                href={`/automation?tab=${t.key}`}
+                scroll={false}
+                className={`inline-block border-b-2 px-4 py-2 text-sm font-medium transition ${
+                  tab === t.key
+                    ? "border-zinc-900 text-zinc-900"
+                    : "border-transparent text-zinc-500 hover:text-zinc-700"
+                }`}
+              >
+                {t.label}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      {tab === "pipeline" && <PipelineTab />}
+      {tab === "activity" && (
+        <ActivityTab showAll={params.show === "all"} feedKind={params.feed as FeedKind | undefined} />
+      )}
+      {tab === "settings" && <SettingsTab />}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Pipeline
+
+async function PipelineTab() {
+  const [snapshot, eanGroups, jobGroups, styleGroups, rerunnableResolved, minPo] =
+    await Promise.all([
+      getPipelineSnapshot(),
+      db.style.groupBy({
+        by: ["eanStatus"],
+        where: { poNumber: { not: null } },
+        _count: { _all: true },
+      }),
+      db.job.groupBy({ by: ["status"], _count: { _all: true } }),
+      db.style.groupBy({ by: ["status"], _count: { _all: true } }),
+      db.style.count({
+        where: {
+          poNumber: { not: null },
+          eanStatus: { in: ["RESOLVED", "PARTIAL"] },
+        },
+      }),
+      getAutomationMinPo(),
+    ]);
+
+  const eanCounts = new Map(eanGroups.map((g) => [g.eanStatus as string, g._count._all]));
+  const jobCounts = new Map(jobGroups.map((g) => [g.status as string, g._count._all]));
+  const styleCounts = new Map(styleGroups.map((g) => [g.status as string, g._count._all]));
+
+  return (
+    <>
+      {/* Master switches — is the machine even on? */}
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         <StateCard
           label="Automatic barcode scraping"
-          on={autoScrape}
-          hint={autoScrape ? "cron drains the EAN queue" : "cron no-ops; drain from /po-eans"}
+          on={snapshot.switches.autoScrape}
+          hint={snapshot.switches.autoScrape ? "cron drains the EAN queue" : "cron no-ops; drain from /po-eans"}
         />
         <StateCard
           label="Automatic generation"
-          on={autoGen}
-          hint={autoGen ? "ready styles auto-generate" : "no auto-generation"}
+          on={snapshot.switches.autoGen}
+          hint={snapshot.switches.autoGen ? "ready styles auto-generate" : "no auto-generation"}
         />
-        <div className="rounded-lg border border-zinc-200 bg-white p-4">
-          <div className="text-sm font-semibold text-zinc-900">Barcodes queued</div>
-          <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-2xl font-semibold tabular-nums text-zinc-900">{activeQueued}</span>
-            <span className="text-xs text-zinc-400">active{minPo !== null ? ` (PO ≥ ${minPo})` : ""}</span>
-          </div>
-          <div className="mt-1 text-xs text-zinc-400">
-            {parkedQueued > 0 ? (
-              <>
-                + <span className="tabular-nums">{parkedQueued.toLocaleString()}</span> parked backlog
-                (not auto-scraped)
-              </>
-            ) : activeQueued === 0 ? (
-              "queue empty"
-            ) : lastEan ? (
-              `last EAN run ${formatDate(lastEan)}`
-            ) : (
-              "no recorded EAN run yet — is the cron hitting the app?"
+        <StateCard
+          label="Automatic supplier sending"
+          on={snapshot.switches.supplierSend}
+          hint={
+            snapshot.switches.supplierSend
+              ? "uploads + midnight digests run"
+              : "queue captures only — toggle on /settings/approved"
+          }
+        />
+      </div>
+
+      {/* The funnel */}
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold text-zinc-900">Pipeline</h2>
+        <span className="text-xs text-zinc-400">
+          scoped to the automation windows
+          {snapshot.genCutoff !== null ? ` · generation PO ≥ ${snapshot.genCutoff}` : ""}
+          {snapshot.parkedBelowGen > 0
+            ? ` · ${snapshot.parkedBelowGen.toLocaleString()} styles parked below cutoff`
+            : ""}
+        </span>
+      </div>
+      <div className="mb-6 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+        {snapshot.stages.map((s, i) => (
+          <Link
+            key={s.key}
+            href={s.href}
+            className={`flex items-center gap-4 px-4 py-3 hover:bg-zinc-50 ${
+              i > 0 ? "border-t border-zinc-100" : ""
+            }`}
+          >
+            <span className="w-8 text-right text-xs tabular-nums text-zinc-300">{i + 1}</span>
+            <span className="flex-1">
+              <span className="block text-sm font-medium text-zinc-800">{s.label}</span>
+              <span className="block text-xs text-zinc-400">{s.hint}</span>
+            </span>
+            {s.floated > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+                gave up <span className="tabular-nums">{s.floated}</span>
+              </span>
             )}
-          </div>
-        </div>
+            <span className="text-xl font-semibold tabular-nums text-zinc-900">
+              {s.count.toLocaleString()}
+            </span>
+          </Link>
+        ))}
       </div>
 
-      {/* PO cutoff controls — scrape and generation are tuned separately */}
-      <div className="mb-6 grid gap-3 lg:grid-cols-2">
-        <PoCutoffControl initialCutoff={minPo} parkedCount={parkedQueued} />
-        <GenerationCutoffControl
-          explicitCutoff={genMinPoExplicit}
-          effectiveCutoff={genMinPo}
-        />
-      </div>
-
-      {/* Generation backlog — how many styles are waiting vs. already produced */}
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Ready to generate"
-          value={readyToGen}
-          hint="complete styles awaiting their first run"
-        />
-        <StatCard
-          label="Generating now"
-          value={styleCounts.get("GENERATING") ?? 0}
-          hint="a job is in flight"
-        />
-        <StatCard
-          label="In review"
-          value={styleCounts.get("AWAITING_REVIEW") ?? 0}
-          hint="generated, awaiting a decision"
-        />
-        <StatCard
-          label="Styles generated"
-          value={generatedStyles}
-          hint="≥ 1 output produced (first print done)"
-        />
-      </div>
-
-      {/* Queue depths */}
+      {/* Queue depth chips — the raw states behind the funnel */}
       <div className="mb-6 grid gap-6 md:grid-cols-2">
         <div>
           <div className="mb-2 flex items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-zinc-900">EAN queue</h2>
-            {/* Re-queue every resolved style so the runner re-scrapes it with
-                the latest matching logic (the sweep never re-touches resolved
-                rows). Bounded by the PO cutoff, same as auto-scrape. */}
             <RerunResolvedButton count={rerunnableResolved} cutoff={minPo} />
           </div>
-          {/* Each chip deep-links to /po-eans filtered to that set, where the
-              rows can be re-resolved (the gave-up set in bulk). */}
           <div className="flex flex-wrap gap-2">
-            {floatedEan > 0 && (
-              <Link
-                href="/po-eans?floated=1"
-                className="inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-red-500"
-              >
-                gave up <span className="tabular-nums">{floatedEan}</span>
-              </Link>
-            )}
             {EAN_ORDER.filter((s) => (eanCounts.get(s) ?? 0) > 0).map((s) => {
               const m = eanStatusMeta(s);
               return (
@@ -293,45 +240,99 @@ export default async function AutomationPage({
               </span>
             ))}
           </div>
+          <h2 className="mt-4 mb-2 text-sm font-semibold text-zinc-900">Styles by status</h2>
+          <div className="flex flex-wrap gap-2">
+            {STYLE_ORDER.filter((s) => (styleCounts.get(s) ?? 0) > 0).map((s) => (
+              <span
+                key={s}
+                className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700"
+              >
+                {s.toLowerCase().replace(/_/g, " ")}{" "}
+                <span className="tabular-nums opacity-70">{styleCounts.get(s)}</span>
+              </span>
+            ))}
+          </div>
         </div>
       </div>
+    </>
+  );
+}
 
-      {/* Styles by status — the whole pipeline at a glance */}
-      <div className="mb-6">
-        <h2 className="mb-2 text-sm font-semibold text-zinc-900">Styles by status</h2>
-        <div className="flex flex-wrap gap-2">
-          {STYLE_ORDER.filter((s) => (styleCounts.get(s) ?? 0) > 0).map((s) => (
-            <span
-              key={s}
-              className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700"
+// ---------------------------------------------------------------- Activity
+
+const STATUS_PILL: Record<FeedEvent["status"], string> = {
+  ok: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  partial: "bg-amber-50 text-amber-700 border-amber-200",
+  failed: "bg-red-50 text-red-700 border-red-200",
+  skipped: "bg-amber-50 text-amber-700 border-amber-200",
+  "dry-run": "bg-sky-50 text-sky-700 border-sky-200",
+  running: "bg-sky-50 text-sky-700 border-sky-200",
+  idle: "bg-zinc-50 text-zinc-400 border-zinc-200",
+};
+
+async function ActivityTab({ showAll, feedKind }: { showAll: boolean; feedKind?: FeedKind }) {
+  const kind = feedKind && FEED_KINDS.includes(feedKind) ? feedKind : undefined;
+  const [{ events, hiddenIdle }, lastFired] = await Promise.all([
+    getAutomationFeed({ limit: 80, kinds: kind ? [kind] : undefined, includeIdle: showAll }),
+    db.cronRun.groupBy({ by: ["kind"], _max: { createdAt: true } }),
+  ]);
+  const lastFiredByKind = new Map(lastFired.map((g) => [g.kind, g._max.createdAt]));
+  const heartbeats = [
+    ["EAN scrape", lastFiredByKind.get("po-eans")],
+    ["Generation", lastFiredByKind.get("jobs")],
+    ["Upload sweep", lastFiredByKind.get("supplier-upload")],
+  ] as const;
+
+  const tabHref = (over: { feed?: string; show?: string }) => {
+    const p = new URLSearchParams({ tab: "activity" });
+    const feed = over.feed ?? kind;
+    if (feed) p.set("feed", feed);
+    const show = over.show ?? (showAll ? "all" : undefined);
+    if (show) p.set("show", show);
+    return `/automation?${p.toString()}`;
+  };
+
+  return (
+    <>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          <Link
+            href={`/automation?tab=activity${showAll ? "&show=all" : ""}`}
+            className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
+              !kind ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+            }`}
+          >
+            All
+          </Link>
+          {FEED_KINDS.map((k) => (
+            <Link
+              key={k}
+              href={tabHref({ feed: k })}
+              className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
+                kind === k
+                  ? "border-zinc-900 bg-zinc-900 text-white"
+                  : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+              }`}
             >
-              {s.toLowerCase().replace(/_/g, " ")}{" "}
-              <span className="tabular-nums opacity-70">{styleCounts.get(s)}</span>
-            </span>
+              {FEED_KIND_LABELS[k]}
+            </Link>
           ))}
         </div>
-      </div>
-
-      {/* Recent runs */}
-      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-zinc-900">
-          Recent runs{showAll ? "" : " with activity"}
-        </h2>
         <div className="flex items-center gap-3 text-xs text-zinc-400">
           <span>
-            EAN scrape {lastEan ? `last fired ${formatDate(lastEan)}` : "never fired"} · Generation{" "}
-            {lastGen ? `last fired ${formatDate(lastGen)}` : "never fired"}
+            {heartbeats
+              .map(([label, at]) => `${label} ${at ? formatDate(at) : "never"}`)
+              .join(" · ")}
           </span>
           <Link
-            href={showAll ? "/automation" : "/automation?show=all"}
+            href={showAll ? tabHref({ show: "" }) : tabHref({ show: "all" })}
             className="rounded-md border border-zinc-200 px-2 py-1 font-medium text-zinc-600 hover:bg-zinc-50"
           >
-            {showAll
-              ? "Activity only"
-              : `Show all${hiddenCount > 0 ? ` (+${hiddenCount} idle)` : ""}`}
+            {showAll ? "Activity only" : `Show idle${hiddenIdle > 0 ? ` (+${hiddenIdle})` : ""}`}
           </Link>
         </div>
       </div>
+
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
@@ -344,65 +345,91 @@ export default async function AutomationPage({
             </tr>
           </thead>
           <tbody>
-            {runs.length === 0 && (
+            {events.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-6 text-center text-zinc-400">
-                  {!showAll && hiddenCount > 0 ? (
-                    <>
-                      No runs with activity yet — the cron has fired {hiddenCount} idle tick
-                      {hiddenCount === 1 ? "" : "s"} with nothing to do.{" "}
-                      <Link href="/automation?show=all" className="underline">
-                        Show all
-                      </Link>{" "}
-                      to see them.
-                    </>
-                  ) : (
-                    <>
-                      No runs recorded yet. Once the Railway cron hits the app (or you press Run now),
-                      ticks show here. An empty list with a full queue means the cron isn&rsquo;t
-                      reaching the app.
-                    </>
-                  )}
+                  Nothing recorded yet{kind ? ` for ${FEED_KIND_LABELS[kind]}` : ""}. Runs land here
+                  as the crons fire or operators trigger work.
                 </td>
               </tr>
             )}
-            {runs.map((r) => (
-              <tr key={r.id} className="border-t border-zinc-100">
-                <td className="px-4 py-2 whitespace-nowrap text-zinc-600">{formatDate(r.createdAt)}</td>
-                <td className="px-4 py-2 font-medium">
-                  {r.kind === "po-eans" ? "EAN scrape" : "Generation"}
-                </td>
-                <td className="px-4 py-2 text-zinc-500">{r.source === "secret" ? "cron" : "manual"}</td>
-                <td className="px-4 py-2 text-zinc-600">
-                  {r.skipped ? (
-                    <span className="text-amber-700">skipped{r.note ? ` — ${r.note}` : ""}</span>
+            {events.map((e) => (
+              <tr key={e.id} className="border-t border-zinc-100 align-top">
+                <td className="px-4 py-2 whitespace-nowrap text-zinc-600">{formatDate(e.at)}</td>
+                <td className="px-4 py-2">
+                  {e.href ? (
+                    <Link href={e.href} className="font-medium text-zinc-800 hover:underline">
+                      {e.title}
+                    </Link>
                   ) : (
-                    <span className="tabular-nums">
-                      {r.kind === "po-eans"
-                        ? `resolved ${r.processed} · requeued ${r.requeued} · failed ${r.failed}`
-                        : `enqueued ${r.enqueued} · rendered ${r.processed} · failed ${r.failed}`}
-                    </span>
+                    <span className="font-medium text-zinc-800">{e.title}</span>
                   )}
+                  <span className="ml-2 rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                    {FEED_KIND_LABELS[e.kind]}
+                  </span>
                 </td>
-                <td className="px-4 py-2 tabular-nums text-zinc-400">
-                  {r.durationMs == null ? "—" : `${(r.durationMs / 1000).toFixed(1)}s`}
+                <td className="px-4 py-2 whitespace-nowrap text-zinc-500">{e.source}</td>
+                <td className="px-4 py-2 text-zinc-600">
+                  <span
+                    className={`mr-2 inline-flex rounded-full border px-1.5 py-0.5 text-[11px] font-medium ${STATUS_PILL[e.status]}`}
+                  >
+                    {e.status}
+                  </span>
+                  <span className="text-xs">{e.detail}</span>
+                </td>
+                <td className="px-4 py-2 whitespace-nowrap tabular-nums text-zinc-400">
+                  {e.durationMs == null ? "—" : `${(e.durationMs / 1000).toFixed(1)}s`}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-    </div>
+    </>
   );
 }
 
-function StatCard({ label, value, hint }: { label: string; value: number; hint: string }) {
+// ---------------------------------------------------------------- Settings
+
+async function SettingsTab() {
+  const [minPo, genMinPo, genMinPoExplicit, supplierMinPo, queued] = await Promise.all([
+    getAutomationMinPo(),
+    getGenerationMinPo(),
+    getGenerationMinPoExplicit(),
+    getSupplierSendMinPo(),
+    db.style.count({ where: { poNumber: { not: null }, eanStatus: "PENDING" } }),
+  ]);
+  // Parked = PENDING below the scrape cutoff (the PoCutoffControl caption).
+  const activeQueued = await db.style.count({
+    where: {
+      poNumber: { not: null },
+      eanStatus: "PENDING",
+      ...(minPo !== null ? { poSeq: { gte: minPo } } : {}),
+    },
+  });
+  const parkedQueued = Math.max(queued - activeQueued, 0);
+
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4">
-      <div className="text-sm font-semibold text-zinc-900">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums text-zinc-900">{value}</div>
-      <div className="mt-1 text-xs text-zinc-400">{hint}</div>
-    </div>
+    <>
+      <div className="mb-6 grid gap-3 lg:grid-cols-2">
+        <PoCutoffControl initialCutoff={minPo} parkedCount={parkedQueued} />
+        <GenerationCutoffControl explicitCutoff={genMinPoExplicit} effectiveCutoff={genMinPo} />
+      </div>
+      <div className="rounded-lg border border-zinc-200 bg-white p-5">
+        <h2 className="text-sm font-semibold text-zinc-900">Supplier sending</h2>
+        <p className="mt-1 max-w-2xl text-sm text-zinc-600">
+          The master toggle, the backfill PO cutoff
+          {supplierMinPo !== null ? ` (currently PO ≥ ${supplierMinPo})` : " (not set — backfill idle)"} and
+          the send queue live on the delivery page.
+        </p>
+        <Link
+          href="/settings/approved"
+          className="mt-3 inline-block rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+        >
+          Open Approved &amp; delivery
+        </Link>
+      </div>
+    </>
   );
 }
 
