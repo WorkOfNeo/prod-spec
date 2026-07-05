@@ -2,10 +2,12 @@ import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { getReviewBoard } from "@/lib/dashboard/review-tasks";
 import { getNeedsInputStyles } from "@/lib/dashboard/needs-input";
+import { getApprovedStyles } from "@/lib/dashboard/approved-styles";
 import { StyleTaskList } from "@/components/style-task-list";
 import { ReviewTabs } from "./review-tabs";
 import { ReviewGroupList } from "./review-group-list";
 import { NeedsInputList } from "./needs-input-list";
+import { ApprovedList } from "./approved-list";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +26,7 @@ export const dynamic = "force-dynamic";
 // sidebar — so it gates on a session, not the admin role.
 export const metadata = { title: "Reviews" };
 
-type Tab = "in-progress" | "queue" | "needs-input";
+type Tab = "in-progress" | "queue" | "needs-input" | "approved";
 
 export default async function ReviewsPage({
   searchParams,
@@ -38,11 +40,18 @@ export default async function ReviewsPage({
   // reached via ?tab=queue / ?tab=needs-input.
   const rawTab = (await searchParams).tab;
   const tab: Tab =
-    rawTab === "queue" ? "queue" : rawTab === "needs-input" ? "needs-input" : "in-progress";
+    rawTab === "queue"
+      ? "queue"
+      : rawTab === "needs-input"
+        ? "needs-input"
+        : rawTab === "approved"
+          ? "approved"
+          : "in-progress";
 
-  const [{ groups, inProgress }, needsInput] = await Promise.all([
+  const [{ groups, inProgress }, needsInput, approved] = await Promise.all([
     getReviewBoard(),
     getNeedsInputStyles(),
+    getApprovedStyles(),
   ]);
   const queueCount = groups.reduce((n, g) => n + g.tasks.length, 0);
   // The readiness notice defaults to the REVIEWER lens; admins get the ADMIN
@@ -57,7 +66,9 @@ export default async function ReviewsPage({
           ? "Styles awaiting their first review, grouped by prod spec — customer and business area. Open a group to review its styles."
           : tab === "needs-input"
             ? "Styles that can't generate yet — missing PO, barcodes or Monday fields. Fix the data and they generate and move to Review automatically. Nothing is rendered here."
-            : "Reviews already started — fix, regenerate and approve each style here. Only the latest output is shown."}
+            : tab === "approved"
+              ? "Fully approved styles, newest first — and how far delivery got: queued, in the supplier's folder, or sent in a digest."
+              : "Reviews already started — fix, regenerate and approve each style here. Only the latest output is shown."}
       </p>
 
       <ReviewTabs
@@ -65,6 +76,7 @@ export default async function ReviewsPage({
         queueCount={queueCount}
         inProgressCount={inProgress.length}
         needsInputCount={needsInput.length}
+        approvedCount={approved.total}
       />
 
       {tab === "queue" ? (
@@ -84,6 +96,15 @@ export default async function ReviewsPage({
           />
         ) : (
           <NeedsInputList styles={needsInput} role={readinessRole} />
+        )
+      ) : tab === "approved" ? (
+        approved.styles.length === 0 ? (
+          <EmptyState
+            title="Nothing fully approved yet."
+            body="Styles land here once every output is approved — with their delivery status toward the supplier."
+          />
+        ) : (
+          <ApprovedList styles={approved.styles} total={approved.total} />
         )
       ) : inProgress.length === 0 ? (
         <EmptyState
