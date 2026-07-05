@@ -16,6 +16,7 @@ import { dispatchEmail } from "@/lib/email/dispatch";
 import { reviewNotificationEmail } from "@/lib/email/templates/review-notification";
 import { notifyReviewReady } from "@/lib/notifications/user-notifications";
 import { supersedeOpenTicketsForStyleOp } from "@/lib/tickets/rejection-tickets";
+import { findCarryForwardClaim } from "@/lib/review-flow/claim";
 import { getReviewNotificationEmails } from "@/lib/settings/app-settings";
 import {
   COVER_VARIANT_KEY,
@@ -680,6 +681,13 @@ export async function processJob(jobId: string): Promise<void> {
   const autoApprovedAt = new Date();
   const autoApprovedDocs = generated.filter(isAutoApproved);
 
+  // Review continuity: if this run supersedes a review that was already
+  // underway (claimed, or a human had decided ≥1 document), carry that owner
+  // onto the new job — a regen swaps the PDFs, it doesn't un-start the
+  // review. Keeps the style in /reviews "In Progress" (and the right
+  // person's "Mine" bucket) instead of dropping back to the untouched queue.
+  const carriedClaim = await findCarryForwardClaim(job.styleId, job.id);
+
   try {
     await db.$transaction([
       db.jobAsset.deleteMany({ where: { jobId: job.id } }),
@@ -716,7 +724,13 @@ export async function processJob(jobId: string): Promise<void> {
       ),
       db.job.update({
         where: { id: job.id },
-        data: { status: "AWAITING_REVIEW", finishedAt: new Date() },
+        data: {
+          status: "AWAITING_REVIEW",
+          finishedAt: new Date(),
+          ...(carriedClaim
+            ? { reviewClaimedById: carriedClaim.userId, reviewClaimedAt: carriedClaim.at }
+            : {}),
+        },
       }),
       db.style.update({
         where: { id: job.styleId },
