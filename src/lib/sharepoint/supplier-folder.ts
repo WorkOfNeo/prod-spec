@@ -40,8 +40,8 @@ const WRITE_FORBIDDEN_HINT =
 
 // SharePoint/OneDrive forbid \ / : * ? " < > | in item names and any control
 // characters, and reject leading/trailing spaces or dots. Replace illegal
-// chars with a space, collapse whitespace, and trim. Everything else (the
-// en-dash in "Style – Customer") is kept. Capped under the ~255 name limit.
+// chars with a space, collapse whitespace, and trim. Everything else (the "&"
+// and "." in "…- Netto ApS & Co. KG -…") is kept. Capped under the ~255 limit.
 const ILLEGAL_NAME_CHARS = '\\/:*?"<>|';
 
 export function sanitizeName(input: string): string {

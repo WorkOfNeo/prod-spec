@@ -9,10 +9,14 @@ import {
 
 // =====================================================
 // Push approved output PDFs into the supplier's own SharePoint folder, under a
-// single "<style> – <customer>" subfolder. Manual, admin-triggered (phase 1) —
-// distinct from the auto publish-on-approval upload in publish-approved-job.ts,
-// which targets the configured SHAREPOINT_SITE_ID site. Only APPROVED,
-// print-safe (no-placeholder) assets are ever pushed.
+// single "<PO> - <customer> - <supplier> - APPROVED LAYOUTS" subfolder. Because
+// the name is keyed on PO + customer + supplier (not the style), every style
+// under the same PO resolves to the SAME subfolder — the first approved style
+// creates it and later styles' approved layouts collect alongside (filenames
+// are style-number-prefixed, so styles never clobber each other). Manual,
+// admin-triggered (phase 1) — distinct from the auto publish-on-approval upload
+// in publish-approved-job.ts, which targets the configured SHAREPOINT_SITE_ID
+// site. Only APPROVED, print-safe (no-placeholder) assets are ever pushed.
 // =====================================================
 
 export class SupplierPushError extends Error {
@@ -30,7 +34,7 @@ export type PushedFile = { assetId: string; fileName: string; webUrl: string | n
 export type SupplierPushResult = {
   dryRun: boolean;
   supplierName: string;
-  folderName: string; // the "<style> – <customer>" subfolder name
+  folderName: string; // the "<PO> - <customer> - <supplier> - APPROVED LAYOUTS" subfolder name
   supplierFolderUrl: string | null; // the supplier's root folder
   targetFolderUrl: string | null; // the subfolder (null on dry run)
   pushed: PushedFile[];
@@ -50,6 +54,7 @@ export async function pushApprovedAssetsToSupplier(input: {
     select: {
       id: true,
       name: true,
+      poNumber: true,
       customer: { select: { name: true } },
       supplier: { select: { name: true, sharepointUrl: true } },
     },
@@ -107,7 +112,14 @@ export async function pushApprovedAssetsToSupplier(input: {
     );
   }
 
-  const folderName = sanitizeName(`${style.name} – ${style.customer.name}`);
+  // "<PO> - <customer> - <supplier> - APPROVED LAYOUTS" (e.g. "C-PO63359 - Netto
+  // ApS & Co. KG - Leadtime Bangladesh Ltd - APPROVED LAYOUTS"). Keyed on the PO
+  // so all styles sharing it land in one folder; falls back to the style number
+  // when a style has no PO. sanitizeName keeps "&", "." and spaces — only the
+  // SharePoint-illegal \ / : * ? " < > | are stripped.
+  const folderName = sanitizeName(
+    `${style.poNumber?.trim() || style.name} - ${style.customer.name} - ${supplier.name} - APPROVED LAYOUTS`,
+  );
 
   // Resolve the supplier's folder (read — works before write is granted).
   let folder;
@@ -133,7 +145,8 @@ export async function pushApprovedAssetsToSupplier(input: {
     };
   }
 
-  // Ensure the "<style> – <customer>" subfolder once, then upload each PDF.
+  // Ensure the "<PO> - <customer> - <supplier> - APPROVED LAYOUTS" subfolder
+  // once (get-or-create — shared across styles under the PO), then upload each PDF.
   let subfolder;
   try {
     subfolder = await ensureChildFolder(folder.driveId, folder.itemId, folderName);

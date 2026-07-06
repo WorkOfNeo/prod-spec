@@ -8,7 +8,8 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 
 // Admin-only: push ONE approved output's PDF into its supplier's SharePoint
-// folder, under a "<style> – <customer>" subfolder. Manual counterpart to the
+// folder, under a "<PO> - <customer> - <supplier> - APPROVED LAYOUTS" subfolder.
+// Manual counterpart to the
 // auto publish-on-approval upload. ?dryRun=1 resolves the target folder + file
 // name WITHOUT writing — verifiable before FLC enables write.
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {

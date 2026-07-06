@@ -351,7 +351,8 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
   }
 
   // Push the just-queued outputs into the supplier's OWN SharePoint folder
-  // (Supplier.sharepointUrl → "<style> – <customer>") so the files are in
+  // (Supplier.sharepointUrl → "<PO> - <customer> - <supplier> - APPROVED
+  // LAYOUTS") so the files are in
   // place before the nightly digest references them. Fail-soft and flag-gated
   // inside the lib — a folder hiccup surfaces on /settings/approved (FAILED,
   // retried by the midnight sweep), never unwinds the publish.

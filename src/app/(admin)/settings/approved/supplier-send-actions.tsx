@@ -251,3 +251,130 @@ export function RetryFloatedButton({ floatedCount }: { floatedCount: number }) {
     </div>
   );
 }
+
+type BackfillResult = {
+  error?: string;
+  candidates?: number;
+  repushed?: number;
+  skipped?: number;
+  failed?: number;
+  cleanup?: Array<{ styleName: string; oldFolderUrl: string }>;
+};
+
+// One-off "Re-consolidate supplier folders" — re-push every already-delivered
+// style into the NEW folder naming ("<PO> - <customer> - <supplier> - APPROVED
+// LAYOUTS"). Preview-then-apply: the first click dry-runs (resolves scope +
+// permissions, writes nothing); "Apply" then does the real push. Bypasses the
+// master send toggle (manual push path), so it works even while sending is off.
+// Old folders are left in place — the result lists them for manual deletion.
+export function BackfillFoldersButton() {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<BackfillResult | null>(null);
+  const [applied, setApplied] = useState<BackfillResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function call(dryRun: boolean): Promise<BackfillResult | null> {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/supplier-send/backfill${dryRun ? "?dryRun=1" : ""}`, {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => ({}))) as BackfillResult;
+      if (!res.ok) {
+        setError(body.error ?? `HTTP ${res.status}`);
+        return null;
+      }
+      return body;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Request failed");
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runPreview() {
+    setApplied(null);
+    const body = await call(true);
+    if (body) setPreview(body);
+  }
+
+  async function apply() {
+    const body = await call(false);
+    if (body) {
+      setApplied(body);
+      setPreview(null);
+      router.refresh();
+    }
+  }
+
+  const result = applied ?? preview;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={runPreview}
+          disabled={busy}
+          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
+        >
+          {busy && !preview ? "Checking…" : "Re-consolidate supplier folders"}
+        </button>
+        {preview && !applied ? (
+          <button
+            type="button"
+            onClick={apply}
+            disabled={busy || (preview.repushed ?? 0) === 0}
+            className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+          >
+            {busy ? "Applying…" : `Apply — re-push ${preview.repushed ?? 0} style${(preview.repushed ?? 0) === 1 ? "" : "s"}`}
+          </button>
+        ) : null}
+      </div>
+
+      {error ? <span className="text-xs text-red-600">{error}</span> : null}
+
+      {result && !error ? (
+        <div className="max-w-2xl rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+          <div>
+            {applied ? "Done — " : "Preview — "}
+            <span className="font-medium text-zinc-800">{result.repushed ?? 0}</span>{" "}
+            {applied ? "re-pushed" : "would be re-pushed"} of {result.candidates ?? 0} already-pushed
+            style(s){" "}
+            <span className="text-zinc-400">
+              ({result.skipped ?? 0} skipped
+              {(result.failed ?? 0) > 0 ? `, ${result.failed} failed` : ""})
+            </span>
+            .
+          </div>
+          {applied && result.cleanup && result.cleanup.length > 0 ? (
+            <details className="mt-1">
+              <summary className="cursor-pointer text-zinc-500">
+                {result.cleanup.length} old folder{result.cleanup.length === 1 ? "" : "s"} to delete
+                manually
+              </summary>
+              <ul className="mt-1 space-y-0.5">
+                {result.cleanup.map((c, i) => (
+                  <li key={i} className="truncate">
+                    <span className="text-zinc-500">{c.styleName}</span>{" "}
+                    <a
+                      href={c.oldFolderUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-zinc-600 underline hover:text-zinc-900"
+                    >
+                      old folder ↗
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}

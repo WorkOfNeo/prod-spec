@@ -6,8 +6,9 @@ import { getSupplierBatchSendEnabled } from "@/lib/settings/app-settings";
 // =====================================================
 // Queue-driven supplier-folder upload (WS2b's missing half). Walks the unsent
 // supplier-send queue and pushes each style's approved PDFs into the supplier's
-// OWN SharePoint folder (Supplier.sharepointUrl → "<style> – <customer>"
-// subfolder, via pushApprovedAssetsToSupplier), then stamps the queue rows'
+// OWN SharePoint folder (Supplier.sharepointUrl → "<PO> - <customer> -
+// <supplier> - APPROVED LAYOUTS" subfolder, shared across styles on the same
+// PO, via pushApprovedAssetsToSupplier), then stamps the queue rows'
 // sharePointStatus — the previously write-only column /settings/approved shows.
 //
 // Called fail-soft from every approval path (job publish, per-asset approve,
