@@ -71,8 +71,8 @@ export function SupplierFolderStatus({
           {ready ? (
             <>
               ✓ Ready — pushes land in <span className="font-medium">{supplierName}</span>’s folder,
-              under a “&lt;PO&gt; - &lt;customer&gt; - &lt;supplier&gt; - APPROVED LAYOUTS” subfolder
-              (shared across styles on the same PO).
+              in a “&lt;PO&gt; - &lt;customer&gt; - &lt;supplier&gt;” folder → “APPROVED LAYOUTS”
+              subfolder (shared across styles on the same PO).
             </>
           ) : !hasSupplier ? (
             <>

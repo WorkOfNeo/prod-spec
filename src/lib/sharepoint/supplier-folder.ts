@@ -120,6 +120,53 @@ export async function ensureChildFolder(
   }
 }
 
+// Look up a child folder by name under (driveId + parentItemId) WITHOUT creating
+// it — the read-only half of ensureChildFolder. Returns null when absent (404).
+// childCount lets a caller check the folder actually holds files (the cleanup
+// uses it as a "the new folder has the copies" safety gate before deleting old
+// ones). Used by the legacy-folder cleanup to find (then delete) old/flat folders.
+export async function findChildFolder(
+  driveId: string,
+  parentItemId: string,
+  name: string,
+): Promise<{ id: string; webUrl: string | null; childCount: number } | null> {
+  const client = getGraphClient();
+  const childByPath = `/drives/${driveId}/items/${parentItemId}:/${encodeURIComponent(name)}`;
+  try {
+    const item = (await client.api(childByPath).get()) as SharedDriveItem;
+    if (!item?.id || !item.folder) return null; // must be a folder, not a file
+    return { id: item.id, webUrl: item.webUrl ?? null, childCount: item.folder.childCount ?? 0 };
+  } catch (err) {
+    const code = statusCodeOf(err);
+    if (code === 404) return null;
+    if (code === 403) {
+      throw new SharePointWriteForbiddenError(`SharePoint denied access (403) — ${WRITE_FORBIDDEN_HINT}`);
+    }
+    throw err;
+  }
+}
+
+// Delete a drive item (folder or file) by id. Idempotent: a 404 (already gone)
+// resolves as { deleted: false, alreadyGone: true } rather than throwing, so a
+// cleanup sweep can re-run safely. A 403 surfaces as the write-forbidden error.
+export async function deleteDriveItem(
+  driveId: string,
+  itemId: string,
+): Promise<{ deleted: boolean; alreadyGone: boolean }> {
+  const client = getGraphClient();
+  try {
+    await client.api(`/drives/${driveId}/items/${itemId}`).delete();
+    return { deleted: true, alreadyGone: false };
+  } catch (err) {
+    const code = statusCodeOf(err);
+    if (code === 404) return { deleted: false, alreadyGone: true };
+    if (code === 403) {
+      throw new SharePointWriteForbiddenError(`SharePoint refused the delete (403) — ${WRITE_FORBIDDEN_HINT}`);
+    }
+    throw err;
+  }
+}
+
 // Upload bytes as a file under (driveId + folderItemId). PUT /content replaces
 // existing content at the same name — so re-pushing a re-approved correction
 // overwrites the prior file. Direct PUT is good up to ~4MB (same limit as
