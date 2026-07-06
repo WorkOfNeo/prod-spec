@@ -16,6 +16,7 @@ import {
   RunBatchNowButton,
   UploadNowButton,
   RetryFloatedButton,
+  BackfillFoldersButton,
 } from "./supplier-send-actions";
 import { UploadProgress } from "./upload-progress";
 
@@ -202,6 +203,24 @@ export default async function ApprovedDeliveryPage() {
         <RunBatchNowButton enabled={enabled} />
         <UploadNowButton enabled={enabled} />
         <RetryFloatedButton floatedCount={floatedCount} />
+      </div>
+
+      {/* One-off maintenance: re-push already-delivered styles into the new
+          folder naming ("<PO> - <customer> - <supplier> - APPROVED LAYOUTS").
+          The naming change is forward-only, so styles already pushed to an old
+          folder need this once to keep their whole set in one place. */}
+      <div className="mt-6 max-w-3xl rounded-lg border border-zinc-200 bg-zinc-50/60 px-4 py-3">
+        <div className="text-sm font-medium text-zinc-800">Supplier folder naming</div>
+        <p className="mt-0.5 mb-2 text-xs text-zinc-500">
+          New folders are named{" "}
+          <span className="font-mono text-[11px] text-zinc-600">
+            PO · Customer · Supplier · APPROVED LAYOUTS
+          </span>{" "}
+          and shared across styles on the same PO. Run this once to move styles that were already
+          pushed under the old <span className="font-mono text-[11px]">Style – Customer</span> naming
+          into the new folders. Old folders are left in place for you to delete manually.
+        </p>
+        <BackfillFoldersButton />
       </div>
 
       {/* Per-supplier summary — who gets what tonight, and to which email. */}

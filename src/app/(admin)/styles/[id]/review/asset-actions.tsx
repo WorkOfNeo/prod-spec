@@ -172,7 +172,8 @@ export function AssetActions({
   }
 
   // Admin-only: push this approved output into the supplier's SharePoint
-  // folder (creates the "<style> – <customer>" subfolder, uploads the PDF).
+  // folder (creates/reuses the "<PO> - <customer> - <supplier> - APPROVED
+  // LAYOUTS" subfolder, uploads the PDF).
   async function push() {
     setError(null);
     setPushNote(null);
