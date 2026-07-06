@@ -653,14 +653,19 @@ export async function processJob(jobId: string): Promise<void> {
   }
 
   // Auto-approve resolution. A generated doc skips the manual review queue
-  // (reviewStatus APPROVED at creation) when its OutputLayout has
-  // autoApprove = true — BUT only when print-safe: a doc carrying
+  // (reviewStatus APPROVED at creation) when EITHER its OutputLayout has
+  // autoApprove = true OR its ProdSpec is marked "Fully approved" (a spec-wide
+  // trust flag the admin sets on /prod-specs; it also feeds the toggle's
+  // approve-and-rerun flow) — BUT only when print-safe: a doc carrying
   // placeholder artifacts always falls back to manual review (mirrors the
-  // ship-gate in the approve route + publishApprovedJob). Bundle pages
-  // (cover / general info) are never auto-approved — they're cascaded by the
-  // human "Approve all & publish" send, which is the manual checkpoint we
-  // deliberately keep. Delivery (SharePoint + supplier email) is NOT
-  // triggered here; auto-approve removes the review click, not the send.
+  // ship-gate in the approve route + publishApprovedJob). The spec-level gate
+  // is deliberately broader than the per-layout one: it covers coded-template
+  // outputs too, since "Fully approved" means the whole spec is trusted.
+  // Bundle pages (cover / general info) are never auto-approved — they're
+  // cascaded by the human "Approve all & publish" send, which is the manual
+  // checkpoint we deliberately keep. Delivery (SharePoint + supplier email) is
+  // NOT triggered here; auto-approve removes the review click, not the send.
+  const specFullyApproved = prodSpec?.fullyApproved === true;
   const generatedLayoutIds = [
     ...new Set(generated.map((d) => layoutIdFromVariantKey(d.variantKey)).filter((x): x is string => x !== null)),
   ];
@@ -675,8 +680,10 @@ export async function processJob(jobId: string): Promise<void> {
       : [],
   );
   const isAutoApproved = (doc: (typeof generated)[number]): boolean => {
+    if (doc.placeholderCount !== 0) return false;
+    if (specFullyApproved) return true;
     const layoutId = layoutIdFromVariantKey(doc.variantKey);
-    return layoutId !== null && autoApproveLayoutIds.has(layoutId) && doc.placeholderCount === 0;
+    return layoutId !== null && autoApproveLayoutIds.has(layoutId);
   };
   const autoApprovedAt = new Date();
   const autoApprovedDocs = generated.filter(isAutoApproved);

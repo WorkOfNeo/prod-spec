@@ -24,6 +24,7 @@ import {
 import { AddOutputPicker, type VariantInfo } from "./add-output-picker";
 import { RerunStylesPanel } from "./rerun-styles-panel";
 import { ApproveStylesPanel, type ApprovalPanelStyle } from "./approve-styles-panel";
+import { ApproveRejectedDialog } from "./approve-rejected-dialog";
 import { TestPanel, type TestStyle } from "./test-panel";
 
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
@@ -105,6 +106,19 @@ export function ProdSpecEditor(props: Props) {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  // Turning "Fully approved" ON is intercepted by a confirm dialog (approve +
+  // re-run the spec's rejected PDFs) rather than flipping the flag silently.
+  const [approveDialogOpen, setApproveDialogOpen] = useState(false);
+
+  // Toggle handler: ON is deferred to the dialog (it persists the flag itself
+  // via the approve-rejected route); OFF flips instantly through the autosaver.
+  function handleFullyApprovedChange(next: boolean) {
+    if (next && !fullyApproved) {
+      setApproveDialogOpen(true);
+    } else {
+      setFullyApproved(next);
+    }
+  }
 
   const variantByKey = new Map(props.variantCatalogue.map((v) => [v.key, v]));
   const addedKeys = new Set(outputs.map((o) => o.variantKey));
@@ -342,6 +356,13 @@ export function ProdSpecEditor(props: Props) {
 
   return (
     <div className="mt-6 flex flex-col gap-4">
+      {approveDialogOpen && (
+        <ApproveRejectedDialog
+          prodSpecId={props.prodSpecId}
+          onClose={() => setApproveDialogOpen(false)}
+          onConfirmed={() => setFullyApproved(true)}
+        />
+      )}
       {/* Basics melted into one sticky row: identity + workflow knobs on
           the left, save state on the right. */}
       <HeaderBar
@@ -356,7 +377,7 @@ export function ProdSpecEditor(props: Props) {
         active={active}
         onActive={setActive}
         fullyApproved={fullyApproved}
-        onFullyApproved={setFullyApproved}
+        onFullyApproved={handleFullyApprovedChange}
       />
 
       <nav className="border-b border-zinc-200">
