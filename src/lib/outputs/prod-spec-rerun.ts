@@ -20,10 +20,14 @@ import type { RunnableStyle } from "@/lib/queue/bulk-run";
 export type AffectedStyle = {
   id: string;
   name: string;
+  poNumber: string | null;
   // Ready outputs with no asset yet (newly added / never generated).
   missing: number;
   // Ready outputs whose latest asset was REJECTED in review.
   rejected: number;
+  // Human names of the rejected outputs (variant names) — powers the
+  // "approve these PDFs" confirm dialog on the Fully-approved toggle.
+  rejectedNames: string[];
 };
 
 export type ProdSpecRerunPlan = {
@@ -71,7 +75,14 @@ const empty = (active: boolean): ProdSpecRerunPlan => ({
   sample: [],
 });
 
-export async function computeProdSpecRerunPlan(prodSpecId: string): Promise<ProdSpecRerunPlan> {
+export async function computeProdSpecRerunPlan(
+  prodSpecId: string,
+  // rejectedOnly scopes the plan to previously-REJECTED outputs only (drop the
+  // new/missing sweep). The "Fully approved" toggle's approve-and-rerun flow
+  // uses this so the run regenerates exactly the PDFs the confirm dialog lists.
+  options: { rejectedOnly?: boolean } = {},
+): Promise<ProdSpecRerunPlan> {
+  const rejectedOnly = options.rejectedOnly === true;
   const spec = await db.prodSpec.findUnique({
     where: { id: prodSpecId },
     select: { active: true },
@@ -155,6 +166,7 @@ export async function computeProdSpecRerunPlan(prodSpecId: string): Promise<Prod
     }
 
     const variantKeys: string[] = [];
+    const rejectedNames: string[] = [];
     let missingN = 0;
     let rejectedN = 0;
     for (const o of outputReadinessForStyle(
@@ -166,11 +178,15 @@ export async function computeProdSpecRerunPlan(prodSpecId: string): Promise<Prod
       if (!o.ready || o.excluded) continue;
       const b = base(o.variantKey);
       if (!hasAsset.has(b)) {
-        variantKeys.push(o.variantKey); // new / missing
-        missingN++;
+        // new / missing — skipped entirely in rejectedOnly mode.
+        if (!rejectedOnly) {
+          variantKeys.push(o.variantKey);
+          missingN++;
+        }
       } else if (hasRejected.has(b)) {
         variantKeys.push(o.variantKey); // previously rejected
         rejectedN++;
+        rejectedNames.push(o.name);
       }
       // generated & not rejected (approved / awaiting review) → leave it.
     }
@@ -180,7 +196,14 @@ export async function computeProdSpecRerunPlan(prodSpecId: string): Promise<Prod
     if (missingN > 0) withMissing++;
     if (rejectedN > 0) withRejected++;
     if (sample.length < SAMPLE_CAP) {
-      sample.push({ id: c.id, name: c.name, missing: missingN, rejected: rejectedN });
+      sample.push({
+        id: c.id,
+        name: c.name,
+        poNumber: c.poNumber,
+        missing: missingN,
+        rejected: rejectedN,
+        rejectedNames,
+      });
     }
   }
 
