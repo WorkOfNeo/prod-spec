@@ -5,14 +5,14 @@ import { parseCustomerConfig } from "@/lib/customers/config";
 
 // =====================================================
 // One-off backfill: re-push already-delivered styles into the NEW supplier-
-// folder naming ("<PO> - <customer> - <supplier> - APPROVED LAYOUTS", see
-// push-to-supplier.ts). The folder-name change is forward-only — a style whose
-// approved layouts already sit in an old "<style> – <customer>" folder would
-// otherwise have its FUTURE approvals land in the new folder, splitting the set
-// across two folders. This walks every style that was previously pushed
+// folder layout ("<PO> - <customer> - <supplier>" folder → "APPROVED LAYOUTS"
+// subfolder, see push-to-supplier.ts). The layout change is forward-only — a
+// style whose approved layouts already sit in an older folder would otherwise
+// have its FUTURE approvals land in the new folder, splitting the set across
+// two folders. This walks every style that was previously pushed
 // (Style.supplierFolderUrl set) and re-pushes its CURRENT approved + print-safe
-// outputs into the new-named folder, consolidating the set. Idempotent: uploads
-// PUT-overwrite by filename and the subfolder is get-or-create, so re-running is
+// outputs into the new folder, consolidating the set. Idempotent: uploads
+// PUT-overwrite by filename and the folders are get-or-create, so re-running is
 // safe.
 //
 // SCOPE (deliberately narrow — Niels's call): only styles with a stored

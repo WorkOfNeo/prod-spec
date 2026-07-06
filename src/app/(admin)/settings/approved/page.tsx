@@ -206,19 +206,23 @@ export default async function ApprovedDeliveryPage() {
       </div>
 
       {/* One-off maintenance: re-push already-delivered styles into the new
-          folder naming ("<PO> - <customer> - <supplier> - APPROVED LAYOUTS").
-          The naming change is forward-only, so styles already pushed to an old
-          folder need this once to keep their whole set in one place. */}
+          folder layout ("<PO> - <customer> - <supplier>" folder → "APPROVED
+          LAYOUTS" subfolder). The layout change is forward-only, so styles
+          already pushed under an older naming need this once to keep their whole
+          set in one place. */}
       <div className="mt-6 max-w-3xl rounded-lg border border-zinc-200 bg-zinc-50/60 px-4 py-3">
         <div className="text-sm font-medium text-zinc-800">Supplier folder naming</div>
         <p className="mt-0.5 mb-2 text-xs text-zinc-500">
-          New folders are named{" "}
+          Approved layouts land in{" "}
           <span className="font-mono text-[11px] text-zinc-600">
-            PO · Customer · Supplier · APPROVED LAYOUTS
+            PO - Customer - Supplier
           </span>{" "}
-          and shared across styles on the same PO. Run this once to move styles that were already
-          pushed under the old <span className="font-mono text-[11px]">Style – Customer</span> naming
-          into the new folders. Old folders are left in place for you to delete manually.
+          →{" "}
+          <span className="font-mono text-[11px] text-zinc-600">APPROVED LAYOUTS</span>, shared across
+          styles on the same PO. Run this once to move styles that were already pushed under an older
+          naming into the new folders. Old folders are left in place — use the cleanup script
+          (<span className="font-mono text-[11px]">npm run cleanup-legacy-supplier-folders</span>) to
+          remove them.
         </p>
         <BackfillFoldersButton />
       </div>
