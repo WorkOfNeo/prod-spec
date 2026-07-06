@@ -1,5 +1,3 @@
-import { db } from "@/lib/db";
-
 // Normalise an English phrase to the Translation.key form: trim, collapse
 // internal whitespace, lowercase. The Monday sync (which WRITES keys) and
 // the renderer (which READS them) MUST normalise identically — otherwise a
@@ -20,6 +18,10 @@ export type TranslationEntry = {
 export type TranslationDictionary = Map<string, TranslationEntry>;
 
 export async function loadTranslationDictionary(): Promise<TranslationDictionary> {
+  // Imported lazily so the pure helpers below (translatePhrase /
+  // translateComposition) can be imported — and unit-tested — without pulling
+  // in the Prisma client or requiring DATABASE_URL.
+  const { db } = await import("@/lib/db");
   const rows = await db.translation.findMany({
     where: { active: true },
     select: { key: true, sourceText: true, translations: true },
@@ -67,8 +69,17 @@ export function translatePhrase(
 //   "95% Cotton, 5% Elastane"    --(da)-->  "95% Bomuld, 5% Elastan"
 //   "92% Polyester 8% Elastane"  --(da)-->  "92% Polyester 8% Elastan"
 //
+// Multi-part compositions head each section with a "<label>:" ("Top:",
+// "Skirt:", "Shell:", "Lining:", …) and string the parts together — usually
+// space-separated, no comma between them. The label word is ALSO a board
+// lookup, and a fibre name STOPS before the next label so it resolves on its
+// own instead of swallowing the following label:
+//
+//   "Top: 100% Cotton Skirt: 100% Polyester"
+//                                --(da)-->  "Overdel: 100% Bomuld Nederdel: 100% Polyester"
+//
 // A comma segment without any percentage is translated whole. `changed`
-// reports whether at least one fibre actually resolved to a non-English
+// reports whether at least one term actually resolved to a non-English
 // value, so callers can skip a language row that would otherwise just
 // reprint the English composition under a foreign flag.
 export function translateComposition(
@@ -79,8 +90,10 @@ export function translateComposition(
   let changed = false;
 
   // "<NN%> <fibre…>" where the fibre runs lazily up to the next percentage
-  // token (or the end of the segment).
-  const PERCENT_CLAUSE = /(\d+(?:[.,]\d+)?\s*%\s*)([^%]+?)(?=\d+(?:[.,]\d+)?\s*%|$)/g;
+  // token, the next part label ("<space><word>:"), or the end of the segment
+  // — so "100% Cotton Skirt:" captures "Cotton", not "Cotton Skirt".
+  const PERCENT_CLAUSE =
+    /(\d+(?:[.,]\d+)?\s*%\s*)([^%]+?)(?=\s*\d+(?:[.,]\d+)?\s*%|\s+[^\s%:,]+\s*:|$)/g;
 
   const translateFibreClauses = (segment: string): string =>
     segment.replace(PERCENT_CLAUSE, (whole, pct: string, fibreRaw: string) => {
@@ -93,12 +106,25 @@ export function translateComposition(
       return pct + fibreRaw.replace(fibre, translated);
     });
 
+  // Section labels: the word before each "<word>:" is looked up on the board
+  // (degrading to English) with the colon and its spacing preserved. A no-op
+  // on single-part compositions, which carry no labels.
+  const PART_LABEL = /([^\s%:,]+)(\s*:)/g;
+  const translatePartLabels = (segment: string): string =>
+    segment.replace(PART_LABEL, (_whole, label: string, colon: string) => {
+      const translated = translatePhrase(dict, label, lang);
+      if (translated !== label) changed = true;
+      return translated + colon;
+    });
+
   const text = composition
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
     .map((segment) => {
-      if (/\d\s*%/.test(segment)) return translateFibreClauses(segment);
+      // Fibres first (their capture stops before the next label), then the
+      // part labels heading each section.
+      if (/\d\s*%/.test(segment)) return translatePartLabels(translateFibreClauses(segment));
       const translated = translatePhrase(dict, segment, lang);
       if (translated !== segment) changed = true;
       return translated;
