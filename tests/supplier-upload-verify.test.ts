@@ -14,7 +14,7 @@ import { test, mock, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 // ── Mutable state the mocks read at call time ───────────────────────────────
-type Scenario = "present" | "missing" | "unresolved";
+type Scenario = "present" | "file-missing" | "po-missing" | "ambiguous" | "unresolved";
 let scenario: Scenario = "present";
 let folderNames = new Set<string>();
 let updateCalls: Array<{ where: { id: { in: string[] } }; data: Record<string, unknown> }> = [];
@@ -70,6 +70,8 @@ before(() => {
 
   // SharePoint Graph layer. sanitizeName is included because
   // supplier-folder-names.ts imports it transitively from this same module.
+  // resolvePoFolder is stubbed per-scenario so the verify branch under test is
+  // isolated from the matcher (which has its own pure test).
   mock.module("@/lib/sharepoint/supplier-folder", {
     namedExports: {
       sanitizeName: (s: string) => s,
@@ -77,13 +79,14 @@ before(() => {
         if (scenario === "unresolved") throw new Error("share link would not resolve");
         return { driveId: "d", itemId: "root", webUrl: null };
       },
-      findChildFolder: async (_driveId: string, _parentId: string, name: string) => {
-        // The APPROVED LAYOUTS leaf is absent in the "missing" scenario.
-        if (name === "APPROVED LAYOUTS") {
-          return scenario === "missing" ? null : { id: "leaf", webUrl: "https://leaf", childCount: 1 };
-        }
-        return { id: "parent", webUrl: "https://parent", childCount: 1 };
+      listChildFolders: async () => [],
+      resolvePoFolder: () => {
+        if (scenario === "po-missing") return { status: "missing" };
+        if (scenario === "ambiguous")
+          return { status: "ambiguous", matches: [{ id: "a", name: "C-PO1 x" }, { id: "b", name: "C-PO1 y" }] };
+        return { status: "found", folder: { id: "po", name: "C-PO1 - Cust - Sup", webUrl: "https://po", childCount: 1 } };
       },
+      findChildFolder: async () => ({ id: "leaf", webUrl: "https://leaf", childCount: 1 }),
       listChildFileNames: async () => folderNames,
     },
   });
@@ -109,8 +112,8 @@ test("file present → row verified, never re-armed", async () => {
   assert.equal(updateCalls[0].data.sharePointStatus, undefined);
 });
 
-test("folder resolves but file missing → row auto re-armed to PENDING", async () => {
-  scenario = "missing";
+test("PO folder found but file missing from APPROVED LAYOUTS → row auto re-armed", async () => {
+  scenario = "file-missing";
   folderNames = new Set();
   const { verifySupplierUploads } = await import("@/lib/sharepoint/verify-supplier-uploads");
 
@@ -122,6 +125,31 @@ test("folder resolves but file missing → row auto re-armed to PENDING", async 
   assert.equal(updateCalls[0].data.sharePointStatus, "PENDING");
   assert.equal(updateCalls[0].data.pushAttempts, 0);
   assert.equal(updateCalls[0].data.sharePointVerifiedAt, null);
+});
+
+test("PO folder no longer exists → row auto re-armed (next push flags NO_FOLDER)", async () => {
+  scenario = "po-missing";
+  folderNames = new Set();
+  const { verifySupplierUploads } = await import("@/lib/sharepoint/verify-supplier-uploads");
+
+  const sweep = await verifySupplierUploads();
+
+  assert.equal(sweep.healed, 1);
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0].data.sharePointStatus, "PENDING");
+});
+
+test("PO folder ambiguous → row LEFT UNTOUCHED (can't conclude 'missing')", async () => {
+  scenario = "ambiguous";
+  folderNames = new Set();
+  const { verifySupplierUploads } = await import("@/lib/sharepoint/verify-supplier-uploads");
+
+  const sweep = await verifySupplierUploads();
+
+  assert.equal(sweep.unresolved, 1);
+  assert.equal(sweep.healed, 0);
+  assert.equal(sweep.verified, 0);
+  assert.equal(updateCalls.length, 0);
 });
 
 test("folder unresolvable (403/transient) → row LEFT UNTOUCHED", async () => {

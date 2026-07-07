@@ -3,6 +3,8 @@ import {
   resolveSupplierFolder,
   ensureChildFolder,
   uploadIntoFolder,
+  listChildFolders,
+  resolvePoFolder,
   SharePointWriteForbiddenError,
 } from "./supplier-folder";
 import { supplierParentFolderName, APPROVED_LAYOUTS_SUBFOLDER } from "./supplier-folder-names";
@@ -11,23 +13,34 @@ import { supplierParentFolderName, APPROVED_LAYOUTS_SUBFOLDER } from "./supplier
 // Push approved output PDFs into the supplier's own SharePoint folder. Layout:
 //
 //   <supplier root>/
-//     <PO> - <customer> - <supplier>/      ← parent, keyed on PO not style
-//       APPROVED LAYOUTS/                   ← subfolder the PDFs land in
+//     <PO> - <customer> - <supplier>/      ← the PO folder — SEARCHED, never created
+//       APPROVED LAYOUTS/                   ← subfolder the PDFs land in (get-or-create)
 //
-// Because the parent is keyed on PO + customer + supplier (not the style), every
-// style under the same PO resolves to the SAME folder — the first approved style
-// creates it and later styles' approved layouts collect in its APPROVED LAYOUTS
-// subfolder (filenames are style-number-prefixed, so styles never clobber each
-// other). Manual, admin-triggered (phase 1) — distinct from the auto publish-on-
-// approval upload in publish-approved-job.ts, which targets the configured
-// SHAREPOINT_SITE_ID site. Only APPROVED, print-safe (no-placeholder) assets are
-// ever pushed.
+// The PO folder is owned upstream (created by another process/person), so the
+// push SEARCHES the supplier's folder for the child whose name matches this
+// style's PO number and NEVER creates it. If none matches, the push refuses with
+// a distinct "no-folder" error so the output is flagged (and re-checked each
+// sweep until the folder appears) instead of silently minting a phantom folder
+// somewhere the supplier can't see. If several folders match the same PO it
+// refuses with "ambiguous-folder" for a human to resolve. Inside the found PO
+// folder the "APPROVED LAYOUTS" subfolder IS ours to get-or-create.
+//
+// Every style under one PO therefore resolves to the SAME PO folder (filenames
+// are style-number-prefixed, so styles never clobber each other). Manual, admin-
+// triggered (phase 1) — distinct from the auto publish-on-approval upload in
+// publish-approved-job.ts, which targets the configured SHAREPOINT_SITE_ID site.
+// Only APPROVED, print-safe (no-placeholder) assets are ever pushed.
 // =====================================================
+
+// Discriminates the folder-shaped refusals the queue sweep maps to distinct,
+// self-healing statuses (NO_FOLDER / AMBIGUOUS) rather than a generic skip.
+export type SupplierPushErrorKind = "no-folder" | "ambiguous-folder";
 
 export class SupplierPushError extends Error {
   constructor(
     public readonly httpStatus: 400 | 403 | 404 | 409,
     message: string,
+    public readonly kind?: SupplierPushErrorKind,
   ) {
     super(message);
     this.name = "SupplierPushError";
@@ -35,13 +48,17 @@ export class SupplierPushError extends Error {
 }
 
 export type PushedFile = { assetId: string; fileName: string; webUrl: string | null };
+export type PoFolderStatus = "found" | "missing" | "ambiguous";
 
 export type SupplierPushResult = {
   dryRun: boolean;
   supplierName: string;
-  folderName: string; // the "<PO> - <customer> - <supplier>" parent folder name
+  folderName: string; // the "<PO> - <customer> - <supplier>" name the app would look for
   supplierFolderUrl: string | null; // the supplier's root folder
-  targetFolderUrl: string | null; // the "APPROVED LAYOUTS" subfolder (null on dry run)
+  targetFolderUrl: string | null; // the "APPROVED LAYOUTS" subfolder (null on dry run / not found)
+  poFolderStatus: PoFolderStatus; // did the PO folder search resolve?
+  poFolderUrl: string | null; // the matched PO folder itself (null when missing)
+  poFolderMatches?: string[]; // folder names when ambiguous, for the operator to disambiguate
   pushed: PushedFile[];
   skipped: Array<{ assetId: string; fileName: string; reason: string }>;
 };
@@ -139,7 +156,17 @@ export async function pushApprovedAssetsToSupplier(input: {
     );
   }
 
-  // Dry run: report the resolved target + file list without writing anything.
+  // SEARCH for the PO folder inside the supplier's root — never create it. Match
+  // on the PO number (supplier is implicit — we're already inside their folder).
+  let resolution;
+  try {
+    const children = await listChildFolders(folder.driveId, folder.itemId);
+    resolution = resolvePoFolder(children, style.poNumber, folderName);
+  } catch (err) {
+    throw toPushError(err);
+  }
+
+  // Dry run: report where the PO-folder search landed + the file list, no writes.
   if (dryRun) {
     return {
       dryRun: true,
@@ -147,18 +174,40 @@ export async function pushApprovedAssetsToSupplier(input: {
       folderName,
       supplierFolderUrl: folder.webUrl,
       targetFolderUrl: null,
+      poFolderStatus: resolution.status,
+      poFolderUrl: resolution.status === "found" ? resolution.folder.webUrl : null,
+      poFolderMatches: resolution.status === "ambiguous" ? resolution.matches.map((m) => m.name) : undefined,
       pushed: pushable.map((a) => ({ assetId: a.id, fileName: a.fileName, webUrl: null })),
       skipped,
     };
   }
 
-  // Ensure the "<PO> - <customer> - <supplier>" parent (get-or-create — shared
-  // across styles under the PO), then the "APPROVED LAYOUTS" subfolder inside it,
-  // then upload each PDF into the subfolder.
+  // No PO folder → flag (never create). Distinct kind so the sweep marks the
+  // rows NO_FOLDER and keeps re-checking until the folder is created upstream.
+  if (resolution.status === "missing") {
+    throw new SupplierPushError(
+      409,
+      `No PO folder for “${style.poNumber ?? style.name}” found in supplier “${supplier.name}”'s SharePoint folder — the app never creates it. Create “${folderName}” (or the PO folder) there and it will upload on the next sweep.`,
+      "no-folder",
+    );
+  }
+  // Several folders match the PO — refuse rather than guess which is canonical.
+  if (resolution.status === "ambiguous") {
+    throw new SupplierPushError(
+      409,
+      `Multiple folders in supplier “${supplier.name}”'s SharePoint folder match PO “${style.poNumber}” (${resolution.matches
+        .map((m) => `“${m.name}”`)
+        .join(", ")}) — leave exactly one so the app knows where to upload.`,
+      "ambiguous-folder",
+    );
+  }
+  const poFolder = resolution.folder;
+
+  // Inside the found PO folder, get-or-create the "APPROVED LAYOUTS" subfolder
+  // (that one IS ours), then upload each PDF into it.
   let subfolder;
   try {
-    const parentFolder = await ensureChildFolder(folder.driveId, folder.itemId, folderName);
-    subfolder = await ensureChildFolder(folder.driveId, parentFolder.id, APPROVED_LAYOUTS_SUBFOLDER);
+    subfolder = await ensureChildFolder(folder.driveId, poFolder.id, APPROVED_LAYOUTS_SUBFOLDER);
   } catch (err) {
     throw toPushError(err);
   }
@@ -201,6 +250,8 @@ export async function pushApprovedAssetsToSupplier(input: {
     folderName,
     supplierFolderUrl: folder.webUrl,
     targetFolderUrl: subfolder.webUrl,
+    poFolderStatus: "found",
+    poFolderUrl: poFolder.webUrl,
     pushed,
     skipped,
   };

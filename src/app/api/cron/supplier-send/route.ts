@@ -57,6 +57,9 @@ export async function POST(req: NextRequest) {
           (reconciled.cutoff === null ? " (no PO cutoff set — backfill idle)" : ` (PO ≥ ${reconciled.cutoff})`) +
           `; verify: ${verified.verified} ok / ${verified.healed} self-healed / ${verified.unresolved} unresolved` +
           `; uploads: ${sweep.uploaded} ok / ${sweep.failed} failed / ${sweep.skipped} skipped` +
+          (sweep.noFolder > 0 || sweep.ambiguous > 0
+            ? ` / ${sweep.noFolder} no PO folder / ${sweep.ambiguous} ambiguous`
+            : "") +
           (enabled ? "" : " — sending OFF, push skipped"),
         processed: sweep.uploaded,
         failed: sweep.failed,

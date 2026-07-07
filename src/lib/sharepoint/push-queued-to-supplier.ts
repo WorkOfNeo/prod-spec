@@ -53,9 +53,23 @@ export type SupplierUploadSweep = {
   uploaded: number;
   failed: number;
   skipped: number;
+  noFolder: number; // PO folder not found under the supplier (flagged, retried each sweep)
+  ambiguous: number; // several folders match the PO — needs a human (flagged, retried)
 };
 
-const EMPTY_SWEEP: SupplierUploadSweep = { styles: 0, uploaded: 0, failed: 0, skipped: 0 };
+const EMPTY_SWEEP: SupplierUploadSweep = {
+  styles: 0,
+  uploaded: 0,
+  failed: 0,
+  skipped: 0,
+  noFolder: 0,
+  ambiguous: 0,
+};
+
+// Non-UPLOADED terminal statuses the sweep stamps. NO_FOLDER / AMBIGUOUS are new
+// folder-shaped flags (PO folder absent / several match); all three non-FAILED
+// take no strike so they retry every sweep until the gap is fixed.
+type StampStatus = "FAILED" | "SKIPPED" | "NO_FOLDER" | "AMBIGUOUS";
 
 export async function pushQueuedSupplierUploads(opts?: {
   styleIds?: string[];
@@ -98,13 +112,28 @@ export async function pushQueuedSupplierUploads(opts?: {
     styleRows.map((s) => [s.id, parseCustomerConfig(s.customer.config).skipSupplierDelivery]),
   );
 
-  const sweep: SupplierUploadSweep = { styles: byStyle.size, uploaded: 0, failed: 0, skipped: 0 };
+  const sweep: SupplierUploadSweep = {
+    styles: byStyle.size,
+    uploaded: 0,
+    failed: 0,
+    skipped: 0,
+    noFolder: 0,
+    ambiguous: 0,
+  };
   const now = () => new Date();
 
+  // FAILED counts a strike (pushAttempts++); every other flagged status is a
+  // data/folder gap that failed fast — stamped without a strike so it keeps
+  // self-healing (retried each sweep until the underlying gap is closed).
+  const counterOf: Record<StampStatus, keyof SupplierUploadSweep> = {
+    FAILED: "failed",
+    SKIPPED: "skipped",
+    NO_FOLDER: "noFolder",
+    AMBIGUOUS: "ambiguous",
+  };
+
   for (const [styleId, styleItems] of byStyle) {
-    // FAILED counts a strike (pushAttempts++); SKIPPED is a data gap that
-    // failed fast — stamped without a strike so it keeps self-healing.
-    const stamp = async (ids: string[], status: "FAILED" | "SKIPPED") => {
+    const stamp = async (ids: string[], status: StampStatus) => {
       if (ids.length === 0) return;
       await db.supplierSendQueueItem
         .updateMany({
@@ -116,7 +145,7 @@ export async function pushQueuedSupplierUploads(opts?: {
           },
         })
         .catch(() => {});
-      sweep[status === "FAILED" ? "failed" : "skipped"] += ids.length;
+      sweep[counterOf[status]] += ids.length;
     };
 
     if (skipDeliveryByStyle.get(styleId)) {
@@ -194,16 +223,21 @@ export async function pushQueuedSupplierUploads(opts?: {
         }
       }
     } catch (err) {
-      // 403 (write not granted yet) and unexpected Graph/network errors are
+      // Folder-shaped refusals get their own flag so /style + /settings/approved
+      // can say WHY (PO folder missing / ambiguous) and the row keeps re-checking
+      // each sweep. 403 (write not granted) + unexpected Graph/network errors are
       // retryable → FAILED. Other SupplierPushErrors (no supplier linked, no
       // folder link on file, nothing pushable) are data gaps → SKIPPED.
-      const retryable = !(err instanceof SupplierPushError) || err.httpStatus === 403;
+      let status: StampStatus;
+      if (err instanceof SupplierPushError && err.kind === "no-folder") status = "NO_FOLDER";
+      else if (err instanceof SupplierPushError && err.kind === "ambiguous-folder") status = "AMBIGUOUS";
+      else status = !(err instanceof SupplierPushError) || err.httpStatus === 403 ? "FAILED" : "SKIPPED";
       await stamp(
         withAsset.map((i) => i.id),
-        retryable ? "FAILED" : "SKIPPED",
+        status,
       );
       console.warn(
-        `[supplier-upload] push failed for style ${styleId} (${retryable ? "FAILED" : "SKIPPED"}):`,
+        `[supplier-upload] push not completed for style ${styleId} (${status}):`,
         err instanceof Error ? err.message : err,
       );
     }

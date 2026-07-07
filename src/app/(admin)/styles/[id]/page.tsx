@@ -47,7 +47,7 @@ import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
-import { SupplierFolderStatus } from "./supplier-folder-status";
+import { SupplierFolderStatus, type PoFolderDelivery } from "./supplier-folder-status";
 import { LogStyleView } from "@/components/log-style-view";
 import { applyFieldOverrides } from "@/lib/pdf/pins";
 import { parseFieldOverrides, PINNABLE_FIELD_LABELS, type PinnableField } from "@/lib/pdf/pins-meta";
@@ -258,6 +258,28 @@ export default async function StyleDetail({
       lastVisitedAt: true,
     },
   });
+
+  // This style's supplier-send queue rows — the ACTUAL SharePoint push outcome
+  // for the "Supplier folder" panel (found + link / no PO folder / ambiguous).
+  const sendQueueRows = await db.supplierSendQueueItem.findMany({
+    where: { styleId: id },
+    select: { sharePointStatus: true, sharePointFolderUrl: true },
+  });
+  const supplierDelivery: PoFolderDelivery | null =
+    sendQueueRows.length > 0
+      ? {
+          uploaded: sendQueueRows.filter((r) => r.sharePointStatus === "UPLOADED").length,
+          noFolder: sendQueueRows.filter((r) => r.sharePointStatus === "NO_FOLDER").length,
+          ambiguous: sendQueueRows.filter((r) => r.sharePointStatus === "AMBIGUOUS").length,
+          other: sendQueueRows.filter(
+            (r) => !["UPLOADED", "NO_FOLDER", "AMBIGUOUS"].includes(r.sharePointStatus),
+          ).length,
+          total: sendQueueRows.length,
+          folderUrl:
+            sendQueueRows.find((r) => r.sharePointStatus === "UPLOADED" && r.sharePointFolderUrl)
+              ?.sharePointFolderUrl ?? null,
+        }
+      : null;
 
   const autoGenerateEnabled = await getAutoGenerateEnabled();
 
@@ -731,6 +753,7 @@ export default async function StyleDetail({
           supplierFolder={{
             supplierName: style.supplier?.name ?? null,
             folderUrl: style.supplier?.sharepointUrl ?? null,
+            delivery: supplierDelivery,
           }}
           readiness={readiness}
           statusView={statusView}
@@ -805,7 +828,7 @@ function DetailsTab({
   missing: Array<{ id: string; label: string }>;
   resolvedFields: ResolvedSpecField[];
   recordFields: Array<{ label: string; value: string | null; href?: string }>;
-  supplierFolder: { supplierName: string | null; folderUrl: string | null };
+  supplierFolder: { supplierName: string | null; folderUrl: string | null; delivery: PoFolderDelivery | null };
   readiness: Readiness;
   statusView: EffectiveStatus;
   eanView: EanView;
@@ -1060,6 +1083,7 @@ function DetailsTab({
       <SupplierFolderStatus
         supplierName={supplierFolder.supplierName}
         folderUrl={supplierFolder.folderUrl}
+        delivery={supplierFolder.delivery}
       />
 
       <section className="mt-8">
