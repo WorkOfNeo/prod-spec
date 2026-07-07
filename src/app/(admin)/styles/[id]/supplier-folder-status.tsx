@@ -12,12 +12,28 @@ import type { ReactNode } from "react";
 // "supplier has no folder link" (step 2). Pure server render; no Graph call
 // (the stored link is what the push resolves; surfacing it lets the reviewer
 // click through to confirm the actual destination).
+// Roll-up of this style's supplier-send queue rows — the ACTUAL push outcome
+// (vs. the readiness chain above). Fed from SupplierSendQueueItem.
+export type PoFolderDelivery = {
+  uploaded: number;
+  noFolder: number; // PO folder not found — app won't create it
+  ambiguous: number; // several folders match the PO
+  other: number; // PENDING/FAILED/SKIPPED (in-flight / gap)
+  total: number;
+  folderUrl: string | null; // the PO / APPROVED LAYOUTS folder link when uploaded
+  // The competing folders when ambiguous — reviewer opens each and deletes the
+  // extra so exactly one PO folder remains.
+  ambiguousMatches: Array<{ name: string; webUrl: string | null }>;
+};
+
 export function SupplierFolderStatus({
   supplierName,
   folderUrl,
+  delivery,
 }: {
   supplierName: string | null; // null ⇒ no supplier linked on the Pre-Order board
   folderUrl: string | null; // null ⇒ supplier has no folder link on the Suppliers board
+  delivery?: PoFolderDelivery | null; // null/absent ⇒ nothing queued for this style
 }) {
   const hasSupplier = supplierName != null;
   const hasLink = folderUrl != null;
@@ -89,7 +105,73 @@ export function SupplierFolderStatus({
           )}
         </div>
       </div>
+
+      {delivery && delivery.total > 0 ? <PoFolderState delivery={delivery} /> : null}
     </section>
+  );
+}
+
+// The PO-folder push outcome for this style. The app SEARCHES the supplier's
+// folder for the PO folder and never creates it — so "no PO folder" is a real,
+// actionable state (create it upstream), not a transient error.
+function PoFolderState({ delivery }: { delivery: PoFolderDelivery }) {
+  const { uploaded, noFolder, ambiguous, total, folderUrl, ambiguousMatches } = delivery;
+  // Worst-first tone: ambiguous > missing > partial > done > queued.
+  const tone =
+    ambiguous > 0
+      ? "border-fuchsia-200 bg-fuchsia-50/60 text-fuchsia-800"
+      : noFolder > 0
+        ? "border-orange-200 bg-orange-50/60 text-orange-800"
+        : uploaded > 0
+          ? "border-emerald-200 bg-emerald-50/50 text-emerald-800"
+          : "border-zinc-200 bg-zinc-50 text-zinc-600";
+
+  return (
+    <div className={`mt-2 rounded-lg border px-4 py-2.5 text-xs ${tone}`}>
+      <div className="mb-1 flex items-center justify-between">
+        <span className="font-medium text-zinc-700">SharePoint delivery</span>
+        {folderUrl ? (
+          <a href={folderUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-zinc-950">
+            Open PO folder ↗
+          </a>
+        ) : null}
+      </div>
+      {ambiguous > 0 ? (
+        <>
+          ⚠ <span className="font-medium">Multiple folders match this PO</span> in the supplier’s SharePoint — there must
+          be exactly one. Open each and delete the extra; it uploads on the next sweep.
+          {ambiguousMatches.length > 0 ? (
+            <ul className="mt-1.5 space-y-0.5">
+              {ambiguousMatches.map((m, i) => (
+                <li key={i} className="flex items-center gap-1.5">
+                  <span aria-hidden>•</span>
+                  {m.webUrl ? (
+                    <a href={m.webUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-zinc-950">
+                      {m.name} ↗
+                    </a>
+                  ) : (
+                    <span>{m.name}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      ) : noFolder > 0 ? (
+        <>
+          ⚠ {noFolder} of {total} output(s) can’t upload — <span className="font-medium">no PO folder found</span> in the
+          supplier’s SharePoint. The app never creates it; create the PO folder there and they upload on the next sweep.
+        </>
+      ) : uploaded >= total ? (
+        <>✓ All {total} approved output(s) are in the PO folder’s “APPROVED LAYOUTS” subfolder.</>
+      ) : uploaded > 0 ? (
+        <>
+          {uploaded} of {total} output(s) uploaded to the PO folder; the rest are queued for the next sweep.
+        </>
+      ) : (
+        <>Queued — {total} approved output(s) will upload to the PO folder on the next sweep.</>
+      )}
+    </div>
   );
 }
 

@@ -4,9 +4,12 @@ import {
   resolveSupplierFolder,
   findChildFolder,
   listChildFileNames,
+  listChildFolders,
+  resolvePoFolder,
   type ResolvedFolder,
+  type ChildFolder,
 } from "./supplier-folder";
-import { supplierParentFolderName, APPROVED_LAYOUTS_SUBFOLDER } from "./supplier-folder-names";
+import { APPROVED_LAYOUTS_SUBFOLDER } from "./supplier-folder-names";
 
 // =====================================================
 // Self-heal verify for supplier-folder uploads (WS4). A queue row is stamped
@@ -106,7 +109,8 @@ export async function verifySupplierUploads(opts?: {
   // Per-run caches — styles under one PO share the same supplier root and the
   // same "APPROVED LAYOUTS" subfolder, so resolve/list each at most once.
   const rootCache = new Map<string, ResolvedFolder | null>();
-  const listingCache = new Map<string, Set<string>>();
+  const rootFoldersCache = new Map<string, ChildFolder[]>(); // supplier root's child folders
+  const listingCache = new Map<string, Set<string>>(); // APPROVED LAYOUTS file names, per PO folder
 
   const sweep: SupplierVerifySweep = { ...EMPTY };
   const now = () => new Date();
@@ -158,41 +162,58 @@ export async function verifySupplierUploads(opts?: {
       // fall back to the stored asset name below
     }
 
-    // Locate + list the "<PO> - <customer> - <supplier>/APPROVED LAYOUTS/"
-    // subfolder (cached per resolved folder). null parent/leaf → the folder
-    // genuinely does not exist → files are missing → these rows heal. A thrown
-    // error (403/transient) → unresolved, left untouched.
-    const parentName = supplierParentFolderName({
-      poNumber: style.poNumber,
-      styleName: style.name,
-      customerName: style.customer.name,
-      supplierName: style.supplier.name,
-    });
-    const cacheKey = `${root.driveId}:${parentName}`;
+    // Find the PO folder the SAME way the push does — search the supplier root
+    // by PO number — so verify and push can never disagree about which folder is
+    // canonical (which would make them fight: verify re-arms, push re-uploads,
+    // forever). missing PO folder / absent leaf → the uploaded file is gone →
+    // heal. A thrown error (403/transient) or an ambiguous match (several folders
+    // for the PO — a human must resolve) → unresolved, left untouched.
+    const rootKey = `${root.driveId}:${root.itemId}`;
 
-    let names: Set<string> | null = null;
-    let folderWebUrl: string | null = null;
-    let folderExists = true;
-    if (listingCache.has(cacheKey)) {
-      names = listingCache.get(cacheKey)!;
-      folderWebUrl = null; // webUrl not re-derived on cache hit; verified rows keep their existing folder URL
-    } else {
-      try {
-        const parent = await findChildFolder(root.driveId, root.itemId, parentName);
-        const leaf = parent
-          ? await findChildFolder(root.driveId, parent.id, APPROVED_LAYOUTS_SUBFOLDER)
-          : null;
-        if (!leaf) {
-          folderExists = false;
-        } else {
-          folderWebUrl = leaf.webUrl;
-          names = await listChildFileNames(root.driveId, leaf.id);
-          listingCache.set(cacheKey, names);
-        }
-      } catch {
-        // Permission/transient — cannot conclude anything.
+    let poFolder: ChildFolder | null = null;
+    try {
+      let children = rootFoldersCache.get(rootKey);
+      if (!children) {
+        children = await listChildFolders(root.driveId, root.itemId);
+        rootFoldersCache.set(rootKey, children);
+      }
+      const resolution = resolvePoFolder(children, style.poNumber);
+      if (resolution.status === "ambiguous") {
+        // Can't safely say the file is missing — leave the UPLOADED rows alone.
         sweep.unresolved += styleItems.length;
         continue;
+      }
+      poFolder = resolution.status === "found" ? resolution.folder : null;
+    } catch {
+      // Permission/transient — cannot conclude anything.
+      sweep.unresolved += styleItems.length;
+      continue;
+    }
+
+    // List the APPROVED LAYOUTS file names inside the found PO folder (cached per
+    // PO folder). Missing PO folder or missing/absent leaf → files not present.
+    let names: Set<string> | null = null;
+    let folderWebUrl: string | null = null;
+    let folderExists = poFolder != null;
+    if (poFolder) {
+      const cacheKey = `${root.driveId}:${poFolder.id}`;
+      if (listingCache.has(cacheKey)) {
+        names = listingCache.get(cacheKey)!;
+        folderWebUrl = null; // not re-derived on cache hit; verified rows keep their existing folder URL
+      } else {
+        try {
+          const leaf = await findChildFolder(root.driveId, poFolder.id, APPROVED_LAYOUTS_SUBFOLDER);
+          if (!leaf) {
+            folderExists = false;
+          } else {
+            folderWebUrl = leaf.webUrl;
+            names = await listChildFileNames(root.driveId, leaf.id);
+            listingCache.set(cacheKey, names);
+          }
+        } catch {
+          sweep.unresolved += styleItems.length;
+          continue;
+        }
       }
     }
 
@@ -242,7 +263,10 @@ export async function verifySupplierUploads(opts?: {
         .catch(() => {});
       sweep.healed += healIds.length;
       console.warn(
-        `[supplier-verify] re-armed ${healIds.length} row(s) for style ${styleId} — file(s) not found in ${parentName}/${APPROVED_LAYOUTS_SUBFOLDER}`,
+        `[supplier-verify] re-armed ${healIds.length} row(s) for style ${styleId} — ` +
+          (poFolder
+            ? `file(s) not found in ${poFolder.name}/${APPROVED_LAYOUTS_SUBFOLDER}`
+            : "PO folder no longer found"),
       );
     }
   }

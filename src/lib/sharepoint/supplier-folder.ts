@@ -178,6 +178,79 @@ export async function listChildFileNames(driveId: string, folderItemId: string):
   return names;
 }
 
+export type ChildFolder = { id: string; name: string; webUrl: string | null; childCount: number };
+
+// List the immediate SUB-FOLDERS (not files) of (driveId + folderItemId), paged.
+// Used to find a style's PO folder by matching on the PO number rather than
+// constructing an exact name — so a folder created by another system (slightly
+// different customer/supplier spelling, same PO) is still found. 403 → write-
+// forbidden; other errors propagate.
+export async function listChildFolders(driveId: string, folderItemId: string): Promise<ChildFolder[]> {
+  const client = getGraphClient();
+  const out: ChildFolder[] = [];
+  let next: string | null = `/drives/${driveId}/items/${folderItemId}/children?$select=name,webUrl,folder&$top=200`;
+  try {
+    while (next) {
+      const page = (await client.api(next).get()) as {
+        value?: SharedDriveItem[];
+        "@odata.nextLink"?: string;
+      };
+      for (const it of page.value ?? []) {
+        if (it.folder && it.id && it.name) {
+          out.push({ id: it.id, name: it.name, webUrl: it.webUrl ?? null, childCount: it.folder.childCount ?? 0 });
+        }
+      }
+      next = page["@odata.nextLink"] ?? null;
+    }
+  } catch (err) {
+    if (statusCodeOf(err) === 403) {
+      throw new SharePointWriteForbiddenError(`SharePoint denied access (403) — ${WRITE_FORBIDDEN_HINT}`);
+    }
+    throw err;
+  }
+  return out;
+}
+
+// True when `folderName` contains `poNumber` as a whole token — the PO string
+// not flanked by a digit on either side, so "C-PO635" can't match a folder for
+// "C-PO63590". Case-insensitive. Empty PO never matches (we can't identify a
+// folder without one).
+export function folderMatchesPo(folderName: string, poNumber: string): boolean {
+  const name = folderName.toLowerCase();
+  const po = poNumber.trim().toLowerCase();
+  if (!po) return false;
+  const isDigit = (c: string) => c >= "0" && c <= "9";
+  let from = 0;
+  for (;;) {
+    const idx = name.indexOf(po, from);
+    if (idx < 0) return false;
+    const before = idx > 0 ? name[idx - 1] : "";
+    const after = idx + po.length < name.length ? name[idx + po.length] : "";
+    if (!isDigit(before) && !isDigit(after)) return true;
+    from = idx + 1; // this occurrence was digit-glued; keep scanning
+  }
+}
+
+export type PoFolderResolution =
+  | { status: "found"; folder: ChildFolder }
+  | { status: "missing" }
+  | { status: "ambiguous"; matches: ChildFolder[] };
+
+// Locate a style's PO folder inside an already-resolved supplier root by
+// matching on the PO number — the app SEARCHES, it never creates the PO folder
+// (employees make it manually; hard rule). There must be EXACTLY ONE folder per
+// PO: zero → `missing` (flag, retry each sweep until made); more than one →
+// `ambiguous` (flag ALL matches so a reviewer deletes the extras). The app never
+// auto-picks among duplicates — that would upload into a folder the reviewer may
+// be about to delete.
+export function resolvePoFolder(children: ChildFolder[], poNumber: string | null): PoFolderResolution {
+  if (!poNumber || !poNumber.trim()) return { status: "missing" };
+  const matches = children.filter((c) => folderMatchesPo(c.name, poNumber));
+  if (matches.length === 0) return { status: "missing" };
+  if (matches.length === 1) return { status: "found", folder: matches[0] };
+  return { status: "ambiguous", matches };
+}
+
 // Delete a drive item (folder or file) by id. Idempotent: a 404 (already gone)
 // resolves as { deleted: false, alreadyGone: true } rather than throwing, so a
 // cleanup sweep can re-run safely. A 403 surfaces as the write-forbidden error.

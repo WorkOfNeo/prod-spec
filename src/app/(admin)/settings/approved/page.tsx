@@ -10,6 +10,7 @@ import {
 import { combineSupplierRecipients } from "@/lib/suppliers/recipients";
 import { loadContactEmailsBySupplier } from "@/lib/suppliers/contact-emails";
 import { MAX_PUSH_ATTEMPTS } from "@/lib/sharepoint/push-queued-to-supplier";
+import { parseFolderMatches } from "@/lib/sharepoint/po-folder-matches";
 import { SupplierSendSetting, SupplierSendCutoff } from "./supplier-send-setting";
 import {
   SupplierPreviewButton,
@@ -156,9 +157,14 @@ export default async function ApprovedDeliveryPage() {
       PENDING: "border-amber-200 bg-amber-50 text-amber-700",
       FAILED: "border-red-200 bg-red-50 text-red-700",
       SKIPPED: "border-zinc-200 bg-zinc-50 text-zinc-500",
+      NO_FOLDER: "border-orange-200 bg-orange-50 text-orange-700",
+      AMBIGUOUS: "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700",
     };
     return map[status] ?? map.PENDING;
   };
+  // Human labels for the folder-shaped flags (the raw enum reads badly).
+  const spLabel = (status: string) =>
+    status === "NO_FOLDER" ? "no PO folder" : status === "AMBIGUOUS" ? "multiple PO folders" : status.toLowerCase();
 
   return (
     <div className="px-8 py-8">
@@ -326,7 +332,7 @@ export default async function ApprovedDeliveryPage() {
                             ? `failed · gave up (${item.pushAttempts}×)`
                             : item.sharePointStatus === "FAILED" && item.pushAttempts > 0
                               ? `failed (${item.pushAttempts}×)`
-                              : item.sharePointStatus.toLowerCase();
+                              : spLabel(item.sharePointStatus);
                         const pill = (
                           <span
                             className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${spPill(item.sharePointStatus)}`}
@@ -350,6 +356,21 @@ export default async function ApprovedDeliveryPage() {
                           {item.sharePointVerifiedAt
                             ? `verified ${item.sharePointVerifiedAt.toISOString().slice(0, 10)}`
                             : "not yet verified"}
+                        </div>
+                      ) : item.sharePointStatus === "AMBIGUOUS" ? (
+                        <div className="mt-0.5 space-y-0.5 text-[10px] text-fuchsia-700">
+                          {parseFolderMatches(item.sharePointFolderMatches).map((m, i) => (
+                            <div key={i}>
+                              {m.webUrl ? (
+                                <a href={m.webUrl} target="_blank" rel="noopener noreferrer" className="underline">
+                                  {m.name} ↗
+                                </a>
+                              ) : (
+                                m.name
+                              )}
+                            </div>
+                          ))}
+                          <div className="text-fuchsia-500">delete all but one</div>
                         </div>
                       ) : null}
                     </td>
