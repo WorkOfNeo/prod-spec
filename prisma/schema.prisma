@@ -183,6 +183,11 @@ model SupplierSendQueueItem {
   // webUrl; FAILED (retryable) or SKIPPED (e.g. below PO cutoff / no config).
   sharePointStatus String    @default("PENDING")
   sharePointUrl    String?
+  // The "APPROVED LAYOUTS" subfolder the PDF(s) landed in (targetFolderUrl from
+  // the push). Persisted so /settings/approved can deep-link straight to the
+  // folder, and so the self-heal verify (WS4) re-checks the exact location
+  // without re-deriving it. Distinct from sharePointUrl (the file itself).
+  sharePointFolderUrl String?
   // Consecutive FAILED folder pushes (WS3). Mirrors Style.eanAttempts: the
   // recurring upload sweep stops retrying a row at MAX_PUSH_ATTEMPTS and it
   // "floats" on /settings/approved; the midnight sweep still retries nightly.
@@ -190,6 +195,14 @@ model SupplierSendQueueItem {
   // (any outcome), for the overview.
   pushAttempts     Int       @default(0)
   lastPushAt       DateTime?
+  // Self-heal verify (WS4). UPLOADED is otherwise set on a non-throwing Graph
+  // PUT and NEVER re-checked, so a file that later moved (legacy folder scheme),
+  // got cleaned up, or landed somewhere the supplier can't browse stays
+  // "uploaded" forever. sharePointVerifiedAt = when the recurring sweep last
+  // CONFIRMED this row's file is actually in the folder; null = never verified
+  // or just re-armed. The verify pass re-checks rows past a TTL; a folder-
+  // resolves-but-file-missing result re-arms the row to PENDING to re-upload.
+  sharePointVerifiedAt DateTime?
   // Send lifecycle. sentAt stamped by the midnight batch; null = still pending.
   queuedAt         DateTime  @default(now())
   sentAt           DateTime?
@@ -202,6 +215,8 @@ model SupplierSendQueueItem {
   @@index([supplierId, sentAt])
   @@index([sentAt])
   @@index([customerId])
+  // Self-heal verify picks UPLOADED rows oldest-verified-first (nulls first).
+  @@index([sharePointStatus, sharePointVerifiedAt])
   @@map("supplier_send_queue_items")
 }
 
