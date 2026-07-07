@@ -188,6 +188,12 @@ model SupplierSendQueueItem {
   // folder, and so the self-heal verify (WS4) re-checks the exact location
   // without re-deriving it. Distinct from sharePointUrl (the file itself).
   sharePointFolderUrl String?
+  // When AMBIGUOUS (several folders in the supplier's SharePoint match this PO —
+  // employees must keep exactly one), the competing folders as a JSON string of
+  // [{name, webUrl}] so /style + /settings/approved can link each and a reviewer
+  // can delete the extra. Null in every other state. String (not Json) so the
+  // sweep can clear it with a plain null (no Prisma DbNull dance).
+  sharePointFolderMatches String?
   // Consecutive FAILED folder pushes (WS3). Mirrors Style.eanAttempts: the
   // recurring upload sweep stops retrying a row at MAX_PUSH_ATTEMPTS and it
   // "floats" on /settings/approved; the midnight sweep still retries nightly.

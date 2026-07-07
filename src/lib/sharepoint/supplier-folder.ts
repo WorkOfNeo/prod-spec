@@ -238,21 +238,16 @@ export type PoFolderResolution =
 
 // Locate a style's PO folder inside an already-resolved supplier root by
 // matching on the PO number — the app SEARCHES, it never creates the PO folder
-// (that's owned upstream). Policy when several folders match the same PO:
-// prefer the one whose name is exactly the app's own "<PO> - <customer> -
-// <supplier>" (case-insensitive); if that doesn't single one out, return
-// `ambiguous` so a human resolves it rather than the app guessing.
-export function resolvePoFolder(
-  children: ChildFolder[],
-  poNumber: string | null,
-  exactName: string,
-): PoFolderResolution {
+// (employees make it manually; hard rule). There must be EXACTLY ONE folder per
+// PO: zero → `missing` (flag, retry each sweep until made); more than one →
+// `ambiguous` (flag ALL matches so a reviewer deletes the extras). The app never
+// auto-picks among duplicates — that would upload into a folder the reviewer may
+// be about to delete.
+export function resolvePoFolder(children: ChildFolder[], poNumber: string | null): PoFolderResolution {
   if (!poNumber || !poNumber.trim()) return { status: "missing" };
   const matches = children.filter((c) => folderMatchesPo(c.name, poNumber));
   if (matches.length === 0) return { status: "missing" };
   if (matches.length === 1) return { status: "found", folder: matches[0] };
-  const exact = matches.filter((c) => c.name.toLowerCase() === exactName.toLowerCase());
-  if (exact.length === 1) return { status: "found", folder: exact[0] };
   return { status: "ambiguous", matches };
 }
 

@@ -8,6 +8,7 @@ import {
   SharePointWriteForbiddenError,
 } from "./supplier-folder";
 import { supplierParentFolderName, APPROVED_LAYOUTS_SUBFOLDER } from "./supplier-folder-names";
+import type { PoFolderMatch } from "./po-folder-matches";
 
 // =====================================================
 // Push approved output PDFs into the supplier's own SharePoint folder. Layout:
@@ -41,6 +42,8 @@ export class SupplierPushError extends Error {
     public readonly httpStatus: 400 | 403 | 404 | 409,
     message: string,
     public readonly kind?: SupplierPushErrorKind,
+    // Populated for "ambiguous-folder" — the competing PO folders.
+    public readonly folderMatches?: PoFolderMatch[],
   ) {
     super(message);
     this.name = "SupplierPushError";
@@ -58,7 +61,7 @@ export type SupplierPushResult = {
   targetFolderUrl: string | null; // the "APPROVED LAYOUTS" subfolder (null on dry run / not found)
   poFolderStatus: PoFolderStatus; // did the PO folder search resolve?
   poFolderUrl: string | null; // the matched PO folder itself (null when missing)
-  poFolderMatches?: string[]; // folder names when ambiguous, for the operator to disambiguate
+  poFolderMatches?: PoFolderMatch[]; // competing folders (name + link) when ambiguous
   pushed: PushedFile[];
   skipped: Array<{ assetId: string; fileName: string; reason: string }>;
 };
@@ -161,10 +164,12 @@ export async function pushApprovedAssetsToSupplier(input: {
   let resolution;
   try {
     const children = await listChildFolders(folder.driveId, folder.itemId);
-    resolution = resolvePoFolder(children, style.poNumber, folderName);
+    resolution = resolvePoFolder(children, style.poNumber);
   } catch (err) {
     throw toPushError(err);
   }
+  const matchList: PoFolderMatch[] | undefined =
+    resolution.status === "ambiguous" ? resolution.matches.map((m) => ({ name: m.name, webUrl: m.webUrl })) : undefined;
 
   // Dry run: report where the PO-folder search landed + the file list, no writes.
   if (dryRun) {
@@ -176,29 +181,31 @@ export async function pushApprovedAssetsToSupplier(input: {
       targetFolderUrl: null,
       poFolderStatus: resolution.status,
       poFolderUrl: resolution.status === "found" ? resolution.folder.webUrl : null,
-      poFolderMatches: resolution.status === "ambiguous" ? resolution.matches.map((m) => m.name) : undefined,
+      poFolderMatches: matchList,
       pushed: pushable.map((a) => ({ assetId: a.id, fileName: a.fileName, webUrl: null })),
       skipped,
     };
   }
 
   // No PO folder → flag (never create). Distinct kind so the sweep marks the
-  // rows NO_FOLDER and keeps re-checking until the folder is created upstream.
+  // rows NO_FOLDER and keeps re-checking until an employee creates it.
   if (resolution.status === "missing") {
     throw new SupplierPushError(
       409,
-      `No PO folder for “${style.poNumber ?? style.name}” found in supplier “${supplier.name}”'s SharePoint folder — the app never creates it. Create “${folderName}” (or the PO folder) there and it will upload on the next sweep.`,
+      `No PO folder for “${style.poNumber ?? style.name}” found in supplier “${supplier.name}”'s SharePoint folder — the app never creates it. An employee must create the PO folder there; it uploads on the next sweep.`,
       "no-folder",
     );
   }
-  // Several folders match the PO — refuse rather than guess which is canonical.
+  // Several folders match the PO — refuse and hand the reviewer the competing
+  // folders (with links) to delete down to one. Never guess which is canonical.
   if (resolution.status === "ambiguous") {
     throw new SupplierPushError(
       409,
       `Multiple folders in supplier “${supplier.name}”'s SharePoint folder match PO “${style.poNumber}” (${resolution.matches
         .map((m) => `“${m.name}”`)
-        .join(", ")}) — leave exactly one so the app knows where to upload.`,
+        .join(", ")}) — there must be exactly one. Delete the extra(s) and it uploads on the next sweep.`,
       "ambiguous-folder",
+      matchList,
     );
   }
   const poFolder = resolution.folder;

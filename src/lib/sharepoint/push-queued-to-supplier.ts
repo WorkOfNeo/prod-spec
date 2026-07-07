@@ -133,7 +133,10 @@ export async function pushQueuedSupplierUploads(opts?: {
   };
 
   for (const [styleId, styleItems] of byStyle) {
-    const stamp = async (ids: string[], status: StampStatus) => {
+    // folderMatches (JSON string of competing folders) rides ONLY on AMBIGUOUS;
+    // every other status clears it, so a row that was ambiguous and is now
+    // resolved doesn't keep stale links.
+    const stamp = async (ids: string[], status: StampStatus, folderMatches?: string | null) => {
       if (ids.length === 0) return;
       await db.supplierSendQueueItem
         .updateMany({
@@ -141,6 +144,7 @@ export async function pushQueuedSupplierUploads(opts?: {
           data: {
             sharePointStatus: status,
             lastPushAt: now(),
+            sharePointFolderMatches: status === "AMBIGUOUS" ? folderMatches ?? null : null,
             ...(status === "FAILED" ? { pushAttempts: { increment: 1 } } : {}),
           },
         })
@@ -209,6 +213,7 @@ export async function pushQueuedSupplierUploads(opts?: {
                 // The APPROVED LAYOUTS subfolder — deep-linked from
                 // /settings/approved and re-checked by the self-heal verify.
                 sharePointFolderUrl: res.targetFolderUrl,
+                sharePointFolderMatches: null, // resolved — drop any prior ambiguity links
                 // A fresh push IS a verification: we just wrote the file. Stamp
                 // it so the verify pass doesn't immediately re-check it.
                 sharePointVerifiedAt: now(),
@@ -229,12 +234,16 @@ export async function pushQueuedSupplierUploads(opts?: {
       // retryable → FAILED. Other SupplierPushErrors (no supplier linked, no
       // folder link on file, nothing pushable) are data gaps → SKIPPED.
       let status: StampStatus;
+      let folderMatches: string | null = null;
       if (err instanceof SupplierPushError && err.kind === "no-folder") status = "NO_FOLDER";
-      else if (err instanceof SupplierPushError && err.kind === "ambiguous-folder") status = "AMBIGUOUS";
-      else status = !(err instanceof SupplierPushError) || err.httpStatus === 403 ? "FAILED" : "SKIPPED";
+      else if (err instanceof SupplierPushError && err.kind === "ambiguous-folder") {
+        status = "AMBIGUOUS";
+        folderMatches = err.folderMatches ? JSON.stringify(err.folderMatches) : null;
+      } else status = !(err instanceof SupplierPushError) || err.httpStatus === 403 ? "FAILED" : "SKIPPED";
       await stamp(
         withAsset.map((i) => i.id),
         status,
+        folderMatches,
       );
       console.warn(
         `[supplier-upload] push not completed for style ${styleId} (${status}):`,

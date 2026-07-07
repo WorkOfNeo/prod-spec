@@ -9,7 +9,7 @@ import {
   type ResolvedFolder,
   type ChildFolder,
 } from "./supplier-folder";
-import { supplierParentFolderName, APPROVED_LAYOUTS_SUBFOLDER } from "./supplier-folder-names";
+import { APPROVED_LAYOUTS_SUBFOLDER } from "./supplier-folder-names";
 
 // =====================================================
 // Self-heal verify for supplier-folder uploads (WS4). A queue row is stamped
@@ -163,17 +163,11 @@ export async function verifySupplierUploads(opts?: {
     }
 
     // Find the PO folder the SAME way the push does — search the supplier root
-    // by PO number, never by an exact constructed name — so verify and push can
-    // never disagree about which folder is canonical (which would make them
-    // fight: verify re-arms, push re-uploads, forever). null parent/leaf → the
-    // folder genuinely does not exist → the uploaded file is gone → heal. A
-    // thrown error (403/transient) or an ambiguous match → unresolved, untouched.
-    const parentName = supplierParentFolderName({
-      poNumber: style.poNumber,
-      styleName: style.name,
-      customerName: style.customer.name,
-      supplierName: style.supplier.name,
-    });
+    // by PO number — so verify and push can never disagree about which folder is
+    // canonical (which would make them fight: verify re-arms, push re-uploads,
+    // forever). missing PO folder / absent leaf → the uploaded file is gone →
+    // heal. A thrown error (403/transient) or an ambiguous match (several folders
+    // for the PO — a human must resolve) → unresolved, left untouched.
     const rootKey = `${root.driveId}:${root.itemId}`;
 
     let poFolder: ChildFolder | null = null;
@@ -183,7 +177,7 @@ export async function verifySupplierUploads(opts?: {
         children = await listChildFolders(root.driveId, root.itemId);
         rootFoldersCache.set(rootKey, children);
       }
-      const resolution = resolvePoFolder(children, style.poNumber, parentName);
+      const resolution = resolvePoFolder(children, style.poNumber);
       if (resolution.status === "ambiguous") {
         // Can't safely say the file is missing — leave the UPLOADED rows alone.
         sweep.unresolved += styleItems.length;
@@ -269,7 +263,10 @@ export async function verifySupplierUploads(opts?: {
         .catch(() => {});
       sweep.healed += healIds.length;
       console.warn(
-        `[supplier-verify] re-armed ${healIds.length} row(s) for style ${styleId} — file(s) not found in ${parentName}/${APPROVED_LAYOUTS_SUBFOLDER}`,
+        `[supplier-verify] re-armed ${healIds.length} row(s) for style ${styleId} — ` +
+          (poFolder
+            ? `file(s) not found in ${poFolder.name}/${APPROVED_LAYOUTS_SUBFOLDER}`
+            : "PO folder no longer found"),
       );
     }
   }

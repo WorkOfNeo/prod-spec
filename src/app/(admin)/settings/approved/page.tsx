@@ -10,6 +10,7 @@ import {
 import { combineSupplierRecipients } from "@/lib/suppliers/recipients";
 import { loadContactEmailsBySupplier } from "@/lib/suppliers/contact-emails";
 import { MAX_PUSH_ATTEMPTS } from "@/lib/sharepoint/push-queued-to-supplier";
+import { parseFolderMatches } from "@/lib/sharepoint/po-folder-matches";
 import { SupplierSendSetting, SupplierSendCutoff } from "./supplier-send-setting";
 import {
   SupplierPreviewButton,
@@ -355,6 +356,21 @@ export default async function ApprovedDeliveryPage() {
                           {item.sharePointVerifiedAt
                             ? `verified ${item.sharePointVerifiedAt.toISOString().slice(0, 10)}`
                             : "not yet verified"}
+                        </div>
+                      ) : item.sharePointStatus === "AMBIGUOUS" ? (
+                        <div className="mt-0.5 space-y-0.5 text-[10px] text-fuchsia-700">
+                          {parseFolderMatches(item.sharePointFolderMatches).map((m, i) => (
+                            <div key={i}>
+                              {m.webUrl ? (
+                                <a href={m.webUrl} target="_blank" rel="noopener noreferrer" className="underline">
+                                  {m.name} ↗
+                                </a>
+                              ) : (
+                                m.name
+                              )}
+                            </div>
+                          ))}
+                          <div className="text-fuchsia-500">delete all but one</div>
                         </div>
                       ) : null}
                     </td>

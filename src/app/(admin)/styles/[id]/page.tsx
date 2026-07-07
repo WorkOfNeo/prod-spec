@@ -48,6 +48,7 @@ import { buildStyleData } from "@/lib/styles/render-context";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
 import { SupplierFolderStatus, type PoFolderDelivery } from "./supplier-folder-status";
+import { parseFolderMatches } from "@/lib/sharepoint/po-folder-matches";
 import { LogStyleView } from "@/components/log-style-view";
 import { applyFieldOverrides } from "@/lib/pdf/pins";
 import { parseFieldOverrides, PINNABLE_FIELD_LABELS, type PinnableField } from "@/lib/pdf/pins-meta";
@@ -263,7 +264,7 @@ export default async function StyleDetail({
   // for the "Supplier folder" panel (found + link / no PO folder / ambiguous).
   const sendQueueRows = await db.supplierSendQueueItem.findMany({
     where: { styleId: id },
-    select: { sharePointStatus: true, sharePointFolderUrl: true },
+    select: { sharePointStatus: true, sharePointFolderUrl: true, sharePointFolderMatches: true },
   });
   const supplierDelivery: PoFolderDelivery | null =
     sendQueueRows.length > 0
@@ -278,6 +279,10 @@ export default async function StyleDetail({
           folderUrl:
             sendQueueRows.find((r) => r.sharePointStatus === "UPLOADED" && r.sharePointFolderUrl)
               ?.sharePointFolderUrl ?? null,
+          ambiguousMatches: parseFolderMatches(
+            sendQueueRows.find((r) => r.sharePointStatus === "AMBIGUOUS" && r.sharePointFolderMatches)
+              ?.sharePointFolderMatches ?? null,
+          ),
         }
       : null;
 

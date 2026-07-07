@@ -20,31 +20,35 @@ test("folderMatchesPo — matches the PO as a token, not a digit-glued substring
 });
 
 test("resolvePoFolder — no PO number is 'missing' (can't identify a folder)", () => {
-  assert.deepEqual(resolvePoFolder([f("C-PO1 - a")], null, "C-PO1 - a"), { status: "missing" });
-  assert.deepEqual(resolvePoFolder([f("C-PO1 - a")], "   ", "C-PO1 - a"), { status: "missing" });
+  assert.deepEqual(resolvePoFolder([f("C-PO1 - a")], null), { status: "missing" });
+  assert.deepEqual(resolvePoFolder([f("C-PO1 - a")], "   "), { status: "missing" });
 });
 
 test("resolvePoFolder — zero matches is 'missing'", () => {
-  const res = resolvePoFolder([f("C-PO999 - a"), f("misc")], "C-PO1", "C-PO1 - Cust - Sup");
+  const res = resolvePoFolder([f("C-PO999 - a"), f("misc")], "C-PO1");
   assert.equal(res.status, "missing");
 });
 
 test("resolvePoFolder — exactly one match is 'found'", () => {
-  const res = resolvePoFolder([f("C-PO1 - Cust - Sup"), f("C-PO2 - other")], "C-PO1", "C-PO1 - Cust - Sup");
+  const res = resolvePoFolder([f("C-PO1 - Cust - Sup"), f("C-PO2 - other")], "C-PO1");
   assert.equal(res.status, "found");
   assert.equal(res.status === "found" && res.folder.name, "C-PO1 - Cust - Sup");
 });
 
-test("resolvePoFolder — several matches: the exact app name breaks the tie", () => {
+test("resolvePoFolder — ANY multiple match is 'ambiguous' (there must be exactly one; never auto-pick)", () => {
+  // Even when one is the app's exact name — employees must delete the duplicate.
   const children = [f("C-PO1 - Cust - Sup"), f("C-PO1 old")];
-  const res = resolvePoFolder(children, "C-PO1", "C-PO1 - Cust - Sup");
-  assert.equal(res.status, "found");
-  assert.equal(res.status === "found" && res.folder.name, "C-PO1 - Cust - Sup");
-});
-
-test("resolvePoFolder — several matches, no exact name → 'ambiguous' (never guess)", () => {
-  const children = [f("C-PO1 - typo"), f("C-PO1 (copy)")];
-  const res = resolvePoFolder(children, "C-PO1", "C-PO1 - Cust - Sup");
+  const res = resolvePoFolder(children, "C-PO1");
   assert.equal(res.status, "ambiguous");
   assert.equal(res.status === "ambiguous" && res.matches.length, 2);
+});
+
+test("resolvePoFolder — ambiguous carries every match (name + link) for the reviewer", () => {
+  const children = [f("C-PO1 - typo"), f("C-PO1 (copy)")];
+  const res = resolvePoFolder(children, "C-PO1");
+  assert.equal(res.status, "ambiguous");
+  assert.deepEqual(
+    res.status === "ambiguous" ? res.matches.map((m) => m.name).sort() : [],
+    ["C-PO1 (copy)", "C-PO1 - typo"],
+  );
 });

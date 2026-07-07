@@ -21,6 +21,9 @@ export type PoFolderDelivery = {
   other: number; // PENDING/FAILED/SKIPPED (in-flight / gap)
   total: number;
   folderUrl: string | null; // the PO / APPROVED LAYOUTS folder link when uploaded
+  // The competing folders when ambiguous — reviewer opens each and deletes the
+  // extra so exactly one PO folder remains.
+  ambiguousMatches: Array<{ name: string; webUrl: string | null }>;
 };
 
 export function SupplierFolderStatus({
@@ -112,7 +115,7 @@ export function SupplierFolderStatus({
 // folder for the PO folder and never creates it — so "no PO folder" is a real,
 // actionable state (create it upstream), not a transient error.
 function PoFolderState({ delivery }: { delivery: PoFolderDelivery }) {
-  const { uploaded, noFolder, ambiguous, total, folderUrl } = delivery;
+  const { uploaded, noFolder, ambiguous, total, folderUrl, ambiguousMatches } = delivery;
   // Worst-first tone: ambiguous > missing > partial > done > queued.
   const tone =
     ambiguous > 0
@@ -135,8 +138,24 @@ function PoFolderState({ delivery }: { delivery: PoFolderDelivery }) {
       </div>
       {ambiguous > 0 ? (
         <>
-          ⚠ {ambiguous} of {total} output(s): <span className="font-medium">multiple folders match this PO</span> in the
-          supplier’s SharePoint. Leave exactly one so the app knows where to upload.
+          ⚠ <span className="font-medium">Multiple folders match this PO</span> in the supplier’s SharePoint — there must
+          be exactly one. Open each and delete the extra; it uploads on the next sweep.
+          {ambiguousMatches.length > 0 ? (
+            <ul className="mt-1.5 space-y-0.5">
+              {ambiguousMatches.map((m, i) => (
+                <li key={i} className="flex items-center gap-1.5">
+                  <span aria-hidden>•</span>
+                  {m.webUrl ? (
+                    <a href={m.webUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-zinc-950">
+                      {m.name} ↗
+                    </a>
+                  ) : (
+                    <span>{m.name}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </>
       ) : noFolder > 0 ? (
         <>
