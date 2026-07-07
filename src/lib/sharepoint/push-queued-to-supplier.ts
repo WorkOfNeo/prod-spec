@@ -177,6 +177,12 @@ export async function pushQueuedSupplierUploads(opts?: {
               data: {
                 sharePointStatus: "UPLOADED",
                 sharePointUrl: uploadedByAsset.get(docIds[0]) ?? res.targetFolderUrl,
+                // The APPROVED LAYOUTS subfolder — deep-linked from
+                // /settings/approved and re-checked by the self-heal verify.
+                sharePointFolderUrl: res.targetFolderUrl,
+                // A fresh push IS a verification: we just wrote the file. Stamp
+                // it so the verify pass doesn't immediately re-check it.
+                sharePointVerifiedAt: now(),
                 lastPushAt: now(),
               },
             })

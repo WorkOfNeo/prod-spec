@@ -320,15 +320,38 @@ export default async function ApprovedDeliveryPage() {
                       )}
                     </td>
                     <td className="px-4 py-2">
-                      <span
-                        className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${spPill(item.sharePointStatus)}`}
-                      >
-                        {item.sharePointStatus === "FAILED" && item.pushAttempts >= MAX_PUSH_ATTEMPTS
-                          ? `failed · gave up (${item.pushAttempts}×)`
-                          : item.sharePointStatus === "FAILED" && item.pushAttempts > 0
-                            ? `failed (${item.pushAttempts}×)`
-                            : item.sharePointStatus.toLowerCase()}
-                      </span>
+                      {(() => {
+                        const label =
+                          item.sharePointStatus === "FAILED" && item.pushAttempts >= MAX_PUSH_ATTEMPTS
+                            ? `failed · gave up (${item.pushAttempts}×)`
+                            : item.sharePointStatus === "FAILED" && item.pushAttempts > 0
+                              ? `failed (${item.pushAttempts}×)`
+                              : item.sharePointStatus.toLowerCase();
+                        const pill = (
+                          <span
+                            className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${spPill(item.sharePointStatus)}`}
+                          >
+                            {label}
+                          </span>
+                        );
+                        // Deep-link the pill to the "APPROVED LAYOUTS" folder the
+                        // file landed in (fall back to the file URL).
+                        const folderHref = item.sharePointFolderUrl ?? item.sharePointUrl;
+                        return folderHref ? (
+                          <a href={folderHref} target="_blank" rel="noopener noreferrer" title="Open the supplier's SharePoint folder">
+                            {pill}
+                          </a>
+                        ) : (
+                          pill
+                        );
+                      })()}
+                      {item.sharePointStatus === "UPLOADED" ? (
+                        <div className="mt-0.5 text-[10px] text-zinc-400">
+                          {item.sharePointVerifiedAt
+                            ? `verified ${item.sharePointVerifiedAt.toISOString().slice(0, 10)}`
+                            : "not yet verified"}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="px-4 py-2 text-xs text-zinc-500">
                       {item.queuedAt.toISOString().slice(0, 16).replace("T", " ")}

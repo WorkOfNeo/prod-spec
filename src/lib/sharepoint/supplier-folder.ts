@@ -146,6 +146,38 @@ export async function findChildFolder(
   }
 }
 
+// List every file name directly inside (driveId + folderItemId) as a
+// lowercased Set, following @odata.nextLink so a folder with more than Graph's
+// default page of children is fully enumerated (the "APPROVED LAYOUTS"
+// subfolder is shared per-PO and can hold many styles' PDFs). Used by the
+// self-heal verify to confirm an UPLOADED row's file is actually present. A 404
+// (folder gone) throws through — the caller treats an unresolvable folder as
+// "files not present". A 403 surfaces as the write-forbidden error so a
+// permission gap is never mistaken for a missing file.
+export async function listChildFileNames(driveId: string, folderItemId: string): Promise<Set<string>> {
+  const client = getGraphClient();
+  const names = new Set<string>();
+  let next: string | null = `/drives/${driveId}/items/${folderItemId}/children?$select=name,file&$top=200`;
+  try {
+    while (next) {
+      const page = (await client.api(next).get()) as {
+        value?: SharedDriveItem[];
+        "@odata.nextLink"?: string;
+      };
+      for (const it of page.value ?? []) {
+        if (it.file && it.name) names.add(it.name.toLowerCase());
+      }
+      next = page["@odata.nextLink"] ?? null;
+    }
+  } catch (err) {
+    if (statusCodeOf(err) === 403) {
+      throw new SharePointWriteForbiddenError(`SharePoint denied access (403) — ${WRITE_FORBIDDEN_HINT}`);
+    }
+    throw err;
+  }
+  return names;
+}
+
 // Delete a drive item (folder or file) by id. Idempotent: a 404 (already gone)
 // resolves as { deleted: false, alreadyGone: true } rather than throwing, so a
 // cleanup sweep can re-run safely. A 403 surfaces as the write-forbidden error.
