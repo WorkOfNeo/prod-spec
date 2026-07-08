@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { runPendingJobs } from "@/lib/queue/runner";
-import { sweepReadyStyleGenerations } from "@/lib/queue/generation-sweep";
+import { sweepReadyStyleGenerations, describeGenSweep, type GenSweepSummary } from "@/lib/queue/generation-sweep";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin } from "@/lib/roles";
 import { triggerRunner } from "@/lib/queue/trigger";
@@ -70,13 +70,14 @@ export async function POST(req: NextRequest) {
   // just drains the job it enqueued.
   let sweepEnqueued = 0;
   let sweepStyleIds: string[] = [];
+  let sweptSummary: GenSweepSummary | null = null;
   let summary: Awaited<ReturnType<typeof runPendingJobs>> = { processed: 0, failed: 0, jobIds: [] };
   draining = true;
   try {
     if (sweep) {
-      const swept = await sweepReadyStyleGenerations(10);
-      sweepEnqueued = swept.enqueued;
-      sweepStyleIds = swept.styleIds;
+      sweptSummary = await sweepReadyStyleGenerations(10);
+      sweepEnqueued = sweptSummary.enqueued;
+      sweepStyleIds = sweptSummary.styleIds;
     }
     summary = await runPendingJobs(limit);
   } finally {
@@ -97,6 +98,9 @@ export async function POST(req: NextRequest) {
         enqueued: sweepEnqueued,
         jobIds: summary.jobIds,
         styleIds: sweepStyleIds,
+        // "checked N · enqueued M · nothing_pending X · floated Y" — so a tick
+        // that queues nothing says WHY on /automation instead of a blank "idle".
+        note: sweptSummary ? describeGenSweep(sweptSummary) : undefined,
         durationMs: Date.now() - startedAt,
       },
     });

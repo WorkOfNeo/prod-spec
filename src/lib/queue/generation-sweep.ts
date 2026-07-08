@@ -71,14 +71,49 @@ export async function maybeEnqueueStyleGeneration(
   return { enqueued: true, jobId, variantKeys };
 }
 
-export type GenSweepSummary = { enqueued: number; styleIds: string[]; jobIds: string[] };
+export type GenSweepSummary = {
+  enqueued: number;
+  // How many candidate styles the sweep actually examined this tick (bounded by
+  // the over-fetch; the loop stops early once `limit` are enqueued).
+  checked: number;
+  // Why the checked-but-not-enqueued styles were skipped — the answer to "the
+  // sweep runs but queues nothing": mostly `nothing_pending` (outputs already
+  // generated or readiness-blocked) or `floated` (3+ failed jobs).
+  skips: Record<StyleGenSkip, number>;
+  styleIds: string[];
+  jobIds: string[];
+};
+
+const emptySkips = (): Record<StyleGenSkip, number> => ({
+  auto_off: 0,
+  prodspec_inactive: 0,
+  in_flight: 0,
+  floated: 0,
+  nothing_pending: 0,
+});
+
+// Compact "checked N · reason X · reason Y" line for the CronRun note (zeros
+// omitted; the feed's own detail already carries enqueued/rendered/failed) so
+// /automation can say WHY a tick enqueued nothing.
+export function describeGenSweep(s: GenSweepSummary): string {
+  const parts = Object.entries(s.skips)
+    .filter(([, n]) => n > 0)
+    .map(([reason, n]) => `${reason} ${n}`);
+  return `checked ${s.checked}${parts.length ? ` · ${parts.join(" · ")}` : ""}`;
+}
 
 // Backlog sweep: enqueue generation for up to `limit` active styles that have
 // ready, ungenerated outputs and no in-flight job. Bounded per tick by design
 // — a large backlog drains over several ticks instead of flooding the queue
 // (and the review inbox) all at once. Caller triggers the runner afterwards.
 export async function sweepReadyStyleGenerations(limit = 10): Promise<GenSweepSummary> {
-  const summary: GenSweepSummary = { enqueued: 0, styleIds: [], jobIds: [] };
+  const summary: GenSweepSummary = {
+    enqueued: 0,
+    checked: 0,
+    skips: emptySkips(),
+    styleIds: [],
+    jobIds: [],
+  };
   if (!(await getAutoGenerateEnabled())) return summary;
 
   // Generation PO cutoff: the sweep only pulls styles at/above the configured
@@ -110,6 +145,7 @@ export async function sweepReadyStyleGenerations(limit = 10): Promise<GenSweepSu
 
   for (const { id } of candidates) {
     if (summary.enqueued >= limit) break;
+    summary.checked += 1;
     const decision = await maybeEnqueueStyleGeneration(id, "CRON_SWEEP", {
       autoGenerateEnabled: true,
     });
@@ -117,6 +153,8 @@ export async function sweepReadyStyleGenerations(limit = 10): Promise<GenSweepSu
       summary.enqueued += 1;
       summary.styleIds.push(id);
       summary.jobIds.push(decision.jobId);
+    } else {
+      summary.skips[decision.reason] += 1;
     }
   }
   return summary;

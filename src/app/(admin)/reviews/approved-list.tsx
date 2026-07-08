@@ -3,12 +3,11 @@ import { formatDate } from "@/lib/utils";
 import type { ApprovedStyleRow } from "@/lib/dashboard/approved-styles";
 
 // The done pile — /reviews "Approved" tab. Read-only list, recent-first, with
-// a delivery chip per style so approval visibly turns into "in the supplier's
-// folder" and "sent" without leaving the board.
+// a delivery chip per style. Success = "in supplier folder" (green); the chip
+// links straight to the folder. The digest "sent" step isn't surfaced.
 
 const DELIVERY_CHIP: Record<ApprovedStyleRow["delivery"], { label: string; cls: string }> = {
-  sent: { label: "sent to supplier", cls: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-  uploaded: { label: "in supplier folder", cls: "border-sky-200 bg-sky-50 text-sky-700" },
+  uploaded: { label: "in supplier folder", cls: "border-emerald-200 bg-emerald-50 text-emerald-700" },
   queued: { label: "delivery queued", cls: "border-amber-200 bg-amber-50 text-amber-700" },
   none: { label: "no delivery", cls: "border-zinc-200 bg-zinc-50 text-zinc-400" },
 };
@@ -49,11 +48,23 @@ export function ApprovedList({ styles, total }: { styles: ApprovedStyleRow[]; to
                     {s.businessArea ? <span className="text-zinc-400"> · {s.businessArea}</span> : null}
                   </td>
                   <td className="px-4 py-2">
-                    <span
-                      className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${chip.cls}`}
-                    >
-                      {chip.label}
-                    </span>
+                    {s.delivery === "uploaded" && s.folderUrl ? (
+                      <a
+                        href={s.folderUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Open the supplier's APPROVED LAYOUTS folder"
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium hover:brightness-95 ${chip.cls}`}
+                      >
+                        {chip.label} ↗
+                      </a>
+                    ) : (
+                      <span
+                        className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${chip.cls}`}
+                      >
+                        {chip.label}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-xs text-zinc-500">{formatDate(s.approvedAt)}</td>
                 </tr>
