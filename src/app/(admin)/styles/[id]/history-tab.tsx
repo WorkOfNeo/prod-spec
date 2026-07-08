@@ -104,11 +104,16 @@ export async function HistoryTab({ styleId }: { styleId: string }) {
   }
 
   if (style.eanResolvedAt) {
-    const resolved = style.eanStatus === "RESOLVED" || style.eanStatus === "PARTIAL";
+    const resolved =
+      style.eanStatus === "RESOLVED" ||
+      style.eanStatus === "PARTIAL" ||
+      style.eanStatus === "RESOLVED_FROM_MONDAY";
     events.push({
       at: style.eanResolvedAt,
       title: resolved
-        ? `Barcodes ${style.eanStatus === "PARTIAL" ? "partially " : ""}resolved — ${style._count.eans} size(s)${style.cartonEan ? " + carton EAN" : ""}`
+        ? `Barcodes ${style.eanStatus === "PARTIAL" ? "partially " : ""}resolved${
+            style.eanStatus === "RESOLVED_FROM_MONDAY" ? " from Monday" : ""
+          } — ${style._count.eans} size(s)${style.cartonEan ? " + carton EAN" : ""}`
         : `Barcode scrape last attempt: ${style.eanStatus.toLowerCase().replace(/_/g, " ")} (${style.eanAttempts} attempt(s))`,
       detail: style.poFileName ? `from ${style.poFileName}` : null,
       href: "/po-eans",

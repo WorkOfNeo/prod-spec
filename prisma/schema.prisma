@@ -906,6 +906,12 @@ enum StyleEanStatus {
   RESOLVING
   // Every size in the run has an EAN.
   RESOLVED
+  // The PO scrape failed and the retry budget was spent, so the EANs were
+  // read from the Pre-Order "Barcode Number" / "Carton Barcode number 1" text
+  // columns instead (src/lib/po/monday-barcode-fallback.ts). Terminal-good —
+  // treated like RESOLVED for generation, but badged distinctly so it's clear
+  // the codes came from Monday, not the PO.
+  RESOLVED_FROM_MONDAY
   // Some sizes have EANs, some don't — or the PO had extra unmatched variants.
   PARTIAL
   // PO PDF was found and downloaded, but it has no barcode/EAN page yet.

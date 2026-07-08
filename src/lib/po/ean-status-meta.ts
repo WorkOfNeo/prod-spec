@@ -6,6 +6,7 @@ export const EAN_STATUS_META: Record<string, { label: string; cls: string }> = {
   PENDING: { label: "queued", cls: "bg-blue-100 text-blue-700" },
   RESOLVING: { label: "resolving…", cls: "bg-blue-100 text-blue-700" },
   RESOLVED: { label: "resolved", cls: "bg-emerald-100 text-emerald-800" },
+  RESOLVED_FROM_MONDAY: { label: "resolved (Monday)", cls: "bg-teal-100 text-teal-800" },
   PARTIAL: { label: "partial", cls: "bg-amber-100 text-amber-800" },
   PO_FOUND_NO_EANS: { label: "PO has no barcodes", cls: "bg-orange-100 text-orange-800" },
   PO_NOT_FOUND: { label: "PO not found", cls: "bg-red-100 text-red-700" },
