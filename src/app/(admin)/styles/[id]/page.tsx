@@ -26,6 +26,7 @@ import { OutputReadinessNotice, type ReadinessHrefs } from "@/components/output-
 import { mondayItemUrl } from "@/lib/monday/url";
 import { loadDocTypeExclusionRules, loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
+import { getCurrentOutputsForStyle } from "@/lib/outputs/current-outputs";
 import { RerunButton } from "./rerun-button";
 import { StyleOutputCard, type StyleOutputCardProps } from "./style-output-card";
 import { ProdSpecTab } from "./prod-spec-tab";
@@ -681,6 +682,56 @@ export default async function StyleDetail({
     }),
   }));
 
+  // The Review tab's main grid shows the STYLE's CURRENT outputs — the latest
+  // asset per (variantKey) across ALL non-FAILED jobs — not just the newest
+  // job's files. Durable approval keeps an approved output in the job that
+  // produced it, and per-output reruns spawn new jobs, so a fully-approved
+  // style's approved layouts scatter across several jobs; keying off "the
+  // latest job" hides everything not touched by the most recent run. This is
+  // the SAME set /review decides on (getCurrentOutputsForStyle), so the tab and
+  // the review screen can never disagree about what's approved.
+  const currentOutputs = await getCurrentOutputsForStyle(style.id);
+  // reviewedBy email is cosmetic ("by X · <date>"); resolve it from the jobs
+  // window we already loaded. An approved asset older than that window keeps
+  // its date (from the current output) but shows no email — acceptable.
+  const reviewerEmailByAsset = new Map<string, string | null>();
+  for (const j of style.jobs) {
+    for (const a of j.assets) reviewerEmailByAsset.set(a.id, a.reviewedBy?.email ?? null);
+  }
+  const currentFiles = currentOutputs
+    // Only generated documents (an asset exists and carries a decision). Still-
+    // coming / excluded outputs have no file to show here.
+    .filter((o) => o.jobAssetId != null && o.jobId != null && o.reviewStatus != null)
+    .map((o) => {
+      const baseKey = (o.variantKey ?? "").split("#")[0];
+      const variant = baseKey ? getVariant(baseKey) : undefined;
+      const carton =
+        variant && (variant.cartonNumbering || variant.multipleStyles)
+          ? {
+              variantKey: baseKey,
+              widthMm: variant.defaultWidthMm,
+              heightMm: variant.defaultHeightMm,
+              cartonNumbering: variant.cartonNumbering ?? false,
+              multipleStyles: variant.multipleStyles ?? false,
+            }
+          : null;
+      return {
+        jobId: o.jobId as string,
+        asset: {
+          id: o.jobAssetId as string,
+          docType: o.docType,
+          variantKey: o.variantKey,
+          displayName: o.name,
+          fileName: o.fileName ?? (o.jobAssetId as string),
+          reviewStatus: o.reviewStatus as "PENDING_REVIEW" | "APPROVED" | "REJECTED",
+          rejectReason: o.rejectReason,
+          reviewedAt: o.reviewedAt?.toISOString() ?? null,
+          reviewerEmail: reviewerEmailByAsset.get(o.jobAssetId as string) ?? null,
+          carton,
+        },
+      };
+    });
+
   return (
     <div className="px-8 py-8">
       <LogStyleView styleId={id} surface="STYLE" />
@@ -800,7 +851,9 @@ export default async function StyleDetail({
         />
       )}
 
-      {tab === "review" && <ReviewTab styleId={style.id} jobs={reviewJobs} />}
+      {tab === "review" && (
+        <ReviewTab styleId={style.id} current={currentFiles} jobs={reviewJobs} />
+      )}
       {tab === "history" && <HistoryTab styleId={style.id} />}
     </div>
   );

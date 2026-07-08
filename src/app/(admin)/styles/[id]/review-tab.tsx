@@ -7,10 +7,14 @@ import { formatDate } from "@/lib/utils";
 
 // The style page's Review tab — the ONE place to look at generated files.
 // The Prod Spec tab next door lists the runs (timestamps, counts, owner);
-// this tab shows the latest run's documents in a grid (up to 4 across) with
-// older runs collapsed below. Deciding still happens on the dedicated
-// review screen (leave guard, claim popup) — the CTA appears whenever the
-// latest run is awaiting review.
+// this tab shows the style's CURRENT outputs in a grid (up to 4 across) —
+// the latest document per output across ALL runs, the same set /review
+// decides on — with the full per-run history collapsed below. Showing the
+// current set (not just the newest job) means a fully-approved style's
+// approved layouts always appear here, even though durable approval and
+// per-output reruns leave them scattered across several jobs. Deciding still
+// happens on the dedicated review screen (leave guard, claim popup) — the CTA
+// appears whenever the latest run is awaiting review.
 
 export type ReviewTabAsset = {
   id: string;
@@ -43,29 +47,45 @@ export type ReviewTabJob = {
   assets: ReviewTabAsset[];
 };
 
+// One CURRENT output document + the job that produced it (its preview/decision
+// endpoints are job-scoped, and the doc may come from an earlier run than the
+// newest job).
+export type ReviewTabCurrentFile = { jobId: string; asset: ReviewTabAsset };
+
 // Up to 4 documents per row, per the review workflow ask.
 const FILE_GRID = "grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";
 
-export function ReviewTab({ styleId, jobs }: { styleId: string; jobs: ReviewTabJob[] }) {
-  // Assets sorted by fileName, not query order: rows land in one
-  // transaction (tied timestamps), and the runner's 00-cover / 01-general-
-  // information prefixes are designed to open every bundle listing.
+export function ReviewTab({
+  styleId,
+  current,
+  jobs,
+}: {
+  styleId: string;
+  current: ReviewTabCurrentFile[];
+  jobs: ReviewTabJob[];
+}) {
+  // Current documents sorted by fileName — the runner's 00-cover / 01-general-
+  // information prefixes are designed to open every bundle listing. Flattened
+  // to carry the doc's own jobId (cross-run set), then grouped by doc type.
+  const currentItems = [...current]
+    .sort((a, b) => a.asset.fileName.localeCompare(b.asset.fileName))
+    .map((c) => ({ jobId: c.jobId, ...c.asset }));
+  // The full run history, newest first — every generation is kept.
   const sortedJobs = jobs.map((j) => ({
     ...j,
     assets: [...j.assets].sort((a, b) => a.fileName.localeCompare(b.fileName)),
   }));
   const latestJob = sortedJobs[0] ?? null;
-  const olderJobs = sortedJobs.slice(1);
 
   return (
     <div className="mt-6 flex flex-col gap-8">
       <section>
         <div className="mb-2 flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-700">Files — latest run</h2>
+            <h2 className="text-sm font-semibold text-zinc-700">Files — current outputs</h2>
             <p className="text-xs text-zinc-500">
-              {latestJob
-                ? `Job ${latestJob.id.slice(-8)} · ${formatDate(latestJob.createdAt)} · ${latestJob.assets.length} file${latestJob.assets.length === 1 ? "" : "s"}`
+              {currentItems.length > 0
+                ? `${currentItems.length} output${currentItems.length === 1 ? "" : "s"} · latest document per output across all runs`
                 : "No run yet — Re-run to generate."}
             </p>
             {latestJob?.claimedByName ? (
@@ -88,31 +108,31 @@ export function ReviewTab({ styleId, jobs }: { styleId: string; jobs: ReviewTabJ
           ) : null}
         </div>
 
-        {!latestJob || latestJob.assets.length === 0 ? (
+        {currentItems.length === 0 ? (
           <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500">
             Nothing generated yet for this style.
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {groupByDocType(latestJob.assets).map((group) => (
+            {groupByDocType(currentItems).map((group) => (
               <DocTypeAccordion key={group.docType} label={group.label} count={group.items.length}>
                 <div className={FILE_GRID}>
-                  {group.items.map((asset) => (
+                  {group.items.map((item) => (
                     <DeliveredCard
-                      key={asset.id}
-                      jobId={latestJob.id}
+                      key={item.id}
+                      jobId={item.jobId}
                       styleId={styleId}
-                      carton={asset.carton ?? null}
+                      carton={item.carton ?? null}
                       asset={{
-                        id: asset.id,
-                        docType: asset.docType,
-                        variantKey: asset.variantKey,
-                        displayName: asset.displayName ?? docTypeLabel(asset.docType),
-                        fileName: asset.fileName,
-                        reviewStatus: asset.reviewStatus,
-                        rejectReason: asset.rejectReason,
-                        reviewedAt: asset.reviewedAt,
-                        reviewerEmail: asset.reviewerEmail,
+                        id: item.id,
+                        docType: item.docType,
+                        variantKey: item.variantKey,
+                        displayName: item.displayName ?? docTypeLabel(item.docType),
+                        fileName: item.fileName,
+                        reviewStatus: item.reviewStatus,
+                        rejectReason: item.rejectReason,
+                        reviewedAt: item.reviewedAt,
+                        reviewerEmail: item.reviewerEmail,
                       }}
                     />
                   ))}
@@ -123,23 +143,24 @@ export function ReviewTab({ styleId, jobs }: { styleId: string; jobs: ReviewTabJ
         )}
       </section>
 
-      {/* Older runs — historical generations are kept (each Re-run creates
-          a new Job row). Collapsed so the page doesn't grow unbounded. */}
-      {olderJobs.length > 0 && (
+      {/* Full run history — every generation is kept (each Re-run creates a new
+          Job row). The current grid above is deduped across runs; this shows
+          each run in full. Collapsed so the page doesn't grow unbounded. */}
+      {sortedJobs.length > 0 && (
         <section>
           <details className="group rounded-lg border border-zinc-200 bg-white">
             <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
               <span className="inline-flex items-center gap-2">
                 <ChevronIcon />
-                Previous runs ({olderJobs.length})
+                All runs ({sortedJobs.length})
               </span>
               <span className="ml-2 text-xs font-normal text-zinc-500">
-                Earlier generations are kept in full — open to browse.
+                Every generation is kept in full — open to browse.
               </span>
             </summary>
             <div className="border-t border-zinc-100 px-4 py-4">
               <div className="flex flex-col gap-6">
-                {olderJobs.map((job) => (
+                {sortedJobs.map((job) => (
                   <div key={job.id}>
                     <div className="mb-2 flex items-baseline justify-between gap-3 text-xs text-zinc-500">
                       <span className="inline-flex items-center gap-2">
