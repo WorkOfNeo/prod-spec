@@ -188,7 +188,11 @@ export type ChildFolder = { id: string; name: string; webUrl: string | null; chi
 export async function listChildFolders(driveId: string, folderItemId: string): Promise<ChildFolder[]> {
   const client = getGraphClient();
   const out: ChildFolder[] = [];
-  let next: string | null = `/drives/${driveId}/items/${folderItemId}/children?$select=name,webUrl,folder&$top=200`;
+  // `id` MUST be in $select — Graph returns ONLY the selected props, and the
+  // filter below requires it.id. Omitting it makes every child fail the guard,
+  // so the folder search silently returns [] and every PO folder reads as
+  // "missing" even when it exists (i.e. every supplier upload → NO_FOLDER).
+  let next: string | null = `/drives/${driveId}/items/${folderItemId}/children?$select=id,name,webUrl,folder&$top=200`;
   try {
     while (next) {
       const page = (await client.api(next).get()) as {
