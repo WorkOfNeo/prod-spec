@@ -29,6 +29,7 @@ import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 import { getCurrentOutputsForStyle } from "@/lib/outputs/current-outputs";
 import { RerunButton } from "./rerun-button";
 import { StyleOutputCard, type StyleOutputCardProps } from "./style-output-card";
+import { OutputsAccordion } from "./outputs-accordion";
 import { ProdSpecTab } from "./prod-spec-tab";
 import { ReviewTab } from "./review-tab";
 import { HistoryTab } from "./history-tab";
@@ -780,6 +781,16 @@ export default async function StyleDetail({
 
       {customerConfig.skipSupplierDelivery && <SkipSupplierDeliveryBadge className="mt-4" />}
 
+      {/* Supplier folder (SharePoint) — moved ABOVE the tabs so the delivery
+          destination + live PO-folder file count stay visible on every tab. */}
+      <SupplierFolderStatus
+        styleId={style.id}
+        supplierName={style.supplier?.name ?? null}
+        folderUrl={style.supplier?.sharepointUrl ?? null}
+        poNumber={style.poNumber}
+        delivery={supplierDelivery}
+      />
+
       <nav className="mt-6 border-b border-zinc-200">
         <ul className="flex gap-1">
           {TABS.map((t) => (
@@ -806,11 +817,6 @@ export default async function StyleDetail({
           missing={missing}
           resolvedFields={resolvedFields}
           recordFields={recordFields}
-          supplierFolder={{
-            supplierName: style.supplier?.name ?? null,
-            folderUrl: style.supplier?.sharepointUrl ?? null,
-            delivery: supplierDelivery,
-          }}
           readiness={readiness}
           statusView={statusView}
           eanView={eanView}
@@ -864,7 +870,6 @@ function DetailsTab({
   missing,
   resolvedFields,
   recordFields,
-  supplierFolder,
   readiness,
   statusView,
   eanView,
@@ -886,7 +891,6 @@ function DetailsTab({
   missing: Array<{ id: string; label: string }>;
   resolvedFields: ResolvedSpecField[];
   recordFields: Array<{ label: string; value: string | null; href?: string }>;
-  supplierFolder: { supplierName: string | null; folderUrl: string | null; delivery: PoFolderDelivery | null };
   readiness: Readiness;
   statusView: EffectiveStatus;
   eanView: EanView;
@@ -913,13 +917,22 @@ function DetailsTab({
   // "can it generate" gate, distinct from the required-columns completion %.
   const missingOutput = requiredFields.fields.filter((f) => !f.ok).map((f) => f.label);
   const outputComplete = requiredFields.total > 0 && missingOutput.length === 0;
+  // The per-output missing fields now live in the collapsed Outputs accordion
+  // below, so drop the "Waiting on: …" tail from the banner — keep just the
+  // lead sentence so the same list isn't shown in two places.
+  const bannerDetail = readiness.detail.split(/\s*Waiting on:/)[0].trim();
+  // Deduped fields blocking any not-ready (non-excluded) output — surfaced in
+  // the collapsed accordion header so blockers are visible without expanding.
+  const blockingFieldLabels = Array.from(
+    new Set(outputCards.filter((o) => !o.ready && !o.excluded).flatMap((o) => o.missing)),
+  );
   return (
     <>
       <div className={`mt-6 flex items-start gap-3 rounded-lg border p-4 ${tone.box}`}>
         <span className={`mt-1 inline-block h-2.5 w-2.5 flex-shrink-0 rounded-full ${tone.dot}`} />
         <div>
           <div className="text-sm font-semibold">{readiness.title}</div>
-          <div className="mt-0.5 text-sm opacity-90">{readiness.detail}</div>
+          <div className="mt-0.5 text-sm opacity-90">{bannerDetail}</div>
         </div>
       </div>
 
@@ -1015,26 +1028,18 @@ function DetailsTab({
       </section>
 
       {outputCards.length > 0 && (
-        <section className="mt-8">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-zinc-700">
-              Outputs · {outputCards.filter((o) => o.ready).length} of {outputCards.length} ready
-            </h2>
-            <span className="text-xs text-zinc-400">
-              Live previews render from the row&apos;s current data — run each output on its own as it
-              goes ready.
-            </span>
-          </div>
-          {/* Fold-out output rows. Each row's live preview only fetches once
-              it's opened; folded out it also keeps the LAST GENERATED artifact
-              (thumbnail + PDF link), which differs from the live preview by
-              design when the row changed after the last run. */}
-          <div className="mt-2 flex flex-col gap-2">
-            {outputCards.map((card) => (
-              <StyleOutputCard key={card.variantKey} {...card} />
-            ))}
-          </div>
-        </section>
+        // Collapsed by default (accordion). The header carries the missing
+        // fields so blockers show at a glance; each row's live preview only
+        // fetches once its card is expanded.
+        <OutputsAccordion
+          readyCount={outputCards.filter((o) => o.ready).length}
+          total={outputCards.length}
+          missingFieldLabels={blockingFieldLabels}
+        >
+          {outputCards.map((card) => (
+            <StyleOutputCard key={card.variantKey} {...card} />
+          ))}
+        </OutputsAccordion>
       )}
 
       {careDerived.lines.length > 0 && (
@@ -1137,12 +1142,6 @@ function DetailsTab({
           </dl>
         </div>
       </section>
-
-      <SupplierFolderStatus
-        supplierName={supplierFolder.supplierName}
-        folderUrl={supplierFolder.folderUrl}
-        delivery={supplierFolder.delivery}
-      />
 
       <section className="mt-8">
         <div className="flex items-center justify-between">
