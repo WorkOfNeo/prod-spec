@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { SupplierFolderFileCount } from "./supplier-folder-file-count";
+import { PoFolderPicker } from "./po-folder-picker";
 
 // Supplier-folder push readiness for the Details panel. Shows WHERE in the
 // resolution chain a style stands, so a reviewer can confirm (or spot the gap)
@@ -117,7 +118,7 @@ export function SupplierFolderStatus({
         </div>
       </div>
 
-      {delivery && delivery.total > 0 ? <PoFolderState delivery={delivery} /> : null}
+      {delivery && delivery.total > 0 ? <PoFolderState styleId={styleId} delivery={delivery} /> : null}
     </section>
   );
 }
@@ -125,7 +126,7 @@ export function SupplierFolderStatus({
 // The PO-folder push outcome for this style. The app SEARCHES the supplier's
 // folder for the PO folder and never creates it — so "no PO folder" is a real,
 // actionable state (create it upstream), not a transient error.
-function PoFolderState({ delivery }: { delivery: PoFolderDelivery }) {
+function PoFolderState({ styleId, delivery }: { styleId: string; delivery: PoFolderDelivery }) {
   const { uploaded, noFolder, ambiguous, total, folderUrl, ambiguousMatches } = delivery;
   // Worst-first tone: ambiguous > missing > partial > done > queued.
   const tone =
@@ -150,22 +151,9 @@ function PoFolderState({ delivery }: { delivery: PoFolderDelivery }) {
       {ambiguous > 0 ? (
         <>
           ⚠ <span className="font-medium">Multiple folders match this PO</span> in the supplier’s SharePoint — there must
-          be exactly one. Open each and delete the extra; it uploads on the next sweep.
+          be exactly one. Pick where to send this style’s files (or open each and remove the extra):
           {ambiguousMatches.length > 0 ? (
-            <ul className="mt-1.5 space-y-0.5">
-              {ambiguousMatches.map((m, i) => (
-                <li key={i} className="flex items-center gap-1.5">
-                  <span aria-hidden>•</span>
-                  {m.webUrl ? (
-                    <a href={m.webUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-zinc-950">
-                      {m.name} ↗
-                    </a>
-                  ) : (
-                    <span>{m.name}</span>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <PoFolderPicker styleId={styleId} matches={ambiguousMatches} />
           ) : null}
         </>
       ) : noFolder > 0 ? (

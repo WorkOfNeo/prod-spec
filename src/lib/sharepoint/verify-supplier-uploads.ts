@@ -88,6 +88,7 @@ export async function verifySupplierUploads(opts?: {
       id: true,
       name: true,
       poNumber: true,
+      supplierPoFolderName: true, // honour the operator's manual pick, same as the push
       customer: { select: { name: true } },
       supplier: { select: { name: true, sharepointUrl: true } },
     },
@@ -177,7 +178,7 @@ export async function verifySupplierUploads(opts?: {
         children = await listChildFolders(root.driveId, root.itemId);
         rootFoldersCache.set(rootKey, children);
       }
-      const resolution = resolvePoFolder(children, style.poNumber);
+      const resolution = resolvePoFolder(children, style.poNumber, style.supplierPoFolderName);
       if (resolution.status === "ambiguous") {
         // Can't safely say the file is missing — leave the UPLOADED rows alone.
         sweep.unresolved += styleItems.length;

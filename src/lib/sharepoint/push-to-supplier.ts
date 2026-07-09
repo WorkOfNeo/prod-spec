@@ -80,6 +80,7 @@ export async function pushApprovedAssetsToSupplier(input: {
       id: true,
       name: true,
       poNumber: true,
+      supplierPoFolderName: true, // operator's manual pick when the PO is ambiguous
       customer: { select: { name: true } },
       supplier: { select: { name: true, sharepointUrl: true } },
     },
@@ -164,7 +165,7 @@ export async function pushApprovedAssetsToSupplier(input: {
   let resolution;
   try {
     const children = await listChildFolders(folder.driveId, folder.itemId);
-    resolution = resolvePoFolder(children, style.poNumber);
+    resolution = resolvePoFolder(children, style.poNumber, style.supplierPoFolderName);
   } catch (err) {
     throw toPushError(err);
   }
