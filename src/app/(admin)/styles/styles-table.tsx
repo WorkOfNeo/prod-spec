@@ -14,7 +14,13 @@ import {
   STATUS_FACET_LABELS,
   type EffectiveStatus,
 } from "@/lib/styles/effective-status";
-import { STYLE_TABLE_COLUMNS, type StyleColumnKey } from "@/lib/styles/table-columns";
+import {
+  STYLE_TABLE_COLUMNS,
+  RESOLVED_FIELD_COLUMN_KEYS,
+  type StyleColumnKey,
+} from "@/lib/styles/table-columns";
+import type { SupplierUploadRollup, ReviewRollup } from "@/lib/styles/table-rollups";
+import { mondayItemUrl } from "@/lib/monday/url";
 import { eanStatusMeta, EAN_STATUS_META } from "@/lib/po/ean-status-meta";
 import { BLANK_BA_VALUES } from "@/lib/import/heuristics";
 import type { EanView } from "@/lib/po/ean-view";
@@ -189,6 +195,27 @@ export type StyleRow = {
   pulledForTest: boolean;
   lastSyncedAt: string;
   searchBlob: string;
+  // ── Opt-in columns (hydrated only when the column is visible) ──
+  // Identity & links — small, always hydrated.
+  supplierName: string | null;
+  supplierCountry: string | null;
+  prodSpecName: string | null;
+  prodSpecId: string | null;
+  cartonEan: string | null;
+  poFileName: string | null;
+  styleFolderUrl: string | null;
+  mondayItemId: string | null;
+  mondayBoardId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  // SharePoint & delivery.
+  folderConnected: boolean;
+  supplierFolderUrl: string | null;
+  upload: SupplierUploadRollup | null;
+  // Spec fields, keyed by column key (only the visible ones are present).
+  resolved: Record<string, string>;
+  // Review / approval rollup (null unless a review column is on).
+  review: ReviewRollup | null;
 };
 
 // Hover text for the status pill: the count (which moves out of the headline
@@ -436,6 +463,18 @@ export function StylesTable({
   // One cell per column key — keyed <td>s so a row can map over the
   // visible registry columns directly.
   function cellFor(key: StyleColumnKey, s: StyleRow) {
+    // Spec-field columns all render the same way: the resolved value (or "—"),
+    // truncated. One branch covers every mapped field.
+    if (RESOLVED_FIELD_COLUMN_KEYS.has(key)) {
+      const v = s.resolved[key]?.trim();
+      return (
+        <td key={key} className="px-4 py-3 text-zinc-600">
+          <span className="block max-w-[240px] truncate" title={v || undefined}>
+            {v || <span className="text-zinc-300">—</span>}
+          </span>
+        </td>
+      );
+    }
     switch (key) {
       case "style":
         return (
@@ -550,6 +589,208 @@ export function StylesTable({
             {s.lastSyncedAt}
           </td>
         );
+
+      // ── Identity & links ──────────────────────────────────────────────
+      case "supplier":
+        return (
+          <td key={key} className="px-4 py-3 text-zinc-600">
+            {s.supplierName ? (
+              <span className="block max-w-[220px] truncate" title={s.supplierName}>
+                {s.supplierName}
+                {s.supplierCountry ? (
+                  <span className="text-zinc-400"> · {s.supplierCountry}</span>
+                ) : null}
+              </span>
+            ) : (
+              <span className="text-zinc-300">—</span>
+            )}
+          </td>
+        );
+      case "prodSpec":
+        return (
+          <td key={key} className="px-4 py-3 text-zinc-600">
+            {s.prodSpecName ? (
+              s.prodSpecId ? (
+                <Link
+                  href={`/prod-specs/${s.prodSpecId}`}
+                  title={s.prodSpecName}
+                  className="block max-w-[200px] truncate underline hover:text-zinc-900"
+                >
+                  {s.prodSpecName}
+                </Link>
+              ) : (
+                <span className="block max-w-[200px] truncate">{s.prodSpecName}</span>
+              )
+            ) : (
+              <span className="text-zinc-300">—</span>
+            )}
+          </td>
+        );
+      case "cartonEan":
+        return (
+          <td key={key} className="px-4 py-3 tabular-nums text-zinc-600">
+            {s.cartonEan ?? <span className="text-zinc-300">—</span>}
+          </td>
+        );
+      case "poFile":
+        return (
+          <td key={key} className="px-4 py-3 text-zinc-500">
+            <span className="block max-w-[220px] truncate" title={s.poFileName ?? undefined}>
+              {s.poFileName ?? <span className="text-zinc-300">—</span>}
+            </span>
+          </td>
+        );
+      case "styleFolder":
+        return (
+          <td key={key} className="px-4 py-3">
+            {s.styleFolderUrl ? (
+              <a
+                href={s.styleFolderUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-zinc-600 underline hover:text-zinc-900"
+              >
+                Open ↗
+              </a>
+            ) : (
+              <span className="text-zinc-300">—</span>
+            )}
+          </td>
+        );
+      case "monday": {
+        const url = mondayItemUrl(s.mondayBoardId, s.mondayItemId);
+        return (
+          <td key={key} className="px-4 py-3 text-zinc-500">
+            {url ? (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-zinc-900"
+              >
+                {s.mondayItemId}
+              </a>
+            ) : (
+              s.mondayItemId ?? <span className="text-zinc-300">—</span>
+            )}
+          </td>
+        );
+      }
+      case "created":
+        return (
+          <td key={key} className="px-4 py-3 text-zinc-500">
+            {s.createdAt}
+          </td>
+        );
+      case "updated":
+        return (
+          <td key={key} className="px-4 py-3 text-zinc-500">
+            {s.updatedAt}
+          </td>
+        );
+
+      // ── SharePoint & delivery ─────────────────────────────────────────
+      case "sharepoint":
+        return (
+          <td key={key} className="px-4 py-3">
+            <UploadCell upload={s.upload} deliversOwn={s.customerDeliversOwn} />
+          </td>
+        );
+      case "folderConnected":
+        return (
+          <td key={key} className="px-4 py-3">
+            {s.folderConnected ? (
+              <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                ✓ Connected
+              </span>
+            ) : (
+              <span
+                className="inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-500"
+                title="No “Supplier Folder” link on the Suppliers board"
+              >
+                Not linked
+              </span>
+            )}
+          </td>
+        );
+      case "approvedFolder":
+        return (
+          <td key={key} className="px-4 py-3">
+            {s.supplierFolderUrl ? (
+              <a
+                href={s.supplierFolderUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-zinc-600 underline hover:text-zinc-900"
+              >
+                Open ↗
+              </a>
+            ) : (
+              <span className="text-zinc-300">—</span>
+            )}
+          </td>
+        );
+      case "deliversOwn":
+        return (
+          <td key={key} className="px-4 py-3">
+            {s.customerDeliversOwn ? (
+              <SkipSupplierDeliveryBadge variant="chip" />
+            ) : (
+              <span className="text-zinc-300">—</span>
+            )}
+          </td>
+        );
+
+      // ── Review & approval ─────────────────────────────────────────────
+      case "approved":
+        return (
+          <td key={key} className="px-4 py-3">
+            {s.review && s.review.total > 0 ? (
+              <span
+                title={`${s.review.approved} of ${s.review.total} outputs approved · ${s.review.generated} generated`}
+                className={`text-sm font-semibold tabular-nums ${
+                  s.review.fullyApproved ? "text-emerald-600" : "text-zinc-600"
+                }`}
+              >
+                {s.review.approved}/{s.review.total}
+              </span>
+            ) : (
+              <span className="text-zinc-300">—</span>
+            )}
+          </td>
+        );
+      case "fullyApproved":
+        return (
+          <td key={key} className="px-4 py-3">
+            {s.review && s.review.total > 0 && s.review.fullyApproved ? (
+              <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                ✓ Fully approved
+              </span>
+            ) : (
+              <span className="text-zinc-300">—</span>
+            )}
+          </td>
+        );
+      case "awaitingReview":
+        return (
+          <td key={key} className="px-4 py-3">
+            {s.review && s.review.awaiting > 0 ? (
+              <span
+                title={`${s.review.awaiting} output${s.review.awaiting === 1 ? "" : "s"} still to decide`}
+                className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium tabular-nums text-amber-700"
+              >
+                {s.review.awaiting}
+              </span>
+            ) : (
+              <span className="text-zinc-300">—</span>
+            )}
+          </td>
+        );
+
+      default:
+        // Any registry key without an explicit cell still renders an (empty)
+        // <td> so the row's column count matches the header.
+        return <td key={key} className="px-4 py-3 text-zinc-300">—</td>;
     }
   }
 
@@ -715,6 +956,57 @@ export function StylesTable({
       </div>
     </div>
   );
+}
+
+// SharePoint-upload rollup for one style — collapses the supplier-send queue
+// row statuses into a single badge, mirroring the single-style "Supplier
+// folder" panel and /settings/approved. Folder-shaped gaps (missing /
+// ambiguous PO folder) win over a plain count so the reason is visible.
+function UploadCell({
+  upload,
+  deliversOwn,
+}: {
+  upload: SupplierUploadRollup | null;
+  deliversOwn: boolean;
+}) {
+  if (deliversOwn) {
+    return (
+      <span
+        className="text-xs text-zinc-400"
+        title="Customer delivers their own goods — nothing is pushed to a supplier folder"
+      >
+        delivers own
+      </span>
+    );
+  }
+  if (!upload || upload.total === 0) return <span className="text-zinc-300">—</span>;
+  const { uploaded, total, noFolder, ambiguous, failed, pending } = upload;
+  const pill = (cls: string, text: string, title: string) => (
+    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${cls}`} title={title}>
+      {text}
+    </span>
+  );
+  if (noFolder > 0)
+    return pill(
+      "bg-red-50 text-red-700",
+      "PO folder missing",
+      `${noFolder} output(s) can't find the PO folder in the supplier's SharePoint`,
+    );
+  if (ambiguous > 0)
+    return pill(
+      "bg-amber-50 text-amber-700",
+      "ambiguous folder",
+      `${ambiguous} output(s): several folders match the PO — delete the extras`,
+    );
+  if (uploaded === total)
+    return pill(
+      "bg-emerald-50 text-emerald-700",
+      `✓ ${uploaded}/${total}`,
+      `all ${total} approved output(s) uploaded to the supplier folder`,
+    );
+  const cls = failed > 0 ? "bg-amber-50 text-amber-700" : "bg-zinc-100 text-zinc-600";
+  const note = failed > 0 ? `${failed} failed` : `${pending} pending`;
+  return pill(cls, `${uploaded}/${total}`, `${uploaded} uploaded · ${note}`);
 }
 
 function EanCell({

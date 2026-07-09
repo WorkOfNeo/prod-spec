@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   STANDARD_VISIBLE,
   STYLE_TABLE_COLUMNS,
+  STYLE_COLUMN_GROUP_ORDER,
+  STYLE_COLUMN_GROUP_LABELS,
   type StyleColumnKey,
 } from "@/lib/styles/table-columns";
 
@@ -22,6 +25,7 @@ export function ColumnsPopover({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const router = useRouter();
 
   // Close on outside click.
   useEffect(() => {
@@ -51,6 +55,11 @@ export function ColumnsPopover({
       if (!res.ok) throw new Error(j.error ?? `Failed to save (${res.status})`);
       // Adopt the server-normalized list (unknown keys dropped, locked forced on).
       if (Array.isArray(j.visible)) onChange(j.visible);
+      // Most new columns are HYDRATED server-side only when visible (to keep the
+      // ~4k-row payload small), so a freshly-enabled column has no data in the
+      // rows the browser already holds. Refresh re-runs the server query with
+      // the new visible set → the column's cells fill in.
+      router.refresh();
     } catch (e) {
       onChange(prev);
       setError(e instanceof Error ? e.message : "Failed to save");
@@ -79,29 +88,42 @@ export function ColumnsPopover({
         Columns ▾
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-20 mt-1 w-64 rounded-md border border-zinc-200 bg-white p-3 shadow-lg">
+        <div className="absolute right-0 top-full z-20 mt-1 w-72 rounded-md border border-zinc-200 bg-white p-3 shadow-lg">
           <div className="text-xs font-semibold text-zinc-900">Table columns</div>
           <p className="mt-0.5 text-[11px] text-zinc-500">
             Standard view for every user — saves instantly.
           </p>
-          <div className="mt-2">
-            {STYLE_TABLE_COLUMNS.map((c) => (
-              <label
-                key={c.key}
-                className={`flex items-center gap-2 py-1 text-xs ${
-                  c.locked ? "text-zinc-400" : "cursor-pointer text-zinc-700"
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={visibleSet.has(c.key)}
-                  disabled={c.locked || saving}
-                  onChange={() => toggle(c.key)}
-                />
-                {c.label}
-                {c.locked && <span className="ml-auto text-[10px] text-zinc-400">always shown</span>}
-              </label>
-            ))}
+          <div className="mt-2 max-h-[60vh] space-y-2 overflow-y-auto pr-1">
+            {STYLE_COLUMN_GROUP_ORDER.map((group) => {
+              const cols = STYLE_TABLE_COLUMNS.filter((c) => c.group === group);
+              if (cols.length === 0) return null;
+              return (
+                <div key={group}>
+                  <div className="sticky top-0 bg-white py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                    {STYLE_COLUMN_GROUP_LABELS[group]}
+                  </div>
+                  {cols.map((c) => (
+                    <label
+                      key={c.key}
+                      className={`flex items-center gap-2 py-1 text-xs ${
+                        c.locked ? "text-zinc-400" : "cursor-pointer text-zinc-700"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={visibleSet.has(c.key)}
+                        disabled={c.locked || saving}
+                        onChange={() => toggle(c.key)}
+                      />
+                      {c.label}
+                      {c.locked && (
+                        <span className="ml-auto text-[10px] text-zinc-400">always shown</span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+              );
+            })}
           </div>
           <div className="mt-2 flex items-center justify-between border-t border-zinc-100 pt-2 text-[11px]">
             {error ? (
