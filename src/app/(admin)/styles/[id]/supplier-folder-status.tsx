@@ -34,12 +34,16 @@ export function SupplierFolderStatus({
   folderUrl,
   poNumber,
   delivery,
+  className = "mt-8",
 }: {
   styleId: string;
   supplierName: string | null; // null ⇒ no supplier linked on the Pre-Order board
   folderUrl: string | null; // null ⇒ supplier has no folder link on the Suppliers board
   poNumber: string | null; // the PO whose folder we count files in
   delivery?: PoFolderDelivery | null; // null/absent ⇒ nothing queued for this style
+  // Root <section> classes — the caller controls spacing (defaults to a
+  // standalone top margin; "" when placed in the above-tabs grid column).
+  className?: string;
 }) {
   const hasSupplier = supplierName != null;
   const hasLink = folderUrl != null;
@@ -47,7 +51,7 @@ export function SupplierFolderStatus({
   const hasPo = poNumber != null && poNumber.trim() !== "";
 
   return (
-    <section className="mt-8">
+    <section className={className}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <h2 className="text-sm font-semibold text-zinc-700">Supplier folder</h2>
