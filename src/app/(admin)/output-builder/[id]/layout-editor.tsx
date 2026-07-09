@@ -32,6 +32,7 @@ import {
 } from "@/lib/output-layouts/token-meta";
 import { validateCalcExpression } from "@/lib/output-layouts/calc";
 import { PreviewFrame } from "@/components/output-preview";
+import { TokenAutocomplete, buildTokenSuggestions } from "@/components/token-autocomplete";
 
 // =====================================================
 // Output Builder editor — one layout, three panes:
@@ -249,6 +250,14 @@ export function LayoutEditor({
   const [langSel, setLangSel] = useState(languages[0]?.code ?? "en");
   // Custom Carton Marking — which sibling slot the palette chips insert.
   const [siblingSlot, setSiblingSlot] = useState(2);
+
+  // The fuzzy-autofill catalogue for the content editor — mirrors the palette,
+  // built for the current language + sibling slot so ":lang"/"styleN" tokens
+  // insert the right variant.
+  const tokenSuggestions = useMemo(
+    () => buildTokenSuggestions({ langSel, siblingSlot }),
+    [langSel, siblingSlot],
+  );
 
   const [jsonText, setJsonText] = useState("");
   const [jsonOpen, setJsonOpen] = useState(false);
@@ -2366,16 +2375,18 @@ export function LayoutEditor({
                       </button>
                     </div>
                   </div>
-                  <textarea
+                  <TokenAutocomplete
                     ref={contentTaRef}
                     value={selBlock.lines.join("\n")}
-                    onChange={(e) => updateBlock(blockId(selBlock), { lines: e.target.value.split("\n").slice(0, 100) })}
+                    onValueChange={(v) => updateBlock(blockId(selBlock), { lines: v.split("\n").slice(0, 100) })}
+                    suggestions={tokenSuggestions}
                     rows={6}
                     spellCheck={false}
                     className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-2 font-mono text-xs leading-relaxed"
                   />
                   <p className="mt-0.5 text-[10px] text-zinc-400">
-                    **bold** and _italic_ render in the print; the preview below shows the result.
+                    Type <code className="rounded bg-zinc-100 px-1">{"{{"}</code> for variable autofill · **bold** and
+                    _italic_ render in the print; the preview below shows the result.
                   </p>
                 </div>
               </div>
