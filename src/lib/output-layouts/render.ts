@@ -6,7 +6,7 @@ import {
   loadWashcareSymbols,
   type WashcareSymbolMap,
 } from "@/lib/pdf/washcare-symbols";
-import { findCertificate, loadCertificates, type CertificateMap } from "@/lib/pdf/certificates";
+import { certDeclaredBy, findCertificate, loadCertificates, type CertificateMap } from "@/lib/pdf/certificates";
 import {
   TOKEN_RE,
   conditionalsInLine,
@@ -354,18 +354,34 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx): string | nu
     }
 
     if (meta.kind === "image" && key === "cert") {
-      // Certification mark from the Certificate library (Settings →
-      // Certificates) — the same artwork pool care-label-02 prints, so
-      // builder layouts and coded templates can never show different art.
-      const resolved = arg && ctx.certs ? findCertificate(ctx.certs, arg) : null;
+      // Certification mark — printed ONLY when THIS style declares the
+      // cert in its Monday "Certificates" column (free text "FSC,
+      // OEKO-TEX", matched case/punctuation-insensitively). A style may
+      // declare FSC, OEKOTEX, both or neither, so one layout can carry
+      // both {{cert:oekotex}} and {{cert:fsc}} and each appears only where
+      // relevant — exactly like the coded care labels (care-label-02 /
+      // spec-generic). No {{if certificates includes …}} wrapper needed.
+      if (!arg || !certDeclaredBy(style.certificates, arg)) {
+        // Not declared on this style — render nothing (a token-only line
+        // drops in production). In the builder preview, a subtle amber
+        // hint so the operator sees the mark is gated, not broken.
+        if (ctx.mode === "preview") {
+          html += `<span class="ol-miss">cert:${escapeHtml(arg ?? "")} — not on style</span>`;
+        }
+        continue; // leave hadValue untouched so the line can still drop
+      }
+      // Declared: show the artwork from the Certificate library (Settings
+      // → Certificates) — the same pool care-label-02 prints, so builder
+      // layouts and coded templates can never show different art.
+      const resolved = ctx.certs ? findCertificate(ctx.certs, arg) : null;
       if (resolved?.dataUrl) {
         html += `<span class="ol-cert"><img src="${resolved.dataUrl}" alt="${escapeHtml(resolved.name)}" title="${escapeHtml(resolved.name)}" /></span>`;
       } else {
-        // No library row / no artwork / row deactivated / bad source —
+        // Declared but no library row / no artwork / row deactivated —
         // the established cert chip: visible on the proof in both modes
         // and counted by countPlaceholderMarkers(), so approval stays
-        // blocked while the mark is missing.
-        html += `<span class="cert-missing">${escapeHtml(arg ?? "cert")} — no artwork in Settings → Certificates</span>`;
+        // blocked while a declared mark is missing its artwork.
+        html += `<span class="cert-missing">${escapeHtml(arg)} — no artwork in Settings → Certificates</span>`;
       }
       hadValue = true;
       continue;
