@@ -10,7 +10,7 @@ import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import { loadIgnoredOutputKeysByStyle } from "@/lib/outputs/output-ignores";
 import { styleReadinessNotice } from "@/lib/styles/readiness-notice";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
-import { effectiveStyleItem } from "@/lib/styles/resolved-fields";
+import { effectiveStyleItem, resolveMappedField } from "@/lib/styles/resolved-fields";
 import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
 import { isArchivedGroup } from "@/lib/import/heuristics";
 import { getDoneGroupPoCutoff } from "@/lib/settings/app-settings";
@@ -18,6 +18,19 @@ import { activeStylesWhere, resolveDoneCutoffIds } from "@/lib/styles/active-fil
 import { StylesTable } from "./styles-table";
 import { DonePoCutoffSetting } from "./done-po-cutoff-setting";
 import { eanStatusMeta } from "@/lib/po/ean-status-meta";
+import {
+  needsSupplierUploadData,
+  needsReviewRollupData,
+  visibleResolvedFieldKeys,
+  type StyleColumnKey,
+} from "@/lib/styles/table-columns";
+import {
+  loadSupplierUploadRollups,
+  loadAssetsByStyle,
+  reviewRollupFor,
+} from "@/lib/styles/table-rollups";
+import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
+import { currentOutputBaseKeys } from "@/lib/tickets/orphan";
 
 export const dynamic = "force-dynamic";
 
@@ -63,11 +76,13 @@ export default async function StylesPage() {
         customer: { select: { name: true, config: true } },
         businessAreaRef: { select: { name: true } },
         // Country falls back to the linked supplier's country when the mapped
-        // mirror column is empty (see effectiveStyleItem).
-        supplier: { select: { country: true } },
+        // mirror column is empty (see effectiveStyleItem). name + sharepointUrl
+        // feed the opt-in Supplier / Folder-connected columns.
+        supplier: { select: { name: true, country: true, sharepointUrl: true } },
         // Threshold the completion bar is measured against + the enabled
         // outputs, whose union of required fields drives the readiness check.
-        prodSpec: { select: { autoGenerateThresholdPct: true, active: true, outputs: true } },
+        // id + name feed the opt-in "Prod spec" column (links to the spec).
+        prodSpec: { select: { id: true, name: true, autoGenerateThresholdPct: true, active: true, outputs: true } },
         // Resolved PO barcodes — the ean13/cartonEan fallback source for
         // the readiness checks (see effectiveStyleItem).
         eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
@@ -97,6 +112,17 @@ export default async function StylesPage() {
   // Per-style operator ignores — ignored outputs drop out of the readiness
   // counts below (they're decided, not pending work).
   const ignoredByStyle = await loadIgnoredOutputKeysByStyle(styles.map((s) => s.id));
+
+  // Opt-in columns are HYDRATED only when visible, so the ~4k-row payload stays
+  // small and the two batched rollup queries only run when their column is on.
+  const styleIds = styles.map((s) => s.id);
+  const resolvedFieldKeys = visibleResolvedFieldKeys(visibleColumns);
+  const wantUpload = needsSupplierUploadData(visibleColumns);
+  const wantReview = needsReviewRollupData(visibleColumns);
+  const [supplierUploads, assetsByStyle] = await Promise.all([
+    wantUpload ? loadSupplierUploadRollups(styleIds) : Promise.resolve(new Map<string, never>()),
+    wantReview ? loadAssetsByStyle(styleIds) : Promise.resolve(new Map<string, never>()),
+  ]);
 
   return (
     <div className="px-8 py-8">
@@ -128,36 +154,36 @@ export default async function StylesPage() {
         isAdmin={role === "ADMIN"}
         rows={styles.map((s) => {
           const ba = s.businessAreaRef?.name ?? s.businessArea ?? null;
+          // The style resolved against its mapping — built once and reused for
+          // both the required-field check and the opt-in spec-field columns.
+          const mapping = mappingFor(s.customerId, s.customer.config);
+          const effItem = effectiveStyleItem(s);
           const requiredKeys = requiredFieldKeysFromOutputs(s.prodSpec?.outputs);
           const missingDetailFields =
             requiredKeys.length > 0
-              ? findMissingDetailFields(
-                  effectiveStyleItem(s),
-                  mappingFor(s.customerId, s.customer.config),
-                  requiredKeys,
-                )
+              ? findMissingDetailFields(effItem, mapping, requiredKeys)
               : [];
           // Per-output readiness: each output generates as soon as its own
           // fields land. Uses the customer mapping (empty override) to match
-          // mappingFor above.
-          const outputReadiness = (
-            s.prodSpec
-              ? outputReadinessForStyle(
-                  {
-                    rawData: s.rawData,
-                    poNumber: s.poNumber,
-                    supplier: s.supplier,
-                    eans: s.eans,
-                    cartonEan: s.cartonEan,
-                    customer: { config: s.customer.config },
-                    prodSpec: { outputs: s.prodSpec.outputs, columnMapping: {} },
-                  },
-                  undefined,
-                  undefined,
-                  ignoredByStyle.get(s.id),
-                )
-              : []
-          ).filter((o) => !o.excluded);
+          // mappingFor above. fullReadiness keeps excluded rows so the review
+          // rollup can drop their stale assets the same way /review does.
+          const fullReadiness = s.prodSpec
+            ? outputReadinessForStyle(
+                {
+                  rawData: s.rawData,
+                  poNumber: s.poNumber,
+                  supplier: s.supplier,
+                  eans: s.eans,
+                  cartonEan: s.cartonEan,
+                  customer: { config: s.customer.config },
+                  prodSpec: { outputs: s.prodSpec.outputs, columnMapping: {} },
+                },
+                undefined,
+                undefined,
+                ignoredByStyle.get(s.id),
+              )
+            : [];
+          const outputReadiness = fullReadiness.filter((o) => !o.excluded);
           const outputsReady = outputReadiness.filter((o) => o.ready).length;
           const r = computeReadiness({
             completionPct: s.completionPct,
@@ -208,11 +234,52 @@ export default async function StylesPage() {
             },
             "ADMIN",
           );
+
+          // ── Opt-in column data ──────────────────────────────────────────
+          // Resolved spec fields (composition, colour, price, …) — only the
+          // VISIBLE ones, read from the same effItem + mapping as above.
+          const resolved: Record<string, string> = {};
+          for (const key of resolvedFieldKeys) {
+            resolved[key] = resolveMappedField(effItem, mapping, key as keyof ColumnMapping);
+          }
+          // Review / approval rollup (approved N/M, fully-approved, awaiting) —
+          // computed from the batched assets, dropping excluded bases like
+          // /review does. Null unless a review column is on.
+          const review = wantReview
+            ? reviewRollupFor(
+                assetsByStyle.get(s.id) ?? [],
+                currentOutputBaseKeys(parseProdSpecOutputs(s.prodSpec?.outputs ?? [])),
+                new Set(fullReadiness.filter((o) => o.excluded).map((o) => o.variantKey.split("#")[0])),
+                outputReadiness.length,
+              )
+            : null;
+
           return {
             id: s.id,
             name: s.name,
             poNumber: s.poNumber,
             customerName: s.customer.name,
+            // ── Identity & links (always small; hydrated regardless) ──
+            supplierName: s.supplier?.name ?? null,
+            supplierCountry: s.supplier?.country ?? null,
+            prodSpecName: s.prodSpec?.name ?? null,
+            prodSpecId: s.prodSpec?.id ?? null,
+            cartonEan: s.cartonEan,
+            poFileName: s.poFileName,
+            styleFolderUrl: s.styleFolderUrl,
+            mondayItemId: s.mondayItemId,
+            mondayBoardId: s.mondayBoardId,
+            createdAt: formatDate(s.createdAt),
+            updatedAt: formatDate(s.updatedAt),
+            // ── SharePoint & delivery ──
+            // Supplier has a "Supplier Folder" link on the Suppliers board.
+            folderConnected: Boolean(s.supplier?.sharepointUrl?.trim()),
+            // The resolved "APPROVED LAYOUTS" folder once something uploaded.
+            supplierFolderUrl: s.supplierFolderUrl,
+            upload: wantUpload ? (supplierUploads.get(s.id) ?? null) : null,
+            // ── Spec fields (resolved) + review rollup ──
+            resolved,
+            review,
             // Customer delivers their own goods — surfaced as a row chip so a
             // style isn't mistaken for one the app sends supplier delivery for.
             customerDeliversOwn: configFor(s.customerId, s.customer.config).skipSupplierDelivery,
@@ -257,6 +324,11 @@ export default async function StylesPage() {
               statusView.label,
               s.groupTitle ?? "",
               eanStatusMeta(s.eanStatus).label,
+              // Opt-in columns join search too — but only the hydrated
+              // (visible) ones, so hidden columns don't bloat the blob.
+              s.supplier?.name ?? "",
+              s.prodSpec?.name ?? "",
+              ...Object.values(resolved),
             ]
               .join(" ")
               .toLowerCase(),
