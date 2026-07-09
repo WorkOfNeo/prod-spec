@@ -24,7 +24,7 @@ export function OutputsAccordion({
   const extra = missingFieldLabels.length - shown.length;
 
   return (
-    <section className="mt-8">
+    <section className="mt-8 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}

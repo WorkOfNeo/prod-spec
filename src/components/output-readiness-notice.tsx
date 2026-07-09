@@ -185,6 +185,9 @@ function Step({
 }
 
 // The full notice panel — header pill + progress bar, then the step ladder.
+// `collapsible` renders it as a native <details> accordion (the header +
+// pill + bar stay visible; the step ladder folds away). Defaults off, so the
+// review page / cards / needs-input list render exactly as before.
 export function OutputReadinessNotice({
   notice,
   role,
@@ -192,6 +195,8 @@ export function OutputReadinessNotice({
   title,
   subtitle,
   className = "",
+  collapsible = false,
+  defaultOpen = false,
 }: {
   notice: ReadinessNotice;
   role: ReadinessRole;
@@ -200,6 +205,10 @@ export function OutputReadinessNotice({
   title?: string;
   subtitle?: string;
   className?: string;
+  // Fold the step ladder behind a disclosure toggle (header stays visible).
+  collapsible?: boolean;
+  // Only meaningful with `collapsible` — start expanded instead of collapsed.
+  defaultOpen?: boolean;
 }) {
   const pct = notice.total > 0 ? Math.round((notice.ready / notice.total) * 100) : 0;
 
@@ -208,33 +217,30 @@ export function OutputReadinessNotice({
   const hasWaiting = notice.steps.some((s) => s.key === "awaiting-fields");
   const showReviewerBanner = role === "REVIEWER" && (hasBlocked || hasWaiting);
 
-  return (
-    <div className={`overflow-hidden rounded-xl border border-zinc-200 bg-white ${className}`}>
-      <div className="border-b border-zinc-100 px-4 py-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            {title ? (
-              <div className="text-[15px] font-bold text-zinc-900">{title}</div>
-            ) : null}
-            {subtitle ? <div className="text-xs text-zinc-500">{subtitle}</div> : null}
-            {notice.total > 0 ? (
-              <div className="mt-0.5 text-xs text-zinc-500 tabular-nums">
-                {notice.ready} of {notice.total} ready
-              </div>
-            ) : null}
-          </div>
-          <ReadinessPill notice={notice} />
+  const titleBlock = (
+    <>
+      {title ? <div className="text-[15px] font-bold text-zinc-900">{title}</div> : null}
+      {subtitle ? <div className="text-xs text-zinc-500">{subtitle}</div> : null}
+      {notice.total > 0 ? (
+        <div className="mt-0.5 text-xs text-zinc-500 tabular-nums">
+          {notice.ready} of {notice.total} ready
         </div>
-        {notice.total > 0 ? (
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-100">
-            <span
-              className={`block h-full rounded-full ${BAR_TONE[notice.tone]}`}
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        ) : null}
-      </div>
+      ) : null}
+    </>
+  );
 
+  const bar =
+    notice.total > 0 ? (
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-100">
+        <span
+          className={`block h-full rounded-full ${BAR_TONE[notice.tone]}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    ) : null;
+
+  const body = (
+    <>
       {showReviewerBanner ? (
         <div className="border-b border-amber-100 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">
           <strong>Don&apos;t approve as final yet.</strong>{" "}
@@ -250,6 +256,52 @@ export function OutputReadinessNotice({
           <Step key={step.key} step={step} index={i} hrefs={hrefs} />
         ))}
       </ul>
+    </>
+  );
+
+  if (collapsible) {
+    return (
+      <details
+        className={`group overflow-hidden rounded-xl border border-zinc-200 bg-white ${className}`}
+        {...(defaultOpen ? { open: true } : {})}
+      >
+        <summary className="cursor-pointer list-none px-4 py-4 marker:hidden [&::-webkit-details-marker]:hidden">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-2">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="mt-1 h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform group-open:rotate-90"
+                aria-hidden="true"
+              >
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+              <div className="min-w-0">{titleBlock}</div>
+            </div>
+            <ReadinessPill notice={notice} />
+          </div>
+          {bar}
+        </summary>
+        <div className="border-t border-zinc-100">{body}</div>
+      </details>
+    );
+  }
+
+  return (
+    <div className={`overflow-hidden rounded-xl border border-zinc-200 bg-white ${className}`}>
+      <div className="border-b border-zinc-100 px-4 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">{titleBlock}</div>
+          <ReadinessPill notice={notice} />
+        </div>
+        {bar}
+      </div>
+      {body}
     </div>
   );
 }

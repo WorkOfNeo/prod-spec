@@ -771,25 +771,27 @@ export default async function StyleDetail({
         </div>
       </div>
 
-      <div className="mt-4 max-w-2xl">
+      {/* Above the tabs, side by side: the pipeline readiness notice (a
+          collapsible accordion) on the left, the Supplier folder / SharePoint
+          delivery on the right — both stay visible on every tab. */}
+      <div className="mt-4 grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
         <OutputReadinessNotice
           notice={readinessNotice}
           role={isAdmin ? "ADMIN" : "REVIEWER"}
           hrefs={readinessHrefs}
+          collapsible
+        />
+        <SupplierFolderStatus
+          styleId={style.id}
+          supplierName={style.supplier?.name ?? null}
+          folderUrl={style.supplier?.sharepointUrl ?? null}
+          poNumber={style.poNumber}
+          delivery={supplierDelivery}
+          className=""
         />
       </div>
 
       {customerConfig.skipSupplierDelivery && <SkipSupplierDeliveryBadge className="mt-4" />}
-
-      {/* Supplier folder (SharePoint) — moved ABOVE the tabs so the delivery
-          destination + live PO-folder file count stay visible on every tab. */}
-      <SupplierFolderStatus
-        styleId={style.id}
-        supplierName={style.supplier?.name ?? null}
-        folderUrl={style.supplier?.sharepointUrl ?? null}
-        poNumber={style.poNumber}
-        delivery={supplierDelivery}
-      />
 
       <nav className="mt-6 border-b border-zinc-200">
         <ul className="flex gap-1">
