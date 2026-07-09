@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { SupplierFolderFileCount } from "./supplier-folder-file-count";
 
 // Supplier-folder push readiness for the Details panel. Shows WHERE in the
 // resolution chain a style stands, so a reviewer can confirm (or spot the gap)
@@ -27,22 +28,32 @@ export type PoFolderDelivery = {
 };
 
 export function SupplierFolderStatus({
+  styleId,
   supplierName,
   folderUrl,
+  poNumber,
   delivery,
 }: {
+  styleId: string;
   supplierName: string | null; // null ⇒ no supplier linked on the Pre-Order board
   folderUrl: string | null; // null ⇒ supplier has no folder link on the Suppliers board
+  poNumber: string | null; // the PO whose folder we count files in
   delivery?: PoFolderDelivery | null; // null/absent ⇒ nothing queued for this style
 }) {
   const hasSupplier = supplierName != null;
   const hasLink = folderUrl != null;
   const ready = hasSupplier && hasLink;
+  const hasPo = poNumber != null && poNumber.trim() !== "";
 
   return (
     <section className="mt-8">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-zinc-700">Supplier folder</h2>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <h2 className="text-sm font-semibold text-zinc-700">Supplier folder</h2>
+          {/* Live file count for the PO folder — fetched lazily (Graph). Only
+              worth asking once there's a supplier folder link and a PO. */}
+          {ready && hasPo && <SupplierFolderFileCount styleId={styleId} />}
+        </div>
         <span className="text-xs text-zinc-400">
           Where approved outputs are pushed — resolved through the Monday chain.
         </span>
