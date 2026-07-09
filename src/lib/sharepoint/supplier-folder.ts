@@ -244,12 +244,24 @@ export type PoFolderResolution =
 // matching on the PO number — the app SEARCHES, it never creates the PO folder
 // (employees make it manually; hard rule). There must be EXACTLY ONE folder per
 // PO: zero → `missing` (flag, retry each sweep until made); more than one →
-// `ambiguous` (flag ALL matches so a reviewer deletes the extras). The app never
-// auto-picks among duplicates — that would upload into a folder the reviewer may
-// be about to delete.
-export function resolvePoFolder(children: ChildFolder[], poNumber: string | null): PoFolderResolution {
+// `ambiguous` (flag ALL matches). The app never auto-picks among duplicates.
+//
+// `chosenName` is the operator's manual pick (Style.supplierPoFolderName) for a
+// style whose PO has several folders: when it still matches one of the PO
+// folders, that folder wins — resolving the ambiguity without deleting anything.
+// A chosen name that no longer matches (folder renamed/deleted) is ignored and
+// we fall back to auto-resolution, so a stale pick safely re-flags.
+export function resolvePoFolder(
+  children: ChildFolder[],
+  poNumber: string | null,
+  chosenName?: string | null,
+): PoFolderResolution {
   if (!poNumber || !poNumber.trim()) return { status: "missing" };
   const matches = children.filter((c) => folderMatchesPo(c.name, poNumber));
+  if (chosenName && chosenName.trim()) {
+    const picked = matches.find((c) => c.name.toLowerCase() === chosenName.trim().toLowerCase());
+    if (picked) return { status: "found", folder: picked };
+  }
   if (matches.length === 0) return { status: "missing" };
   if (matches.length === 1) return { status: "found", folder: matches[0] };
   return { status: "ambiguous", matches };

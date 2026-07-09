@@ -763,6 +763,14 @@ model Style {
   // files). The nightly digest links this so suppliers land directly on
   // their files; null until something has been pushed.
   supplierFolderUrl   String?
+  // Operator-chosen PO folder NAME, when the supplier's SharePoint has several
+  // folders matching this style's PO (AMBIGUOUS). Employees create PO folders
+  // manually and can end up with duplicates; rather than the app guessing or
+  // deleting, a user picks one here and the push/verify send to exactly that
+  // folder (resolvePoFolder honours it). Null = auto-resolve (0/1/many). A
+  // stored name no longer present in the supplier folder falls back to
+  // auto-resolve, so a deleted/renamed choice safely re-flags.
+  supplierPoFolderName String?
   // Monday group this item lives in (e.g. "✅ Done", "⏰ Behind
   // Schedule", "Cancelled"). Captured from MondayItem.group on every
   // ingest so list views / scans can default-hide archived items

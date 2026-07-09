@@ -52,3 +52,25 @@ test("resolvePoFolder — ambiguous carries every match (name + link) for the re
     ["C-PO1 (copy)", "C-PO1 - typo"],
   );
 });
+
+test("resolvePoFolder — an operator's chosen name resolves the ambiguity (case-insensitive)", () => {
+  const children = [f("C-PO1 - typo"), f("C-PO1 (copy)")];
+  const res = resolvePoFolder(children, "C-PO1", "c-po1 (copy)");
+  assert.equal(res.status, "found");
+  assert.equal(res.status === "found" && res.folder.name, "C-PO1 (copy)");
+});
+
+test("resolvePoFolder — a chosen name that no longer matches falls back to auto-resolve (re-flags)", () => {
+  const children = [f("C-PO1 - typo"), f("C-PO1 (copy)")];
+  // The picked folder was deleted/renamed → not among the matches → ambiguous again.
+  const res = resolvePoFolder(children, "C-PO1", "C-PO1 - deleted");
+  assert.equal(res.status, "ambiguous");
+});
+
+test("resolvePoFolder — a chosen name only counts if it still matches the PO", () => {
+  // A stored choice whose name doesn't contain the PO can't smuggle a wrong folder.
+  const children = [f("C-PO1 - Cust - Sup"), f("random other folder")];
+  const res = resolvePoFolder(children, "C-PO1", "random other folder");
+  assert.equal(res.status, "found");
+  assert.equal(res.status === "found" && res.folder.name, "C-PO1 - Cust - Sup");
+});
