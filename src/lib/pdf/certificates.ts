@@ -71,3 +71,17 @@ export function findCertificate(map: CertificateMap, source: string): ResolvedCe
   }
   return null;
 }
+
+// True when the style's DECLARED certificates (Monday "Certificates"
+// column, free text like "FSC, OEKO-TEX") include the given token source
+// ("oekotex" / "fsc"). Both sides reduce to bare lowercase alphanumerics
+// (normalizeCertKey) so "OEKO-TEX" matches "oekotex". This gates the
+// Output Builder's {{cert:<source>}} mark: it prints only on styles that
+// actually declare the certificate — exactly like the coded care labels
+// (care-label-02 / spec-generic). A style may declare FSC, OEKOTEX, both,
+// or neither.
+export function certDeclaredBy(certificates: string[] | undefined, source: string): boolean {
+  const want = normalizeCertKey(source);
+  if (!want) return false;
+  return (certificates ?? []).some((c) => normalizeCertKey(c) === want);
+}

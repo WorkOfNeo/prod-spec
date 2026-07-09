@@ -175,7 +175,8 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   },
   {
     key: "cert",
-    label: "Certification mark (artwork from Settings → Certificates)",
+    label:
+      "Certification mark — prints only on styles whose Certificates field declares it (artwork from Settings → Certificates)",
     group: "Barcodes & symbols",
     kind: "image",
     arg: "source",

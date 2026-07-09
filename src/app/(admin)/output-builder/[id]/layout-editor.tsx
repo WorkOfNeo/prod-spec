@@ -2573,13 +2573,13 @@ export function LayoutEditor({
                 />
                 <TokenChip
                   token="{{cert:oekotex}}"
-                  title="OEKO-TEX certification mark from the Certificate library (Settings → Certificates) — placeholder artwork until the licensed mark is uploaded; height scales with the block font size"
+                  title="OEKO-TEX certification mark — prints only on styles whose Certificates field includes OEKO-TEX (no {{if}} wrapper needed). Artwork from Settings → Certificates (placeholder until the licensed mark is uploaded); height scales with the block font size"
                   disabled={!selBlock}
                   onClick={() => insertToken("{{cert:oekotex}}")}
                 />
                 <TokenChip
                   token="{{cert:fsc}}"
-                  title="FSC certification mark from the Certificate library (Settings → Certificates) — placeholder artwork until the licensed mark is uploaded; height scales with the block font size"
+                  title="FSC certification mark — prints only on styles whose Certificates field includes FSC (no {{if}} wrapper needed). Artwork from Settings → Certificates (placeholder until the licensed mark is uploaded); height scales with the block font size"
                   disabled={!selBlock}
                   onClick={() => insertToken("{{cert:fsc}}")}
                 />
@@ -2596,14 +2596,15 @@ export function LayoutEditor({
                 />
                 <TokenChip
                   token="{{if … includes …}}"
-                  title='List condition — e.g. {{if certificates includes FSC}}{{cert:fsc}}{{endif}}: true when one of the comma-separated values matches, ignoring case and punctuation (OEKO-TEX = OEKOTEX). Also supports !includes. Not a substring check.'
+                  title='List condition — e.g. {{if certificates includes FSC}}FSC certified{{endif}}: true when one of the comma-separated values matches, ignoring case and punctuation (OEKO-TEX = OEKOTEX). Also supports !includes. Not a substring check. Note: the {{cert:…}} marks already self-gate on the Certificates field — this is for conditional TEXT.'
                   disabled={!selBlock}
-                  onClick={() => insertToken("{{if certificates includes FSC}}{{cert:fsc}}{{endif}}")}
+                  onClick={() => insertToken("{{if certificates includes FSC}}FSC certified{{endif}}")}
                 />
               </div>
               <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
                 One condition per line, no nesting. ==/!= compare the whole value; includes/!includes check a
-                comma-separated list — e.g. show the FSC mark only on styles that declare the certificate.
+                comma-separated list. The {"{{cert:…}}"} marks already print only on styles that declare the
+                certificate, so no wrapper is needed for them.
               </p>
             </div>
           </div>
