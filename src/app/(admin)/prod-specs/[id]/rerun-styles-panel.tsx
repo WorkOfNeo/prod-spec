@@ -1,23 +1,19 @@
 "use client";
 
-// Admin-only "Rerun all styles" panel for the ProdSpec editor's Outputs tab.
-// After an operator swaps the spec's outputs, this regenerates the spec's
-// ALREADY-GENERATED styles — but only the outputs that are NEW/MISSING or
-// previously REJECTED (approved / awaiting-review outputs are left alone, so a
-// big spec doesn't blast everything back into review). It surfaces the
-// rejected / new-missing breakdown + an "affected styles" list so the operator
-// can see what will run, then polls a BulkRunBatch for DONE/TOTAL progress.
+// Admin-only run list for the ProdSpec editor's Outputs tab. Lists EVERY style
+// on this prod spec so an operator can run one, or run all. A run regenerates
+// only the outputs that are NEW/MISSING or previously REJECTED — approved work
+// is left alone, so a big spec doesn't blast everything back into review. Each
+// row shows when the style last ran and whether that run was automated (Monday
+// webhook / EAN handoff / cron sweep) or manual (a Re-run / bulk-run button).
+//
+// "Run all" enqueues a background BulkRunBatch (polled for DONE/TOTAL); a
+// per-row "Run" fires that single style inline via the shared style re-run
+// endpoint, scoped to exactly that row's new/missing + rejected outputs.
 
-import { useCallback, useEffect, useState } from "react";
-
-type Plan = {
-  active: boolean;
-  generatedStyles: number;
-  toRerun: number;
-  withMissing: number;
-  withRejected: number;
-  sample: Array<{ id: string; name: string; missing: number; rejected: number }>;
-};
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import type { ProdSpecStyleRunList, StyleRunRow } from "@/lib/outputs/prod-spec-rerun";
 
 type Batch = {
   id: string;
@@ -39,33 +35,36 @@ export function RerunStylesPanel({
   unsaved,
 }: {
   prodSpecId: string;
-  // Live editor state — the spec's active toggle and whether there are
-  // unsaved output edits. Both gate the run: the rerun must read PERSISTED
-  // outputs, and an inactive spec can't generate.
+  // Live editor state — the spec's active toggle and whether there are unsaved
+  // output edits. Both gate a run: it must read PERSISTED outputs, and an
+  // inactive spec can't generate.
   specActive: boolean;
   unsaved: boolean;
 }) {
   const base = `/api/admin/prod-specs/${prodSpecId}/rerun-styles`;
   const storageKey = `prodspec-rerun:${prodSpecId}`;
 
-  const [plan, setPlan] = useState<Plan | null>(null);
-  const [planLoading, setPlanLoading] = useState(true);
+  const [list, setList] = useState<ProdSpecStyleRunList | null>(null);
+  const [listLoading, setListLoading] = useState(true);
   const [batch, setBatch] = useState<Batch | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [submittingAll, setSubmittingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showSample, setShowSample] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [query, setQuery] = useState("");
+  // Styles currently being run via their per-row button (inline fetch pending).
+  const [runningRows, setRunningRows] = useState<Set<string>>(() => new Set());
+  // Per-row failures, keyed by styleId — cleared when that row runs again.
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
 
   const activeRun = batch != null && batch.finishedAt == null;
 
   // Pure fetchers — NO setState, so they can be awaited inside effects without
-  // tripping react-hooks/set-state-in-effect. Callers setState after the await
-  // (the same shape as the /styles bulk-run progress widget).
-  const fetchPlan = useCallback(async (): Promise<Plan | null> => {
+  // tripping react-hooks/set-state-in-effect. Callers setState after the await.
+  const fetchList = useCallback(async (): Promise<ProdSpecStyleRunList | null> => {
     try {
       const res = await fetch(base, { cache: "no-store" });
       if (!res.ok) return null;
-      return (await res.json()) as Plan;
+      return (await res.json()) as ProdSpecStyleRunList;
     } catch {
       return null;
     }
@@ -85,18 +84,17 @@ export function RerunStylesPanel({
     [base],
   );
 
-  // Load the plan on mount and after each save (unsaved → false) so the counts
-  // reflect the just-persisted outputs; resume an in-flight run recorded in
-  // localStorage so it reappears after a reload. All setState runs after an
-  // await inside the effect's async closure.
+  // Load the list on mount and after each save (unsaved → false) so it reflects
+  // the just-persisted outputs; resume an in-flight "Run all" recorded in
+  // localStorage so it reappears after a reload.
   useEffect(() => {
-    if (unsaved) return; // wait for the autosave to flush before reading the plan
+    if (unsaved) return; // wait for autosave to flush before reading the list
     let cancelled = false;
     void (async () => {
-      const p = await fetchPlan();
+      const l = await fetchList();
       if (cancelled) return;
-      if (p) setPlan(p);
-      setPlanLoading(false);
+      if (l) setList(l);
+      setListLoading(false);
     })();
     const storedId = typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
     if (storedId) {
@@ -104,16 +102,16 @@ export function RerunStylesPanel({
         const b = await fetchBatch(storedId);
         if (cancelled) return;
         if (b && b.finishedAt == null) setBatch(b);
-        else window.localStorage.removeItem(storageKey); // stale / finished — don't resurface
+        else window.localStorage.removeItem(storageKey);
       })();
     }
     return () => {
       cancelled = true;
     };
-  }, [unsaved, fetchPlan, fetchBatch, storageKey]);
+  }, [unsaved, fetchList, fetchBatch, storageKey]);
 
-  // Poll only while a run is in flight (setState in a subscription callback,
-  // after the await — the supported effect pattern).
+  // Poll only while a "Run all" batch is in flight; refetch the list when it
+  // settles so last-run stamps + to-run counts update.
   useEffect(() => {
     if (!activeRun || !batch) return;
     let cancelled = false;
@@ -123,34 +121,34 @@ export function RerunStylesPanel({
       setBatch(b);
       if (b.finishedAt != null) {
         window.localStorage.removeItem(storageKey);
-        const p = await fetchPlan(); // refresh counts now that outputs regenerated
-        if (!cancelled && p) setPlan(p);
+        const l = await fetchList();
+        if (!cancelled && l) setList(l);
       }
     }, POLL_MS);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [activeRun, batch, fetchBatch, fetchPlan, storageKey]);
+  }, [activeRun, batch, fetchBatch, fetchList, storageKey]);
 
-  const disabledReason = unsaved
+  const runAllDisabledReason = unsaved
     ? "Save your output changes first"
     : !specActive
-      ? "Activate this prod spec to rerun its styles"
-      : plan && plan.toRerun === 0
-        ? "Nothing to rerun — every generated style is up to date"
+      ? "Activate this prod spec to run its styles"
+      : list && list.toRerun === 0
+        ? "Nothing to run — every style is up to date"
         : null;
 
   async function runAll() {
-    if (!plan || plan.toRerun === 0 || submitting || activeRun || disabledReason) return;
+    if (!list || list.toRerun === 0 || submittingAll || activeRun || runAllDisabledReason) return;
     const ok = window.confirm(
-      `Rerun ${plan.toRerun} style${plan.toRerun === 1 ? "" : "s"} on this prod spec?\n\n` +
-        `Regenerates ${plan.withRejected} with rejected output${plan.withRejected === 1 ? "" : "s"} ` +
-        `and ${plan.withMissing} with new/missing output${plan.withMissing === 1 ? "" : "s"}. ` +
-        `Renders in the background — safe to leave this page.`,
+      `Run ${list.toRerun} style${list.toRerun === 1 ? "" : "s"} on this prod spec?\n\n` +
+        `Regenerates ${list.withRejected} with rejected output${list.withRejected === 1 ? "" : "s"} ` +
+        `and ${list.withMissing} with new/missing output${list.withMissing === 1 ? "" : "s"}. ` +
+        `Approved outputs are left alone. Renders in the background — safe to leave this page.`,
     );
     if (!ok) return;
-    setSubmitting(true);
+    setSubmittingAll(true);
     setError(null);
     setDismissed(false);
     try {
@@ -162,8 +160,8 @@ export function RerunStylesPanel({
       }
       if (!data.batchId) {
         setError("Nothing to run — the styles may have started generating elsewhere.");
-        const p = await fetchPlan();
-        if (p) setPlan(p);
+        const l = await fetchList();
+        if (l) setList(l);
         return;
       }
       window.localStorage.setItem(storageKey, data.batchId);
@@ -172,40 +170,54 @@ export function RerunStylesPanel({
     } catch (e) {
       setError(e instanceof Error ? e.message : "Request failed");
     } finally {
-      setSubmitting(false);
+      setSubmittingAll(false);
     }
   }
 
-  // In-flight: the progress card replaces the button (one run at a time).
-  if (activeRun && batch) {
-    const pct = batch.total > 0 ? Math.min(100, Math.round((batch.done / batch.total) * 100)) : 0;
-    return (
-      <div className="mt-4 rounded-md border border-zinc-200 bg-white px-3 py-2.5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2 text-sm text-zinc-700">
-            <Spinner />
-            <span className="font-medium">Rerunning styles</span>
-            <span className="tabular-nums text-zinc-500">
-              {batch.done}/{batch.total}
-            </span>
-            {batch.failed > 0 && <span className="tabular-nums text-red-600">· {batch.failed} failed</span>}
-          </div>
-          {batch.createdByEmail && (
-            <span className="shrink-0 text-xs text-zinc-400">started by {batch.createdByEmail}</span>
-          )}
-        </div>
-        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
-          <div
-            className="h-full rounded-full bg-zinc-900 transition-[width] duration-500"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-        <p className="mt-1.5 text-[11px] text-zinc-400">
-          Rendering in the background — safe to leave this page; progress resumes when you return.
-        </p>
-      </div>
-    );
+  async function runOne(row: StyleRunRow) {
+    if (row.inFlight || row.variantKeys.length === 0 || runningRows.has(row.id)) return;
+    if (unsaved || !specActive) return;
+    setRunningRows((prev) => new Set(prev).add(row.id));
+    setRowErrors((prev) => {
+      const next = { ...prev };
+      delete next[row.id];
+      return next;
+    });
+    try {
+      // Inline single-style re-run, scoped to this row's new/missing + rejected
+      // outputs (approved work stays out of it). Runs to completion server-side.
+      const res = await fetch(`/api/admin/styles/${row.id}/rerun`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ variantKeys: row.variantKeys }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setRowErrors((prev) => ({ ...prev, [row.id]: data.error ?? `HTTP ${res.status}` }));
+        return;
+      }
+      const l = await fetchList(); // refresh last-run + to-run for this row
+      if (l) setList(l);
+    } catch (e) {
+      setRowErrors((prev) => ({ ...prev, [row.id]: e instanceof Error ? e.message : "Request failed" }));
+    } finally {
+      setRunningRows((prev) => {
+        const next = new Set(prev);
+        next.delete(row.id);
+        return next;
+      });
+    }
   }
+
+  const totalRows = list?.rows.length ?? 0;
+  const filtered = useMemo(() => {
+    const all = list?.rows ?? [];
+    const q = query.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter(
+      (r) => r.name.toLowerCase().includes(q) || (r.poNumber ?? "").toLowerCase().includes(q),
+    );
+  }, [list, query]);
 
   const justFinished = batch != null && batch.finishedAt != null && !dismissed;
 
@@ -213,79 +225,83 @@ export function RerunStylesPanel({
     <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-zinc-800">Rerun all styles</p>
+          <p className="text-sm font-medium text-zinc-800">Run styles</p>
           <p className="mt-0.5 text-xs text-zinc-500">
-            Regenerate this spec&apos;s already-generated styles after swapping outputs — only the
-            outputs that are <span className="font-medium text-zinc-700">new/missing</span> or{" "}
-            <span className="font-medium text-zinc-700">rejected</span> (approved work is left alone).
+            Every style on this prod spec. Run one, or run all — only{" "}
+            <span className="font-medium text-zinc-700">new/missing</span> and{" "}
+            <span className="font-medium text-zinc-700">rejected</span> outputs regenerate; approved
+            work is left alone.
           </p>
         </div>
         <button
           type="button"
           onClick={runAll}
-          disabled={submitting || planLoading || plan == null || plan.toRerun === 0 || Boolean(disabledReason)}
-          title={disabledReason ?? "Enqueue a scoped rerun for every affected style on this prod spec"}
+          disabled={
+            submittingAll ||
+            listLoading ||
+            list == null ||
+            list.toRerun === 0 ||
+            activeRun ||
+            Boolean(runAllDisabledReason)
+          }
+          title={runAllDisabledReason ?? "Run every style with outputs to regenerate on this prod spec"}
           className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
         >
           <RunAllIcon />
-          {submitting ? "Starting…" : `Rerun ${plan?.toRerun ?? 0} style${plan?.toRerun === 1 ? "" : "s"}`}
+          {submittingAll ? "Starting…" : `Run all${list ? ` (${list.toRerun})` : ""}`}
         </button>
       </div>
 
-      {/* Breakdown + affected-styles list so the operator can SEE what runs. */}
-      {plan && plan.generatedStyles > 0 && (
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-600">
+      {/* Summary counts + filter. */}
+      {list && list.totalStyles > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
+          <span className="text-zinc-600">{list.totalStyles} styles</span>
+          <span>· {list.generatedStyles} generated</span>
           <span className="inline-flex items-center gap-1">
-            <Dot className="bg-red-500" /> {plan.withRejected} with rejected
+            · <Dot className="bg-zinc-900" /> {list.toRerun} to run
           </span>
-          <span className="inline-flex items-center gap-1">
-            <Dot className="bg-amber-500" /> {plan.withMissing} with new/missing
-          </span>
-          <span className="text-zinc-400">· {plan.generatedStyles} generated styles on this spec</span>
-          {plan.sample.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowSample((s) => !s)}
-              className="text-zinc-500 underline hover:text-zinc-800"
-            >
-              {showSample ? "Hide" : "See affected styles"}
-            </button>
-          )}
+          <div className="ml-auto">
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter by name / PO…"
+              className="w-44 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs"
+            />
+          </div>
         </div>
       )}
 
-      {showSample && plan && plan.sample.length > 0 && (
-        <ul className="mt-2 max-h-56 overflow-auto rounded-md border border-zinc-200 bg-white">
-          {plan.sample.map((s) => (
-            <li
-              key={s.id}
-              className="flex items-center justify-between gap-2 border-b border-zinc-100 px-3 py-1.5 text-xs last:border-b-0"
-            >
-              <span className="truncate text-zinc-700">{s.name}</span>
-              <span className="flex shrink-0 items-center gap-1.5">
-                {s.rejected > 0 && (
-                  <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
-                    {s.rejected} rejected
-                  </span>
-                )}
-                {s.missing > 0 && (
-                  <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                    {s.missing} new
-                  </span>
-                )}
+      {/* "Run all" progress. */}
+      {activeRun && batch && (
+        <div className="mt-3 rounded-md border border-zinc-200 bg-white px-3 py-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2 text-sm text-zinc-700">
+              <Spinner />
+              <span className="font-medium">Running all styles</span>
+              <span className="tabular-nums text-zinc-500">
+                {batch.done}/{batch.total}
               </span>
-            </li>
-          ))}
-          {plan.toRerun > plan.sample.length && (
-            <li className="px-3 py-1.5 text-[11px] text-zinc-400">
-              and {plan.toRerun - plan.sample.length} more…
-            </li>
-          )}
-        </ul>
-      )}
-
-      {disabledReason && plan && plan.toRerun > 0 && (
-        <p className="mt-2 text-[11px] text-amber-700">{disabledReason}.</p>
+              {batch.failed > 0 && (
+                <span className="tabular-nums text-red-600">· {batch.failed} failed</span>
+              )}
+            </div>
+            {batch.createdByEmail && (
+              <span className="shrink-0 text-xs text-zinc-400">started by {batch.createdByEmail}</span>
+            )}
+          </div>
+          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+            <div
+              className="h-full rounded-full bg-zinc-900 transition-[width] duration-500"
+              style={{
+                width: `${batch.total > 0 ? Math.min(100, Math.round((batch.done / batch.total) * 100)) : 0}%`,
+              }}
+            />
+          </div>
+          <p className="mt-1.5 text-[11px] text-zinc-400">
+            Rendering in the background — safe to leave this page; progress resumes when you return.
+          </p>
+        </div>
       )}
 
       {error && (
@@ -297,7 +313,7 @@ export function RerunStylesPanel({
       {justFinished && batch && (
         <div className="mt-2 inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">
           <span>
-            ✓ Rerun complete · {batch.done}/{batch.total}
+            ✓ Run complete · {batch.done}/{batch.total}
             {batch.failed > 0 ? ` · ${batch.failed} failed` : ""}
           </span>
           <button
@@ -310,17 +326,232 @@ export function RerunStylesPanel({
           </button>
         </div>
       )}
+
+      {/* The styles table. */}
+      <div className="mt-3 overflow-hidden rounded-md border border-zinc-200 bg-white">
+        <div className="flex items-center gap-3 border-b border-zinc-200 bg-zinc-50 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+          <span className="min-w-0 flex-1">Style</span>
+          <span className="hidden w-44 shrink-0 sm:block">Last run</span>
+          <span className="w-28 shrink-0">To run</span>
+          <span className="w-16 shrink-0 text-right">Run</span>
+        </div>
+
+        {listLoading ? (
+          <div className="flex items-center gap-2 px-3 py-6 text-xs text-zinc-500">
+            <Spinner /> Loading styles…
+          </div>
+        ) : unsaved ? (
+          <div className="px-3 py-6 text-xs text-zinc-500">
+            Save your output changes to load the list…
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="px-3 py-6 text-xs text-zinc-500">
+            {totalRows === 0 ? "No styles on this prod spec yet." : "No styles match your filter."}
+          </div>
+        ) : (
+          <ul className="max-h-[32rem] divide-y divide-zinc-100 overflow-auto">
+            {filtered.map((r) => (
+              <StyleRow
+                key={r.id}
+                row={r}
+                running={runningRows.has(r.id)}
+                error={rowErrors[r.id]}
+                disabled={unsaved || !specActive}
+                onRun={() => void runOne(r)}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
+}
+
+function StyleRow({
+  row,
+  running,
+  error,
+  disabled,
+  onRun,
+}: {
+  row: StyleRunRow;
+  running: boolean;
+  error: string | undefined;
+  disabled: boolean;
+  onRun: () => void;
+}) {
+  const canRun = !row.inFlight && row.variantKeys.length > 0 && !disabled && !running;
+  const runTitle = row.inFlight
+    ? "A job is already running for this style"
+    : row.variantKeys.length === 0
+      ? row.readyCount > 0
+        ? "Nothing to run — every output is approved or awaiting review"
+        : "No ready outputs yet — awaiting data"
+      : disabled
+        ? "Save your changes / activate the spec first"
+        : "Regenerate this style's new/missing + rejected outputs";
+
+  return (
+    <li className="px-3 py-2">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <Link
+            href={`/styles/${row.id}`}
+            className="block truncate text-sm font-medium text-zinc-800 hover:underline"
+            title={row.name}
+          >
+            {row.name}
+          </Link>
+          <div className="truncate text-[11px] text-zinc-400">
+            {row.poNumber ? `PO ${row.poNumber}` : "no PO"} · {statusLabel(row.status)}
+          </div>
+        </div>
+
+        <div className="hidden w-44 shrink-0 sm:block">
+          {row.lastRun ? (
+            <div className="flex flex-col gap-0.5">
+              <span
+                className="text-xs text-zinc-600"
+                title={new Date(row.lastRun.at).toLocaleString()}
+              >
+                {timeAgo(row.lastRun.at)}
+              </span>
+              <KindBadge kind={row.lastRun.kind} source={row.lastRun.triggerSource} />
+            </div>
+          ) : (
+            <span className="text-xs text-zinc-400">Never run</span>
+          )}
+        </div>
+
+        <div className="w-28 shrink-0">
+          <ToRunCell row={row} />
+        </div>
+
+        <div className="w-16 shrink-0 text-right">
+          <button
+            type="button"
+            onClick={onRun}
+            disabled={!canRun}
+            title={runTitle}
+            className="inline-flex items-center justify-center gap-1 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {running ? <Spinner className="h-3.5 w-3.5" /> : "Run"}
+          </button>
+        </div>
+      </div>
+      {error && <p className="mt-1 text-[11px] text-red-600">{error}</p>}
+    </li>
+  );
+}
+
+function ToRunCell({ row }: { row: StyleRunRow }) {
+  if (row.inFlight) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600">
+        <Spinner className="h-3 w-3" /> running
+      </span>
+    );
+  }
+  if (row.variantKeys.length === 0) {
+    return row.readyCount > 0 ? (
+      <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700">
+        <Dot className="bg-emerald-500" /> up to date
+      </span>
+    ) : (
+      <span className="inline-flex items-center gap-1 text-[11px] text-zinc-400">
+        <Dot className="bg-zinc-300" /> awaiting data
+      </span>
+    );
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {row.missing > 0 && (
+        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+          {row.missing} new
+        </span>
+      )}
+      {row.rejected > 0 && (
+        <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
+          {row.rejected} rejected
+        </span>
+      )}
+    </span>
+  );
+}
+
+function KindBadge({ kind, source }: { kind: "automated" | "manual"; source: string }) {
+  const cls =
+    kind === "manual"
+      ? "border-violet-200 bg-violet-50 text-violet-700"
+      : "border-sky-200 bg-sky-50 text-sky-700";
+  return (
+    <span
+      className={`inline-flex w-fit items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
+      title={triggerLabelClient(source)}
+    >
+      {kind === "manual" ? "Manual" : "Automated"}
+    </span>
+  );
+}
+
+// Style workflow status → friendlier label. Unknown values pass through.
+function statusLabel(status: string): string {
+  const map: Record<string, string> = {
+    PENDING: "pending",
+    READY: "ready",
+    GENERATING: "generating",
+    AWAITING_REVIEW: "awaiting review",
+    APPROVED: "approved",
+    REJECTED: "rejected",
+  };
+  return map[status] ?? status.toLowerCase().replace(/_/g, " ");
+}
+
+// Client-side mirror of the trigger label (the server helper isn't importable
+// into a client bundle without pulling in server-only deps — this is just the
+// tooltip text). Kept tiny; the badge itself is driven by `kind`.
+function triggerLabelClient(source: string): string {
+  const labels: Record<string, string> = {
+    WEBHOOK: "Monday webhook (fields landed)",
+    MANUAL_RERUN: "manual re-run",
+    ADMIN_TEST: "admin test",
+    MANUAL_IMPORT: "import promotion",
+    TICKET_RERUN: "rejection-ticket re-run",
+    TICKET_FIX: "rejection-ticket fix",
+    EAN_RESOLVED: "barcodes landed (EAN handoff)",
+    CRON_SWEEP: "backlog sweep",
+    MANUAL_BULK: "bulk run",
+  };
+  return labels[source] ?? source.toLowerCase().replace(/_/g, " ");
+}
+
+function timeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  const s = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (s < 60) return "just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  if (d < 30) return `${d}d ago`;
+  const mo = Math.round(d / 30);
+  if (mo < 12) return `${mo}mo ago`;
+  return `${Math.round(mo / 12)}y ago`;
 }
 
 function Dot({ className }: { className: string }) {
   return <span className={`inline-block h-1.5 w-1.5 rounded-full ${className}`} aria-hidden="true" />;
 }
 
-function Spinner() {
+function Spinner({ className = "h-4 w-4" }: { className?: string }) {
   return (
-    <svg className="h-4 w-4 shrink-0 animate-spin text-zinc-500" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <svg
+      className={`shrink-0 animate-spin text-zinc-500 ${className}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
     </svg>
@@ -329,7 +560,13 @@ function Spinner() {
 
 function RunAllIcon() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5" aria-hidden="true">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className="h-3.5 w-3.5"
+      aria-hidden="true"
+    >
       <path d="M8 5v14l11-7z" />
     </svg>
   );

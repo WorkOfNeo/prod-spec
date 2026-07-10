@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
+import { triggerLabel } from "@/lib/queue/trigger-labels";
 
 // History tab — the automation trace for ONE style, stitched from the rows
 // every stage already writes: sync stamps → PO/EAN resolution → generation
@@ -16,18 +17,6 @@ type TimelineEvent = {
   detail?: string | null;
   href?: string | null;
   tone: Tone;
-};
-
-const TRIGGER_LABELS: Record<string, string> = {
-  WEBHOOK: "Monday webhook (fields landed)",
-  MANUAL_RERUN: "manual re-run",
-  ADMIN_TEST: "admin test",
-  MANUAL_IMPORT: "import promotion",
-  TICKET_RERUN: "rejection-ticket re-run",
-  TICKET_FIX: "rejection-ticket fix",
-  EAN_RESOLVED: "barcodes landed (EAN handoff)",
-  CRON_SWEEP: "backlog sweep",
-  MANUAL_BULK: "bulk run",
 };
 
 const DOT: Record<Tone, string> = {
@@ -124,7 +113,7 @@ export async function HistoryTab({ styleId }: { styleId: string }) {
   for (const j of jobs) {
     events.push({
       at: j.createdAt,
-      title: `Generation job enqueued — ${TRIGGER_LABELS[j.triggerSource] ?? j.triggerSource.toLowerCase()}`,
+      title: `Generation job enqueued — ${triggerLabel(j.triggerSource)}`,
       tone: "info",
     });
     if (j.finishedAt) {

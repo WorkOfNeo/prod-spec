@@ -3,6 +3,7 @@ import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { outputReadinessForStyle, type ReadinessStyle } from "@/lib/styles/output-readiness";
 import { loadIgnoredOutputKeysByStyle } from "@/lib/outputs/output-ignores";
 import type { RunnableStyle } from "@/lib/queue/bulk-run";
+import { triggerKind, type TriggerKind } from "@/lib/queue/trigger-labels";
 
 // =====================================================
 // Prod-spec rerun plan — after an admin swaps a ProdSpec's outputs, decide
@@ -214,5 +215,243 @@ export async function computeProdSpecRerunPlan(
     withMissing,
     withRejected,
     sample,
+  };
+}
+
+// =====================================================
+// Per-ProdSpec run list — EVERY active style on the spec (not just the
+// already-generated ones computeProdSpecRerunPlan reruns over), each with the
+// scoped set of outputs a run would regenerate, a last-run stamp, and whether
+// that last run was automated or manual. Backs the run-list table in the
+// ProdSpec editor's Outputs tab: run all, or run one.
+//
+// The scoped set is identical to the bulk plan — new/missing + previously
+// rejected READY outputs; approved and awaiting-review outputs are left alone.
+// A never-generated style's ready outputs are all "missing", so running it
+// generates them for the first time.
+// =====================================================
+
+// Select for the run list — the readiness inputs plus the style's own status
+// (shown as a pill in the table). Extends the shared candidate shape.
+const RUN_LIST_SELECT = {
+  ...CANDIDATE_SELECT,
+  status: true,
+} as const;
+
+// The newest job for a style, distilled for the "Last run" column.
+export type StyleLastRun = {
+  // finishedAt ?? startedAt ?? createdAt, as an ISO string for the client.
+  at: string;
+  // JobStatus of that job (QUEUED / RUNNING / AWAITING_REVIEW / APPROVED / …).
+  status: string;
+  triggerSource: string;
+  kind: TriggerKind;
+};
+
+// One row in the run list — one active style on the spec.
+export type StyleRunRow = {
+  id: string;
+  name: string;
+  poNumber: string | null;
+  // The style's own workflow status (StyleStatus).
+  status: string;
+  // Ready, non-excluded outputs total — the denominator behind the state text
+  // ("up to date" vs "awaiting data").
+  readyCount: number;
+  // Scoped rerun for this style: new/missing + previously-rejected ready
+  // outputs. Empty ⇒ nothing to regenerate (all approved / awaiting review, or
+  // no ready outputs at all). The per-row Run button posts exactly these keys.
+  variantKeys: string[];
+  missing: number;
+  rejected: number;
+  // A QUEUED/RUNNING job is already in flight — the row can't be re-run yet and
+  // it's excluded from "Run all".
+  inFlight: boolean;
+  // Newest job for this style, or null if it never ran.
+  lastRun: StyleLastRun | null;
+};
+
+export type ProdSpecStyleRunList = {
+  prodSpecActive: boolean;
+  // Every active style on the spec.
+  totalStyles: number;
+  // Of those, how many have generated ≥1 output before.
+  generatedStyles: number;
+  // Rows with ≥1 output to run and no in-flight job — the "Run all" universe.
+  toRerun: number;
+  withMissing: number;
+  withRejected: number;
+  rows: StyleRunRow[];
+};
+
+const emptyRunList = (active: boolean): ProdSpecStyleRunList => ({
+  prodSpecActive: active,
+  totalStyles: 0,
+  generatedStyles: 0,
+  toRerun: 0,
+  withMissing: 0,
+  withRejected: 0,
+  rows: [],
+});
+
+export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpecStyleRunList> {
+  const spec = await db.prodSpec.findUnique({
+    where: { id: prodSpecId },
+    select: { active: true },
+  });
+  if (!spec) return emptyRunList(false);
+
+  // Output Builder layouts (layout:<id>) must be registered before the
+  // readiness walk resolves them — same rule as the bulk plan.
+  await ensureLayoutVariantsLoaded();
+
+  // EVERY active style on this spec — including never-generated ones (they show
+  // as "never run"; running one generates all its ready outputs). Newest first
+  // so the operator sees recently-touched styles at the top.
+  const candidates = await db.style.findMany({
+    where: { prodSpecId, archivedAt: null, deletedAt: null },
+    orderBy: { updatedAt: "desc" },
+    select: RUN_LIST_SELECT,
+  });
+  if (candidates.length === 0) return emptyRunList(spec.active);
+
+  const styleIds = candidates.map((c) => c.id);
+
+  // Latest asset per (style, full variantKey) across non-FAILED jobs, newest
+  // job first — identical to the bulk plan so "current decision" agrees with
+  // the review surfaces. Rolled up to base below.
+  const assets = await db.jobAsset.findMany({
+    where: {
+      job: { styleId: { in: styleIds }, status: { not: "FAILED" } },
+      variantKey: { not: null },
+    },
+    orderBy: { job: { createdAt: "desc" } },
+    select: { variantKey: true, reviewStatus: true, job: { select: { styleId: true } } },
+  });
+  const latestByStyle = new Map<string, Map<string, "PENDING_REVIEW" | "APPROVED" | "REJECTED">>();
+  for (const a of assets) {
+    if (!a.variantKey) continue;
+    let m = latestByStyle.get(a.job.styleId);
+    if (!m) {
+      m = new Map();
+      latestByStyle.set(a.job.styleId, m);
+    }
+    if (!m.has(a.variantKey)) m.set(a.variantKey, a.reviewStatus);
+  }
+
+  // Styles with a QUEUED/RUNNING job — shown as "running", not runnable.
+  const inflight = await db.job.findMany({
+    where: { styleId: { in: styleIds }, status: { in: ["QUEUED", "RUNNING"] } },
+    select: { styleId: true },
+    distinct: ["styleId"],
+  });
+  const inflightSet = new Set(inflight.map((j) => j.styleId));
+
+  // Newest job per style (any status) → the "Last run" stamp + trigger. Fetched
+  // newest-first; first row seen per style wins (same reduce as the asset
+  // rollup above, guaranteed-correct without relying on DISTINCT ON ordering).
+  const jobRows = await db.job.findMany({
+    where: { styleId: { in: styleIds } },
+    orderBy: { createdAt: "desc" },
+    select: {
+      styleId: true,
+      status: true,
+      triggerSource: true,
+      createdAt: true,
+      startedAt: true,
+      finishedAt: true,
+    },
+  });
+  const lastJobByStyle = new Map<string, (typeof jobRows)[number]>();
+  for (const j of jobRows) {
+    if (!lastJobByStyle.has(j.styleId)) lastJobByStyle.set(j.styleId, j);
+  }
+
+  // Per-style operator ignores — an ignored output must not count as "missing"
+  // (it would re-enqueue on every run and never render).
+  const ignoredByStyle = await loadIgnoredOutputKeysByStyle(styleIds);
+
+  const rows: StyleRunRow[] = [];
+  let generatedStyles = 0;
+  let toRerun = 0;
+  let withMissing = 0;
+  let withRejected = 0;
+
+  for (const c of candidates) {
+    // Roll latest-per-fullKey assets up to base (see computeProdSpecRerunPlan).
+    const hasAsset = new Set<string>();
+    const hasRejected = new Set<string>();
+    const fullKeys = latestByStyle.get(c.id);
+    if (fullKeys) {
+      for (const [fk, status] of fullKeys) {
+        const b = base(fk);
+        hasAsset.add(b);
+        if (status === "REJECTED") hasRejected.add(b);
+      }
+    }
+    if (hasAsset.size > 0) generatedStyles++;
+
+    const variantKeys: string[] = [];
+    let missingN = 0;
+    let rejectedN = 0;
+    let readyCount = 0;
+    for (const o of outputReadinessForStyle(
+      c as ReadinessStyle,
+      undefined,
+      undefined,
+      ignoredByStyle.get(c.id),
+    )) {
+      if (!o.ready || o.excluded) continue;
+      readyCount++;
+      const b = base(o.variantKey);
+      if (!hasAsset.has(b)) {
+        variantKeys.push(o.variantKey); // new / missing
+        missingN++;
+      } else if (hasRejected.has(b)) {
+        variantKeys.push(o.variantKey); // previously rejected
+        rejectedN++;
+      }
+      // generated & not rejected (approved / awaiting review) → leave it.
+    }
+
+    const isInflight = inflightSet.has(c.id);
+    // "Run all" mirrors what the button will actually enqueue: runnable outputs
+    // and not already in flight.
+    if (variantKeys.length > 0 && !isInflight) {
+      toRerun++;
+      if (missingN > 0) withMissing++;
+      if (rejectedN > 0) withRejected++;
+    }
+
+    const lj = lastJobByStyle.get(c.id);
+    rows.push({
+      id: c.id,
+      name: c.name,
+      poNumber: c.poNumber,
+      status: c.status,
+      readyCount,
+      variantKeys,
+      missing: missingN,
+      rejected: rejectedN,
+      inFlight: isInflight,
+      lastRun: lj
+        ? {
+            at: (lj.finishedAt ?? lj.startedAt ?? lj.createdAt).toISOString(),
+            status: lj.status,
+            triggerSource: lj.triggerSource,
+            kind: triggerKind(lj.triggerSource),
+          }
+        : null,
+    });
+  }
+
+  return {
+    prodSpecActive: spec.active,
+    totalStyles: candidates.length,
+    generatedStyles,
+    toRerun,
+    withMissing,
+    withRejected,
+    rows,
   };
 }
