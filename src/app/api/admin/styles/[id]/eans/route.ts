@@ -21,6 +21,10 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   // budget. resolveAndPersistStyleEans then sets it to 0 (success) or 1
   // (this attempt failed) — never straight back to floated.
   await db.style.updateMany({ where: { id }, data: { eanAttempts: 0 } });
-  const view = await resolveAndPersistStyleEans(id);
+  // Force the Monday barcode-column fallback: a manual re-resolve reset the
+  // strike counter above, so the "budget spent" auto-trigger won't fire — but
+  // a human explicitly asking to resolve wants the best available answer, so
+  // consult Monday whenever this attempt's PO scrape comes up empty.
+  const view = await resolveAndPersistStyleEans(id, { forceMondayFallback: true });
   return NextResponse.json(view);
 }

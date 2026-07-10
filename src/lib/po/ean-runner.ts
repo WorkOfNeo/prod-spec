@@ -9,7 +9,8 @@ import { triggerRunner } from "@/lib/queue/trigger";
 import { maybeEnqueueStyleGeneration } from "@/lib/queue/generation-sweep";
 import { getAutomationMinPo } from "@/lib/settings/app-settings";
 import { resolveStyleEans, type StyleEanStatus as ResolveStatus } from "./resolve-style-eans";
-import { MAX_EAN_ATTEMPTS } from "./ean-status-meta";
+import { MAX_EAN_ATTEMPTS, FLOATABLE_STATUSES } from "./ean-status-meta";
+import { resolveStyleEansFromMonday, type MondayFallbackResult } from "./monday-barcode-fallback";
 import type { EanView } from "./ean-view";
 
 // =====================================================
@@ -46,6 +47,10 @@ const RETRYABLE: DbEanStatus[] = [
   "STYLE_NOT_IN_PO",
   "ERROR",
 ];
+
+// The non-resolved outcomes where the Monday barcode-column fallback is worth
+// trying — the same set that can float. Kept as a Set for the persist path.
+const FLOATABLE_DB = new Set<DbEanStatus>(FLOATABLE_STATUSES as readonly DbEanStatus[]);
 
 export type EanRunSummary = {
   processed: number;
@@ -135,13 +140,18 @@ async function releaseStaleResolving(): Promise<void> {
 }
 
 // Re-queue PO'd styles that didn't fully resolve yet (no barcode page, PO not
-// found, transient error) once the retry window has passed and while strikes
-// remain — at MAX_EAN_ATTEMPTS the row floats and waits for a manual Re-resolve.
-// Queueing is event-driven: we deliberately do NOT re-queue NONE rows here, so
-// the historical backlog stays parked — a style only (re-)enters via a new or
-// changed PO at ingest. The PO cutoff bounds even the retries: nothing below
-// the cutoff is auto-retried. Terminal-good states (RESOLVED / PARTIAL) and
-// no-PO rows are left untouched.
+// found, transient error) once the retry window has passed. The budget guard
+// is `<= MAX_EAN_ATTEMPTS`, not `<`, on purpose: the strikes 0..MAX-1 are the
+// normal PO-scrape retries, and the ONE extra pass at exactly MAX_EAN_ATTEMPTS
+// gives every floated row a final shot — one more PO scrape plus the Monday
+// barcode-column fallback (resolveAndPersistStyleEans fires it when the budget
+// is spent). After that pass a still-failing row is at MAX+1 and rests. This
+// is what sweeps the pre-existing floated backlog through the fallback once.
+// Queueing is otherwise event-driven: we deliberately do NOT re-queue NONE
+// rows here, so the historical backlog stays parked — a style only (re-)enters
+// via a new or changed PO at ingest. The PO cutoff bounds even the retries:
+// nothing below the cutoff is auto-retried. Terminal-good states (RESOLVED /
+// RESOLVED_FROM_MONDAY / PARTIAL) and no-PO rows are left untouched.
 async function requeueRetryable(minPo: number | null): Promise<number> {
   const cutoff = new Date(Date.now() - RETRY_AFTER_MS);
   const requeued = await db.style.updateMany({
@@ -153,12 +163,12 @@ async function requeueRetryable(minPo: number | null): Promise<number> {
       OR: [
         {
           eanStatus: { in: RETRYABLE },
-          eanAttempts: { lt: MAX_EAN_ATTEMPTS },
+          eanAttempts: { lte: MAX_EAN_ATTEMPTS },
           eanResolvedAt: { lt: cutoff },
         },
         {
           eanStatus: { in: RETRYABLE },
-          eanAttempts: { lt: MAX_EAN_ATTEMPTS },
+          eanAttempts: { lte: MAX_EAN_ATTEMPTS },
           eanResolvedAt: null,
         },
       ],
@@ -172,20 +182,72 @@ async function requeueRetryable(minPo: number | null): Promise<number> {
 // view. Used by both the runner loop and the admin "Re-resolve" endpoint so a
 // manual resolve persists exactly like a queued one. Throws on unexpected
 // failure (the runner catches it and marks ERROR; the route surfaces a 500).
-export async function resolveAndPersistStyleEans(styleId: string): Promise<EanView> {
+export async function resolveAndPersistStyleEans(
+  styleId: string,
+  opts: { forceMondayFallback?: boolean } = {},
+): Promise<EanView> {
   const result = await resolveStyleEans(styleId);
-  const dbStatus = toDbStatus(result.status);
-  const withEan = result.sizeEans.filter((s) => s.ean13).length;
-  // RESOLVED / PARTIAL are the healthy outcomes — reset the strike counter.
-  // Everything else (error / not-found / no-barcode) is a strike toward the
-  // MAX_EAN_ATTEMPTS float cap enforced by requeueRetryable().
-  const resolved = dbStatus === "RESOLVED" || dbStatus === "PARTIAL";
+  let dbStatus = toDbStatus(result.status);
+  let sizeEans = result.sizeEans;
+  let cartonEan = result.cartonEan;
+  let message = result.message;
+
+  // Monday barcode fallback. When the PO scrape produced no usable EANs, read
+  // the Pre-Order "Barcode Number" / "Carton Barcode number 1" text columns
+  // instead of floating the row — but only once the PO retry budget is spent
+  // (this attempt reaches MAX_EAN_ATTEMPTS) or a human forced it (the /po-eans
+  // Re-resolve). A hit becomes a terminal-good RESOLVED_FROM_MONDAY.
+  let mondayFallback: MondayFallbackResult | null = null;
+  if (FLOATABLE_DB.has(dbStatus)) {
+    const priorAttempts =
+      (await db.style.findUnique({ where: { id: styleId }, select: { eanAttempts: true } }))
+        ?.eanAttempts ?? 0;
+    const budgetSpent = priorAttempts + 1 >= MAX_EAN_ATTEMPTS;
+    if (opts.forceMondayFallback || budgetSpent) {
+      mondayFallback = await resolveStyleEansFromMonday(styleId);
+      if (mondayFallback) {
+        sizeEans = mondayFallback.sizeEans;
+        cartonEan = mondayFallback.cartonEan;
+        dbStatus = "RESOLVED_FROM_MONDAY";
+        message = `Barcodes read from Monday (${mondayFallback.matchedSizes}/${sizeEans.length} sizes${
+          mondayFallback.assortEan ? " + assort" : ""
+        }${mondayFallback.invalid.length ? `; ${mondayFallback.invalid.length} invalid ignored` : ""})`;
+      }
+    }
+  }
+
+  const withEan = sizeEans.filter((s) => s.ean13).length;
+  // RESOLVED / PARTIAL / RESOLVED_FROM_MONDAY are the healthy outcomes — reset
+  // the strike counter. Everything else (error / not-found / no-barcode) is a
+  // strike toward the MAX_EAN_ATTEMPTS float cap enforced by requeueRetryable().
+  const resolved =
+    dbStatus === "RESOLVED" || dbStatus === "PARTIAL" || dbStatus === "RESOLVED_FROM_MONDAY";
+
+  // Diagnostics trail: the PO-scrape verdict (why it failed) plus, when we fell
+  // back, a summary of what the Monday columns held. poSections (the per-section
+  // scrape dump) is a live-UI affordance only — strip it so it doesn't bloat
+  // every Log row.
+  const logPayload = {
+    ...(result.diagnostics ? { ...result.diagnostics, poSections: undefined } : {}),
+    ...(mondayFallback
+      ? {
+          mondayFallback: {
+            matchedSizes: mondayFallback.matchedSizes,
+            totalSizes: sizeEans.length,
+            assortEan: mondayFallback.assortEan,
+            invalid: mondayFallback.invalid,
+            productField: mondayFallback.productField,
+            cartonField: mondayFallback.cartonField,
+          },
+        }
+      : {}),
+  };
 
   await db.$transaction([
     // Replace the per-size rows wholesale — simplest correct way to keep
-    // style_eans in lockstep with the latest PO read (sizes can change).
+    // style_eans in lockstep with the latest read (sizes can change).
     db.styleEan.deleteMany({ where: { styleId } }),
-    ...result.sizeEans.map((s, i) =>
+    ...sizeEans.map((s, i) =>
       db.styleEan.create({
         data: {
           styleId,
@@ -201,7 +263,7 @@ export async function resolveAndPersistStyleEans(styleId: string): Promise<EanVi
       where: { id: styleId },
       data: {
         eanStatus: dbStatus,
-        cartonEan: result.cartonEan,
+        cartonEan,
         poFileName: result.poFileName,
         eanResolvedAt: new Date(),
         eanResolveStartedAt: null,
@@ -210,21 +272,13 @@ export async function resolveAndPersistStyleEans(styleId: string): Promise<EanVi
     }),
     db.log.create({
       data: {
-        // RESOLVED / PARTIAL are healthy; everything else is worth flagging
+        // RESOLVED* / PARTIAL are healthy; everything else is worth flagging
         // for review, so log it at WARN with the full diagnostics payload.
         level: resolved ? "INFO" : "WARN",
-        message: `ean resolve ${styleId}: ${result.status} (${withEan}/${result.sizeEans.length} sizes${
-          result.poFileName ? `, po=${result.poFileName}` : ""
+        message: `ean resolve ${styleId}: ${dbStatus} (${withEan}/${sizeEans.length} sizes${
+          mondayFallback ? ", via Monday fallback" : result.poFileName ? `, po=${result.poFileName}` : ""
         })`,
-        // Full verification trail: chosen file + candidate list, barcode-page
-        // detection, raw 13-digit token count, parsed items/variants and a
-        // text snippet — so PO_FOUND_NO_EANS can be confirmed as "genuinely
-        // no barcode page" vs "wrong file" vs "parser miss". poSections (the
-        // per-section scrape dump) is a live-UI affordance only — strip it so
-        // it doesn't bloat every Log row.
-        payload: (result.diagnostics
-          ? { ...result.diagnostics, poSections: undefined }
-          : undefined) as unknown as object,
+        payload: (Object.keys(logPayload).length ? logPayload : undefined) as unknown as object,
       },
     }),
   ]);
@@ -257,7 +311,8 @@ export async function resolveAndPersistStyleEans(styleId: string): Promise<EanVi
   // One-line summary in the dev/worker console with the decisive signals.
   const d = result.diagnostics;
   console.info(
-    `[ean] ${styleId} → ${result.status}` +
+    `[ean] ${styleId} → ${dbStatus}` +
+      (mondayFallback ? ` (monday ${mondayFallback.matchedSizes}/${sizeEans.length})` : "") +
       ` | file="${result.poFileName ?? "-"}"` +
       ` | candidates=${d?.candidateCount ?? "?"}` +
       ` | barcodePage=${d?.barcodePageFound ?? "?"}` +
@@ -267,10 +322,10 @@ export async function resolveAndPersistStyleEans(styleId: string): Promise<EanVi
 
   return {
     status: dbStatus,
-    message: result.message,
+    message,
     poFileName: result.poFileName,
-    sizeEans: result.sizeEans,
-    cartonEan: result.cartonEan,
+    sizeEans,
+    cartonEan,
     diagnostics: result.diagnostics,
   };
 }

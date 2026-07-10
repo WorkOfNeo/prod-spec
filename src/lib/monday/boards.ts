@@ -129,6 +129,19 @@ export const MONDAY_PRE_ORDER_COLS = {
   styleFolderUrl: process.env.MONDAY_PRE_ORDER_COL_FOLDER_LINK ?? "link_mkrca16v",
 } as const;
 
+// TEXT columns on the Pre Order board holding buyer-entered barcodes, used as
+// the FALLBACK when the PO PDF scrape can't produce EANs (see
+// src/lib/po/monday-barcode-fallback.ts). These are distinct from the legacy
+// NUMERIC "Barcode Number" / "Carton Barcode number" columns — only the text
+// columns can hold the per-size "SIZE:EAN" lists the buyers type. Confirmed
+// against the live board on 2026-07-08; env-overridable without a deploy.
+export const MONDAY_PRE_ORDER_BARCODE_COLS = {
+  // "Barcode Number" — per-size product EAN-13 list.
+  product: process.env.MONDAY_PRE_ORDER_COL_BARCODE_NUMBER ?? "text_mm51c0mj",
+  // "Carton Barcode number 1" — per-size carton EAN list + "Assort - <EAN>".
+  carton: process.env.MONDAY_PRE_ORDER_COL_CARTON_BARCODE ?? "text_mm51twj9",
+} as const;
+
 export function listKnownBoardIds(): string[] {
   return listKnownBoards().map((b) => b.id);
 }

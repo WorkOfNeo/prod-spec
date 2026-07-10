@@ -82,6 +82,7 @@ export type EanStatusValue =
   | "PENDING"
   | "RESOLVING"
   | "RESOLVED"
+  | "RESOLVED_FROM_MONDAY"
   | "PARTIAL"
   | "PO_FOUND_NO_EANS"
   | "PO_NOT_FOUND"
@@ -366,6 +367,19 @@ function sourceStep(input: ReadinessNoticeInput): ReadinessStep | null {
         detail: poFileName
           ? `Matched ${poFileName} · EANs resolved.`
           : "PO found, sizes matched, EANs resolved.",
+        owner: "SYSTEM",
+      };
+    case "RESOLVED_FROM_MONDAY":
+      // PO scrape came up empty, so barcodes were taken from the Pre-Order
+      // "Barcode Number" / "Carton Barcode number 1" columns. Settled, but
+      // named so a reviewer knows the codes are buyer-entered, not scraped.
+      return {
+        key: "po-resolved-monday",
+        status: "ok",
+        tone: "green",
+        title: "Barcodes from Monday",
+        detail:
+          "The PO scrape found no EANs, so the barcodes were read from the Pre-Order barcode columns. Verify them if the PO later gains a barcode page.",
         owner: "SYSTEM",
       };
     default:
