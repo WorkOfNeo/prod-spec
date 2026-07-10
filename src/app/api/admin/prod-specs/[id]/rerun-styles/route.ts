@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin } from "@/lib/roles";
 import { enqueueBulkRun } from "@/lib/queue/bulk-run";
-import { computeProdSpecRerunPlan } from "@/lib/outputs/prod-spec-rerun";
+import { listProdSpecStyleRuns } from "@/lib/outputs/prod-spec-rerun";
 
 export const runtime = "nodejs";
 // Enqueue-only — the jobs render in the background (runner cron), so this
@@ -23,10 +23,11 @@ async function gate(): Promise<Gate> {
 }
 
 // GET ?batchId=<id> → live progress for that batch (the panel polls this after
-// it starts a run, so a run begun elsewhere can't hijack the card).
-// GET (no batchId) → the rerun plan summary: how many styles would rerun, the
-// rejected/new-missing breakdown, and a capped "affected styles" sample so the
-// operator can SEE which styles are reviewed-and-rejected before running.
+// it starts a "Run all", so a run begun elsewhere can't hijack the card).
+// GET (no batchId) → the full run list: EVERY active style on this spec, each
+// with its scoped run set (new/missing + rejected ready outputs), a last-run
+// stamp, and whether that run was automated or manual. The table shows this;
+// per-row Run buttons post to /api/admin/styles/[id]/rerun with the row's keys.
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const g = await gate();
   if (!g.ok) return g.res;
@@ -35,18 +36,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const batchId = req.nextUrl.searchParams.get("batchId");
   if (batchId) return batchProgress(batchId);
 
-  const plan = await computeProdSpecRerunPlan(id);
-  return NextResponse.json({
-    active: plan.prodSpecActive,
-    generatedStyles: plan.generatedStyles,
-    toRerun: plan.toRerun.length,
-    withMissing: plan.withMissing,
-    withRejected: plan.withRejected,
-    sample: plan.sample,
-  });
+  const list = await listProdSpecStyleRuns(id);
+  return NextResponse.json(list);
 }
 
-// POST — enqueue the rerun plan (new/missing + rejected outputs per style),
+// POST — "Run all": enqueue every runnable style on the spec (new/missing +
+// rejected outputs each, approved work left alone; in-flight styles skipped),
 // grouped under a BulkRunBatch. Returns the batchId for scoped progress polling.
 export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const g = await gate();
@@ -64,9 +59,15 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     );
   }
 
-  const plan = await computeProdSpecRerunPlan(id);
+  // Same source of truth as the list the operator is looking at: run the rows
+  // that have outputs to regenerate and aren't already in flight.
+  const list = await listProdSpecStyleRuns(id);
+  const runnable = list.rows
+    .filter((r) => !r.inFlight && r.variantKeys.length > 0)
+    .map((r) => ({ id: r.id, prodSpecId: id, variantKeys: r.variantKeys }));
+
   const { batchId, enqueued } = await enqueueBulkRun({
-    runnable: plan.toRerun,
+    runnable,
     label: `Prod spec: ${spec.name}`,
     user: { id: g.userId, email: g.email },
   });
@@ -75,8 +76,8 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     ok: true,
     batchId,
     enqueued,
-    withMissing: plan.withMissing,
-    withRejected: plan.withRejected,
+    withMissing: list.withMissing,
+    withRejected: list.withRejected,
   });
 }
 
