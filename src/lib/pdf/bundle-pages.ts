@@ -52,6 +52,11 @@ export type BundleDocSummary = {
   // PDFs this output produced (renderMany variants emit one per size/EAN).
   // null ⇒ unknown at render time (editor preview) — shown as "—".
   fileCount: number | null;
+  // Approval state for the required-packaging manifest. true ⇒ the layout is
+  // approved (its size is confirmed); false ⇒ still in review, flagged
+  // "Awaiting Contrast confirmation" so the supplier expects it later;
+  // undefined ⇒ caller doesn't track approval (no status shown).
+  approved?: boolean;
 };
 
 export type CoverPageInput = {
@@ -87,14 +92,24 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
     ...(input.supplierName ? ([["Supplier", input.supplierName]] as Array<[string, string]>) : []),
   ];
 
+  // Any pending (not-yet-approved) row switches the status column on, so the
+  // supplier reads it as a manifest of what's still to come. When every row is
+  // approved (or approval isn't tracked, e.g. the editor preview) the sizes are
+  // all confirmed and the extra column would just be a wall of "Approved".
+  const hasPending = input.docs.some((d) => d.approved === false);
+  const statusCell = (approved: boolean | undefined): string => {
+    if (approved === true) return `<span class="ok">Approved</span>`;
+    if (approved === false) return `<span class="await">Awaiting Contrast confirmation</span>`;
+    return "—";
+  };
   const rows = input.docs
     .map(
       (d, i) => `
-        <tr>
+        <tr class="${d.approved === false ? "pending" : ""}">
           <td class="num">${i + 1}</td>
           <td class="doc">${esc(d.displayName)}</td>
           <td class="size">${fmtMm(d.widthMm)} × ${fmtMm(d.heightMm)} mm</td>
-          <td class="files">${d.fileCount === null ? "—" : d.fileCount}</td>
+          ${hasPending ? `<td class="status">${statusCell(d.approved)}</td>` : ""}
         </tr>`,
     )
     .join("");
@@ -113,16 +128,24 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
         )
         .join("")}
     </table>
-    <div class="caption">Documents in this bundle</div>
+    <div class="caption">Required packaging for this order</div>
     <table class="docs">
       <thead>
-        <tr><th>#</th><th>Document</th><th>Size (W × H)</th><th>Files</th></tr>
+        <tr><th>#</th><th>Packaging</th><th>Size (W × H)</th>${
+          hasPending ? "<th>Status</th>" : ""
+        }</tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
     <p class="note">
-      All dimensions are finished print sizes. Artwork files are supplied at 1:1 scale with
-      no bleed unless stated on the document itself.
+      All required packaging for this order is listed above. All dimensions are finished print
+      sizes; artwork files are supplied at 1:1 scale with no bleed unless stated on the document
+      itself.${
+        hasPending
+          ? ` Items marked <strong>Awaiting Contrast confirmation</strong> are still under review — their
+      artwork will follow once approved, so please expect them.`
+          : ""
+      }
     </p>`;
 
   const sections: A4Section[] = [
@@ -345,7 +368,27 @@ const COVER_CSS = `
   .cov table.docs td.num { width: 8mm; color: #a1a1aa; }
   .cov table.docs td.doc { font-weight: bold; }
   .cov table.docs td.size { width: 38mm; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .cov table.docs td.files { width: 16mm; text-align: right; font-variant-numeric: tabular-nums; }
+  .cov table.docs td.status { width: 52mm; }
+  /* Pending rows: the size is the PLANNED dimension, not yet confirmed by
+     Contrast — mute it so it reads as provisional next to the amber flag. */
+  .cov table.docs tr.pending td.size { color: #a1a1aa; }
+  .cov table.docs .ok {
+    color: #15803d;
+    font-weight: bold;
+    font-size: 0.9em;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .cov table.docs .await {
+    display: inline-block;
+    color: #b45309;
+    background: #fef3c7;
+    border: 0.2mm solid #fcd34d;
+    border-radius: 1mm;
+    padding: 0.3mm 1.6mm;
+    font-size: 0.82em;
+    font-weight: bold;
+  }
   .cov .note { margin-top: 5mm; font-size: 0.8em; color: #71717a; }
 `;
 

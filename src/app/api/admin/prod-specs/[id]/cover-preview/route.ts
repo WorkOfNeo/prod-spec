@@ -5,6 +5,7 @@ import { getVariant } from "@/lib/pdf/template-registry";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildSampleStyleData } from "@/lib/pdf/sample-data";
 import { parseBundlePageSettings, parseProdSpecOutputs } from "@/lib/prod-spec/config";
+import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 import { renderCoverPageHtml, type BundleDocSummary } from "@/lib/pdf/bundle-pages";
 import { inlineProdSpecImages } from "@/lib/pdf/inline-images";
 
@@ -35,13 +36,19 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   if (!prodSpec) return NextResponse.json({ error: "ProdSpec not found" }, { status: 404 });
 
   try {
+    const sizeMap = await loadInfoAreaSizeMap();
     const outputs = parseProdSpecOutputs(prodSpec.outputs).filter((o) => o.enabled !== false);
     const docs: BundleDocSummary[] = outputs.map((o) => {
       const variant = getVariant(o.variantKey);
+      // Same size resolution as the runner (info-area picks honoured) so the
+      // preview matches the generated cover. No approval status here — this is a
+      // config preview with no style; the real per-job cover flags approved vs
+      // "Awaiting Contrast confirmation" from live review state.
+      const dims = effectiveOutputDims(o, variant?.isInfoArea ?? false, sizeMap);
       return {
         displayName: variant?.name ?? o.variantKey,
-        widthMm: o.widthMm,
-        heightMm: o.heightMm,
+        widthMm: dims.widthMm,
+        heightMm: dims.heightMm,
         // Multi-document variants (repeat-per-EAN) only know their file
         // count against a real style — "—" on the sample preview.
         fileCount: variant?.renderMany ? null : 1,

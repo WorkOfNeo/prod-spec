@@ -11,11 +11,8 @@ import {
 } from "@/lib/outputs/output-field-values";
 import { countPlaceholderMarkers } from "@/lib/pdf/placeholders";
 import { defaultArtifactFileName } from "@/lib/pdf/template-registry";
-import {
-  COVER_VARIANT_KEY,
-  renderCoverPageHtml,
-  type BundleDocSummary,
-} from "@/lib/pdf/bundle-pages";
+import { COVER_VARIANT_KEY, renderCoverPageHtml } from "@/lib/pdf/bundle-pages";
+import { buildRequiredPackagingForStyle } from "@/lib/outputs/required-packaging";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import {
   DEFAULT_OUTPUTS,
@@ -157,9 +154,6 @@ export async function renderProdSpecTestBundle(
   // test bundle mirrors what the runner would generate. Fail-soft empty.
   const fieldValues = await loadStyleFieldValues(styleId);
   const outputDocs: TestBundleDoc[] = [];
-  // One row per OUTPUT for the cover's document table — built as we render
-  // so the cover reflects the real generated list (and real file counts).
-  const docSummaries: BundleDocSummary[] = [];
 
   for (const output of outputs) {
     const variant = resolveOutputVariant(output);
@@ -209,12 +203,6 @@ export async function renderProdSpecTestBundle(
             error: null,
           });
         }
-        docSummaries.push({
-          displayName: variant.name,
-          widthMm: dims.widthMm,
-          heightMm: dims.heightMm,
-          fileCount: parts.length,
-        });
         continue;
       }
 
@@ -241,12 +229,6 @@ export async function renderProdSpecTestBundle(
         placeholderCount,
         pdf,
         error: null,
-      });
-      docSummaries.push({
-        displayName: variant.name,
-        widthMm: dims.widthMm,
-        heightMm: dims.heightMm,
-        fileCount: 1,
       });
     } catch (err) {
       // Resilient: surface the broken output as a card, keep going.
@@ -282,7 +264,9 @@ export async function renderProdSpecTestBundle(
       poNumber: style.poNumber ?? null,
       supplierName: style.supplier?.name ?? null,
       generatedAt: new Date(),
-      docs: docSummaries,
+      // The required-packaging manifest with live approval state (dry run
+      // against a real style) — same builder the publish cover uses.
+      docs: await buildRequiredPackagingForStyle(styleId),
       settings: pageSettings.cover,
       generalInfo: generalInfoMd
         ? { markdown: generalInfoMd, settings: pageSettings.generalInfo }
