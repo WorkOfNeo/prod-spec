@@ -41,6 +41,11 @@ import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
 import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
 import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
 import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
+import {
+  ignoreBaseKey,
+  loadStyleFieldValues,
+  mergeFieldOverrides,
+} from "@/lib/outputs/output-field-values";
 
 const STALE_RUNNING_MS = 15 * 60 * 1000;
 
@@ -318,17 +323,29 @@ export async function processJob(jobId: string): Promise<void> {
   // brings the runner in line with the auto-enqueue gate. Per-output required
   // fields are defined by the ProdSpec, so the gate engages only when one is
   // present (see the conditional below).
+  // Per-style reviewer-supplied field values (inline fills / overrides) —
+  // loaded once and used in BOTH the readiness gate (so a filled field lets a
+  // previously-blocked output through this gate) and the render merge below (so
+  // the value actually prints). Fail-soft empty until db:deploy lands the table.
+  const fieldValues = await loadStyleFieldValues(job.styleId);
+
   const readyKeys = new Set(
     (prodSpec
-      ? outputReadinessForStyle({
-          rawData: job.style.rawData,
-          poNumber: job.style.poNumber,
-          supplier: job.style.supplier,
-          eans: job.style.eans,
-          cartonEan: job.style.cartonEan,
-          customer: { config: job.style.customer.config },
-          prodSpec: { outputs: prodSpec.outputs, columnMapping: prodSpec.columnMapping },
-        })
+      ? outputReadinessForStyle(
+          {
+            rawData: job.style.rawData,
+            poNumber: job.style.poNumber,
+            supplier: job.style.supplier,
+            eans: job.style.eans,
+            cartonEan: job.style.cartonEan,
+            customer: { config: job.style.customer.config },
+            prodSpec: { outputs: prodSpec.outputs, columnMapping: prodSpec.columnMapping },
+          },
+          undefined,
+          undefined,
+          undefined,
+          fieldValues,
+        )
       : []
     )
       .filter((r) => r.ready)
@@ -514,8 +531,15 @@ export async function processJob(jobId: string): Promise<void> {
       // multi-style carton marking is a manual one-off (the carton dialog),
       // never standing config, so the runner never flips style.multipleStyles
       // and {{style2}}+ stay empty here.
+      // Admin pins on the output ∪ this style's inline field values (per-style
+      // wins), so a reviewer's filled/overridden value prints — the same merge
+      // the readiness gate above used to let this output through.
+      const overrides = mergeFieldOverrides(
+        output.fieldOverrides,
+        fieldValues.get(ignoreBaseKey(output.variantKey, variant.docType)),
+      );
       const renderStyle = applyCartonBarcodePrefs(
-        applyFieldOverrides(styleData, output.fieldOverrides),
+        applyFieldOverrides(styleData, overrides),
         output,
       );
       // Printed size — the info-area size override (admin pick or custom)

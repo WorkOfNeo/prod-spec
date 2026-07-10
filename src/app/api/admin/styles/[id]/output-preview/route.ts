@@ -2,6 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getServerSession } from "@/lib/auth-server";
 import { getVariant } from "@/lib/pdf/template-registry";
 import { applyFieldOverrides, withSelectedSiblings } from "@/lib/pdf/pins";
+import {
+  ignoreBaseKey,
+  loadStyleFieldValues,
+  mergeFieldOverrides,
+} from "@/lib/outputs/output-field-values";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 
@@ -69,7 +74,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const siblingIdsParam = req.nextUrl.searchParams.get("siblingIds");
 
   try {
-    let renderStyle = applyFieldOverrides(context.styleData, output.fieldOverrides);
+    // Admin pins ∪ this style's inline field values (per-style wins), so the
+    // live preview matches what the runner will generate after a save.
+    const fieldValues = await loadStyleFieldValues(id);
+    const overrides = mergeFieldOverrides(
+      output.fieldOverrides,
+      fieldValues.get(ignoreBaseKey(baseKey, variant.docType)),
+    );
+    let renderStyle = applyFieldOverrides(context.styleData, overrides);
     if (siblingIdsParam !== null) {
       renderStyle = withSelectedSiblings(renderStyle, siblingIdsParam.split(",").filter(Boolean));
     }

@@ -2,8 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
-import { isAdmin } from "@/lib/roles";
+import { isAdmin, canReview } from "@/lib/roles";
 import { AssetActions } from "./asset-actions";
+import { OutputFieldEditor } from "./output-field-editor";
 import { OutputBulkActions } from "./output-bulk-actions";
 import { SupplierPushActions } from "./supplier-push-actions";
 import { ReviewClaim } from "./claim-review";
@@ -72,11 +73,16 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   });
   if (!style) notFound();
 
-  const [outputs, docTypeLabels] = await Promise.all([
+  const { loadStyleFieldValues } = await import("@/lib/outputs/output-field-values");
+  const [outputs, docTypeLabels, fieldValuesByKey] = await Promise.all([
     getCurrentOutputsForStyle(id),
     loadDocTypeLabels(),
+    loadStyleFieldValues(id),
   ]);
   const rollup = rollupOutputSlots(outputs);
+  // Reviewers (ADMIN or REVIEWER) may fill/override output fields inline; other
+  // viewers see the fields read-only. The endpoint enforces the same gate.
+  const canEditFields = canReview(role);
 
   // The shared, role-aware Output Readiness Notice — one model that folds the
   // whole pipeline (SharePoint → PO → EANs → fields → generation → review) into
@@ -330,6 +336,8 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                     styleId={style.id}
                     styleContext={styleContext}
                     canPush={canPush}
+                    canEditFields={canEditFields}
+                    fieldValues={fieldValuesByKey.get(o.variantKey.split("#")[0]) ?? {}}
                   />
                 ))}
               </div>
@@ -343,7 +351,11 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           <DocTypeAccordion
             label="Missing fields — could not be generated"
             count={missingFieldOutputs.length}
-            rightHint="fill the fields on Monday, then they generate automatically"
+            rightHint={
+              canEditFields
+                ? "fill the values here to generate, or add them on Monday"
+                : "fill the fields on Monday, then they generate automatically"
+            }
           >
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
               {missingFieldOutputs.map((o) => (
@@ -352,32 +364,52 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                   className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4"
                 >
                   <div className="text-sm font-semibold text-amber-900">{o.name}</div>
-                  <p className="mt-1 text-xs leading-relaxed text-amber-800">
-                    Missing fields, output could not be generated. Please fill these in{" "}
-                    {mondayHref ? (
-                      <a
-                        href={mondayHref}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-medium underline"
-                      >
-                        Monday
-                      </a>
-                    ) : (
-                      "Monday"
-                    )}
-                    :
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {o.missing.map((m) => (
-                      <span
-                        key={m.field}
-                        className="rounded-md border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-800"
-                      >
-                        {m.label}
-                      </span>
-                    ))}
-                  </div>
+                  {canEditFields ? (
+                    <>
+                      <p className="mt-1 text-xs leading-relaxed text-amber-800">
+                        Couldn&apos;t generate — missing data. Fill it in and it&apos;ll render:
+                      </p>
+                      <div className="mt-2">
+                        <OutputFieldEditor
+                          styleId={style.id}
+                          variantKey={o.variantKey}
+                          outputName={o.name}
+                          submitLabel="Save & generate"
+                          missing={o.missing}
+                          mondayHref={mondayHref ?? undefined}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-1 text-xs leading-relaxed text-amber-800">
+                        Missing fields, output could not be generated. Please fill these in{" "}
+                        {mondayHref ? (
+                          <a
+                            href={mondayHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-medium underline"
+                          >
+                            Monday
+                          </a>
+                        ) : (
+                          "Monday"
+                        )}
+                        :
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {o.missing.map((m) => (
+                          <span
+                            key={m.field}
+                            className="rounded-md border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                          >
+                            {m.label}
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
@@ -461,11 +493,19 @@ function OutputReviewCard({
   styleId,
   styleContext,
   canPush,
+  canEditFields = false,
+  fieldValues = {},
 }: {
   o: CurrentOutput;
   styleId: string;
   styleContext: string;
   canPush: boolean;
+  // Reviewer may override this output's fields inline (ADMIN/REVIEWER). The
+  // "Earlier generations" cards leave this off — they're reference-only.
+  canEditFields?: boolean;
+  // Current per-style override values for this output (field → value), so the
+  // editor pre-fills what's already set.
+  fieldValues?: Record<string, string>;
 }) {
   const previewUrl = `/api/admin/jobs/${o.jobId}/preview?variantKey=${encodeURIComponent(o.variantKey)}`;
   // Carton-capable outputs (numbering / multi-style) get an in-review Customize
@@ -607,6 +647,27 @@ function OutputReviewCard({
           label="Re-run this output"
         />
       </div>
+      {/* Inline field override — type a value for a field on THIS style's copy
+          of this output and re-render (e.g. fix a colour name). Persists per
+          style + output; the runner uses it on every future generation too.
+          Framing pages (cover / general info) carry no editable fields. */}
+      {canEditFields && canIgnore ? (
+        <details className="border-t border-zinc-100 px-3 py-2">
+          <summary className="cursor-pointer text-[11px] font-medium text-zinc-500 hover:text-zinc-700">
+            Edit fields{Object.keys(fieldValues).length > 0 ? ` (${Object.keys(fieldValues).length} set)` : ""}
+          </summary>
+          <div className="mt-2">
+            <OutputFieldEditor
+              styleId={styleId}
+              variantKey={baseKey}
+              outputName={o.name}
+              submitLabel="Save & re-render"
+              initialValues={fieldValues}
+              allowAdd
+            />
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }
