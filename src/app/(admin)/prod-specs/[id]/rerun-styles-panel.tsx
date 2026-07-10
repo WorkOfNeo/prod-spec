@@ -55,6 +55,9 @@ export function RerunStylesPanel({
   const [runningRows, setRunningRows] = useState<Set<string>>(() => new Set());
   // Per-row failures, keyed by styleId — cleared when that row runs again.
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  // Manual "Refresh" affordance state (pull the latest queue/last-run without a
+  // reload — useful to catch a style the automation just queued).
+  const [refreshing, setRefreshing] = useState(false);
 
   const activeRun = batch != null && batch.finishedAt == null;
 
@@ -130,6 +133,26 @@ export function RerunStylesPanel({
       window.clearInterval(id);
     };
   }, [activeRun, batch, fetchBatch, fetchList, storageKey]);
+
+  // Whether any style is currently queued or generating — drives the live
+  // auto-refresh below and the "live" pill in the header.
+  const anyInFlight = (list?.rows ?? []).some((r) => r.queueState != null);
+
+  // Live refresh while work is in flight: re-poll the list so a row moves
+  // Queued → Generating → done (last-run updates) without a manual reload. Only
+  // runs while something is actually in flight, so an idle spec does no polling.
+  useEffect(() => {
+    if (!anyInFlight) return;
+    let cancelled = false;
+    const id = window.setInterval(async () => {
+      const l = await fetchList();
+      if (!cancelled && l) setList(l);
+    }, POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [anyInFlight, fetchList]);
 
   const runAllDisabledReason = unsaved
     ? "Save your output changes first"
@@ -209,6 +232,17 @@ export function RerunStylesPanel({
     }
   }
 
+  async function refresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      const l = await fetchList();
+      if (l) setList(l);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   const totalRows = list?.rows.length ?? 0;
   const filtered = useMemo(() => {
     const all = list?.rows ?? [];
@@ -260,7 +294,24 @@ export function RerunStylesPanel({
           <span className="inline-flex items-center gap-1">
             · <Dot className="bg-zinc-900" /> {list.toRerun} to run
           </span>
-          <div className="ml-auto">
+          {anyInFlight && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700"
+              title="A style is queued or generating — the list is refreshing live"
+            >
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" /> live
+            </span>
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              disabled={refreshing}
+              title="Refresh the queue + last-run info"
+              className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+            >
+              <RefreshIcon spinning={refreshing} /> Refresh
+            </button>
             <input
               type="search"
               value={query}
@@ -445,10 +496,25 @@ function StyleRow({
 }
 
 function ToRunCell({ row }: { row: StyleRunRow }) {
-  if (row.inFlight) {
+  // In flight: distinguish Queued (accepted, waiting for the runner) from
+  // Generating (actively rendering) — the "system is working on it" signal.
+  if (row.queueState === "queued") {
     return (
-      <span className="inline-flex items-center gap-1 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600">
-        <Spinner className="h-3 w-3" /> running
+      <span
+        className="inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700"
+        title="Accepted into the generation queue — waiting for the runner to pick it up"
+      >
+        <ClockIcon /> Queued
+      </span>
+    );
+  }
+  if (row.queueState === "running" || row.inFlight) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600"
+        title="Rendering now"
+      >
+        <Spinner className="h-3 w-3" /> Generating
       </span>
     );
   }
@@ -542,6 +608,42 @@ function timeAgo(iso: string): string {
 
 function Dot({ className }: { className: string }) {
   return <span className={`inline-block h-1.5 w-1.5 rounded-full ${className}`} aria-hidden="true" />;
+}
+
+function ClockIcon() {
+  return (
+    <svg
+      className="h-3 w-3 shrink-0"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function RefreshIcon({ spinning = false }: { spinning?: boolean }) {
+  return (
+    <svg
+      className={`h-3.5 w-3.5 shrink-0 ${spinning ? "animate-spin" : ""}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v6h-6" />
+    </svg>
+  );
 }
 
 function Spinner({ className = "h-4 w-4" }: { className?: string }) {

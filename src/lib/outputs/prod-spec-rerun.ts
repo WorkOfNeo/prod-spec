@@ -265,8 +265,10 @@ export type StyleRunRow = {
   missing: number;
   rejected: number;
   // A QUEUED/RUNNING job is already in flight — the row can't be re-run yet and
-  // it's excluded from "Run all".
+  // it's excluded from "Run all". `queueState` says which: "queued" (accepted,
+  // waiting for the runner) vs "running" (actively rendering); null when idle.
   inFlight: boolean;
+  queueState: "queued" | "running" | null;
   // Newest job for this style, or null if it never ran.
   lastRun: StyleLastRun | null;
 };
@@ -339,13 +341,16 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
     if (!m.has(a.variantKey)) m.set(a.variantKey, a.reviewStatus);
   }
 
-  // Styles with a QUEUED/RUNNING job — shown as "running", not runnable.
+  // Styles with a QUEUED/RUNNING job — shown as Queued/Generating, not runnable.
   const inflight = await db.job.findMany({
     where: { styleId: { in: styleIds }, status: { in: ["QUEUED", "RUNNING"] } },
-    select: { styleId: true },
+    select: { styleId: true, status: true },
     distinct: ["styleId"],
   });
-  const inflightSet = new Set(inflight.map((j) => j.styleId));
+  // styleId → in-flight job status. At most one in-flight job per style (the
+  // enqueue paths refuse to double-enqueue), so distinct-by-style is exact.
+  const inflightByStyle = new Map<string, "QUEUED" | "RUNNING">();
+  for (const j of inflight) inflightByStyle.set(j.styleId, j.status as "QUEUED" | "RUNNING");
 
   // Newest job per style (any status) → the "Last run" stamp + trigger. Fetched
   // newest-first; first row seen per style wins (same reduce as the asset
@@ -414,7 +419,9 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
       // generated & not rejected (approved / awaiting review) → leave it.
     }
 
-    const isInflight = inflightSet.has(c.id);
+    const inflightStatus = inflightByStyle.get(c.id);
+    const isInflight = inflightStatus != null;
+    const queueState = inflightStatus === "RUNNING" ? "running" : inflightStatus === "QUEUED" ? "queued" : null;
     // "Run all" mirrors what the button will actually enqueue: runnable outputs
     // and not already in flight.
     if (variantKeys.length > 0 && !isInflight) {
@@ -434,6 +441,7 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
       missing: missingN,
       rejected: rejectedN,
       inFlight: isInflight,
+      queueState,
       lastRun: lj
         ? {
             at: (lj.finishedAt ?? lj.startedAt ?? lj.createdAt).toISOString(),
