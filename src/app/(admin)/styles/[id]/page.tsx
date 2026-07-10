@@ -166,11 +166,15 @@ export default async function StyleDetail({
           ? "history"
           : "details";
 
-  // Generation actions (Re-run, per-output Run, carton prints) are ADMIN-only
-  // — the API enforces it, and REVIEWERs (who can reach this page) must not see
-  // buttons that would only 403. Threaded into the output cards below.
+  // The output cards' generation actions (per-output Run, carton prints) stay
+  // ADMIN-only — the API enforces it, and REVIEWERs (who can reach this page)
+  // must not see buttons that would only 403. The header Generate / Re-run is
+  // the exception: a reviewer opening a style that hasn't generated yet has no
+  // review screen to work from, so kicking off a whole-style (re)generation is
+  // part of reviewing (canReview) — the rerun endpoint enforces the same.
   const { role } = await getSessionWithRole();
   const isAdmin = role === "ADMIN";
+  const canRun = role === "ADMIN" || role === "REVIEWER";
 
   const style = await db.style.findUnique({
     where: { id },
@@ -756,16 +760,20 @@ export default async function StyleDetail({
               Review
             </Link>
           )}
-          <Link
-            href={`/styles/${style.id}/edit`}
-            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-          >
-            Edit
-          </Link>
           {isAdmin && (
+            <Link
+              href={`/styles/${style.id}/edit`}
+              className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+            >
+              Edit
+            </Link>
+          )}
+          {canRun && (
             <RerunButton
               styleId={style.id}
               disabled={latestJob?.status === "RUNNING" || latestJob?.status === "QUEUED"}
+              label={currentFiles.length > 0 ? "Re-run" : "Generate"}
+              pendingLabel={currentFiles.length > 0 ? "Re-running…" : "Generating…"}
             />
           )}
         </div>
