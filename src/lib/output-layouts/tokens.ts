@@ -89,7 +89,10 @@ const RESOLVERS: Record<string, TextResolver> = {
       .map((x) => x.label)
       .filter(Boolean)
       .join(" - "),
-  price: (s) => (s.price ? `${s.price.amount.toFixed(2)} ${s.price.currency}` : ""),
+  price: (s) =>
+    s.price
+      ? `${s.price.amount.toFixed(2)}${s.price.currency ? ` ${s.price.currency}` : ""}`
+      : "",
 
   poNumber: (s) => s.poNumber ?? "",
   customerOrderNo: (s) => s.customerOrderNo ?? "",

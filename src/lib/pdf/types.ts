@@ -93,7 +93,10 @@ export type StyleData = {
 
   price?: {
     amount: number;
-    currency: "EUR" | "DKK" | "NOK" | "SEK" | "GBP";
+    // Only set when the source value carries an explicit ISO currency code.
+    // Otherwise omitted — we do NOT invent one. (Monday "Retail Currency"
+    // wiring is the planned follow-up; until then bare numbers print alone.)
+    currency?: "EUR" | "DKK" | "NOK" | "SEK" | "GBP";
   };
 
   supplierEmail?: string;

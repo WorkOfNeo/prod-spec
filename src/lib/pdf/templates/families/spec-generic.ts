@@ -361,7 +361,8 @@ async function renderField(
       if (!style.price) return "";
       const amount = style.price.amount.toFixed(2).replace(".", ",");
       const fmt = tweaks.format?.retailPrice;
-      const text = fmt ? fmt(amount) : `${amount} ${style.price.currency}`;
+      const withCurrency = style.price.currency ? `${amount} ${style.price.currency}` : amount;
+      const text = fmt ? fmt(amount) : withCurrency;
       return `<div class="price-line">${escapeHtml(text)}</div>`;
     }
 

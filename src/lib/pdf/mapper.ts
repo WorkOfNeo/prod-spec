@@ -189,8 +189,12 @@ function parsePrice(raw: string): StyleData["price"] | undefined {
   if (!match) return undefined;
   const amount = parseFloat(match[1].replace(",", "."));
   if (Number.isNaN(amount)) return undefined;
-  const currency = (match[2] ?? "EUR") as NonNullable<StyleData["price"]>["currency"];
-  return { amount, currency };
+  // Only carry a currency when the source value actually spells one out.
+  // No fallback — a bare number prints as just the amount rather than
+  // being silently labelled EUR. (Currency will come from Monday's
+  // "Retail Currency" column once that's wired up.)
+  const currency = match[2] as NonNullable<StyleData["price"]>["currency"] | undefined;
+  return currency ? { amount, currency } : { amount };
 }
 
 function ensureValidEan(input: string): string {
