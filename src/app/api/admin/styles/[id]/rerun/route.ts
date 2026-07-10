@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
-import { isAdmin } from "@/lib/roles";
+import { canReview, isAdmin } from "@/lib/roles";
 import { enqueueGenerationJob } from "@/lib/queue/enqueue";
 import { runPendingJobs } from "@/lib/queue/runner";
 
@@ -12,14 +12,11 @@ export const maxDuration = 300;
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  if (!isAdmin(role)) {
-    return NextResponse.json({ error: "Requires role: ADMIN" }, { status: 403 });
-  }
-
-  const { id } = await ctx.params;
 
   // Optional scope: { variantKeys: ["coop-dk-license-…"] } runs just those
-  // outputs (the per-output Run buttons). No/empty body = full re-run.
+  // outputs (the per-output Run / "Re-run this output" buttons). No/empty
+  // body = a full, whole-style re-run. Parsed before the role gate because the
+  // gate depends on the scope (reviewers may run one output, not the style).
   let variantKeys: string[] = [];
   try {
     const body = (await req.json()) as { variantKeys?: unknown };
@@ -29,6 +26,24 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   } catch {
     // No JSON body — classic full re-run.
   }
+
+  // Role gate. Reviewers may re-run an INDIVIDUAL output from the review screen
+  // (a scoped variantKeys set) — fixing one output's data and re-rendering it
+  // is part of reviewing, and mirrors the in-review carton customize, which is
+  // already canReview. Kicking off a WHOLE-style regeneration stays ADMIN-only.
+  const scoped = variantKeys.length > 0;
+  if (!(isAdmin(role) || (scoped && canReview(role)))) {
+    return NextResponse.json(
+      {
+        error: scoped
+          ? "Requires role: ADMIN or REVIEWER"
+          : "Re-running the whole style requires role: ADMIN",
+      },
+      { status: 403 },
+    );
+  }
+
+  const { id } = await ctx.params;
 
   const style = await db.style.findUnique({ where: { id } });
   if (!style) return NextResponse.json({ error: "Style not found" }, { status: 404 });
