@@ -534,14 +534,20 @@ export async function processJob(jobId: string): Promise<void> {
       // Admin pins on the output ∪ this style's inline field values (per-style
       // wins), so a reviewer's filled/overridden value prints — the same merge
       // the readiness gate above used to let this output through.
-      const overrides = mergeFieldOverrides(
-        output.fieldOverrides,
-        fieldValues.get(ignoreBaseKey(output.variantKey, variant.docType)),
-      );
+      const baseKey = ignoreBaseKey(output.variantKey, variant.docType);
+      const overrides = mergeFieldOverrides(output.fieldOverrides, fieldValues.get(baseKey));
       const renderStyle = applyCartonBarcodePrefs(
         applyFieldOverrides(styleData, overrides),
         output,
       );
+      // Per-PDF overrides for a multi-document output: values keyed
+      // "<base>#<suffix>" layer on top of the whole-output override for THAT
+      // document only (a reviewer corrected one PDF of a repeat-per-EAN set).
+      const docPrefix = `${baseKey}#`;
+      const perDocOverrides = new Map<string, Record<string, string>>();
+      for (const [k, v] of fieldValues) {
+        if (k.startsWith(docPrefix)) perDocOverrides.set(k.slice(docPrefix.length), v as Record<string, string>);
+      }
       // Printed size — the info-area size override (admin pick or custom)
       // when the variant is an info area, else the output's own dims.
       const dims = effectiveOutputDims(output, variant.isInfoArea ?? false, infoAreaSizes);
@@ -550,7 +556,11 @@ export async function processJob(jobId: string): Promise<void> {
       if (!variant.staticPdf && variant.renderMany) {
         // Multi-document variant: one PDF per returned doc, each its own
         // JobAsset under "<key>#<suffix>".
-        const docs = await variant.renderMany(renderStyle, dims);
+        const docs = await variant.renderMany(
+          renderStyle,
+          dims,
+          perDocOverrides.size > 0 ? perDocOverrides : undefined,
+        );
         for (const doc of docs) {
           const pdf = await renderPdf({ html: doc.html });
           const defaultName = fileNameFor(variant, styleData.styleNumber).replace(

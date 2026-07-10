@@ -10,6 +10,8 @@ import {
 } from "./tokens";
 import { layoutSettings, type LayoutSettings } from "./schema";
 import { renderLayoutHtml, repetitionStyles } from "./render";
+import { pinnableFieldsInDef } from "./tokens";
+import { applyFieldOverrides } from "@/lib/pdf/pins";
 
 // =====================================================
 // Layout → TemplateVariant bridge (SERVER-ONLY — imports db).
@@ -100,6 +102,9 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     defaultWidthMm: first.widthMm,
     defaultHeightMm: first.heightMm,
     requiredFields,
+    // The pinnable fields this layout prints — the review-time editor's
+    // pre-filled inputs (structured/derived tokens drop out).
+    editableFields: pinnableFieldsInDef(def),
     // Branch-dependent content ({{orderNo}}, {{if …}} conditionals) gates
     // readiness by the TAKEN branch only — evaluated per style.
     readiness: defNeedsDynamicReadiness(def) ? (resolve) => layoutReadinessColumns(def, resolve) : undefined,
@@ -133,18 +138,30 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     // {{colourName}} bound). Either way each file carries one EAN.
     renderMany:
       settings.repeatBy !== "none" && settings.splitBy === "ean"
-        ? (style, dims) =>
+        ? (style, dims, perDocOverrides) =>
             Promise.all(
               splitFilePlan(settings, style).map(async ({ suffix, fileName, repStyle }) => ({
                 suffix,
                 fileName,
-                html: await renderLayoutHtml(def, repStyle, {
-                  mode: "production",
-                  sizeOverrideMm: row.isInfoArea ? dims : undefined,
-                  customLogo: row.customLogo,
-                }),
+                // Per-PDF override (reviewer edited THIS document's fields)
+                // layers on top of the already whole-output-overridden row.
+                html: await renderLayoutHtml(
+                  def,
+                  applyFieldOverrides(repStyle, perDocOverrides?.get(suffix)),
+                  {
+                    mode: "production",
+                    sizeOverrideMm: row.isInfoArea ? dims : undefined,
+                    customLogo: row.customLogo,
+                  },
+                ),
               })),
             )
+        : undefined,
+    // Per-document styles (one per PDF) for the review-time editor's per-PDF
+    // pre-fill — same suffix + per-row narrowing as renderMany/filesPreview.
+    docStyles:
+      settings.repeatBy !== "none" && settings.splitBy === "ean"
+        ? (style) => splitFilePlan(settings, style).map(({ suffix, repStyle }) => ({ suffix, style: repStyle }))
         : undefined,
     // Pre-run preview: the same plan WITHOUT rendering — what the style
     // page shows as "files the next run will generate".

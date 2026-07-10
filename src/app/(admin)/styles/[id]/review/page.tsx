@@ -16,6 +16,10 @@ import { LogStyleView } from "@/components/log-style-view";
 import { groupByDocType, DocTypeAccordion } from "../doc-type-groups";
 import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { getVariant } from "@/lib/pdf/template-registry";
+import { applyFieldOverrides, readPinnableField } from "@/lib/pdf/pins";
+import { PINNABLE_FIELDS, isPinnableField } from "@/lib/pdf/pins-meta";
+import { loadStyleRenderContext } from "@/lib/styles/render-context";
+import type { StyleData } from "@/lib/pdf/types";
 import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
 import { baseVariantKey } from "@/lib/tickets/orphan";
 import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
@@ -74,11 +78,16 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   if (!style) notFound();
 
   const { loadStyleFieldValues } = await import("@/lib/outputs/output-field-values");
-  const [outputs, docTypeLabels, fieldValuesByKey] = await Promise.all([
+  const [outputs, docTypeLabels, fieldValuesByKey, renderContext] = await Promise.all([
     getCurrentOutputsForStyle(id),
     loadDocTypeLabels(),
     loadStyleFieldValues(id),
+    // StyleData for pre-filling the field editor with each output's current
+    // resolved values. Fail-soft: a preview-build hiccup just means blank
+    // pre-fills, never a broken review page.
+    loadStyleRenderContext(id).catch(() => null),
   ]);
+  const styleData = renderContext?.styleData ?? null;
   const rollup = rollupOutputSlots(outputs);
   // Reviewers (ADMIN or REVIEWER) may fill/override output fields inline; other
   // viewers see the fields read-only. The endpoint enforces the same gate.
@@ -337,7 +346,8 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                     styleContext={styleContext}
                     canPush={canPush}
                     canEditFields={canEditFields}
-                    fieldValues={fieldValuesByKey.get(o.variantKey.split("#")[0]) ?? {}}
+                    styleData={styleData}
+                    fieldValuesByKey={fieldValuesByKey}
                   />
                 ))}
               </div>
@@ -375,7 +385,9 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                           variantKey={o.variantKey}
                           outputName={o.name}
                           submitLabel="Save & generate"
-                          missing={o.missing}
+                          fields={o.missing.filter((m) => isPinnableField(m.field)).map((m) => m.field)}
+                          locked={o.missing.filter((m) => !isPinnableField(m.field))}
+                          overrides={fieldValuesByKey.get(o.variantKey) ?? {}}
                           mondayHref={mondayHref ?? undefined}
                         />
                       </div>
@@ -484,6 +496,42 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   );
 }
 
+// The editable-field editor props for one output (or one PDF of a multi-doc
+// output). `fields` = the pinnable fields this output prints; `resolved` = each
+// pinnable field's CURRENT value on THIS document (per-row for a multi-doc PDF,
+// with the shared base override folded in so the baseline matches what printed).
+// The editor pre-fills from `overrides[f] ?? resolved[f]` and only persists what
+// the reviewer changes away from `resolved`.
+function outputFieldEditorProps(
+  variantKey: string,
+  styleData: StyleData | null,
+  fieldValuesByKey: ReadonlyMap<string, Record<string, string>>,
+): { fields: string[]; resolved: Record<string, string> } {
+  const baseKey = variantKey.split("#")[0];
+  const variant = getVariant(baseKey);
+  const editable = (variant?.editableFields ?? (variant?.requiredFields ?? []).filter(isPinnableField)).filter(
+    isPinnableField,
+  );
+  const resolved: Record<string, string> = {};
+  if (styleData) {
+    // Multi-doc PDF → read from that document's per-row style (colour / carton
+    // EAN differ per PDF).
+    let src = styleData;
+    const hashIdx = variantKey.indexOf("#");
+    if (hashIdx >= 0 && variant?.docStyles) {
+      const suffix = variantKey.slice(hashIdx + 1);
+      const match = variant.docStyles(styleData).find((d) => d.suffix === suffix);
+      if (match) src = match.style;
+      // The shared, whole-output override (e.g. a pre-generation missing-field
+      // fill) is the baseline the per-PDF value layers over.
+      const baseOverride = fieldValuesByKey.get(baseKey);
+      if (baseOverride) src = applyFieldOverrides(src, baseOverride);
+    }
+    for (const f of PINNABLE_FIELDS) resolved[f] = readPinnableField(src, f);
+  }
+  return { fields: [...new Set(editable)], resolved };
+}
+
 // One reviewable output card — preview + identity header + decision footer.
 // Shared by the current-generation groups and the "Earlier generations"
 // history accordion so a prior-run decision renders identically (and stays
@@ -494,7 +542,8 @@ function OutputReviewCard({
   styleContext,
   canPush,
   canEditFields = false,
-  fieldValues = {},
+  styleData = null,
+  fieldValuesByKey,
 }: {
   o: CurrentOutput;
   styleId: string;
@@ -503,9 +552,11 @@ function OutputReviewCard({
   // Reviewer may override this output's fields inline (ADMIN/REVIEWER). The
   // "Earlier generations" cards leave this off — they're reference-only.
   canEditFields?: boolean;
-  // Current per-style override values for this output (field → value), so the
-  // editor pre-fills what's already set.
-  fieldValues?: Record<string, string>;
+  // StyleData for pre-filling the editor with resolved values; the full
+  // per-(style×output) override map (base + per-PDF keys). Both absent on the
+  // history cards.
+  styleData?: StyleData | null;
+  fieldValuesByKey?: ReadonlyMap<string, Record<string, string>>;
 }) {
   const previewUrl = `/api/admin/jobs/${o.jobId}/preview?variantKey=${encodeURIComponent(o.variantKey)}`;
   // Carton-capable outputs (numbering / multi-style) get an in-review Customize
@@ -647,27 +698,41 @@ function OutputReviewCard({
           label="Re-run this output"
         />
       </div>
-      {/* Inline field override — type a value for a field on THIS style's copy
-          of this output and re-render (e.g. fix a colour name). Persists per
-          style + output; the runner uses it on every future generation too.
-          Framing pages (cover / general info) carry no editable fields. */}
-      {canEditFields && canIgnore ? (
-        <details className="border-t border-zinc-100 px-3 py-2">
-          <summary className="cursor-pointer text-[11px] font-medium text-zinc-500 hover:text-zinc-700">
-            Edit fields{Object.keys(fieldValues).length > 0 ? ` (${Object.keys(fieldValues).length} set)` : ""}
-          </summary>
-          <div className="mt-2">
-            <OutputFieldEditor
-              styleId={styleId}
-              variantKey={baseKey}
-              outputName={o.name}
-              submitLabel="Save & re-render"
-              initialValues={fieldValues}
-              allowAdd
-            />
-          </div>
-        </details>
-      ) : null}
+      {/* Inline field editor — each field pre-filled with its current value on
+          THIS document; edit and re-render (e.g. fix a colour name). Keyed by
+          o.variantKey, so a single PDF of a repeat-per-EAN output is overridden
+          on its own (per-PDF); single-doc outputs key by the base. Framing pages
+          (cover / general info) carry no editable fields. */}
+      {canEditFields && canIgnore
+        ? (() => {
+            const overrides = fieldValuesByKey?.get(o.variantKey) ?? {};
+            const { fields, resolved } = outputFieldEditorProps(
+              o.variantKey,
+              styleData,
+              fieldValuesByKey ?? new Map(),
+            );
+            const setCount = Object.keys(overrides).length;
+            return (
+              <details className="border-t border-zinc-100 px-3 py-2">
+                <summary className="cursor-pointer text-[11px] font-medium text-zinc-500 hover:text-zinc-700">
+                  Edit fields{setCount > 0 ? ` (${setCount} edited)` : ""}
+                </summary>
+                <div className="mt-2">
+                  <OutputFieldEditor
+                    styleId={styleId}
+                    variantKey={o.variantKey}
+                    outputName={o.name}
+                    submitLabel="Save & re-render"
+                    fields={fields}
+                    resolved={resolved}
+                    overrides={overrides}
+                    allowAdd
+                  />
+                </div>
+              </details>
+            );
+          })()
+        : null}
     </div>
   );
 }

@@ -19,10 +19,12 @@ import {
   applyConditionals,
   conditionalsInDef,
   lineWithoutConditionals,
+  tokensInDef,
   tokensInLine,
   type LayoutDef,
   type TokenRef,
 } from "./schema";
+import { isPinnableField, type PinnableField } from "@/lib/pdf/pins-meta";
 
 // =====================================================
 // Token resolvers — the SERVER half of the layout variable system
@@ -330,6 +332,24 @@ function columnsForToken(ref: TokenRef): Array<keyof ColumnMapping> {
     return [];
   }
   return REQUIRED_COLUMNS[ref.key] ?? [];
+}
+
+// The PINNABLE fields a layout actually prints — every token's backing
+// column(s) that are in the pin vocabulary. Drives the review-time field
+// editor's pre-filled inputs (structured/derived columns like sizes/ean13/
+// washCare/price aren't pinnable, so they fall out). Deduped, definition order.
+export function pinnableFieldsInDef(def: LayoutDef): PinnableField[] {
+  const out: PinnableField[] = [];
+  const seen = new Set<string>();
+  for (const ref of tokensInDef(def)) {
+    for (const col of columnsForToken(ref)) {
+      if (isPinnableField(col) && !seen.has(col)) {
+        seen.add(col);
+        out.push(col);
+      }
+    }
+  }
+  return out;
 }
 
 function conditionColumn(field: string): keyof ColumnMapping | null {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   PINNABLE_FIELDS,
@@ -9,25 +9,30 @@ import {
   type PinnableField,
 } from "@/lib/pdf/pins-meta";
 
-// Inline field editor for ONE output of ONE style. Two shapes, one component:
-//   • Missing-field fill (accordion): `missing` lists the blocking fields.
-//     Pinnable ones become editable inputs (fill → "Save & generate"); the
-//     non-pinnable ones (sizes, EANs, wash care) stay read-only with the
-//     "fill on Monday" note — they can't be free-typed.
-//   • Override (generated card): `allowAdd` shows a field picker so the
-//     reviewer can override any supported field on an already-generated output
-//     ("Save & re-render"), pre-filled with the current per-style values.
+// Inline field editor for ONE output (or ONE PDF of a multi-doc output) of ONE
+// style. Used on two review surfaces:
+//   • Missing-field fill: `fields` are the blocking pinnable fields with empty
+//     `resolved` values (type them in → "Save & generate"). `locked` lists the
+//     non-pinnable blockers (sizes/EANs/wash care) read-only with a Monday note.
+//   • Generated-output edit: `fields` are the fields the output prints, each
+//     pre-filled with its CURRENT resolved value (`resolved[f]`) or the existing
+//     override (`overrides[f]`) → "Save & re-render".
 //
-// Save POSTs to /api/admin/styles/[id]/output-fields, which stores the values
-// (per style + output) and re-renders the output through the runner — so the
-// filled value both unblocks generation and prints. On success we refresh.
+// Only fields the reviewer CHANGES are persisted. A field left at its resolved
+// value is never stored — so it stays dynamic against future Monday data (no
+// silent pinning). Clearing an override (or editing back to the resolved value)
+// deletes the override. Save POSTs to /api/admin/styles/[id]/output-fields,
+// which stores the values (by the given variantKey — base or "base#suffix" for
+// a single PDF) and re-renders the output through the runner, then we refresh.
 export function OutputFieldEditor({
   styleId,
   variantKey,
   outputName,
   submitLabel,
-  missing = [],
-  initialValues = {},
+  fields = [],
+  resolved = {},
+  overrides = {},
+  locked = [],
   allowAdd = false,
   mondayHref,
 }: {
@@ -35,76 +40,76 @@ export function OutputFieldEditor({
   variantKey: string;
   outputName: string;
   submitLabel: string;
-  // Blocking fields from readiness ({field, label}); split into editable vs
-  // locked by whether the field is pinnable.
-  missing?: { field: string; label: string }[];
-  // Current per-style override values (generated-card edit), field → value.
-  initialValues?: Record<string, string>;
+  // Pinnable field keys shown as editable inputs.
+  fields?: string[];
+  // Current resolved (would-print) value per field — the pre-fill + the
+  // "unchanged" baseline that is never persisted.
+  resolved?: Record<string, string>;
+  // Current stored override per field (wins over resolved in the input).
+  overrides?: Record<string, string>;
+  // Read-only non-pinnable blockers (missing-field surface only).
+  locked?: { field: string; label: string }[];
   allowAdd?: boolean;
   mondayHref?: string;
 }) {
   const router = useRouter();
 
-  const missingEditable = useMemo(
-    () => missing.filter((m) => isPinnableField(m.field)),
-    [missing],
-  );
-  const lockedFields = useMemo(
-    () => missing.filter((m) => !isPinnableField(m.field)),
-    [missing],
-  );
+  // Signature of the server-provided data; when it changes (after a refresh),
+  // reset local edit state so the inputs reflect the freshly-rendered values.
+  const sig = JSON.stringify({ fields, resolved, overrides });
 
-  // Labels for every field we show an input for (missing + already-overridden).
-  const labelFor = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const m of missingEditable) map.set(m.field, m.label);
-    for (const f of Object.keys(initialValues)) {
-      if (isPinnableField(f)) map.set(f, PINNABLE_FIELD_LABELS[f]);
-    }
-    return map;
-  }, [missingEditable, initialValues]);
+  const buildShown = () =>
+    [...new Set([...fields, ...Object.keys(overrides)])].filter(isPinnableField) as PinnableField[];
+  const buildValues = (shownList: PinnableField[]) => {
+    const m: Record<string, string> = {};
+    for (const f of shownList) m[f] = overrides[f] ?? resolved[f] ?? "";
+    return m;
+  };
 
-  // The fields shown as inputs: the missing pinnable ones + any already
-  // overridden + any the reviewer adds via the picker. Order preserved.
-  const [fields, setFields] = useState<PinnableField[]>(() => {
-    const seen = new Set<string>();
-    const list: PinnableField[] = [];
-    for (const m of missingEditable) {
-      if (isPinnableField(m.field) && !seen.has(m.field)) {
-        seen.add(m.field);
-        list.push(m.field);
-      }
-    }
-    for (const f of Object.keys(initialValues)) {
-      if (isPinnableField(f) && !seen.has(f)) {
-        seen.add(f);
-        list.push(f);
-      }
-    }
-    return list;
-  });
-
-  const [values, setValues] = useState<Record<string, string>>(() => ({ ...initialValues }));
+  const [shown, setShown] = useState<PinnableField[]>(buildShown);
+  const [values, setValues] = useState<Record<string, string>>(() => buildValues(buildShown()));
+  const [dirty, setDirty] = useState<Set<string>>(new Set());
   const [addField, setAddField] = useState<PinnableField | "">("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const available = PINNABLE_FIELDS.filter((f) => !fields.includes(f));
+  useEffect(() => {
+    const next = buildShown();
+    setShown(next);
+    setValues(buildValues(next));
+    setDirty(new Set());
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig]);
 
+  const available = PINNABLE_FIELDS.filter((f) => !shown.includes(f));
+
+  function setVal(f: PinnableField, v: string) {
+    setValues((p) => ({ ...p, [f]: v }));
+    setDirty((p) => new Set(p).add(f));
+  }
   function add() {
-    if (!addField) return;
-    setFields((prev) => (prev.includes(addField) ? prev : [...prev, addField]));
+    if (!addField || !isPinnableField(addField)) return;
+    setShown((p) => (p.includes(addField) ? p : [...p, addField]));
+    setValues((p) => (addField in p ? p : { ...p, [addField]: overrides[addField] ?? resolved[addField] ?? "" }));
     setAddField("");
   }
 
   async function save() {
+    // Persist only CHANGED fields; a value equal to the resolved baseline (or
+    // blank) clears the override so the field reverts to live data.
+    const payload: Record<string, string> = {};
+    for (const f of dirty) {
+      const v = (values[f] ?? "").trim();
+      payload[f] = v && v !== (resolved[f] ?? "").trim() ? v : "";
+    }
+    if (Object.keys(payload).length === 0) {
+      setError("No changes to save.");
+      return;
+    }
     setPending(true);
     setError(null);
     try {
-      // Send every shown field (blank ones are deleted server-side, clearing
-      // that override). A missing-field save with all blanks is a no-op re-run.
-      const payload: Record<string, string> = {};
-      for (const f of fields) payload[f] = (values[f] ?? "").trim();
       const res = await fetch(`/api/admin/styles/${styleId}/output-fields`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -116,7 +121,6 @@ export function OutputFieldEditor({
         setPending(false);
         return;
       }
-      // The output re-rendered and re-entered review — pull the fresh state.
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -124,27 +128,22 @@ export function OutputFieldEditor({
     }
   }
 
-  const hasInputs = fields.length > 0;
+  const hasChanges = dirty.size > 0;
 
   return (
     <div className="space-y-2">
-      {lockedFields.length > 0 ? (
+      {locked.length > 0 ? (
         <p className="text-[11px] leading-relaxed text-amber-800">
           Not editable here — fill on{" "}
           {mondayHref ? (
-            <a
-              href={mondayHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium underline"
-            >
+            <a href={mondayHref} target="_blank" rel="noopener noreferrer" className="font-medium underline">
               Monday
             </a>
           ) : (
             "Monday"
           )}
           :{" "}
-          {lockedFields.map((m, i) => (
+          {locked.map((m, i) => (
             <span key={m.field}>
               {i > 0 ? ", " : ""}
               <span className="font-medium">{m.label}</span>
@@ -153,29 +152,40 @@ export function OutputFieldEditor({
         </p>
       ) : null}
 
-      {hasInputs ? (
+      {shown.length > 0 ? (
         <div className="space-y-1.5">
-          {fields.map((f) => (
-            <label key={f} className="flex items-center gap-2">
-              <span className="w-32 shrink-0 text-[11px] font-medium text-zinc-600">
-                {labelFor.get(f) ?? PINNABLE_FIELD_LABELS[f]}
-              </span>
-              <input
-                type="text"
-                value={values[f] ?? ""}
-                disabled={pending}
-                onChange={(e) => setValues((prev) => ({ ...prev, [f]: e.target.value }))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void save();
-                  }
-                }}
-                placeholder="type a value…"
-                className="min-w-0 flex-1 rounded-md border border-zinc-300 px-2 py-1 text-xs"
-              />
-            </label>
-          ))}
+          {shown.map((f) => {
+            const isOverride = (values[f] ?? "").trim() !== "" && (values[f] ?? "").trim() !== (resolved[f] ?? "").trim();
+            return (
+              <label key={f} className="flex items-center gap-2">
+                <span className="flex w-32 shrink-0 items-center gap-1 text-[11px] font-medium text-zinc-600">
+                  {PINNABLE_FIELD_LABELS[f]}
+                  {isOverride ? (
+                    <span
+                      title="Overridden — differs from the value on Monday"
+                      className="rounded-sm bg-amber-100 px-1 text-[9px] font-semibold uppercase text-amber-700"
+                    >
+                      edited
+                    </span>
+                  ) : null}
+                </span>
+                <input
+                  type="text"
+                  value={values[f] ?? ""}
+                  disabled={pending}
+                  onChange={(e) => setVal(f, e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void save();
+                    }
+                  }}
+                  placeholder={resolved[f] ? resolved[f] : "type a value…"}
+                  className="min-w-0 flex-1 rounded-md border border-zinc-300 px-2 py-1 text-xs"
+                />
+              </label>
+            );
+          })}
         </div>
       ) : null}
 
@@ -209,16 +219,14 @@ export function OutputFieldEditor({
 
       {error ? <p className="text-[11px] font-medium text-red-700">{error}</p> : null}
 
-      {hasInputs ? (
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={pending}
-          className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:opacity-50"
-        >
-          {pending ? "Re-rendering…" : submitLabel}
-        </button>
-      ) : null}
+      <button
+        type="button"
+        onClick={() => void save()}
+        disabled={pending || !hasChanges}
+        className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:opacity-50"
+      >
+        {pending ? "Re-rendering…" : submitLabel}
+      </button>
     </div>
   );
 }
