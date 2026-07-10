@@ -167,6 +167,15 @@ export function StyleTaskList({
                         >
                           Review
                         </Link>
+                      ) : o.state === "AWAITING_DATA" ? (
+                        // Not generated — missing data. Jump to the review page,
+                        // where the fields can be filled in to generate it.
+                        <Link
+                          href={`/styles/${t.styleId}/review`}
+                          className="text-amber-700 hover:underline"
+                        >
+                          Fix
+                        </Link>
                       ) : (
                         // No document yet — keep the column aligned, no action.
                         <span className="text-zinc-300" aria-hidden="true">
