@@ -11,6 +11,7 @@ import { getAutomationMinPo } from "@/lib/settings/app-settings";
 import { resolveStyleEans, type StyleEanStatus as ResolveStatus } from "./resolve-style-eans";
 import { MAX_EAN_ATTEMPTS, FLOATABLE_STATUSES } from "./ean-status-meta";
 import { resolveStyleEansFromMonday, type MondayFallbackResult } from "./monday-barcode-fallback";
+import { eanResolveKey } from "./resolve-inputs";
 import type { EanView } from "./ean-view";
 
 // =====================================================
@@ -243,6 +244,23 @@ export async function resolveAndPersistStyleEans(
       : {}),
   };
 
+  // Fingerprint the inputs this scrape resolved against so the runner can
+  // detect a later Sizes / Colour-code edit and re-resolve before rendering.
+  // Rebuilt from diagnostics (which the resolver populated via the SAME
+  // eanResolveInputs the runner recomputes with) — present for every outcome
+  // that got as far as reading the style's columns; null only for no-PO /
+  // not-found styles, which the runner's staleness check skips anyway.
+  const d = result.diagnostics;
+  const resolveKey = d
+    ? eanResolveKey({
+        poNumber: d.poNumber,
+        customerItemNo: d.customerItemNoOnStyle ?? "",
+        styleNumber: d.styleNumberOnStyle ?? "",
+        sizes: d.styleSizes,
+        colourCode: d.colourCodeOnStyle ?? "",
+      })
+    : null;
+
   await db.$transaction([
     // Replace the per-size rows wholesale — simplest correct way to keep
     // style_eans in lockstep with the latest read (sizes can change).
@@ -268,6 +286,7 @@ export async function resolveAndPersistStyleEans(
         eanResolvedAt: new Date(),
         eanResolveStartedAt: null,
         eanAttempts: resolved ? 0 : { increment: 1 },
+        eanResolveKey: resolveKey,
       },
     }),
     db.log.create({
@@ -309,7 +328,6 @@ export async function resolveAndPersistStyleEans(
   }
 
   // One-line summary in the dev/worker console with the decisive signals.
-  const d = result.diagnostics;
   console.info(
     `[ean] ${styleId} → ${dbStatus}` +
       (mondayFallback ? ` (monday ${mondayFallback.matchedSizes}/${sizeEans.length})` : "") +
