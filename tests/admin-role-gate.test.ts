@@ -16,13 +16,17 @@ const SECRET = "test-job-runner-secret";
 process.env.JOB_RUNNER_SECRET = SECRET;
 
 // ── Mutable session state the auth mock reads at call time ──────────────────
-type Role = "ADMIN" | "REVIEWER" | null;
+type Role = "ADMIN" | "REVIEWER" | "VIEWER" | null;
 let sessionState: { session: unknown; role: Role } = { session: null, role: null };
 function asAdmin() {
   sessionState = { session: { user: { id: "admin-1", email: "admin@example.com" } }, role: "ADMIN" };
 }
 function asReviewer() {
   sessionState = { session: { user: { id: "rev-1", email: "reviewer@example.com" } }, role: "REVIEWER" };
+}
+function asViewer() {
+  // Signed in but NEITHER ADMIN nor REVIEWER — must be refused by canReview gates.
+  sessionState = { session: { user: { id: "v-1", email: "viewer@example.com" } }, role: "VIEWER" };
 }
 function asAnon() {
   sessionState = { session: null, role: null };
@@ -158,12 +162,8 @@ const INTERACTIVE = [
     url: "http://localhost/api/admin/rejection-tickets/bogus-id/rerun",
     spy: findRejectionTicket,
   },
-  {
-    name: "admin/styles/[id]/rerun",
-    path: "@/app/api/admin/styles/[id]/rerun/route",
-    url: "http://localhost/api/admin/styles/bogus-id/rerun",
-    spy: findStyle,
-  },
+  // styles/[id]/rerun moved OUT of this list — it's reviewer-accessible now
+  // (canReview, like carton-customize); its gate tests live below.
   {
     name: "admin/job-assets/[id]/push-to-supplier",
     path: "@/app/api/admin/job-assets/[id]/push-to-supplier/route",
@@ -200,6 +200,49 @@ for (const route of INTERACTIVE) {
     assert.equal(route.spy.mock.callCount(), 0);
   });
 }
+
+// ── styles/[id]/rerun — reviewer-ACCESSIBLE (canReview, like carton-customize):
+// reviewers regenerate outputs from the review screen after a data change.
+// Bogus id → 404 proves execution proceeded past the gate.
+const RERUN_PATH = "@/app/api/admin/styles/[id]/rerun/route";
+const RERUN_URL = "http://localhost/api/admin/styles/bogus-id/rerun";
+
+test("styles/[id]/rerun: REVIEWER passes the gate (the point of the change)", async () => {
+  const POST = await load(RERUN_PATH);
+  asReviewer();
+  const { status } = await call(POST, RERUN_URL);
+  assert.notEqual(status, 401, "reviewer must not be unauthorized");
+  assert.notEqual(status, 403, "reviewer must NOT be forbidden — they may rerun outputs");
+  assert.equal(status, 404, "bogus id 404s — i.e. execution proceeded past the gate");
+  assert.equal(findStyle.mock.callCount(), 1, "reviewer reaches the style lookup");
+});
+
+test("styles/[id]/rerun: ADMIN passes the gate", async () => {
+  const POST = await load(RERUN_PATH);
+  asAdmin();
+  const { status } = await call(POST, RERUN_URL);
+  assert.notEqual(status, 403);
+  assert.notEqual(status, 401);
+  assert.equal(status, 404);
+  assert.equal(findStyle.mock.callCount(), 1);
+});
+
+test("styles/[id]/rerun: a non-review role (VIEWER) is refused with 403 before any work", async () => {
+  const POST = await load(RERUN_PATH);
+  asViewer();
+  const { status, body } = await call(POST, RERUN_URL);
+  assert.equal(status, 403, "only ADMIN/REVIEWER may rerun");
+  assert.match(body?.error ?? "", /ADMIN or REVIEWER/, "403 body names the allowed roles");
+  assert.equal(findStyle.mock.callCount(), 0, "gate blocks before touching the DB");
+});
+
+test("styles/[id]/rerun: no session is rejected with 401", async () => {
+  const POST = await load(RERUN_PATH);
+  asAnon();
+  const { status } = await call(POST, RERUN_URL);
+  assert.equal(status, 401);
+  assert.equal(findStyle.mock.callCount(), 0);
+});
 
 // ── jobs/run — dual auth: secret (automation) bypasses role; session is ADMIN-only
 test("jobs/run: REVIEWER session (no secret) → 403, queue not drained", async () => {
