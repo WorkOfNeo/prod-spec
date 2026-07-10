@@ -198,10 +198,12 @@ for (const route of INTERACTIVE) {
   });
 }
 
-// ── admin/styles/[id]/rerun — scoped re-run policy ──────────────────────────
-// A REVIEWER may re-run an INDIVIDUAL output (scoped variantKeys) from the
-// review screen, but only an ADMIN may kick off a whole-style regeneration.
-// The scope is read from the JSON body, so these send a real body.
+// ── admin/styles/[id]/rerun — re-run policy ─────────────────────────────────
+// A REVIEWER may re-run outputs: an INDIVIDUAL output (scoped variantKeys) from
+// the review screen, OR the whole style from the style page — a reviewer opening
+// a not-yet-generated style has no review screen to work from, so kicking off
+// (re)generation is part of reviewing. The scope is read from the JSON body, so
+// these send a real body.
 const RERUN = "@/app/api/admin/styles/[id]/rerun/route";
 const RERUN_URL = "http://localhost/api/admin/styles/bogus-id/rerun";
 const rerunReq = (body?: unknown) =>
@@ -230,21 +232,20 @@ test("styles/[id]/rerun: REVIEWER may re-run a SCOPED (per-output) set", async (
   assert.equal(findStyle.mock.callCount(), 1, "reviewer reaches the DB lookup for a scoped run");
 });
 
-test("styles/[id]/rerun: REVIEWER may NOT re-run the whole style (no scope → 403)", async () => {
+test("styles/[id]/rerun: REVIEWER may re-run the whole style (no scope)", async () => {
   const POST = await load(RERUN);
   asReviewer();
-  const { status, body } = await callRerun(POST); // no body = full re-run
-  assert.equal(status, 403, "reviewer must not kick off a whole-style regeneration");
-  assert.match(body?.error ?? "", /ADMIN/, "403 body names the required role");
-  assert.equal(findStyle.mock.callCount(), 0, "gate blocks before touching the DB");
+  const { status } = await callRerun(POST); // no body = full re-run
+  assert.equal(status, 404, "reviewer full re-run clears the gate; bogus id 404s");
+  assert.equal(findStyle.mock.callCount(), 1, "reviewer reaches the DB lookup for a full run");
 });
 
-test("styles/[id]/rerun: REVIEWER with an empty variantKeys array → 403 (still a full re-run)", async () => {
+test("styles/[id]/rerun: REVIEWER with an empty variantKeys array is a full re-run (allowed)", async () => {
   const POST = await load(RERUN);
   asReviewer();
   const { status } = await callRerun(POST, { variantKeys: [] });
-  assert.equal(status, 403, "empty scope is a full re-run — ADMIN-only");
-  assert.equal(findStyle.mock.callCount(), 0, "gate blocks before touching the DB");
+  assert.equal(status, 404, "empty scope is a full re-run — now allowed for reviewers");
+  assert.equal(findStyle.mock.callCount(), 1, "reviewer reaches the DB lookup");
 });
 
 test("styles/[id]/rerun: ADMIN may re-run the whole style", async () => {

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
-import { canReview, isAdmin } from "@/lib/roles";
+import { canReview } from "@/lib/roles";
 import { enqueueGenerationJob } from "@/lib/queue/enqueue";
 import { runPendingJobs } from "@/lib/queue/runner";
 
@@ -27,18 +27,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     // No JSON body — classic full re-run.
   }
 
-  // Role gate. Reviewers may re-run an INDIVIDUAL output from the review screen
-  // (a scoped variantKeys set) — fixing one output's data and re-rendering it
-  // is part of reviewing, and mirrors the in-review carton customize, which is
-  // already canReview. Kicking off a WHOLE-style regeneration stays ADMIN-only.
-  const scoped = variantKeys.length > 0;
-  if (!(isAdmin(role) || (scoped && canReview(role)))) {
+  // Role gate. Reviewers may re-run outputs — a scoped variantKeys set from the
+  // review screen (fixing one output's data and re-rendering it), OR the whole
+  // style from the style page: a reviewer opening a style that hasn't generated
+  // yet has no review screen to work from, so kicking off (re)generation is part
+  // of reviewing. Mirrors the in-review carton customize / scoped re-run, both
+  // already canReview.
+  if (!canReview(role)) {
     return NextResponse.json(
-      {
-        error: scoped
-          ? "Requires role: ADMIN or REVIEWER"
-          : "Re-running the whole style requires role: ADMIN",
-      },
+      { error: "Requires role: ADMIN or REVIEWER" },
       { status: 403 },
     );
   }
