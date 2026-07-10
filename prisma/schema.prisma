@@ -160,6 +160,34 @@ model StyleOutputIgnore {
   @@map("style_output_ignores")
 }
 
+// Per-(style × output × field) reviewer-supplied value — "on THIS style's copy
+// of THIS output, use this string for this field". Set inline on the review
+// surfaces (fill a missing/blocked field so the output can generate, or
+// override a value on an already-generated output). It composes with the
+// ProdSpec output's `fieldOverrides` pins — the per-style value wins — and
+// flows through the SAME machinery: `pinnedColumnKeys` (so readiness/the runner
+// treat the field as filled and stop skipping the output) and
+// `applyFieldOverrides` (so it prints). `field` is a PinnableField key; `value`
+// is a non-empty string (rows are deleted, not blanked, to clear). Loose
+// styleId ref and no relations (matching StyleOutputIgnore / OutputDelivery) so
+// adding it never changes existing model selects; all reads are fail-soft until
+// db:deploy lands the table.
+model StyleOutputFieldValue {
+  id          String   @id @default(cuid())
+  styleId     String
+  variantKey  String // BASE key ("care-label-02", "layout:<id>") or "doc:<TYPE>" — see ignoreBaseKey
+  field       String // PinnableField key, e.g. "colourName", "composition", "lot"
+  value       String
+  outputName  String? // display snapshot for logs
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([styleId, variantKey, field])
+  @@index([styleId])
+  @@map("style_output_field_values")
+}
+
 // Nightly supplier-send queue (WS2). One row per approved (style, output).
 // Populated the moment an output is approved (manual or auto) — ALWAYS, even
 // while sending is flag-gated off — so /settings/approved can show exactly

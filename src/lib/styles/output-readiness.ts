@@ -12,6 +12,12 @@ import {
   type DocTypeRulesMap,
 } from "@/lib/outputs/exclusion";
 import { IGNORED_EXCLUSION_REASON, loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
+import {
+  ignoreBaseKey,
+  loadStyleFieldValues,
+  mergeFieldOverrides,
+  type StyleFieldValues,
+} from "@/lib/outputs/output-field-values";
 import type { MondayItem } from "@/lib/monday/client";
 import { effectiveStyleItem, resolveMappedField, STYLE_FIELD_LABELS } from "./resolved-fields";
 import type { DetailFieldKey, MissingDetailField } from "./detail-fields";
@@ -88,6 +94,12 @@ export function outputReadinessForStyle(
   // operator marked "not wanted for this style". Marked excluded like a rule
   // hit, plus `ignored: true` so the UI can tell them apart.
   ignoredKeys?: ReadonlySet<string>,
+  // Per-style reviewer-supplied field values (loadStyleFieldValues), keyed by
+  // BASE variantKey. Composed with each output's admin pins (per-style wins) so
+  // a filled field counts as satisfied here exactly like a pin — the output
+  // stops reading "missing" and the runner stops skipping it. Optional so
+  // existing callers stay unaware; absent ⇒ pins-only, unchanged behaviour.
+  fieldValuesByKey?: ReadonlyMap<string, StyleFieldValues>,
 ): OutputReadiness[] {
   const enabledOutputs = parseProdSpecOutputs(style.prodSpec?.outputs ?? []).filter(
     (o) => o.enabled !== false,
@@ -101,7 +113,12 @@ export function outputReadinessForStyle(
 
   return enabledOutputs.map((output) => {
     const variant = getVariant(output.variantKey);
-    const pinned = pinnedColumnKeys(output.fieldOverrides);
+    // Admin pins on the output ∪ this style's inline field values (per-style
+    // wins). `pinnedColumnKeys` treats every key in the merged map as filled,
+    // so a reviewer-supplied value flips the field from missing → satisfied.
+    const baseKey = ignoreBaseKey(output.variantKey, variant?.docType ?? "");
+    const merged = mergeFieldOverrides(output.fieldOverrides, fieldValuesByKey?.get(baseKey));
+    const pinned = pinnedColumnKeys(merged);
     const keys = (variant?.readiness
       ? variant.readiness(resolve)
       : (variant?.requiredFields ?? [])) as DetailFieldKey[];
@@ -175,11 +192,12 @@ export async function pendingOutputKeysForStyle(
   // and forever "pending", which would re-trigger auto-runs (and NO_OUTPUTS
   // failures when it's the only one left). Treat excluded as not-pending.
   // Per-style operator ignores are excluded the same way.
-  const [rules, ignoredKeys] = await Promise.all([
+  const [rules, ignoredKeys, fieldValues] = await Promise.all([
     loadDocTypeExclusionRules(),
     loadIgnoredOutputKeys(styleId, client),
+    loadStyleFieldValues(styleId, client),
   ]);
-  const ready = outputReadinessForStyle(style, rules, undefined, ignoredKeys)
+  const ready = outputReadinessForStyle(style, rules, undefined, ignoredKeys, fieldValues)
     .filter((o) => o.ready && !o.excluded)
     .map((o) => o.variantKey);
   if (ready.length === 0) return [];

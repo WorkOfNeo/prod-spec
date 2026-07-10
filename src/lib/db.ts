@@ -47,4 +47,7 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
 // either — production callers get the global `db`, while a transactional
 // caller (or a rollback-only test) can pass `tx` to make the whole unit of
 // work atomic. Extend the picked set when a helper needs another model.
-export type DbClient = Pick<typeof db, "job" | "style" | "jobAsset" | "log" | "styleOutputIgnore">;
+export type DbClient = Pick<
+  typeof db,
+  "job" | "style" | "jobAsset" | "log" | "styleOutputIgnore" | "styleOutputFieldValue"
+>;

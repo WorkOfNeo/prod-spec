@@ -4,6 +4,11 @@ import { inlineProdSpecImages } from "@/lib/pdf/inline-images";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { applyCartonBarcodePrefs, applyFieldOverrides } from "@/lib/pdf/pins";
+import {
+  ignoreBaseKey,
+  loadStyleFieldValues,
+  mergeFieldOverrides,
+} from "@/lib/outputs/output-field-values";
 import { countPlaceholderMarkers } from "@/lib/pdf/placeholders";
 import { defaultArtifactFileName } from "@/lib/pdf/template-registry";
 import {
@@ -148,6 +153,9 @@ export async function renderProdSpecTestBundle(
   })();
 
   const infoAreaSizes = await loadInfoAreaSizeMap();
+  // Per-style inline field values — merged with each output's pins below so the
+  // test bundle mirrors what the runner would generate. Fail-soft empty.
+  const fieldValues = await loadStyleFieldValues(styleId);
   const outputDocs: TestBundleDoc[] = [];
   // One row per OUTPUT for the cover's document table — built as we render
   // so the cover reflects the real generated list (and real file counts).
@@ -162,10 +170,17 @@ export async function renderProdSpecTestBundle(
       continue;
     }
     try {
-      // Per-output pins + carton barcode preference on a copy; the base
-      // StyleData is shared across this style's outputs (runner-identical).
+      // Per-output pins ∪ this style's inline field values (per-style wins) +
+      // carton barcode preference on a copy; the base StyleData is shared across
+      // this style's outputs (runner-identical).
       const renderStyle = applyCartonBarcodePrefs(
-        applyFieldOverrides(styleData, output.fieldOverrides),
+        applyFieldOverrides(
+          styleData,
+          mergeFieldOverrides(
+            output.fieldOverrides,
+            fieldValues.get(ignoreBaseKey(output.variantKey, variant.docType)),
+          ),
+        ),
         output,
       );
       // Printed size: info-area size override when applicable, else the

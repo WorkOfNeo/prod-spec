@@ -303,6 +303,7 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
   const { getVariant } = await import("@/lib/pdf/template-registry");
   const { loadDocTypeExclusionRules, loadDocTypeLabels } = await import("@/lib/pdf/doc-types-db");
   const { loadIgnoredOutputKeys } = await import("@/lib/outputs/output-ignores");
+  const { loadStyleFieldValues } = await import("@/lib/outputs/output-field-values");
   const { parseProdSpecOutputs } = await import("@/lib/prod-spec/config");
 
   // ProdSpec.outputs may reference Output Builder layouts (`layout:<id>`) —
@@ -310,12 +311,14 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
   await ensureLayoutVariantsLoaded();
 
   // Doc-type keyword rules + per-style operator ignores drive the EXCLUDED
-  // state below; labels flavour the reason text. All degrade to empty before
-  // db:deploy (nothing excluded).
-  const [exclusionRules, docTypeLabels, ignoredKeys] = await Promise.all([
+  // state below; labels flavour the reason text; per-style field values let a
+  // reviewer-filled field count as satisfied (so a blocked output stops showing
+  // "missing X"). All degrade to empty before db:deploy (feature dormant).
+  const [exclusionRules, docTypeLabels, ignoredKeys, fieldValues] = await Promise.all([
     loadDocTypeExclusionRules(),
     loadDocTypeLabels(),
     loadIgnoredOutputKeys(styleId),
+    loadStyleFieldValues(styleId),
   ]);
 
   const style = await db.style.findUnique({
@@ -337,6 +340,7 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
     exclusionRules,
     docTypeLabels,
     ignoredKeys,
+    fieldValues,
   );
 
   // Every non-FAILED asset, newest job first.

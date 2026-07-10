@@ -7,6 +7,7 @@ import {
 } from "@/lib/styles/output-readiness";
 import { activeStylesWhere } from "@/lib/styles/active-filter";
 import { loadIgnoredOutputKeysByStyle } from "@/lib/outputs/output-ignores";
+import { loadStyleFieldValuesByStyle } from "@/lib/outputs/output-field-values";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { styleReadinessNotice, type ReadinessNotice } from "@/lib/styles/readiness-notice";
 import { mondayItemUrl } from "@/lib/monday/url";
@@ -99,7 +100,11 @@ export async function getNeedsInputStyles(): Promise<NeedsInputStyle[]> {
     orderBy: { updatedAt: "desc" },
   });
 
-  const ignoredByStyle = await loadIgnoredOutputKeysByStyle(styles.map((s) => s.id));
+  const styleIds = styles.map((s) => s.id);
+  const [ignoredByStyle, fieldValuesByStyle] = await Promise.all([
+    loadIgnoredOutputKeysByStyle(styleIds),
+    loadStyleFieldValuesByStyle(styleIds),
+  ]);
 
   const out: NeedsInputStyle[] = [];
   for (const s of styles) {
@@ -108,6 +113,7 @@ export async function getNeedsInputStyles(): Promise<NeedsInputStyle[]> {
       exclusionRules,
       docTypeLabels,
       ignoredByStyle.get(s.id),
+      fieldValuesByStyle.get(s.id),
     );
     // Outputs that actually count as work (a doc-type rule or a per-style
     // operator ignore may exclude some).
