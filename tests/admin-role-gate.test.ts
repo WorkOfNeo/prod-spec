@@ -158,12 +158,9 @@ const INTERACTIVE = [
     url: "http://localhost/api/admin/rejection-tickets/bogus-id/rerun",
     spy: findRejectionTicket,
   },
-  {
-    name: "admin/styles/[id]/rerun",
-    path: "@/app/api/admin/styles/[id]/rerun/route",
-    url: "http://localhost/api/admin/styles/bogus-id/rerun",
-    spy: findStyle,
-  },
+  // NB: admin/styles/[id]/rerun is NOT in this fully-ADMIN-only table — a
+  // SCOPED (per-output) re-run is allowed for REVIEWERs. See its dedicated
+  // block below ("admin/styles/[id]/rerun — scoped re-run policy").
   {
     name: "admin/job-assets/[id]/push-to-supplier",
     path: "@/app/api/admin/job-assets/[id]/push-to-supplier/route",
@@ -200,6 +197,71 @@ for (const route of INTERACTIVE) {
     assert.equal(route.spy.mock.callCount(), 0);
   });
 }
+
+// ── admin/styles/[id]/rerun — scoped re-run policy ──────────────────────────
+// A REVIEWER may re-run an INDIVIDUAL output (scoped variantKeys) from the
+// review screen, but only an ADMIN may kick off a whole-style regeneration.
+// The scope is read from the JSON body, so these send a real body.
+const RERUN = "@/app/api/admin/styles/[id]/rerun/route";
+const RERUN_URL = "http://localhost/api/admin/styles/bogus-id/rerun";
+const rerunReq = (body?: unknown) =>
+  new NextRequest(RERUN_URL, {
+    method: "POST",
+    ...(body !== undefined
+      ? { body: JSON.stringify(body), headers: { "Content-Type": "application/json" } }
+      : {}),
+  });
+async function callRerun(POST: Awaited<ReturnType<typeof load>>, body?: unknown) {
+  const res = await POST(rerunReq(body), ctx);
+  let parsed: unknown = null;
+  try {
+    parsed = await res.clone().json();
+  } catch {
+    /* empty */
+  }
+  return { status: res.status, body: parsed as { error?: string } | null };
+}
+
+test("styles/[id]/rerun: REVIEWER may re-run a SCOPED (per-output) set", async () => {
+  const POST = await load(RERUN);
+  asReviewer();
+  const { status } = await callRerun(POST, { variantKeys: ["coop-dk-license-care-label"] });
+  assert.equal(status, 404, "scoped reviewer re-run clears the gate; bogus id 404s");
+  assert.equal(findStyle.mock.callCount(), 1, "reviewer reaches the DB lookup for a scoped run");
+});
+
+test("styles/[id]/rerun: REVIEWER may NOT re-run the whole style (no scope → 403)", async () => {
+  const POST = await load(RERUN);
+  asReviewer();
+  const { status, body } = await callRerun(POST); // no body = full re-run
+  assert.equal(status, 403, "reviewer must not kick off a whole-style regeneration");
+  assert.match(body?.error ?? "", /ADMIN/, "403 body names the required role");
+  assert.equal(findStyle.mock.callCount(), 0, "gate blocks before touching the DB");
+});
+
+test("styles/[id]/rerun: REVIEWER with an empty variantKeys array → 403 (still a full re-run)", async () => {
+  const POST = await load(RERUN);
+  asReviewer();
+  const { status } = await callRerun(POST, { variantKeys: [] });
+  assert.equal(status, 403, "empty scope is a full re-run — ADMIN-only");
+  assert.equal(findStyle.mock.callCount(), 0, "gate blocks before touching the DB");
+});
+
+test("styles/[id]/rerun: ADMIN may re-run the whole style", async () => {
+  const POST = await load(RERUN);
+  asAdmin();
+  const { status } = await callRerun(POST); // no body = full re-run
+  assert.equal(status, 404, "admin full re-run clears the gate; bogus id 404s");
+  assert.equal(findStyle.mock.callCount(), 1, "admin reaches the DB lookup");
+});
+
+test("styles/[id]/rerun: no session is rejected with 401", async () => {
+  const POST = await load(RERUN);
+  asAnon();
+  const { status } = await callRerun(POST, { variantKeys: ["x"] });
+  assert.equal(status, 401);
+  assert.equal(findStyle.mock.callCount(), 0);
+});
 
 // ── jobs/run — dual auth: secret (automation) bypasses role; session is ADMIN-only
 test("jobs/run: REVIEWER session (no secret) → 403, queue not drained", async () => {
