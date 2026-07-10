@@ -5,8 +5,6 @@ import { canReview } from "@/lib/roles";
 import { maybeSettleJob } from "@/lib/publish/settle-job";
 import { claimReviewIfUnclaimed } from "@/lib/review-flow/claim";
 import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
-import { deliverOutput } from "@/lib/publish/deliver-output";
-import { perOutputDeliveryEnabled } from "@/lib/review-flow/flags";
 import { enqueueApprovedAsset } from "@/lib/publish/supplier-send-queue";
 import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
 
@@ -113,14 +111,8 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     });
   }
 
-  // Per-output delivery (phase 3) — gated off. When enabled, an approved
-  // output notifies the supplier on its own and we skip the job-level publish;
-  // the job no longer needs to "settle" as a unit (status is derived from the
-  // outputs). Until then, the job roll-up + publish path is unchanged.
-  if (perOutputDeliveryEnabled()) {
-    const email = await deliverOutput(id);
-    return NextResponse.json({ ok: true, perOutput: true, email });
-  }
-
+  // Approving the last pending asset settles the job — SharePoint upload +
+  // supplier-send-queue enqueue happen there. Suppliers are reached only by the
+  // nightly digest; there is no immediate per-output supplier email.
   return NextResponse.json(await maybeSettleJob(asset.jobId, session.user.id));
 }

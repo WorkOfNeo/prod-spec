@@ -1,10 +1,9 @@
 import { db } from "@/lib/db";
 import { uploadJobAssets, type UploadResult } from "@/lib/sharepoint/upload";
 import { getFile } from "@/lib/sharepoint/client";
-import { dispatchEmail, type EmailOutcome } from "@/lib/email/dispatch";
+import { type EmailOutcome } from "@/lib/email/dispatch";
 import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
 import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
-import { customerApprovalEmail } from "@/lib/email/templates/review-notification";
 import { getSupplierReviewCcEmails } from "@/lib/settings/app-settings";
 import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
 import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
@@ -464,45 +463,9 @@ export async function onStyleFullyApproved(ctx: StyleApprovalContext): Promise<v
       },
     });
 
-    // 2) Customer-responsible email (the people column on the Styles board).
-    const recipients = monday.customerResponsible.map((r) => r.email);
-    if (recipients.length === 0) {
-      await db.log.create({
-        data: {
-          jobId: ctx.jobId,
-          level: "INFO",
-          message: `customer-responsible email skipped — no recipient resolved (${monday.notes.join("; ") || "none"})`,
-        },
-      });
-      return;
-    }
-    const base = process.env.PROD_SPEC_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
-    const email = customerApprovalEmail({
-      styleName: ctx.styleNumber,
-      customerName: ctx.customerName,
-      businessArea: ctx.businessArea,
-      poNumber: ctx.poNumber,
-      files: ctx.files,
-      certificates: ctx.requiredCerts,
-      supplierEmail: ctx.supplierEmail,
-      styleUrl: `${base}/styles/${ctx.styleId}`,
-    });
-    const outcome = await dispatchEmail({
-      type: "SUPPLIER_APPROVAL",
-      to: recipients,
-      subject: email.subject,
-      html: email.html,
-      text: email.text,
-      jobId: ctx.jobId,
-      styleId: ctx.styleId,
-    });
-    await db.log.create({
-      data: {
-        jobId: ctx.jobId,
-        level: outcome.status === "FAILED" ? "WARN" : "INFO",
-        message: `customer-responsible email ${outcome.status} · To: ${recipients.join(", ")}`,
-      },
-    });
+    // 2) Customer-responsible email removed — per the "nightly supplier digest
+    // is the only outbound email" decision, full approval no longer emails the
+    // Styles-board customer contacts. The Monday subitem flip above still runs.
   } catch (err) {
     await db.log
       .create({

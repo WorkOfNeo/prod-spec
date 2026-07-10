@@ -12,8 +12,6 @@ import { applyCartonBarcodePrefs, applyFieldOverrides } from "@/lib/pdf/pins";
 import { countPlaceholderMarkers } from "@/lib/pdf/placeholders";
 import type { StyleData } from "@/lib/pdf/types";
 import { defaultArtifactFileName, type TemplateVariant } from "@/lib/pdf/template-registry";
-import { dispatchEmail } from "@/lib/email/dispatch";
-import { reviewNotificationEmail } from "@/lib/email/templates/review-notification";
 import { notifyReviewReady } from "@/lib/notifications/user-notifications";
 import { supersedeOpenTicketsForStyleOp } from "@/lib/tickets/rejection-tickets";
 import { findCarryForwardClaim } from "@/lib/review-flow/claim";
@@ -961,60 +959,11 @@ async function notifyReviewer(input: {
   // fix endpoint, with the rejection context the generic mail lacks.
   if (input.triggerSource === "TICKET_RERUN" || input.triggerSource === "TICKET_FIX") return;
 
-  // Cron-origin generation (the PO→EAN handoff and the backlog sweep) and the
-  // admin "Run all outputs" bulk action never send the review-ready EMAIL —
-  // automated / many-at-once fills shouldn't blast the mailbox — but still drop
-  // the in-app review-inbox entry below so the work stays visible. Holds even
-  // if email is re-enabled for manual/webhook runs.
-  const emailSuppressed =
-    input.triggerSource === "EAN_RESOLVED" ||
-    input.triggerSource === "CRON_SWEEP" ||
-    input.triggerSource === "MANUAL_BULK";
-
+  // Reviewers are no longer emailed when outputs finish generating — the only
+  // outbound mail is the nightly supplier digest. The in-app review-inbox entry
+  // below keeps the work visible without a mailbox blast; the recipient list
+  // still decides who gets that in-app notice.
   const recipients = await getReviewNotificationEmails();
-
-  if (!emailSuppressed) {
-    const base = process.env.PROD_SPEC_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
-    const reviewUrl = `${base}/styles/${input.styleId}/review`;
-    const email = reviewNotificationEmail({
-      styleName: input.styleName,
-      styleNumber: input.styleNumber,
-      customerName: input.customerName,
-      businessArea: input.businessArea,
-      poNumber: input.poNumber,
-      reviewUrl,
-      outputNames: input.outputNames,
-    });
-
-    try {
-      // Empty recipients still dispatch: that records a SKIPPED email_logs
-      // row with an actionable note instead of silently notifying no one.
-      const outcome = await dispatchEmail({
-        type: "REVIEW_READY",
-        to: recipients,
-        subject: email.subject,
-        html: email.html,
-        text: email.text,
-        jobId: input.jobId,
-        styleId: input.styleId,
-      });
-      const message =
-        outcome.status === "SENT"
-          ? `review notification sent to ${outcome.to}`
-          : outcome.status === "SIMULATED"
-            ? `review notification SIMULATED (RESEND_EMAILS off) — would go to ${outcome.to}`
-            : outcome.status === "FAILED"
-              ? `review notification FAILED: ${outcome.note ?? "Resend error"}`
-              : `review notification skipped: ${outcome.note ?? "no recipient — set it at /settings/notifications"}`;
-      await db.log.create({
-        data: { jobId: input.jobId, level: outcome.status === "FAILED" ? "WARN" : "INFO", message },
-      });
-    } catch (err) {
-      await db.log.create({
-        data: { jobId: input.jobId, level: "WARN", message: `review notification failed: ${(err as Error).message}` },
-      });
-    }
-  }
 
   // In-app review-ready notice (T2): ADMINs get the entry — they own the
   // pipeline and triage the queue — plus any configured recipient with an
