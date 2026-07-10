@@ -1,5 +1,6 @@
 import type { ColumnMapping } from "@/lib/customers/config";
 import type { StyleData } from "./types";
+import type { PinnableField } from "./pins-meta";
 import { renderCareLabel01Html } from "./templates/care-label-01";
 import { renderCareLabel02Html } from "./templates/care-label-02";
 import { renderNettoWashCareLabelHtml } from "./templates/netto-dk-privatelabel/wash-care-label";
@@ -50,6 +51,11 @@ export type TemplateVariant = {
   // are required (e.g. DDP carton markings need poNumber, not
   // customerOrderNo). When absent, `requiredFields` is the static gate.
   readiness?: (resolve: (field: keyof ColumnMapping) => string) => Array<keyof ColumnMapping>;
+  // The PINNABLE fields this output actually prints — the set the review-time
+  // field editor offers as pre-filled, editable inputs. For Output Builder
+  // layouts it's derived from the tokens in the definition; coded variants
+  // leave it undefined and callers fall back to `requiredFields` ∩ pinnable.
+  editableFields?: PinnableField[];
   render: (style: StyleData, dims: OutputDims) => Promise<string>;
   // True for "info area" Output Builder layouts (OutputLayout.isInfoArea):
   // the print size is switchable per style, so `dims` (the resolved
@@ -72,7 +78,21 @@ export type TemplateVariant = {
   // one PDF per returned doc, persisted as JobAssets with variantKey
   // "<key>#<suffix>". fileName null → runner default + suffix. `dims` is the
   // resolved output size (info-area size override flows through here too).
-  renderMany?: (style: StyleData, dims: OutputDims) => Promise<Array<{ suffix: string; fileName: string | null; html: string }>>;
+  // `perDocOverrides` (Output Builder only): per-document field overrides keyed
+  // by the doc's `suffix`, layered on top of the (already whole-output-
+  // overridden) style so a reviewer can correct a value on ONE PDF of a
+  // repeat-per-EAN output. Absent / no match ⇒ the row renders unchanged.
+  renderMany?: (
+    style: StyleData,
+    dims: OutputDims,
+    perDocOverrides?: ReadonlyMap<string, Record<string, string>>,
+  ) => Promise<Array<{ suffix: string; fileName: string | null; html: string }>>;
+  // The per-document styles a multi-doc (repeat-per-EAN) output would render —
+  // one entry per PDF, its `suffix` matching renderMany/filesPreview and the
+  // per-row `style` (colour / carton EAN narrowed to that PDF). Lets the
+  // review-time editor pre-fill each PDF card with ITS values. Undefined for
+  // single-document outputs.
+  docStyles?: (style: StyleData) => Array<{ suffix: string; style: StyleData }>;
   // Optional pre-run files preview: the per-file plan (suffix + custom
   // name, null = runner default) the NEXT run would emit for a style,
   // WITHOUT rendering anything. Output Builder layouts implement it

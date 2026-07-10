@@ -57,8 +57,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (!variantKey.trim()) {
     return NextResponse.json({ error: "variantKey required" }, { status: 400 });
   }
-  // BASE key ("layout:abc" from "layout:abc#86-92") — the same key readiness and
-  // the render merge look values up by.
+  // STORAGE key = the variantKey as sent: the BASE ("layout:abc") for a
+  // single-document output or the pre-generation missing-field fill (applies to
+  // every PDF), or the FULL "layout:abc#<suffix>" for one PDF of a multi-doc
+  // (repeat-per-EAN) output — a per-PDF override that layers over the base.
+  const storageKey = variantKey.trim();
+  // BASE key drives the re-generation scope: a rerun always regenerates the
+  // whole output (which re-splits into all its PDFs), never a single document.
   const baseKey = ignoreBaseKey(variantKey, "");
 
   // Reject any non-pinnable field explicitly (structured/derived fields — sizes,
@@ -89,7 +94,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   // Persist first, so the scoped generation below reads the new values.
   let saved: Record<string, string>;
   try {
-    saved = await saveStyleOutputFieldValues(id, baseKey, values, {
+    saved = await saveStyleOutputFieldValues(id, storageKey, values, {
       outputName,
       updatedById: session.user.id,
     });
@@ -114,7 +119,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     data: {
       jobId,
       level: "INFO",
-      message: `inline field values (${fieldNote}) for ${baseKey} by ${session.user.email} — re-rendering, re-entering review`,
+      message: `inline field values (${fieldNote}) for ${storageKey} by ${session.user.email} — re-rendering, re-entering review`,
     },
   });
 

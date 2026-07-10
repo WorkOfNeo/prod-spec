@@ -173,16 +173,18 @@ export async function renderProdSpecTestBundle(
       // Per-output pins ∪ this style's inline field values (per-style wins) +
       // carton barcode preference on a copy; the base StyleData is shared across
       // this style's outputs (runner-identical).
+      const baseKey = ignoreBaseKey(output.variantKey, variant.docType);
       const renderStyle = applyCartonBarcodePrefs(
-        applyFieldOverrides(
-          styleData,
-          mergeFieldOverrides(
-            output.fieldOverrides,
-            fieldValues.get(ignoreBaseKey(output.variantKey, variant.docType)),
-          ),
-        ),
+        applyFieldOverrides(styleData, mergeFieldOverrides(output.fieldOverrides, fieldValues.get(baseKey))),
         output,
       );
+      // Per-PDF overrides ("<base>#<suffix>") for a multi-doc output — mirrors
+      // the runner so a Test-tab dry run matches production per document.
+      const docPrefix = `${baseKey}#`;
+      const perDocOverrides = new Map<string, Record<string, string>>();
+      for (const [k, v] of fieldValues) {
+        if (k.startsWith(docPrefix)) perDocOverrides.set(k.slice(docPrefix.length), v as Record<string, string>);
+      }
       // Printed size: info-area size override when applicable, else the
       // output's own dims.
       const dims = effectiveOutputDims(output, variant.isInfoArea ?? false, infoAreaSizes);
@@ -190,7 +192,11 @@ export async function renderProdSpecTestBundle(
       // Multi-document variant (Output Builder repeat-per-EAN): one PDF per
       // returned doc.
       if (!variant.staticPdf && variant.renderMany) {
-        const parts = await variant.renderMany(renderStyle, dims);
+        const parts = await variant.renderMany(
+          renderStyle,
+          dims,
+          perDocOverrides.size > 0 ? perDocOverrides : undefined,
+        );
         for (const doc of parts) {
           const defaultName = defaultArtifactFileName(variant, styleData.styleNumber).replace(
             /\.pdf$/,

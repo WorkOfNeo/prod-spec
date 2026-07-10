@@ -101,6 +101,56 @@ export function applyFieldOverrides(style: StyleData, rawOverrides: unknown): St
   return next;
 }
 
+// Read the CURRENT value of a pinnable field from a StyleData — the inverse
+// of applyFieldOverrides's write switch. Used to pre-fill the review-time
+// field editor with what the output would print right now (so a reviewer edits
+// a resolved value in place). Returns "" when the field has no value. For a
+// per-document (repeat-per-EAN) render, pass that document's per-row StyleData
+// (repetitionStyles output) so colour / carton EAN reflect the specific PDF.
+export function readPinnableField(style: StyleData, field: PinnableField): string {
+  switch (field) {
+    case "customerName":
+      return style.customerName ?? "";
+    case "styleNumber":
+      return style.styleNumber ?? "";
+    case "composition":
+      // The English source line — mirrors how a pin is written back in.
+      return style.composition?.find((c) => c.language === "en")?.text ?? style.composition?.[0]?.text ?? "";
+    case "colourName":
+      return style.colour?.name ?? "";
+    case "colourCode":
+      return style.colour?.code ?? "";
+    case "cartonQty":
+      return style.carton.outerVE ? String(style.carton.outerVE) : "";
+    case "cartonEan":
+      return style.carton.ean13 ?? "";
+    case "klNumber":
+      return style.carton.klNumber ?? "";
+    case "lot":
+      return style.carton.lot ?? "";
+    case "supplierNumber":
+      return style.carton.supplierNumber ?? "";
+    case "customerItemNo":
+      return style.customerItemNo ?? "";
+    case "batchNo":
+      return style.batchNo ?? "";
+    case "prodNumber":
+      return style.prodNumber ?? "";
+    case "description":
+      return style.description ?? "";
+    case "campaignWeek":
+      return style.campaignWeek ?? "";
+    case "customerOrderNo":
+      return style.customerOrderNo ?? "";
+    case "deliveryTerm":
+      return style.deliveryTerm ?? "";
+    case "poNumber":
+      return style.poNumber ?? "";
+    case "countryOfOrigin":
+      return style.countryOfOrigin ?? "";
+  }
+}
+
 // Apply the output row's carton-barcode preference (symbology / bar
 // height) onto a StyleData copy — same copy-on-write contract as
 // applyFieldOverrides (the per-job StyleData is shared across outputs).
