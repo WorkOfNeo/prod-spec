@@ -11,7 +11,8 @@ import {
 import { labelHasSize } from "./size-match";
 import { colourLettersFromCode, scopeVariantsByColour, variantMatchesColour } from "./colour-scope";
 import type { EanDiagnostics } from "./ean-view";
-import { parseCustomerConfig, MANUAL_COLUMN_IDS, type ColumnMapping } from "@/lib/customers/config";
+import { eanResolveInputs } from "./resolve-inputs";
+import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
 import { parseProdSpecColumnMapping } from "@/lib/prod-spec/config";
 
 // =====================================================
@@ -64,34 +65,6 @@ export type StyleEanResult = {
   unmatchedVariants: PoVariant[];
   diagnostics?: EanDiagnostics;
 };
-
-function rawCols(rawData: unknown): Array<{ id?: string; text?: string | null; display_value?: string | null }> {
-  const cv = (rawData as { column_values?: unknown })?.column_values;
-  return Array.isArray(cv) ? cv : [];
-}
-
-// Read a column by id, trying both the native and the legacy "po."-prefixed
-// form so this works whether the style was sourced from Pre-Order (native)
-// or the old Styles board + enrichment (po.*).
-function readCol(rawData: unknown, ...ids: string[]): string {
-  const cols = rawCols(rawData);
-  for (const id of [...ids, ...ids.map((i) => `po.${i}`)]) {
-    const c = cols.find((x) => x.id === id);
-    const v = (c?.text ?? "").trim() || (c?.display_value ?? "").trim();
-    if (v) return v;
-  }
-  return "";
-}
-
-// Split a size list into labels. Only "," / ";" separate labels — NOT "/",
-// because combined sizes are written with slashes ("S/M", "L/XL") and must
-// stay intact to match both the PO variant labels and the EAN-map keys.
-function splitSizes(s: string): string[] {
-  return s
-    .split(/[,;]/)
-    .map((x) => x.trim())
-    .filter(Boolean);
-}
 
 export async function resolveStyleEans(styleId: string): Promise<StyleEanResult> {
   const style = await db.style.findUnique({
@@ -150,29 +123,15 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
       : null;
   const mapping: ColumnMapping = prodSpecMapping ?? config.columnMapping;
 
-  const customerItemNo = readCol(
+  // Customer Item No, style number (PO section-header match key), size run and
+  // the 🎨 Colour code ("*A"/"*B" colourway marker — see colour-scope.ts) — all
+  // read through the shared resolver so the runner's staleness fingerprint
+  // (eanResolveKey) reads exactly the same values this scrape did.
+  const { customerItemNo, styleNumber, sizes, colourCode } = eanResolveInputs(
     style.rawData,
-    mapping.customerItemNo ?? "text91__1",
-    MANUAL_COLUMN_IDS.customerItemNo,
-  );
-  // The style number printed on the PO section headers. Default maps to the
-  // Pre-Order row name (synthetic "__name__" column = Style.name, e.g.
-  // "PTQ60031"); fall back to Style.name directly so a missing mapping still
-  // resolves. This is the primary match key for multi-style POs.
-  const styleNumber =
-    readCol(style.rawData, mapping.styleNumber ?? "__name__", MANUAL_COLUMN_IDS.styleNumber) ||
-    style.name;
-  const sizes = splitSizes(
-    readCol(style.rawData, mapping.sizes ?? "sizes__1", MANUAL_COLUMN_IDS.sizes),
-  );
-  // The 🎨 Colour code column sometimes carries a "*A" / "*B" marker naming
-  // which of a PO section's colourways belongs to THIS style — two Pre-Order
-  // rows can order against ONE section that lists both colourways. See
-  // colour-scope.ts for the convention.
-  const colourCode = readCol(
-    style.rawData,
-    mapping.colourCode ?? "dropdown__1",
-    MANUAL_COLUMN_IDS.colourCode,
+    mapping,
+    style.name,
+    style.poNumber,
   );
   const colourLetters = colourLettersFromCode(colourCode);
 

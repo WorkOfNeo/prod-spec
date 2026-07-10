@@ -29,10 +29,13 @@ import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config"
 import {
   DEFAULT_OUTPUTS,
   parseBundlePageSettings,
+  parseProdSpecColumnMapping,
   parseProdSpecOutputs,
   resolveOutputVariant,
   type ProdSpecOutput,
 } from "@/lib/prod-spec/config";
+import { eanResolveInputs, eanResolveKey } from "@/lib/po/resolve-inputs";
+import { resolveAndPersistStyleEans } from "@/lib/po/ean-runner";
 import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
 import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
@@ -106,6 +109,69 @@ async function releaseStaleRunning(): Promise<void> {
   }
 }
 
+// Catch a Sizes / Colour-code edit that landed on Monday since the last PO→EAN
+// scrape and re-resolve before rendering. Ingest only re-queues a resolve when
+// the PO NUMBER changes; a size/colour edit leaves the PO untouched, so the
+// style_eans snapshot (and thus the printed labels/barcodes) would otherwise
+// stay stale until a manual Re-resolve. We fingerprint the current resolve
+// inputs (src/lib/po/resolve-inputs.ts) and compare to the one the last scrape
+// stored on Style.eanResolveKey.
+//
+// Returns true when a re-resolve actually ran (the caller reloads the eans).
+// Best-effort by design:
+//   • no PO → nothing to resolve.
+//   • column not migrated yet (the SELECT throws pre-db:deploy) → skip.
+//   • first render for a style with no stored key → just start tracking (write
+//     the key) rather than force a re-scrape, so a deploy can't stampede every
+//     style through SharePoint at once.
+async function maybeReResolveStaleEans(
+  jobId: string,
+  style: { id: string; rawData: unknown; name: string; poNumber: string | null },
+  prodSpec: { columnMapping: unknown } | null,
+  config: ReturnType<typeof parseCustomerConfig>,
+): Promise<boolean> {
+  if (!style.poNumber) return false;
+
+  let storedKey: string | null;
+  try {
+    const row = await db.style.findUnique({
+      where: { id: style.id },
+      select: { eanResolveKey: true },
+    });
+    storedKey = row?.eanResolveKey ?? null;
+  } catch {
+    // eanResolveKey column not present yet (pre-db:deploy) — skip the check.
+    return false;
+  }
+
+  const psRaw = prodSpec?.columnMapping;
+  const mapping: ColumnMapping =
+    psRaw && typeof psRaw === "object" && Object.keys(psRaw as object).length > 0
+      ? parseProdSpecColumnMapping(psRaw)
+      : config.columnMapping;
+  const currentKey = eanResolveKey(
+    eanResolveInputs(style.rawData, mapping, style.name, style.poNumber),
+  );
+
+  if (storedKey === null) {
+    // First render since this style resolved (or since the feature shipped) —
+    // start tracking without a forced re-scrape.
+    await db.style.update({ where: { id: style.id }, data: { eanResolveKey: currentKey } });
+    return false;
+  }
+  if (storedKey === currentKey) return false;
+
+  await db.log.create({
+    data: {
+      jobId,
+      level: "INFO",
+      message: "re-resolving EANs before render — size/colour changed since last scrape",
+    },
+  });
+  await resolveAndPersistStyleEans(style.id);
+  return true;
+}
+
 export async function processJob(jobId: string): Promise<void> {
   // Load published Output Builder layouts into the variant registry so
   // `layout:<id>` keys resolve like any code-registered variant below
@@ -116,6 +182,10 @@ export async function processJob(jobId: string): Promise<void> {
     where: { id: jobId },
     include: {
       style: {
+        // eanResolveKey is read separately (guarded) by the staleness check —
+        // omit it here so this critical render query never selects a column
+        // that may not exist yet on a pre-db:deploy boot.
+        omit: { eanResolveKey: true },
         include: {
           customer: true,
           qrImage: true,
@@ -148,6 +218,41 @@ export async function processJob(jobId: string): Promise<void> {
   const prodSpec = job.style.prodSpecId
     ? await db.prodSpec.findUnique({ where: { id: job.style.prodSpecId } })
     : null;
+
+  // Re-resolve the PO barcodes first if a Sizes / Colour-code edit landed on
+  // Monday since the last scrape (such an edit changes the size↔barcode map
+  // but doesn't re-queue a resolve at ingest, so the style_eans snapshot would
+  // otherwise print stale labels/barcodes). Best-effort: on a re-resolve, pull
+  // the refreshed eans + carton EAN into the loaded style before building the
+  // render context. A failure here must never fail the job — fall back to the
+  // existing snapshot.
+  try {
+    const reResolved = await maybeReResolveStaleEans(job.id, job.style, prodSpec, config);
+    if (reResolved) {
+      const fresh = await db.style.findUnique({
+        where: { id: job.style.id },
+        select: {
+          cartonEan: true,
+          eans: {
+            orderBy: { position: "asc" },
+            select: { size: true, ean13: true, variantLabel: true },
+          },
+        },
+      });
+      if (fresh) {
+        job.style.eans = fresh.eans;
+        job.style.cartonEan = fresh.cartonEan;
+      }
+    }
+  } catch (err) {
+    await db.log.create({
+      data: {
+        jobId: job.id,
+        level: "WARN",
+        message: `pre-render EAN re-resolve skipped: ${(err as Error).message}`,
+      },
+    });
+  }
 
   let styleData: StyleData;
   try {

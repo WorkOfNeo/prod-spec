@@ -811,6 +811,15 @@ model Style {
   // a bulk re-sync can't drag it back in. Backfilled to createdAt for existing
   // rows. Null = never had a PO queued.
   eanQueuedAt         DateTime?
+  // Fingerprint of the inputs the last EAN scrape resolved against (PO number,
+  // style number, Customer Item No, Colour code, size run — see
+  // src/lib/po/resolve-inputs.ts). Recomputed before each render: if it no
+  // longer matches the current Monday snapshot, a Sizes / Colour-code edit has
+  // landed since the scrape (which — unlike a PO change — does NOT re-queue a
+  // resolve at ingest), so the style_eans snapshot is stale and the runner
+  // re-resolves before building the PDFs. Null = never resolved / pre-feature
+  // row (the runner backfills it on the next render without a forced re-scrape).
+  eanResolveKey       String?
   // Numeric value of the PO reference (last digit run of poNumber, e.g. 63144
   // for "C-PO63144") — see parsePoNumberValue in src/lib/po/po-number.ts. The
   // automation cutoff uses it: auto-scrape + the generation sweep only touch
