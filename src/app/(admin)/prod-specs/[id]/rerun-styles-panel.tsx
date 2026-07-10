@@ -55,6 +55,9 @@ export function RerunStylesPanel({
   const [runningRows, setRunningRows] = useState<Set<string>>(() => new Set());
   // Per-row failures, keyed by styleId — cleared when that row runs again.
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  // Manual "Refresh" affordance state (pull the latest queue/last-run without a
+  // reload — useful to catch a style the automation just queued).
+  const [refreshing, setRefreshing] = useState(false);
 
   const activeRun = batch != null && batch.finishedAt == null;
 
@@ -131,6 +134,26 @@ export function RerunStylesPanel({
     };
   }, [activeRun, batch, fetchBatch, fetchList, storageKey]);
 
+  // Whether any style is currently queued or generating — drives the live
+  // auto-refresh below and the "live" pill in the header.
+  const anyInFlight = (list?.rows ?? []).some((r) => r.queueState != null);
+
+  // Live refresh while work is in flight: re-poll the list so a row moves
+  // Queued → Generating → done (last-run updates) without a manual reload. Only
+  // runs while something is actually in flight, so an idle spec does no polling.
+  useEffect(() => {
+    if (!anyInFlight) return;
+    let cancelled = false;
+    const id = window.setInterval(async () => {
+      const l = await fetchList();
+      if (!cancelled && l) setList(l);
+    }, POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [anyInFlight, fetchList]);
+
   const runAllDisabledReason = unsaved
     ? "Save your output changes first"
     : !specActive
@@ -143,9 +166,10 @@ export function RerunStylesPanel({
     if (!list || list.toRerun === 0 || submittingAll || activeRun || runAllDisabledReason) return;
     const ok = window.confirm(
       `Run ${list.toRerun} style${list.toRerun === 1 ? "" : "s"} on this prod spec?\n\n` +
-        `Regenerates ${list.withRejected} with rejected output${list.withRejected === 1 ? "" : "s"} ` +
-        `and ${list.withMissing} with new/missing output${list.withMissing === 1 ? "" : "s"}. ` +
-        `Approved outputs are left alone. Renders in the background — safe to leave this page.`,
+        `Regenerates new/missing, rejected, and changed (non-approved) outputs ` +
+        `(${list.withMissing} new · ${list.withRejected} rejected · ${list.withChanged} changed). ` +
+        `Approved outputs are left alone — including any on an outdated layout. ` +
+        `Renders in the background — safe to leave this page.`,
     );
     if (!ok) return;
     setSubmittingAll(true);
@@ -209,6 +233,17 @@ export function RerunStylesPanel({
     }
   }
 
+  async function refresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      const l = await fetchList();
+      if (l) setList(l);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   const totalRows = list?.rows.length ?? 0;
   const filtered = useMemo(() => {
     const all = list?.rows ?? [];
@@ -228,9 +263,11 @@ export function RerunStylesPanel({
           <p className="text-sm font-medium text-zinc-800">Run styles</p>
           <p className="mt-0.5 text-xs text-zinc-500">
             Every style on this prod spec. Run one, or run all — only{" "}
-            <span className="font-medium text-zinc-700">new/missing</span> and{" "}
-            <span className="font-medium text-zinc-700">rejected</span> outputs regenerate; approved
-            work is left alone.
+            <span className="font-medium text-zinc-700">new/missing</span>,{" "}
+            <span className="font-medium text-zinc-700">rejected</span>, and{" "}
+            <span className="font-medium text-zinc-700">changed</span> (layout edited since) outputs
+            regenerate; approved work is left alone (flagged{" "}
+            <span className="font-medium text-orange-700">outdated</span> if its layout changed).
           </p>
         </div>
         <button
@@ -260,7 +297,32 @@ export function RerunStylesPanel({
           <span className="inline-flex items-center gap-1">
             · <Dot className="bg-zinc-900" /> {list.toRerun} to run
           </span>
-          <div className="ml-auto">
+          {list.changedApprovedStyles > 0 && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-1.5 py-0.5 font-medium text-orange-700"
+              title="These styles have approved outputs on a layout that changed since — they won't rerun automatically; use each row's Run to refresh."
+            >
+              <WarnIcon /> {list.changedApprovedStyles} with outdated approved
+            </span>
+          )}
+          {anyInFlight && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700"
+              title="A style is queued or generating — the list is refreshing live"
+            >
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" /> live
+            </span>
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              disabled={refreshing}
+              title="Refresh the queue + last-run info"
+              className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+            >
+              <RefreshIcon spinning={refreshing} /> Refresh
+            </button>
             <input
               type="search"
               value={query}
@@ -332,7 +394,7 @@ export function RerunStylesPanel({
         <div className="flex items-center gap-3 border-b border-zinc-200 bg-zinc-50 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
           <span className="min-w-0 flex-1">Style</span>
           <span className="hidden w-44 shrink-0 sm:block">Last run</span>
-          <span className="w-28 shrink-0">To run</span>
+          <span className="w-40 shrink-0">To run</span>
           <span className="w-16 shrink-0 text-right">Run</span>
         </div>
 
@@ -423,7 +485,7 @@ function StyleRow({
           )}
         </div>
 
-        <div className="w-28 shrink-0">
+        <div className="w-40 shrink-0">
           <ToRunCell row={row} />
         </div>
 
@@ -445,14 +507,43 @@ function StyleRow({
 }
 
 function ToRunCell({ row }: { row: StyleRunRow }) {
-  if (row.inFlight) {
+  // In flight: distinguish Queued (accepted, waiting for the runner) from
+  // Generating (actively rendering) — the "system is working on it" signal.
+  if (row.queueState === "queued") {
     return (
-      <span className="inline-flex items-center gap-1 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600">
-        <Spinner className="h-3 w-3" /> running
+      <span
+        className="inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700"
+        title="Accepted into the generation queue — waiting for the runner to pick it up"
+      >
+        <ClockIcon /> Queued
       </span>
     );
   }
+  if (row.queueState === "running" || row.inFlight) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600"
+        title="Rendering now"
+      >
+        <Spinner className="h-3 w-3" /> Generating
+      </span>
+    );
+  }
+  // Approved outputs whose layout changed since generation — a flag only, never
+  // in the run set. Shown alongside run badges, or alone (instead of "up to
+  // date") when there's nothing else to run.
+  const outdatedFlag =
+    row.changedApproved > 0 ? (
+      <span
+        className="inline-flex items-center gap-1 rounded border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] font-medium text-orange-700"
+        title={`${row.changedApproved} approved output${row.changedApproved === 1 ? "" : "s"} on an outdated layout — rerun manually to refresh (won't auto-run)`}
+      >
+        <WarnIcon /> {row.changedApproved} outdated
+      </span>
+    ) : null;
+
   if (row.variantKeys.length === 0) {
+    if (outdatedFlag) return <span className="flex flex-wrap items-center gap-1">{outdatedFlag}</span>;
     return row.readyCount > 0 ? (
       <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700">
         <Dot className="bg-emerald-500" /> up to date
@@ -475,6 +566,15 @@ function ToRunCell({ row }: { row: StyleRunRow }) {
           {row.rejected} rejected
         </span>
       )}
+      {row.changed > 0 && (
+        <span
+          className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700"
+          title={`${row.changed} output${row.changed === 1 ? "" : "s"} whose layout changed since it last generated — will regenerate`}
+        >
+          {row.changed} changed
+        </span>
+      )}
+      {outdatedFlag}
     </span>
   );
 }
@@ -542,6 +642,61 @@ function timeAgo(iso: string): string {
 
 function Dot({ className }: { className: string }) {
   return <span className={`inline-block h-1.5 w-1.5 rounded-full ${className}`} aria-hidden="true" />;
+}
+
+function WarnIcon() {
+  return (
+    <svg
+      className="h-3 w-3 shrink-0"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg
+      className="h-3 w-3 shrink-0"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function RefreshIcon({ spinning = false }: { spinning?: boolean }) {
+  return (
+    <svg
+      className={`h-3.5 w-3.5 shrink-0 ${spinning ? "animate-spin" : ""}`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v6h-6" />
+    </svg>
+  );
 }
 
 function Spinner({ className = "h-4 w-4" }: { className?: string }) {

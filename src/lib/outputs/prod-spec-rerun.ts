@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
+import { layoutIdFromVariantKey } from "@/lib/output-layouts/variant-keys";
 import { outputReadinessForStyle, type ReadinessStyle } from "@/lib/styles/output-readiness";
 import { loadIgnoredOutputKeysByStyle } from "@/lib/outputs/output-ignores";
 import type { RunnableStyle } from "@/lib/queue/bulk-run";
@@ -264,9 +265,22 @@ export type StyleRunRow = {
   variantKeys: string[];
   missing: number;
   rejected: number;
+  // Ready outputs whose Output Builder layout was EDITED after this style's
+  // current asset was generated (layout `updatedAt` > asset `createdAt`), and
+  // whose latest asset is NOT approved (awaiting review). Folded into
+  // variantKeys so a manual run regenerates them. Approved-but-changed outputs
+  // are counted in `changedApproved` instead and left OUT of the run set.
+  changed: number;
+  // Ready outputs whose layout changed since generation but whose latest asset
+  // is APPROVED — surfaced as a flag only, never auto-added to the run set (a
+  // manual, deliberate rerun is required so approved work isn't blasted back
+  // into review). Kept separate from `changed` for exactly that reason.
+  changedApproved: number;
   // A QUEUED/RUNNING job is already in flight — the row can't be re-run yet and
-  // it's excluded from "Run all".
+  // it's excluded from "Run all". `queueState` says which: "queued" (accepted,
+  // waiting for the runner) vs "running" (actively rendering); null when idle.
   inFlight: boolean;
+  queueState: "queued" | "running" | null;
   // Newest job for this style, or null if it never ran.
   lastRun: StyleLastRun | null;
 };
@@ -281,6 +295,11 @@ export type ProdSpecStyleRunList = {
   toRerun: number;
   withMissing: number;
   withRejected: number;
+  // Runnable styles that include ≥1 changed (non-approved) output.
+  withChanged: number;
+  // Styles that have ≥1 approved output on an outdated layout — the "flagged,
+  // won't auto-run" bucket, surfaced as a spec-level notice.
+  changedApprovedStyles: number;
   rows: StyleRunRow[];
 };
 
@@ -291,6 +310,8 @@ const emptyRunList = (active: boolean): ProdSpecStyleRunList => ({
   toRerun: 0,
   withMissing: 0,
   withRejected: 0,
+  withChanged: 0,
+  changedApprovedStyles: 0,
   rows: [],
 });
 
@@ -326,9 +347,17 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
       variantKey: { not: null },
     },
     orderBy: { job: { createdAt: "desc" } },
-    select: { variantKey: true, reviewStatus: true, job: { select: { styleId: true } } },
+    select: {
+      variantKey: true,
+      reviewStatus: true,
+      // Generation time — compared against the layout's last-edit time to flag
+      // outputs whose design changed since this asset was produced.
+      createdAt: true,
+      job: { select: { styleId: true } },
+    },
   });
-  const latestByStyle = new Map<string, Map<string, "PENDING_REVIEW" | "APPROVED" | "REJECTED">>();
+  type LatestAsset = { status: "PENDING_REVIEW" | "APPROVED" | "REJECTED"; at: Date };
+  const latestByStyle = new Map<string, Map<string, LatestAsset>>();
   for (const a of assets) {
     if (!a.variantKey) continue;
     let m = latestByStyle.get(a.job.styleId);
@@ -336,16 +365,30 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
       m = new Map();
       latestByStyle.set(a.job.styleId, m);
     }
-    if (!m.has(a.variantKey)) m.set(a.variantKey, a.reviewStatus);
+    if (!m.has(a.variantKey)) m.set(a.variantKey, { status: a.reviewStatus, at: a.createdAt });
   }
 
-  // Styles with a QUEUED/RUNNING job — shown as "running", not runnable.
+  // Published Output Builder layouts → last-edit time, keyed by layout id.
+  // Editing a published layout takes effect on future renders immediately and
+  // bumps `updatedAt` (see the layout PATCH route), so `updatedAt` is the
+  // accurate "this output's design last changed" signal. Only layout outputs
+  // carry this — coded templates have no per-output change stamp (out of scope).
+  const layoutRows = await db.outputLayout.findMany({
+    where: { status: "PUBLISHED" },
+    select: { id: true, updatedAt: true },
+  });
+  const layoutUpdatedById = new Map<string, Date>(layoutRows.map((l) => [l.id, l.updatedAt]));
+
+  // Styles with a QUEUED/RUNNING job — shown as Queued/Generating, not runnable.
   const inflight = await db.job.findMany({
     where: { styleId: { in: styleIds }, status: { in: ["QUEUED", "RUNNING"] } },
-    select: { styleId: true },
+    select: { styleId: true, status: true },
     distinct: ["styleId"],
   });
-  const inflightSet = new Set(inflight.map((j) => j.styleId));
+  // styleId → in-flight job status. At most one in-flight job per style (the
+  // enqueue paths refuse to double-enqueue), so distinct-by-style is exact.
+  const inflightByStyle = new Map<string, "QUEUED" | "RUNNING">();
+  for (const j of inflight) inflightByStyle.set(j.styleId, j.status as "QUEUED" | "RUNNING");
 
   // Newest job per style (any status) → the "Last run" stamp + trigger. Fetched
   // newest-first; first row seen per style wins (same reduce as the asset
@@ -376,24 +419,47 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
   let toRerun = 0;
   let withMissing = 0;
   let withRejected = 0;
+  let withChanged = 0;
+  let changedApprovedStyles = 0;
 
   for (const c of candidates) {
     // Roll latest-per-fullKey assets up to base (see computeProdSpecRerunPlan).
+    // Beyond has-asset / has-rejected we also track whether any doc is still
+    // awaiting review (hasPending) and the newest asset time per base (to
+    // compare against the layout's last-edit time for the "changed" flag).
     const hasAsset = new Set<string>();
     const hasRejected = new Set<string>();
+    const hasPending = new Set<string>();
+    const newestAtByBase = new Map<string, number>();
     const fullKeys = latestByStyle.get(c.id);
     if (fullKeys) {
-      for (const [fk, status] of fullKeys) {
+      for (const [fk, a] of fullKeys) {
         const b = base(fk);
         hasAsset.add(b);
-        if (status === "REJECTED") hasRejected.add(b);
+        if (a.status === "REJECTED") hasRejected.add(b);
+        if (a.status === "PENDING_REVIEW") hasPending.add(b);
+        const t = a.at.getTime();
+        const prev = newestAtByBase.get(b);
+        if (prev === undefined || t > prev) newestAtByBase.set(b, t);
       }
     }
     if (hasAsset.size > 0) generatedStyles++;
 
+    // An output "changed" when its published layout was edited after this
+    // style's current asset for it was generated. Layout outputs only.
+    const isChanged = (b: string): boolean => {
+      const layoutId = layoutIdFromVariantKey(b);
+      if (!layoutId) return false;
+      const updatedAt = layoutUpdatedById.get(layoutId);
+      const generatedAt = newestAtByBase.get(b);
+      return updatedAt != null && generatedAt != null && updatedAt.getTime() > generatedAt;
+    };
+
     const variantKeys: string[] = [];
     let missingN = 0;
     let rejectedN = 0;
+    let changedN = 0;
+    let changedApprovedN = 0;
     let readyCount = 0;
     for (const o of outputReadinessForStyle(
       c as ReadinessStyle,
@@ -410,18 +476,32 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
       } else if (hasRejected.has(b)) {
         variantKeys.push(o.variantKey); // previously rejected
         rejectedN++;
+      } else if (isChanged(b)) {
+        // Generated & not rejected, but the layout changed since. Awaiting
+        // review → fold into the run set; Approved → flag only, left out so
+        // approved work isn't blasted back into review without a deliberate run.
+        if (hasPending.has(b)) {
+          variantKeys.push(o.variantKey);
+          changedN++;
+        } else {
+          changedApprovedN++;
+        }
       }
-      // generated & not rejected (approved / awaiting review) → leave it.
+      // generated, not rejected, unchanged (approved / awaiting up-to-date) → leave.
     }
 
-    const isInflight = inflightSet.has(c.id);
+    const inflightStatus = inflightByStyle.get(c.id);
+    const isInflight = inflightStatus != null;
+    const queueState = inflightStatus === "RUNNING" ? "running" : inflightStatus === "QUEUED" ? "queued" : null;
     // "Run all" mirrors what the button will actually enqueue: runnable outputs
     // and not already in flight.
     if (variantKeys.length > 0 && !isInflight) {
       toRerun++;
       if (missingN > 0) withMissing++;
       if (rejectedN > 0) withRejected++;
+      if (changedN > 0) withChanged++;
     }
+    if (!isInflight && changedApprovedN > 0) changedApprovedStyles++;
 
     const lj = lastJobByStyle.get(c.id);
     rows.push({
@@ -433,7 +513,10 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
       variantKeys,
       missing: missingN,
       rejected: rejectedN,
+      changed: changedN,
+      changedApproved: changedApprovedN,
       inFlight: isInflight,
+      queueState,
       lastRun: lj
         ? {
             at: (lj.finishedAt ?? lj.startedAt ?? lj.createdAt).toISOString(),
@@ -452,6 +535,8 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
     toRerun,
     withMissing,
     withRejected,
+    withChanged,
+    changedApprovedStyles,
     rows,
   };
 }
