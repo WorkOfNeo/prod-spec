@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { isChallenge, isEventPayload, verifyWebhookRequest } from "@/lib/monday/webhook";
 import { ingestMondayItem, markStyleArchived, markStyleDeleted } from "@/lib/monday/ingest";
 import { autoEnqueueReadyOutputs } from "@/lib/queue/auto-enqueue";
-import { triggerRunner, triggerEanRunner } from "@/lib/queue/trigger";
+import { triggerRunner, triggerEanRunner, triggerTranslationsSync } from "@/lib/queue/trigger";
 import { MONDAY_BOARDS } from "@/lib/monday/boards";
 import { getItem } from "@/lib/monday/client";
 import { upsertCustomerFromMondayItem, upsertSupplierFromMondayItem } from "@/lib/monday/sync";
@@ -86,6 +86,8 @@ export async function POST(req: NextRequest) {
       await handleCustomerEvent(event.pulseId);
     } else if (boardId === MONDAY_BOARDS.suppliers) {
       await handleSupplierEvent(event.pulseId);
+    } else if (boardId === MONDAY_BOARDS.translations) {
+      await handleTranslationsEvent(event.pulseId);
     } else {
       await db.log.create({
         data: {
@@ -136,6 +138,23 @@ async function handleStyleEvent(pulseId: number): Promise<void> {
     triggerSource: "WEBHOOK",
   });
   if (enqueue.enqueued) await triggerRunner();
+}
+
+async function handleTranslationsEvent(pulseId: number): Promise<void> {
+  // The Translations board is the source of the multilingual dictionary. A new
+  // phrase or an edited cell should refresh it — but the sink + transform is
+  // heavy (every phrase × ~27 language columns), so we never run it inline;
+  // Monday needs a fast ack and retries/disables slow endpoints. Fire the
+  // coalescing auto-sync in the background instead (a burst of cell edits
+  // collapses into ~one re-sink). We only subscribe to create_item /
+  // change_column_value for this board, so archive/delete never reach here.
+  await triggerTranslationsSync();
+  await db.log.create({
+    data: {
+      level: "INFO",
+      message: `translations dictionary refresh kicked from monday ${pulseId}`,
+    },
+  });
 }
 
 async function handleCustomerEvent(pulseId: number): Promise<void> {

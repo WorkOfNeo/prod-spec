@@ -35,6 +35,24 @@ const DEFAULT_EVENTS: WebhookEvent[] = [
   "item_deleted",
 ];
 
+// The Translations board only feeds the multilingual dictionary, whose
+// transform is upsert-only — so it needs live updates on new phrases and cell
+// edits, but NOT archive/delete (those are handled by the style-lifecycle
+// path and would be no-ops here anyway).
+const TRANSLATION_EVENTS: WebhookEvent[] = ["create_item", "change_column_value"];
+
+// Boards we keep webhook subscriptions on, each with the event set it needs.
+// Additive only — registerMissing registers what's missing and never deletes
+// (global webhook rule). Pre-Order is the source of Style rows; Translations
+// keeps the dictionary fresh.
+const WEBHOOK_BOARDS: Array<{ boardId: string; events: WebhookEvent[] }> = [
+  { boardId: MONDAY_BOARDS.preOrder, events: DEFAULT_EVENTS },
+  { boardId: MONDAY_BOARDS.styles, events: DEFAULT_EVENTS },
+  { boardId: MONDAY_BOARDS.customers, events: DEFAULT_EVENTS },
+  { boardId: MONDAY_BOARDS.suppliers, events: DEFAULT_EVENTS },
+  { boardId: MONDAY_BOARDS.translations, events: TRANSLATION_EVENTS },
+];
+
 function buildWebhookUrl(): string {
   const base = process.env.PROD_SPEC_BASE_URL?.replace(/\/$/, "");
   const token = process.env.MONDAY_WEBHOOK_SECRET;
@@ -69,22 +87,15 @@ export async function POST(req: NextRequest) {
   const url = buildWebhookUrl();
 
   if ("all" in parsed.data) {
-    // Cover the known boards with the default event set. Pre-Order is the
-    // source of Style rows, so it needs the same live-update subscriptions.
+    // Cover the known boards with their event sets (see WEBHOOK_BOARDS).
     // Per the global webhook rule, we register what's missing — never delete.
-    const boards = [
-      MONDAY_BOARDS.preOrder,
-      MONDAY_BOARDS.styles,
-      MONDAY_BOARDS.customers,
-      MONDAY_BOARDS.suppliers,
-    ];
     // Capture per-board failures instead of letting one board's error
     // (e.g. a Monday permission problem on a single board) reject the whole
     // run and discard the boards that DID register.
     const results = await Promise.all(
-      boards.map(async (boardId) => {
+      WEBHOOK_BOARDS.map(async ({ boardId, events }) => {
         try {
-          return { boardId, ...(await registerMissing(boardId, DEFAULT_EVENTS, url)) };
+          return { boardId, ...(await registerMissing(boardId, events, url)) };
         } catch (err) {
           const error = err instanceof Error ? err.message : "register failed";
           console.error(`[webhooks] board ${boardId} register failed — ${error}`);

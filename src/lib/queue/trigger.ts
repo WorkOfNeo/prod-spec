@@ -32,3 +32,23 @@ export async function triggerEanRunner(): Promise<void> {
     console.error("[queue] triggerEanRunner failed", err);
   });
 }
+
+// Fire-and-forget kick for the translations dictionary auto-sync. Fired from
+// the Monday Translations-board webhook so a changed phrase refreshes the
+// dictionary without running the heavy sink+transform inline. The endpoint
+// coalesces (src/lib/monday/translations-auto-sync.ts), so a burst of cell
+// edits collapses into at most one in-flight sink plus a trailing catch-up —
+// overlapping kicks are harmless, same as triggerRunner.
+export async function triggerTranslationsSync(): Promise<void> {
+  const base = process.env.PROD_SPEC_BASE_URL?.replace(/\/$/, "");
+  const secret = process.env.JOB_RUNNER_SECRET;
+  if (!base || !secret) {
+    console.warn("[queue] triggerTranslationsSync skipped — PROD_SPEC_BASE_URL or JOB_RUNNER_SECRET not set");
+    return;
+  }
+  void fetch(`${base}/api/admin/translations/sync?secret=${encodeURIComponent(secret)}`, {
+    method: "POST",
+  }).catch((err) => {
+    console.error("[queue] triggerTranslationsSync failed", err);
+  });
+}
