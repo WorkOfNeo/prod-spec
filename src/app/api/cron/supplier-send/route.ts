@@ -60,6 +60,8 @@ export async function POST(req: NextRequest) {
           (sweep.noFolder > 0 || sweep.ambiguous > 0
             ? ` / ${sweep.noFolder} no PO folder / ${sweep.ambiguous} ambiguous`
             : "") +
+          // Surface the first failure reason so /automation says WHY, not just a count.
+          (sweep.failures.length > 0 ? ` — e.g. ${sweep.failures[0].message}` : "") +
           (enabled ? "" : " — sending OFF, push skipped"),
         processed: sweep.uploaded,
         failed: sweep.failed,

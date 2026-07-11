@@ -61,6 +61,28 @@ export function sanitizeName(input: string): string {
   return cleaned || "untitled";
 }
 
+// Same illegal set, but for FILE names. Folder names collapse illegal chars to
+// a space (sanitizeName); a filename keeps its shape so the variant key stays
+// readable — "…-layout:<id>-…​.pdf" becomes "…-layout-<id>-…​.pdf" — by mapping
+// each illegal char (and control chars) to a hyphen. Still trims the edges
+// SharePoint forbids (leading/trailing spaces, trailing dots). The colon in
+// Output-Builder variant keys is the usual offender; without this the Graph
+// PUT 400s and the row floats as a bare "gave up (3×)".
+export function sanitizeFileName(input: string): string {
+  let out = "";
+  for (const ch of input) {
+    const code = ch.codePointAt(0) ?? 0;
+    out += code < 0x20 || ILLEGAL_NAME_CHARS.includes(ch) ? "-" : ch;
+  }
+  const cleaned = out
+    .replace(/^[.\s]+/, "") // no leading dots/spaces
+    .replace(/[.\s]+$/, "") // no trailing dots/spaces (protects the extension too)
+    .slice(0, 250)
+    .replace(/[.\s]+$/, "")
+    .trim();
+  return cleaned || "untitled";
+}
+
 // Resolve a supplier's "Supplier Folder" sharing URL to a writable target
 // (driveId + itemId). Read-only — works before write is granted.
 export async function resolveSupplierFolder(sharingUrl: string): Promise<ResolvedFolder> {

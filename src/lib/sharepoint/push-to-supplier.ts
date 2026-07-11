@@ -5,6 +5,7 @@ import {
   uploadIntoFolder,
   listChildFolders,
   resolvePoFolder,
+  sanitizeFileName,
   SharePointWriteForbiddenError,
 } from "./supplier-folder";
 import { supplierParentFolderName, APPROVED_LAYOUTS_SUBFOLDER } from "./supplier-folder-names";
@@ -223,7 +224,9 @@ export async function pushApprovedAssetsToSupplier(input: {
   const pushed: PushedFile[] = [];
   for (const a of pushable) {
     try {
-      const up = await uploadIntoFolder(folder.driveId, subfolder.id, a.fileName, Buffer.from(a.pdf));
+      // SharePoint rejects filenames with : / \ * ? " < > | — the Output-Builder
+      // variant key ("layout:<id>") carries a colon, so sanitize before the PUT.
+      const up = await uploadIntoFolder(folder.driveId, subfolder.id, sanitizeFileName(a.fileName), Buffer.from(a.pdf));
       pushed.push({ assetId: a.id, fileName: up.name, webUrl: up.webUrl });
     } catch (err) {
       throw toPushError(err);
