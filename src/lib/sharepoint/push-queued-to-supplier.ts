@@ -55,6 +55,8 @@ export type SupplierUploadSweep = {
   skipped: number;
   noFolder: number; // PO folder not found under the supplier (flagged, retried each sweep)
   ambiguous: number; // several folders match the PO — needs a human (flagged, retried)
+  // Per-style failure detail so the cron JSON says WHY, not just "failed: 13".
+  failures: Array<{ styleId: string; status: StampStatus; message: string }>;
 };
 
 const EMPTY_SWEEP: SupplierUploadSweep = {
@@ -64,6 +66,7 @@ const EMPTY_SWEEP: SupplierUploadSweep = {
   skipped: 0,
   noFolder: 0,
   ambiguous: 0,
+  failures: [],
 };
 
 // Non-UPLOADED terminal statuses the sweep stamps. NO_FOLDER / AMBIGUOUS are new
@@ -119,13 +122,24 @@ export async function pushQueuedSupplierUploads(opts?: {
     skipped: 0,
     noFolder: 0,
     ambiguous: 0,
+    failures: [],
   };
   const now = () => new Date();
+
+  // Persist the last push error on the row, in its OWN guarded update so a
+  // missing sharePointError column (before db:deploy runs the migration) can
+  // never break the core status stamp above. Cleared (null) on success.
+  const recordError = async (ids: string[], message: string | null) => {
+    if (ids.length === 0) return;
+    await db.supplierSendQueueItem
+      .updateMany({ where: { id: { in: ids } }, data: { sharePointError: message } })
+      .catch(() => {});
+  };
 
   // FAILED counts a strike (pushAttempts++); every other flagged status is a
   // data/folder gap that failed fast — stamped without a strike so it keeps
   // self-healing (retried each sweep until the underlying gap is closed).
-  const counterOf: Record<StampStatus, keyof SupplierUploadSweep> = {
+  const counterOf: Record<StampStatus, "failed" | "skipped" | "noFolder" | "ambiguous"> = {
     FAILED: "failed",
     SKIPPED: "skipped",
     NO_FOLDER: "noFolder",
@@ -136,7 +150,12 @@ export async function pushQueuedSupplierUploads(opts?: {
     // folderMatches (JSON string of competing folders) rides ONLY on AMBIGUOUS;
     // every other status clears it, so a row that was ambiguous and is now
     // resolved doesn't keep stale links.
-    const stamp = async (ids: string[], status: StampStatus, folderMatches?: string | null) => {
+    const stamp = async (
+      ids: string[],
+      status: StampStatus,
+      folderMatches?: string | null,
+      errorMessage?: string | null,
+    ) => {
       if (ids.length === 0) return;
       await db.supplierSendQueueItem
         .updateMany({
@@ -149,6 +168,7 @@ export async function pushQueuedSupplierUploads(opts?: {
           },
         })
         .catch(() => {});
+      await recordError(ids, errorMessage ?? null);
       sweep[counterOf[status]] += ids.length;
     };
 
@@ -221,6 +241,7 @@ export async function pushQueuedSupplierUploads(opts?: {
               },
             })
             .catch(() => {});
+          await recordError([item.id], null); // landed cleanly — drop any prior error
           sweep.uploaded += 1;
         } else {
           // Asset no longer approved/print-safe (or gone) — data-shaped skip.
@@ -240,15 +261,17 @@ export async function pushQueuedSupplierUploads(opts?: {
         status = "AMBIGUOUS";
         folderMatches = err.folderMatches ? JSON.stringify(err.folderMatches) : null;
       } else status = !(err instanceof SupplierPushError) || err.httpStatus === 403 ? "FAILED" : "SKIPPED";
-      await stamp(
-        withAsset.map((i) => i.id),
-        status,
-        folderMatches,
-      );
-      console.warn(
-        `[supplier-upload] push not completed for style ${styleId} (${status}):`,
-        err instanceof Error ? err.message : err,
-      );
+
+      // The reason, persisted on the row + surfaced in the sweep result: HTTP
+      // status (when known) plus the message, so "gave up (3×)" becomes
+      // e.g. "400 · The file name … is invalid".
+      const httpStatus = err instanceof SupplierPushError ? err.httpStatus : undefined;
+      const rawMessage = err instanceof Error ? err.message : String(err);
+      const message = `${httpStatus ? `${httpStatus} · ` : ""}${rawMessage}`.replace(/\s+/g, " ").trim().slice(0, 500);
+
+      await stamp(withAsset.map((i) => i.id), status, folderMatches, message);
+      sweep.failures.push({ styleId, status, message });
+      console.warn(`[supplier-upload] push not completed for style ${styleId} (${status}): ${message}`);
     }
   }
 

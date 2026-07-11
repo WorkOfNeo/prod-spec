@@ -222,6 +222,12 @@ model SupplierSendQueueItem {
   // can delete the extra. Null in every other state. String (not Json) so the
   // sweep can clear it with a plain null (no Prisma DbNull dance).
   sharePointFolderMatches String?
+  // Last push failure, human-readable ("400 · The file name is invalid", "403 ·
+  // write not granted"). Written on every FAILED/SKIPPED/flagged stamp, cleared
+  // on UPLOADED — so /settings/approved can say WHY a row floated instead of a
+  // bare "gave up (3×)". Best-effort: written in its own guarded update so it
+  // can't break the core status stamp before the column exists.
+  sharePointError  String?
   // Consecutive FAILED folder pushes (WS3). Mirrors Style.eanAttempts: the
   // recurring upload sweep stops retrying a row at MAX_PUSH_ATTEMPTS and it
   // "floats" on /settings/approved; the midnight sweep still retries nightly.

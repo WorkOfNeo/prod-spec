@@ -6,6 +6,7 @@ import {
   listChildFileNames,
   listChildFolders,
   resolvePoFolder,
+  sanitizeFileName,
   type ResolvedFolder,
   type ChildFolder,
 } from "./supplier-folder";
@@ -229,7 +230,11 @@ export async function verifySupplierUploads(opts?: {
         sweep.unresolved += 1;
         continue;
       }
-      const present = folderExists && names != null && expected.every((n) => names!.has(n.toLowerCase()));
+      // Match against the SAME sanitized name the push writes to SharePoint —
+      // otherwise a colon-bearing expected name never matches the uploaded
+      // "layout-<id>" file and verify would re-arm a perfectly good row forever.
+      const present =
+        folderExists && names != null && expected.every((n) => names!.has(sanitizeFileName(n).toLowerCase()));
       if (present) verifyIds.push(item.id);
       else healIds.push(item.id);
     }

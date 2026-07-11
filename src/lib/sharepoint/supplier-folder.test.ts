@@ -4,7 +4,7 @@
 // wrong folder.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { folderMatchesPo, resolvePoFolder, type ChildFolder } from "./supplier-folder";
+import { folderMatchesPo, resolvePoFolder, sanitizeFileName, type ChildFolder } from "./supplier-folder";
 
 const f = (name: string): ChildFolder => ({ id: name, name, webUrl: `https://x/${name}`, childCount: 1 });
 
@@ -73,4 +73,30 @@ test("resolvePoFolder — a chosen name only counts if it still matches the PO",
   const res = resolvePoFolder(children, "C-PO1", "random other folder");
   assert.equal(res.status, "found");
   assert.equal(res.status === "found" && res.folder.name, "C-PO1 - Cust - Sup");
+});
+
+test("sanitizeFileName — replaces the Output-Builder colon (the actual bug) with a hyphen", () => {
+  // The real failing name: "layout:<cuid>" carried a colon SharePoint rejects.
+  assert.equal(
+    sanitizeFileName("mg30019-layout:cmrde40im012r2xppaahkkkkd-110116cm56r-Navy.pdf"),
+    "mg30019-layout-cmrde40im012r2xppaahkkkkd-110116cm56r-Navy.pdf",
+  );
+});
+
+test("sanitizeFileName — strips every SharePoint-illegal character", () => {
+  assert.equal(sanitizeFileName('a:b/c\\d*e?f"g<h>i|j.pdf'), "a-b-c-d-e-f-g-h-i-j.pdf");
+});
+
+test("sanitizeFileName — keeps the extension and legal characters (dots, spaces, &)", () => {
+  assert.equal(sanitizeFileName("IL96897 - Netto & Co - Info Area.pdf"), "IL96897 - Netto & Co - Info Area.pdf");
+});
+
+test("sanitizeFileName — trims leading/trailing dots & spaces and control chars", () => {
+  assert.equal(sanitizeFileName("  . name .  "), "name");
+  assert.equal(sanitizeFileName("tab\tin\tname.pdf"), "tab-in-name.pdf");
+});
+
+test("sanitizeFileName — never returns empty", () => {
+  assert.equal(sanitizeFileName(":::"), "---"); // colons map to hyphens (a valid, if degenerate, name)
+  assert.equal(sanitizeFileName("   "), "untitled"); // nothing left after trimming → placeholder
 });

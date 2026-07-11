@@ -51,6 +51,9 @@ export default async function ApprovedDeliveryPage() {
       where: { sentAt: null },
       orderBy: { queuedAt: "desc" },
       take: 500,
+      // Read the error separately (guarded) so this list can't 500 in the window
+      // between deploy and `db:deploy` adding the sharePointError column.
+      omit: { sharePointError: true },
     }),
     db.supplierSendBatch.findMany({ orderBy: { createdAt: "desc" }, take: 15 }),
     db.supplierSendQueueItem.count({
@@ -60,6 +63,20 @@ export default async function ApprovedDeliveryPage() {
     // cap. (Live upload-status counts moved into the UploadProgress widget.)
     db.supplierSendQueueItem.findMany({ where: { sentAt: null }, select: { styleId: true, customerId: true } }),
   ]);
+
+  // Last push error per row, read separately + guarded: the sharePointError
+  // column doesn't exist until db:deploy runs the migration, so a failure here
+  // (before that) degrades to "no detail" instead of 500-ing the whole page.
+  let pushErrorById = new Map<string, string>();
+  try {
+    const errs = await db.supplierSendQueueItem.findMany({
+      where: { id: { in: pending.map((p) => p.id) }, sharePointError: { not: null } },
+      select: { id: true, sharePointError: true },
+    });
+    pushErrorById = new Map(errs.map((e) => [e.id, e.sharePointError as string]));
+  } catch {
+    // Column not migrated yet — surface no per-row error until db:deploy runs.
+  }
 
   // Tonight's batch, summed up: outputs / styles / customers / business areas,
   // and where the files stand on SharePoint. BA resolves via the mirror ref
@@ -352,6 +369,14 @@ export default async function ApprovedDeliveryPage() {
                           pill
                         );
                       })()}
+                      {item.sharePointStatus === "FAILED" && pushErrorById.get(item.id) ? (
+                        <div
+                          className="mt-0.5 max-w-[280px] text-[10px] leading-tight text-red-600"
+                          title={pushErrorById.get(item.id)}
+                        >
+                          {pushErrorById.get(item.id)}
+                        </div>
+                      ) : null}
                       {item.sharePointStatus === "UPLOADED" ? (
                         <div className="mt-0.5 text-[10px] text-zinc-400">
                           {item.sharePointVerifiedAt
