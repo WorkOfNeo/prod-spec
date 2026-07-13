@@ -248,7 +248,9 @@ export function resolveTextToken(style: StyleData, key: string, arg?: string): s
 // Barcode source value off StyleData ("" when absent).
 export function resolveBarcodeValue(style: StyleData, source: BarcodeSource): string {
   if (source === "cartonEan") return resolveTextToken(style, "cartonEan");
-  if (source === "assortEan") return resolveTextToken(style, "assortEan");
+  // assortEan (Code128/EAN-128) and assortEan13 (true EAN-13) print the SAME
+  // master-carton value — only the symbology differs (see barcodeSymbology).
+  if (source === "assortEan" || source === "assortEan13") return resolveTextToken(style, "assortEan");
   return resolveTextToken(style, "ean13");
 }
 
@@ -342,7 +344,7 @@ const CONDITION_COLUMN: Partial<Record<string, keyof ColumnMapping>> = {
 function columnsForToken(ref: TokenRef): Array<keyof ColumnMapping> {
   if (ref.key === "barcode") {
     if (ref.arg === "cartonEan") return ["cartonEan"];
-    if (ref.arg === "assortEan") return ["assortEan"];
+    if (ref.arg === "assortEan" || ref.arg === "assortEan13") return ["assortEan"];
     if (ref.arg === "ean13") return ["ean13"];
     return [];
   }

@@ -203,7 +203,10 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   },
 ];
 
-export const BARCODE_SOURCES = ["cartonEan", "assortEan", "ean13"] as const;
+// cartonEan / assortEan print as EAN-128 (Code128); assortEan13 prints the
+// SAME master-carton value as a true EAN-13 — so a layout can pick the
+// symbology. ean13 is the per-size product barcode.
+export const BARCODE_SOURCES = ["cartonEan", "assortEan", "assortEan13", "ean13"] as const;
 export type BarcodeSource = (typeof BARCODE_SOURCES)[number];
 
 export const LOGO_SOURCES = ["contrast", "contrastAddress", "custom"] as const;
