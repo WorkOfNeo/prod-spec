@@ -50,7 +50,15 @@ export function parseBarcodeField(text: string): ParsedBarcodeField {
   const out: ParsedBarcodeField = { bySize: [], bareEans: [], assort: null, invalid: [] };
   if (!text) return out;
 
-  for (const rawLine of text.split(/[\n\r]+/)) {
+  // Buyers often append the assort/master-carton EAN to the size list on ONE
+  // line — "…3XL: 707…715. Assort - 707…141" — rather than giving it its own
+  // line. Break "Assort" (and any leading ". "/" ; " punctuation) onto a fresh
+  // line first, so the per-line "Assort - <EAN>" branch below catches it AND
+  // the trailing size ("3XL: 707…715") no longer swallows the assort clause
+  // into an unparseable value.
+  const lined = text.replace(/[.;\s]*\b(assort)\b/gi, "\n$1");
+
+  for (const rawLine of lined.split(/[\n\r]+/)) {
     const line = rawLine.trim();
     if (!line) continue;
 
