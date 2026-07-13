@@ -33,6 +33,8 @@ export function RerunStylesPanel({
   prodSpecId,
   specActive,
   unsaved,
+  onList,
+  adoptBatchId,
 }: {
   prodSpecId: string;
   // Live editor state — the spec's active toggle and whether there are unsaved
@@ -40,6 +42,13 @@ export function RerunStylesPanel({
   // inactive spec can't generate.
   specActive: boolean;
   unsaved: boolean;
+  // Bubble each freshly-fetched run list up to the editor so the per-output
+  // "Run all" buttons can read its `byOutput` counts (single source of truth —
+  // the panel is the only fetcher of this list).
+  onList?: (list: ProdSpecStyleRunList) => void;
+  // A batch the EDITOR started (a per-output "Run all") — the panel adopts it so
+  // its progress card + polling are the one place a run is watched.
+  adoptBatchId?: string | null;
 }) {
   const base = `/api/admin/prod-specs/${prodSpecId}/rerun-styles`;
   const storageKey = `prodspec-rerun:${prodSpecId}`;
@@ -131,6 +140,34 @@ export function RerunStylesPanel({
     };
   }, [activeRun, batch, fetchBatch, fetchList, storageKey]);
 
+  // Surface every fetched list to the editor (per-output "Run all" counts).
+  // Keyed on `list` so it fires once per fetch, regardless of which path set it.
+  useEffect(() => {
+    if (list) onList?.(list);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list]);
+
+  // Adopt a batch the editor started (per-output "Run all"): show + poll it here
+  // so a run has one home. Each scoped run returns a fresh id, so this re-runs
+  // per click. Refreshes the list immediately so the affected rows read
+  // "running" without waiting for the batch to settle.
+  useEffect(() => {
+    if (!adoptBatchId) return;
+    let cancelled = false;
+    void (async () => {
+      const b = await fetchBatch(adoptBatchId);
+      if (cancelled || !b) return;
+      window.localStorage.setItem(storageKey, adoptBatchId);
+      setBatch(b);
+      setDismissed(false);
+      const l = await fetchList();
+      if (!cancelled && l) setList(l);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [adoptBatchId, fetchBatch, fetchList, storageKey]);
+
   const runAllDisabledReason = unsaved
     ? "Save your output changes first"
     : !specActive
@@ -143,8 +180,9 @@ export function RerunStylesPanel({
     if (!list || list.toRerun === 0 || submittingAll || activeRun || runAllDisabledReason) return;
     const ok = window.confirm(
       `Run ${list.toRerun} style${list.toRerun === 1 ? "" : "s"} on this prod spec?\n\n` +
-        `Regenerates ${list.withRejected} with rejected output${list.withRejected === 1 ? "" : "s"} ` +
-        `and ${list.withMissing} with new/missing output${list.withMissing === 1 ? "" : "s"}. ` +
+        `Regenerates ${list.withRejected} with rejected, ` +
+        `${list.withMissing} with new/missing, and ` +
+        `${list.withChanged} with changed output${list.withChanged === 1 ? "" : "s"}. ` +
         `Approved outputs are left alone. Renders in the background — safe to leave this page.`,
     );
     if (!ok) return;
@@ -473,6 +511,14 @@ function ToRunCell({ row }: { row: StyleRunRow }) {
       {row.rejected > 0 && (
         <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
           {row.rejected} rejected
+        </span>
+      )}
+      {row.changed > 0 && (
+        <span
+          className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
+          title="Output config edited since this awaiting-review PDF rendered"
+        >
+          {row.changed} changed
         </span>
       )}
     </span>

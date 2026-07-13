@@ -4,6 +4,7 @@ import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin } from "@/lib/roles";
 import { enqueueBulkRun } from "@/lib/queue/bulk-run";
 import { listProdSpecStyleRuns } from "@/lib/outputs/prod-spec-rerun";
+import { getVariant } from "@/lib/pdf/template-registry";
 
 export const runtime = "nodejs";
 // Enqueue-only — the jobs render in the background (runner cron), so this
@@ -41,12 +42,24 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 }
 
 // POST — "Run all": enqueue every runnable style on the spec (new/missing +
-// rejected outputs each, approved work left alone; in-flight styles skipped),
-// grouped under a BulkRunBatch. Returns the batchId for scoped progress polling.
-export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+// rejected + changed outputs each, approved work left alone; in-flight styles
+// skipped), grouped under a BulkRunBatch. Returns the batchId for scoped
+// progress polling.
+//
+// Optional JSON body { variantKey } scopes the run to ONE output: the per-output
+// "Run all" button on each Outputs-tab row. Only that output's base key is
+// enqueued, and only for the styles where it's missing / rejected / changed.
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const g = await gate();
   if (!g.ok) return g.res;
   const { id } = await ctx.params;
+
+  // Optional per-output scope. Tolerate an empty/absent body (spec-wide run).
+  const body = (await req.json().catch(() => ({}))) as { variantKey?: unknown };
+  const scopeKey =
+    typeof body.variantKey === "string" && body.variantKey.trim().length > 0
+      ? body.variantKey.split("#")[0] // compare against base keys
+      : null;
 
   const spec = await db.prodSpec.findUnique({ where: { id }, select: { name: true, active: true } });
   if (!spec) return NextResponse.json({ error: "Prod spec not found" }, { status: 404 });
@@ -60,24 +73,34 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
   }
 
   // Same source of truth as the list the operator is looking at: run the rows
-  // that have outputs to regenerate and aren't already in flight.
+  // that have outputs to regenerate and aren't already in flight. When scoped,
+  // keep only the one output's key on each row and drop rows that don't carry it.
   const list = await listProdSpecStyleRuns(id);
   const runnable = list.rows
     .filter((r) => !r.inFlight && r.variantKeys.length > 0)
-    .map((r) => ({ id: r.id, prodSpecId: id, variantKeys: r.variantKeys }));
+    .map((r) => ({
+      id: r.id,
+      prodSpecId: id,
+      variantKeys: scopeKey ? r.variantKeys.filter((k) => k.split("#")[0] === scopeKey) : r.variantKeys,
+    }))
+    .filter((r) => r.variantKeys.length > 0);
 
+  const scopeName = scopeKey ? (getVariant(scopeKey)?.name ?? scopeKey) : null;
   const { batchId, enqueued } = await enqueueBulkRun({
     runnable,
-    label: `Prod spec: ${spec.name}`,
+    label: scopeName ? `Prod spec: ${spec.name} · ${scopeName}` : `Prod spec: ${spec.name}`,
     user: { id: g.userId, email: g.email },
   });
 
+  const summary = scopeKey ? list.byOutput[scopeKey] : null;
   return NextResponse.json({
     ok: true,
     batchId,
     enqueued,
-    withMissing: list.withMissing,
-    withRejected: list.withRejected,
+    variantKey: scopeKey,
+    withMissing: summary ? summary.missing : list.withMissing,
+    withRejected: summary ? summary.rejected : list.withRejected,
+    withChanged: summary ? summary.changed : list.withChanged,
   });
 }
 

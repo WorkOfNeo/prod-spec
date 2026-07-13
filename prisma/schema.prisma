@@ -1054,6 +1054,15 @@ model JobAsset {
   // > 0 means the PDF is review-safe but NOT print-safe — approval is
   // blocked until the gaps are fixed and the output is re-run.
   placeholderCount Int               @default(0)
+  // Fingerprint of the OUTPUT's render-affecting config at the moment this
+  // asset was built (outputConfigKey: dims / pins / carton barcode / info-area
+  // size). The rerun surfaces recompute the key from the current spec and
+  // compare: a mismatch on a still-awaiting-review output means the admin
+  // edited the output since it rendered, so it's "changed" and re-runnable.
+  // Nullable: legacy rows (and rows built before this shipped) carry null,
+  // which the detectors treat as "unknown → not changed" until re-rendered or
+  // backfilled (scripts/backfill-output-config-key.ts).
+  outputConfigKey  String?
   // Per-asset review state — separate from the parent Job's status so
   // we can approve some outputs and reject others with reasons.
   reviewStatus     AssetReviewStatus @default(PENDING_REVIEW)
