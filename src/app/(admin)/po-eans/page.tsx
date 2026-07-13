@@ -15,6 +15,23 @@ export const dynamic = "force-dynamic";
 // set, not a recent slice.
 const FILTERED_TAKE = 500;
 
+// The Colour code ("🎨 Color Code" dropdown, e.g. "*A"/"*B") off the raw Monday
+// snapshot. Two colourways of the same style share a style NUMBER but differ by
+// this code + PO, so surfacing it disambiguates otherwise-identical rows. Reads
+// the mapped column then the manual fallback (matches DEFAULT_COLUMN_MAPPING);
+// empty when the style carries no colour code.
+function readColourCode(rawData: unknown): string {
+  const cols = (rawData as { column_values?: Array<{ id?: string; text?: string | null; display_value?: string | null }> })
+    ?.column_values;
+  if (!Array.isArray(cols)) return "";
+  for (const id of ["dropdown__1", "manual.colourCode"]) {
+    const c = cols.find((x) => x.id === id);
+    const v = (c?.text ?? "").trim() || (c?.display_value ?? "").trim();
+    if (v) return v;
+  }
+  return "";
+}
+
 // PO → EAN resolution. Every style that carries a PO number is shown with its
 // persisted resolution state: resolution is queued automatically when the PO
 // is filled (Monday sync) and drained by the EAN runner, which scrapes the
@@ -92,6 +109,7 @@ export default async function PoEansPage({
       select: {
         id: true,
         name: true,
+        rawData: true,
         poNumber: true,
         eanStatus: true,
         eanAttempts: true,
@@ -123,6 +141,7 @@ export default async function PoEansPage({
   const rows: PoEanRow[] = styles.map((s) => ({
     id: s.id,
     name: s.name,
+    colourCode: readColourCode(s.rawData),
     poNumber: s.poNumber ?? "",
     supplierName: s.supplier?.name ?? null,
     resolvedAt: s.eanResolvedAt ? formatDate(s.eanResolvedAt) : null,
