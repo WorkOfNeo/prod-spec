@@ -52,7 +52,14 @@ export async function POST(req: NextRequest) {
   // (never dropped) so its row + Log trail survive for audit and the styles
   // list stops surfacing it. Don't fall through to ingest — the item may no
   // longer be fetchable from Monday.
-  if (event.type === "item_archived" || event.type === "item_deleted") {
+  //
+  // The Translations board is exempt: an archived / deleted phrase must fall
+  // through to its board handler, which re-syncs the dictionary and reconciles
+  // the removal (soft-deactivate) rather than touching the Style mirror.
+  if (
+    (event.type === "item_archived" || event.type === "item_deleted") &&
+    boardId !== MONDAY_BOARDS.translations
+  ) {
     const lifecycle =
       event.type === "item_deleted"
         ? await markStyleDeleted(event.pulseId)
@@ -141,13 +148,13 @@ async function handleStyleEvent(pulseId: number): Promise<void> {
 }
 
 async function handleTranslationsEvent(pulseId: number): Promise<void> {
-  // The Translations board is the source of the multilingual dictionary. A new
-  // phrase or an edited cell should refresh it — but the sink + transform is
-  // heavy (every phrase × ~27 language columns), so we never run it inline;
-  // Monday needs a fast ack and retries/disables slow endpoints. Fire the
-  // coalescing auto-sync in the background instead (a burst of cell edits
-  // collapses into ~one re-sink). We only subscribe to create_item /
-  // change_column_value for this board, so archive/delete never reach here.
+  // The Translations board is the source of the multilingual dictionary. Any
+  // change — a new phrase, an edited cell, or an archived / deleted phrase —
+  // should refresh it. The sink + transform is heavy (every phrase × ~27
+  // language columns), so we never run it inline; Monday needs a fast ack and
+  // retries/disables slow endpoints. Fire the coalescing auto-sync in the
+  // background instead (a burst of edits collapses into ~one re-sink), which
+  // also reconciles removals by soft-deactivating phrases no longer on Monday.
   await triggerTranslationsSync();
   await db.log.create({
     data: {

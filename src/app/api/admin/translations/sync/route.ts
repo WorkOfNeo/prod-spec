@@ -45,8 +45,12 @@ export async function POST(req: NextRequest) {
 
   const transformOnly = req.nextUrl.searchParams.get("transformOnly") === "true";
   try {
-    const sink = transformOnly ? null : await sinkBoard(MONDAY_BOARDS.translations);
-    const result = await syncTranslations();
+    // freshSince (captured before the sink) puts syncTranslations in reconcile
+    // mode so phrases removed on Monday get soft-deactivated. transformOnly has
+    // no fresh sink, so it skips reconciliation.
+    const freshSince = transformOnly ? undefined : new Date();
+    const sink = freshSince ? await sinkBoard(MONDAY_BOARDS.translations) : null;
+    const result = await syncTranslations(freshSince ? { freshSince } : undefined);
     return NextResponse.json({ sink, ...result });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 502 });

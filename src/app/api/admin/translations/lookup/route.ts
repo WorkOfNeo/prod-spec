@@ -18,8 +18,10 @@ export async function GET(req: NextRequest) {
   const key = normaliseTranslationKey(req.nextUrl.searchParams.get("text") ?? "");
   if (!key) return NextResponse.json({ found: false });
 
-  const row = await db.translation.findUnique({
-    where: { key },
+  // active-only, matching the renderer (loadTranslationDictionary): a phrase
+  // removed from Monday is soft-deactivated and reads as "no translation yet".
+  const row = await db.translation.findFirst({
+    where: { key, active: true },
     select: {
       sourceText: true,
       translations: true,

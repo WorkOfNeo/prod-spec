@@ -55,8 +55,12 @@ export async function autoSyncTranslations(): Promise<AutoSyncOutcome> {
   //    run is responsible for — anything requested after it is left to step 4.
   const covered = requestedAt;
   try {
+    // Captured before the sink so syncTranslations can tell which ghost items
+    // this run actually touched — anything older is a phrase removed on Monday
+    // and gets soft-deactivated (reconciliation).
+    const freshSince = new Date();
     await sinkBoard(MONDAY_BOARDS.translations);
-    await syncTranslations();
+    await syncTranslations({ freshSince });
   } finally {
     // Release the slot whether we succeeded or threw, so a later kick can run.
     const done = await getTranslationSyncState();

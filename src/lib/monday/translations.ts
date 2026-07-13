@@ -57,15 +57,30 @@ export type TranslationSyncResult = {
   unmappedColumns: string[];
   itemsScanned: number;
   translationsUpserted: number;
+  // Active dictionary rows soft-deactivated because their phrase is no longer
+  // on the board (reconcile mode only; 0 otherwise).
+  deactivated: number;
 };
 
 // Transform the already-sunk Translations ghost board into the Translation
 // dictionary. Reads ghost columns/items only — run the board sink first.
 //
-// Never deletes: re-runs upsert every English phrase and merge its language
-// values. Board duplicates of the same English phrase collapse onto one row
-// (their translations are merged; last non-empty value per language wins).
-export async function syncTranslations(): Promise<TranslationSyncResult> {
+// Upserts every English phrase and merges its language values. Board
+// duplicates of the same English phrase collapse onto one row (their
+// translations are merged; last non-empty value per language wins).
+//
+// RECONCILIATION — pass { freshSince } (captured just BEFORE the sink ran) to
+// reflect DELETIONS. Monday's items_page excludes archived / deleted items and
+// the sink is upsert-only, so a removed phrase lingers in the ghost mirror with
+// an old lastSyncedAt. Only items the latest sink actually touched
+// (lastSyncedAt >= freshSince) count as live; any active dictionary row whose
+// phrase is no longer live is soft-deactivated (active:false) — it drops out of
+// every rendered output (loadTranslationDictionary loads active rows only)
+// while the row stays for audit and reactivates automatically if re-added on
+// Monday. Without freshSince (e.g. transformOnly) nothing is deactivated.
+export async function syncTranslations(
+  opts?: { freshSince?: Date },
+): Promise<TranslationSyncResult> {
   const board = await db.mondayGhostBoard.findUnique({
     where: { mondayBoardId: MONDAY_BOARDS.translations },
     select: { id: true },
@@ -98,8 +113,14 @@ export async function syncTranslations(): Promise<TranslationSyncResult> {
     }
   }
 
+  // In reconcile mode only the items the latest sink actually touched count as
+  // live — a stale (deleted) ghost row keeps its older lastSyncedAt.
+  const reconcile = Boolean(opts?.freshSince);
   const items = await db.mondayGhostItem.findMany({
-    where: { boardId: board.id },
+    where: {
+      boardId: board.id,
+      ...(opts?.freshSince ? { lastSyncedAt: { gte: opts.freshSince } } : {}),
+    },
     select: { mondayItemId: true, name: true, groupTitle: true, columnValues: true },
   });
 
@@ -163,10 +184,31 @@ export async function syncTranslations(): Promise<TranslationSyncResult> {
     translationsUpserted++;
   }
 
+  // Reflect deletions: any active phrase no longer live on the board is
+  // soft-deactivated. Guarded on a non-empty live set so a transient empty
+  // fetch can never mass-disable the whole dictionary.
+  let deactivated = 0;
+  if (reconcile && byKey.size > 0) {
+    const seenKeys = new Set(byKey.keys());
+    const activeRows = await db.translation.findMany({
+      where: { active: true },
+      select: { key: true },
+    });
+    const staleKeys = activeRows.map((r) => r.key).filter((k) => !seenKeys.has(k));
+    if (staleKeys.length > 0) {
+      await db.translation.updateMany({
+        where: { key: { in: staleKeys } },
+        data: { active: false, lastSyncedAt: now },
+      });
+      deactivated = staleKeys.length;
+    }
+  }
+
   return {
     columnsMapped: langColumns.length,
     unmappedColumns,
     itemsScanned: items.length,
     translationsUpserted,
+    deactivated,
   };
 }
