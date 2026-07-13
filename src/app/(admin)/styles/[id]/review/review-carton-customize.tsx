@@ -7,7 +7,8 @@ import { LazyOutputPreview } from "@/components/output-preview";
 // In-review "Customize" — the carton-finishing step done WHERE the reviewer
 // already is. Unlike the style-page download dialog, this REGENERATES the one
 // carton output and REPLACES it, so the customized result re-enters review.
-// Two MUTUALLY-EXCLUSIVE modes (pick one):
+// Two INDEPENDENT capabilities the reviewer can apply — either, or BOTH at once
+// (a numbered set that also carries other styles on each page):
 //   • Carton numbering — one multi-page PDF, 1/N … N/N (the whole printed set
 //     is reviewable in this card).
 //   • Multiple styles  — other same-PO styles on the box ({{style2}}…).
@@ -83,14 +84,14 @@ function CartonCustomizeDialog({
   onClose,
 }: ReviewCartonCustomizeProps & { onClose: () => void }) {
   const router = useRouter();
-  // The two capabilities can't combine here — when the layout has BOTH, the
-  // operator switches between them; with one, that mode shows directly.
+  // The two capabilities are independent. When the layout has BOTH, the reviewer
+  // ticks which to apply (numbering on by default, multiple-styles opt-in) and
+  // may pick both; with one, that capability shows directly.
   const both = cartonNumbering && multipleStyles;
-  const [mode, setMode] = useState<"numbering" | "multi">(
-    cartonNumbering ? "numbering" : "multi",
-  );
-  const numbering = mode === "numbering";
-  const multi = mode === "multi";
+  const [useNumbering, setUseNumbering] = useState(true);
+  const [useMulti, setUseMulti] = useState(false);
+  const numbering = cartonNumbering && (!both || useNumbering);
+  const multi = multipleStyles && (!both || useMulti);
 
   const [total, setTotal] = useState(200);
   const [debouncedTotal, setDebouncedTotal] = useState(total);
@@ -109,7 +110,7 @@ function CartonCustomizeDialog({
   }, [total]);
 
   // Load the same-PO sibling candidates up front (ready the moment the operator
-  // switches to Multiple styles) — only when the layout supports it.
+  // ticks Multiple styles) — only when the layout supports it.
   useEffect(() => {
     if (!multipleStyles) return;
     let cancelled = false;
@@ -144,7 +145,10 @@ function CartonCustomizeDialog({
   }
 
   const countValid = !numbering || (Number.isInteger(total) && total >= 1 && total <= CARTON_MAX);
-  const canGenerate = numbering ? countValid : selectedIds.length > 0;
+  // At least one capability must be on; numbering needs a valid count, multiple
+  // styles needs at least one sibling picked.
+  const multiHasPick = !multi || selectedIds.length > 0;
+  const canGenerate = (numbering || multi) && countValid && multiHasPick;
   const previewNo = Math.min(7, Math.max(1, debouncedTotal));
 
   const previewSrc =
@@ -160,11 +164,12 @@ function CartonCustomizeDialog({
       const res = await fetch(`/api/admin/styles/${styleId}/carton-customize`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          numbering
-            ? { variantKey, total }
-            : { variantKey, total: 1, siblingIds: selectedIds },
-        ),
+        body: JSON.stringify({
+          variantKey,
+          total: numbering ? total : 1,
+          // Present (even empty) ⇒ multi-style mode ON.
+          ...(multi ? { siblingIds: selectedIds } : {}),
+        }),
       });
       const j = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(j.error ?? `Generation failed (${res.status})`);
@@ -197,29 +202,28 @@ function CartonCustomizeDialog({
         </div>
 
         <div className="space-y-4 overflow-y-auto px-5 py-4">
-          {/* Mode picker — only when the layout supports BOTH (mutually exclusive). */}
+          {/* Capability picker — only when the layout supports BOTH. Independent
+              checkboxes: tick either or both. */}
           {both && (
             <div>
               <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-                Customization
+                Include
               </div>
               <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1.5">
                 <label className="flex items-center gap-1.5 text-xs font-medium text-zinc-700">
                   <input
-                    type="radio"
-                    name="carton-customize-mode"
-                    checked={numbering}
-                    onChange={() => setMode("numbering")}
+                    type="checkbox"
+                    checked={useNumbering}
+                    onChange={(e) => setUseNumbering(e.target.checked)}
                     className="accent-amber-600"
                   />
                   Carton numbering (X of Y)
                 </label>
                 <label className="flex items-center gap-1.5 text-xs font-medium text-zinc-700">
                   <input
-                    type="radio"
-                    name="carton-customize-mode"
-                    checked={multi}
-                    onChange={() => setMode("multi")}
+                    type="checkbox"
+                    checked={useMulti}
+                    onChange={(e) => setUseMulti(e.target.checked)}
                     className="accent-indigo-600"
                   />
                   Multiple styles
@@ -357,7 +361,8 @@ function CartonCustomizeDialog({
                 Replaces this output with one print-ready PDF, {countValid ? total : "N"} page
                 {countValid && total === 1 ? "" : "s"} — each numbered with{" "}
                 <code className="rounded bg-zinc-100 px-1">{"{{cartonNo}}"}</code>/
-                <code className="rounded bg-zinc-100 px-1">{"{{cartonTotal}}"}</code>.{" "}
+                <code className="rounded bg-zinc-100 px-1">{"{{cartonTotal}}"}</code>
+                {multi ? " and carrying the selected styles" : ""}.{" "}
               </>
             ) : (
               <>Replaces this output with one print-ready page carrying the selected styles. </>

@@ -21,10 +21,11 @@ export const maxDuration = 300;
 //
 // Reviewers may run this: finalizing a carton for print is part of reviewing,
 // so it's gated to canReview (ADMIN or REVIEWER) — deliberately looser than the
-// ADMIN-only generation rule for this one scoped action. The two modes are
-// MUTUALLY EXCLUSIVE (the operator picks one):
-//   • carton numbering — body { variantKey, total } with total > 1.
-//   • multiple styles  — body { variantKey, total: 1, siblingIds: [...] }.
+// ADMIN-only generation rule for this one scoped action. The two capabilities
+// are INDEPENDENT and may combine in a single request (renderCartonCustomization
+// binds both) — a numbered set that ALSO carries other styles on the box:
+//   • carton numbering — body { total } with total > 1 (each page 1/N … N/N).
+//   • multiple styles  — body { siblingIds: [...] } (fills {{style2}}… slots).
 //
 //   POST /api/admin/styles/<id>/carton-customize → { ok, jobId }
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -52,17 +53,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     }
   } catch {
     return NextResponse.json({ error: "Expected a JSON body" }, { status: 400 });
-  }
-
-  // Mutually exclusive: a numbered SET and other-styles-on-the-box can't
-  // combine in the review flow — pick one.
-  const wantsNumbering = total > 1;
-  const wantsMulti = siblingIds !== null && siblingIds.length > 0;
-  if (wantsNumbering && wantsMulti) {
-    return NextResponse.json(
-      { error: "Pick one: carton numbering OR multiple styles, not both." },
-      { status: 400 },
-    );
   }
 
   const baseKey = variantKey.split("#")[0];
@@ -108,11 +98,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     }
 
     const siblingCount = siblingIds?.length ?? 0;
-    const modeNote = result.multi
-      ? `multiple styles (${siblingCount} other${siblingCount === 1 ? "" : "s"} on the box)`
-      : result.numbered
-        ? `carton numbering 1–${total}`
-        : "single carton";
+    // The capabilities compose — describe whichever are in play (both, one, or
+    // neither) so the review card labels the asset accurately.
+    const noteParts: string[] = [];
+    if (result.numbered) noteParts.push(`carton numbering 1–${total}`);
+    if (result.multi) {
+      noteParts.push(
+        `multiple styles (${siblingCount} other${siblingCount === 1 ? "" : "s"} on the box)`,
+      );
+    }
+    const modeNote = noteParts.length ? noteParts.join(" + ") : "single carton";
 
     await db.$transaction([
       // ONE multi-page asset at the BASE key — supersedes the prior carton
