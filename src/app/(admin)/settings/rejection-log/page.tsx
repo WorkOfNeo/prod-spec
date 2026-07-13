@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { TicketList, type TicketRow, type StyleOutputView } from "./ticket-list";
 import { requireAdminPage } from "@/lib/auth-server";
 import { outputEditLink } from "@/lib/outputs/output-edit-link";
+import { layoutIdFromVariantKey } from "@/lib/output-layouts/variant-keys";
 import { styleOutputBases, notGeneratedReason } from "@/lib/rejection-log/style-outputs";
 import { baseVariantKey } from "@/lib/tickets/orphan";
 
@@ -173,6 +174,9 @@ export default async function RejectionLogPage({
       outputName: t.outputName,
       docType: t.docType,
       variantKey: t.variantKey,
+      // AI-fixable only when the output is an Output Builder layout (has an
+      // editable definition) — cover / general-info / coded outputs aren't.
+      aiFixable: layoutIdFromVariantKey(t.variantKey) !== null,
       customerName: t.customerName,
       businessArea: t.businessArea,
       poNumber: t.poNumber,
