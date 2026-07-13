@@ -198,10 +198,11 @@ function defUsesToken(pages: LayoutPage[], key: string): boolean {
 type BarcodeSymbology = "ean128" | "ean13";
 
 export function barcodeSymbology(style: StyleData, source: BarcodeSource): BarcodeSymbology {
-  // cartonEan / assortEan follow the style's carton symbology (Code128 by
-  // default). Everything else — the per-size product barcode (ean13) AND the
-  // explicit assortEan13 source — prints as a true EAN-13, so a layout can
-  // choose EAN-128 (assortEan) vs EAN-13 (assortEan13) for the same value.
+  // Only cartonEan / assortEan follow the style's carton symbology preference
+  // (Code128 by default, or EAN-13 when the ProdSpec row's dropdown is set).
+  // Every other source — the per-size product barcode (ean13) and the explicit
+  // cartonEan13 / assortEan13 sources — prints as a true EAN-13, so a layout
+  // picks EAN-128 vs EAN-13 per barcode for the same carton/master value.
   if (source !== "cartonEan" && source !== "assortEan") return "ean13";
   return style.cartonBarcode?.type ?? "ean128";
 }
@@ -264,8 +265,9 @@ function renderBarcodeHtml(style: StyleData, source: BarcodeSource, ctx: RenderC
   // beneath; EAN-13 includes its text in the symbol (includetext: true).
   const numberRow = symbology === "ean128" ? `<div class="ol-ean-number">${escapeHtml(value)}</div>` : "";
   // Per-spec bar height (ProdSpec output row) beats the block's
-  // font-scaled default — for the carton barcode only.
-  const heightMm = source === "cartonEan" ? style.cartonBarcode?.heightMm : undefined;
+  // font-scaled default — for the carton barcode only (either symbology).
+  const heightMm =
+    source === "cartonEan" || source === "cartonEan13" ? style.cartonBarcode?.heightMm : undefined;
   const imgStyle = heightMm ? ` style="height: ${heightMm}mm"` : "";
   return `<span class="ol-barcode${ctx.mode === "preview" ? " ol-barcode-preview" : ""}"><img src="${dataUrl}"${imgStyle} alt="${escapeHtml(value)}" />${numberRow}</span>`;
 }

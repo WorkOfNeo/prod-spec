@@ -2552,6 +2552,13 @@ export function LayoutEditor({
                   onClick={() => insertToken("{{barcode:cartonEan}}")}
                 />
                 <TokenChip
+                  token="{{barcode:cartonEan13}}"
+                  title="Same carton EAN as true EAN-13 bars (digits in the symbol). Use this instead of {{barcode:cartonEan}} when the carton must print EAN-13 — no ProdSpec setting needed."
+                  disabled={!selBlock}
+                  value={showValues ? (tokenValues["barcode:cartonEan13"] ?? "") : undefined}
+                  onClick={() => insertToken("{{barcode:cartonEan13}}")}
+                />
+                <TokenChip
                   token="{{barcode:ean13}}"
                   title="First size EAN as EAN-13 bars — scales with the block font size"
                   disabled={!selBlock}
