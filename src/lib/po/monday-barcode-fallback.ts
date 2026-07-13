@@ -73,6 +73,22 @@ export async function resolveStyleEansFromMonday(styleId: string): Promise<Monda
   const mapping: ColumnMapping = prodSpecMapping ?? config.columnMapping;
 
   const sizes = splitSizes(readCol(style.rawData, mapping.sizes ?? "sizes__1", MANUAL_COLUMN_IDS.sizes));
+
+  // Colour for the output's per-row colour column. The PO scrape derives this
+  // from each variant's PO label; the Monday fallback has no such label, so it
+  // used to stamp a literal "Monday fallback" — which then printed AS the
+  // colour. Instead take the style's own Colour name, falling back to the
+  // Colour code, off the mapped columns (defaults mirror DEFAULT_COLUMN_MAPPING
+  // so a ProdSpec mapping that omits them still resolves). Empty when neither
+  // is filled → the colour column stays blank rather than printing a stand-in.
+  const colourName = readCol(style.rawData, mapping.colourName ?? "text_mktbynx8", MANUAL_COLUMN_IDS.colourName);
+  // The Colour code column carries a "*" colourway marker (e.g. "*Blue", "*A").
+  // Strip it on the fallback so the code prints as a plain colour ("Blue").
+  const colourCode = readCol(style.rawData, mapping.colourCode ?? "dropdown__1", MANUAL_COLUMN_IDS.colourCode)
+    .replace(/^\*+\s*/, "")
+    .trim();
+  const colourLabel = colourName || colourCode || null;
+
   const productField = readCol(style.rawData, MONDAY_PRE_ORDER_BARCODE_COLS.product);
   const cartonField = readCol(style.rawData, MONDAY_PRE_ORDER_BARCODE_COLS.carton);
   if (!productField && !cartonField) return null;
@@ -94,7 +110,7 @@ export async function resolveStyleEansFromMonday(styleId: string): Promise<Monda
       sizeEans.push({
         size,
         ean13,
-        variantLabel: ean13 || sizeCarton ? "Monday fallback" : null,
+        variantLabel: ean13 || sizeCarton ? colourLabel : null,
         cartonEan: sizeCarton,
       });
     }

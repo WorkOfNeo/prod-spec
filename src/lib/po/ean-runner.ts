@@ -12,6 +12,7 @@ import { resolveStyleEans, type StyleEanStatus as ResolveStatus } from "./resolv
 import { MAX_EAN_ATTEMPTS, FLOATABLE_STATUSES } from "./ean-status-meta";
 import { resolveStyleEansFromMonday, type MondayFallbackResult } from "./monday-barcode-fallback";
 import { eanResolveKey } from "./resolve-inputs";
+import { computeBatchSize } from "./batch-size";
 import type { EanView } from "./ean-view";
 
 // =====================================================
@@ -62,9 +63,11 @@ export type EanRunSummary = {
 
 export async function runPendingEanResolutions(
   limit = 5,
-  opts: { sweep?: boolean } = {},
+  opts: { sweep?: boolean; softDeadlineMs?: number } = {},
 ): Promise<EanRunSummary> {
   const summary: EanRunSummary = { processed: 0, failed: 0, requeued: 0, styleIds: [] };
+  const startedAt = Date.now();
+  const deadline = opts.softDeadlineMs ?? Infinity;
 
   // PO cutoff: auto-processing only touches styles whose PO is at/above the
   // configured minimum (Style.poSeq >= minPo). null = no cutoff (whole
@@ -76,6 +79,10 @@ export async function runPendingEanResolutions(
   if (opts.sweep) summary.requeued = await requeueRetryable(minPo);
 
   for (let i = 0; i < limit; i++) {
+    // Wall-clock guard: with a large (duration-sized) limit a run of slow
+    // giant-PDF scrapes could otherwise overrun the route's maxDuration. Stop
+    // claiming NEW styles past the soft deadline; the in-flight one finishes.
+    if (Date.now() - startedAt > deadline) break;
     const claimed = await claimNextPendingStyle(minPo);
     if (!claimed) break;
     summary.styleIds.push(claimed.id);
@@ -89,6 +96,21 @@ export async function runPendingEanResolutions(
   }
 
   return summary;
+}
+
+// Duration-aware batch size for a cron sweep: read how long recent working
+// sweeps took per style and size the next batch to fill EAN_BATCH.targetBudgetMs
+// (clamped to [min, max]). Self-correcting — every sweep records its own
+// durationMs/processed (see /api/po-eans/run), so the estimate tracks reality.
+export async function estimateEanBatchSize(): Promise<number> {
+  const rows = await db.cronRun.findMany({
+    where: { kind: "po-eans", processed: { gt: 0 }, durationMs: { not: null } },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+    select: { durationMs: true, processed: true },
+  });
+  const samples = rows.map((r) => (r.durationMs ?? 0) / r.processed);
+  return computeBatchSize(samples);
 }
 
 // Atomically claim the oldest PENDING style and flip it to RESOLVING so a

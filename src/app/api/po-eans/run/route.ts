@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { runPendingEanResolutions } from "@/lib/po/ean-runner";
+import { runPendingEanResolutions, estimateEanBatchSize } from "@/lib/po/ean-runner";
+import { EAN_BATCH } from "@/lib/po/batch-size";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin } from "@/lib/roles";
@@ -80,8 +81,24 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const limit = Number(req.nextUrl.searchParams.get("limit") ?? "5");
-  const summary = await runPendingEanResolutions(Math.min(Math.max(limit, 1), 20), { sweep });
+  // Batch size:
+  //  - explicit ?limit= → honoured (manual override, ceiling 50)
+  //  - cron sweep / operator "Run now" → duration-aware size that drains the
+  //    backlog fast without overrunning maxDuration (see estimateEanBatchSize)
+  //  - inline post-ingest nudge (secret, no sweep) → tiny fixed batch: it only
+  //    needs to resolve the one style just ingested, not drain the backlog.
+  const explicit = req.nextUrl.searchParams.get("limit");
+  const dynamic = explicit == null && (sweep || source === "session");
+  const limit = explicit != null
+    ? Math.min(Math.max(Number(explicit) || EAN_BATCH.min, 1), 50)
+    : dynamic
+      ? await estimateEanBatchSize()
+      : EAN_BATCH.min;
+
+  const summary = await runPendingEanResolutions(limit, {
+    sweep,
+    softDeadlineMs: EAN_BATCH.softDeadlineMs,
+  });
   if (record) {
     await db.cronRun.create({
       data: {
@@ -91,6 +108,8 @@ export async function POST(req: NextRequest) {
         failed: summary.failed,
         requeued: summary.requeued,
         styleIds: summary.styleIds,
+        // Surface the chosen batch size on /automation so the sizing is visible.
+        note: dynamic ? `auto batch ${limit}` : null,
         durationMs: Date.now() - startedAt,
       },
     });
