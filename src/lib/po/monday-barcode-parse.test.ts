@@ -34,6 +34,18 @@ test("parseBarcodeField — carton field carries an Assort line", () => {
   assert.equal(p.bySize.length, 2);
 });
 
+test("parseBarcodeField — assort APPENDED after the size list on ONE line (IL18661)", () => {
+  // "…L: <ean>. Assort - <ean>" with no newline: the assort must still be
+  // extracted, and the trailing size must not swallow the assort clause.
+  const p = parseBarcodeField(`Solid - M: ${M}, L: ${L}. Assort - ${ASSORT}`);
+  assert.equal(p.assort, ASSORT);
+  assert.deepEqual(p.bySize, [
+    { sizeKey: "M", ean: M },
+    { sizeKey: "L", ean: L },
+  ]);
+  assert.deepEqual(p.invalid, []);
+});
+
 test("parseBarcodeField — labelled pairs with slashed sizes, no colour (IL84138)", () => {
   const p = parseBarcodeField("M/L: 7070001349999, XL/XXL: 7070001350001, 3XL: 7070001349982");
   assert.deepEqual(
