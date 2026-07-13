@@ -68,7 +68,10 @@ export type LayoutRenderMode = "production" | "preview";
 //   "ean"  — one per PO EAN row (SIZE × COLOUR; {{colourName}} binds the
 //            row's colour parsed from the PO variant label). Falls back
 //            to size rows when no EAN rows were scraped.
-export function repetitionStyles(style: StyleData, repeatBy: "none" | "size" | "ean"): StyleData[] {
+export function repetitionStyles(
+  style: StyleData,
+  repeatBy: "none" | "size" | "ean" | "assort",
+): StyleData[] {
   // The full size run, preserved as we narrow `sizes` to one row per
   // repetition so {{sizeRangeCoop}} can still list every size and enlarge
   // the current one. `?? style.sizes` keeps it idempotent: renderLayoutHtml
@@ -100,6 +103,23 @@ export function repetitionStyles(style: StyleData, repeatBy: "none" | "size" | "
     if (style.sizes.length > 0) {
       return style.sizes.map((entry) => ({ ...style, sizes: [entry], allSizes }));
     }
+  }
+  if (repeatBy === "assort") {
+    // One label per resolved ASSORTMENT (master) carton EAN — a single value
+    // on the style today (carton.assortEan). Bind it onto carton.ean13 too so
+    // {{barcode:cartonEan}} prints the assort on this row (not a per-size
+    // carton), and flag it {{isAssortment}}. When no assort is resolved we
+    // still emit one row so the label surfaces its missing-barcode state and
+    // readiness flags {{assortEan}} as an editable field to fill in review.
+    const assortEan = resolveBarcodeValue(style, "assortEan");
+    return [
+      {
+        ...style,
+        allSizes,
+        isAssortment: true,
+        ...(assortEan ? { carton: { ...style.carton, ean13: assortEan } } : {}),
+      },
+    ];
   }
   return [style];
 }
@@ -178,7 +198,9 @@ function defUsesToken(pages: LayoutPage[], key: string): boolean {
 type BarcodeSymbology = "ean128" | "ean13";
 
 function barcodeSymbology(style: StyleData, source: BarcodeSource): BarcodeSymbology {
-  if (source !== "cartonEan") return "ean13";
+  // Carton and assortment cartons follow the style's carton symbology (Code128
+  // by default); everything else is a true EAN-13 product barcode.
+  if (source !== "cartonEan" && source !== "assortEan") return "ean13";
   return style.cartonBarcode?.type ?? "ean128";
 }
 
@@ -223,7 +245,12 @@ async function buildBarcodeCache(styles: StyleData[], pages: LayoutPage[]): Prom
 function renderBarcodeHtml(style: StyleData, source: BarcodeSource, ctx: RenderCtx): string {
   const value = resolveBarcodeValue(style, source);
   if (!value) {
-    const label = source === "cartonEan" ? "No carton EAN configured" : "No EAN-13 on style";
+    const label =
+      source === "ean13"
+        ? "No EAN-13 on style"
+        : source === "assortEan"
+          ? "No assortment EAN configured"
+          : "No carton EAN configured";
     return `<div class="barcode-missing">${escapeHtml(label)}</div>`;
   }
   const symbology = barcodeSymbology(style, source);

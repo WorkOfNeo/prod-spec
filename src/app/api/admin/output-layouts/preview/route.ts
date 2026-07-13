@@ -166,7 +166,9 @@ export async function POST(req: NextRequest) {
                 (v) => `${v.size}${v.colour ? ` ${v.colour}` : ""}=${cleanEan(v.ean13)}`,
               )
             : styleData.sizes.map((s) => `${s.label || "?"}=${cleanEan(s.ean13)}`))
-        : [];
+        : settings.repeatBy === "assort"
+          ? [`assort=${cleanEan(styleData.carton.assortEan)}`]
+          : [];
   // Resolve the example file name against the FIRST repetition so
   // per-repetition variables ({{size}}, {{colourName}}, {{ean13}}) show
   // real values when files are split per EAN. A single-file output names

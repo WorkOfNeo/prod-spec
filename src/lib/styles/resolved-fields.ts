@@ -42,6 +42,7 @@ export const FALLBACK_SOURCE = {
   countryOfOrigin: "supplier",
   ean13: "resolved PO barcodes",
   cartonEan: "resolved PO barcodes",
+  assortEan: "resolved PO barcodes",
 } as const satisfies Partial<Record<keyof ColumnMapping, string>>;
 
 // Resolved per-size EANs → the "size=ean,size=ean" map string the PDF
@@ -81,6 +82,10 @@ export function effectiveStyleItem(style: {
     ["countryOfOrigin", style.supplier?.country],
     ["ean13", formatEanMap(style.eans)],
     ["cartonEan", style.cartonEan],
+    // The master/assortment carton is the same resolved value, surfaced under
+    // its own field so {{assortEan}} survives per-EAN repeat narrowing (where
+    // {{cartonEan}} is rebound to each size's own carton).
+    ["assortEan", style.cartonEan],
   ];
   let cols = item.column_values ?? [];
   let changed = false;
@@ -108,6 +113,7 @@ export const STYLE_FIELD_LABELS = {
   sizes: "Sizes",
   ean13: "EAN-13 (per size)",
   cartonEan: "Carton EAN",
+  assortEan: "Assortment EAN",
   cartonQty: "Carton qty (outer VE)",
   klNumber: "KL number",
   lot: "Lot",

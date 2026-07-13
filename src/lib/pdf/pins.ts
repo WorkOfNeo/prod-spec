@@ -60,6 +60,9 @@ export function applyFieldOverrides(style: StyleData, rawOverrides: unknown): St
       case "cartonEan":
         next.carton.ean13 = ensureValidEan(v);
         break;
+      case "assortEan":
+        next.carton.assortEan = ensureValidEan(v);
+        break;
       case "klNumber":
         next.carton.klNumber = v;
         break;
@@ -124,6 +127,12 @@ export function readPinnableField(style: StyleData, field: PinnableField): strin
       return style.carton.outerVE ? String(style.carton.outerVE) : "";
     case "cartonEan":
       return style.carton.ean13 ?? "";
+    case "assortEan":
+      // Guard the all-zero sentinel (ensureValidEan's "empty") so the review
+      // editor shows a blank the reviewer can fill, not "0000000000000".
+      return style.carton.assortEan && style.carton.assortEan !== "0000000000000"
+        ? style.carton.assortEan
+        : "";
     case "klNumber":
       return style.carton.klNumber ?? "";
     case "lot":

@@ -107,6 +107,9 @@ const RESOLVERS: Record<string, TextResolver> = {
   },
   qtyPerCarton: (s) => (s.carton.outerVE ? String(s.carton.outerVE) : ""),
   cartonEan: (s) => (s.carton.ean13 && s.carton.ean13 !== EAN_SENTINEL ? s.carton.ean13 : ""),
+  assortEan: (s) =>
+    s.carton.assortEan && s.carton.assortEan !== EAN_SENTINEL ? s.carton.assortEan : "",
+  isAssortment: (s) => (s.isAssortment ? "1" : ""),
   ean13: (s) => s.sizes.find((x) => x.ean13)?.ean13 ?? "",
   batchNo: (s) => s.batchNo ?? "",
   prodNumber: (s) => s.prodNumber ?? "",
@@ -239,6 +242,7 @@ export function resolveTextToken(style: StyleData, key: string, arg?: string): s
 // Barcode source value off StyleData ("" when absent).
 export function resolveBarcodeValue(style: StyleData, source: BarcodeSource): string {
   if (source === "cartonEan") return resolveTextToken(style, "cartonEan");
+  if (source === "assortEan") return resolveTextToken(style, "assortEan");
   return resolveTextToken(style, "ean13");
 }
 
@@ -305,6 +309,7 @@ const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   customerOrderNo: ["customerOrderNo"],
   qtyPerCarton: ["cartonQty"],
   cartonEan: ["cartonEan"],
+  assortEan: ["assortEan"],
   ean13: ["ean13"],
   batchNo: ["batchNo"],
   prodNumber: ["prodNumber"],
@@ -331,6 +336,7 @@ const CONDITION_COLUMN: Partial<Record<string, keyof ColumnMapping>> = {
 function columnsForToken(ref: TokenRef): Array<keyof ColumnMapping> {
   if (ref.key === "barcode") {
     if (ref.arg === "cartonEan") return ["cartonEan"];
+    if (ref.arg === "assortEan") return ["assortEan"];
     if (ref.arg === "ean13") return ["ean13"];
     return [];
   }

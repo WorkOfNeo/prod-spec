@@ -119,7 +119,13 @@ export async function resolveStyleEansFromMonday(styleId: string): Promise<Monda
   // Assort line → the single representative carton EAN (Style.cartonEan); else
   // the first per-size carton we did land.
   const assortEan = carton.assort ?? product.assort ?? null;
-  const cartonEan = assortEan ?? sizeEans.map((s) => s.cartonEan).find(Boolean) ?? null;
+  // Style.cartonEan is the MASTER / assortment carton (drives {{assortEan}} and
+  // the assortment sticker). Use the real "Assort" line only — do NOT fall back
+  // to a per-size carton, so a style with no assort stays detectable and
+  // surfaces the Assortment EAN as an editable field in review instead of
+  // silently printing an arbitrary size's carton. Per-size cartons still live
+  // on the per-row style_eans (sizeEans[].cartonEan), untouched.
+  const cartonEan = assortEan;
   const matchedSizes = sizeEans.filter((s) => s.ean13).length;
 
   // Nothing usable — no product EANs and no carton value. Let the PO status stand.

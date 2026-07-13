@@ -248,7 +248,11 @@ export const LayoutSettingsSchema = z.object({
   // "size": one repetition per size row (deduped — one per size).
   // "ean":  one repetition per PO EAN row — SIZE × COLOUR combo, with
   //         {{size}}/{{ean13}}/{{colourName}} bound to that row.
-  repeatBy: z.enum(["none", "size", "ean"]).default("none"),
+  // "assort": one repetition per resolved ASSORTMENT (master) carton EAN —
+  //         each row prints {{barcode:assortEan}} (also bound to
+  //         {{barcode:cartonEan}}) and sets {{isAssortment}}. For the
+  //         assortment sticker: one label for the whole mixed carton.
+  repeatBy: z.enum(["none", "size", "ean", "assort"]).default("none"),
   // How repetitions land in output FILES — independent of repeatBy, which
   // only controls how the content iterates. Meaningful when repeatBy ≠
   // "none" (a non-repeating layout is always one file):

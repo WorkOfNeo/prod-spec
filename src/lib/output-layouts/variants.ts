@@ -69,7 +69,12 @@ function splitFilePlan(
       settings.repeatBy === "ean"
         ? (repStyle.colour?.name ?? "").replace(/[^\w.-]+/g, "").slice(0, 16)
         : "";
-    let suffix = [sizePart, colourPart].filter(Boolean).join("-").slice(0, 40) || String(i + 1);
+    // The assortment row isn't a single size — name its file "assort" (deduped
+    // below if a style ever resolves several assortment cartons).
+    let suffix =
+      settings.repeatBy === "assort"
+        ? "assort"
+        : [sizePart, colourPart].filter(Boolean).join("-").slice(0, 40) || String(i + 1);
     const n = (seen.get(suffix) ?? 0) + 1;
     seen.set(suffix, n);
     if (n > 1) suffix = `${suffix}-${n}`;

@@ -29,6 +29,10 @@ export const ColumnMappingSchema = z.object({
   lot: z.string().optional(),
   cartonQty: z.string().optional(),
   cartonEan: z.string().optional(),
+  // Master/assortment carton EAN — one per style (the "Assort" line on the
+  // Pre-Order carton column). Derived, not a real board column: resolved onto
+  // Style.cartonEan and injected as manual.assortEan (see effectiveStyleItem).
+  assortEan: z.string().optional(),
   colourName: z.string().optional(),
   colourCode: z.string().optional(),
   price: z.string().optional(),
@@ -208,6 +212,7 @@ export const MANUAL_COLUMN_IDS = {
   lot: "manual.lot",
   cartonQty: "manual.cartonQty",
   cartonEan: "manual.cartonEan",
+  assortEan: "manual.assortEan",
   colourName: "manual.colourName",
   colourCode: "manual.colourCode",
   price: "manual.price",

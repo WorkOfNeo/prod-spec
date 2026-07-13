@@ -22,6 +22,7 @@ export type PinnableField =
   | "colourCode"
   | "cartonQty"
   | "cartonEan"
+  | "assortEan"
   | "klNumber"
   | "lot"
   | "supplierNumber"
@@ -43,6 +44,7 @@ export const PINNABLE_FIELDS: PinnableField[] = [
   "colourCode",
   "cartonQty",
   "cartonEan",
+  "assortEan",
   "klNumber",
   "lot",
   "supplierNumber",
@@ -67,6 +69,7 @@ export const PINNABLE_FIELD_LABELS: Record<PinnableField, string> = {
   colourCode: "Colour code",
   cartonQty: "Carton qty (outer VE)",
   cartonEan: "Carton EAN",
+  assortEan: "Assortment EAN",
   klNumber: "KL number",
   lot: "Lot",
   supplierNumber: "Supplier number",

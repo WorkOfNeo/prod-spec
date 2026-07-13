@@ -69,6 +69,7 @@ export function buildSampleStyleData(): StyleData {
       lot: "LOT-2406",
       outerVE: 24,
       ean13: ean13("570087654321"),
+      assortEan: ean13("570011122233"),
     },
 
     colour: { name: "Navy Blue", code: "NVY-300" },
