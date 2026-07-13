@@ -5,9 +5,9 @@
 // live Railway DB, Puppeteer, or email.
 //
 // The handler 409s the moment it sees an in-flight job (db.job.count → 1) —
-// that's the clean stopping point AFTER the role + exclusivity guards but
-// BEFORE any render/persist, so a "passes the gate" case proves pass-through
-// without mocking the whole generation stack.
+// that's the clean stopping point AFTER the role guard but BEFORE any
+// render/persist, so a "passes the gate" case proves pass-through without
+// mocking the whole generation stack.
 //
 // Runs under: node --experimental-test-module-mocks --import tsx --test
 import { test, mock, before, beforeEach } from "node:test";
@@ -142,11 +142,11 @@ test("no session is rejected with 401", async () => {
   assert.equal(jobCount.mock.callCount(), 0);
 });
 
-test("numbering + multi-style in one request is refused (mutually exclusive)", async () => {
+test("numbering + multi-style in one request is allowed (the capabilities combine)", async () => {
   const POST = await load();
   asReviewer();
-  const { status, body } = await call(POST, { variantKey: "layout:abc", total: 200, siblingIds: ["s2"] });
-  assert.equal(status, 400, "can't combine the two modes");
-  assert.match(body?.error ?? "", /Pick one/);
-  assert.equal(jobCount.mock.callCount(), 0, "exclusivity guard fires before the in-flight check");
+  const { status } = await call(POST, { variantKey: "layout:abc", total: 200, siblingIds: ["s2"] });
+  assert.notEqual(status, 400, "combining numbering and multiple styles must not be rejected");
+  assert.equal(status, 409, "combined request proceeds past the guards to the in-flight check");
+  assert.equal(jobCount.mock.callCount(), 1, "combined request reached the in-flight check");
 });
