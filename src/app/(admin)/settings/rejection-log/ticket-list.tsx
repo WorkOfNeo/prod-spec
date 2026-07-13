@@ -35,9 +35,10 @@ export type TicketRow = {
   // docType (e.g. CARTON_MARKING) — drives the "Output type" filter.
   docType: string;
   variantKey: string;
-  // True when this output is an Output Builder layout — so the AI can edit its
-  // JSON. False for cover / general-info / coded outputs (no editable def).
-  aiFixable: boolean;
+  // Which AI-fix flow this output supports: "layout" (edit the layout
+  // definition), "general-info" (edit the ProdSpec markdown), or null (cover /
+  // coded outputs — not AI-editable).
+  aiFixKind: "layout" | "general-info" | null;
   customerName: string;
   businessArea: string | null;
   poNumber: string | null;
@@ -1287,12 +1288,16 @@ function Row({
                   </p>
                 ) : null}
                 <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
-                  {!readOnly && row.aiFixable ? (
+                  {!readOnly && row.aiFixKind ? (
                     <button
                       type="button"
                       onClick={() => onAiFix(row)}
                       className="inline-flex items-center gap-1 rounded-md border border-violet-300 bg-violet-50 px-2 py-1 font-medium text-violet-700 hover:bg-violet-100"
-                      title="Let the AI propose an edit to this layout from the rejection comment — preview before/after and keep it if you like it"
+                      title={
+                        row.aiFixKind === "general-info"
+                          ? "Let the AI propose an edit to this General information page from the rejection comment — preview before/after and keep it if you like it"
+                          : "Let the AI propose an edit to this layout from the rejection comment — preview before/after and keep it if you like it"
+                      }
                     >
                       ✨ AI fix
                     </button>

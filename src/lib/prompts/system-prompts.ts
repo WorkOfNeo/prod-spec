@@ -17,6 +17,7 @@ import { db } from "@/lib/db";
 // =====================================================
 
 export const REJECTION_FIX_PROMPT_KEY = "rejection-fix";
+export const GENERAL_INFO_FIX_PROMPT_KEY = "general-info-fix";
 
 // Guidance handed to Claude as the `system` prompt for the rejection auto-fix.
 // Editable by admins; the strict JSON output contract is appended by the
@@ -36,6 +37,19 @@ Crucially, many rejections are DATA problems, not template problems. If the comp
 
 Keep the note short and concrete — one or two plain sentences a non-technical reviewer can read.`;
 
+// Guidance for fixing the "General information" A4 page — a single markdown
+// document (no variables/tokens). Editable by admins; the JSON output contract
+// is appended by the caller (src/lib/rejection-ai/general-info-fix.ts).
+export const DEFAULT_GENERAL_INFO_FIX_PROMPT = `You fix the "General information" page of a garment production spec — a single GitHub-flavored markdown document (headings, lists, tables, and images written as ![alt](name)). A reviewer rejected the page and left a comment. You get the comment and the page's current markdown.
+
+Return the SMALLEST change to the markdown that resolves the complaint: fix wording, correct a value stated in the text, fix a table or list, add a missing sentence or section. Preserve everything that is already correct — keep the headings, tables, lists and especially the image references (![...](...)) intact unless the comment is specifically about them.
+
+This page is shared by EVERY style on the Prod Spec, so only make a change that is correct in general — never write something that is only true for one style.
+
+Many rejections can't be fixed by editing this text: the complaint may be about an image that's wrong, a value that comes from the style's data rather than this page, or a layout/formatting concern the markdown can't control. In those cases set isTemplateProblem to false, return the markdown UNCHANGED, and explain in the note what actually needs to happen.
+
+Keep the note to one or two plain sentences.`;
+
 type PromptDef = {
   key: string;
   name: string;
@@ -52,6 +66,13 @@ export const SYSTEM_PROMPT_DEFS: PromptDef[] = [
     description:
       "Guides the AI that proposes fixes to a rejected Output Builder layout from the rejection log. The strict JSON output format is fixed in code and appended automatically — edit the guidance/persona here.",
     default: DEFAULT_REJECTION_FIX_PROMPT,
+  },
+  {
+    key: GENERAL_INFO_FIX_PROMPT_KEY,
+    name: "General-info fix",
+    description:
+      "Guides the AI that proposes edits to a rejected General Information page (the ProdSpec's markdown). Prose/markdown editing — no variables. The JSON output format is fixed in code and appended automatically.",
+    default: DEFAULT_GENERAL_INFO_FIX_PROMPT,
   },
 ];
 
