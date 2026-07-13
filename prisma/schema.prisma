@@ -1909,3 +1909,21 @@ model MondayGhostDropdownOption {
   @@index([label])
   @@map("monday_ghost_dropdown_options")
 }
+
+// Editable AI system prompts, keyed by a stable slug (e.g. "rejection-fix").
+// A row OVERRIDES the built-in default for that key; an absent row means the
+// code default is used. Admins edit these under Settings → Prompts. Kept
+// generic so a future AI feature registers its own key + default in code
+// (src/lib/prompts/system-prompts.ts) without a schema change.
+model SystemPrompt {
+  id             String   @id @default(cuid())
+  key            String   @unique
+  content        String
+  // Email of the admin who last saved (display only — no FK, so a deleted
+  // user never orphans the prompt).
+  updatedByEmail String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("system_prompts")
+}

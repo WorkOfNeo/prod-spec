@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { outputTypeLabel } from "./rejection-filters";
 import { FacetFilter, type FacetOption } from "@/components/facet-filter";
+import { AiFixDialog } from "./ai-fix-dialog";
 
 // A rendered PDF for a ticket's output (jobId + the preview query that
 // addresses it), with its review state.
@@ -34,6 +35,9 @@ export type TicketRow = {
   // docType (e.g. CARTON_MARKING) — drives the "Output type" filter.
   docType: string;
   variantKey: string;
+  // True when this output is an Output Builder layout — so the AI can edit its
+  // JSON. False for cover / general-info / coded outputs (no editable def).
+  aiFixable: boolean;
   customerName: string;
   businessArea: string | null;
   poNumber: string | null;
@@ -146,6 +150,8 @@ export function TicketList({
 }) {
   const isHistory = view === "history";
   const router = useRouter();
+  // The ticket whose AI-fix dialog is open (null = closed).
+  const [aiFixTicket, setAiFixTicket] = useState<TicketRow | null>(null);
   const [query, setQuery] = useState("");
   // Per-style action state: which action is running, and its last result.
   const [styleBusy, setStyleBusy] = useState<Record<string, StyleAction | null>>({});
@@ -747,6 +753,7 @@ export function TicketList({
                 styleBusy={styleBusy[g.styleId] ?? null}
                 styleResult={styleResult[g.styleId] ?? null}
                 onStyleAct={(action) => styleAct(g.styleId, action)}
+                onAiFix={setAiFixTicket}
                 readOnly={isHistory}
               />
             ))}
@@ -795,6 +802,18 @@ export function TicketList({
           </div>
         </div>
       ) : null}
+
+      {aiFixTicket ? (
+        <AiFixDialog
+          ticketId={aiFixTicket.id}
+          outputName={aiFixTicket.outputName}
+          styleName={aiFixTicket.styleName}
+          styleNumber={aiFixTicket.styleNumber}
+          comment={aiFixTicket.comment}
+          onClose={() => setAiFixTicket(null)}
+          onApplied={() => router.refresh()}
+        />
+      ) : null}
     </div>
   );
 }
@@ -818,6 +837,7 @@ function GroupSection({
   styleBusy,
   styleResult,
   onStyleAct,
+  onAiFix,
   readOnly,
 }: {
   group: StyleGroup;
@@ -838,6 +858,7 @@ function GroupSection({
   styleBusy: StyleAction | null;
   styleResult: StyleResult | null;
   onStyleAct: (action: StyleAction) => void;
+  onAiFix: (row: TicketRow) => void;
   // History view: render the group + tickets read-only (no regenerate /
   // mark-fixed bar, no selection column).
   readOnly: boolean;
@@ -1056,6 +1077,7 @@ function GroupSection({
                   selected={selected.has(row.id)}
                   onToggleSelect={() => onToggleSelect(row.id)}
                   bulkBusy={bulkBusy}
+                  onAiFix={onAiFix}
                   readOnly={readOnly}
                 />
               ))}
@@ -1127,6 +1149,7 @@ function Row({
   selected,
   onToggleSelect,
   bulkBusy,
+  onAiFix,
   readOnly,
 }: {
   row: TicketRow;
@@ -1140,6 +1163,7 @@ function Row({
   selected: boolean;
   onToggleSelect: () => void;
   bulkBusy: boolean;
+  onAiFix: (row: TicketRow) => void;
   readOnly: boolean;
 }) {
   const actionable = !readOnly && (row.status === "OPEN" || row.status === "IN_PROGRESS");
@@ -1262,7 +1286,17 @@ function Row({
                     {row.notGeneratedText}
                   </p>
                 ) : null}
-                <div className="mt-2 flex flex-wrap gap-3 text-xs">
+                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+                  {!readOnly && row.aiFixable ? (
+                    <button
+                      type="button"
+                      onClick={() => onAiFix(row)}
+                      className="inline-flex items-center gap-1 rounded-md border border-violet-300 bg-violet-50 px-2 py-1 font-medium text-violet-700 hover:bg-violet-100"
+                      title="Let the AI propose an edit to this layout from the rejection comment — preview before/after and keep it if you like it"
+                    >
+                      ✨ AI fix
+                    </button>
+                  ) : null}
                   {row.editHref ? (
                     <a
                       href={row.editHref}
