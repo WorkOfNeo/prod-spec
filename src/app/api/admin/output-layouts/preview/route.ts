@@ -143,6 +143,7 @@ export async function POST(req: NextRequest) {
     for (const t of LAYOUT_TOKENS) {
       if (t.kind === "barcode") {
         tokenValues["barcode:cartonEan"] = resolveBarcodeValue(styleData, "cartonEan");
+        tokenValues["barcode:cartonEan13"] = resolveBarcodeValue(styleData, "cartonEan13");
         tokenValues["barcode:ean13"] = resolveBarcodeValue(styleData, "ean13");
       } else if (t.arg === "lang") {
         tokenValues[`${t.key}:${valuesLang}`] = resolveTextToken(styleData, t.key, valuesLang);
