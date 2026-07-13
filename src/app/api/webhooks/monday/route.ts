@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { isChallenge, isEventPayload, verifyWebhookRequest } from "@/lib/monday/webhook";
 import { ingestMondayItem, markStyleArchived, markStyleDeleted } from "@/lib/monday/ingest";
 import { autoEnqueueReadyOutputs } from "@/lib/queue/auto-enqueue";
-import { triggerRunner, triggerEanRunner } from "@/lib/queue/trigger";
+import { triggerRunner, triggerEanRunner, triggerTranslationsSync } from "@/lib/queue/trigger";
 import { MONDAY_BOARDS } from "@/lib/monday/boards";
 import { getItem } from "@/lib/monday/client";
 import { upsertCustomerFromMondayItem, upsertSupplierFromMondayItem } from "@/lib/monday/sync";
@@ -52,7 +52,14 @@ export async function POST(req: NextRequest) {
   // (never dropped) so its row + Log trail survive for audit and the styles
   // list stops surfacing it. Don't fall through to ingest — the item may no
   // longer be fetchable from Monday.
-  if (event.type === "item_archived" || event.type === "item_deleted") {
+  //
+  // The Translations board is exempt: an archived / deleted phrase must fall
+  // through to its board handler, which re-syncs the dictionary and reconciles
+  // the removal (soft-deactivate) rather than touching the Style mirror.
+  if (
+    (event.type === "item_archived" || event.type === "item_deleted") &&
+    boardId !== MONDAY_BOARDS.translations
+  ) {
     const lifecycle =
       event.type === "item_deleted"
         ? await markStyleDeleted(event.pulseId)
@@ -86,6 +93,8 @@ export async function POST(req: NextRequest) {
       await handleCustomerEvent(event.pulseId);
     } else if (boardId === MONDAY_BOARDS.suppliers) {
       await handleSupplierEvent(event.pulseId);
+    } else if (boardId === MONDAY_BOARDS.translations) {
+      await handleTranslationsEvent(event.pulseId);
     } else {
       await db.log.create({
         data: {
@@ -136,6 +145,23 @@ async function handleStyleEvent(pulseId: number): Promise<void> {
     triggerSource: "WEBHOOK",
   });
   if (enqueue.enqueued) await triggerRunner();
+}
+
+async function handleTranslationsEvent(pulseId: number): Promise<void> {
+  // The Translations board is the source of the multilingual dictionary. Any
+  // change — a new phrase, an edited cell, or an archived / deleted phrase —
+  // should refresh it. The sink + transform is heavy (every phrase × ~27
+  // language columns), so we never run it inline; Monday needs a fast ack and
+  // retries/disables slow endpoints. Fire the coalescing auto-sync in the
+  // background instead (a burst of edits collapses into ~one re-sink), which
+  // also reconciles removals by soft-deactivating phrases no longer on Monday.
+  await triggerTranslationsSync();
+  await db.log.create({
+    data: {
+      level: "INFO",
+      message: `translations dictionary refresh kicked from monday ${pulseId}`,
+    },
+  });
 }
 
 async function handleCustomerEvent(pulseId: number): Promise<void> {

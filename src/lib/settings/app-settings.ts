@@ -35,6 +35,39 @@ export async function setAutoGenerateEnabled(enabled: boolean): Promise<void> {
   });
 }
 
+const TRANSLATION_SYNC_STATE_KEY = "translationSyncState";
+
+// Bookkeeping for the AUTOMATIC translations re-sync — the coalescing guard
+// behind the Monday Translations-board webhook (see
+// src/lib/monday/translations-auto-sync.ts). This is NOT a user-facing toggle;
+// automatic re-sync is always on. It just lets a burst of cell edits collapse
+// into at most one in-flight sink + one trailing catch-up instead of one full
+// board re-sink per changed cell. Both fields are ISO-8601 UTC strings, with
+// "" meaning unset (we store strings, never JSON null).
+//   • requestedAt — the newest webhook that asked for a refresh (demand).
+//   • runningAt   — when the active run claimed the slot ("" = idle).
+export type TranslationSyncState = {
+  requestedAt: string;
+  runningAt: string;
+};
+
+export async function getTranslationSyncState(): Promise<TranslationSyncState> {
+  const row = await db.appSetting.findUnique({ where: { key: TRANSLATION_SYNC_STATE_KEY } });
+  const value = (row?.value ?? null) as Partial<TranslationSyncState> | null;
+  return {
+    requestedAt: typeof value?.requestedAt === "string" ? value.requestedAt : "",
+    runningAt: typeof value?.runningAt === "string" ? value.runningAt : "",
+  };
+}
+
+export async function setTranslationSyncState(state: TranslationSyncState): Promise<void> {
+  await db.appSetting.upsert({
+    where: { key: TRANSLATION_SYNC_STATE_KEY },
+    create: { key: TRANSLATION_SYNC_STATE_KEY, value: state },
+    update: { value: state },
+  });
+}
+
 const SUPPLIER_BATCH_SEND_KEY = "supplierBatchSendEnabled";
 
 // Master switch for the nightly supplier-send system (WS2).
