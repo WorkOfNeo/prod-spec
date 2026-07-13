@@ -18,6 +18,8 @@ export type PoEanFilter =
 export type PoEanRow = {
   id: string;
   name: string;
+  // Colour code ("*A"/"*B") — disambiguates two colourways sharing a style number.
+  colourCode: string;
   poNumber: string;
   supplierName: string | null;
   // Formatted timestamp of the last resolution attempt (null = never).
@@ -72,7 +74,7 @@ export function PoEansTable({
     const n = q.trim().toLowerCase();
     if (!n) return rows;
     return rows.filter((r) =>
-      `${r.name} ${r.poNumber} ${r.supplierName ?? ""}`.toLowerCase().includes(n),
+      `${r.name} ${r.colourCode} ${r.poNumber} ${r.supplierName ?? ""}`.toLowerCase().includes(n),
     );
   }, [rows, q]);
 
@@ -236,7 +238,14 @@ export function PoEansTable({
               const floated = !ov && eanFloated(r.initial.status, r.eanAttempts);
               return (
                 <tr key={r.id} className="border-t border-zinc-100 align-top">
-                  <td className="px-4 py-3 font-medium">{r.name}</td>
+                  <td className="px-4 py-3 font-medium">
+                    {r.name}
+                    {r.colourCode && (
+                      <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-xs font-normal text-zinc-500">
+                        {r.colourCode}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <PoPdfLink styleId={r.id} poNumber={r.poNumber} />
                   </td>
