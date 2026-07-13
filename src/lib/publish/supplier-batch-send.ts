@@ -246,7 +246,15 @@ export async function runSupplierSendBatch(opts?: { source?: "midnight" | "manua
       sentCount += items.length;
       perSupplier.push({ ...base, status: "SENT", emailLogId: outcome.emailLogId });
     } else {
-      perSupplier.push({ ...base, status: outcome.status as PerSupplierOutcome["status"], emailLogId: outcome.emailLogId });
+      // Carry the dispatcher's reason (Resend's rejection for FAILED, the
+      // simulate/skip note otherwise) so /settings/approved can show WHY,
+      // not just the status word.
+      perSupplier.push({
+        ...base,
+        status: outcome.status as PerSupplierOutcome["status"],
+        emailLogId: outcome.emailLogId,
+        error: outcome.note,
+      });
     }
   }
 

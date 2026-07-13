@@ -99,7 +99,7 @@ export default async function ApprovedDeliveryPage() {
 
   // "Opened" tracking: collect the emailLogIds referenced by recent batches'
   // per-supplier outcomes, then find which have an "opened" Resend event.
-  type PerSup = { supplierName?: string; email?: string | null; status?: string; emailLogId?: string | null; outputCount?: number; styleCount?: number };
+  type PerSup = { supplierName?: string; email?: string | null; status?: string; emailLogId?: string | null; outputCount?: number; styleCount?: number; error?: string | null };
   const batchLogIds = [
     ...new Set(
       batches.flatMap((b) => (b.perSupplier as PerSup[]).map((p) => p.emailLogId).filter((x): x is string => !!x)),
@@ -460,6 +460,12 @@ export default async function ApprovedDeliveryPage() {
                                 )
                               ) : null}
                               {p.status === "NO_EMAIL" ? <span className="ml-1 text-red-500">(no email)</span> : null}
+                              {p.status === "FAILED" ? (
+                                <div className="mt-0.5 text-[10px] leading-snug text-red-600">
+                                  {p.error?.replace(/^Send failed:\s*/, "") ?? "send failed"}
+                                  {p.email ? <span className="text-zinc-400"> · to {p.email}</span> : null}
+                                </div>
+                              ) : null}
                             </li>
                           ))}
                         </ul>
