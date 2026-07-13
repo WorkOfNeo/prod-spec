@@ -9,16 +9,30 @@ import type { StyleData } from "../pdf/types";
 process.env.DATABASE_URL ??= "postgresql://u:p@localhost:5432/db?sslmode=disable";
 
 let repetitionStyles: typeof import("./render").repetitionStyles;
+let barcodeSymbology: typeof import("./render").barcodeSymbology;
 let resolveBarcodeValue: typeof import("./tokens").resolveBarcodeValue;
 let resolveTextToken: typeof import("./tokens").resolveTextToken;
 let buildSampleStyleData: typeof import("../pdf/sample-data").buildSampleStyleData;
 let ASSORT: string;
 
 before(async () => {
-  ({ repetitionStyles } = await import("./render"));
+  ({ repetitionStyles, barcodeSymbology } = await import("./render"));
   ({ resolveBarcodeValue, resolveTextToken } = await import("./tokens"));
   ({ buildSampleStyleData } = await import("../pdf/sample-data"));
   ASSORT = buildSampleStyleData().carton.assortEan!; // sample master carton
+});
+
+test("assortEan13 → same master-carton value as assortEan, but EAN-13 symbology", () => {
+  const s = buildSampleStyleData();
+  // Same value…
+  assert.equal(resolveBarcodeValue(s, "assortEan13"), ASSORT);
+  assert.equal(resolveBarcodeValue(s, "assortEan13"), resolveBarcodeValue(s, "assortEan"));
+  // …different symbology: assortEan is the carton default (Code128/EAN-128),
+  // assortEan13 is a true EAN-13 so a layout can choose.
+  assert.equal(barcodeSymbology(s, "assortEan"), "ean128");
+  assert.equal(barcodeSymbology(s, "assortEan13"), "ean13");
+  assert.equal(barcodeSymbology(s, "cartonEan"), "ean128");
+  assert.equal(barcodeSymbology(s, "ean13"), "ean13");
 });
 
 test("assortEan token + barcode source resolve the master carton", () => {

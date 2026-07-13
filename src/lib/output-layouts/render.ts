@@ -197,9 +197,11 @@ function defUsesToken(pages: LayoutPage[], key: string): boolean {
 // historic default.
 type BarcodeSymbology = "ean128" | "ean13";
 
-function barcodeSymbology(style: StyleData, source: BarcodeSource): BarcodeSymbology {
-  // Carton and assortment cartons follow the style's carton symbology (Code128
-  // by default); everything else is a true EAN-13 product barcode.
+export function barcodeSymbology(style: StyleData, source: BarcodeSource): BarcodeSymbology {
+  // cartonEan / assortEan follow the style's carton symbology (Code128 by
+  // default). Everything else — the per-size product barcode (ean13) AND the
+  // explicit assortEan13 source — prints as a true EAN-13, so a layout can
+  // choose EAN-128 (assortEan) vs EAN-13 (assortEan13) for the same value.
   if (source !== "cartonEan" && source !== "assortEan") return "ean13";
   return style.cartonBarcode?.type ?? "ean128";
 }
@@ -248,7 +250,7 @@ function renderBarcodeHtml(style: StyleData, source: BarcodeSource, ctx: RenderC
     const label =
       source === "ean13"
         ? "No EAN-13 on style"
-        : source === "assortEan"
+        : source === "assortEan" || source === "assortEan13"
           ? "No assortment EAN configured"
           : "No carton EAN configured";
     return `<div class="barcode-missing">${escapeHtml(label)}</div>`;
