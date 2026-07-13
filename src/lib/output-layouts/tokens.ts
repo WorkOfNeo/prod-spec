@@ -8,6 +8,7 @@ import { getWashcareSymbol, loadWashcareSymbols } from "@/lib/pdf/washcare-symbo
 import { ruleRequiredColumns } from "@/lib/pdf/spec-fields";
 import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-marking";
 import { tokenMeta, parseSiblingTokenKey, type BarcodeSource } from "./token-meta";
+import { formatCompositionLines } from "./composition";
 import {
   calcsInLine,
   evaluateCalc,
@@ -126,7 +127,12 @@ const RESOLVERS: Record<string, TextResolver> = {
   cartonNoPadded: (s) =>
     s.cartonSerial ? String(s.cartonSerial.no).padStart(String(s.cartonSerial.total).length, "0") : "",
 
-  composition: (s, arg) => tFor(s.composition, (arg ?? "en").toLowerCase()),
+  // Multi-part garments ("Outer: … Inner: …") arrive on one line from
+  // Monday but print one part per line — formatCompositionLines splits on
+  // the "<word>:" label boundary (translated, so language-agnostic). Single
+  // compositions pass through untouched. The renderer draws the "\n" via
+  // .ol-line's pre-wrap. See ./composition.
+  composition: (s, arg) => formatCompositionLines(tFor(s.composition, (arg ?? "en").toLowerCase())),
   // "Made in <country>" per language — values are precomputed by
   // augmentTranslatedFields (translation bank), carried on a side-channel
   // field; unaugmented styles resolve "" (→ unresolved chip in preview).
