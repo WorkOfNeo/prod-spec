@@ -72,6 +72,10 @@ export function mapMondayItemToStyleData(
       lot: readField("lot"),
       outerVE: Number(readField("cartonQty")) || 0,
       ean13: ensureValidEan(readField("cartonEan")),
+      // Master/assortment carton (injected as manual.assortEan = Style.cartonEan).
+      // Same value as ean13 on the base style; kept distinct so it survives the
+      // per-EAN repeat, where ean13 is rebound to each size's own carton.
+      assortEan: ensureValidEan(readField("assortEan")),
     },
     colour: {
       name: readField("colourName"),

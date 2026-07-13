@@ -73,12 +73,22 @@ export type StyleData = {
   // `sizes` already IS the full run.
   allSizes?: SizeVariant[];
 
+  // True on the extra "assortment" repetition emitted by repeatBy="assort":
+  // the label represents the master assortment carton, not a single size. Lets
+  // a template branch with {{if isAssortment}} to render that row differently.
+  isAssortment?: boolean;
+
   carton: {
     klNumber: string;
     supplierNumber: string;
     lot: string;
     outerVE: number;
     ean13: string;
+    // Master/assortment carton EAN — the single carton for the whole style,
+    // distinct from `ean13` which a per-EAN repeat rebinds to each size's own
+    // carton. Preserved across repetition narrowing so {{assortEan}} always
+    // resolves to the master. Optional: non-mapper constructors omit it.
+    assortEan?: string;
   };
 
   colour?: {

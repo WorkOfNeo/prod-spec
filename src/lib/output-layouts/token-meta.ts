@@ -77,6 +77,14 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   },
   { key: "qtyPerCarton", label: "Qty per carton", group: "Order & carton", kind: "text", example: "48" },
   { key: "cartonEan", label: "Carton EAN (number)", group: "Order & carton", kind: "text", example: "5701234567890" },
+  { key: "assortEan", label: "Assortment EAN (number)", group: "Order & carton", kind: "text", example: "5701234567890" },
+  {
+    key: "isAssortment",
+    label: 'Assortment-row flag — use as {{if isAssortment == 1}}…{{else}}…{{endif}} (repeatBy "assort")',
+    group: "Order & carton",
+    kind: "text",
+    example: "1",
+  },
   { key: "ean13", label: "EAN-13 first size (number)", group: "Order & carton", kind: "text", example: "5701234567104" },
   { key: "batchNo", label: "Batch no", group: "Order & carton", kind: "text", example: "48835447" },
   { key: "prodNumber", label: "Prod number", group: "Order & carton", kind: "text", example: "GI10024" },
@@ -195,7 +203,7 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   },
 ];
 
-export const BARCODE_SOURCES = ["cartonEan", "ean13"] as const;
+export const BARCODE_SOURCES = ["cartonEan", "assortEan", "ean13"] as const;
 export type BarcodeSource = (typeof BARCODE_SOURCES)[number];
 
 export const LOGO_SOURCES = ["contrast", "contrastAddress", "custom"] as const;
