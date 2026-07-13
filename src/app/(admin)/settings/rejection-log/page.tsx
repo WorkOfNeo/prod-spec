@@ -174,9 +174,14 @@ export default async function RejectionLogPage({
       outputName: t.outputName,
       docType: t.docType,
       variantKey: t.variantKey,
-      // AI-fixable only when the output is an Output Builder layout (has an
-      // editable definition) — cover / general-info / coded outputs aren't.
-      aiFixable: layoutIdFromVariantKey(t.variantKey) !== null,
+      // Which AI-fix flow (if any) this output supports: an Output Builder
+      // layout (edit the definition), the General information page (edit the
+      // markdown), or none (cover / coded outputs — no editable source).
+      aiFixKind: layoutIdFromVariantKey(t.variantKey)
+        ? "layout"
+        : baseVariantKey(t.variantKey) === "__general_info__"
+          ? "general-info"
+          : null,
       customerName: t.customerName,
       businessArea: t.businessArea,
       poNumber: t.poNumber,

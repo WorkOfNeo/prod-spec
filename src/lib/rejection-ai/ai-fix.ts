@@ -28,7 +28,7 @@ import {
   langArgsInDef,
 } from "@/lib/output-layouts/tokens";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
-import { currentOutputBaseKeys } from "@/lib/tickets/orphan";
+import { currentOutputBaseKeys, baseVariantKey } from "@/lib/tickets/orphan";
 import { getSystemPromptContent, REJECTION_FIX_PROMPT_KEY } from "@/lib/prompts/system-prompts";
 import { callClaudeForJson } from "./anthropic";
 
@@ -69,6 +69,7 @@ export type AiFixEdit = {
 };
 
 export type AiFixProposal = {
+  kind: "layout";
   layoutId: string;
   layoutName: string;
   styleId: string;
@@ -114,6 +115,15 @@ const TICKET_SELECT = {
   styleName: true,
   styleNumber: true,
 } as const;
+
+// Which AI-fix flow (if any) applies to a ticket's output, keyed by its
+// variantKey: an Output Builder layout, the General information page, or
+// neither (cover / coded outputs — no editable source the AI can touch).
+export function fixKindForVariantKey(variantKey: string): "layout" | "general-info" | null {
+  if (layoutIdFromVariantKey(variantKey)) return "layout";
+  if (baseVariantKey(variantKey) === "__general_info__") return "general-info";
+  return null;
+}
 
 // Resolve the Output Builder layout behind a ticket, or throw an AiFixError
 // with a reviewer-friendly reason. Shared by the proposal and apply routes so
@@ -361,6 +371,7 @@ export async function buildAiFixProposal(ticketId: string): Promise<AiFixProposa
   const usedByCount = await countProdSpecsUsingLayout(layoutId);
 
   return {
+    kind: "layout",
     layoutId,
     layoutName: layout.name,
     styleId: ticket.styleId,
