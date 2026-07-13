@@ -13,6 +13,13 @@ export type Guide = {
   file: string;
   title: string;
   summary: string;
+  /**
+   * ADMIN-only guide: hidden from the reviewer index/sidebar and gated
+   * server-side on the [slug] page (REVIEWERs bounce to /dashboard, like
+   * requireAdminPage). NOT part of the reviewer handbook booklet. Note the
+   * raw public/guides/<file> is still statically served — see README.
+   */
+  adminOnly?: boolean;
 };
 
 export const GUIDES: Guide[] = [
@@ -58,7 +65,21 @@ export const GUIDES: Guide[] = [
     title: "Reviewing a style — the data",
     summary: "Care instructions, required fields, EAN barcodes & the PO PDF, and the Monday link.",
   },
+  {
+    slug: "carton-barcode-format",
+    file: "admin-carton-barcode.html",
+    title: "Carton barcode format — EAN-128 vs EAN-13",
+    summary:
+      "Switch a carton-marking output's barcode between EAN-128 (Code 128) and EAN-13, and set the bar height — in the Prod Spec editor.",
+    adminOnly: true,
+  },
 ];
+
+/** Reviewer-visible guides (the handbook) — everyone signed in sees these. */
+export const REVIEWER_GUIDES: Guide[] = GUIDES.filter((g) => !g.adminOnly);
+
+/** Admin-only guides — shown only to ADMINs, in their own section. */
+export const ADMIN_GUIDES: Guide[] = GUIDES.filter((g) => g.adminOnly);
 
 /** The combined booklet (all guides, one PDF). */
 export const HANDBOOK_PDF = "/guides/00-reviewer-handbook-all.pdf";

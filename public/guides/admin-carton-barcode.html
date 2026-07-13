@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Admin guide · Carton barcode format — EAN-128 vs EAN-13</title>
+<link rel="stylesheet" href="_guide.css" />
+</head>
+<body>
+
+  <div class="doc-head">
+    <div class="kicker">Prod Spec · Admin guide</div>
+    <h1>Carton barcode format — EAN-128 vs EAN-13</h1>
+    <p class="sub">How to choose the barcode symbology for a <b>carton-marking</b> output — EAN-128 (Code&nbsp;128) or EAN-13 — and set its bar height. A per-output setting in the Prod Spec editor.</p>
+    <div class="crumb">Admins only · set under <b>Prod specs</b> ▸ open a spec ▸ a <b>Carton marking</b> output. It changes only the <b>carton</b> (outer-box) barcode — never the per-size product EANs.</div>
+  </div>
+
+  <!-- SECTION 1 -->
+  <div class="section">
+    <h2><span class="n">1</span> What it controls</h2>
+    <p class="lead">Carton-marking labels carry the <b>carton EAN</b> (the outer box's number). This setting decides how that number prints — as <b>EAN-128 / Code&nbsp;128</b> bars with the digits beneath (the default), or as a true <b>EAN-13</b> retail symbol. It's set <b>per output</b>, so two carton outputs on the same spec can differ.</p>
+    <div class="note">
+      <div class="h">It only touches the carton barcode</div>
+      <p>The per-size <b>product</b> EAN-13s on care labels, price stickers and the like are always true EAN-13 and are <b>not</b> affected. This switch is exclusively the carton/outer-box barcode (<span style="font-family:ui-monospace,Menlo,monospace;">{{barcode:cartonEan}}</span> in builder layouts, and the carton-marking templates).</p>
+    </div>
+  </div>
+
+  <!-- SECTION 2 -->
+  <div class="section">
+    <h2><span class="n">2</span> Where to find it</h2>
+    <p class="lead">Open the spec, find the <b>carton-marking</b> output, expand its <b>📌 … · preview</b> panel — the <b>Carton barcode</b> dropdown sits at the top, next to <b>Bar height mm</b>.</p>
+
+    <div class="mock">
+      <div class="chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">prod-spec.app / prod-specs / 4471</span></div>
+      <div class="appbody"><div class="canvas" style="padding:13px 15px;">
+        <div style="font-weight:800;font-size:11.5px;">Outputs</div>
+        <div class="cap" style="margin-top:2px;">One row per generated document on this spec.</div>
+
+        <div class="ocard" style="margin-top:9px;">
+          <div class="ocard-top">
+            <div class="meta">
+              <div class="oname">Carton marking — A6 <span class="pill bl" style="margin-left:4px;">CARTON_MARKING</span></div>
+              <div class="ofile">netto-dk · private-label · carton-marking</div>
+            </div>
+            <div class="acts"><span class="cap" style="margin:0;">220 × 140 mm</span></div>
+          </div>
+
+          <div style="margin-top:9px;border-top:1px solid #f4f4f5;padding-top:8px;">
+            <div style="font-size:10px;color:#3f3f46;font-weight:700;">📌 2 pins · preview <span class="mk in">1</span></div>
+
+            <div style="margin-top:9px;display:flex;flex-wrap:wrap;align-items:center;gap:12px;">
+              <div>
+                <div style="font-size:8.5px;text-transform:uppercase;letter-spacing:.06em;color:#71717a;">Carton barcode <span class="mk in">2</span></div>
+                <div style="margin-top:3px;border:1px solid #d4d4d8;border-radius:6px;background:#fff;padding:5px 9px;font-size:10px;display:flex;align-items:center;gap:18px;">
+                  <span>EAN-128 (Code 128) — default</span><span style="color:#a1a1aa;">▾</span>
+                </div>
+              </div>
+              <div>
+                <div style="font-size:8.5px;text-transform:uppercase;letter-spacing:.06em;color:#71717a;">Bar height mm <span class="mk in">3</span></div>
+                <div style="margin-top:3px;border:1px solid #d4d4d8;border-radius:6px;background:#fff;padding:5px 9px;font-size:10px;width:74px;color:#a1a1aa;">auto</div>
+              </div>
+            </div>
+
+            <div class="cap" style="margin-top:9px;">Live preview below updates after each autosave <span class="mk in">4</span></div>
+            <div class="pdf" style="margin-top:6px;height:74px;">
+              <span class="tag">CARTON · PREVIEW</span>
+              <div class="ln" style="width:42%;"></div>
+              <div class="ln" style="width:30%;"></div>
+              <div style="position:absolute;right:12px;bottom:12px;display:flex;flex-direction:column;align-items:center;gap:2px;">
+                <div style="font-family:ui-monospace,Menlo,monospace;letter-spacing:1px;color:#18181b;font-size:12px;">▌█▐██▌█▐█▌▐█▌█</div>
+                <div style="font-size:8px;color:#3f3f46;">5712345670000</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>It lives inside the collapsed “📌 … · preview” panel.</b> If you don't expand the output row you won't see it — that's the usual reason people can't find it.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>Carton barcode</b> — the symbology dropdown. Two choices: <b>EAN-128 (Code&nbsp;128) — default</b> and <b>EAN-13</b>. Leaving it on the default stores nothing (absent = EAN-128).</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>Bar height mm</b> — optional override for how tall the bars print. Blank = <b>auto</b> (16&nbsp;mm on the coded templates; scaled to the block in Output&nbsp;Builder). Range 4–60&nbsp;mm.</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>The preview wears the setting.</b> What you see here is what the generated PDF prints — change the dropdown and the carton barcode re-renders after the autosave.</span></li>
+    </ol>
+
+    <div class="note warn">
+      <div class="h">The dropdown only appears on carton-marking outputs</div>
+      <p>It's shown solely for outputs whose document type is <b>CARTON_MARKING</b>. On a care label, price sticker or any other output the control is hidden — there's no carton barcode to switch there.</p>
+    </div>
+  </div>
+
+  <!-- SECTION 3 -->
+  <div class="section">
+    <h2><span class="n">3</span> The two formats</h2>
+    <p class="lead">Pick the one the customer's carton spec asks for. When unsure, leave it on the default — EAN-128 is the historic carton marking.</p>
+
+    <div class="compare">
+      <div class="col">
+        <h3><span class="pill zc">Default</span> EAN-128 (Code 128)</h3>
+        <div class="body">
+          <ul>
+            <li>Carton EAN encoded as <b>Code&nbsp;128</b> bars, with the number printed <b>beneath</b> the bars.</li>
+            <li>The historic carton-marking look — use it for most master-carton labels.</li>
+            <li>Handles the full carton number cleanly; not a retail till symbol.</li>
+            <li>Stored as <b>nothing</b> — it's what you get when the setting is left alone.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="col">
+        <h3><span class="pill em">Alt</span> EAN-13</h3>
+        <div class="body">
+          <ul>
+            <li>Carton EAN printed as a true <b>EAN-13</b> retail symbol, digits <b>inside</b> the guard bars.</li>
+            <li>Use when the carton must carry the same scannable EAN-13 as the product.</li>
+            <li>Requires a valid 13-digit EAN — a non-EAN number won't encode.</li>
+            <li>Chosen explicitly from the dropdown; stored on the output.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <div class="h">Good to know</div>
+      <p>“EAN-128” here is plain <b>Code&nbsp;128</b> of the carton number — not GS1-128 with application identifiers (the <span style="font-family:ui-monospace,Menlo,monospace;">(00)</span>/SSCC style). If a customer ever needs true GS1-128, that's a dev change, not this dropdown.</p>
+    </div>
+  </div>
+
+  <!-- SECTION 4 -->
+  <div class="section">
+    <h2><span class="n">4</span> Where the setting takes effect</h2>
+    <p class="lead">Save and it applies everywhere that carton output is rendered — the in-editor preview, the downloadable PDF, and every future generation of that output. Both rendering paths honour it.</p>
+    <div class="flow">
+      <div class="step"><span class="si">1</span><span class="st"><b>Set it on the output</b> in the Prod Spec editor (per carton-marking output).</span></div>
+      <div class="step"><span class="si">2</span><span class="st"><b>It's applied at render time</b> to the carton barcode — the coded carton-marking templates and Output&nbsp;Builder carton layouts both read it.</span></div>
+      <div class="step"><span class="si">3</span><span class="st"><b>Preview and final PDF match</b> — the live preview and the generated document use the same setting, so what you approve is what prints.</span></div>
+    </div>
+  </div>
+
+  <div class="tip">
+    <b>In one line:</b> Prod specs ▸ open the spec ▸ expand a <b>Carton marking</b> output's <b>📌 preview</b> panel ▸ set <b>Carton barcode</b> to EAN-128 (default) or EAN-13, and optionally <b>Bar height</b>. It changes only the carton barcode, per output.
+  </div>
+
+  <div class="foot">
+    <span>Prod Spec · Admin guide — Carton barcode format</span>
+    <span>EAN-128 / EAN-13 · per carton output</span>
+  </div>
+
+</body>
+</html>

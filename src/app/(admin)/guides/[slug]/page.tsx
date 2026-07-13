@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { getSessionWithRole } from "@/lib/auth-server";
 import { getGuide, guideHtmlSrc, guidePdfSrc } from "@/lib/guides";
 import { GuideFrame } from "./guide-frame";
 
@@ -13,6 +14,13 @@ export default async function GuidePage({ params }: { params: Promise<{ slug: st
   const { slug } = await params;
   const guide = getGuide(slug);
   if (!guide) notFound();
+
+  // Admin-only guides bounce REVIEWERs to their dashboard, matching
+  // requireAdminPage — hiding the index card is not access control.
+  if (guide.adminOnly) {
+    const { role } = await getSessionWithRole();
+    if (role !== "ADMIN") redirect("/dashboard");
+  }
 
   return (
     <div className="px-8 py-8">
