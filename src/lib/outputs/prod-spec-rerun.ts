@@ -3,6 +3,7 @@ import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { outputReadinessForStyle, type ReadinessStyle } from "@/lib/styles/output-readiness";
 import { loadIgnoredOutputKeysByStyle } from "@/lib/outputs/output-ignores";
 import { outputConfigKey } from "@/lib/outputs/output-config-key";
+import { getVariant } from "@/lib/pdf/template-registry";
 import { classifyOutput, type BaseAssetState, type OutputBucket } from "@/lib/outputs/rerun-buckets";
 import { parseProdSpecOutputs, type ProdSpecOutput } from "@/lib/prod-spec/config";
 import type { RunnableStyle } from "@/lib/queue/bulk-run";
@@ -100,6 +101,7 @@ async function loadLatestBaseStateByStyle(
     variantKey: string | null;
     reviewStatus: "PENDING_REVIEW" | "APPROVED" | "REJECTED";
     outputConfigKey: string | null;
+    outputContentVersion: number | null;
     job: { styleId: string };
   };
   let assets: Row[];
@@ -107,22 +109,31 @@ async function loadLatestBaseStateByStyle(
     assets = (await db.jobAsset.findMany({
       where,
       orderBy: order,
-      select: { variantKey: true, reviewStatus: true, outputConfigKey: true, job: { select: { styleId: true } } },
+      select: {
+        variantKey: true,
+        reviewStatus: true,
+        outputConfigKey: true,
+        outputContentVersion: true,
+        job: { select: { styleId: true } },
+      },
     })) as Row[];
   } catch {
-    // outputConfigKey column not present yet (pre-db:deploy) — read without it.
-    // Every key reads as null, so nothing is ever "changed" until the migration
-    // lands and assets get stamped (matches the runner's guarded eanResolveKey).
+    // A fingerprint column not present yet (pre-db:deploy) — read without them.
+    // Every key/version reads as null, so nothing is ever "changed" until the
+    // migration lands (matches the runner's guarded eanResolveKey).
     const rows = await db.jobAsset.findMany({
       where,
       orderBy: order,
       select: { variantKey: true, reviewStatus: true, job: { select: { styleId: true } } },
     });
-    assets = rows.map((r) => ({ ...r, outputConfigKey: null }));
+    assets = rows.map((r) => ({ ...r, outputConfigKey: null, outputContentVersion: null }));
   }
 
-  // styleId → fullVariantKey → {latest status, key} (first seen wins = newest).
-  const latestFull = new Map<string, Map<string, { status: Row["reviewStatus"]; key: string | null }>>();
+  // styleId → fullVariantKey → {latest status, key, version} (first seen wins).
+  const latestFull = new Map<
+    string,
+    Map<string, { status: Row["reviewStatus"]; key: string | null; version: number | null }>
+  >();
   for (const a of assets) {
     if (!a.variantKey) continue;
     let m = latestFull.get(a.job.styleId);
@@ -130,38 +141,50 @@ async function loadLatestBaseStateByStyle(
       m = new Map();
       latestFull.set(a.job.styleId, m);
     }
-    if (!m.has(a.variantKey)) m.set(a.variantKey, { status: a.reviewStatus, key: a.outputConfigKey });
+    if (!m.has(a.variantKey)) {
+      m.set(a.variantKey, { status: a.reviewStatus, key: a.outputConfigKey, version: a.outputContentVersion });
+    }
   }
 
   // Roll full keys up to base: a base "has an asset" if any doc generated; "has
   // a rejected doc" if any latest doc is REJECTED (a multi-doc output
   // regenerates wholesale if any size rejected); "has pending" if any latest
-  // doc still awaits review. configKey = the newest doc's key (docs of one
-  // output share a config, so any is representative).
+  // doc still awaits review. configKey / contentVersion = the newest doc's (docs
+  // of one output share a config + layout version, so any is representative).
   const out = new Map<string, Map<string, BaseAssetState>>();
   for (const [styleId, fulls] of latestFull) {
     const byBase = new Map<string, BaseAssetState>();
-    for (const [fk, { status, key }] of fulls) {
+    for (const [fk, { status, key, version }] of fulls) {
       const b = base(fk);
       let s = byBase.get(b);
       if (!s) {
-        s = { hasAsset: false, hasRejected: false, hasPending: false, configKey: null };
+        s = { hasAsset: false, hasRejected: false, hasPending: false, configKey: null, contentVersion: null };
         byBase.set(b, s);
       }
       s.hasAsset = true;
       if (status === "REJECTED") s.hasRejected = true;
       if (status === "PENDING_REVIEW") s.hasPending = true;
       if (s.configKey == null && key != null) s.configKey = key;
+      if (s.contentVersion == null && version != null) s.contentVersion = version;
     }
     out.set(styleId, byBase);
   }
   return out;
 }
 
-// base variantKey → the output's current config fingerprint, from the spec.
+// base variantKey → the output's current row-config fingerprint, from the spec.
 function currentKeyByBase(outputs: ProdSpecOutput[]): Map<string, string> {
   const m = new Map<string, string>();
   for (const o of outputs) m.set(base(o.variantKey), outputConfigKey(o));
+  return m;
+}
+
+// base variantKey → the output's CURRENT layout content version (null for coded
+// variants). Callers must have awaited ensureLayoutVariantsLoaded() first so the
+// registry carries fresh versions.
+function currentContentVersionByBase(outputs: ProdSpecOutput[]): Map<string, number | null> {
+  const m = new Map<string, number | null>();
+  for (const o of outputs) m.set(base(o.variantKey), getVariant(o.variantKey)?.contentVersion ?? null);
   return m;
 }
 
@@ -209,7 +232,9 @@ export async function computeProdSpecRerunPlan(
   if (candidates.length === 0) return empty(spec.active);
 
   const styleIds = candidates.map((c) => c.id);
-  const currentKeys = currentKeyByBase(safeOutputs(spec.outputs));
+  const specOutputs = safeOutputs(spec.outputs);
+  const currentKeys = currentKeyByBase(specOutputs);
+  const currentVersions = currentContentVersionByBase(specOutputs);
   const stateByStyle = await loadLatestBaseStateByStyle(styleIds);
 
   // Styles with a QUEUED/RUNNING job — skip entirely (don't double-enqueue).
@@ -249,7 +274,7 @@ export async function computeProdSpecRerunPlan(
     )) {
       if (!o.ready || o.excluded) continue;
       const b = base(o.variantKey);
-      const bucket = classifyOutput(state?.get(b), currentKeys.get(b) ?? null);
+      const bucket = classifyOutput(state?.get(b), currentKeys.get(b) ?? null, currentVersions.get(b) ?? null);
       if (bucket === "rejected") {
         variantKeys.push(o.variantKey);
         rejectedN++;
@@ -417,7 +442,9 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
   if (candidates.length === 0) return emptyRunList(spec.active);
 
   const styleIds = candidates.map((c) => c.id);
-  const currentKeys = currentKeyByBase(safeOutputs(spec.outputs));
+  const specOutputs = safeOutputs(spec.outputs);
+  const currentKeys = currentKeyByBase(specOutputs);
+  const currentVersions = currentContentVersionByBase(specOutputs);
   const stateByStyle = await loadLatestBaseStateByStyle(styleIds);
 
   // Styles with a QUEUED/RUNNING job — shown as "running", not runnable.
@@ -490,7 +517,7 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
       if (!o.ready || o.excluded) continue;
       readyCount++;
       const b = base(o.variantKey);
-      const bucket = classifyOutput(state?.get(b), currentKeys.get(b) ?? null);
+      const bucket = classifyOutput(state?.get(b), currentKeys.get(b) ?? null, currentVersions.get(b) ?? null);
       if (bucket === "ok") continue;
       variantKeys.push(o.variantKey);
       if (bucket === "missing") missingN++;

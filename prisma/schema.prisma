@@ -1063,6 +1063,13 @@ model JobAsset {
   // which the detectors treat as "unknown → not changed" until re-rendered or
   // backfilled (scripts/backfill-output-config-key.ts).
   outputConfigKey  String?
+  // Published version of the Output Builder layout this asset rendered from
+  // (OutputLayout.version, bumped on every publish). The rerun surfaces compare
+  // it to the layout's CURRENT version: a bump on a still-awaiting-review output
+  // means the layout content was re-published since it rendered, so it's
+  // "changed" too. Null for coded variants and legacy rows — a null on either
+  // side is skipped (no false "changed"), so this needs no backfill.
+  outputContentVersion Int?
   // Per-asset review state — separate from the parent Job's status so
   // we can approve some outputs and reject others with reasons.
   reviewStatus     AssetReviewStatus @default(PENDING_REVIEW)

@@ -102,6 +102,9 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     key: layoutVariantKey(row.id),
     docType: row.docType,
     name: row.name,
+    // Bumped on every publish — feeds outputConfigKey so a re-published layout
+    // edit registers as a "changed" output on the styles that use it.
+    contentVersion: row.version,
     description: `Output Builder layout · v${row.version} · ${def.pages.length} page${def.pages.length === 1 ? "" : "s"} · ${def.pages
       .map((p) => `${p.widthMm}×${p.heightMm}`)
       .join(", ")} mm`,

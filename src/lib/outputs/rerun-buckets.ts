@@ -15,6 +15,9 @@ export type BaseAssetState = {
   // The output-config fingerprint the base was rendered with (null when the
   // column is pre-db:deploy / the asset predates the feature / no backfill yet).
   configKey: string | null;
+  // The Output Builder layout version the base rendered from (null for coded
+  // variants and legacy rows).
+  contentVersion: number | null;
 };
 
 export type OutputBucket = "missing" | "rejected" | "changed" | "pending" | "ok";
@@ -24,17 +27,25 @@ export type OutputBucket = "missing" | "rejected" | "changed" | "pending" | "ok"
 // APPROVED (generated, not rejected, no pending doc): approved PDFs are never
 // re-run, even when their config changed.
 //
-// Among the awaiting-review outputs we still distinguish "changed" — its stored
-// config fingerprint no longer matches the current spec, i.e. the admin edited
-// it since it rendered — from a plain "pending" re-run. That's a display
-// highlight only; both run. (A null key on either side can't be compared, so it
-// reads as plain "pending", not "changed".)
-export function classifyOutput(st: BaseAssetState | undefined, currentKey: string | null): OutputBucket {
+// Among the awaiting-review outputs we still distinguish "changed" — edited
+// since it rendered — from a plain "pending" re-run. "changed" covers BOTH the
+// row config (configKey mismatch) AND the layout content (its published version
+// bumped). Both run; it's a display highlight. A null on either side of either
+// comparison can't be evaluated, so it reads as plain "pending", not "changed".
+export function classifyOutput(
+  st: BaseAssetState | undefined,
+  currentKey: string | null,
+  currentContentVersion: number | null,
+): OutputBucket {
   if (!st || !st.hasAsset) return "missing";
   if (st.hasRejected) return "rejected";
   if (st.hasPending) {
-    if (st.configKey != null && currentKey != null && st.configKey !== currentKey) return "changed";
-    return "pending";
+    const configChanged = st.configKey != null && currentKey != null && st.configKey !== currentKey;
+    const contentChanged =
+      st.contentVersion != null &&
+      currentContentVersion != null &&
+      st.contentVersion !== currentContentVersion;
+    return configChanged || contentChanged ? "changed" : "pending";
   }
   return "ok";
 }

@@ -6,38 +6,53 @@ import { classifyOutput, type BaseAssetState } from "./rerun-buckets";
 const NONE: BaseAssetState | undefined = undefined;
 
 function state(patch: Partial<BaseAssetState>): BaseAssetState {
-  return { hasAsset: true, hasRejected: false, hasPending: false, configKey: null, ...patch };
+  return {
+    hasAsset: true,
+    hasRejected: false,
+    hasPending: false,
+    configKey: null,
+    contentVersion: null,
+    ...patch,
+  };
 }
 
+// classifyOutput(state, currentKey, currentContentVersion)
 test("classifyOutput — no asset is 'missing'", () => {
-  assert.equal(classifyOutput(NONE, "k"), "missing");
-  assert.equal(classifyOutput(state({ hasAsset: false }), "k"), "missing");
+  assert.equal(classifyOutput(NONE, "k", null), "missing");
+  assert.equal(classifyOutput(state({ hasAsset: false }), "k", null), "missing");
 });
 
 test("classifyOutput — a rejected latest asset is 'rejected' (regardless of key)", () => {
-  assert.equal(classifyOutput(state({ hasRejected: true, configKey: "old" }), "new"), "rejected");
-  assert.equal(classifyOutput(state({ hasRejected: true, hasPending: true }), "new"), "rejected");
+  assert.equal(classifyOutput(state({ hasRejected: true, configKey: "old" }), "new", null), "rejected");
+  assert.equal(classifyOutput(state({ hasRejected: true, hasPending: true }), "new", null), "rejected");
 });
 
-test("classifyOutput — APPROVED (no pending doc) is the ONLY skip ('ok'), even when config changed", () => {
+test("classifyOutput — APPROVED (no pending doc) is the ONLY skip ('ok'), even when config/layout changed", () => {
   // The user's rule: approved work is left alone. A fully-approved base has no
-  // pending doc, so a key mismatch does NOT bring it back.
-  assert.equal(classifyOutput(state({ hasPending: false, configKey: "old" }), "new"), "ok");
+  // pending doc, so neither a key mismatch nor a layout bump brings it back.
+  assert.equal(classifyOutput(state({ hasPending: false, configKey: "old" }), "new", null), "ok");
+  assert.equal(classifyOutput(state({ hasPending: false, contentVersion: 1 }), null, 2), "ok");
 });
 
 test("classifyOutput — awaiting review ALWAYS runs; config-changed surfaces as 'changed'", () => {
-  // Edited since render → 'changed' (still runs, just highlighted).
-  assert.equal(classifyOutput(state({ hasPending: true, configKey: "old" }), "new"), "changed");
+  assert.equal(classifyOutput(state({ hasPending: true, configKey: "old" }), "new", null), "changed");
 });
 
-test("classifyOutput — awaiting review + config unchanged is 'pending' (runs, not skipped)", () => {
-  // The key fix: a plain awaiting-review output must be re-runnable by "Run all".
-  assert.equal(classifyOutput(state({ hasPending: true, configKey: "same" }), "same"), "pending");
+test("classifyOutput — a re-published layout (content version bumped) is 'changed'", () => {
+  // Same row config, but the layout's published version moved 1 → 2.
+  assert.equal(classifyOutput(state({ hasPending: true, contentVersion: 1 }), null, 2), "changed");
 });
 
-test("classifyOutput — a null key on either side is 'pending', not 'changed' (can't compare ⇒ still runs)", () => {
-  // Pre-db:deploy / un-backfilled asset: stored key null → plain pending (runs).
-  assert.equal(classifyOutput(state({ hasPending: true, configKey: null }), "new"), "pending");
-  // Output no longer in the spec: current key null → plain pending (runs).
-  assert.equal(classifyOutput(state({ hasPending: true, configKey: "old" }), null), "pending");
+test("classifyOutput — awaiting review, config + layout unchanged is 'pending' (runs, not skipped)", () => {
+  assert.equal(
+    classifyOutput(state({ hasPending: true, configKey: "same", contentVersion: 3 }), "same", 3),
+    "pending",
+  );
+});
+
+test("classifyOutput — a null on either side of either comparison is 'pending', not 'changed'", () => {
+  // Stored key/version null (pre-deploy / coded variant / legacy) → can't compare.
+  assert.equal(classifyOutput(state({ hasPending: true, configKey: null, contentVersion: null }), "new", 2), "pending");
+  // Current null (output gone from spec / no layout) → can't compare.
+  assert.equal(classifyOutput(state({ hasPending: true, configKey: "old", contentVersion: 1 }), null, null), "pending");
 });

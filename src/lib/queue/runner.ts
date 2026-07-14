@@ -861,10 +861,11 @@ export async function processJob(jobId: string): Promise<void> {
             fileName: doc.fileName,
             pdf: toPlainBytes(doc.pdf),
             placeholderCount: doc.placeholderCount,
-            // Fingerprint of the output's render-affecting config, so the rerun
-            // surfaces can later tell an edited (dims/pins/carton/size) output
-            // apart from an untouched one — see output-config-key.ts.
+            // Fingerprint of the output's render-affecting config (dims / pins /
+            // carton / size) + the layout's published version, so the rerun
+            // surfaces can tell an edited output apart from an untouched one.
             outputConfigKey: outputConfigKey(doc.output),
+            outputContentVersion: doc.variant.contentVersion ?? null,
             // System auto-approval — reviewedById left null marks "no human
             // reviewer" (vs. the session user the approve route stamps).
             ...(isAutoApproved(doc)

@@ -41,6 +41,11 @@ export type TemplateVariant = {
   description: string;
   defaultWidthMm: number;
   defaultHeightMm: number;
+  // Published content version for Output Builder layouts (OutputLayout.version,
+  // bumped on every publish). Folded into outputConfigKey so a re-published
+  // layout edit marks the output "changed". Undefined for coded variants,
+  // whose content is versioned only by a code deploy.
+  contentVersion?: number;
   // Resolved-spec fields this template needs to render meaningfully (keys of
   // ColumnMapping / STYLE_FIELD_LABELS). A style's overall required-field set
   // is the UNION of these across the outputs its ProdSpec will print.

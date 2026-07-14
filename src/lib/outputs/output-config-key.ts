@@ -5,16 +5,21 @@ import type { ProdSpecOutput } from "@/lib/prod-spec/config";
 // of a single ProdSpec output. Stamped on each JobAsset at render time
 // (JobAsset.outputConfigKey) and recomputed from the current spec when the
 // rerun surfaces decide what to run: a difference means the output was edited
-// (dims / pins / carton barcode / info-area size) since the asset was built, so
-// the printed PDF no longer matches the spec — the output is "changed".
+// since the asset was built, so the printed PDF no longer matches the spec —
+// the output is "changed".
 //
+// Covers the output's own ROW config only — dims / pins / carton barcode /
+// info-area size, edited on the ProdSpec Outputs tab. The layout's published
+// CONTENT version is tracked SEPARATELY (JobAsset.outputContentVersion) so it
+// can be compared null-tolerantly without changing this key's format.
+//
+// Spec-wide globals (logo / languages / care catalogue) are deliberately NOT
+// included, so a global tweak doesn't mark every output on every style stale.
 // Mirrors the eanResolveKey pattern (src/lib/po/resolve-inputs.ts): a JSON
 // array rather than a joined string, so an array boundary in one field can
-// never masquerade as another's value. Scope is deliberately the OUTPUT's own
-// config only — spec-wide globals (logo / languages / care catalogue) are NOT
-// included, so a global tweak doesn't mark every output on every style stale.
-// `enabled` and `variantKey` are excluded: toggling an output off just removes
-// it, and the key is always compared within the same variant.
+// never masquerade as another's value. `enabled` and `variantKey` are excluded:
+// toggling an output off just removes it, and the key is always compared within
+// the same variant.
 // =====================================================
 
 export function outputConfigKey(output: ProdSpecOutput): string {
