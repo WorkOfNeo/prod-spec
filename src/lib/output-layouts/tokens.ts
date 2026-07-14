@@ -4,6 +4,7 @@ import { tFor } from "@/lib/pdf/templates/base";
 import { loadTranslationDictionary, translateComposition, translatePhrase } from "@/lib/translations/lookup";
 import { loadCareLabels } from "@/lib/care-labels";
 import { isCareLabelVisible, type PresentSymbol } from "@/lib/care-labels/visibility";
+import { sanitizeCareInstructions } from "@/lib/care-labels/format";
 import { getWashcareSymbol, loadWashcareSymbols } from "@/lib/pdf/washcare-symbols";
 import { ruleRequiredColumns } from "@/lib/pdf/spec-fields";
 import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-marking";
@@ -181,7 +182,10 @@ const RESOLVERS: Record<string, TextResolver> = {
       (arg ?? "en").toLowerCase()
     ] ?? "",
   productName: (s, arg) => tFor(s.productNameTranslations, (arg ?? "en").toLowerCase()),
-  careInstructions: (s, arg) => s.careInstructionsByLang?.[(arg ?? "en").toLowerCase()] ?? "",
+  // Every care line prints capitalized regardless of source (board
+  // translation, catalogue, or free-text override) — see sanitizeCareInstructions.
+  careInstructions: (s, arg) =>
+    sanitizeCareInstructions(s.careInstructionsByLang?.[(arg ?? "en").toLowerCase()]),
 
   // Text representation of the wash-care symbol tokens (the renderer
   // draws the actual artwork; this backs show-values + unresolved checks).

@@ -25,6 +25,11 @@ export {
   toLaunderingAction,
   type LaunderingAction,
 } from "./actions";
+export {
+  CARE_INSTRUCTION_SEPARATOR,
+  capitalizeCarePhrase,
+  sanitizeCareInstructions,
+} from "./format";
 
 const CACHE_TTL_MS = 30_000;
 let cached: { at: number; labels: CareLabel[] } | null = null;
