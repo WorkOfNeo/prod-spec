@@ -61,6 +61,22 @@ const RESOLVERS: Record<string, TextResolver> = {
   // Same fallback chain the Netto carton template uses: Description
   // column → EN product name → style name.
   description: (s) => s.description || tFor(s.productNameTranslations, "en") || s.styleName,
+  // Every selected style's description, comma-joined — the base style
+  // first, then each picked sibling in slot order (the {{style2Description}}…
+  // slot family collapsed into one list so a template needn't hard-code the
+  // slot count). Only aggregates in multi-style mode (style.multipleStyles),
+  // walking base + ACTIVE siblings via the SAME per-slot projection the
+  // {{styleN…}} tokens use; on standard single-style generation it degrades
+  // to the plain {{description}} value. Blank descriptions are dropped so a
+  // missing sibling never leaves a dangling ", ".
+  multipleStylesDescriptions: (s) => {
+    const base = resolveTextToken(s, "description");
+    const pool = s.multipleStyles ? (s.siblings ?? []) : [];
+    return [base, ...pool.map((sib) => sib.description)]
+      .map((d) => d.trim())
+      .filter(Boolean)
+      .join(", ");
+  },
   customerItemNo: (s) => s.customerItemNo ?? "",
   countryOfOrigin: (s) => s.countryOfOrigin ?? "",
   // The style's declared certifications (Monday "certifications__1"
@@ -302,6 +318,10 @@ export function evaluateCalcForStyle(expr: string, style: StyleData): string | n
 const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   styleNumber: ["styleNumber"],
   description: ["description"],
+  // Falls back to {{description}} in single-style mode, so it needs the
+  // same column to be ready (the sibling parts are gated separately, like
+  // the {{style2}}… slots — never a "missing field" on the base style).
+  multipleStylesDescriptions: ["description"],
   customerItemNo: ["customerItemNo"],
   countryOfOrigin: ["countryOfOrigin"],
   colourName: ["colourName"],
