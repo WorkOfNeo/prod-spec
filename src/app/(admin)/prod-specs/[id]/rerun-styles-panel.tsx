@@ -2,8 +2,9 @@
 
 // Admin-only run list for the ProdSpec editor's Outputs tab. Lists EVERY style
 // on this prod spec so an operator can run one, or run all. A run regenerates
-// only the outputs that are NEW/MISSING or previously REJECTED — approved work
-// is left alone, so a big spec doesn't blast everything back into review. Each
+// every output that isn't APPROVED — new/missing, rejected, and still awaiting
+// review — leaving approved work alone so a big spec doesn't blast approved
+// PDFs back into review. Each
 // row shows when the style last ran and whether that run was automated (Monday
 // webhook / EAN handoff / cron sweep) or manual (a Re-run / bulk-run button).
 //
@@ -180,10 +181,9 @@ export function RerunStylesPanel({
     if (!list || list.toRerun === 0 || submittingAll || activeRun || runAllDisabledReason) return;
     const ok = window.confirm(
       `Run ${list.toRerun} style${list.toRerun === 1 ? "" : "s"} on this prod spec?\n\n` +
-        `Regenerates ${list.withRejected} with rejected, ` +
-        `${list.withMissing} with new/missing, and ` +
-        `${list.withChanged} with changed output${list.withChanged === 1 ? "" : "s"}. ` +
-        `Approved outputs are left alone. Renders in the background — safe to leave this page.`,
+        `Regenerates every output that isn't approved — new/missing, rejected, and ` +
+        `awaiting review. Approved outputs are left alone. Renders in the background — ` +
+        `safe to leave this page.`,
     );
     if (!ok) return;
     setSubmittingAll(true);
@@ -265,10 +265,9 @@ export function RerunStylesPanel({
         <div className="min-w-0">
           <p className="text-sm font-medium text-zinc-800">Run styles</p>
           <p className="mt-0.5 text-xs text-zinc-500">
-            Every style on this prod spec. Run one, or run all — only{" "}
-            <span className="font-medium text-zinc-700">new/missing</span> and{" "}
-            <span className="font-medium text-zinc-700">rejected</span> outputs regenerate; approved
-            work is left alone.
+            Every style on this prod spec. Run one, or run all — every output that isn&apos;t{" "}
+            <span className="font-medium text-zinc-700">approved</span> regenerates (new/missing,
+            rejected, and awaiting review); approved work is left alone.
           </p>
         </div>
         <button
@@ -423,11 +422,11 @@ function StyleRow({
     ? "A job is already running for this style"
     : row.variantKeys.length === 0
       ? row.readyCount > 0
-        ? "Nothing to run — every output is approved or awaiting review"
+        ? "Nothing to run — every output is approved"
         : "No ready outputs yet — awaiting data"
       : disabled
         ? "Save your changes / activate the spec first"
-        : "Regenerate this style's new/missing + rejected outputs";
+        : "Regenerate this style's not-approved outputs (new/missing, rejected, awaiting review)";
 
   return (
     <li className="px-3 py-2">
@@ -519,6 +518,14 @@ function ToRunCell({ row }: { row: StyleRunRow }) {
           title="Output config edited since this awaiting-review PDF rendered"
         >
           {row.changed} changed
+        </span>
+      )}
+      {row.pending > 0 && (
+        <span
+          className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600"
+          title="Awaiting review — re-runs with everything not yet approved"
+        >
+          {row.pending} awaiting
         </span>
       )}
     </span>
