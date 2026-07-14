@@ -13,6 +13,7 @@ import {
 import {
   loadCareLabels,
   isCareLabelVisible,
+  sanitizeCareInstructions,
   type CareLabel,
   type PresentSymbol,
 } from "@/lib/care-labels";
@@ -420,7 +421,7 @@ function careLangRows(
         .map((l) => translatePhrase(dict, l.sourceText, code).trim())
         .filter(Boolean)
         .join(" / ");
-      const text = (override[code]?.trim() || composed).trim();
+      const text = sanitizeCareInstructions(override[code]?.trim() || composed);
       if (!text) return "";
       return `
       <div class="lang-row">

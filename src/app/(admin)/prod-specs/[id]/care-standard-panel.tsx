@@ -6,6 +6,7 @@ import {
   type PresentSymbol,
 } from "@/lib/care-labels/visibility";
 import { LAUNDERING_ACTION_LABELS, type LaunderingAction } from "@/lib/care-labels/actions";
+import { capitalizeCarePhrase, sanitizeCareInstructions } from "@/lib/care-labels/format";
 
 // =====================================================
 // "Care instructions — generated from the standard."
@@ -208,7 +209,9 @@ export function CareStandardPanel({
             const parts = visibleLabels.map((label) => {
               const t =
                 code === "en" ? label.sourceText : translationsByLabel[label.id]?.[code]?.trim();
-              return { text: t || label.sourceText, fallback: code !== "en" && !t };
+              // Each line prints capitalized (see sanitizeCareInstructions);
+              // capitalize here too so the preview matches the label.
+              return { text: capitalizeCarePhrase(t || label.sourceText), fallback: code !== "en" && !t };
             });
             const fallbackCount = parts.filter((p) => p.fallback).length;
             const override = (careByLang[code] ?? "").trim();
@@ -236,7 +239,7 @@ export function CareStandardPanel({
                 </div>
                 <div className="mt-1.5 text-xs leading-relaxed">
                   {override ? (
-                    <span className="text-amber-900">{override}</span>
+                    <span className="text-amber-900">{sanitizeCareInstructions(override)}</span>
                   ) : parts.length === 0 ? (
                     <span className="italic text-zinc-400">
                       nothing prints — every line is filtered out for the picked symbols

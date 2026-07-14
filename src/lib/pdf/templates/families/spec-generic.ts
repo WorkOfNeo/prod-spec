@@ -14,6 +14,7 @@ import {
 import {
   loadCareLabels,
   isCareLabelVisible,
+  sanitizeCareInstructions,
   type CareLabel,
   type PresentSymbol,
 } from "@/lib/care-labels";
@@ -508,7 +509,7 @@ function careBlock(
         .map((l) => translatePhrase(dict, l.sourceText, code).trim())
         .filter(Boolean)
         .join(" / ");
-      const text = (override[code]?.trim() || composed).trim();
+      const text = sanitizeCareInstructions(override[code]?.trim() || composed);
       if (!text) return "";
       if (solo) return `<div class="text">${escapeHtml(text)}</div>`;
       return `
