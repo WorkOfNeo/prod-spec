@@ -34,6 +34,13 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   },
   { key: "customerName", label: "Customer name", group: "Style", kind: "text", example: "Netto A/S" },
   { key: "description", label: "Description", group: "Style", kind: "text", example: "T-Shirt Paw Patrol – Blue" },
+  {
+    key: "multipleStylesDescriptions",
+    label: "All selected styles' descriptions, comma-joined (multi-style; falls back to the single Description)",
+    group: "Style",
+    kind: "text",
+    example: "T-Shirt Paw Patrol – Blue, T-Shirt Paw Patrol – Red",
+  },
   { key: "customerItemNo", label: "Customer item no", group: "Style", kind: "text", example: "223609" },
   { key: "countryOfOrigin", label: "Country of origin", group: "Style", kind: "text", example: "India" },
   {
