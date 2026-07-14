@@ -115,6 +115,22 @@ test("repeatBy 'cartonEan' → sizes sharing a carton EAN collapse to ONE markin
   assert.equal(resolveTextToken(reps[0], "sizes"), "S, M");
 });
 
+test("repeatBy 'cartonEan' → assort row's {{size}} lists ALL sizes (not just the first)", () => {
+  // The assort master carton covers the whole run, so a per-carton file name
+  // like "…-{{size}}" must not name the assort PDF after one arbitrary size.
+  const base = buildSampleStyleData();
+  const sizes = ["XS", "S", "M", "L", "XL", "XXL"].map((label) => ({ label, ean13: "" }));
+  const style: StyleData = { ...base, sizes };
+  const reps = repetitionStyles(style, "cartonEan");
+  const last = reps[reps.length - 1];
+  assert.equal(last.isAssortment, true);
+  // {{size}} on the assortment row = every size joined by "-" (slug-safe), so
+  // the file name shows the whole run, not just "XS".
+  assert.equal(resolveTextToken(last, "size"), "XS-S-M-L-XL-XXL");
+  // A per-size (non-assort) row still shows just its single size.
+  assert.equal(resolveTextToken(reps[0], "size"), base.carton.perSize![0].size);
+});
+
 test("repeatBy 'cartonEan' with no cartons at all → falls back to one whole-style row", () => {
   const base = buildSampleStyleData();
   const bare: StyleData = {

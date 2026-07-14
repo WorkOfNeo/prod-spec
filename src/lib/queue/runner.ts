@@ -199,8 +199,10 @@ export async function processJob(jobId: string): Promise<void> {
           // free-text Style.businessArea when the mirror row isn't linked).
           businessAreaRef: { select: { name: true } },
           // Resolved PO barcodes — fall back into the ean13/cartonEan
-          // fields at render time (see effectiveStyleItem).
-          eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, variantLabel: true } },
+          // fields at render time (see effectiveStyleItem). cartonEan is the
+          // per-size carton feeding carton.perSize (repeatBy="cartonEan"); omit
+          // it and that repeat generates only the assort row.
+          eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, variantLabel: true, cartonEan: true } },
         },
       },
     },
@@ -239,7 +241,7 @@ export async function processJob(jobId: string): Promise<void> {
           cartonEan: true,
           eans: {
             orderBy: { position: "asc" },
-            select: { size: true, ean13: true, variantLabel: true },
+            select: { size: true, ean13: true, variantLabel: true, cartonEan: true },
           },
         },
       });
