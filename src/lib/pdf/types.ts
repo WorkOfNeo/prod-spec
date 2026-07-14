@@ -89,6 +89,19 @@ export type StyleData = {
     // carton. Preserved across repetition narrowing so {{assortEan}} always
     // resolves to the master. Optional: non-mapper constructors omit it.
     assortEan?: string;
+    // Per-size carton EANs — one entry per style_eans row that carries a carton
+    // EAN (from the PO section carton, or, when filled, the Monday "Carton
+    // Barcode number 1" column which wins per size). Distinct from `ean13`
+    // (the per-size PRODUCT barcode). Drives repeatBy="cartonEan": the repeat
+    // emits one carton marking per DISTINCT carton EAN here (+ the assort
+    // master). Built in render-context; absent on non-mapper constructors.
+    perSize?: Array<{
+      size: string;
+      cartonEan: string;
+      // The size's PRODUCT EAN-13, if the style has one ("" when carton-only).
+      productEan13: string;
+      colour: string | null;
+    }>;
   };
 
   colour?: {

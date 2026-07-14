@@ -80,7 +80,7 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   { key: "assortEan", label: "Assortment EAN (number)", group: "Order & carton", kind: "text", example: "5701234567890" },
   {
     key: "isAssortment",
-    label: 'Assortment-row flag — use as {{if isAssortment == 1}}…{{else}}…{{endif}} (repeatBy "assort")',
+    label: 'Assortment-row flag — use as {{if isAssortment == 1}}…{{else}}…{{endif}} (repeatBy "assort" / "cartonEan")',
     group: "Order & carton",
     kind: "text",
     example: "1",

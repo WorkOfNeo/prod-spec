@@ -1598,6 +1598,7 @@ export function LayoutEditor({
                 <option value="size">Per size</option>
                 <option value="ean">Per EAN (size × colour)</option>
                 <option value="assort">Per assortment EAN</option>
+                <option value="cartonEan">Per carton EAN (per size + assort)</option>
               </select>
               {settings.repeatBy !== "none" ? (
                 <p className="mt-1.5 break-words font-mono text-[10px] leading-relaxed text-zinc-400">
