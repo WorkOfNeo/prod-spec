@@ -49,7 +49,11 @@ export type RenderableStyle = {
     size: string;
     ean13: string | null;
     variantLabel?: string | null;
-    cartonEan?: string | null;
+    // Per-row carton EAN — REQUIRED (not optional) so a loader that forgets to
+    // `select` it fails tsc instead of silently yielding an empty carton.perSize
+    // (which made repeatBy="cartonEan" generate only the assort row). Every query
+    // feeding buildStyleData MUST select eans.cartonEan.
+    cartonEan: string | null;
   }>;
   customer: { name: string; config: unknown };
   qrImage: { image: string } | null;

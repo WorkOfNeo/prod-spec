@@ -90,7 +90,18 @@ const RESOLVERS: Record<string, TextResolver> = {
   sizes: (s) => s.sizes.map((x) => x.label).filter(Boolean).join(", "),
   // First size label — inside a repeat-per-EAN repetition the renderer
   // narrows style.sizes to the current row, so this IS the current size.
-  size: (s) => s.sizes[0]?.label ?? "",
+  // EXCEPTION: the assortment row (repeatBy="cartonEan"/"assort") is not a
+  // single size — the master carton covers the whole run, so {{size}} lists
+  // every size (hyphen-joined, slug-safe for file names) instead of just the
+  // first. Keeps a per-carton file name like "…-Carton Marking-{{size}}" from
+  // naming the assort PDF after one arbitrary size.
+  size: (s) =>
+    s.isAssortment
+      ? (s.allSizes ?? s.sizes)
+          .map((x) => x.label)
+          .filter(Boolean)
+          .join("-")
+      : s.sizes[0]?.label ?? "",
   sizeRange: (s) => {
     const labels = s.sizes.map((x) => x.label).filter(Boolean);
     if (labels.length === 0) return "";
