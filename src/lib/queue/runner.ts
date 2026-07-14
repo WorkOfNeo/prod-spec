@@ -39,6 +39,7 @@ import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
 import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
 import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
 import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
+import { outputConfigKey } from "@/lib/outputs/output-config-key";
 import {
   ignoreBaseKey,
   loadStyleFieldValues,
@@ -858,6 +859,10 @@ export async function processJob(jobId: string): Promise<void> {
             fileName: doc.fileName,
             pdf: toPlainBytes(doc.pdf),
             placeholderCount: doc.placeholderCount,
+            // Fingerprint of the output's render-affecting config, so the rerun
+            // surfaces can later tell an edited (dims/pins/carton/size) output
+            // apart from an untouched one — see output-config-key.ts.
+            outputConfigKey: outputConfigKey(doc.output),
             // System auto-approval — reviewedById left null marks "no human
             // reviewer" (vs. the session user the approve route stamps).
             ...(isAutoApproved(doc)

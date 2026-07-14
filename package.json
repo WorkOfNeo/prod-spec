@@ -22,6 +22,7 @@
     "seed-certificates": "tsx --env-file=.env scripts/seed-certificates.ts",
     "backfill-preorder-eans": "tsx --env-file=.env scripts/backfill-preorder-eans.ts",
     "backfill-supplier-folders": "tsx --env-file=.env scripts/backfill-supplier-folders.ts",
+    "backfill-output-config-key": "tsx --env-file=.env scripts/backfill-output-config-key.ts",
     "cleanup-legacy-supplier-folders": "tsx --env-file=.env scripts/cleanup-legacy-supplier-folders.ts"
   },
   "dependencies": {

@@ -23,6 +23,7 @@ import {
 } from "./care-standard-panel";
 import { AddOutputPicker, type VariantInfo } from "./add-output-picker";
 import { RerunStylesPanel } from "./rerun-styles-panel";
+import type { ProdSpecStyleRunList } from "@/lib/outputs/prod-spec-rerun";
 import { ApproveStylesPanel, type ApprovalPanelStyle } from "./approve-styles-panel";
 import { ApproveRejectedDialog } from "./approve-rejected-dialog";
 import { TestPanel, type TestStyle } from "./test-panel";
@@ -109,6 +110,15 @@ export function ProdSpecEditor(props: Props) {
   // Turning "Fully approved" ON is intercepted by a confirm dialog (approve +
   // re-run the spec's rejected PDFs) rather than flipping the flag silently.
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
+  // Latest run list from the RerunStylesPanel (the only fetcher) — its
+  // `byOutput` drives the per-output "Run all (N)" buttons on the rows.
+  const [runList, setRunList] = useState<ProdSpecStyleRunList | null>(null);
+  // The output whose "Run all" is mid-enqueue (base variantKey), + last error.
+  const [runningOutput, setRunningOutput] = useState<string | null>(null);
+  const [outputRunError, setOutputRunError] = useState<{ key: string; message: string } | null>(null);
+  // A per-output run's batch id, handed to the panel so its progress card
+  // watches it. Bumps on every scoped run (each returns a fresh id).
+  const [adoptBatchId, setAdoptBatchId] = useState<string | null>(null);
 
   // Toggle handler: ON is deferred to the dialog (it persists the flag itself
   // via the approve-rejected route); OFF flips instantly through the autosaver.
@@ -117,6 +127,42 @@ export function ProdSpecEditor(props: Props) {
       setApproveDialogOpen(true);
     } else {
       setFullyApproved(next);
+    }
+  }
+
+  // Per-output "Run all": regenerate THIS output across every style attached to
+  // the spec where it's new/missing, rejected, or changed (approved left alone).
+  // Enqueues a scoped background batch; the "Run styles" panel adopts its id and
+  // shows the progress. Gated the same way as the panel's spec-wide run — must
+  // read PERSISTED outputs (not dirty) and the spec must be active.
+  async function runOutputAll(variantKey: string, outputName: string) {
+    const count = runList?.byOutput?.[variantKey]?.toRun ?? 0;
+    if (count <= 0 || runningOutput || status === "dirty" || status === "saving" || !active) return;
+    const ok = window.confirm(
+      `Run “${outputName}” on ${count} style${count === 1 ? "" : "s"}?\n\n` +
+        `Only styles where this output is new/missing, rejected, or changed run — approved work ` +
+        `is left alone. Renders in the background; progress shows in “Run styles” below.`,
+    );
+    if (!ok) return;
+    setRunningOutput(variantKey);
+    setOutputRunError(null);
+    try {
+      const res = await fetch(`/api/admin/prod-specs/${props.prodSpecId}/rerun-styles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ variantKey }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { batchId?: string | null; error?: string };
+      if (!res.ok) {
+        setOutputRunError({ key: variantKey, message: data.error ?? `HTTP ${res.status}` });
+        return;
+      }
+      if (data.batchId) setAdoptBatchId(data.batchId);
+      else setOutputRunError({ key: variantKey, message: "Nothing to run — styles may have started elsewhere." });
+    } catch (e) {
+      setOutputRunError({ key: variantKey, message: e instanceof Error ? e.message : "Request failed" });
+    } finally {
+      setRunningOutput(null);
     }
   }
 
@@ -589,6 +635,15 @@ export function ProdSpecEditor(props: Props) {
                           />
                           mm
                         </label>
+                        <OutputRunAllButton
+                          summary={runList?.byOutput?.[o.variantKey]}
+                          listLoaded={runList !== null}
+                          running={runningOutput === o.variantKey}
+                          busy={runningOutput !== null}
+                          unsaved={status === "dirty" || status === "saving"}
+                          specActive={active}
+                          onRun={() => void runOutputAll(o.variantKey, v?.name ?? o.variantKey)}
+                        />
                         <button
                           type="button"
                           onClick={() => removeOutput(i)}
@@ -599,6 +654,9 @@ export function ProdSpecEditor(props: Props) {
                           <XIcon className="h-4 w-4" />
                         </button>
                       </div>
+                      {outputRunError?.key === o.variantKey && (
+                        <p className="mt-1 text-[11px] text-red-600">{outputRunError.message}</p>
+                      )}
 
                       <details className="mt-1.5">
                         <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-800">
@@ -683,6 +741,8 @@ export function ProdSpecEditor(props: Props) {
               prodSpecId={props.prodSpecId}
               specActive={active}
               unsaved={status === "dirty" || status === "saving"}
+              onList={setRunList}
+              adoptBatchId={adoptBatchId}
             />
           </Section>
 
@@ -1148,6 +1208,79 @@ function SummaryChip({
     >
       {children}
     </span>
+  );
+}
+
+// Per-output "Run all" — regenerates one output across every attached style
+// that needs it (new/missing + rejected + changed; approved left alone). The
+// count comes from the run list's byOutput; the actual enqueue + progress live
+// in the RerunStylesPanel below. Disabled (with a reason) while the spec is
+// dirty/inactive, the list is loading, or nothing needs this output.
+function OutputRunAllButton({
+  summary,
+  listLoaded,
+  running,
+  busy,
+  unsaved,
+  specActive,
+  onRun,
+}: {
+  summary: { toRun: number; missing: number; rejected: number; changed: number } | undefined;
+  listLoaded: boolean;
+  running: boolean;
+  busy: boolean;
+  unsaved: boolean;
+  specActive: boolean;
+  onRun: () => void;
+}) {
+  const count = summary?.toRun ?? 0;
+  const disabledReason = unsaved
+    ? "Save your output changes first"
+    : !specActive
+      ? "Activate this prod spec to run its styles"
+      : !listLoaded
+        ? "Loading styles…"
+        : count === 0
+          ? "Every style is up to date for this output"
+          : null;
+  const disabled = running || busy || count === 0 || Boolean(disabledReason);
+  const prominent = count > 0 && !disabled;
+  return (
+    <button
+      type="button"
+      onClick={onRun}
+      disabled={disabled}
+      title={
+        disabledReason ??
+        `Run this output on ${count} style${count === 1 ? "" : "s"} (new/missing, rejected, changed)` +
+          (summary && summary.changed > 0 ? ` — ${summary.changed} changed since last render` : "")
+      }
+      className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+        prominent
+          ? "border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800"
+          : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50"
+      }`}
+    >
+      {running ? <RowSpinner /> : <RunAllRowIcon />}
+      Run all{listLoaded && count > 0 ? ` (${count})` : ""}
+    </button>
+  );
+}
+
+function RunAllRowIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="h-3 w-3" aria-hidden="true">
+      <path d="M8 5v14l11-7z" />
+    </svg>
+  );
+}
+
+function RowSpinner() {
+  return (
+    <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+    </svg>
   );
 }
 
