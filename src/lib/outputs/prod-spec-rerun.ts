@@ -12,15 +12,15 @@ import { triggerKind, type TriggerKind } from "@/lib/queue/trigger-labels";
 // Prod-spec rerun plan — after an admin swaps or edits a ProdSpec's outputs,
 // decide which of its styles to regenerate and EXACTLY which outputs per style:
 //
-//   ready outputs that are NEW/MISSING (never generated), currently REJECTED,
-//   or CHANGED (edited since they rendered while still awaiting review).
+//   every ready output that isn't APPROVED — NEW/MISSING (never generated),
+//   REJECTED, or still AWAITING REVIEW (pending). "Run all" runs them all.
 //
-// APPROVED outputs are never re-run — even when their config changed, an
-// approved PDF is left in place (the operator's explicit choice); a config
-// edit only propagates to the not-yet-approved population. Awaiting-review
-// outputs whose config is UNCHANGED are left alone too (no pointless churn).
-// Computed in a handful of batched queries so it scales like the /styles
-// "Run all outputs" path rather than N per-style reads.
+// APPROVED outputs are the only skip — an approved PDF is left in place (the
+// operator's explicit choice), even when its config changed. Among the pending
+// outputs we still flag "changed" (config edited since render) as a display
+// highlight, but changed and plain-pending both run. Computed in a handful of
+// batched queries so it scales like the /styles "Run all outputs" path rather
+// than N per-style reads.
 // =====================================================
 
 // One style that needs a rerun, with a per-bucket breakdown for the UI.
@@ -34,6 +34,8 @@ export type AffectedStyle = {
   rejected: number;
   // Ready outputs still awaiting review whose config was edited since render.
   changed: number;
+  // Ready outputs awaiting review, config unchanged (a plain pending re-run).
+  pending: number;
   // Human names of the rejected outputs (variant names) — powers the
   // "approve these PDFs" confirm dialog on the Fully-approved toggle.
   rejectedNames: string[];
@@ -45,12 +47,13 @@ export type ProdSpecRerunPlan = {
   // "already-generated" universe we rerun within (never-generated PENDING
   // styles awaiting data are out of scope by the operator's choice).
   generatedStyles: number;
-  // Styles that will actually rerun (≥1 missing / rejected / changed ready
-  // output), each scoped to the variant keys to regenerate.
+  // Styles that will actually rerun (≥1 not-approved ready output), each scoped
+  // to the variant keys to regenerate.
   toRerun: RunnableStyle[];
   withMissing: number;
   withRejected: number;
   withChanged: number;
+  withPending: number;
   // Capped, display-friendly slice for the "see affected styles" list.
   sample: AffectedStyle[];
 };
@@ -169,6 +172,7 @@ const empty = (active: boolean): ProdSpecRerunPlan => ({
   withMissing: 0,
   withRejected: 0,
   withChanged: 0,
+  withPending: 0,
   sample: [],
 });
 
@@ -225,6 +229,7 @@ export async function computeProdSpecRerunPlan(
   let withMissing = 0;
   let withRejected = 0;
   let withChanged = 0;
+  let withPending = 0;
 
   for (const c of candidates) {
     if (inflightSet.has(c.id)) continue;
@@ -235,6 +240,7 @@ export async function computeProdSpecRerunPlan(
     let missingN = 0;
     let rejectedN = 0;
     let changedN = 0;
+    let pendingN = 0;
     for (const o of outputReadinessForStyle(
       c as ReadinessStyle,
       undefined,
@@ -244,22 +250,19 @@ export async function computeProdSpecRerunPlan(
       if (!o.ready || o.excluded) continue;
       const b = base(o.variantKey);
       const bucket = classifyOutput(state?.get(b), currentKeys.get(b) ?? null);
-      if (bucket === "missing") {
-        if (!rejectedOnly) {
-          variantKeys.push(o.variantKey);
-          missingN++;
-        }
-      } else if (bucket === "rejected") {
+      if (bucket === "rejected") {
         variantKeys.push(o.variantKey);
         rejectedN++;
         rejectedNames.push(o.name);
-      } else if (bucket === "changed") {
-        if (!rejectedOnly) {
-          variantKeys.push(o.variantKey);
-          changedN++;
-        }
+      } else if (bucket === "ok") {
+        // approved → leave it.
+      } else if (!rejectedOnly) {
+        // missing / changed / pending — every not-approved output re-runs.
+        variantKeys.push(o.variantKey);
+        if (bucket === "missing") missingN++;
+        else if (bucket === "changed") changedN++;
+        else pendingN++;
       }
-      // "ok" (approved / awaiting-review & unchanged) → leave it.
     }
 
     if (variantKeys.length === 0) continue;
@@ -267,6 +270,7 @@ export async function computeProdSpecRerunPlan(
     if (missingN > 0) withMissing++;
     if (rejectedN > 0) withRejected++;
     if (changedN > 0) withChanged++;
+    if (pendingN > 0) withPending++;
     if (sample.length < SAMPLE_CAP) {
       sample.push({
         id: c.id,
@@ -275,6 +279,7 @@ export async function computeProdSpecRerunPlan(
         missing: missingN,
         rejected: rejectedN,
         changed: changedN,
+        pending: pendingN,
         rejectedNames,
       });
     }
@@ -287,6 +292,7 @@ export async function computeProdSpecRerunPlan(
     withMissing,
     withRejected,
     withChanged,
+    withPending,
     sample,
   };
 }
@@ -331,14 +337,15 @@ export type StyleRunRow = {
   // Ready, non-excluded outputs total — the denominator behind the state text
   // ("up to date" vs "awaiting data").
   readyCount: number;
-  // Scoped rerun for this style: new/missing + rejected + changed ready
-  // outputs. Empty ⇒ nothing to regenerate (all approved / awaiting review &
-  // unchanged, or no ready outputs at all). The per-row Run button posts
-  // exactly these keys.
+  // Scoped rerun for this style: every not-approved ready output (new/missing +
+  // rejected + changed + pending). Empty ⇒ nothing to regenerate (all approved,
+  // or no ready outputs at all). The per-row Run button posts exactly these keys.
   variantKeys: string[];
   missing: number;
   rejected: number;
   changed: number;
+  // Awaiting review, config unchanged (a plain pending re-run).
+  pending: number;
   // A QUEUED/RUNNING job is already in flight — the row can't be re-run yet and
   // it's excluded from "Run all".
   inFlight: boolean;
@@ -348,12 +355,14 @@ export type StyleRunRow = {
 
 // Per-output aggregate across every runnable (non-in-flight) style on the spec
 // — powers the "Run all (N)" button on each output row. Keyed by base
-// variantKey. toRun = missing + rejected + changed.
+// variantKey. toRun = missing + rejected + changed + pending (everything not
+// approved).
 export type OutputRunSummary = {
   toRun: number;
   missing: number;
   rejected: number;
   changed: number;
+  pending: number;
 };
 
 export type ProdSpecStyleRunList = {
@@ -367,6 +376,7 @@ export type ProdSpecStyleRunList = {
   withMissing: number;
   withRejected: number;
   withChanged: number;
+  withPending: number;
   // base variantKey → per-output run counts (for the per-output "Run all").
   byOutput: Record<string, OutputRunSummary>;
   rows: StyleRunRow[];
@@ -380,6 +390,7 @@ const emptyRunList = (active: boolean): ProdSpecStyleRunList => ({
   withMissing: 0,
   withRejected: 0,
   withChanged: 0,
+  withPending: 0,
   byOutput: {},
   rows: [],
 });
@@ -446,7 +457,7 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
   const bumpOutput = (b: string, bucket: Exclude<OutputBucket, "ok">) => {
     let s = byOutput.get(b);
     if (!s) {
-      s = { toRun: 0, missing: 0, rejected: 0, changed: 0 };
+      s = { toRun: 0, missing: 0, rejected: 0, changed: 0, pending: 0 };
       byOutput.set(b, s);
     }
     s.toRun++;
@@ -457,6 +468,7 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
   let withMissing = 0;
   let withRejected = 0;
   let withChanged = 0;
+  let withPending = 0;
 
   for (const c of candidates) {
     const state = stateByStyle.get(c.id);
@@ -467,6 +479,7 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
     let missingN = 0;
     let rejectedN = 0;
     let changedN = 0;
+    let pendingN = 0;
     let readyCount = 0;
     for (const o of outputReadinessForStyle(
       c as ReadinessStyle,
@@ -482,7 +495,8 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
       variantKeys.push(o.variantKey);
       if (bucket === "missing") missingN++;
       else if (bucket === "rejected") rejectedN++;
-      else changedN++;
+      else if (bucket === "changed") changedN++;
+      else pendingN++;
       // Per-output tallies mirror what "Run all" for that output would enqueue:
       // only styles that aren't already in flight.
       if (!isInflight) bumpOutput(b, bucket);
@@ -495,6 +509,7 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
       if (missingN > 0) withMissing++;
       if (rejectedN > 0) withRejected++;
       if (changedN > 0) withChanged++;
+      if (pendingN > 0) withPending++;
     }
 
     const lj = lastJobByStyle.get(c.id);
@@ -508,6 +523,7 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
       missing: missingN,
       rejected: rejectedN,
       changed: changedN,
+      pending: pendingN,
       inFlight: isInflight,
       lastRun: lj
         ? {
@@ -528,6 +544,7 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
     withMissing,
     withRejected,
     withChanged,
+    withPending,
     byOutput: Object.fromEntries(byOutput),
     rows,
   };

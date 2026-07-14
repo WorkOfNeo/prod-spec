@@ -131,7 +131,7 @@ export function ProdSpecEditor(props: Props) {
   }
 
   // Per-output "Run all": regenerate THIS output across every style attached to
-  // the spec where it's new/missing, rejected, or changed (approved left alone).
+  // the spec where it isn't approved (new/missing, rejected, or awaiting review).
   // Enqueues a scoped background batch; the "Run styles" panel adopts its id and
   // shows the progress. Gated the same way as the panel's spec-wide run — must
   // read PERSISTED outputs (not dirty) and the spec must be active.
@@ -140,8 +140,9 @@ export function ProdSpecEditor(props: Props) {
     if (count <= 0 || runningOutput || status === "dirty" || status === "saving" || !active) return;
     const ok = window.confirm(
       `Run “${outputName}” on ${count} style${count === 1 ? "" : "s"}?\n\n` +
-        `Only styles where this output is new/missing, rejected, or changed run — approved work ` +
-        `is left alone. Renders in the background; progress shows in “Run styles” below.`,
+        `Runs this output on every style where it isn't approved (new/missing, rejected, ` +
+        `awaiting review). Approved work is left alone. Renders in the background; progress ` +
+        `shows in “Run styles” below.`,
     );
     if (!ok) return;
     setRunningOutput(variantKey);
@@ -1225,7 +1226,7 @@ function OutputRunAllButton({
   specActive,
   onRun,
 }: {
-  summary: { toRun: number; missing: number; rejected: number; changed: number } | undefined;
+  summary: { toRun: number; missing: number; rejected: number; changed: number; pending: number } | undefined;
   listLoaded: boolean;
   running: boolean;
   busy: boolean;
@@ -1241,7 +1242,7 @@ function OutputRunAllButton({
       : !listLoaded
         ? "Loading styles…"
         : count === 0
-          ? "Every style is up to date for this output"
+          ? "Every style is approved for this output"
           : null;
   const disabled = running || busy || count === 0 || Boolean(disabledReason);
   const prominent = count > 0 && !disabled;
@@ -1252,7 +1253,7 @@ function OutputRunAllButton({
       disabled={disabled}
       title={
         disabledReason ??
-        `Run this output on ${count} style${count === 1 ? "" : "s"} (new/missing, rejected, changed)` +
+        `Run this output on ${count} style${count === 1 ? "" : "s"} where it isn't approved` +
           (summary && summary.changed > 0 ? ` — ${summary.changed} changed since last render` : "")
       }
       className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${

@@ -19,23 +19,25 @@ test("classifyOutput — a rejected latest asset is 'rejected' (regardless of ke
   assert.equal(classifyOutput(state({ hasRejected: true, hasPending: true }), "new"), "rejected");
 });
 
-test("classifyOutput — APPROVED (no pending doc) is never re-run, even when the config changed", () => {
-  // The user's explicit rule: approved work is left alone. A fully-approved base
-  // has no pending doc, so a key mismatch does NOT make it 'changed'.
+test("classifyOutput — APPROVED (no pending doc) is the ONLY skip ('ok'), even when config changed", () => {
+  // The user's rule: approved work is left alone. A fully-approved base has no
+  // pending doc, so a key mismatch does NOT bring it back.
   assert.equal(classifyOutput(state({ hasPending: false, configKey: "old" }), "new"), "ok");
 });
 
-test("classifyOutput — awaiting review + config changed is 'changed'", () => {
+test("classifyOutput — awaiting review ALWAYS runs; config-changed surfaces as 'changed'", () => {
+  // Edited since render → 'changed' (still runs, just highlighted).
   assert.equal(classifyOutput(state({ hasPending: true, configKey: "old" }), "new"), "changed");
 });
 
-test("classifyOutput — awaiting review + config unchanged is 'ok' (no churn)", () => {
-  assert.equal(classifyOutput(state({ hasPending: true, configKey: "same" }), "same"), "ok");
+test("classifyOutput — awaiting review + config unchanged is 'pending' (runs, not skipped)", () => {
+  // The key fix: a plain awaiting-review output must be re-runnable by "Run all".
+  assert.equal(classifyOutput(state({ hasPending: true, configKey: "same" }), "same"), "pending");
 });
 
-test("classifyOutput — a null key on either side is never 'changed' (unknown ⇒ safe)", () => {
-  // Pre-db:deploy / un-backfilled asset: stored key null.
-  assert.equal(classifyOutput(state({ hasPending: true, configKey: null }), "new"), "ok");
-  // Output no longer in the spec: current key null.
-  assert.equal(classifyOutput(state({ hasPending: true, configKey: "old" }), null), "ok");
+test("classifyOutput — a null key on either side is 'pending', not 'changed' (can't compare ⇒ still runs)", () => {
+  // Pre-db:deploy / un-backfilled asset: stored key null → plain pending (runs).
+  assert.equal(classifyOutput(state({ hasPending: true, configKey: null }), "new"), "pending");
+  // Output no longer in the spec: current key null → plain pending (runs).
+  assert.equal(classifyOutput(state({ hasPending: true, configKey: "old" }), null), "pending");
 });

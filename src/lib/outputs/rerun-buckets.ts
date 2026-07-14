@@ -17,18 +17,24 @@ export type BaseAssetState = {
   configKey: string | null;
 };
 
-export type OutputBucket = "missing" | "rejected" | "changed" | "ok";
+export type OutputBucket = "missing" | "rejected" | "changed" | "pending" | "ok";
 
-// "changed" requires BOTH a stored key and a current key to compare — a null on
-// either side (pre-deploy, un-backfilled, or an output missing from the spec)
-// reads as "ok" so we never blast work on unknowns. APPROVED (generated, not
-// rejected, no pending doc) is always "ok" — approved PDFs are never re-run,
-// even when their config changed.
+// Every not-approved output is re-runnable — "Run all" runs new/missing,
+// rejected, AND everything still awaiting review. The ONLY skip is "ok" =
+// APPROVED (generated, not rejected, no pending doc): approved PDFs are never
+// re-run, even when their config changed.
+//
+// Among the awaiting-review outputs we still distinguish "changed" — its stored
+// config fingerprint no longer matches the current spec, i.e. the admin edited
+// it since it rendered — from a plain "pending" re-run. That's a display
+// highlight only; both run. (A null key on either side can't be compared, so it
+// reads as plain "pending", not "changed".)
 export function classifyOutput(st: BaseAssetState | undefined, currentKey: string | null): OutputBucket {
   if (!st || !st.hasAsset) return "missing";
   if (st.hasRejected) return "rejected";
-  if (st.hasPending && st.configKey != null && currentKey != null && st.configKey !== currentKey) {
-    return "changed";
+  if (st.hasPending) {
+    if (st.configKey != null && currentKey != null && st.configKey !== currentKey) return "changed";
+    return "pending";
   }
   return "ok";
 }
