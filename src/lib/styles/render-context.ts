@@ -145,6 +145,22 @@ export async function buildStyleData(
       cartonEan: e.cartonEan ?? null,
     }));
 
+  // Per-size CARTON EANs for repeatBy="cartonEan" — every style_eans row that
+  // carries a carton EAN (independent of whether it has a PRODUCT ean13, so a
+  // carton-only style still yields carton labels). The row's carton is the PO
+  // section carton, or the Monday "Carton Barcode number 1" per-size value when
+  // that column is filled (it wins at resolve time, see ean-runner). The
+  // repeat dedupes by carton EAN, so sizes sharing a carton collapse to one
+  // marking.
+  styleData.carton.perSize = style.eans
+    .filter((e) => (e.cartonEan ?? "").trim())
+    .map((e) => ({
+      size: e.size,
+      cartonEan: e.cartonEan!,
+      productEan13: (e.ean13 ?? "").trim(),
+      colour: colourFromVariantLabel(e.variantLabel ?? null, e.size),
+    }));
+
   // Wash-care token repair: Monday dropdown labels can contain ", " and the
   // mapper's comma split shears them into unresolvable fragments. Re-join
   // against the catalogue so e.g. "Dry Clean, Any Solvent" stays one symbol.

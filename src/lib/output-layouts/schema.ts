@@ -252,7 +252,12 @@ export const LayoutSettingsSchema = z.object({
   //         each row prints {{barcode:assortEan}} (also bound to
   //         {{barcode:cartonEan}}) and sets {{isAssortment}}. For the
   //         assortment sticker: one label for the whole mixed carton.
-  repeatBy: z.enum(["none", "size", "ean", "assort"]).default("none"),
+  // "cartonEan": one repetition per DISTINCT per-size CARTON EAN the style
+  //         carries (carton.perSize), PLUS a final assortment-master row
+  //         ({{isAssortment}}). Each row binds its carton onto {{cartonEan}} /
+  //         {{barcode:cartonEan}} and narrows {{size}} to the covered size(s).
+  //         For "one carton marking per carton": XS…XXL + Assort.
+  repeatBy: z.enum(["none", "size", "ean", "assort", "cartonEan"]).default("none"),
   // How repetitions land in output FILES — independent of repeatBy, which
   // only controls how the content iterates. Meaningful when repeatBy ≠
   // "none" (a non-repeating layout is always one file):

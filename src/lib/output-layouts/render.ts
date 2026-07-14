@@ -1,4 +1,4 @@
-import type { StyleData } from "@/lib/pdf/types";
+import type { StyleData, SizeVariant } from "@/lib/pdf/types";
 import { escapeHtml, htmlDocument } from "@/lib/pdf/templates/base";
 import { renderBarcodeDataUrl } from "@/lib/pdf/barcode";
 import {
@@ -70,7 +70,7 @@ export type LayoutRenderMode = "production" | "preview";
 //            to size rows when no EAN rows were scraped.
 export function repetitionStyles(
   style: StyleData,
-  repeatBy: "none" | "size" | "ean" | "assort",
+  repeatBy: "none" | "size" | "ean" | "assort" | "cartonEan",
 ): StyleData[] {
   // The full size run, preserved as we narrow `sizes` to one row per
   // repetition so {{sizeRangeCoop}} can still list every size and enlarge
@@ -120,6 +120,38 @@ export function repetitionStyles(
         ...(assortEan ? { carton: { ...style.carton, ean13: assortEan } } : {}),
       },
     ];
+  }
+  if (repeatBy === "cartonEan") {
+    // One label per DISTINCT carton EAN the style carries (carton.perSize) —
+    // each row narrowed to the size(s) that share that carton, with the carton
+    // bound onto carton.ean13 so {{barcode:cartonEan}} / {{barcode:cartonEan13}}
+    // print it. Then ONE more row for the master assortment carton (flagged
+    // {{isAssortment}}), so a single run emits every size carton + the assort.
+    // Sizes sharing a carton collapse into one label (dedup by EAN value);
+    // {{size}} shows the first, {{sizes}}/{{sizeRange}} list them all.
+    const byCarton = new Map<string, { sizes: SizeVariant[]; colour: string | null }>();
+    for (const v of style.carton.perSize ?? []) {
+      if (!v.cartonEan) continue;
+      const group = byCarton.get(v.cartonEan) ?? { sizes: [], colour: v.colour };
+      group.sizes.push({ label: v.size, ean13: v.productEan13 });
+      byCarton.set(v.cartonEan, group);
+    }
+    const rows: StyleData[] = [...byCarton.entries()].map(([cartonEan, group]) => ({
+      ...style,
+      sizes: group.sizes,
+      allSizes,
+      carton: { ...style.carton, ean13: cartonEan },
+      colour: group.colour ? { name: group.colour, code: style.colour?.code ?? "" } : style.colour,
+    }));
+    // Append the assortment master carton as a final row when the style has one
+    // (same binding as repeatBy="assort"). No per-size cartons AND no assort ⇒
+    // fall back to the whole style so the layout still renders (missing state
+    // visible) rather than producing zero files.
+    const assortEan = resolveBarcodeValue(style, "assortEan");
+    if (assortEan) {
+      rows.push({ ...style, allSizes, isAssortment: true, carton: { ...style.carton, ean13: assortEan } });
+    }
+    return rows.length > 0 ? rows : [style];
   }
   return [style];
 }

@@ -70,6 +70,16 @@ export function buildSampleStyleData(): StyleData {
       outerVE: 24,
       ean13: ean13("570087654321"),
       assortEan: ean13("570011122233"),
+      // Per-size carton EANs — drive the repeatBy="cartonEan" preview: one
+      // carton marking per DISTINCT carton here, plus the assort master above.
+      perSize: [
+        { size: "XS", cartonEan: ean13("570087600001"), productEan13: "", colour: "Navy Blue" },
+        { size: "S", cartonEan: ean13("570087600002"), productEan13: "", colour: "Navy Blue" },
+        { size: "M", cartonEan: ean13("570087600003"), productEan13: ean13("570012345678"), colour: "Navy Blue" },
+        { size: "L", cartonEan: ean13("570087600004"), productEan13: "", colour: "Navy Blue" },
+        { size: "XL", cartonEan: ean13("570087600005"), productEan13: "", colour: "Navy Blue" },
+        { size: "XXL", cartonEan: ean13("570087600006"), productEan13: "", colour: "Navy Blue" },
+      ],
     },
 
     colour: { name: "Navy Blue", code: "NVY-300" },

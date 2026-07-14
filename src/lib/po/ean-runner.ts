@@ -10,7 +10,12 @@ import { maybeEnqueueStyleGeneration } from "@/lib/queue/generation-sweep";
 import { getAutomationMinPo } from "@/lib/settings/app-settings";
 import { resolveStyleEans, type StyleEanStatus as ResolveStatus } from "./resolve-style-eans";
 import { MAX_EAN_ATTEMPTS, FLOATABLE_STATUSES } from "./ean-status-meta";
-import { resolveStyleEansFromMonday, type MondayFallbackResult } from "./monday-barcode-fallback";
+import {
+  resolveStyleEansFromMonday,
+  readMondayCartonOverlay,
+  type MondayFallbackResult,
+} from "./monday-barcode-fallback";
+import { eanForSize } from "./monday-barcode-parse";
 import { eanResolveKey } from "./resolve-inputs";
 import { computeBatchSize } from "./batch-size";
 import type { EanView } from "./ean-view";
@@ -236,6 +241,27 @@ export async function resolveAndPersistStyleEans(
           mondayFallback.assortEan ? " + assort" : ""
         }${mondayFallback.invalid.length ? `; ${mondayFallback.invalid.length} invalid ignored` : ""})`;
       }
+    }
+  }
+
+  // Monday carton overlay — the "Carton Barcode number 1" column WINS for carton
+  // EANs whenever it's filled: its per-size cartons override the PO-scraped
+  // section carton (all sizes in a section otherwise share one), and its "Assort"
+  // line overrides the representative Style.cartonEan. When the column is empty
+  // (the future scrape-only world) nothing changes — the scraped cartons stand.
+  // Skipped after a full Monday fallback, which already sourced cartons from the
+  // same column. Product EANs (sizeEans[].ean13) are never touched here — they
+  // still come from the PO scrape (or the fallback above).
+  if (dbStatus !== "RESOLVED_FROM_MONDAY") {
+    const overlay = await readMondayCartonOverlay(styleId);
+    if (overlay) {
+      sizeEans = sizeEans.map((s) => {
+        const c = eanForSize(s.size, overlay.bySize);
+        return c ? { ...s, cartonEan: c } : s;
+      });
+      // Only a real "Assort" line overrides the master carton (mirrors the
+      // fallback: never promote an arbitrary per-size carton to the master).
+      if (overlay.assort) cartonEan = overlay.assort;
     }
   }
 

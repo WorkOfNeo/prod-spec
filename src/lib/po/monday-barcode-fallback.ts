@@ -133,3 +133,30 @@ export async function resolveStyleEansFromMonday(styleId: string): Promise<Monda
 
   return { sizeEans, cartonEan, matchedSizes, assortEan, productField, cartonField, invalid };
 }
+
+export type MondayCartonOverlay = {
+  // Per-size carton EANs the buyer typed ("XS: …, S: …"), matched to a style
+  // size via eanForSize.
+  bySize: Array<{ sizeKey: string; ean: string }>;
+  // The "Assort - <EAN>" master carton, if present.
+  assort: string | null;
+  // Raw column text (audit / logging).
+  cartonField: string;
+};
+
+// Read ONLY the "Carton Barcode number 1" column (text_mm51twj9) and return the
+// per-size cartons + assort a buyer typed. Unlike resolveStyleEansFromMonday
+// (the whole-scrape fallback), this runs on EVERY resolve — the runner overlays
+// it so that whenever the column is FILLED, its per-size cartons win over the
+// PO-scraped section carton (Niels: "if these fields are filled in Monday, they
+// win"). Returns null when the column is empty (the future scrape-only world),
+// so the scraped cartons stand untouched.
+export async function readMondayCartonOverlay(styleId: string): Promise<MondayCartonOverlay | null> {
+  const style = await db.style.findUnique({ where: { id: styleId }, select: { rawData: true } });
+  if (!style) return null;
+  const cartonField = readCol(style.rawData, MONDAY_PRE_ORDER_BARCODE_COLS.carton);
+  if (!cartonField) return null;
+  const carton = parseBarcodeField(cartonField);
+  if (carton.bySize.length === 0 && !carton.assort) return null;
+  return { bySize: carton.bySize, assort: carton.assort, cartonField };
+}

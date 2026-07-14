@@ -66,13 +66,14 @@ function splitFilePlan(
   return reps.map((repStyle, i) => {
     const sizePart = (repStyle.sizes[0]?.label ?? "").replace(/[^\w.-]+/g, "");
     const colourPart =
-      settings.repeatBy === "ean"
+      settings.repeatBy === "ean" || settings.repeatBy === "cartonEan"
         ? (repStyle.colour?.name ?? "").replace(/[^\w.-]+/g, "").slice(0, 16)
         : "";
     // The assortment row isn't a single size — name its file "assort" (deduped
-    // below if a style ever resolves several assortment cartons).
+    // below if a style ever resolves several assortment cartons). repeatBy
+    // "cartonEan" appends such a row too, flagged isAssortment.
     let suffix =
-      settings.repeatBy === "assort"
+      settings.repeatBy === "assort" || repStyle.isAssortment
         ? "assort"
         : [sizePart, colourPart].filter(Boolean).join("-").slice(0, 40) || String(i + 1);
     const n = (seen.get(suffix) ?? 0) + 1;

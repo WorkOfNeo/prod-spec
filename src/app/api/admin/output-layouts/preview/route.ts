@@ -169,7 +169,22 @@ export async function POST(req: NextRequest) {
             : styleData.sizes.map((s) => `${s.label || "?"}=${cleanEan(s.ean13)}`))
         : settings.repeatBy === "assort"
           ? [`assort=${cleanEan(styleData.carton.assortEan)}`]
-          : [];
+          : settings.repeatBy === "cartonEan"
+            ? [
+                // Distinct per-size cartons (dedup by EAN, preserving order) + the
+                // assort master row the repeat appends.
+                ...[
+                  ...new Map(
+                    (styleData.carton.perSize ?? [])
+                      .filter((v) => v.cartonEan)
+                      .map((v) => [v.cartonEan, v] as const),
+                  ).values(),
+                ].map((v) => `${v.size}=${cleanEan(v.cartonEan)}`),
+                ...(cleanEan(styleData.carton.assortEan) !== "no EAN"
+                  ? [`assort=${cleanEan(styleData.carton.assortEan)}`]
+                  : []),
+              ]
+            : [];
   // Resolve the example file name against the FIRST repetition so
   // per-repetition variables ({{size}}, {{colourName}}, {{ean13}}) show
   // real values when files are split per EAN. A single-file output names
