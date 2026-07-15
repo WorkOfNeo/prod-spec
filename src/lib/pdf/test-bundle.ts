@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { renderPdf } from "@/lib/pdf/renderer";
 import { inlineProdSpecImages } from "@/lib/pdf/inline-images";
+import { inlineCoverPageImages } from "@/lib/pdf/inline-cover-images";
+import { getCoverPageInfoMd } from "@/lib/settings/app-settings";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { applyCartonBarcodePrefs, applyFieldOverrides } from "@/lib/pdf/pins";
@@ -11,11 +13,8 @@ import {
 } from "@/lib/outputs/output-field-values";
 import { countPlaceholderMarkers } from "@/lib/pdf/placeholders";
 import { defaultArtifactFileName } from "@/lib/pdf/template-registry";
-import {
-  COVER_VARIANT_KEY,
-  renderCoverPageHtml,
-  type BundleDocSummary,
-} from "@/lib/pdf/bundle-pages";
+import { COVER_VARIANT_KEY, renderCoverPageHtml } from "@/lib/pdf/bundle-pages";
+import { buildRequiredPackagingForStyle } from "@/lib/outputs/required-packaging";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import {
   DEFAULT_OUTPUTS,
@@ -157,9 +156,6 @@ export async function renderProdSpecTestBundle(
   // test bundle mirrors what the runner would generate. Fail-soft empty.
   const fieldValues = await loadStyleFieldValues(styleId);
   const outputDocs: TestBundleDoc[] = [];
-  // One row per OUTPUT for the cover's document table — built as we render
-  // so the cover reflects the real generated list (and real file counts).
-  const docSummaries: BundleDocSummary[] = [];
 
   for (const output of outputs) {
     const variant = resolveOutputVariant(output);
@@ -215,12 +211,6 @@ export async function renderProdSpecTestBundle(
             error: null,
           });
         }
-        docSummaries.push({
-          displayName: variant.name,
-          widthMm: dims.widthMm,
-          heightMm: dims.heightMm,
-          fileCount: parts.length,
-        });
         continue;
       }
 
@@ -248,12 +238,6 @@ export async function renderProdSpecTestBundle(
         pdf,
         error: null,
       });
-      docSummaries.push({
-        displayName: variant.name,
-        widthMm: dims.widthMm,
-        heightMm: dims.heightMm,
-        fileCount: 1,
-      });
     } catch (err) {
       // Resilient: surface the broken output as a card, keep going.
       outputDocs.push({
@@ -278,6 +262,7 @@ export async function renderProdSpecTestBundle(
   const slug = styleData.styleNumber.replace(/[^a-z0-9-]+/gi, "-").toLowerCase();
   const pageSettings = parseBundlePageSettings(prodSpec.bundlePageSettings);
   const generalInfoMd = prodSpec.generalInfoMd?.trim();
+  const coverInfoMd = (await getCoverPageInfoMd().catch(() => "")).trim();
   let coverDoc: TestBundleDoc;
   try {
     let coverHtml = renderCoverPageHtml({
@@ -288,15 +273,20 @@ export async function renderProdSpecTestBundle(
       poNumber: style.poNumber ?? null,
       supplierName: style.supplier?.name ?? null,
       generatedAt: new Date(),
-      docs: docSummaries,
+      // The required-packaging manifest with live approval state (dry run
+      // against a real style) — same builder the publish cover uses.
+      docs: await buildRequiredPackagingForStyle(styleId),
       settings: pageSettings.cover,
       generalInfo: generalInfoMd
         ? { markdown: generalInfoMd, settings: pageSettings.generalInfo }
         : null,
+      coverInfo: coverInfoMd ? { markdown: coverInfoMd } : null,
     });
-    // Inline general-info image URLs to data URLs — page.setContent() can't
-    // fetch a bare /api path (same as the runner + cover preview).
+    // Inline image URLs to data URLs — page.setContent() can't fetch a bare
+    // /api path (same as the runner + cover preview). General-info images are
+    // ProdSpec-owned; the global cover block's are addressed globally.
     if (generalInfoMd) coverHtml = await inlineProdSpecImages(coverHtml, prodSpec.id);
+    if (coverInfoMd) coverHtml = await inlineCoverPageImages(coverHtml);
     coverDoc = {
       kind: "cover",
       variantKey: COVER_VARIANT_KEY,

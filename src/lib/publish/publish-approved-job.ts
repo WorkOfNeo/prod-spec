@@ -8,6 +8,10 @@ import { getSupplierReviewCcEmails } from "@/lib/settings/app-settings";
 import { resolveNotificationsForJob } from "@/lib/notifications/user-notifications";
 import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
 import { ignoreBaseKey, loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
+import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
+import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
+import { buildStyleCoverPdf } from "@/lib/pdf/style-cover";
+import { toPlainBytes } from "@/lib/pdf/bytes";
 import { upsertShareForStyle } from "@/lib/supplier-share/share";
 import { combineSupplierRecipients } from "@/lib/suppliers/recipients";
 import { loadContactEmailsBySupplier } from "@/lib/suppliers/contact-emails";
@@ -106,6 +110,58 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
     );
   }
 
+  // Refresh the cover so the copy the supplier RECEIVES reflects the approval
+  // state as of this publish: outputs approved by this send show their confirmed
+  // size, the rest stay "Awaiting Contrast confirmation". The cover was baked at
+  // generation while every output was still pending review, so without this the
+  // supplier's manifest would contradict the package (a label in the box reading
+  // "awaiting"). Rendered from the PROJECTED post-publish approval set — this
+  // job's clean, non-rejected outputs are about to be cascaded to APPROVED, so
+  // we add their bases to the durable-approval set the DB already holds. The
+  // fresh PDF replaces the cover asset in BOTH the SharePoint upload (below) and
+  // the DB (in the cascade transaction), so every delivery surface — SharePoint,
+  // the supplier share portal, the nightly digest — serves the current cover.
+  // Fail-soft: a render hiccup keeps the generation-time cover rather than
+  // blocking approval.
+  const coverAsset = publishable.find((a) => a.variantKey === COVER_VARIANT_KEY);
+  let refreshedCoverPdf: Buffer | null = null;
+  if (coverAsset) {
+    try {
+      const framingBases = new Set<string>([COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY]);
+      const baseOfAsset = (a: { variantKey: string | null; docType: string }) =>
+        (a.variantKey ?? `doc:${a.docType}`).split("#")[0];
+      // This job's output bases that will end up approved: every document of the
+      // base is print-safe and not individually rejected (a partially-rejected
+      // multi-document output is NOT approved).
+      const docsByBase = new Map<string, typeof publishable>();
+      for (const a of publishable) {
+        const b = baseOfAsset(a);
+        if (framingBases.has(b)) continue;
+        const arr = docsByBase.get(b);
+        if (arr) arr.push(a);
+        else docsByBase.set(b, [a]);
+      }
+      const projectedApproved = new Set(await approvedOutputBaseKeysForStyle(job.styleId));
+      for (const [b, docs] of docsByBase) {
+        if (docs.every((d) => d.placeholderCount === 0 && d.reviewStatus !== "REJECTED")) {
+          projectedApproved.add(b);
+        }
+      }
+      refreshedCoverPdf = await buildStyleCoverPdf(job.id, projectedApproved);
+    } catch (err) {
+      refreshedCoverPdf = null;
+      await db.log
+        .create({
+          data: {
+            jobId: job.id,
+            level: "WARN",
+            message: `cover refresh at publish failed — shipping generation-time cover: ${(err as Error).message}`,
+          },
+        })
+        .catch(() => {});
+    }
+  }
+
   // Deterministic folder layout: prodspec/<customer-slug>/<supplier-slug?>/<style-id>.
   // Once the SharePoint folder convention is finalised, parse Supplier.sharepointUrl
   // (which is the supplier's *hyperlink* in their portal, not an upload path).
@@ -130,7 +186,10 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
         assets: publishable.map((a) => ({
           fileName: a.fileName,
           docType: a.docType,
-          pdf: Buffer.from(a.pdf),
+          pdf:
+            refreshedCoverPdf && a.id === coverAsset?.id
+              ? refreshedCoverPdf
+              : Buffer.from(a.pdf),
         })),
       })
     : [];
@@ -163,6 +222,19 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
     db.reviewAction.create({
       data: { jobId: job.id, userId, action: "APPROVED" },
     }),
+    // Persist the refreshed cover so every downstream delivery surface that
+    // re-reads the asset PDFs — the supplier share portal, the nightly digest,
+    // the supplier-folder push — serves the approval-aware cover, not the
+    // generation-time one. Same asset row (COVER key on this job), so it stays
+    // the current cover. No-op when the refresh didn't run / failed.
+    ...(refreshedCoverPdf && coverAsset
+      ? [
+          db.jobAsset.update({
+            where: { id: coverAsset.id },
+            data: { pdf: toPlainBytes(refreshedCoverPdf) },
+          }),
+        ]
+      : []),
     db.log.create({
       data: {
         jobId: job.id,

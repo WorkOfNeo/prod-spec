@@ -1,6 +1,5 @@
 import { db } from "@/lib/db";
 import { renderPdf } from "@/lib/pdf/renderer";
-import { inlineProdSpecImages } from "@/lib/pdf/inline-images";
 import { ensureLayoutVariantsLoaded, layoutIdFromVariantKey } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { outputReadinessForStyle, effectiveMapping } from "@/lib/styles/output-readiness";
@@ -15,13 +14,8 @@ import { defaultArtifactFileName, type TemplateVariant } from "@/lib/pdf/templat
 import { notifyReviewReady } from "@/lib/notifications/user-notifications";
 import { supersedeOpenTicketsForStyleOp } from "@/lib/tickets/rejection-tickets";
 import { findCarryForwardClaim } from "@/lib/review-flow/claim";
-import { getReviewNotificationEmails } from "@/lib/settings/app-settings";
-import {
-  COVER_VARIANT_KEY,
-  GENERAL_INFO_VARIANT_KEY,
-  renderCoverPageHtml,
-  type BundleDocSummary,
-} from "@/lib/pdf/bundle-pages";
+import { getReviewNotificationEmails, getCoverPageInfoMd } from "@/lib/settings/app-settings";
+import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-pages";
 import type { TriggerSource } from "@/generated/prisma/enums";
 import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
 import {
@@ -38,6 +32,9 @@ import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-a
 import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
 import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
 import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
+import { assembleRequiredPackagingDocs } from "@/lib/outputs/required-packaging";
+import { renderStyleCoverPdf } from "@/lib/pdf/cover";
+import { toPlainBytes } from "@/lib/pdf/bytes";
 import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 import { outputConfigKey } from "@/lib/outputs/output-config-key";
 import {
@@ -47,12 +44,6 @@ import {
 } from "@/lib/outputs/output-field-values";
 
 const STALE_RUNNING_MS = 15 * 60 * 1000;
-
-function toPlainBytes(buf: Buffer): Uint8Array<ArrayBuffer> {
-  const out = new Uint8Array(buf.byteLength);
-  out.set(buf);
-  return out as Uint8Array<ArrayBuffer>;
-}
 
 export type RunSummary = {
   processed: number;
@@ -297,6 +288,11 @@ export async function processJob(jobId: string): Promise<void> {
     }
     return DEFAULT_OUTPUTS;
   })();
+  // The FULL declared/enabled set, captured before the scope / durable-approval
+  // / missing-field filters below narrow `outputs` down to this run's render
+  // subset. The cover page lists ALL of these as "required packaging" (minus
+  // per-style exclusions/ignores), regardless of what this run regenerates.
+  const declaredEnabledOutputs = outputs;
 
   // Per-output generation: a job may be scoped to specific variant keys (the
   // auto-enqueue paths set these to the outputs whose own required fields
@@ -359,6 +355,14 @@ export async function processJob(jobId: string): Promise<void> {
   // carried-forward approved assets) apart from a real misconfiguration.
   let approvedSkips = 0;
 
+  // The style's currently-approved output bases (durable approval), read once.
+  // Used BOTH to skip regenerating approved outputs on a full regen (below) AND
+  // to flag them "Approved" on the cover's required-packaging manifest. Read
+  // now (before this run's assets are persisted) it reflects PRIOR approvals —
+  // exactly what the cover should show at generation time (this run's fresh
+  // outputs are still pending review).
+  const approvedBases = await approvedOutputBaseKeysForStyle(job.styleId);
+
   // Scoped re-runs (auto-enqueue / ticket fixes) narrow to specific outputs;
   // an empty scope is a full regen of every enabled output. Tickets reference
   // per-document asset keys ("layout:<id>#<size>"); ProdSpec outputs carry the
@@ -380,7 +384,6 @@ export async function processJob(jobId: string): Promise<void> {
     // exactly as before. approvedOutputBaseKeysForStyle uses the same
     // current-asset selection as the review page, so what we skip lines up with
     // what the reviewer sees as approved.
-    const approvedBases = await approvedOutputBaseKeysForStyle(job.styleId);
     if (approvedBases.size > 0) {
       const skipped: string[] = [];
       outputs = outputs.filter((o) => {
@@ -444,9 +447,6 @@ export async function processJob(jobId: string): Promise<void> {
     placeholderCount: number;
   };
   const generated: Generated[] = [];
-  // One row per OUTPUT (not per file) for the cover page's documents
-  // table — title + dims once, with a file count for multi-doc variants.
-  const docSummaries: BundleDocSummary[] = [];
   // Info-area size catalogue, loaded once — resolves each info-area
   // output's per-style size pick to printed mm. Empty if the migration
   // isn't applied yet; outputs then fall back to their stored dims.
@@ -578,12 +578,6 @@ export async function processJob(jobId: string): Promise<void> {
             placeholderCount: countPlaceholderMarkers(doc.html),
           });
         }
-        docSummaries.push({
-          displayName: variant.name,
-          widthMm: dims.widthMm,
-          heightMm: dims.heightMm,
-          fileCount: docs.length,
-        });
         continue;
       }
 
@@ -604,12 +598,6 @@ export async function processJob(jobId: string): Promise<void> {
         fileName: variant.fileNameFor?.(renderStyle) ?? fileNameFor(variant, styleData.styleNumber),
         pdf,
         placeholderCount,
-      });
-      docSummaries.push({
-        displayName: variant.name,
-        widthMm: dims.widthMm,
-        heightMm: dims.heightMm,
-        fileCount: 1,
       });
     } catch (err) {
       const reason = (err as Error).message;
@@ -755,35 +743,66 @@ export async function processJob(jobId: string): Promise<void> {
   const slug = styleSlug(styleData.styleNumber);
   const pageSettings = parseBundlePageSettings(prodSpec?.bundlePageSettings);
   const bundlePages: BundlePage[] = [];
+  // Required-packaging manifest for the cover: EVERY declared output for this
+  // style — not just what THIS run regenerated — minus the ones skipped for this
+  // style (doc-type keyword rule or operator ignore), resolved through the SAME
+  // filters the render loop uses so the cover and the review page agree. Each
+  // approved output shows its confirmed size; the rest are flagged "Awaiting
+  // Contrast confirmation" so the supplier expects them in a later delivery.
+  const coverRows = declaredEnabledOutputs.flatMap((o) => {
+    const variant = resolveOutputVariant(o);
+    if (!variant) return [];
+    if (ignoredKeys.has(variant.key)) return [];
+    if (resolveExclusionField) {
+      const hit = matchExclusionRules(exclusionRules[variant.docType], resolveExclusionField);
+      if (hit) return [];
+    }
+    const dims = effectiveOutputDims(o, variant.isInfoArea ?? false, infoAreaSizes);
+    return [
+      {
+        variantKey: o.variantKey,
+        displayName: variant.name,
+        widthMm: dims.widthMm,
+        heightMm: dims.heightMm,
+        fileCount: variant.renderMany ? null : 1,
+      },
+    ];
+  });
+  const coverDocs = assembleRequiredPackagingDocs(coverRows, approvedBases);
+  // Global cover content block (admin-authored, app-wide) — printed on the
+  // cover sheet under the manifest. Fail-soft empty so a settings read never
+  // breaks generation.
+  const coverInfoMd = await getCoverPageInfoMd().catch(() => "");
   try {
     const generalInfoMd = prodSpec?.generalInfoMd?.trim();
-    let coverHtml = renderCoverPageHtml({
-      customerName: job.style.customer.name,
-      businessArea: businessAreaName,
-      styleName: job.style.name,
-      styleNumber: styleData.styleNumber,
-      poNumber: job.style.poNumber ?? null,
-      supplierName: job.style.supplier?.name ?? null,
-      generatedAt: new Date(),
-      docs: docSummaries,
-      settings: pageSettings.cover,
-      // General info rides inside the cover document — own pages, own
-      // margins, after the cover sheet. The cover is its ONLY home in the
-      // bundle, so the order is guaranteed: cover sheet first, then the
-      // requirements. No standalone general-information PDF is emitted.
-      generalInfo: generalInfoMd
-        ? { markdown: generalInfoMd, settings: pageSettings.generalInfo }
-        : null,
-    });
-    // Resolve general-info image URLs to data URLs — the cover embeds the
-    // same markdown, and page.setContent() can't fetch a bare /api path.
-    if (prodSpec && generalInfoMd) coverHtml = await inlineProdSpecImages(coverHtml, prodSpec.id);
+    const coverPdf = await renderStyleCoverPdf(
+      {
+        customerName: job.style.customer.name,
+        businessArea: businessAreaName,
+        styleName: job.style.name,
+        styleNumber: styleData.styleNumber,
+        poNumber: job.style.poNumber ?? null,
+        supplierName: job.style.supplier?.name ?? null,
+        generatedAt: new Date(),
+        docs: coverDocs,
+        settings: pageSettings.cover,
+        coverInfo: coverInfoMd.trim() ? { markdown: coverInfoMd } : null,
+        // General info rides inside the cover document — own pages, own
+        // margins, after the cover sheet. The cover is its ONLY home in the
+        // bundle, so the order is guaranteed: cover sheet first, then the
+        // requirements. No standalone general-information PDF is emitted.
+        generalInfo: generalInfoMd
+          ? { markdown: generalInfoMd, settings: pageSettings.generalInfo }
+          : null,
+      },
+      prodSpec?.id ?? null,
+    );
     bundlePages.push({
       docType: "COVER",
       variantKey: COVER_VARIANT_KEY,
       displayName: "Cover page",
       fileName: `00-${slug}-cover-page.pdf`,
-      pdf: await renderPdf({ html: coverHtml }),
+      pdf: coverPdf,
     });
   } catch (err) {
     throw new RunnerError(
