@@ -1,6 +1,7 @@
 import { requireAdminPage } from "@/lib/auth-server";
 import { getCoverPageInfoMd } from "@/lib/settings/app-settings";
 import { CoverPageEditor } from "./cover-page-editor";
+import { CoverRegenPanel } from "./cover-regen-panel";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Cover page · Settings" };
@@ -25,6 +26,7 @@ export default async function CoverPageSettingsPage() {
       <div className="mt-6">
         <CoverPageEditor initialMarkdown={markdown} />
       </div>
+      <CoverRegenPanel />
     </div>
   );
 }

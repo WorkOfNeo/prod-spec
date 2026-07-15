@@ -1,0 +1,86 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
+import { db } from "@/lib/db";
+import { requireRole } from "@/lib/auth-server";
+import {
+  listCoverRefreshableStyleIds,
+  countDeliveredAmong,
+  processCoverRefreshChunk,
+} from "@/lib/pdf/cover-regen-sweep";
+
+export const runtime = "nodejs";
+// Each chunk renders a handful of cover PDFs (Chromium) — give it headroom.
+export const maxDuration = 300;
+
+// "Regenerate cover pages" sweep — rebuilds the CURRENT cover of every style
+// that already has one so a new cover format / edited global cover block
+// reaches existing (incl. approved) styles without a full re-run. ADMIN only.
+// Client-driven + chunked: the browser calls `prepare` for the id list, then
+// POSTs bounded `process` chunks and shows progress. Idempotent throughout.
+//
+//   POST { mode: "prepare" }
+//     → { styleIds: string[], total, delivered }
+//   POST { mode: "process", styleIds: string[], deliver?: boolean }
+//     → { outcomes, pushed, pushErrors, refreshed, noCover, errors, requeued }
+
+const PREPARE = z.object({ mode: z.literal("prepare") });
+const PROCESS = z.object({
+  mode: z.literal("process"),
+  // Bounded per request so one chunk always finishes inside maxDuration.
+  styleIds: z.array(z.string().min(1)).min(1).max(25),
+  deliver: z.boolean().default(true),
+});
+const BODY = z.discriminatedUnion("mode", [PREPARE, PROCESS]);
+
+export async function POST(req: NextRequest) {
+  const auth = await requireRole(["ADMIN"]);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+  const parsed = BODY.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? "Invalid body" },
+      { status: 400 },
+    );
+  }
+
+  if (parsed.data.mode === "prepare") {
+    const styleIds = await listCoverRefreshableStyleIds();
+    const delivered = await countDeliveredAmong(styleIds);
+    return NextResponse.json({ styleIds, total: styleIds.length, delivered });
+  }
+
+  const { styleIds, deliver } = parsed.data;
+  const { outcomes, pushed, pushErrors } = await processCoverRefreshChunk(styleIds, { deliver });
+
+  const refreshed = outcomes.filter((o) => o.status === "refreshed").length;
+  const noCover = outcomes.filter((o) => o.status === "no-cover").length;
+  const errored = outcomes.filter((o) => o.status === "error");
+  const requeued = outcomes.filter((o) => o.requeue === "queued").length;
+
+  if (errored.length > 0) {
+    await db.log
+      .create({
+        data: {
+          level: "WARN",
+          message:
+            `cover-regen chunk: ${errored.length} cover(s) failed to refresh — ` +
+            errored
+              .map((o) => `${o.styleId}: ${o.status === "error" ? o.error : ""}`)
+              .join(" · ")
+              .slice(0, 800),
+        },
+      })
+      .catch(() => {});
+  }
+
+  return NextResponse.json({
+    outcomes,
+    refreshed,
+    noCover,
+    errors: errored.length,
+    requeued,
+    pushed,
+    pushErrors,
+  });
+}
