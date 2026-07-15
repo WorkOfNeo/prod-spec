@@ -763,6 +763,23 @@ model AppSetting {
   @@map("app_settings")
 }
 
+// Images referenced by the GLOBAL cover-page content block (AppSetting
+// "coverPageInfoMd"). Global counterpart of ProdSpecImage — the block is
+// app-wide, not owned by any one ProdSpec — so the bytes live in their own
+// table with no owner FK. Same storage model: raw bytes in Postgres, referenced
+// from the markdown by a short serve URL, re-emitted as a data URL only at PDF
+// render time (src/lib/pdf/inline-cover-images.ts).
+model CoverPageImage {
+  id        String   @id @default(cuid())
+  data      Bytes
+  mimeType  String
+  fileName  String
+  byteSize  Int
+  createdAt DateTime @default(now())
+
+  @@map("cover_page_images")
+}
+
 model Style {
   id                  String         @id @default(cuid())
   customerId          String

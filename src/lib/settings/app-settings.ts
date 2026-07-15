@@ -320,6 +320,33 @@ export async function setSupplierReviewCcEmails(raw: string): Promise<void> {
   });
 }
 
+const COVER_PAGE_INFO_MD_KEY = "coverPageInfoMd";
+
+// GLOBAL cover-page content block — GitHub-flavoured markdown an admin edits at
+// /settings/cover-page. Printed on the cover SHEET (page 1) of every bundle,
+// below the required-packaging manifest, on top of each ProdSpec's own
+// "General information" pages (which still ship after the cover sheet). This is
+// company-wide boilerplate the supplier should always see — contact lines,
+// standing instructions — that changes from time to time without a redeploy.
+//
+// Empty string ⇒ nothing printed (the block collapses away). Images are
+// referenced by a short serve URL and stored in cover_page_images, re-inlined
+// to data URLs at PDF render time (src/lib/pdf/inline-cover-images.ts).
+export async function getCoverPageInfoMd(): Promise<string> {
+  const row = await db.appSetting.findUnique({ where: { key: COVER_PAGE_INFO_MD_KEY } });
+  return typeof row?.value === "string" ? row.value : "";
+}
+
+export async function setCoverPageInfoMd(markdown: string): Promise<void> {
+  // Trim trailing whitespace only — internal markdown structure is preserved.
+  const value = markdown.trimEnd();
+  await db.appSetting.upsert({
+    where: { key: COVER_PAGE_INFO_MD_KEY },
+    create: { key: COVER_PAGE_INFO_MD_KEY, value },
+    update: { value },
+  });
+}
+
 const STYLES_TABLE_COLUMNS_KEY = "stylesTableColumns";
 
 // Which columns the /styles table shows — the GLOBAL standard view every

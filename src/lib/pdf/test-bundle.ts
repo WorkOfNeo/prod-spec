@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { renderPdf } from "@/lib/pdf/renderer";
 import { inlineProdSpecImages } from "@/lib/pdf/inline-images";
+import { inlineCoverPageImages } from "@/lib/pdf/inline-cover-images";
+import { getCoverPageInfoMd } from "@/lib/settings/app-settings";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { buildStyleData } from "@/lib/styles/render-context";
 import { applyCartonBarcodePrefs, applyFieldOverrides } from "@/lib/pdf/pins";
@@ -254,6 +256,7 @@ export async function renderProdSpecTestBundle(
   const slug = styleData.styleNumber.replace(/[^a-z0-9-]+/gi, "-").toLowerCase();
   const pageSettings = parseBundlePageSettings(prodSpec.bundlePageSettings);
   const generalInfoMd = prodSpec.generalInfoMd?.trim();
+  const coverInfoMd = (await getCoverPageInfoMd().catch(() => "")).trim();
   let coverDoc: TestBundleDoc;
   try {
     let coverHtml = renderCoverPageHtml({
@@ -271,10 +274,13 @@ export async function renderProdSpecTestBundle(
       generalInfo: generalInfoMd
         ? { markdown: generalInfoMd, settings: pageSettings.generalInfo }
         : null,
+      coverInfo: coverInfoMd ? { markdown: coverInfoMd } : null,
     });
-    // Inline general-info image URLs to data URLs — page.setContent() can't
-    // fetch a bare /api path (same as the runner + cover preview).
+    // Inline image URLs to data URLs — page.setContent() can't fetch a bare
+    // /api path (same as the runner + cover preview). General-info images are
+    // ProdSpec-owned; the global cover block's are addressed globally.
     if (generalInfoMd) coverHtml = await inlineProdSpecImages(coverHtml, prodSpec.id);
+    if (coverInfoMd) coverHtml = await inlineCoverPageImages(coverHtml);
     coverDoc = {
       kind: "cover",
       variantKey: COVER_VARIANT_KEY,

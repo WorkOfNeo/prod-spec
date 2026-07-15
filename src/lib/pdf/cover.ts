@@ -1,5 +1,6 @@
 import { renderCoverPageHtml, type CoverPageInput } from "./bundle-pages";
 import { inlineProdSpecImages } from "./inline-images";
+import { inlineCoverPageImages } from "./inline-cover-images";
 import { renderPdf } from "./renderer";
 
 // The cover document as a PDF buffer — the shared render step behind both
@@ -18,6 +19,11 @@ export async function renderStyleCoverPdf(
   let html = renderCoverPageHtml(input);
   if (prodSpecIdForImages && input.generalInfo?.markdown?.trim()) {
     html = await inlineProdSpecImages(html, prodSpecIdForImages);
+  }
+  // The global cover block's images are addressed by a global serve path (no
+  // owning ProdSpec) — inline them whenever the block carries markdown.
+  if (input.coverInfo?.markdown?.trim()) {
+    html = await inlineCoverPageImages(html);
   }
   return renderPdf({ html });
 }

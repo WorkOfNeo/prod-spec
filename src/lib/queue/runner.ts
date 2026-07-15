@@ -16,7 +16,7 @@ import { reviewNotificationEmail } from "@/lib/email/templates/review-notificati
 import { notifyReviewReady } from "@/lib/notifications/user-notifications";
 import { supersedeOpenTicketsForStyleOp } from "@/lib/tickets/rejection-tickets";
 import { findCarryForwardClaim } from "@/lib/review-flow/claim";
-import { getReviewNotificationEmails } from "@/lib/settings/app-settings";
+import { getReviewNotificationEmails, getCoverPageInfoMd } from "@/lib/settings/app-settings";
 import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-pages";
 import type { TriggerSource } from "@/generated/prisma/enums";
 import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
@@ -758,6 +758,10 @@ export async function processJob(jobId: string): Promise<void> {
     ];
   });
   const coverDocs = assembleRequiredPackagingDocs(coverRows, approvedBases);
+  // Global cover content block (admin-authored, app-wide) — printed on the
+  // cover sheet under the manifest. Fail-soft empty so a settings read never
+  // breaks generation.
+  const coverInfoMd = await getCoverPageInfoMd().catch(() => "");
   try {
     const generalInfoMd = prodSpec?.generalInfoMd?.trim();
     const coverPdf = await renderStyleCoverPdf(
@@ -771,6 +775,7 @@ export async function processJob(jobId: string): Promise<void> {
         generatedAt: new Date(),
         docs: coverDocs,
         settings: pageSettings.cover,
+        coverInfo: coverInfoMd.trim() ? { markdown: coverInfoMd } : null,
         // General info rides inside the cover document — own pages, own
         // margins, after the cover sheet. The cover is its ONLY home in the
         // bundle, so the order is guaranteed: cover sheet first, then the

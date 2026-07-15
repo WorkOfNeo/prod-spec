@@ -8,6 +8,7 @@ import { parseBundlePageSettings, parseProdSpecOutputs } from "@/lib/prod-spec/c
 import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 import { renderCoverPageHtml, type BundleDocSummary } from "@/lib/pdf/bundle-pages";
 import { inlineProdSpecImages } from "@/lib/pdf/inline-images";
+import { getCoverPageInfoMd } from "@/lib/settings/app-settings";
 
 export const runtime = "nodejs";
 
@@ -58,6 +59,10 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     const sample = buildSampleStyleData();
     const pageSettings = parseBundlePageSettings(prodSpec.bundlePageSettings);
     const generalInfoMd = prodSpec.generalInfoMd?.trim();
+    // The global cover block ships on every cover — show it in the per-spec
+    // preview too. Its <img> serve URLs resolve live in the iframe (same-origin,
+    // admin session), so no inlining is needed here (unlike the PDF path).
+    const coverInfoMd = (await getCoverPageInfoMd().catch(() => "")).trim();
     let html = renderCoverPageHtml({
       customerName: prodSpec.customer.name,
       businessArea: prodSpec.businessArea.name,
@@ -73,6 +78,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       generalInfo: generalInfoMd
         ? { markdown: generalInfoMd, settings: pageSettings.generalInfo }
         : null,
+      coverInfo: coverInfoMd ? { markdown: coverInfoMd } : null,
     });
     // Inline any general-info image URLs to data URLs — same as the runner.
     if (generalInfoMd) html = await inlineProdSpecImages(html, id);

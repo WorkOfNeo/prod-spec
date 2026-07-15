@@ -4,6 +4,7 @@ import { parseCustomerConfig } from "@/lib/customers/config";
 import { parseBundlePageSettings } from "@/lib/prod-spec/config";
 import { buildRequiredPackagingForStyle } from "@/lib/outputs/required-packaging";
 import { renderStyleCoverPdf } from "@/lib/pdf/cover";
+import { getCoverPageInfoMd } from "@/lib/settings/app-settings";
 
 // Rebuild a style's cover PDF from scratch, off the job id, with a caller-
 // supplied set of currently-approved output bases. Used by publish to refresh
@@ -88,6 +89,7 @@ export async function buildStyleCoverPdf(
 
   const pageSettings = parseBundlePageSettings(prodSpec?.bundlePageSettings);
   const generalInfoMd = prodSpec?.generalInfoMd?.trim();
+  const coverInfoMd = (await getCoverPageInfoMd().catch(() => "")).trim();
   const businessAreaName = style.businessAreaRef?.name ?? style.businessArea ?? null;
 
   return renderStyleCoverPdf(
@@ -104,6 +106,7 @@ export async function buildStyleCoverPdf(
       generalInfo: generalInfoMd
         ? { markdown: generalInfoMd, settings: pageSettings.generalInfo }
         : null,
+      coverInfo: coverInfoMd ? { markdown: coverInfoMd } : null,
     },
     prodSpec?.id ?? null,
   );

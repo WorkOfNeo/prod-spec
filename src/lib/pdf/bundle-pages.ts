@@ -75,6 +75,12 @@ export type CoverPageInput = {
   // 01 document still ships alongside; the cover carries the requirements
   // so they can't be missed by someone who only opens/prints the cover.
   generalInfo?: { markdown: string; settings?: PageSettings } | null;
+  // GLOBAL cover content block (AppSetting "coverPageInfoMd") — admin-authored
+  // markdown printed on the cover SHEET itself (page 1), below the required-
+  // packaging manifest. Same trust boundary as generalInfo (admin-only), so no
+  // sanitiser pass. Empty/absent ⇒ nothing rendered. Its images are inlined by
+  // renderStyleCoverPdf before the PDF pass.
+  coverInfo?: { markdown: string } | null;
 };
 
 export type GeneralInfoInput = {
@@ -148,12 +154,23 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
       }
     </p>`;
 
+  // Global cover content block — admin-authored boilerplate printed on the cover
+  // sheet, below the manifest. gfm profile, async:false (a string return is
+  // guaranteed; an async extension would throw loudly). Images are already
+  // inlined to data URLs by the time this renders (renderStyleCoverPdf).
+  const coverInfoMd = input.coverInfo?.markdown.trim();
+  const coverInfoBlock = coverInfoMd
+    ? `<div class="cover-info md">${marked.parse(coverInfoMd, { async: false })}</div>`
+    : "";
+
   const sections: A4Section[] = [
     {
       pageName: null, // default @page — the cover's own margins
       mode: "page",
-      body: `<div class="cov">${body}</div>`,
-      extraCss: COVER_CSS,
+      body: `<div class="cov">${body}${coverInfoBlock}</div>`,
+      // The cover sheet can now carry markdown (the global block), so the
+      // markdown type styles ride along with the cover styles on this section.
+      extraCss: `${COVER_CSS}\n${MARKDOWN_CSS}`,
       settings,
       footerLeft: `Prod Spec · ${esc(input.customerName)}${
         input.businessArea ? ` · ${esc(input.businessArea)}` : ""
@@ -390,6 +407,17 @@ const COVER_CSS = `
     font-weight: bold;
   }
   .cov .note { margin-top: 5mm; font-size: 0.8em; color: #71717a; }
+  /* Global cover content block — sits on the cover sheet under the manifest,
+     set off by a hairline rule. Its inner markdown inherits the .md type
+     styles; keep the first element flush to the rule. */
+  .cov .cover-info {
+    margin-top: 7mm;
+    padding-top: 5mm;
+    border-top: 0.3mm solid #d4d4d8;
+    font-size: 0.9em;
+  }
+  .cov .cover-info > :first-child { margin-top: 0; }
+  .cov .cover-info img { max-width: 100%; }
 `;
 
 const MARKDOWN_CSS = `
