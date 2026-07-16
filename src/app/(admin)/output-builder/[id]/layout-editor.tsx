@@ -266,6 +266,18 @@ export function LayoutEditor({
   const contentTaRef = useRef<HTMLTextAreaElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const firstRender = useRef(true);
+  // Keeps the operator's picked test style selected across the background
+  // re-ranks the test-styles effect fires while you edit. A ref (not a dep)
+  // so the fetch closure reads the latest pick without re-running the effect.
+  const selectedStyleIdRef = useRef<string | null>(null);
+  // The context (customer|area|search) the styles list was last fetched for.
+  // Only a change here shows the blocking loader + re-picks a style; a token
+  // re-rank keeps the current list, nav and selection in place — no jump.
+  const styleCtxRef = useRef<string>("");
+
+  // Guide drawer — the "?" beside Save/Open PDF opens an in-editor reader for
+  // the admin Output Builder guide (also at /guides/output-builder).
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const page: LayoutPage | undefined = def.pages[pageIdx];
   const selBlock = page?.blocks.find((b) => blockId(b) === sel) ?? null;
@@ -650,8 +662,21 @@ export function LayoutEditor({
     return [...keys].sort().join(",");
   }, [def]);
 
+  // Track the currently-selected style id so the fetch below can re-find it
+  // after a re-rank without listing styleIdx/styles as effect deps.
+  useEffect(() => {
+    selectedStyleIdRef.current = testStyle?.id ?? null;
+  }, [testStyle?.id]);
+
   useEffect(() => {
     let cancelled = false;
+    // A change of customer / business area / search is a genuinely new list:
+    // show the loader and let the fullest style be picked. A token re-rank
+    // (you edited the layout, so the fullest-first ranking may shift) is a
+    // background refresh — keep the current nav + selection so it doesn't jump.
+    const ctxKey = `${customerId ?? ""}|${businessAreaId ?? ""}|${styleQuery.trim()}`;
+    const contextChanged = ctxKey !== styleCtxRef.current;
+    styleCtxRef.current = ctxKey;
     const t = window.setTimeout(async () => {
       if (!customerId || !businessAreaId) {
         if (!cancelled) {
@@ -660,7 +685,7 @@ export function LayoutEditor({
         }
         return;
       }
-      if (!cancelled) setStylesLoading(true);
+      if (!cancelled && contextChanged) setStylesLoading(true);
       try {
         const res = await fetch("/api/admin/output-layouts/test-styles", {
           method: "POST",
@@ -678,8 +703,14 @@ export function LayoutEditor({
           return;
         }
         const body = (await res.json()) as { styles: TestStyle[] };
+        if (cancelled) return;
+        // Preserve the operator's pick across the refetch: re-find it by id in
+        // the new ranking. Fall back to the fullest (index 0) only when it's
+        // gone — a different customer, or a search that excludes it.
+        const prevId = selectedStyleIdRef.current;
+        const keepIdx = prevId ? body.styles.findIndex((s) => s.id === prevId) : -1;
         setStyles(body.styles);
-        setStyleIdx(0);
+        setStyleIdx(keepIdx >= 0 ? keepIdx : 0);
       } finally {
         if (!cancelled) setStylesLoading(false);
       }
@@ -777,6 +808,16 @@ export function LayoutEditor({
   useEffect(() => {
     setHoverBlock(null);
   }, [pageIdx]);
+
+  // Esc closes the guide drawer.
+  useEffect(() => {
+    if (!guideOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setGuideOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [guideOpen]);
 
   // ---- actions -----------------------------------------------------------
 
@@ -988,6 +1029,15 @@ export function LayoutEditor({
           <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
+              onClick={() => setGuideOpen(true)}
+              aria-label="Output Builder guide"
+              title="Output Builder guide — what every control does and how to use it"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-sm font-semibold text-zinc-500 hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-800"
+            >
+              ?
+            </button>
+            <button
+              type="button"
               onClick={saveNow}
               disabled={saveState === "saved" || saveState === "saving"}
               className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
@@ -1098,6 +1148,52 @@ export function LayoutEditor({
                 {deleting ? "Deleting…" : "Delete"}
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ---------- guide drawer ---------- */}
+      {guideOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex justify-end bg-black/30"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Output Builder guide"
+          onClick={() => setGuideOpen(false)}
+        >
+          <div
+            className="flex h-full w-full max-w-[46rem] flex-col bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 border-b border-zinc-200 px-5 py-3">
+              <div className="text-sm font-semibold tracking-tight text-zinc-900">
+                Output Builder — guide
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                <a
+                  href="/guides/output-builder"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+                  title="Open the full guide page (with PDF download) in a new tab"
+                >
+                  Pop out ↗
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setGuideOpen(false)}
+                  aria-label="Close guide"
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            <iframe
+              src="/guides/admin-output-builder.html"
+              title="Output Builder guide"
+              className="min-h-0 flex-1 border-0"
+            />
           </div>
         </div>
       ) : null}
