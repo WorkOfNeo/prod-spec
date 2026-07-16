@@ -11,6 +11,7 @@ const SETTINGS_ITEMS: Array<{ href: string; label: string }> = [
   { href: "/settings", label: "General" },
   { href: "/settings/cover-page", label: "Cover page" },
   { href: "/settings/approved", label: "Approved & delivery" },
+  { href: "/settings/style-dashboard", label: "Style dashboard" },
   { href: "/settings/notifications", label: "Notifications" },
   { href: "/settings/rejection-log", label: "Rejection log" },
   { href: "/settings/review-activity", label: "Review activity" },
