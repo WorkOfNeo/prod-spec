@@ -107,9 +107,15 @@ export async function pushQueuedSupplierUploads(opts?: {
 
   const items = await db.supplierSendQueueItem.findMany({
     where: {
-      OR: [{ sentAt: null }, { queuedAt: { gte: new Date(Date.now() - SENT_RETRY_LEASE_MS) } }],
+      // The sent-retry lease only bounds the GLOBAL cron sweep (it exists so a
+      // gap nobody fixes stops churning Graph after a week). A push targeted at
+      // specific styles is a deliberate act — an approval, the operator picking
+      // a PO folder, a cover regen — so it retries that style's sent rows
+      // regardless of how long ago they aged out.
+      ...(opts?.styleIds && opts.styleIds.length > 0
+        ? { styleId: { in: opts.styleIds } }
+        : { OR: [{ sentAt: null }, { queuedAt: { gte: new Date(Date.now() - SENT_RETRY_LEASE_MS) } }] }),
       sharePointStatus: { not: "UPLOADED" },
-      ...(opts?.styleIds && opts.styleIds.length > 0 ? { styleId: { in: opts.styleIds } } : {}),
       ...(opts?.includeFloated
         ? {}
         : { NOT: { sharePointStatus: "FAILED", pushAttempts: { gte: MAX_PUSH_ATTEMPTS } } }),

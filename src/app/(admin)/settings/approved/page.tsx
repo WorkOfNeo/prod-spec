@@ -9,7 +9,7 @@ import {
 } from "@/lib/settings/app-settings";
 import { combineSupplierRecipients } from "@/lib/suppliers/recipients";
 import { loadContactEmailsBySupplier } from "@/lib/suppliers/contact-emails";
-import { MAX_PUSH_ATTEMPTS } from "@/lib/sharepoint/push-queued-to-supplier";
+import { MAX_PUSH_ATTEMPTS, SENT_RETRY_LEASE_MS } from "@/lib/sharepoint/push-queued-to-supplier";
 import { parseFolderMatches } from "@/lib/sharepoint/po-folder-matches";
 import { PoFolderPicker } from "@/app/(admin)/styles/[id]/po-folder-picker";
 import { SupplierSendSetting, SupplierSendCutoff } from "./supplier-send-setting";
@@ -39,6 +39,7 @@ export default async function ApprovedDeliveryPage() {
     cutoffEffective,
     generationCutoff,
     pending,
+    sentGaps,
     batches,
     floatedCount,
     queuedRefs,
@@ -53,6 +54,18 @@ export default async function ApprovedDeliveryPage() {
       take: 500,
       // Read the error separately (guarded) so this list can't 500 in the window
       // between deploy and `db:deploy` adding the sharePointError column.
+      omit: { sharePointError: true },
+    }),
+    // SharePoint gaps: the digest email went out but the files are NOT in the
+    // supplier's folder. The midnight batch stamps sentAt on every row it
+    // emails whatever its upload state, so these rows are invisible in the
+    // sentAt-null queue above — without this list a flagged row silently
+    // disappears from the page at midnight while the supplier was just told
+    // "your files are in the folder".
+    db.supplierSendQueueItem.findMany({
+      where: { sentAt: { not: null }, sharePointStatus: { not: "UPLOADED" } },
+      orderBy: { lastPushAt: "desc" },
+      take: 200,
       omit: { sharePointError: true },
     }),
     db.supplierSendBatch.findMany({ orderBy: { createdAt: "desc" }, take: 15 }),
@@ -70,7 +83,10 @@ export default async function ApprovedDeliveryPage() {
   let pushErrorById = new Map<string, string>();
   try {
     const errs = await db.supplierSendQueueItem.findMany({
-      where: { id: { in: pending.map((p) => p.id) }, sharePointError: { not: null } },
+      where: {
+        id: { in: [...pending, ...sentGaps].map((p) => p.id) },
+        sharePointError: { not: null },
+      },
       select: { id: true, sharePointError: true },
     });
     pushErrorById = new Map(errs.map((e) => [e.id, e.sharePointError as string]));
@@ -116,10 +132,12 @@ export default async function ApprovedDeliveryPage() {
       : [],
   );
 
-  // Resolve the loose refs (styleId / customerId / supplierId) in bulk.
-  const styleIds = [...new Set(pending.map((p) => p.styleId))];
-  const customerIds = [...new Set(pending.map((p) => p.customerId))];
-  const supplierIds = [...new Set(pending.map((p) => p.supplierId).filter((x): x is string => !!x))];
+  // Resolve the loose refs (styleId / customerId / supplierId) in bulk —
+  // covering both the unsent queue and the sent-gaps list.
+  const allRows = [...pending, ...sentGaps];
+  const styleIds = [...new Set(allRows.map((p) => p.styleId))];
+  const customerIds = [...new Set(allRows.map((p) => p.customerId))];
+  const supplierIds = [...new Set(allRows.map((p) => p.supplierId).filter((x): x is string => !!x))];
 
   const [styles, customers, suppliers] = await Promise.all([
     db.style.findMany({
@@ -396,6 +414,121 @@ export default async function ApprovedDeliveryPage() {
                     </td>
                     <td className="px-4 py-2 text-xs text-zinc-500">
                       {item.queuedAt.toISOString().slice(0, 16).replace("T", " ")}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* SharePoint gaps — the digest already told the supplier "your files are
+          in the folder", but this row's files are NOT there (flagged status
+          after send, or re-armed by the self-heal verify). These rows are
+          invisible in the queue above (it's sentAt-null only), so without this
+          section a flagged row vanishes from the page at midnight. */}
+      <h2 className="mt-8 mb-2 text-sm font-semibold text-zinc-700">
+        SharePoint gaps — sent, but files not in the folder
+        {sentGaps.length > 0 ? (
+          <span className="ml-2 inline-flex rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-700">
+            {sentGaps.length}
+          </span>
+        ) : null}
+      </h2>
+      <div className="overflow-hidden rounded-lg border border-zinc-200">
+        <table className="w-full text-sm">
+          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+            <tr>
+              <th className="px-4 py-2">Customer / BA</th>
+              <th className="px-4 py-2">Style</th>
+              <th className="px-4 py-2">Output</th>
+              <th className="px-4 py-2">Supplier</th>
+              <th className="px-4 py-2">SharePoint</th>
+              <th className="px-4 py-2">Retry</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sentGaps.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-6 text-center text-zinc-500">
+                  None — every sent output&rsquo;s files are in its supplier folder.
+                </td>
+              </tr>
+            ) : (
+              sentGaps.map((item) => {
+                const style = styleById.get(item.styleId);
+                const customer = customerById.get(item.customerId);
+                const ba = style?.businessAreaRef?.name ?? style?.businessArea ?? "—";
+                // Inside the lease the recurring sweep still retries this row;
+                // past it only a targeted push (approving the style again,
+                // picking a folder here, or the style page's "Push to
+                // supplier") will move it.
+                const inLease = item.queuedAt.getTime() >= Date.now() - SENT_RETRY_LEASE_MS;
+                return (
+                  <tr key={item.id} className="border-t border-zinc-100">
+                    <td className="px-4 py-2">
+                      <div className="font-medium text-zinc-800">{customer?.name ?? "—"}</div>
+                      <div className="text-xs text-zinc-500">{ba}</div>
+                    </td>
+                    <td className="px-4 py-2">
+                      <Link href={`/styles/${item.styleId}`} className="text-zinc-700 underline">
+                        {style?.name ?? item.styleId}
+                      </Link>
+                      {style?.poNumber ? (
+                        <div className="font-mono text-[11px] text-zinc-400">{style.poNumber}</div>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-2">
+                      <div className="text-zinc-700">{item.displayName ?? item.docType}</div>
+                      <div className="font-mono text-[11px] text-zinc-400">{item.variantKey}</div>
+                    </td>
+                    <td className="px-4 py-2 text-zinc-600">
+                      {item.supplierId ? supplierById.get(item.supplierId)?.name ?? "—" : (
+                        <span className="text-red-500">none</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2">
+                      <span
+                        className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${spPill(item.sharePointStatus)}`}
+                      >
+                        {spLabel(item.sharePointStatus)}
+                      </span>
+                      {pushErrorById.get(item.id) ? (
+                        <div
+                          className="mt-0.5 max-w-[280px] text-[10px] leading-tight text-red-600"
+                          title={pushErrorById.get(item.id)}
+                        >
+                          {pushErrorById.get(item.id)}
+                        </div>
+                      ) : null}
+                      {item.sharePointStatus === "AMBIGUOUS" ? (
+                        <div className="mt-1 text-[10px] text-fuchsia-700">
+                          <div className="mb-0.5">pick where to send:</div>
+                          <PoFolderPicker
+                            styleId={item.styleId}
+                            matches={parseFolderMatches(item.sharePointFolderMatches)}
+                            compact
+                          />
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-2 text-xs">
+                      {inLease ? (
+                        <span className="text-emerald-700">auto-retrying</span>
+                      ) : (
+                        <span className="text-zinc-500">
+                          aged out — re-push from the{" "}
+                          <Link href={`/styles/${item.styleId}`} className="underline">
+                            style page
+                          </Link>
+                        </span>
+                      )}
+                      {item.lastPushAt ? (
+                        <div className="mt-0.5 text-[10px] text-zinc-400">
+                          last try {item.lastPushAt.toISOString().slice(0, 16).replace("T", " ")}
+                        </div>
+                      ) : null}
                     </td>
                   </tr>
                 );
