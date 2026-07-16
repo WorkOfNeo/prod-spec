@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { refreshStyleCoverAsset, type CoverRefreshResult } from "@/lib/pdf/refresh-cover";
-import { enqueueCoverForSupplier } from "@/lib/publish/requeue-cover";
+import { enqueueCoverForSupplier, type CoverRequeueResult } from "@/lib/publish/requeue-cover";
 import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
 
 // =====================================================
@@ -19,7 +19,7 @@ import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-suppl
 export type CoverSweepStyleOutcome = CoverRefreshResult & {
   // Present when deliver was requested and the cover was refreshed: whether the
   // supplier queue row was re-armed for the SharePoint push + nightly digest.
-  requeue?: "queued" | "not-delivered";
+  requeue?: CoverRequeueResult;
 };
 
 export type CoverSweepChunkResult = {

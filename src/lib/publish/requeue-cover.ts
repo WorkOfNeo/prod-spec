@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
+import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { parseCustomerConfig } from "@/lib/customers/config";
 
 // =====================================================
@@ -18,11 +18,16 @@ import { parseCustomerConfig } from "@/lib/customers/config";
 // re-pushes it (overwriting the prior cover by its stable filename) and the
 // nightly digest carries it.
 //
-// The only gate is a real delivery target: a linked supplier that isn't a
-// self-delivering customer (config.skipSupplierDelivery). Approval is NOT a gate.
+// Gates (approval is NOT one):
+//   • a real delivery target — a linked supplier that isn't a self-delivering
+//     customer (config.skipSupplierDelivery), and
+//   • the style has ≥1 real output generated. A cover for a style with NO
+//     outputs is just the manifest with everything "Awaiting Contrast
+//     confirmation"; it must not be auto-shipped to the supplier folder on its
+//     own. The cover ships only once there's an actual layout to accompany.
 // =====================================================
 
-export type CoverRequeueResult = "queued" | "not-delivered";
+export type CoverRequeueResult = "queued" | "not-delivered" | "no-outputs";
 
 export async function enqueueCoverForSupplier(
   styleId: string,
@@ -44,6 +49,20 @@ export async function enqueueCoverForSupplier(
   // deliver their own goods; their styles never enter the queue.
   if (!style.supplierId) return "not-delivered";
   if (parseCustomerConfig(style.customer.config).skipSupplierDelivery) return "not-delivered";
+
+  // Don't auto-ship a cover for a style that has no real outputs yet — a
+  // cover-only bundle (the manifest with everything "Awaiting Contrast
+  // confirmation") must never land in the supplier folder on its own. Require
+  // ≥1 generated output document (any review status; framing pages — cover /
+  // general info — and legacy null-key rows don't count). Same "has a generated
+  // output" shape the /styles bulk-regen route uses.
+  const outputCount = await db.jobAsset.count({
+    where: {
+      job: { styleId, status: { not: "FAILED" } },
+      variantKey: { notIn: [COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY], not: null },
+    },
+  });
+  if (outputCount === 0) return "no-outputs";
 
   // Force-armed state: whether the row existed (previously sent) or not, it
   // must end up pending + unpushed so the sweep + digest pick the fresh cover.
