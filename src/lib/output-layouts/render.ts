@@ -1,6 +1,6 @@
 import type { StyleData, SizeVariant } from "@/lib/pdf/types";
 import { escapeHtml, htmlDocument } from "@/lib/pdf/templates/base";
-import { renderBarcodeDataUrl } from "@/lib/pdf/barcode";
+import { renderBarcodePng } from "@/lib/pdf/barcode";
 import {
   getWashcareSymbol,
   loadWashcareSymbols,
@@ -55,6 +55,9 @@ import {
 // Graphics scale with the block's font size (9 pt = the classic sizes):
 //   barcode bars  fontPt × 16/9 mm     EAN digits  fontPt × 10/9 pt
 //   wash symbols  fontPt × 6/9 mm
+// Exception: {{barcode:…:H}} sets an explicit bar height of H mm — the
+// symbol then prints at true physical size (standard module width, digits
+// unscaled) regardless of the block font. See renderBarcodeHtml.
 //
 // Page sizes: every page gets a CSS named page (@page olp<i>) with its
 // own mm size, so one PDF can carry differently-sized pages. Chromium
@@ -213,7 +216,7 @@ const ANCHOR_ALIGN: Record<LayoutAnchor, "left" | "right"> = {
 
 type RenderCtx = {
   mode: LayoutRenderMode;
-  barcodes: Map<string, string | null>; // "symbology:value" → data URL (null = encode failed)
+  barcodes: BarcodeCache; // "symbology:height:value" → rendered PNG (null = encode failed)
   symbols: WashcareSymbolMap | null; // loaded only when {{washSymbols}} is used
   logos: { contrast: string | null; contrastAddress: string | null; custom: string | null }; // loaded only when {{logo:…}} is used
   certs: CertificateMap | null; // loaded only when {{cert:…}} is used
@@ -257,36 +260,93 @@ export function barcodeSymbology(style: StyleData, source: BarcodeSource): Barco
   return style.cartonBarcode?.type ?? "ean128";
 }
 
-async function buildBarcodeCache(styles: StyleData[], pages: LayoutPage[]): Promise<Map<string, string | null>> {
-  const wanted = new Map<string, { symbology: BarcodeSymbology; value: string }>();
+// Rendered barcode PNG + its true physical size in mm (bars AND the
+// human-readable digit row) — needed to print an explicit-height barcode at
+// actual size instead of stretching it to the block's font-scaled default.
+// widthMm is the symbol's 100%-magnification width (for EAN-13 ≈ the GS1
+// nominal 37.3 mm incl. light-margin digits); the fit logic scales the
+// printed width between 80% and 100% of it.
+type BarcodeEntry = { dataUrl: string; totalMm: number; widthMm: number };
+type BarcodeCache = Map<string, BarcodeEntry | null>;
+
+// Optional {{barcode:…:H}} second argument — explicit bar height in mm.
+// Mirrors validateTokenRef's 2–40 mm publish gate; out-of-range/garbage
+// degrades to the default font-scaled sizing instead of breaking a print.
+function parseBarHeightMm(arg2: string | undefined): number | null {
+  if (arg2 === undefined) return null;
+  const n = Number(arg2);
+  return Number.isFinite(n) && n >= 2 && n <= 40 ? n : null;
+}
+
+function barcodeCacheKey(symbology: BarcodeSymbology, heightMm: number | null, value: string): string {
+  return `${symbology}:${heightMm ?? ""}:${value}`;
+}
+
+// bwip-js renders at 72 dpi × scale, so px ↔ mm is exact: 1 mm = scale ×
+// 72/25.4 px. Reading the PNG's IHDR height (bytes 20–23) therefore gives
+// the symbol's true physical height including the digit row bwip appends
+// below the bars (includetext).
+const BWIP_PX_PER_MM = 72 / 25.4;
+
+function pngWidthPx(png: Buffer): number {
+  return png.readUInt32BE(16);
+}
+
+function pngHeightPx(png: Buffer): number {
+  return png.readUInt32BE(20);
+}
+
+// GS1 lower bound for EAN magnification — a symbol printed narrower than
+// 80% of nominal is out of spec and starts failing at POS scanners. Fixed-
+// size barcodes fit their block down to this floor, then turn into a
+// visible warning chip instead of silently printing an unscannable code.
+const MIN_MAGNIFICATION = 0.8;
+
+// bwip-js rounds each module up to whole pixels, rendering the symbol a
+// shade wider than GS1-nominal geometry (37.51 mm vs 37.29 mm for EAN-13).
+// Judged against the rendered width alone, a 30 mm block — fine by nominal
+// math (floor 29.83 mm) — would chip on a rounding hair. This factor backs
+// the floor off to the nominal-geometry equivalent.
+const FLOOR_TOLERANCE = 0.995;
+
+async function buildBarcodeCache(styles: StyleData[], pages: LayoutPage[]): Promise<BarcodeCache> {
+  const wanted = new Map<string, { symbology: BarcodeSymbology; heightMm: number | null; value: string }>();
   for (const page of pages) {
     for (const block of page.blocks) {
       for (const line of block.lines) {
         for (const m of line.matchAll(new RegExp(TOKEN_RE.source, "g"))) {
           if (m[1] !== "barcode") continue;
           const source = (m[2] ?? "cartonEan") as BarcodeSource;
+          const heightMm = parseBarHeightMm(m[3]);
           for (const style of styles) {
             const value = resolveBarcodeValue(style, source);
             if (!value) continue;
             const symbology = barcodeSymbology(style, source);
-            wanted.set(`${symbology}:${value}`, { symbology, value });
+            wanted.set(barcodeCacheKey(symbology, heightMm, value), { symbology, heightMm, value });
           }
         }
       }
     }
   }
-  const cache = new Map<string, string | null>();
+  const cache: BarcodeCache = new Map();
   await Promise.all(
-    [...wanted.entries()].map(async ([cacheKey, { symbology, value }]) => {
+    [...wanted.entries()].map(async ([cacheKey, { symbology, heightMm, value }]) => {
       try {
         // EAN-128 (the carton default) prints as Code 128 bars with the
         // number as a separate HTML row beneath; true EAN-13 carries the
-        // human-readable digits inside the symbol (includetext).
-        const dataUrl =
+        // human-readable digits inside the symbol (includetext). An explicit
+        // {{barcode:…:H}} height is baked into the bars here, so the module
+        // width and digit size stay standards-correct at any bar height.
+        const scale = symbology === "ean128" ? 4 : 3;
+        const png =
           symbology === "ean128"
-            ? await renderBarcodeDataUrl(value, { bcid: "code128", scale: 4, height: 16, includetext: false })
-            : await renderBarcodeDataUrl(value, { bcid: "ean13", scale: 3, height: 14, includetext: true });
-        cache.set(cacheKey, dataUrl);
+            ? await renderBarcodePng(value, { bcid: "code128", scale, height: heightMm ?? 16, includetext: false })
+            : await renderBarcodePng(value, { bcid: "ean13", scale, height: heightMm ?? 14, includetext: true });
+        cache.set(cacheKey, {
+          dataUrl: `data:image/png;base64,${png.toString("base64")}`,
+          totalMm: pngHeightPx(png) / (scale * BWIP_PX_PER_MM),
+          widthMm: pngWidthPx(png) / (scale * BWIP_PX_PER_MM),
+        });
       } catch {
         cache.set(cacheKey, null);
       }
@@ -295,7 +355,13 @@ async function buildBarcodeCache(styles: StyleData[], pages: LayoutPage[]): Prom
   return cache;
 }
 
-function renderBarcodeHtml(style: StyleData, source: BarcodeSource, ctx: RenderCtx): string {
+function renderBarcodeHtml(
+  style: StyleData,
+  source: BarcodeSource,
+  ctx: RenderCtx,
+  heightArg?: string,
+  blockWidthMm?: number,
+): string {
   const value = resolveBarcodeValue(style, source);
   if (!value) {
     const label =
@@ -307,19 +373,51 @@ function renderBarcodeHtml(style: StyleData, source: BarcodeSource, ctx: RenderC
     return `<div class="barcode-missing">${escapeHtml(label)}</div>`;
   }
   const symbology = barcodeSymbology(style, source);
-  const dataUrl = ctx.barcodes.get(`${symbology}:${value}`);
-  if (!dataUrl) {
+  const tokenHeightMm = parseBarHeightMm(heightArg);
+  const entry = ctx.barcodes.get(barcodeCacheKey(symbology, tokenHeightMm, value));
+  if (!entry) {
     return `<div class="barcode-missing">EAN ${escapeHtml(value)} — could not encode</div>`;
   }
   // Code 128 carries no digits in the bars image — print the number
   // beneath; EAN-13 includes its text in the symbol (includetext: true).
   const numberRow = symbology === "ean128" ? `<div class="ol-ean-number">${escapeHtml(value)}</div>` : "";
-  // Per-spec bar height (ProdSpec output row) beats the block's
-  // font-scaled default — for the carton barcode only (either symbology).
-  const heightMm =
+  // Display sizing, by precedence:
+  //   1. {{barcode:…:H}} token argument — FIXED PHYSICAL SIZE. Bars are H mm
+  //      on every info-area size (deliberately NOT fontScale-scaled: the
+  //      barcode is the one element with a legal minimum, so the design
+  //      shrinks around it). Width auto-fits the block by adjusting the
+  //      magnification — scanners read relative bar widths, so a uniform
+  //      horizontal squeeze IS a magnification change — but never below the
+  //      80% GS1 floor: a block too narrow for 80% renders the standard
+  //      `barcode-missing` chip instead (visible on preview + proof, counted
+  //      by the placeholder gate, so it can never ship silently).
+  //   2. Per-spec carton bar height (ProdSpec output row) — carton sources
+  //      only (either symbology). Legacy: uniformly scales the default PNG.
+  //   3. Block default — CSS var --ol-bc-h (fontPt × 16/9 mm).
+  if (tokenHeightMm != null) {
+    const natural = entry.widthMm; // 100% magnification
+    const floor = natural * MIN_MAGNIFICATION * FLOOR_TOLERANCE;
+    const avail = blockWidthMm ?? natural;
+    if (avail < floor) {
+      // The block genuinely cannot hold a scannable symbol (the whole PNG —
+      // bwip draws the HRI digits flush to its edges, so nothing about it is
+      // croppable, and the info-area PDF page IS the physical print, so
+      // there's no surrounding stock to overhang onto). Chip in BOTH modes:
+      // visible while designing, printed on the proof, counted by the
+      // placeholder gate so the output can't be approved.
+      return `<div class="barcode-missing">Barcode won't scan at this size — needs ${floor.toFixed(1)} mm, block is ${avail.toFixed(1)} mm wide</div>`;
+    }
+    const printWidth = Math.min(avail, natural);
+    // width + height set independently: height pins the bars at H mm, width
+    // sets the magnification (80–100%). max-width:none guards against the
+    // stylesheet's max-width:100% re-squashing an already-clamped symbol.
+    const imgStyle = ` style="height: ${entry.totalMm.toFixed(3)}mm; width: ${printWidth.toFixed(3)}mm; max-width: none"`;
+    return `<span class="ol-barcode${ctx.mode === "preview" ? " ol-barcode-preview" : ""}"><img src="${entry.dataUrl}"${imgStyle} alt="${escapeHtml(value)}" />${numberRow}</span>`;
+  }
+  const specHeightMm =
     source === "cartonEan" || source === "cartonEan13" ? style.cartonBarcode?.heightMm : undefined;
-  const imgStyle = heightMm ? ` style="height: ${heightMm}mm"` : "";
-  return `<span class="ol-barcode${ctx.mode === "preview" ? " ol-barcode-preview" : ""}"><img src="${dataUrl}"${imgStyle} alt="${escapeHtml(value)}" />${numberRow}</span>`;
+  const imgStyle = specHeightMm ? ` style="height: ${specHeightMm}mm"` : "";
+  return `<span class="ol-barcode${ctx.mode === "preview" ? " ol-barcode-preview" : ""}"><img src="${entry.dataUrl}"${imgStyle} alt="${escapeHtml(value)}" />${numberRow}</span>`;
 }
 
 // Wash-care symbol strip — same honest-gap rules as the coded templates
@@ -356,7 +454,7 @@ function renderWashSymbolsHtml(style: StyleData, ctx: RenderCtx, gapArg?: string
 // literal text escaped, tokens replaced. Returns null when the line
 // should be dropped (production mode, line was only empty tokens /
 // whitespace).
-function renderLine(line: string, style: StyleData, ctx: RenderCtx): string | null {
+function renderLine(line: string, style: StyleData, ctx: RenderCtx, blockWidthMm?: number): string | null {
   // Carton-number lines belong ONLY on a numbered print. A line like
   // "Carton {{cartonNo}} of {{cartonTotal}}" carries literal text, so the
   // token-only drop below would NOT fire — it would print "Carton  of ".
@@ -429,7 +527,7 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx): string | nu
 
     if (meta.kind === "barcode") {
       const source = (arg ?? "cartonEan") as BarcodeSource;
-      html += renderBarcodeHtml(style, source, ctx);
+      html += renderBarcodeHtml(style, source, ctx, m[3] || undefined, blockWidthMm);
       hadValue = true; // barcode renders something in every state
       continue;
     }
@@ -585,16 +683,32 @@ function blockTypography(block: LayoutBlock, fontScale: number): string {
 }
 
 function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx: RenderCtx): string {
+  const { cols: gridCols, rows: gridRows } = pageGrid(page);
+  const marg = page.margins ?? { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 };
+  // Physical content width of this block (page is already the FINAL print
+  // size — a sizeOverrideMm rewrite happened in prepareLayoutRender), minus
+  // border + inner padding (box-sizing: border-box). Fixed-size barcodes
+  // fit their magnification to this.
+  const outerW = block.rect
+    ? ((page.widthMm - marg.leftMm - marg.rightMm) * block.rect.colSpan) / gridCols
+    : (page.widthMm * block.cols) / gridCols;
+  const borderPad = block.border
+    ? (2 * block.border.widthMm +
+        effectiveBorderPad(block.border).leftMm +
+        effectiveBorderPad(block.border).rightMm) *
+      ctx.fontScale
+    : 0;
+  const blockWidthMm = Math.max(0, outerW - borderPad);
+
   const lines = block.lines
-    .map((line) => renderLine(applyConditionalsForStyle(line, style), style, ctx))
+    .map((line) => renderLine(applyConditionalsForStyle(line, style), style, ctx, blockWidthMm))
     .filter((l): l is string => l !== null)
     .map((l) => `<div class="ol-line">${l || "&nbsp;"}</div>`)
     .join("");
 
-  const { cols: gridCols, rows: gridRows } = pageGrid(page);
   if (block.rect) {
     const r = block.rect;
-    const m = page.margins ?? { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 };
+    const m = marg;
     const innerW = page.widthMm - m.leftMm - m.rightMm;
     const innerH = page.heightMm - m.topMm - m.bottomMm;
     const left = (m.leftMm + (innerW * r.col) / gridCols).toFixed(2);

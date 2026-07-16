@@ -30,6 +30,15 @@ import {
   type CurrentOutput,
 } from "@/lib/outputs/current-outputs";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
+import {
+  effectiveOutputDims,
+  listActiveInfoAreaSizes,
+  loadInfoAreaSizeMap,
+} from "@/lib/prod-spec/info-area";
+import {
+  ReviewInfoAreaSizePicker,
+  type InfoAreaSizeOption,
+} from "./info-area-size-picker";
 import { mondayItemUrl } from "@/lib/monday/url";
 import { styleReadinessNotice } from "@/lib/styles/readiness-notice";
 import {
@@ -78,15 +87,20 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   if (!style) notFound();
 
   const { loadStyleFieldValues } = await import("@/lib/outputs/output-field-values");
-  const [outputs, docTypeLabels, fieldValuesByKey, renderContext] = await Promise.all([
-    getCurrentOutputsForStyle(id),
-    loadDocTypeLabels(),
-    loadStyleFieldValues(id),
-    // StyleData for pre-filling the field editor with each output's current
-    // resolved values. Fail-soft: a preview-build hiccup just means blank
-    // pre-fills, never a broken review page.
-    loadStyleRenderContext(id).catch(() => null),
-  ]);
+  const [outputs, docTypeLabels, fieldValuesByKey, renderContext, infoAreaSizes, infoAreaSizeMap] =
+    await Promise.all([
+      getCurrentOutputsForStyle(id),
+      loadDocTypeLabels(),
+      loadStyleFieldValues(id),
+      // StyleData for pre-filling the field editor with each output's current
+      // resolved values. Fail-soft: a preview-build hiccup just means blank
+      // pre-fills, never a broken review page.
+      loadStyleRenderContext(id).catch(() => null),
+      // Info-area print sizes: the active list feeds the in-review picker;
+      // the full map resolves the current pick (even a deactivated one).
+      listActiveInfoAreaSizes(),
+      loadInfoAreaSizeMap(),
+    ]);
   const styleData = renderContext?.styleData ?? null;
   const rollup = rollupOutputSlots(outputs);
   // Reviewers (ADMIN or REVIEWER) may fill/override output fields inline; other
@@ -253,6 +267,30 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
 
   const groups = groupByDocType<CurrentOutput>(current, docTypeLabels);
 
+  // Info-area outputs get an in-card print-size picker (reviewers operate
+  // here, not on the style page). Resolved per output: the ProdSpec entry
+  // carries the pick; the size map names it even if since deactivated.
+  const prodSpecId = style.prodSpec?.id ?? null;
+  const infoAreaFor = (o: CurrentOutput): InfoAreaProps | null => {
+    if (!prodSpecId || !canEditFields) return null;
+    const baseKey = o.variantKey.split("#")[0];
+    if (!getVariant(baseKey)?.isInfoArea) return null;
+    const entry = prodSpecOutputs.find((x) => x.variantKey === baseKey);
+    if (!entry) return null;
+    const dims = effectiveOutputDims(entry, true, infoAreaSizeMap);
+    return {
+      prodSpecId,
+      variantKey: baseKey,
+      sizes: infoAreaSizes,
+      currentSizeId: entry.infoAreaSizeId ?? null,
+      currentSizeName: entry.infoAreaSizeId
+        ? (infoAreaSizeMap.get(entry.infoAreaSizeId)?.name ?? null)
+        : null,
+      widthMm: dims.widthMm,
+      heightMm: dims.heightMm,
+    };
+  };
+
   return (
     <div className="px-8 py-8">
       <LogStyleView styleId={id} surface="REVIEW" />
@@ -348,6 +386,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                     canEditFields={canEditFields}
                     styleData={styleData}
                     fieldValuesByKey={fieldValuesByKey}
+                    infoArea={infoAreaFor(o)}
                   />
                 ))}
               </div>
@@ -532,6 +571,18 @@ function outputFieldEditorProps(
   return { fields: [...new Set(editable)], resolved };
 }
 
+// Props for the in-card info-area print-size picker — null on non-info-area
+// outputs, on history cards, and for viewers without the review role.
+type InfoAreaProps = {
+  prodSpecId: string;
+  variantKey: string;
+  sizes: InfoAreaSizeOption[];
+  currentSizeId: string | null;
+  currentSizeName: string | null;
+  widthMm: number;
+  heightMm: number;
+};
+
 // One reviewable output card — preview + identity header + decision footer.
 // Shared by the current-generation groups and the "Earlier generations"
 // history accordion so a prior-run decision renders identically (and stays
@@ -544,6 +595,7 @@ function OutputReviewCard({
   canEditFields = false,
   styleData = null,
   fieldValuesByKey,
+  infoArea = null,
 }: {
   o: CurrentOutput;
   styleId: string;
@@ -552,6 +604,8 @@ function OutputReviewCard({
   // Reviewer may override this output's fields inline (ADMIN/REVIEWER). The
   // "Earlier generations" cards leave this off — they're reference-only.
   canEditFields?: boolean;
+  // Info-area outputs: the in-card print-size picker (absent on history cards).
+  infoArea?: InfoAreaProps | null;
   // StyleData for pre-filling the editor with resolved values; the full
   // per-(style×output) override map (base + per-PDF keys). Both absent on the
   // history cards.
@@ -684,6 +738,22 @@ function OutputReviewCard({
           ) : null
         }
       />
+      {/* Info-area print size — pick where reviewers operate; saving re-runs
+          this output so the proof above shows the chosen size (including the
+          "barcode won't scan at this size" chip when it can't fit). */}
+      {infoArea ? (
+        <ReviewInfoAreaSizePicker
+          styleId={styleId}
+          prodSpecId={infoArea.prodSpecId}
+          variantKey={infoArea.variantKey}
+          sizes={infoArea.sizes}
+          currentSizeId={infoArea.currentSizeId}
+          currentSizeName={infoArea.currentSizeName}
+          widthMm={infoArea.widthMm}
+          heightMm={infoArea.heightMm}
+          ready={o.missing.length === 0}
+        />
+      ) : null}
       {/* Single-output re-run (WS8) — change the data (wash-care, care label)
           then re-run just this output without touching the rest of the review.
           A scoped re-run regenerates even an approved output (explicit intent),

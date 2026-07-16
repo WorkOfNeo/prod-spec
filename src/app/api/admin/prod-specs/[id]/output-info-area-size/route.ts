@@ -7,9 +7,9 @@ import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 export const runtime = "nodejs";
 
 // Set the per-style info-area size for ONE output of a ProdSpec, from the
-// Style page's output card. The pick lives on ProdSpec.outputs[] (shared by
-// every style under this spec — no per-style column), so this updates that
-// one output entry in place.
+// Style page's output card OR the review screen's output card. The pick
+// lives on ProdSpec.outputs[] (shared by every style under this spec — no
+// per-style column), so this updates that one output entry in place.
 //
 //   PATCH /api/admin/prod-specs/<id>/output-info-area-size
 //   body: { variantKey, infoAreaSizeId: string | null, widthMm?, heightMm? }
@@ -31,7 +31,11 @@ const BODY_SCHEMA = z.object({
 });
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await requireRole(["ADMIN"]);
+  // Reviewers included: the review screen is where sizes are actually picked
+  // (reviewers rarely open the style page). Switching a print size is a
+  // render tweak followed by a re-run — the same trust level as the scoped
+  // re-run / carton customize actions, which are already canReview.
+  const auth = await requireRole(["ADMIN", "REVIEWER"]);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const { id } = await ctx.params;
