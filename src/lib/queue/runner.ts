@@ -35,6 +35,7 @@ import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-suppl
 import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
 import { assembleRequiredPackagingDocs } from "@/lib/outputs/required-packaging";
 import { renderStyleCoverPdf } from "@/lib/pdf/cover";
+import { buildStyleCoverPdf } from "@/lib/pdf/style-cover";
 import { toPlainBytes } from "@/lib/pdf/bytes";
 import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 import { outputConfigKey } from "@/lib/outputs/output-config-key";
@@ -656,11 +657,59 @@ export async function processJob(jobId: string): Promise<void> {
     missingFieldSkips === 0 &&
     excludedOutputs.length === 0
   ) {
+    // The style is fully approved and this run rendered nothing. The old
+    // short-circuit returned HERE — before the cover step — so the cover kept
+    // whatever it last showed, rendered while these outputs were still pending
+    // ("Awaiting Contrast confirmation"). Result: an all-approved style whose
+    // cover still says nothing is approved, and a re-run that never produces a
+    // fresh cover (the exact IL22414 symptom).
+    //
+    // Fix: refresh the cover here too. `approvedBases` already holds every
+    // approved base (that's WHY we short-circuited), so buildStyleCoverPdf renders
+    // the manifest with each output's confirmed size. Persist it on THIS job as
+    // APPROVED (the whole style is; the cover is a framing page, not a reviewable)
+    // so it supersedes the stale cover and the current job owns it. Fail-soft: a
+    // cover hiccup must never stop an approved style settling.
+    let coverPdf: Buffer | null = null;
+    try {
+      coverPdf = await buildStyleCoverPdf(job.id, approvedBases);
+    } catch (err) {
+      await db.log
+        .create({
+          data: {
+            jobId: job.id,
+            level: "WARN",
+            message: `fully-approved cover refresh failed to render: ${(err as Error).message}`,
+          },
+        })
+        .catch(() => {});
+    }
+    const coverFileName = `00-${styleSlug(styleData.styleNumber)}-cover-page.pdf`;
     await db.$transaction([
-      // Scoped to THIS job's own assets — this job generated none, so it's a
-      // no-op; the carried-forward approved assets belong to earlier jobs and
-      // are untouched.
+      // This job generated no output assets, so deleteMany is a no-op for those;
+      // the carried-forward approved assets live on earlier jobs and survive. We
+      // then (re)create just the refreshed cover on THIS job.
       db.jobAsset.deleteMany({ where: { jobId: job.id } }),
+      ...(coverPdf
+        ? [
+            db.jobAsset.create({
+              data: {
+                jobId: job.id,
+                docType: "COVER",
+                variantKey: COVER_VARIANT_KEY,
+                displayName: "Cover page",
+                fileName: coverFileName,
+                pdf: toPlainBytes(coverPdf),
+                placeholderCount: 0,
+                // Fully approved + the cover auto-ships (delivery is decoupled
+                // from approval), so it lands APPROVED — no manual review of a
+                // framing page, and it reads "approved" everywhere.
+                reviewStatus: "APPROVED" as const,
+                reviewedAt: new Date(),
+              },
+            }),
+          ]
+        : []),
       db.job.update({ where: { id: job.id }, data: { status: "APPROVED", finishedAt: new Date() } }),
       db.style.update({ where: { id: job.styleId }, data: { status: "APPROVED" } }),
       db.log.create({
@@ -669,10 +718,26 @@ export async function processJob(jobId: string): Promise<void> {
           level: "INFO",
           message:
             `no new documents generated — all ${approvedSkips} output(s) already approved and ` +
-            `carried forward; approvals preserved, style settled APPROVED`,
+            `carried forward; ${coverPdf ? "cover refreshed to approved state, " : ""}style settled APPROVED`,
         },
       }),
     ]);
+    // Hand the refreshed cover to the supplier folder (decoupled from approval —
+    // the cover always ships and is re-armed on every regeneration). Fail-soft.
+    if (coverPdf) {
+      try {
+        const cover = await db.jobAsset.findFirst({
+          where: { jobId: job.id, variantKey: COVER_VARIANT_KEY },
+          select: { id: true },
+        });
+        if (cover) {
+          await enqueueCoverForSupplier(job.styleId, cover.id);
+          await pushQueuedSupplierUploads({ styleIds: [job.styleId], recordRunAs: "runner" });
+        }
+      } catch (err) {
+        console.warn(`[runner] fully-approved cover enqueue/push failed for ${job.styleId}:`, err);
+      }
+    }
     return;
   }
 
