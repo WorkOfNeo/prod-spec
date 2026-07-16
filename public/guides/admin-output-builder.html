@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Admin guide · Output Builder — designing a print layout</title>
+<link rel="stylesheet" href="_guide.css" />
+<style>
+  /* ---- Output-Builder-specific mock widgets (on top of _guide.css) ---- */
+  .ob-bar { display:flex; align-items:center; flex-wrap:wrap; gap:7px; padding:9px 12px; }
+  .ob-bar.sub { border-top:1px solid #f4f4f5; }
+  .ob-tabs { display:flex; gap:16px; padding:0 12px; border-top:1px solid #f4f4f5; }
+  .ob-tab { padding:8px 2px; font-size:10.5px; font-weight:600; color:#a1a1aa; border-bottom:2px solid transparent; }
+  .ob-tab.on { color:#18181b; border-bottom-color:#18181b; }
+  .ob-input { border:1px solid #d4d4d8; border-radius:6px; background:#fff; padding:4px 8px; font-size:10px; color:#3f3f46; }
+  .ob-input.mono { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:9.5px; }
+  .ob-sel { border:1px solid #d4d4d8; border-radius:6px; background:#fff; padding:4px 8px; font-size:10px; color:#3f3f46; display:inline-flex; align-items:center; gap:14px; }
+  .ob-sel .cv { color:#a1a1aa; }
+  .ob-lbl { font-size:8px; text-transform:uppercase; letter-spacing:.06em; color:#71717a; margin-bottom:3px; }
+  .ob-btn { border:1px solid #d4d4d8; border-radius:6px; background:#fff; padding:4px 10px; font-size:10px; font-weight:600; color:#3f3f46; }
+  .ob-btn.dark { background:#18181b; border-color:#18181b; color:#fff; }
+  .ob-btn.q { width:22px; height:22px; padding:0; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; color:#71717a; }
+  .ob-tok { display:inline-block; border:1px solid #e4e4e7; background:#fafafa; border-radius:5px; padding:2px 6px; font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:9px; color:#52525b; }
+  .ob-tok.rd { border-color:#fecaca; background:#fef2f2; color:#b91c1c; }
+  .ob-tok.sk { border-color:#bae6fd; background:#f0f9ff; color:#0369a1; }
+  .ob-tok.it { font-style:italic; color:#a1a1aa; background:#fff; }
+  .ob-canvas { position:relative; border:1px solid #d4d4d8; background:#fff;
+    background-image:
+      repeating-linear-gradient(to right, transparent 0, transparent calc(12.5% - 1px), rgba(24,24,27,.06) calc(12.5% - 1px), rgba(24,24,27,.06) 12.5%),
+      repeating-linear-gradient(to bottom, transparent 0, transparent calc(16.66% - 1px), rgba(24,24,27,.06) calc(16.66% - 1px), rgba(24,24,27,.06) 16.66%);
+  }
+  .ob-blk { position:absolute; border:1px solid rgba(24,24,27,.35); background:rgba(255,255,255,.5); border-radius:3px; font-size:8px; color:#3f3f46; padding:2px 3px; overflow:hidden; }
+  .ob-blk.sel { border:1.5px solid #18181b; box-shadow:0 0 0 2px rgba(24,24,27,.12); }
+  .ob-row { display:flex; align-items:center; gap:6px; padding:4px 6px; border:1px solid transparent; border-radius:6px; font-size:9.5px; color:#52525b; }
+  .ob-row.sel { border-color:#18181b; background:#fafafa; color:#18181b; }
+  .ob-row .kd { border:1px solid #e4e4e7; background:#f4f4f5; border-radius:3px; padding:0 4px; font-size:7.5px; text-transform:uppercase; letter-spacing:.04em; color:#71717a; }
+  .ob-seg { display:inline-flex; border:1px solid #d4d4d8; border-radius:6px; overflow:hidden; }
+  .ob-seg span { padding:3px 8px; font-size:9px; color:#52525b; }
+  .ob-seg span.on { background:#18181b; color:#fff; font-weight:600; }
+  .ob-toggle { width:30px; height:17px; border-radius:99px; background:#34d399; position:relative; flex:none; }
+  .ob-toggle i { position:absolute; top:2px; right:2px; width:13px; height:13px; border-radius:50%; background:#fff; }
+  .ob-panel { border:1px solid #e4e4e7; border-radius:9px; padding:9px 10px; background:#fff; }
+  .ob-cap { font-size:8.5px; text-transform:uppercase; letter-spacing:.07em; color:#a1a1aa; font-weight:700; }
+  .keyword { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:.92em; background:#f4f4f5; border-radius:4px; padding:1px 4px; }
+</style>
+</head>
+<body>
+
+  <div class="doc-head">
+    <div class="kicker">Prod Spec · Admin guide</div>
+    <h1>Output Builder — designing a print layout</h1>
+    <p class="sub">The Output Builder is where you draw a reusable <b>print template</b> — a care label, price sticker, carton marking, hang-tag — position text and graphics on a true-size page, and wire in the <b>variables</b> that fill it per style. This guide walks every control on the screen: what it means and how to use it.</p>
+    <div class="crumb">Admins only · open it at <b>Output builder</b> ▸ click a layout (or <b>+ New</b>). The <b>?</b> beside <b>Save</b> / <b>Open&nbsp;PDF</b> opens this guide in a side panel while you work.</div>
+  </div>
+
+  <!-- ============ 0 · THE BIG PICTURE ============ -->
+  <div class="section">
+    <h2><span class="n">0</span> How a layout becomes a printed document</h2>
+    <p class="lead">A layout on its own prints nothing. It becomes a real output only after you <b>Publish</b> it and add it to a style's <b>Prod Spec</b>. Keep this five-step path in mind — most of the builder's settings make sense once you see where the output ends up.</p>
+    <div class="flow">
+      <div class="step"><span class="si">1</span><span class="st"><b>Design</b> the layout here — page size, blocks, variables — with a real test style in the live preview.</span></div>
+      <div class="step"><span class="si">2</span><span class="st"><b>Publish</b> it. Publishing validates every variable and turns the Draft into a versioned, usable output <span class="keyword">layout:&lt;id&gt;</span>.</span></div>
+      <div class="step"><span class="si">3</span><span class="st"><b>Add it to a Prod Spec</b> (Prod specs ▸ open a spec ▸ add output). Only then is it attached to styles.</span></div>
+      <div class="step"><span class="si">4</span><span class="st"><b>Generation</b> renders a PDF per style (and per size/EAN, if you set it to repeat), filling the variables from that style's data.</span></div>
+      <div class="step"><span class="si">5</span><span class="st"><b>Review</b> — each PDF is approved or rejected, then sent to the supplier from the style page.</span></div>
+    </div>
+    <div class="note good">
+      <div class="h">Once published, edits go live on save</div>
+      <p>A <b>Published</b> layout is used by every spec that references it. Your next autosave changes what those specs generate from then on — there's no separate re-publish step for edits. Draft layouts are private until you publish.</p>
+    </div>
+    <p class="cap" style="margin-top:11px;">The editor has <b>three tabs</b> — you'll spend almost all your time in the first:</p>
+    <div class="mock" style="margin-top:6px;">
+      <div class="chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">prod-spec.app / output-builder / A6 care label</span></div>
+      <div class="appbody"><div class="canvas" style="padding:0;">
+        <div class="ob-tabs">
+          <span class="ob-tab on">Customizer</span>
+          <span class="ob-tab">Reviews</span>
+          <span class="ob-tab">Settings</span>
+        </div>
+        <div style="padding:11px 13px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;">
+          <div class="ob-panel"><div class="ob-cap">Customizer</div><p style="margin-top:4px;font-size:9.5px;color:#52525b;">The design surface — pages, the canvas you draw on, the block inspector and the variable palette. Everything below lives here.</p></div>
+          <div class="ob-panel"><div class="ob-cap">Reviews</div><p style="margin-top:4px;font-size:9.5px;color:#52525b;">The most recent PDFs this output produced across all styles, with their approve / reject status.</p></div>
+          <div class="ob-panel"><div class="ob-cap">Settings</div><p style="margin-top:4px;font-size:9.5px;color:#52525b;">Generation totals and the <b>auto-approve</b> switch. (Repeat / file name / carton live in the Customizer, beside the canvas.)</p></div>
+        </div>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- ============ 1 · HEADER ============ -->
+  <div class="section">
+    <h2><span class="n">1</span> The header — identity, saving &amp; publishing</h2>
+    <p class="lead">The sticky top bar carries the layout's identity on the left and its actions on the right. It's the same on every tab.</p>
+
+    <div class="mock">
+      <div class="chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">prod-spec.app / output-builder / A6 care label</span></div>
+      <div class="appbody"><div class="canvas" style="padding:0;">
+        <div class="ob-bar">
+          <span style="color:#a1a1aa;font-size:10px;">← Output builder</span>
+          <span class="ob-input" style="font-weight:800;color:#18181b;min-width:120px;">A6 care label <span class="mk in">1</span></span>
+          <span class="ob-sel">Care label <span class="cv">▾</span></span> <span class="mk in">2</span>
+          <span style="font-size:9px;color:#a1a1aa;text-decoration:underline;">Manage types</span>
+          <span class="ob-input" style="display:inline-flex;gap:5px;align-items:center;"><span style="width:10px;height:10px;border:1px solid #a1a1aa;border-radius:2px;"></span>Info area <span class="mk in">3</span></span>
+          <span class="pill em">Published · v4 <span class="mk in">4</span></span>
+          <span style="font-size:9px;color:#a1a1aa;">Saved · 14:32 <span class="mk in">5</span></span>
+          <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">
+            <span class="ob-btn q">? <span class="mk in">6</span></span>
+            <span class="ob-btn">Save</span>
+            <span class="ob-btn">Open PDF <span class="mk in">7</span></span>
+            <span class="ob-btn dark">Publish <span class="mk in">8</span></span>
+            <span style="color:#c4c4c8;font-size:10px;border-left:1px solid #e4e4e7;padding-left:8px;">Delete <span class="mk in">9</span></span>
+          </span>
+        </div>
+      </div></div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>Name</b> — click to rename. Purely a label for you; it's how the layout shows in the list and the Prod Spec output picker.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>Document type</b> — groups the output in pickers and stamps every generated asset (e.g. <b>Care label</b>, <b>Carton marking</b>). Some app behaviour keys off it (carton outputs get extra powers). <b>Manage types</b> opens the catalogue to add / rename a type and set keyword <b>exclusion rules</b>.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>Info area</b> — tick this and the layout's print size becomes <b>switchable per style</b> on the Style page (the admin size, or a custom one). For fixed-size labels leave it off. Sizes are managed under <b>Settings → Info area sizes</b>.</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>Status pill</b> — <span class="pill zc" style="margin:0 2px;">Draft</span> (private, not usable yet) or <span class="pill em" style="margin:0 2px;">Published · v#</span> (live; edits go live on save).</span></li>
+      <li><span class="ln"><span class="mk">5</span></span><span class="tx"><b>Save state</b> — <i>Unsaved changes → Saving… → Saved · time</i>. <b>Autosave</b> fires 1.2&nbsp;s after your last change; the browser also warns before you leave with anything unsaved.</span></li>
+      <li><span class="ln"><span class="mk">6</span></span><span class="tx"><b>?</b> — this guide, in a side panel you can read while you build (with a <b>Pop out ↗</b> to the full page + PDF).</span></li>
+      <li><span class="ln"><span class="mk">7</span></span><span class="tx"><b>Open PDF</b> — renders the <b>real</b> production PDF for the selected test style and opens it in a new tab. The truest proof of what will print.</span></li>
+      <li><span class="ln"><span class="mk">8</span></span><span class="tx"><b>Publish</b> (Draft only) — validates the whole layout and makes it usable. If a variable is malformed or a required argument is missing, publishing is blocked and the reasons are listed here.</span></li>
+      <li><span class="ln"><span class="mk">9</span></span><span class="tx"><b>Delete</b> — removes the layout and unlinks it from any Prod Spec (it tells you which). <b>Already-generated PDFs are kept</b> — only the link is removed.</span></li>
+    </ol>
+  </div>
+
+  <!-- ============ 2 · TEST DATA ============ -->
+  <div class="section">
+    <h2><span class="n">2</span> Test data — preview with a real style</h2>
+    <p class="lead">Pick a <b>customer</b> and <b>business area</b>; the builder finds real styles for that pair and previews your layout against one. This only drives the <b>preview</b> — it has no effect on what the output generates in production.</p>
+
+    <div class="mock">
+      <div class="chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">prod-spec.app / output-builder / A6 care label</span></div>
+      <div class="appbody"><div class="canvas" style="padding:0;">
+        <div class="ob-bar sub">
+          <span class="ob-cap" style="margin-right:2px;">Test data</span>
+          <span class="ob-sel">Netto A/S <span class="cv">▾</span></span> <span class="mk in">1</span>
+          <span class="ob-sel">Childrenswear <span class="cv">▾</span></span>
+          <span class="ob-input">Search style / PO… <span class="mk in">2</span></span>
+          <span class="ob-seg"><span class="on">◀</span><span>2044 PAW PATROL TEE</span><span class="on">▶</span></span> <span class="mk in">3</span>
+          <span class="pill em">18/18 fields <span class="mk in">4</span></span>
+          <span style="font-size:9px;color:#c4c4c8;">3 of 57, fullest first</span>
+        </div>
+      </div></div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>Customer × Business area</b> — the pair that scopes which styles you can preview with. Both are required before styles load.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>Search</b> — jump to a specific style number or PO instead of cycling.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>◀ Style ▶</b> — step through the matches, ranked <b>fullest first</b> (the styles that fill the most of your variables come first, so you preview against complete data).</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>Fields badge</b> — how many of the layout's variables this style fills. <span class="pill em" style="margin:0 2px;">18/18</span> is complete; an <span class="pill am" style="margin:0 2px;">amber</span> badge lists what's missing, so you can see gaps before they reach a real label.</span></li>
+    </ol>
+    <div class="note good">
+      <div class="h">Your test style now stays put</div>
+      <p>Editing the layout re-ranks the fullest-first list in the background, but the style you're previewing <b>stays selected</b> — the preview no longer jumps back to the first style each time. Changing customer, business area or the search is what re-picks a style.</p>
+    </div>
+  </div>
+
+  <!-- ============ 3 · PAGES & GRID ============ -->
+  <div class="section">
+    <h2><span class="n">3</span> Pages, page setup &amp; the grid</h2>
+    <p class="lead">The left rail defines the <b>paper</b>. A layout can have several pages (e.g. a front and a back); each has its own size, margins and placement grid.</p>
+
+    <div class="two">
+      <div class="mock" style="grid-column:1 / -1;">
+        <div class="appbody"><div class="canvas" style="display:grid;grid-template-columns:150px 1fr;gap:12px;">
+          <div>
+            <div class="ob-cap">Pages <span class="mk in">1</span></div>
+            <div style="margin-top:5px;display:grid;gap:4px;">
+              <div class="ob-panel" style="border-color:#18181b;padding:6px 8px;"><div style="font-size:9.5px;font-weight:700;">1 · Front</div><div style="font-family:ui-monospace,Menlo,monospace;font-size:8px;color:#a1a1aa;">105 × 148 mm</div></div>
+              <div class="ob-panel" style="padding:6px 8px;"><div style="font-size:9.5px;font-weight:600;color:#52525b;">2 · Back</div><div style="font-family:ui-monospace,Menlo,monospace;font-size:8px;color:#a1a1aa;">105 × 148 mm</div></div>
+              <div style="border:1px dashed #d4d4d8;border-radius:6px;text-align:center;font-size:8.5px;color:#a1a1aa;padding:4px;">+ Add page</div>
+            </div>
+          </div>
+          <div>
+            <div class="ob-cap">Page settings</div>
+            <div style="margin-top:5px;display:grid;gap:7px;">
+              <div><div class="ob-lbl">Title</div><div class="ob-input">Front</div></div>
+              <div style="display:flex;gap:6px;"><div style="flex:1;"><div class="ob-lbl">Width mm</div><div class="ob-input">105</div></div><div style="flex:1;"><div class="ob-lbl">Height mm</div><div class="ob-input">148</div></div></div>
+              <div><div class="ob-lbl">Margins mm <span class="mk in">2</span> <span style="border:1px solid #18181b;background:#18181b;color:#fff;border-radius:3px;padding:0 4px;font-size:7px;">🔗 linked</span></div><div class="ob-input">4</div></div>
+              <div><div class="ob-lbl">Orientation <span class="mk in">3</span></div><div class="ob-seg"><span class="on">Portrait</span><span>Landscape</span></div></div>
+              <div style="border-top:1px solid #f4f4f5;padding-top:6px;"><div class="ob-cap">Grid <span class="mk in">4</span></div>
+                <div style="display:flex;gap:6px;align-items:flex-end;margin-top:4px;"><div style="flex:1;"><div class="ob-lbl">Cell size (mm)</div><div class="ob-input">4</div></div><div class="ob-btn">Regenerate</div></div>
+                <div style="font-size:8px;color:#a1a1aa;margin-top:4px;">Current grid <b>26 × 37</b> · ≈ 4.0 × 4.0 mm per cell.</div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>Pages</b> — click to switch; <b>+ Add page</b> clones the last page's size. Hover a page to reveal its ✕ (a page with blocks asks first). The canvas always shows the selected page.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>Margins</b> — an inset from the paper edge that the whole grid (and every block) sits inside. <b>🔗 linked</b> drives all four sides from one value; click it to switch to <b>per side</b> (Top / Right / Bottom / Left). Type decimals with a comma or dot.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>Orientation</b> — Portrait / Landscape simply swaps width and height.</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>Grid</b> — blocks snap to a grid of cells. Set a <b>cell size in mm</b> and press <b>Regenerate</b> to recompute the columns × rows; existing blocks are remapped proportionally (anything that no longer fits is nudged to fit). Smaller cells = finer placement.</span></li>
+    </ol>
+    <div class="note">
+      <div class="h">Print guides — sewing &amp; folding lines</div>
+      <p>Below the grid, add non-printing reference rules: a <b>sewing line</b> a fixed distance from the top or bottom edge (the seam allowance), and a <b>folding line</b> down or across the centre. They appear on the canvas and in the true render to help you place content, matching how the label is sewn or folded.</p>
+    </div>
+  </div>
+
+  <!-- ============ 4 · CANVAS & BLOCKS ============ -->
+  <div class="section">
+    <h2><span class="n">4</span> The canvas — drawing blocks</h2>
+    <p class="lead">The centre pane is the page at true aspect ratio. You place content by <b>drawing a block</b>: press and drag a rectangle on the grid. Everything on the label is a block — a line of text, a barcode, a logo.</p>
+
+    <div class="mock">
+      <div class="appbody"><div class="canvas" style="display:grid;grid-template-columns:1fr 168px;gap:14px;">
+        <div>
+          <div class="ob-cap" style="margin-bottom:5px;">Canvas — 105 × 148 mm · portrait</div>
+          <div class="ob-canvas" style="width:150px;height:212px;margin:0 auto;">
+            <div class="ob-blk sel" style="left:8%;top:5%;width:84%;height:12%;">{{styleName}} <span class="mk in" style="transform:scale(.8) translateY(-2px);">1</span></div>
+            <div class="ob-blk" style="left:8%;top:20%;width:60%;height:22%;font-family:ui-monospace,Menlo,monospace;">{{composition:da}}</div>
+            <div class="ob-blk" style="left:8%;top:62%;width:40%;height:16%;">▌█▐██▌█▐<br><span style="font-size:6px;">{{barcode:ean13}}</span></div>
+            <div class="ob-blk" style="left:56%;top:64%;width:34%;height:12%;">⬡ ⬡ ⬡</div>
+          </div>
+          <p class="cap" style="text-align:center;"><b>Drag on the grid</b> to draw a block · click a block to edit · <b>Del</b> removes the selected block.</p>
+        </div>
+        <div>
+          <div class="ob-panel">
+            <div style="display:flex;justify-content:space-between;"><span class="ob-cap">Blocks <span class="mk in">2</span></span><span style="font-size:8.5px;color:#a1a1aa;">4</span></div>
+            <div style="margin-top:5px;display:grid;gap:2px;">
+              <div class="ob-row sel"><span style="flex:1;">{{styleName}}</span><span style="font-size:7.5px;color:#a1a1aa;">R2·C2</span></div>
+              <div class="ob-row"><span style="flex:1;">{{composition:da}}</span></div>
+              <div class="ob-row"><span class="kd">Barcode</span><span style="flex:1;">{{barcode:ean13}}</span></div>
+              <div class="ob-row"><span class="kd">Wash</span><span style="flex:1;">{{washSymbols}}</span></div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>A selected block</b> shows a dark ring and an ✕. Click any block to select and edit it in the inspector (next section). Drag on empty grid to draw a new one.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>Blocks list</b> — every block on the page in reading order (top→bottom, left→right). Far easier than hunting the crammed canvas: click a row to select it, hover to flash its position with a blue locator ring, and use the row ✕ to delete. Graphic blocks get a small kind tag (<span class="kd" style="margin:0 2px;">Barcode</span>, <span class="kd" style="margin:0 2px;">Wash</span>, <span class="kd" style="margin:0 2px;">Logo</span>, <span class="kd" style="margin:0 2px;">Cert</span>).</span></li>
+    </ol>
+  </div>
+
+  <!-- ============ 5 · BLOCK INSPECTOR ============ -->
+  <div class="section">
+    <h2><span class="n">5</span> The block inspector — styling a block</h2>
+    <p class="lead">With a block selected, the right rail shows everything about it: where it sits, how the text is styled, and — at the bottom — its <b>content</b>. All of it autosaves.</p>
+
+    <div class="two">
+      <div>
+        <p style="font-size:10.5px;color:#3f3f46;">Layout controls</p>
+        <ul style="margin:6px 0 0;padding-left:16px;font-size:10px;color:#3f3f46;display:grid;gap:5px;">
+          <li><b>Column / Row / Width / Height</b> — the block's cell position and span. Type exact numbers when dragging isn't precise enough. The <b>≈ mm</b> readout shows its real printed size.</li>
+          <li><b>Align</b> (left / center / right) and <b>Vertical</b> (top / middle / bottom) — where the text sits inside the block.</li>
+          <li><b>Font size</b> in pt. <b>Barcodes and wash symbols scale with the font size</b> — bump the pt to enlarge a barcode.</li>
+          <li><b>Bold</b> and <b>Line height</b> (1.2–1.8).</li>
+        </ul>
+      </div>
+      <div>
+        <p style="font-size:10.5px;color:#3f3f46;">Box &amp; fit controls</p>
+        <ul style="margin:6px 0 0;padding-left:16px;font-size:10px;color:#3f3f46;display:grid;gap:5px;">
+          <li><b>Border</b> — width (0.2–2&nbsp;mm), colour, and inner <b>padding</b> (linked or per side). A framed field.</li>
+          <li><b>Invert</b> — white text on a solid black block.</li>
+          <li><b>Fit width</b> — force the text onto one line and auto-scale it to fill the block's width.</li>
+          <li><b>Shrink to fit cell</b> — reduce the text until it fits its box, so it never overflows onto neighbours.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="note">
+      <div class="h">The content box — one line per printed row</div>
+      <p>Each line in the content box is one printed row. Type <span class="keyword">{{</span> to open <b>variable autocomplete</b>; wrap a selection in <span class="keyword">**bold**</span> or <span class="keyword">_italic_</span> (the <b>B</b> / <b>I</b> buttons do this) to style part of a line. Literal text prints as-is; variables resolve at generation. What you type is exactly what the preview and the PDF render.</p>
+    </div>
+  </div>
+
+  <!-- ============ 6 · VARIABLES ============ -->
+  <div class="section">
+    <h2><span class="n">6</span> Variables — the heart of a layout</h2>
+    <p class="lead">Variables (also called <b>tokens</b>) are <span class="keyword">{{placeholders}}</span> that fill from the style's data at generation. The <b>Variables palette</b> on the right lists them by group; click a chip to insert it at your cursor. Tick <b>Show values</b> to resolve every chip against the current test style so you can see real data.</p>
+
+    <p class="cap">Text variables — the everyday fields. Insert as <span class="keyword">{{styleNumber}}</span> etc.</p>
+    <table class="tbl">
+      <thead><tr><th style="width:34%;">Group</th><th>Examples (not exhaustive)</th></tr></thead>
+      <tbody>
+        <tr><td><b>Style</b></td><td><span class="ob-tok">{{styleName}}</span> <span class="ob-tok">{{styleNumber}}</span> <span class="ob-tok">{{description}}</span> <span class="ob-tok">{{customerName}}</span> <span class="ob-tok">{{customerItemNo}}</span> <span class="ob-tok">{{colourName}}</span> <span class="ob-tok">{{sizes}}</span> <span class="ob-tok">{{size}}</span> <span class="ob-tok">{{sizeRange}}</span> <span class="ob-tok">{{price}}</span> <span class="ob-tok">{{countryOfOrigin}}</span> <span class="ob-tok">{{certificates}}</span></td></tr>
+        <tr><td><b>Order &amp; carton</b></td><td><span class="ob-tok">{{poNumber}}</span> <span class="ob-tok">{{customerOrderNo}}</span> <span class="ob-tok">{{qtyPerCarton}}</span> <span class="ob-tok">{{cartonEan}}</span> <span class="ob-tok">{{assortEan}}</span> <span class="ob-tok">{{ean13}}</span> <span class="ob-tok">{{batchNo}}</span> <span class="ob-tok">{{deliveryTerm}}</span> <span class="ob-tok">{{supplierNumber}}</span></td></tr>
+        <tr><td><b>Per language</b><br><span style="font-size:8.5px;color:#a1a1aa;">need a <span class="keyword">:lang</span></span></td><td><span class="ob-tok">{{composition:da}}</span> <span class="ob-tok">{{careInstructions:en}}</span> <span class="ob-tok">{{productName:de}}</span> <span class="ob-tok">{{madeIn:da}}</span> <span class="ob-tok">{{country:fr}}</span> — pick the language from the palette's <b>Per language</b> dropdown so the right variant inserts.</td></tr>
+      </tbody>
+    </table>
+
+    <p class="cap" style="margin-top:12px;">Graphics — rendered as images, scaled by the block's font size.</p>
+    <table class="tbl">
+      <tbody>
+        <tr><td style="width:34%;"><b>Barcodes</b></td><td>
+          <span class="ob-tok">{{barcode:cartonEan}}</span> carton EAN as <b>Code&nbsp;128</b>; <span class="ob-tok">{{barcode:cartonEan13}}</span> the same carton number as a true <b>EAN-13</b>; <span class="ob-tok">{{barcode:ean13}}</span> the first size's product EAN-13. Add a bar height in mm: <span class="ob-tok">{{barcode:ean13:8}}</span> (2–40&nbsp;mm).</td></tr>
+        <tr><td><b>Wash symbols</b></td><td><span class="ob-tok">{{washSymbols}}</span> the style's care icons as a row. Optional mm gap between icons: <span class="ob-tok">{{washSymbols:0}}</span> (0 = flush).</td></tr>
+        <tr><td><b>Logos</b></td><td><span class="ob-tok">{{logo:contrast}}</span> / <span class="ob-tok">{{logo:contrastAddress}}</span> the built-in Contrast marks; <span class="ob-tok">{{logo:custom}}</span> this layout's own uploaded logo (see §7).</td></tr>
+        <tr><td><b>Certificate marks</b></td><td><span class="ob-tok">{{cert:oekotex}}</span> <span class="ob-tok">{{cert:fsc}}</span> — <b>self-gating</b>: a mark prints only on styles whose <b>Certificates</b> field declares it. No <span class="keyword">{{if}}</span> wrapper needed. Artwork comes from <b>Settings → Certificates</b> (a placeholder shows until the licensed mark is uploaded).</td></tr>
+      </tbody>
+    </table>
+
+    <div class="two" style="margin-top:12px;">
+      <div class="variant">
+        <div class="vh">🔀 Logic — <span class="ob-tok it">{{if …}}{{else}}{{endif}}</span></div>
+        <div class="vd">Conditional text, <b>one condition per line, no nesting</b>. The condition field must be a text variable.</div>
+        <ul style="margin:7px 0 0;padding-left:15px;font-size:9.5px;color:#3f3f46;display:grid;gap:4px;">
+          <li><span class="keyword">== / !=</span> compare the whole value, case-insensitively:<br><span class="ob-tok">{{if deliveryTerm == FOB}}…{{else}}…{{endif}}</span></li>
+          <li><span class="keyword">includes / !includes</span> test a comma-separated list:<br><span class="ob-tok">{{if certificates includes FSC}}FSC certified{{endif}}</span></li>
+        </ul>
+      </div>
+      <div class="variant">
+        <div class="vh">🧮 Calculated — <span class="ob-tok sk">{{= … }}</span></div>
+        <div class="vd">Arithmetic over field values, useful on multi-style cartons.</div>
+        <ul style="margin:7px 0 0;padding-left:15px;font-size:9.5px;color:#3f3f46;display:grid;gap:4px;">
+          <li><span class="keyword">+ − × ÷</span> on numeric fields: <span class="ob-tok sk">{{= qtyPerCarton * 2 }}</span></li>
+          <li><span class="keyword">sum / count / min / max(field)</span> across the styles on the carton (base + picked siblings; an empty slot counts as 0): <span class="ob-tok sk">{{= sum(qtyPerCarton) }}</span></li>
+          <li><span class="keyword">round(…, decimals)</span> to tidy the result.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="note warn">
+      <div class="h">Sibling styles — putting several styles on one carton</div>
+      <p>When <b>Multiple styles on the box</b> is on (§7), a carton layout can place OTHER styles from the same PO via slot tokens: <span class="ob-tok">{{style2}}</span> (the headline number) and its fields <span class="ob-tok">{{style2Name}}</span>, <span class="ob-tok">{{style2Description}}</span>, <span class="ob-tok">{{style2QtyPerCarton}}</span> … up to 8 slots. Pick the slot from the palette's <b>Sibling styles</b> dropdown. Branch the single- vs multi-style look with <span class="ob-tok">{{if multipleStyles == true}}…{{else}}…{{endif}}</span> — note <span class="keyword">==</span>, not <span class="keyword">===</span>.</p>
+    </div>
+    <p class="cap">On the canvas and in the content box, variables are colour-coded: <span class="ob-tok">known</span> muted, <span class="ob-tok it">{{if}}/{{else}}</span> italic, <span class="ob-tok sk">{{= calc}}</span> blue (red if the expression is invalid), and <span class="ob-tok rd">{{unknown}}</span> red — an at-a-glance check before you publish.</p>
+  </div>
+
+  <!-- ============ 7 · OUTPUT SETTINGS ============ -->
+  <div class="section">
+    <h2><span class="n">7</span> Output settings — repeat, split, file name, carton &amp; logo</h2>
+    <p class="lead">Below the grid in the Customizer's left rail sit the settings that decide <b>how many documents</b> this output makes per style and <b>what they're called</b>. This is where most of the "possibilities" live.</p>
+
+    <div class="mock">
+      <div class="appbody"><div class="canvas" style="max-width:280px;">
+        <div class="ob-cap">Settings</div>
+        <div style="margin-top:6px;display:grid;gap:8px;">
+          <div><div class="ob-lbl">Repeat output <span class="mk in">1</span></div><div class="ob-sel" style="justify-content:space-between;">Per EAN (size × colour) <span class="cv">▾</span></div><div style="font-size:8px;color:#a1a1aa;margin-top:3px;">3 repetitions: 98/104·Navy, 110/116·Navy, …</div></div>
+          <div><div class="ob-lbl">Output files <span class="mk in">2</span></div><div class="ob-sel" style="justify-content:space-between;">One PDF per EAN <span class="cv">▾</span></div></div>
+          <div><div class="ob-lbl">Output file name <span class="mk in">3</span></div><div class="ob-input mono">{{styleNumber}}-{{size}}-care</div><div style="font-size:8px;color:#059669;margin-top:3px;">→ IL97261-98_104-care</div></div>
+          <div style="border-top:1px solid #f4f4f5;padding-top:7px;"><label style="display:flex;gap:6px;align-items:center;font-size:10px;color:#3f3f46;"><span style="width:11px;height:11px;border:1px solid #a1a1aa;border-radius:3px;"></span>Carton numbering (X/Y) <span class="mk in">4</span></label></div>
+          <div><label style="display:flex;gap:6px;align-items:center;font-size:10px;color:#3f3f46;"><span style="width:11px;height:11px;border:1px solid #a1a1aa;border-radius:3px;"></span>Multiple styles on the box <span class="mk in">5</span></label></div>
+        </div>
+      </div></div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>Repeat output</b> — make one document, or one per variant:
+        <b>Don't repeat</b> (a single PDF) · <b>Per size</b> · <b>Per EAN</b> (size × colour) · <b>Per assortment EAN</b> · <b>Per carton EAN</b> (per size + assort). The panel shows the exact repetitions for the test style. Use <span class="ob-tok">{{size}}</span> / <span class="ob-tok">{{ean13}}</span> in the design so each repetition shows its own data.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>Output files</b> (only when repeating) — <b>One PDF per EAN</b> (a separate file for each repetition, each holding only its own EAN) or <b>One single PDF</b> (every repetition bound into one file).</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>Output file name</b> — a template for the generated file's name. Variables are allowed (<span class="ob-tok">{{styleNumber}}</span>, <span class="ob-tok">{{size}}</span>, <span class="ob-tok">{{colourName}}</span>…); the resolved name previews live in green. Leave it empty for the default name. When splitting per EAN, include a per-EAN variable so each file gets a distinct name.</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>Carton numbering (X/Y)</b> — lets an operator print a numbered set (1/N … N/N) from the Style page. Turn it on, then place <span class="ob-tok">{{cartonNo}}</span> / <span class="ob-tok">{{cartonTotal}}</span> (or zero-padded <span class="ob-tok">{{cartonNoPadded}}</span>) on the label. The builder warns if the switch is on but the tokens aren't placed, and the preview gains a <b>“Preview as carton N of M”</b> control.</span></li>
+      <li><span class="ln"><span class="mk">5</span></span><span class="tx"><b>Multiple styles on the box</b> — enables the sibling slots from §6 so an operator can add other same-PO styles to a carton as a manual one-off. Independent of carton numbering.</span></li>
+    </ol>
+    <div class="note">
+      <div class="h">Custom logo</div>
+      <p>The moment your design uses <span class="ob-tok">{{logo:custom}}</span>, a <b>Custom logo</b> control appears here: upload an SVG / PNG / JPG (under ~450&nbsp;KB) for <b>this layout</b>, and set its printed <b>width as a % of its block</b> (height keeps the aspect ratio). It's stored per layout, separate from the autosave.</p>
+    </div>
+  </div>
+
+  <!-- ============ 8 · PREVIEW ============ -->
+  <div class="section">
+    <h2><span class="n">8</span> The live preview — true render</h2>
+    <p class="lead">Under the canvas, the <b>Print preview</b> is rendered by the <b>same code that generates the production PDF</b> — not an approximation. It updates a moment after each change.</p>
+    <div class="mock">
+      <div class="appbody"><div class="canvas">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;"><span class="ob-cap">Print preview — true render · 2044 PAW PATROL TEE</span><span style="font-size:9px;color:#b45309;">1 unresolved: {{batchNo}} <span class="mk in">2</span></span></div>
+        <div class="pdf" style="height:96px;margin-top:6px;">
+          <span class="tag">CARE · PREVIEW</span>
+          <div style="font-weight:800;font-size:10px;">2044 PAW PATROL TEE <span class="mk in">1</span></div>
+          <div class="ln" style="width:52%;margin-top:6px;"></div>
+          <div class="ln" style="width:38%;"></div>
+          <span style="display:inline-block;border:1px dashed #f59e0b;background:#fffdf5;color:#b45309;border-radius:4px;padding:1px 5px;font-size:8px;">{{batchNo}}</span>
+          <div style="position:absolute;right:12px;bottom:10px;font-family:ui-monospace,Menlo,monospace;font-size:12px;">▌█▐██▌█▐█▌</div>
+        </div>
+      </div></div>
+    </div>
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>Real data</b> from the selected test style fills the variables. With no style picked it renders with <b>sample data</b> and says so.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>Unresolved variables</b> show as <b>amber chips</b> here and are counted in the corner. They <b>never print</b> — an amber chip means that style has no value for that field, so fix the data or guard the line with <span class="keyword">{{if}}</span>. When everything resolves you get a green <i>“all variables resolved”</i>.</span></li>
+    </ol>
+    <div class="note">
+      <div class="h">Edit as JSON</div>
+      <p>At the bottom of the right rail, <b>Edit JSON directly</b> exposes the whole layout — pages, margins, blocks, repeat / split / file-name settings — as one JSON document. An escape hatch for bulk tweaks and copy-paste between layouts; it's validated before it applies.</p>
+    </div>
+  </div>
+
+  <!-- ============ 9 · SETTINGS & REVIEWS TABS ============ -->
+  <div class="section">
+    <h2><span class="n">9</span> The Settings &amp; Reviews tabs</h2>
+    <div class="two">
+      <div class="variant">
+        <div class="vh">⚙️ Settings tab</div>
+        <div class="vd"><b>Generation activity</b> — how many PDFs this output has ever produced (total / approved / pending / rejected), across how many styles, and when it last ran.</div>
+        <div class="vd"><b>Auto-approve outputs</b> — a switch that marks this output's assets <b>approved the moment they generate</b>, skipping the manual review queue. Two guards stay: a print-unsafe document (missing artwork or EAN) still falls back to manual review, and a person still presses <b>“Approve all &amp; publish”</b> on the style to send to the supplier.</div>
+      </div>
+      <div class="variant">
+        <div class="vh">🗂️ Reviews tab</div>
+        <div class="vd">The most recent PDFs this output produced, newest first — style, file name (with a placeholder-count flag), <b>status</b> (Pending / Approved / Rejected), when it generated, and a link to <b>Open PDF</b>. The tab shows an amber count when any are awaiting review.</div>
+        <div class="vd">Open a style's review screen from here to actually approve or reject.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tip">
+    <b>In one line:</b> draw blocks on the true-size grid, fill them with <span class="keyword" style="color:#e4e4e7;background:#3f3f46;">{{variables}}</span> from the palette, watch the true-render preview against a real style, set repeat / file-name / carton options, then <b>Publish</b> and add the output to a Prod Spec so it generates.
+  </div>
+
+  <div class="foot">
+    <span>Prod Spec · Admin guide — Output Builder</span>
+    <span>Design ▸ Publish ▸ add to a Prod Spec ▸ generate ▸ review</span>
+  </div>
+
+</body>
+</html>

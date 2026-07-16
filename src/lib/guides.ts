@@ -73,6 +73,14 @@ export const GUIDES: Guide[] = [
       "Switch a carton-marking output's barcode between EAN-128 (Code 128) and EAN-13, and set the bar height — in the Prod Spec editor.",
     adminOnly: true,
   },
+  {
+    slug: "output-builder",
+    file: "admin-output-builder.html",
+    title: "Output Builder — designing a print layout",
+    summary:
+      "Every part of the Output Builder: pages & grid, drawing blocks, the variable palette, barcodes & logos, {{if}} logic and calculations, repeat & split, file names, carton numbering, and publishing.",
+    adminOnly: true,
+  },
 ];
 
 /** Reviewer-visible guides (the handbook) — everyone signed in sees these. */
