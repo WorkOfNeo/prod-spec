@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
       poNumber: true,
       cartonEan: true,
       supplier: { select: { country: true } },
-      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
+      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, cartonEan: true } },
       customer: { select: { config: true } },
       prodSpec: { select: { outputs: true, columnMapping: true } },
     },

@@ -54,8 +54,11 @@ export type ReadinessStyle = {
   poNumber?: string | null;
   supplier?: { country?: string | null } | null;
   // Resolved PO barcodes — feed the ean13/cartonEan fallbacks so an output
-  // that needs EANs reads "ready" once the PO PDF has been scraped.
-  eans?: ReadonlyArray<{ size: string; ean13: string | null }> | null;
+  // that needs EANs reads "ready" once the PO PDF has been scraped. The
+  // per-row cartonEan is REQUIRED on the row shape (not optional) so a
+  // caller whose select forgets it fails tsc instead of silently gating
+  // carton outputs on the style-level field alone (see hasPerSizeCarton).
+  eans?: ReadonlyArray<{ size: string; ean13: string | null; cartonEan: string | null }> | null;
   cartonEan?: string | null;
   customer: { config: unknown };
   prodSpec: { outputs: unknown; columnMapping: unknown } | null;
@@ -111,6 +114,18 @@ export function outputReadinessForStyle(
   const resolve = (f: keyof ColumnMapping) => resolveMappedField(item, mapping, f);
   const hasRules = rules != null && Object.keys(rules).length > 0;
 
+  // Per-size carton EANs (style_eans.cartonEan — the "Carton Barcode number 1"
+  // per-size values / PO section cartons) satisfy the cartonEan requirement.
+  // The renderer's repeatBy="cartonEan" split reads carton.perSize built from
+  // these SAME rows (render-context.ts), so a style with per-size cartons but
+  // no assort line (Style.cartonEan NULL by design since the Monday fallback
+  // stopped inventing one from an arbitrary size) must not read "awaiting
+  // data" — the runner would skip the very output the split can render.
+  // Deliberately NOT injected through effectiveStyleItem: that item feeds the
+  // render too, and a style-level stand-in would leak into {{cartonEan}} on
+  // non-split rows.
+  const hasPerSizeCarton = (style.eans ?? []).some((e) => (e.cartonEan ?? "").trim() !== "");
+
   return enabledOutputs.map((output) => {
     const variant = getVariant(output.variantKey);
     // Admin pins on the output ∪ this style's inline field values (per-style
@@ -123,7 +138,9 @@ export function outputReadinessForStyle(
       ? variant.readiness(resolve)
       : (variant?.requiredFields ?? [])) as DetailFieldKey[];
     const missing = keys
-      .filter((f) => !pinned.has(f) && !resolve(f).trim())
+      .filter(
+        (f) => !pinned.has(f) && !resolve(f).trim() && !(f === "cartonEan" && hasPerSizeCarton),
+      )
       .map((f) => ({ field: f, label: STYLE_FIELD_LABELS[f] }));
     // Exclusion: does this output's document type carry a keyword rule that
     // matches the style? Resolved through the SAME field resolver as
@@ -180,7 +197,7 @@ export async function pendingOutputKeysForStyle(
       poNumber: true,
       cartonEan: true,
       supplier: { select: { country: true } },
-      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
+      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, cartonEan: true } },
       customer: { select: { config: true } },
       prodSpec: { select: { outputs: true, columnMapping: true } },
     },

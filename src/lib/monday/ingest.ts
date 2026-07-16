@@ -182,7 +182,7 @@ export async function ingestMondayItem(
       // Current workflow status — guards the upsert below from downgrading
       // post-generation states back to READY/PENDING on re-sync.
       status: true,
-      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
+      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, cartonEan: true } },
     },
   });
 
