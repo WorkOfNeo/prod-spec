@@ -7,6 +7,7 @@ import { resolveNotificationsForJob } from "@/lib/notifications/user-notificatio
 import { claimReviewIfUnclaimed } from "@/lib/review-flow/claim";
 import { createOrReopenRejectionTicket } from "@/lib/tickets/rejection-tickets";
 import { stampReviewEnded } from "@/lib/publish/publish-approved-job";
+import { scheduleCoverRegen } from "@/lib/pdf/cover-regen-schedule";
 import { ignoreBaseKey, loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 import { decodeImageAttachments, MAX_IMAGE_DATA_URL_CHARS } from "@/lib/images/decode-data-url";
 
@@ -140,6 +141,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     // Settled — open dashboard notifications for this job are done.
     await resolveNotificationsForJob(asset.jobId);
   }
+
+  // A rejection changes the style's approved-output set too (that output is no
+  // longer confirmed), so the cover manifest is stale — debounced regen, same as
+  // approve. Fail-soft.
+  await scheduleCoverRegen(asset.job.styleId);
 
   return NextResponse.json({ ok: true, ticketId: ticket.ticketId, reopened: ticket.reopened, settled });
 }

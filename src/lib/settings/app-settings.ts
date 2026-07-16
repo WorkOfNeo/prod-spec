@@ -68,6 +68,39 @@ export async function setTranslationSyncState(state: TranslationSyncState): Prom
   });
 }
 
+const COVER_REGEN_QUEUE_KEY = "coverRegenQueue";
+
+// Debounce ledger for the AUTOMATIC cover refresh (see
+// src/lib/pdf/cover-regen-schedule.ts). Each output approval/rejection stamps
+// its style with dueAt = now + debounce, so a burst of per-output decisions
+// collapses to ONE cover regen fired after the last one (rather than a render
+// per click). Map of styleId → ISO-8601 due time; entries are removed as they
+// are processed, so it only ever holds styles decided in the last few seconds.
+// A plain JSON blob (no migration, no per-style column) — the same key-value
+// store the translation coalesce guard uses. The map shape + the pure
+// due/claim helpers live in the import-free leaf src/lib/pdf/cover-regen-ledger.
+export type { CoverRegenQueue } from "@/lib/pdf/cover-regen-ledger";
+import type { CoverRegenQueue } from "@/lib/pdf/cover-regen-ledger";
+
+export async function getCoverRegenQueue(): Promise<CoverRegenQueue> {
+  const row = await db.appSetting.findUnique({ where: { key: COVER_REGEN_QUEUE_KEY } });
+  const value = (row?.value ?? null) as Record<string, unknown> | null;
+  if (!value || typeof value !== "object") return {};
+  const out: CoverRegenQueue = {};
+  for (const [styleId, iso] of Object.entries(value)) {
+    if (typeof iso === "string") out[styleId] = iso;
+  }
+  return out;
+}
+
+export async function setCoverRegenQueue(queue: CoverRegenQueue): Promise<void> {
+  await db.appSetting.upsert({
+    where: { key: COVER_REGEN_QUEUE_KEY },
+    create: { key: COVER_REGEN_QUEUE_KEY, value: queue },
+    update: { value: queue },
+  });
+}
+
 const SUPPLIER_BATCH_SEND_KEY = "supplierBatchSendEnabled";
 
 // Master switch for the nightly supplier-send system (WS2).
