@@ -7,6 +7,7 @@ import { claimReviewIfUnclaimed } from "@/lib/review-flow/claim";
 import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
 import { enqueueApprovedAsset } from "@/lib/publish/supplier-send-queue";
 import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
+import { scheduleCoverRegen } from "@/lib/pdf/cover-regen-schedule";
 
 export const runtime = "nodejs";
 // Approving the LAST pending asset rolls the job up and publishes —
@@ -110,6 +111,12 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       },
     });
   }
+
+  // The approval changed the style's approved-output set, so the cover manifest
+  // is now stale. Debounced regen: a burst of per-output approvals collapses to
+  // ONE cover refresh + supplier push a few seconds after the last decision.
+  // Fail-soft — never let a cover hiccup break the approval.
+  await scheduleCoverRegen(asset.job.styleId);
 
   // Approving the last pending asset settles the job — SharePoint upload +
   // supplier-send-queue enqueue happen there. Suppliers are reached only by the
