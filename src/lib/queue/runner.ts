@@ -30,6 +30,7 @@ import { eanResolveInputs, eanResolveKey } from "@/lib/po/resolve-inputs";
 import { resolveAndPersistStyleEans } from "@/lib/po/ean-runner";
 import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
+import { enqueueCoverForSupplier } from "@/lib/publish/requeue-cover";
 import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
 import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
 import { assembleRequiredPackagingDocs } from "@/lib/outputs/required-packaging";
@@ -938,6 +939,22 @@ export async function processJob(jobId: string): Promise<void> {
     await enqueueApprovedAssetsForJob(job.id);
   } catch (err) {
     console.warn(`[supplier-send-queue] runner enqueue failed for ${job.id}:`, err);
+  }
+
+  // The cover is a framing MANIFEST, not a reviewable layout — it ships to the
+  // supplier folder regardless of approval and is re-armed on EVERY regeneration
+  // so the folder always holds the current one (the layouts still gate on
+  // approval above). Arm this run's cover here, before the push below, so it
+  // lands in the same pass. Fail-soft; no-op for styles with no supplier /
+  // skipSupplierDelivery.
+  try {
+    const coverAsset = await db.jobAsset.findFirst({
+      where: { jobId: job.id, variantKey: COVER_VARIANT_KEY },
+      select: { id: true },
+    });
+    if (coverAsset) await enqueueCoverForSupplier(job.styleId, coverAsset.id);
+  } catch (err) {
+    console.warn(`[supplier-send-queue] runner cover enqueue failed for ${job.id}:`, err);
   }
 
   // …and land them in the supplier's own SharePoint folder like a manual

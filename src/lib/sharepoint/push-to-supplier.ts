@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import {
   resolveSupplierFolder,
   ensureChildFolder,
@@ -114,6 +115,7 @@ export async function pushApprovedAssetsToSupplier(input: {
     select: {
       id: true,
       jobId: true,
+      variantKey: true,
       fileName: true,
       reviewStatus: true,
       placeholderCount: true,
@@ -122,10 +124,16 @@ export async function pushApprovedAssetsToSupplier(input: {
   });
 
   // Gate (defense-in-depth — the UI already restricts to approved): only
-  // APPROVED, print-safe (no-placeholder) outputs reach the supplier.
-  const pushable = assets.filter((a) => a.reviewStatus === "APPROVED" && a.placeholderCount === 0);
+  // APPROVED, print-safe (no-placeholder) outputs reach the supplier. The COVER
+  // is the exception: it's a framing manifest, not a reviewable layout, so it
+  // ships regardless of its own review status (it's always placeholder-free) —
+  // this is what lets a freshly-generated cover reach the supplier folder before
+  // its layouts are approved.
+  const isDeliverable = (a: (typeof assets)[number]) =>
+    a.placeholderCount === 0 && (a.reviewStatus === "APPROVED" || a.variantKey === COVER_VARIANT_KEY);
+  const pushable = assets.filter(isDeliverable);
   const skipped = assets
-    .filter((a) => !(a.reviewStatus === "APPROVED" && a.placeholderCount === 0))
+    .filter((a) => !isDeliverable(a))
     .map((a) => ({
       assetId: a.id,
       fileName: a.fileName,

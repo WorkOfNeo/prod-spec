@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { refreshStyleCoverAsset, type CoverRefreshResult } from "@/lib/pdf/refresh-cover";
-import { requeueCoverForSupplier } from "@/lib/publish/requeue-cover";
+import { enqueueCoverForSupplier } from "@/lib/publish/requeue-cover";
 import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
 
 // =====================================================
@@ -74,7 +74,7 @@ export async function processCoverRefreshChunk(
     const result = await refreshStyleCoverAsset(styleId);
     if (opts.deliver && result.status === "refreshed") {
       try {
-        const requeue = await requeueCoverForSupplier(styleId, result.coverAssetId);
+        const requeue = await enqueueCoverForSupplier(styleId, result.coverAssetId);
         if (requeue === "queued") requeuedStyleIds.push(styleId);
         outcomes.push({ ...result, requeue });
       } catch (err) {
