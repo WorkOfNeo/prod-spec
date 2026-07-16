@@ -12,11 +12,12 @@
 // row should print ITS size's entry, not the whole list. This module is
 // the pure parser+narrower repetitionStyles applies to those fields.
 //
-// Parsing anchors on the style's KNOWN size labels followed by ":" —
-// never on bare commas — so values may contain commas, newlines, or even
-// the size text itself ("… ROSA 4-5 ÅR" has no trailing colon and can't
-// open a new entry). Labels match space-insensitively and case-
-// insensitively ("4-5ÅR:" ≡ "4-5 ÅR:").
+// Parsing anchors on the style's KNOWN size labels followed by a
+// separator — ":" by default; the carton-qty column uses "=" instead
+// ("4-5ÅR=1040, 6-7ÅR=1050") — never on bare commas — so values may
+// contain commas, newlines, or even the size text itself ("… ROSA
+// 4-5 ÅR" has no trailing colon and can't open a new entry). Labels
+// match space-insensitively and case-insensitively ("4-5ÅR:" ≡ "4-5 ÅR:").
 //
 // Fallbacks keep the raw value verbatim (never blank a printed field):
 //   • no size anchors in the text → not a per-size list, print as-is
@@ -30,13 +31,17 @@ function sizeKey(label: string): string {
 
 type SizeAnchor = { key: string; start: number; valueStart: number };
 
-// Every "<size>:" occurrence in the text whose <size> is one of the style's
-// known labels. A candidate label is the text between the previous
-// separator (comma / newline / start) and the colon.
-function findAnchors(text: string, knownKeys: ReadonlySet<string>): SizeAnchor[] {
+// Every "<size><sep>" occurrence in the text whose <size> is one of the
+// style's known labels. A candidate label is the text between the previous
+// delimiter (comma / newline / start) and the separator char.
+function findAnchors(
+  text: string,
+  knownKeys: ReadonlySet<string>,
+  separators: readonly string[],
+): SizeAnchor[] {
   const anchors: SizeAnchor[] = [];
   for (let i = 0; i < text.length; i++) {
-    if (text[i] !== ":") continue;
+    if (!separators.includes(text[i])) continue;
     let segStart = i - 1;
     while (segStart >= 0 && text[segStart] !== "," && text[segStart] !== "\n") segStart--;
     segStart++;
@@ -58,6 +63,9 @@ export function narrowSizeScopedText(
   raw: string | undefined,
   allSizeLabels: readonly string[],
   rowSizeLabels: readonly string[],
+  // Char(s) that close a size label. Customer Item No / Description use
+  // ":", the carton-qty column uses "=" — pass both there.
+  separators: readonly string[] = [":"],
 ): string | undefined {
   if (raw === undefined) return undefined;
   const text = raw;
@@ -65,7 +73,7 @@ export function narrowSizeScopedText(
   const knownKeys = new Set(allSizeLabels.map(sizeKey).filter(Boolean));
   if (knownKeys.size === 0) return text;
 
-  const anchors = findAnchors(text, knownKeys);
+  const anchors = findAnchors(text, knownKeys, separators);
   if (anchors.length === 0) return text;
 
   const wanted = new Set(rowSizeLabels.map(sizeKey));

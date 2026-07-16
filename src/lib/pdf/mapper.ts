@@ -66,6 +66,7 @@ export function mapMondayItemToStyleData(
     productNameTranslations: parseTranslations(readField("productNameTranslations")),
     washSymbols: parseWashSymbols(readField("washCare")),
     sizes: parseSizes(readField("sizes"), readField("ean13")),
+    cartonQtyRaw: readField("cartonQty") || undefined,
     carton: {
       klNumber: readField("klNumber"),
       supplierNumber: readField("supplierNumber"),

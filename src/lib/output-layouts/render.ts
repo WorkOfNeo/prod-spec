@@ -102,6 +102,9 @@ export function repetitionStyles(
     return {
       customerItemNo: narrowSizeScopedText(style.customerItemNo, allLabels, rowLabels),
       description: narrowSizeScopedText(style.description, allLabels, rowLabels),
+      // The carton-qty column writes its per-size lists with "=" instead of
+      // ":" ("4-5ÅR=1040, 6-7ÅR=1050"); accept both.
+      cartonQtyRaw: narrowSizeScopedText(style.cartonQtyRaw, allLabels, rowLabels, [":", "="]),
     };
   };
   if (repeatBy === "size" && style.sizes.length > 0) {
