@@ -98,7 +98,7 @@ export async function processCoverRefreshChunk(
       // waiting for the recurring sweep. Returns EMPTY_SWEEP (0 uploaded) when
       // supplier batch-send is disabled — the re-armed rows still ride the
       // nightly digest once it's on.
-      const sweep = await pushQueuedSupplierUploads({ styleIds: requeuedStyleIds });
+      const sweep = await pushQueuedSupplierUploads({ styleIds: requeuedStyleIds, recordRunAs: "cover-regen" });
       pushed = sweep.uploaded;
       pushErrors = sweep.failed;
     } catch (err) {

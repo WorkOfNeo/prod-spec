@@ -24,7 +24,9 @@ import { getSupplierBatchSendEnabled } from "@/lib/settings/app-settings";
 // entirely and keep working regardless.
 //
 // Status semantics per queue row:
-//   UPLOADED — in the supplier folder (sharePointUrl set); not retried.
+//   UPLOADED — in the supplier folder (sharePointUrl set); not retried, but
+//              unverified until WS4 lists the real folder and confirms every
+//              document of the slot is present (re-arms to PENDING when not).
 //   FAILED   — transient/permission error (e.g. write 403); retried until
 //              pushAttempts hits MAX_PUSH_ATTEMPTS, then it "floats" for the
 //              recurring sweep (surfaced on /settings/approved). The midnight
@@ -47,6 +49,17 @@ import { getSupplierBatchSendEnabled } from "@/lib/settings/app-settings";
 // (mirrors MAX_EAN_ATTEMPTS / MAX_GEN_ATTEMPTS). The midnight sweep ignores
 // the cap; a new approved render resets it (see enqueueApprovedAsset).
 export const MAX_PUSH_ATTEMPTS = 3;
+
+// The midnight digest stamps sentAt on every pending row once its email SENDS,
+// whatever the row's sharePointStatus — so a row that was still FAILED /
+// NO_FOLDER / SKIPPED at midnight would otherwise leave the sweep's sentAt-null
+// pool and never reach the supplier folder at all. Sent rows therefore keep a
+// bounded retry lease: they stay in the sweep while their queuedAt is recent.
+// Keyed on queuedAt (NOT lastPushAt, which every retry refreshes — that would
+// make the lease self-renewing and churn forever): re-arms (a new render, a
+// verify heal) reset queuedAt and grant a fresh lease; a gap nobody fixes ages
+// out of the sweep after a week but stays visible on /settings/approved.
+export const SENT_RETRY_LEASE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type SupplierUploadSweep = {
   styles: number;
@@ -80,12 +93,21 @@ export async function pushQueuedSupplierUploads(opts?: {
   // MAX_PUSH_ATTEMPTS strikes. The recurring day-time sweep leaves them
   // floated so a persistent 403 can't hammer Graph every tick.
   includeFloated?: boolean;
+  // When set (and the sweep touched at least one style), persist this sweep as
+  // a CronRun (kind "supplier-upload", source = this value) so event-driven
+  // pushes — approve-time, job publish, runner auto-approve — show up in the
+  // /automation activity feed. Without it those uploads happened invisibly:
+  // the recurring cron ticks that followed had nothing left to do and read as
+  // idle, so the feed looked dead on exactly the days files DID go out. The
+  // cron route does NOT set this — it composes its own richer run row.
+  recordRunAs?: string;
 }): Promise<SupplierUploadSweep> {
+  const startedAt = Date.now();
   if (!(await getSupplierBatchSendEnabled())) return EMPTY_SWEEP;
 
   const items = await db.supplierSendQueueItem.findMany({
     where: {
-      sentAt: null,
+      OR: [{ sentAt: null }, { queuedAt: { gte: new Date(Date.now() - SENT_RETRY_LEASE_MS) } }],
       sharePointStatus: { not: "UPLOADED" },
       ...(opts?.styleIds && opts.styleIds.length > 0 ? { styleId: { in: opts.styleIds } } : {}),
       ...(opts?.includeFloated
@@ -224,9 +246,17 @@ export async function pushQueuedSupplierUploads(opts?: {
         const docIds = docIdsByItem.get(item.id) ?? [];
         // The slot is UPLOADED only when EVERY one of its documents landed.
         if (docIds.length > 0 && docIds.every((id) => uploadedByAsset.has(id))) {
-          await db.supplierSendQueueItem
-            .update({
-              where: { id: item.id },
+          // Guarded on the representative we EXPANDED from: a concurrent
+          // approval in this slot re-arms the row (enqueueApprovedAsset swaps
+          // jobAssetId) while this push is mid-flight with a doc set that
+          // predates it. Stamping unconditionally would mark the slot UPLOADED
+          // without the newest file and nothing would ever re-push it. When the
+          // guard misses, the row simply stays PENDING and the next sweep
+          // re-expands with the full set (PUT overwrites, so re-pushing the
+          // files that did land is idempotent).
+          const stamped = await db.supplierSendQueueItem
+            .updateMany({
+              where: { id: item.id, jobAssetId: item.jobAssetId },
               data: {
                 sharePointStatus: "UPLOADED",
                 sharePointUrl: uploadedByAsset.get(docIds[0]) ?? res.targetFolderUrl,
@@ -234,15 +264,19 @@ export async function pushQueuedSupplierUploads(opts?: {
                 // /settings/approved and re-checked by the self-heal verify.
                 sharePointFolderUrl: res.targetFolderUrl,
                 sharePointFolderMatches: null, // resolved — drop any prior ambiguity links
-                // A fresh push IS a verification: we just wrote the file. Stamp
-                // it so the verify pass doesn't immediately re-check it.
-                sharePointVerifiedAt: now(),
+                // Deliberately NOT verified: WS4 confirms the files by listing
+                // the real folder on a later tick. A push pre-stamping itself
+                // as verified left race-lost files unchecked until the 24h TTL
+                // — by which time the midnight digest had already claimed them.
+                sharePointVerifiedAt: null,
                 lastPushAt: now(),
               },
             })
-            .catch(() => {});
-          await recordError([item.id], null); // landed cleanly — drop any prior error
-          sweep.uploaded += 1;
+            .catch(() => ({ count: 0 }));
+          if (stamped.count > 0) {
+            await recordError([item.id], null); // landed cleanly — drop any prior error
+            sweep.uploaded += 1;
+          }
         } else {
           // Asset no longer approved/print-safe (or gone) — data-shaped skip.
           await stamp([item.id], "SKIPPED");
@@ -273,6 +307,29 @@ export async function pushQueuedSupplierUploads(opts?: {
       sweep.failures.push({ styleId, status, message });
       console.warn(`[supplier-upload] push not completed for style ${styleId} (${status}): ${message}`);
     }
+  }
+
+  // Make event-driven sweeps visible on /automation (see recordRunAs above).
+  // Fail-soft: a run-record hiccup must never break the approval that
+  // triggered the push.
+  if (opts?.recordRunAs && sweep.styles > 0) {
+    await db.cronRun
+      .create({
+        data: {
+          kind: "supplier-upload",
+          source: opts.recordRunAs,
+          note:
+            `uploads: ${sweep.uploaded} ok / ${sweep.failed} failed / ${sweep.skipped} skipped` +
+            (sweep.noFolder > 0 || sweep.ambiguous > 0
+              ? ` / ${sweep.noFolder} no PO folder / ${sweep.ambiguous} ambiguous`
+              : "") +
+            (sweep.failures.length > 0 ? ` — e.g. ${sweep.failures[0].message}` : ""),
+          processed: sweep.uploaded,
+          failed: sweep.failed,
+          durationMs: Date.now() - startedAt,
+        },
+      })
+      .catch(() => {});
   }
 
   return sweep;

@@ -42,6 +42,14 @@ import { APPROVED_LAYOUTS_SUBFOLDER } from "./supplier-folder-names";
 
 // Re-verify each UPLOADED row at most once per this window.
 export const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
+// Sent rows stay in the verify scan while their last push is this recent. The
+// midnight digest stamps sentAt on every row it emails — scoping verify to
+// sentAt-null rows only meant a file lost between push and midnight was never
+// re-checked again (the digest claimed it, verify never looked). Bounding by
+// lastPushAt keeps the scan off ancient POs (whose folders operators may have
+// reorganised — re-arming those would resurrect long-dead uploads) while every
+// recent push, sent or not, gets audited against the real folder.
+export const SENT_REVERIFY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 // Rows checked per run — caps the Graph calls a single tick makes.
 const DEFAULT_BUDGET = 60;
 
@@ -65,9 +73,11 @@ export async function verifySupplierUploads(opts?: {
 
   const items = await db.supplierSendQueueItem.findMany({
     where: {
-      sentAt: null,
+      AND: [
+        { OR: [{ sentAt: null }, { lastPushAt: { gte: new Date(Date.now() - SENT_REVERIFY_WINDOW_MS) } }] },
+        { OR: [{ sharePointVerifiedAt: null }, { sharePointVerifiedAt: { lt: cutoff } }] },
+      ],
       sharePointStatus: "UPLOADED",
-      OR: [{ sharePointVerifiedAt: null }, { sharePointVerifiedAt: { lt: cutoff } }],
       ...(opts?.styleIds && opts.styleIds.length > 0 ? { styleId: { in: opts.styleIds } } : {}),
     },
     select: { id: true, styleId: true, variantKey: true, jobAssetId: true },
@@ -255,6 +265,10 @@ export async function verifySupplierUploads(opts?: {
     if (healIds.length > 0) {
       // Auto re-arm — identical to the manual "retry floated" action, plus
       // clearing the now-stale location so the next sweep re-uploads cleanly.
+      // queuedAt is refreshed so a SENT row's heal grants it a fresh retry
+      // lease in the push sweep (see SENT_RETRY_LEASE_MS) — sentAt itself is
+      // left alone: the supplier was already emailed about this output, the
+      // file just needs to actually be in the folder.
       await db.supplierSendQueueItem
         .updateMany({
           where: { id: { in: healIds } },
@@ -264,6 +278,7 @@ export async function verifySupplierUploads(opts?: {
             sharePointUrl: null,
             sharePointFolderUrl: null,
             sharePointVerifiedAt: null,
+            queuedAt: now(),
           },
         })
         .catch(() => {});

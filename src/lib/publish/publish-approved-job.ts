@@ -429,7 +429,7 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
   // retried by the midnight sweep), never unwinds the publish.
   if (!skipDelivery) {
     try {
-      await pushQueuedSupplierUploads({ styleIds: [job.styleId] });
+      await pushQueuedSupplierUploads({ styleIds: [job.styleId], recordRunAs: "approval" });
     } catch (err) {
       console.warn(`[supplier-upload] publish push failed for ${job.id}:`, err);
     }

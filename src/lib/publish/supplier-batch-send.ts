@@ -135,6 +135,7 @@ export async function runSupplierSendBatch(opts?: { source?: "midnight" | "manua
       styleIds: [...new Set(pending.map((p) => p.styleId))],
       // Midnight retries even rows that used up their day-time strikes.
       includeFloated: true,
+      recordRunAs: source,
     });
     if (swept.styles > 0) {
       console.log(

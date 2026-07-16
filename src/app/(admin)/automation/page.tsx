@@ -274,7 +274,10 @@ const STATUS_PILL: Record<FeedEvent["status"], string> = {
 async function ActivityTab({ showAll, feedKind }: { showAll: boolean; feedKind?: FeedKind }) {
   const kind = feedKind && FEED_KINDS.includes(feedKind) ? feedKind : undefined;
   const [{ events, hiddenIdle }, lastFired] = await Promise.all([
-    getAutomationFeed({ limit: 80, kinds: kind ? [kind] : undefined, includeIdle: showAll }),
+    // A single-kind view is for digging ("when did uploads actually run?") —
+    // fetch the full window so a kind that ticks every few minutes still shows
+    // a day of history, not a couple of hours.
+    getAutomationFeed({ limit: kind ? 300 : 80, kinds: kind ? [kind] : undefined, includeIdle: showAll }),
     db.cronRun.groupBy({ by: ["kind"], _max: { createdAt: true } }),
   ]);
   const lastFiredByKind = new Map(lastFired.map((g) => [g.kind, g._max.createdAt]));

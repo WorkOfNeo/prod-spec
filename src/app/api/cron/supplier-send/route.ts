@@ -66,6 +66,9 @@ export async function POST(req: NextRequest) {
         processed: sweep.uploaded,
         failed: sweep.failed,
         enqueued: reconciled.outputsEnqueued,
+        // A self-heal re-arm is real activity — count it so the feed's default
+        // (activity-only) view surfaces the tick instead of hiding it as idle.
+        requeued: verified.healed,
         durationMs: Date.now() - startedAt,
       },
     });
