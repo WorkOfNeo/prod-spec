@@ -19,6 +19,7 @@ import {
   type LayoutPage,
 } from "./schema";
 import { tokenMeta, type BarcodeSource, type LogoSource } from "./token-meta";
+import { narrowSizeScopedText } from "./size-scoped-text";
 import { CALC_RE, fieldsInCalcExpression } from "./calc";
 import { getContrastAddressLogoDataUrl, getContrastLogoDataUrl } from "./logos";
 import {
@@ -81,8 +82,35 @@ export function repetitionStyles(
   // re-applies repetitionStyles to already-narrowed styles, and an
   // already-set allSizes must survive that second pass.
   const allSizes = style.allSizes ?? style.sizes;
+  // Buyers fill some text columns as per-size lists keyed by the style's own
+  // size labels ("4-5 ÅR: 7307204, 6-7 ÅR: …") — one entry per size, same
+  // convention as the barcode columns. A repetition row narrowed to size(s)
+  // prints ITS entry, not the whole list. No size anchors in the value (or
+  // none matching the row) → the raw value stands (see size-scoped-text.ts).
+  // Idempotent like the rest of the narrowing: a narrowed value carries no
+  // "<size>:" anchor, so the second repetitionStyles pass leaves it alone.
+  // Anchor vocabulary = every size label the style knows, whatever the source
+  // (sizes column, PO EAN rows, per-size cartons) — `sizes` alone can be a
+  // subset (it dedupes by the ean-map string).
+  const allLabels = [
+    ...allSizes.map((s) => s.label),
+    ...(style.eanVariants ?? []).map((v) => v.size),
+    ...(style.carton.perSize ?? []).map((v) => v.size),
+  ];
+  const sizeScoped = (rowSizes: readonly SizeVariant[]) => {
+    const rowLabels = rowSizes.map((s) => s.label);
+    return {
+      customerItemNo: narrowSizeScopedText(style.customerItemNo, allLabels, rowLabels),
+      description: narrowSizeScopedText(style.description, allLabels, rowLabels),
+    };
+  };
   if (repeatBy === "size" && style.sizes.length > 0) {
-    return style.sizes.map((entry) => ({ ...style, sizes: [entry], allSizes }));
+    return style.sizes.map((entry) => ({
+      ...style,
+      sizes: [entry],
+      allSizes,
+      ...sizeScoped([entry]),
+    }));
   }
   if (repeatBy === "ean") {
     const rows = style.eanVariants ?? [];
@@ -95,6 +123,7 @@ export function repetitionStyles(
         ...style,
         sizes: [{ label: v.size, ean13: v.ean13 }],
         allSizes,
+        ...sizeScoped([{ label: v.size, ean13: v.ean13 }]),
         eanVariants: [v],
         colour: v.colour ? { name: v.colour, code: style.colour?.code ?? "" } : style.colour,
         // Bind this colourway's own carton EAN so {{cartonEan}} /
@@ -104,7 +133,12 @@ export function repetitionStyles(
       }));
     }
     if (style.sizes.length > 0) {
-      return style.sizes.map((entry) => ({ ...style, sizes: [entry], allSizes }));
+      return style.sizes.map((entry) => ({
+        ...style,
+        sizes: [entry],
+        allSizes,
+        ...sizeScoped([entry]),
+      }));
     }
   }
   if (repeatBy === "assort") {
@@ -155,6 +189,9 @@ export function repetitionStyles(
       isCartonRow: true,
       sizes: group.sizes,
       allSizes,
+      // Sizes sharing a carton collapse to one row — matched entries join
+      // with ", " (the assort row below keeps the raw whole-style value).
+      ...sizeScoped(group.sizes),
       carton: { ...style.carton, ean13: cartonEan, perSize: group.rows },
       colour: group.colour ? { name: group.colour, code: style.colour?.code ?? "" } : style.colour,
     }));
