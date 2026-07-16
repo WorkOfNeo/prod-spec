@@ -378,3 +378,155 @@ export function BackfillFoldersButton() {
     </div>
   );
 }
+
+type FixItem = {
+  styleId: string;
+  styleName: string;
+  variantKey: string;
+  docType: string;
+  currentName: string;
+  correctName: string;
+  action: "rename" | "delete-stale" | "ok" | "skip" | "failed";
+  note?: string;
+};
+type FixResult = {
+  error?: string;
+  scanned?: number;
+  needFix?: number;
+  renamed?: number;
+  deletedStale?: number;
+  alreadyCorrect?: number;
+  skipped?: number;
+  failed?: number;
+  dryRun?: boolean;
+  items?: FixItem[];
+};
+
+// "Fix output filenames" — reconcile every UPLOADED supplier output's SharePoint
+// name with what its layout's CURRENT filename template says it should be,
+// renaming drifted files IN PLACE (no re-generate, no re-review). Preview shows
+// each old → new rename; "Apply" performs the Graph renames + corrects our
+// stored names. Use after editing an output's filename template on an output
+// that's already approved + uploaded (the runner won't regenerate those).
+export function FixFilenamesButton() {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<FixResult | null>(null);
+  const [applied, setApplied] = useState<FixResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function call(dryRun: boolean): Promise<FixResult | null> {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/supplier-send/fix-filenames${dryRun ? "?dryRun=1" : ""}`, {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => ({}))) as FixResult;
+      if (!res.ok) {
+        setError(body.error ?? `HTTP ${res.status}`);
+        return null;
+      }
+      return body;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Request failed");
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runPreview() {
+    setApplied(null);
+    const body = await call(true);
+    if (body) setPreview(body);
+  }
+
+  async function apply() {
+    const body = await call(false);
+    if (body) {
+      setApplied(body);
+      setPreview(null);
+      router.refresh();
+    }
+  }
+
+  const result = applied ?? preview;
+  const renames = (result?.items ?? []).filter((i) => i.action === "rename" || i.action === "delete-stale");
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={runPreview}
+          disabled={busy}
+          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
+        >
+          {busy && !preview ? "Checking…" : "Fix output filenames"}
+        </button>
+        {preview && !applied ? (
+          <button
+            type="button"
+            onClick={apply}
+            disabled={busy || (preview.needFix ?? 0) === 0}
+            className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+          >
+            {busy ? "Renaming…" : `Apply — rename ${preview.needFix ?? 0} file${(preview.needFix ?? 0) === 1 ? "" : "s"}`}
+          </button>
+        ) : null}
+      </div>
+
+      {error ? <span className="text-xs text-red-600">{error}</span> : null}
+
+      {result && !error ? (
+        <div className="max-w-2xl rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+          <div>
+            {applied ? "Done — " : "Preview — "}
+            <span className="font-medium text-zinc-800">
+              {applied ? (result.renamed ?? 0) + (result.deletedStale ?? 0) : result.needFix ?? 0}
+            </span>{" "}
+            {applied ? "renamed" : "to rename"} of {result.scanned ?? 0} uploaded output(s){" "}
+            <span className="text-zinc-400">
+              ({result.alreadyCorrect ?? 0} already correct
+              {(result.skipped ?? 0) > 0 ? `, ${result.skipped} skipped` : ""}
+              {(result.failed ?? 0) > 0 ? `, ${result.failed} failed` : ""})
+            </span>
+            .
+          </div>
+          {renames.length > 0 ? (
+            <details className="mt-1" open={!applied}>
+              <summary className="cursor-pointer text-zinc-500">
+                {renames.length} file{renames.length === 1 ? "" : "s"} — old → new
+              </summary>
+              <ul className="mt-1 max-h-64 space-y-1 overflow-y-auto pr-1">
+                {renames.map((r, i) => (
+                  <li key={i} className="border-b border-zinc-100 pb-1 last:border-0">
+                    <span className="text-zinc-500">{r.styleName}</span>
+                    <div className="font-mono text-[11px] leading-tight">
+                      <span className="text-zinc-400 line-through">{r.currentName}</span>
+                      <span className="mx-1 text-zinc-400">→</span>
+                      <span className="text-emerald-700">{r.correctName}</span>
+                    </div>
+                    {r.note && applied ? <span className="text-[10px] text-zinc-400">{r.note}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+          {(result.failed ?? 0) > 0 ? (
+            <ul className="mt-1 space-y-0.5">
+              {(result.items ?? [])
+                .filter((i) => i.action === "failed")
+                .map((f, i) => (
+                  <li key={i} className="text-[11px] text-red-600">
+                    {f.styleName} · {f.variantKey}: {f.note}
+                  </li>
+                ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
