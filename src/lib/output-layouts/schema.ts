@@ -316,12 +316,14 @@ export function blockId(b: LayoutBlock): string {
   return b.id ?? (b.anchor ? `b-${b.anchor}` : "b-rect");
 }
 
-// Matches {{token}} and {{token:arg}}. Group 1 = key, group 2 = arg.
-// Kept intentionally strict (no spaces, no nesting) so a stray "{{" in
-// literal text can't half-match. Conditional control tags ({{if …}},
-// {{else}}, {{endif}}) deliberately do NOT match this — they're handled
-// by IF_RE / CONTROL_RE below.
-export const TOKEN_RE = /\{\{([a-zA-Z][a-zA-Z0-9]*)(?::([a-zA-Z0-9-]+))?\}\}/g;
+// Matches {{token}}, {{token:arg}} and {{token:arg:arg2}}. Group 1 = key,
+// group 2 = arg, group 3 = arg2. arg2 is numeric-only (a size in mm — today
+// only {{barcode:…:height}}), so a stray colon in a text arg can't grow a
+// bogus second argument. Kept intentionally strict (no spaces, no nesting)
+// so a stray "{{" in literal text can't half-match. Conditional control tags
+// ({{if …}}, {{else}}, {{endif}}) deliberately do NOT match this — they're
+// handled by IF_RE / CONTROL_RE below.
+export const TOKEN_RE = /\{\{([a-zA-Z][a-zA-Z0-9]*)(?::([a-zA-Z0-9-]+))?(?::([0-9]+(?:\.[0-9]+)?))?\}\}/g;
 
 // Single-level conditional inside one line:
 //   {{if deliveryTerm == FOB}}{{customerOrderNo}}{{else}}{{poNumber}}{{endif}}
@@ -408,7 +410,7 @@ export function lineWithoutConditionals(line: string): string {
   return line.replace(new RegExp(IF_RE.source, "g"), "");
 }
 
-export type TokenRef = { key: string; arg?: string };
+export type TokenRef = { key: string; arg?: string; arg2?: string };
 
 // Conditional control tags are NOT variables. {{if …}} carries spaces so it
 // never matches TOKEN_RE, but bare {{else}} / {{endif}} are token-shaped and
@@ -421,7 +423,7 @@ export function tokensInLine(line: string): TokenRef[] {
   const out: TokenRef[] = [];
   for (const m of line.matchAll(new RegExp(TOKEN_RE.source, "g"))) {
     if (CONTROL_TOKEN_KEYS.has(m[1])) continue;
-    out.push({ key: m[1], arg: m[2] || undefined });
+    out.push({ key: m[1], arg: m[2] || undefined, arg2: m[3] || undefined });
   }
   return out;
 }
@@ -434,7 +436,7 @@ export function tokensInDef(def: LayoutDef): TokenRef[] {
     for (const block of page.blocks) {
       for (const line of block.lines) {
         for (const ref of tokensInLine(line)) {
-          seen.set(`${ref.key}:${ref.arg ?? ""}`, ref);
+          seen.set(`${ref.key}:${ref.arg ?? ""}:${ref.arg2 ?? ""}`, ref);
         }
       }
     }

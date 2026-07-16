@@ -32,7 +32,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
 
   const problems: string[] = [];
   for (const ref of tokensInDef(def)) {
-    problems.push(...validateTokenRef(ref.key, ref.arg));
+    problems.push(...validateTokenRef(ref.key, ref.arg, ref.arg2));
   }
   // Conditional syntax — malformed {{if}}/{{else}}/{{endif}} is a publish
   // blocker, not just a preview oddity. Same for calculated fields

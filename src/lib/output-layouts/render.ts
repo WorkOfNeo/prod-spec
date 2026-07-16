@@ -1,6 +1,6 @@
 import type { StyleData, SizeVariant } from "@/lib/pdf/types";
 import { escapeHtml, htmlDocument } from "@/lib/pdf/templates/base";
-import { renderBarcodeDataUrl } from "@/lib/pdf/barcode";
+import { renderBarcodePng } from "@/lib/pdf/barcode";
 import {
   getWashcareSymbol,
   loadWashcareSymbols,
@@ -55,6 +55,9 @@ import {
 // Graphics scale with the block's font size (9 pt = the classic sizes):
 //   barcode bars  fontPt × 16/9 mm     EAN digits  fontPt × 10/9 pt
 //   wash symbols  fontPt × 6/9 mm
+// Exception: {{barcode:…:H}} sets an explicit bar height of H mm — the
+// symbol then prints at true physical size (standard module width, digits
+// unscaled) regardless of the block font. See renderBarcodeHtml.
 //
 // Page sizes: every page gets a CSS named page (@page olp<i>) with its
 // own mm size, so one PDF can carry differently-sized pages. Chromium
@@ -213,7 +216,7 @@ const ANCHOR_ALIGN: Record<LayoutAnchor, "left" | "right"> = {
 
 type RenderCtx = {
   mode: LayoutRenderMode;
-  barcodes: Map<string, string | null>; // "symbology:value" → data URL (null = encode failed)
+  barcodes: BarcodeCache; // "symbology:height:value" → rendered PNG (null = encode failed)
   symbols: WashcareSymbolMap | null; // loaded only when {{washSymbols}} is used
   logos: { contrast: string | null; contrastAddress: string | null; custom: string | null }; // loaded only when {{logo:…}} is used
   certs: CertificateMap | null; // loaded only when {{cert:…}} is used
@@ -257,36 +260,72 @@ export function barcodeSymbology(style: StyleData, source: BarcodeSource): Barco
   return style.cartonBarcode?.type ?? "ean128";
 }
 
-async function buildBarcodeCache(styles: StyleData[], pages: LayoutPage[]): Promise<Map<string, string | null>> {
-  const wanted = new Map<string, { symbology: BarcodeSymbology; value: string }>();
+// Rendered barcode PNG + its true physical height in mm (bars AND the
+// human-readable digit row) — needed to print an explicit-height barcode at
+// actual size instead of stretching it to the block's font-scaled default.
+type BarcodeEntry = { dataUrl: string; totalMm: number };
+type BarcodeCache = Map<string, BarcodeEntry | null>;
+
+// Optional {{barcode:…:H}} second argument — explicit bar height in mm.
+// Mirrors validateTokenRef's 2–40 mm publish gate; out-of-range/garbage
+// degrades to the default font-scaled sizing instead of breaking a print.
+function parseBarHeightMm(arg2: string | undefined): number | null {
+  if (arg2 === undefined) return null;
+  const n = Number(arg2);
+  return Number.isFinite(n) && n >= 2 && n <= 40 ? n : null;
+}
+
+function barcodeCacheKey(symbology: BarcodeSymbology, heightMm: number | null, value: string): string {
+  return `${symbology}:${heightMm ?? ""}:${value}`;
+}
+
+// bwip-js renders at 72 dpi × scale, so px ↔ mm is exact: 1 mm = scale ×
+// 72/25.4 px. Reading the PNG's IHDR height (bytes 20–23) therefore gives
+// the symbol's true physical height including the digit row bwip appends
+// below the bars (includetext).
+const BWIP_PX_PER_MM = 72 / 25.4;
+
+function pngHeightPx(png: Buffer): number {
+  return png.readUInt32BE(20);
+}
+
+async function buildBarcodeCache(styles: StyleData[], pages: LayoutPage[]): Promise<BarcodeCache> {
+  const wanted = new Map<string, { symbology: BarcodeSymbology; heightMm: number | null; value: string }>();
   for (const page of pages) {
     for (const block of page.blocks) {
       for (const line of block.lines) {
         for (const m of line.matchAll(new RegExp(TOKEN_RE.source, "g"))) {
           if (m[1] !== "barcode") continue;
           const source = (m[2] ?? "cartonEan") as BarcodeSource;
+          const heightMm = parseBarHeightMm(m[3]);
           for (const style of styles) {
             const value = resolveBarcodeValue(style, source);
             if (!value) continue;
             const symbology = barcodeSymbology(style, source);
-            wanted.set(`${symbology}:${value}`, { symbology, value });
+            wanted.set(barcodeCacheKey(symbology, heightMm, value), { symbology, heightMm, value });
           }
         }
       }
     }
   }
-  const cache = new Map<string, string | null>();
+  const cache: BarcodeCache = new Map();
   await Promise.all(
-    [...wanted.entries()].map(async ([cacheKey, { symbology, value }]) => {
+    [...wanted.entries()].map(async ([cacheKey, { symbology, heightMm, value }]) => {
       try {
         // EAN-128 (the carton default) prints as Code 128 bars with the
         // number as a separate HTML row beneath; true EAN-13 carries the
-        // human-readable digits inside the symbol (includetext).
-        const dataUrl =
+        // human-readable digits inside the symbol (includetext). An explicit
+        // {{barcode:…:H}} height is baked into the bars here, so the module
+        // width and digit size stay standards-correct at any bar height.
+        const scale = symbology === "ean128" ? 4 : 3;
+        const png =
           symbology === "ean128"
-            ? await renderBarcodeDataUrl(value, { bcid: "code128", scale: 4, height: 16, includetext: false })
-            : await renderBarcodeDataUrl(value, { bcid: "ean13", scale: 3, height: 14, includetext: true });
-        cache.set(cacheKey, dataUrl);
+            ? await renderBarcodePng(value, { bcid: "code128", scale, height: heightMm ?? 16, includetext: false })
+            : await renderBarcodePng(value, { bcid: "ean13", scale, height: heightMm ?? 14, includetext: true });
+        cache.set(cacheKey, {
+          dataUrl: `data:image/png;base64,${png.toString("base64")}`,
+          totalMm: pngHeightPx(png) / (scale * BWIP_PX_PER_MM),
+        });
       } catch {
         cache.set(cacheKey, null);
       }
@@ -295,7 +334,7 @@ async function buildBarcodeCache(styles: StyleData[], pages: LayoutPage[]): Prom
   return cache;
 }
 
-function renderBarcodeHtml(style: StyleData, source: BarcodeSource, ctx: RenderCtx): string {
+function renderBarcodeHtml(style: StyleData, source: BarcodeSource, ctx: RenderCtx, heightArg?: string): string {
   const value = resolveBarcodeValue(style, source);
   if (!value) {
     const label =
@@ -307,19 +346,32 @@ function renderBarcodeHtml(style: StyleData, source: BarcodeSource, ctx: RenderC
     return `<div class="barcode-missing">${escapeHtml(label)}</div>`;
   }
   const symbology = barcodeSymbology(style, source);
-  const dataUrl = ctx.barcodes.get(`${symbology}:${value}`);
-  if (!dataUrl) {
+  const tokenHeightMm = parseBarHeightMm(heightArg);
+  const entry = ctx.barcodes.get(barcodeCacheKey(symbology, tokenHeightMm, value));
+  if (!entry) {
     return `<div class="barcode-missing">EAN ${escapeHtml(value)} — could not encode</div>`;
   }
   // Code 128 carries no digits in the bars image — print the number
   // beneath; EAN-13 includes its text in the symbol (includetext: true).
   const numberRow = symbology === "ean128" ? `<div class="ol-ean-number">${escapeHtml(value)}</div>` : "";
-  // Per-spec bar height (ProdSpec output row) beats the block's
-  // font-scaled default — for the carton barcode only (either symbology).
-  const heightMm =
+  // Display height, by precedence:
+  //   1. {{barcode:…:H}} token argument — bars are H mm; the <img> prints at
+  //      the PNG's true physical size (bars + digit row), so bar height is
+  //      exact and width stays the symbology's standard, whatever the block
+  //      font. Scaled with the rest of the design (fontScale), like the
+  //      washSymbols gap.
+  //   2. Per-spec carton bar height (ProdSpec output row) — carton sources
+  //      only (either symbology). Legacy: uniformly scales the default PNG.
+  //   3. Block default — CSS var --ol-bc-h (fontPt × 16/9 mm).
+  const specHeightMm =
     source === "cartonEan" || source === "cartonEan13" ? style.cartonBarcode?.heightMm : undefined;
-  const imgStyle = heightMm ? ` style="height: ${heightMm}mm"` : "";
-  return `<span class="ol-barcode${ctx.mode === "preview" ? " ol-barcode-preview" : ""}"><img src="${dataUrl}"${imgStyle} alt="${escapeHtml(value)}" />${numberRow}</span>`;
+  const imgStyle =
+    tokenHeightMm != null
+      ? ` style="height: ${(entry.totalMm * ctx.fontScale).toFixed(3)}mm"`
+      : specHeightMm
+        ? ` style="height: ${specHeightMm}mm"`
+        : "";
+  return `<span class="ol-barcode${ctx.mode === "preview" ? " ol-barcode-preview" : ""}"><img src="${entry.dataUrl}"${imgStyle} alt="${escapeHtml(value)}" />${numberRow}</span>`;
 }
 
 // Wash-care symbol strip — same honest-gap rules as the coded templates
@@ -429,7 +481,7 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx): string | nu
 
     if (meta.kind === "barcode") {
       const source = (arg ?? "cartonEan") as BarcodeSource;
-      html += renderBarcodeHtml(style, source, ctx);
+      html += renderBarcodeHtml(style, source, ctx, m[3] || undefined);
       hadValue = true; // barcode renders something in every state
       continue;
     }

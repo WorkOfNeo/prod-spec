@@ -17,6 +17,9 @@ export type LayoutTokenMeta = {
   // "source" → barcode/logo source argument ({{barcode:cartonEan}});
   // "gap" → optional numeric mm gap, e.g. {{washSymbols:0}} (0 mm gap).
   arg?: "lang" | "source" | "gap";
+  // Optional SECOND argument (TOKEN_RE group 3, numeric-only).
+  // "heightMm" → bar height in mm, e.g. {{barcode:ean13:8}} (8 mm bars).
+  arg2?: "heightMm";
   // Example value shown in the palette tooltip.
   example?: string;
 };
@@ -171,7 +174,15 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   },
 
   // ---- Barcodes & symbols (rendered as graphics, scaled by block font size) ----
-  { key: "barcode", label: "Barcode", group: "Barcodes & symbols", kind: "barcode", arg: "source", example: "{{barcode:cartonEan}}" },
+  {
+    key: "barcode",
+    label: "Barcode (optional bar height in mm, e.g. {{barcode:ean13:8}})",
+    group: "Barcodes & symbols",
+    kind: "barcode",
+    arg: "source",
+    arg2: "heightMm",
+    example: "{{barcode:cartonEan}}",
+  },
   {
     key: "washSymbols",
     label: "Wash care symbols (optional gap in mm, e.g. {{washSymbols:0}})",
@@ -313,7 +324,7 @@ export function tokenMeta(key: string): LayoutTokenMeta | null {
 
 // Validation shared by the builder (live) and the publish endpoint
 // (gate): unknown keys, missing/invalid args. Returns [] when clean.
-export function validateTokenRef(key: string, arg?: string): string[] {
+export function validateTokenRef(key: string, arg?: string, arg2?: string): string[] {
   const meta = tokenMeta(key);
   if (!meta) return [`unknown variable {{${key}${arg ? `:${arg}` : ""}}}`];
   const errs: string[] = [];
@@ -338,6 +349,18 @@ export function validateTokenRef(key: string, arg?: string): string[] {
   }
   if (!meta.arg && arg) {
     errs.push(`{{${key}}} does not take an argument (got ":${arg}")`);
+  }
+  // Second argument — today only the barcode bar height in mm. Optional;
+  // when present it must be a sane printable bar height (2–40 mm).
+  if (arg2 !== undefined) {
+    if (meta.arg2 !== "heightMm") {
+      errs.push(`{{${key}${arg ? `:${arg}` : ""}}} does not take a second argument (got ":${arg2}")`);
+    } else {
+      const n = Number(arg2);
+      if (!Number.isFinite(n) || n < 2 || n > 40) {
+        errs.push(`{{${key}:${arg}:${arg2}}} bar height must be a number of mm between 2 and 40`);
+      }
+    }
   }
   return errs;
 }

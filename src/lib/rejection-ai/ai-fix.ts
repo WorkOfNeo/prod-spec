@@ -242,7 +242,7 @@ function buildUserMessage(input: {
 function validateLineText(text: string): string[] {
   const errs: string[] = [];
   if (text.length > 500) errs.push("line exceeds the 500-character limit");
-  for (const ref of tokensInLine(text)) errs.push(...validateTokenRef(ref.key, ref.arg));
+  for (const ref of tokensInLine(text)) errs.push(...validateTokenRef(ref.key, ref.arg, ref.arg2));
   errs.push(...validateLineConditionals(text, IF_RE, CONTROL_RE));
   return errs;
 }
