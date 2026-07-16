@@ -69,13 +69,25 @@ const RESOLVERS: Record<string, TextResolver> = {
   // walking base + ACTIVE siblings via the SAME per-slot projection the
   // {{styleN…}} tokens use; on standard single-style generation it degrades
   // to the plain {{description}} value. Blank descriptions are dropped so a
-  // missing sibling never leaves a dangling ", ".
+  // missing sibling never leaves a dangling ", "; and styles that carry an
+  // identical description collapse to a SINGLE entry (see the de-dupe below).
   multipleStylesDescriptions: (s) => {
     const base = resolveTextToken(s, "description");
     const pool = s.multipleStyles ? (s.siblings ?? []) : [];
+    // De-dupe on the description text: several styles on one box often share
+    // the SAME description, and it should print ONCE (3 identical → one),
+    // keeping the first occurrence. Compared case/whitespace-insensitively so
+    // trivial formatting differences still count as "1:1 the same".
+    const seen = new Set<string>();
     return [base, ...pool.map((sib) => sib.description)]
       .map((d) => d.trim())
       .filter(Boolean)
+      .filter((d) => {
+        const key = d.replace(/\s+/g, " ").toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
       .join(", ");
   },
   customerItemNo: (s) => s.customerItemNo ?? "",
