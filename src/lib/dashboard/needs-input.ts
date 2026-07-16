@@ -93,7 +93,7 @@ export async function getNeedsInputStyles(): Promise<NeedsInputStyle[]> {
       businessAreaRef: { select: { name: true } },
       supplier: { select: { country: true, sharepointUrl: true } },
       rawData: true,
-      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
+      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, cartonEan: true } },
       customer: { select: { name: true, config: true } },
       prodSpec: { select: { id: true, outputs: true, columnMapping: true } },
     },

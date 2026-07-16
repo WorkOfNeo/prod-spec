@@ -454,7 +454,7 @@ async function recomputeStyleCompletion(styleId: string): Promise<void> {
       // Current workflow status — guards the update below from downgrading
       // post-generation states back to READY/PENDING.
       status: true,
-      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
+      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, cartonEan: true } },
       customer: { select: { config: true } },
       prodSpec: { select: { requiredFields: true, columnMapping: true } },
     },

@@ -85,7 +85,7 @@ export default async function StylesPage() {
         prodSpec: { select: { id: true, name: true, autoGenerateThresholdPct: true, active: true, outputs: true } },
         // Resolved PO barcodes — the ean13/cartonEan fallback source for
         // the readiness checks (see effectiveStyleItem).
-        eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true } },
+        eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, cartonEan: true } },
         // Latest job → drives the post-generation half of the Status pill
         // (queued / generating / review states), independent of the stored
         // Style.status, which Monday re-syncs reset (see ingest.ts).
