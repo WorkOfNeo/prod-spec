@@ -310,6 +310,57 @@ export async function deleteDriveItem(
   }
 }
 
+// Look up a single FILE by name under (driveId + folderItemId) via get-by-path,
+// returning its item id + webUrl (or null on 404). listChildFileNames returns
+// names only; this is how "Fix output filenames" gets the item id it needs to
+// rename. A 403 surfaces as the write-forbidden error.
+export async function findChildFile(
+  driveId: string,
+  folderItemId: string,
+  name: string,
+): Promise<{ id: string; name: string; webUrl: string | null } | null> {
+  const client = getGraphClient();
+  const byPath = `/drives/${driveId}/items/${folderItemId}:/${encodeURIComponent(name)}`;
+  try {
+    const item = (await client.api(byPath).get()) as SharedDriveItem;
+    if (!item?.id || !item.file) return null; // must be a file, not a folder
+    return { id: item.id, name: item.name, webUrl: item.webUrl ?? null };
+  } catch (err) {
+    const code = statusCodeOf(err);
+    if (code === 404) return null;
+    if (code === 403) {
+      throw new SharePointWriteForbiddenError(`SharePoint denied access (403) — ${WRITE_FORBIDDEN_HINT}`);
+    }
+    throw err;
+  }
+}
+
+// Rename a drive item IN PLACE (PATCH the name) — same item id, same bytes, same
+// version history, just a new name and webUrl. This is how "Fix output filenames"
+// corrects a file whose stored name drifted from the layout's current template,
+// without a destructive delete + re-upload. 404 → { renamed:false, notFound:true }.
+// 409 (a file with the target name already exists) → { renamed:false, conflict:true }
+// so the caller can fall back to deleting the stale duplicate. 403 → write-forbidden.
+export async function renameDriveItem(
+  driveId: string,
+  itemId: string,
+  newName: string,
+): Promise<{ renamed: boolean; notFound?: boolean; conflict?: boolean; webUrl?: string | null }> {
+  const client = getGraphClient();
+  try {
+    const res = (await client.api(`/drives/${driveId}/items/${itemId}`).update({ name: newName })) as SharedDriveItem;
+    return { renamed: true, webUrl: res.webUrl ?? null };
+  } catch (err) {
+    const code = statusCodeOf(err);
+    if (code === 404) return { renamed: false, notFound: true };
+    if (code === 409) return { renamed: false, conflict: true };
+    if (code === 403) {
+      throw new SharePointWriteForbiddenError(`SharePoint refused the rename (403) — ${WRITE_FORBIDDEN_HINT}`);
+    }
+    throw err;
+  }
+}
+
 // Upload bytes as a file under (driveId + folderItemId). PUT /content replaces
 // existing content at the same name — so re-pushing a re-approved correction
 // overwrites the prior file. Direct PUT is good up to ~4MB (same limit as

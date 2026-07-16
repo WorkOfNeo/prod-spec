@@ -19,19 +19,39 @@ import {
   UploadNowButton,
   RetryFloatedButton,
   BackfillFoldersButton,
+  FixFilenamesButton,
 } from "./supplier-send-actions";
 import { UploadProgress } from "./upload-progress";
+import { QueuedLoadMore } from "./queued-load-more";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Approved & delivery" };
+
+// "Queued outputs" list paging — one page at a time, grown via the ?queued=
+// param (clamped) so the list can be scrolled through in full without pulling
+// an unbounded result set. The summary cards stay exact (separate unbounded
+// count), independent of this display cap.
+const QUEUED_PAGE_STEP = 250;
+const QUEUED_PAGE_MAX = 10000;
 
 // WS2a — the delivery control tower. Shows the supplier-send queue: every
 // approved output waiting to reach its supplier, grouped by supplier (with the
 // resolved email) and listed in detail. Sending is gated by the master toggle
 // at the top; while it's off this is a pure preview of what WOULD go out.
 // The sent log + Resend open-tracking land with WS2b.
-export default async function ApprovedDeliveryPage() {
+export default async function ApprovedDeliveryPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   await requireAdminPage();
+
+  const sp = await searchParams;
+  const rowsParam = typeof sp.queued === "string" ? sp.queued : null;
+  const parsedRows = rowsParam ? Number.parseInt(rowsParam, 10) : Number.NaN;
+  const queuedLimit = Number.isFinite(parsedRows)
+    ? Math.min(Math.max(parsedRows, QUEUED_PAGE_STEP), QUEUED_PAGE_MAX)
+    : QUEUED_PAGE_STEP;
 
   const [
     enabled,
@@ -51,7 +71,7 @@ export default async function ApprovedDeliveryPage() {
     db.supplierSendQueueItem.findMany({
       where: { sentAt: null },
       orderBy: { queuedAt: "desc" },
-      take: 500,
+      take: queuedLimit,
       // Read the error separately (guarded) so this list can't 500 in the window
       // between deploy and `db:deploy` adding the sharePointError column.
       omit: { sharePointError: true },
@@ -93,6 +113,12 @@ export default async function ApprovedDeliveryPage() {
   } catch {
     // Column not migrated yet — surface no per-row error until db:deploy runs.
   }
+
+  // "Queued outputs" paging: queuedRefs is the exact unbounded total, `pending`
+  // is the current page. Show a "load more" (scroll-triggered) while capped.
+  const totalQueued = queuedRefs.length;
+  const hasMoreQueued = pending.length < totalQueued;
+  const nextQueuedHref = `/settings/approved?queued=${Math.min(queuedLimit + QUEUED_PAGE_STEP, QUEUED_PAGE_MAX)}#queued`;
 
   // Tonight's batch, summed up: outputs / styles / customers / business areas,
   // and where the files stand on SharePoint. BA resolves via the mirror ref
@@ -269,6 +295,22 @@ export default async function ApprovedDeliveryPage() {
         <BackfillFoldersButton />
       </div>
 
+      {/* Reconcile uploaded filenames with the layout's CURRENT template. Needed
+          because an approved output is never regenerated, so editing its
+          filename doesn't reach the file already on SharePoint — this renames it
+          in place (no re-generate, no re-review). */}
+      <div className="mt-4 max-w-3xl rounded-lg border border-zinc-200 bg-zinc-50/60 px-4 py-3">
+        <div className="text-sm font-medium text-zinc-800">Output filenames</div>
+        <p className="mt-0.5 mb-2 text-xs text-zinc-500">
+          Reconcile every uploaded output&rsquo;s SharePoint filename with what its layout&rsquo;s
+          current filename template says it should be. Use after editing an output&rsquo;s filename
+          when it&rsquo;s already approved &amp; uploaded — an approved output isn&rsquo;t regenerated,
+          so its file keeps the old name until this renames it in place. Preview first; nothing is
+          renamed until you apply.
+        </p>
+        <FixFilenamesButton />
+      </div>
+
       {/* Per-supplier summary — who gets what tonight, and to which email. */}
       <h2 className="mt-8 mb-2 text-sm font-semibold text-zinc-700">By supplier</h2>
       <div className="overflow-hidden rounded-lg border border-zinc-200">
@@ -313,10 +355,15 @@ export default async function ApprovedDeliveryPage() {
       </div>
 
       {/* Detail — every queued output. */}
-      <h2 className="mt-8 mb-2 text-sm font-semibold text-zinc-700">Queued outputs</h2>
-      <div className="overflow-hidden rounded-lg border border-zinc-200">
+      <h2 id="queued" className="mt-8 mb-2 scroll-mt-4 text-sm font-semibold text-zinc-700">
+        Queued outputs{" "}
+        <span className="font-normal text-zinc-400">
+          ({pending.length.toLocaleString()} of {totalQueued.toLocaleString()})
+        </span>
+      </h2>
+      <div className="max-h-[70vh] overflow-y-auto rounded-lg border border-zinc-200">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="sticky top-0 z-10 bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
             <tr>
               <th className="px-4 py-2">Customer / BA</th>
               <th className="px-4 py-2">Style</th>
@@ -422,6 +469,9 @@ export default async function ApprovedDeliveryPage() {
           </tbody>
         </table>
       </div>
+      {hasMoreQueued ? (
+        <QueuedLoadMore key={nextQueuedHref} href={nextQueuedHref} remaining={totalQueued - pending.length} />
+      ) : null}
 
       {/* SharePoint gaps — the digest already told the supplier "your files are
           in the folder", but this row's files are NOT there (flagged status
