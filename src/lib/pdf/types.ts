@@ -88,6 +88,14 @@ export type StyleData = {
   // assort row, which would otherwise re-append on every pass. Internal — no token.
   isCartonRow?: boolean;
 
+  // Raw carton-qty column text. `carton.outerVE` is its numeric parse and
+  // 0 whenever the buyer filled a per-size list instead ("4-5ÅR=1040,
+  // 6-7ÅR=1050" — the "=" flavour of the size-scoped convention, see
+  // output-layouts/size-scoped-text.ts). Kept verbatim so repetitionStyles
+  // can narrow it to the row's size and {{qtyPerCarton}} can fall back to
+  // it when outerVE didn't parse. Optional: non-mapper constructors omit it.
+  cartonQtyRaw?: string;
+
   carton: {
     klNumber: string;
     supplierNumber: string;

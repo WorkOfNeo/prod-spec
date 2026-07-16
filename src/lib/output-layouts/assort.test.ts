@@ -202,6 +202,37 @@ test("repeatBy 'cartonEan' rows narrow per-size text; assort row keeps the raw v
   assert.equal(reps[2].customerItemNo, s.customerItemNo);
 });
 
+test("per-size '=' carton-qty list → {{qtyPerCarton}} resolves the row's qty", () => {
+  const base = buildSampleStyleData();
+  const s: StyleData = {
+    ...base,
+    sizes: [
+      { label: "XS", ean13: "" },
+      { label: "S", ean13: "" },
+    ],
+    eanVariants: undefined,
+    // The list doesn't parse as a number → outerVE 0, raw kept verbatim.
+    cartonQtyRaw: "XS=1040, S=1050",
+    carton: { ...base.carton, outerVE: 0 },
+  };
+  const reps = repetitionStyles(s, "size");
+  assert.equal(reps.length, 2);
+  assert.equal(resolveTextToken(reps[0], "qtyPerCarton"), "1040");
+  assert.equal(resolveTextToken(reps[1], "qtyPerCarton"), "1050");
+});
+
+test("plain numeric carton qty → outerVE wins, repeat leaves it alone", () => {
+  const base = buildSampleStyleData();
+  const s: StyleData = {
+    ...base,
+    cartonQtyRaw: "48",
+    carton: { ...base.carton, outerVE: 48 },
+  };
+  for (const rep of repetitionStyles(s, "size")) {
+    assert.equal(resolveTextToken(rep, "qtyPerCarton"), "48");
+  }
+});
+
 test("single-value customerItemNo unchanged by per-size repeat", () => {
   const base = buildSampleStyleData();
   const s: StyleData = { ...base, customerItemNo: "223609" };

@@ -64,6 +64,35 @@ test("idempotent — a narrowed value passes through unchanged", () => {
   assert.equal(narrowSizeScopedText(once, SIZES, ["4-5 ÅR"]), once);
 });
 
+test('"=" separator — carton-qty lists narrow per size', () => {
+  const raw = "4-5ÅR=1040, 6-7ÅR=1050, 8ÅR=1030";
+  const seps = [":", "="];
+  assert.equal(narrowSizeScopedText(raw, SIZES, ["4-5 ÅR"], seps), "1040");
+  assert.equal(narrowSizeScopedText(raw, SIZES, ["8 ÅR"], seps), "1030");
+  // Carton grouping joins qty entries too.
+  assert.equal(narrowSizeScopedText(raw, SIZES, ["4-5 ÅR", "6-7 ÅR"], seps), "1040, 1050");
+  // A plain numeric qty has no anchors → verbatim.
+  assert.equal(narrowSizeScopedText("1040", SIZES, ["4-5 ÅR"], seps), "1040");
+});
+
+test('"=" separator — real-world shapes', () => {
+  const seps = [":", "="];
+  // No spaces around commas or the "=" (live Size Ratio format).
+  const raw = "2-3Y=150PCS,4-5Y=200PCS,6-7Y=240PCS,8Y=200PCS";
+  const sizes = ["2-3Y", "4-5Y", "6-7Y", "8Y"];
+  assert.equal(narrowSizeScopedText(raw, sizes, ["4-5Y"], seps), "200PCS");
+  assert.equal(narrowSizeScopedText(raw, sizes, ["8Y"], seps), "200PCS");
+  // Composition-style notes: the text before "=" is not a size label, so
+  // there's no anchor and the value passes verbatim.
+  const note = "EV90000(White)+EV90000(Black)=15";
+  assert.equal(narrowSizeScopedText(note, sizes, ["4-5Y"], seps), note);
+});
+
+test('default separators exclude "=" — item-no/description behavior unchanged', () => {
+  const raw = "4-5ÅR=1040, 6-7ÅR=1050";
+  assert.equal(narrowSizeScopedText(raw, SIZES, ["4-5 ÅR"]), raw);
+});
+
 test("empty / blank inputs pass through", () => {
   assert.equal(narrowSizeScopedText("", SIZES, ["4-5 ÅR"]), "");
   assert.equal(narrowSizeScopedText("x: 1", [], ["4-5 ÅR"]), "x: 1");

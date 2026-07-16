@@ -146,7 +146,11 @@ const RESOLVERS: Record<string, TextResolver> = {
     const isFob = (s.deliveryTerm ?? "").toUpperCase().includes("FOB");
     return (isFob ? s.customerOrderNo : s.poNumber) ?? "";
   },
-  qtyPerCarton: (s) => (s.carton.outerVE ? String(s.carton.outerVE) : ""),
+  // outerVE is the column's numeric parse; it's 0 when the buyer filled a
+  // per-size "SIZE=qty" list instead, so fall back to the raw text — which
+  // repetitionStyles narrows to the row's own size (size-scoped-text.ts).
+  qtyPerCarton: (s) =>
+    s.carton.outerVE ? String(s.carton.outerVE) : (s.cartonQtyRaw ?? "").trim(),
   cartonEan: (s) => (s.carton.ean13 && s.carton.ean13 !== EAN_SENTINEL ? s.carton.ean13 : ""),
   assortEan: (s) =>
     s.carton.assortEan && s.carton.assortEan !== EAN_SENTINEL ? s.carton.assortEan : "",
