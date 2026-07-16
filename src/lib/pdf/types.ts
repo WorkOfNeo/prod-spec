@@ -78,6 +78,16 @@ export type StyleData = {
   // a template branch with {{if isAssortment}} to render that row differently.
   isAssortment?: boolean;
 
+  // True on a row already narrowed to ONE carton by repeatBy="cartonEan".
+  // renderMany narrows the style per carton and hands each row back to
+  // renderLayoutHtml, which re-applies repetitionStyles — this marks the row as
+  // done so it returns as-is instead of re-expanding to every carton (which made
+  // each per-carton PDF contain ALL the markings). repeatBy "size"/"ean" get the
+  // same idempotency implicitly by narrowing sizes/eanVariants to the current
+  // row; the carton repeat needs an explicit flag because it also APPENDS the
+  // assort row, which would otherwise re-append on every pass. Internal — no token.
+  isCartonRow?: boolean;
+
   carton: {
     klNumber: string;
     supplierNumber: string;

@@ -131,6 +131,26 @@ test("repeatBy 'cartonEan' → assort row's {{size}} lists ALL sizes (not just t
   assert.equal(resolveTextToken(reps[0], "size"), base.carton.perSize![0].size);
 });
 
+test("repeatBy 'cartonEan' → narrowing is IDEMPOTENT (one marking per per-carton PDF)", () => {
+  // renderMany narrows the style to ONE carton row, then hands that row back to
+  // renderLayoutHtml, which re-applies repetitionStyles. Re-applying to an
+  // already-narrowed row MUST return that same single row — otherwise the row's
+  // inherited carton.perSize re-expands and EVERY per-carton PDF contains ALL
+  // the markings (XS gets all, M gets all, …). Same invariant repeatBy "ean"
+  // keeps by narrowing eanVariants to the current row.
+  const base = buildSampleStyleData();
+  const reps = repetitionStyles(base, "cartonEan");
+  assert.ok(reps.length > 1, "sample must fan out to several carton rows");
+
+  for (const row of reps) {
+    const again = repetitionStyles(row, "cartonEan");
+    assert.equal(again.length, 1);
+    assert.equal(resolveBarcodeValue(again[0], "cartonEan"), resolveBarcodeValue(row, "cartonEan"));
+    assert.equal(again[0].isAssortment, row.isAssortment);
+    assert.equal(resolveTextToken(again[0], "size"), resolveTextToken(row, "size"));
+  }
+});
+
 test("repeatBy 'cartonEan' with no cartons at all → falls back to one whole-style row", () => {
   const base = buildSampleStyleData();
   const bare: StyleData = {

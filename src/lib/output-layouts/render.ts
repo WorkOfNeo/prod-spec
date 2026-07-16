@@ -129,18 +129,30 @@ export function repetitionStyles(
     // {{isAssortment}}), so a single run emits every size carton + the assort.
     // Sizes sharing a carton collapse into one label (dedup by EAN value);
     // {{size}} shows the first, {{sizes}}/{{sizeRange}} list them all.
-    const byCarton = new Map<string, { sizes: SizeVariant[]; colour: string | null }>();
+    //
+    // IDEMPOTENCY: renderMany narrows the style to one carton row and hands it
+    // back to renderLayoutHtml, which re-applies repetitionStyles. A narrowed row
+    // is flagged isCartonRow and returns as-is — without this it would re-expand
+    // (its carton.perSize is inherited) and every per-carton PDF would contain
+    // ALL the markings. Narrowing perSize below is belt-and-braces for the same.
+    if (style.isCartonRow) return [style];
+    const byCarton = new Map<
+      string,
+      { sizes: SizeVariant[]; colour: string | null; rows: NonNullable<StyleData["carton"]["perSize"]> }
+    >();
     for (const v of style.carton.perSize ?? []) {
       if (!v.cartonEan) continue;
-      const group = byCarton.get(v.cartonEan) ?? { sizes: [], colour: v.colour };
+      const group = byCarton.get(v.cartonEan) ?? { sizes: [], colour: v.colour, rows: [] };
       group.sizes.push({ label: v.size, ean13: v.productEan13 });
+      group.rows.push(v);
       byCarton.set(v.cartonEan, group);
     }
     const rows: StyleData[] = [...byCarton.entries()].map(([cartonEan, group]) => ({
       ...style,
+      isCartonRow: true,
       sizes: group.sizes,
       allSizes,
-      carton: { ...style.carton, ean13: cartonEan },
+      carton: { ...style.carton, ean13: cartonEan, perSize: group.rows },
       colour: group.colour ? { name: group.colour, code: style.colour?.code ?? "" } : style.colour,
     }));
     // Append the assortment master carton as a final row when the style has one
@@ -149,7 +161,13 @@ export function repetitionStyles(
     // visible) rather than producing zero files.
     const assortEan = resolveBarcodeValue(style, "assortEan");
     if (assortEan) {
-      rows.push({ ...style, allSizes, isAssortment: true, carton: { ...style.carton, ean13: assortEan } });
+      rows.push({
+        ...style,
+        isCartonRow: true,
+        isAssortment: true,
+        allSizes,
+        carton: { ...style.carton, ean13: assortEan, perSize: [] },
+      });
     }
     return rows.length > 0 ? rows : [style];
   }
