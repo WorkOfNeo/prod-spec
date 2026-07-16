@@ -130,18 +130,43 @@ function correctNameForRow(row: Row, styleData: StyleData, stored: string): Name
     return plan[0].fileName ? { name: plan[0].fileName } : null;
   }
 
-  // Split output — map THIS file to its split row by suffix (from the variant
-  // key, else recovered from the leaked filename), so the size/colour is kept.
+  // Split output — map THIS file to its split row so the size/colour is kept.
+  // Prefer an exact suffix (from the variant key, else recovered from the leaked
+  // "layout:<id>-<suffix>" name).
   let suffix = hashSuffix || null;
   if (!suffix) {
     const layoutId = layoutIdFromVariantKey(baseKey);
     suffix = layoutId ? suffixFromStored(stored, layoutId) : null;
   }
-  if (!suffix) return { skip: "per-size output — can't tie this file to one size" };
+  if (suffix) {
+    const hit = plan.find((p) => p.suffix != null && p.suffix.toLowerCase() === suffix!.toLowerCase());
+    if (!hit) return { skip: `size/colour "${suffix}" no longer in the style — regenerate` };
+    return hit.fileName ? { name: hit.fileName } : null;
+  }
 
-  const hit = plan.find((p) => p.suffix != null && p.suffix.toLowerCase() === suffix.toLowerCase());
-  if (!hit) return { skip: `size/colour "${suffix}" no longer in the style — regenerate` };
-  return hit.fileName ? { name: hit.fileName } : null;
+  // No exact suffix (base variant key + a non-leaked name like
+  // "00077180-L-Inner-Pack.pdf"). Identify the split row by matching its SIZE
+  // (then colour, to disambiguate) as WHOLE tokens in the stored name — the size
+  // is preserved by construction (we pick the row whose size the name already
+  // carries), so this can't mislabel; ambiguous/no match → skip.
+  const tokens = new Set(stored.toLowerCase().replace(/\.pdf$/i, "").split(/[^a-z0-9]+/i).filter(Boolean));
+  const splits = plan.filter((p) => p.suffix != null);
+  const bySize = splits.filter((p) => {
+    const sizePart = p.suffix!.split("-")[0].toLowerCase();
+    return sizePart.length > 0 && tokens.has(sizePart);
+  });
+  if (bySize.length === 1) return bySize[0].fileName ? { name: bySize[0].fileName } : null;
+  if (bySize.length > 1) {
+    const byBoth = bySize.filter((p) =>
+      p.suffix!
+        .toLowerCase()
+        .split("-")
+        .every((part) => part.length === 0 || tokens.has(part)),
+    );
+    if (byBoth.length === 1) return byBoth[0].fileName ? { name: byBoth[0].fileName } : null;
+    return { skip: "several sizes/colours match this name — regenerate to disambiguate" };
+  }
+  return { skip: "per-size output — can't tie this file to one size" };
 }
 
 export async function fixOutputFileNames(opts?: {
