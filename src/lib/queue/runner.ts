@@ -944,7 +944,7 @@ export async function processJob(jobId: string): Promise<void> {
   // approval would (flag-gated + fail-soft inside the lib; the midnight sweep
   // retries anything that failed here).
   try {
-    await pushQueuedSupplierUploads({ styleIds: [job.styleId] });
+    await pushQueuedSupplierUploads({ styleIds: [job.styleId], recordRunAs: "runner" });
   } catch (err) {
     console.warn(`[supplier-upload] runner push failed for ${job.id}:`, err);
   }

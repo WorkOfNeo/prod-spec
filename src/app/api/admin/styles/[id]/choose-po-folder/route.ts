@@ -59,7 +59,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   // lib). Anything that can't push this instant stays queued for the sweep.
   let sweep: Awaited<ReturnType<typeof pushQueuedSupplierUploads>> | null = null;
   try {
-    sweep = await pushQueuedSupplierUploads({ styleIds: [id] });
+    sweep = await pushQueuedSupplierUploads({ styleIds: [id], recordRunAs: "operator" });
   } catch (err) {
     console.warn(`[choose-po-folder] immediate push failed for style ${id}:`, err);
   }

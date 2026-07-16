@@ -94,7 +94,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
   // (flag-gated + fail-soft inside the lib; the midnight sweep retries any
   // FAILED rows before the digest email goes out).
   try {
-    await pushQueuedSupplierUploads({ styleIds: [asset.job.styleId] });
+    await pushQueuedSupplierUploads({ styleIds: [asset.job.styleId], recordRunAs: "approval" });
   } catch (err) {
     console.warn(`[supplier-upload] approve push failed for asset ${asset.id}:`, err);
   }

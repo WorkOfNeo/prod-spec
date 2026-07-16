@@ -68,9 +68,20 @@ export async function getAutomationFeed(opts?: {
   const kinds = opts?.kinds && opts.kinds.length > 0 ? new Set(opts.kinds) : null;
   const wants = (k: FeedKind) => kinds === null || kinds.has(k);
 
+  // When the view is filtered to specific kinds, filter the CronRun fetch in
+  // SQL too. cron_runs mixes three kinds ticking every few minutes, so the
+  // newest `limit` rows overall span only a few hours — filtering after the
+  // fetch made a kind-scoped view (e.g. "SharePoint upload") show nothing
+  // whenever that kind's last real activity was older than the mixed window.
+  const wantedCronKinds = Object.keys(CRON_KIND).filter((k) => wants(CRON_KIND[k].kind));
+
   const [cronRuns, syncJobs, batches, bulkRuns, emails] = await Promise.all([
-    wants("ean") || wants("generation") || wants("upload")
-      ? db.cronRun.findMany({ orderBy: { createdAt: "desc" }, take: limit })
+    wantedCronKinds.length > 0
+      ? db.cronRun.findMany({
+          where: kinds === null ? undefined : { kind: { in: wantedCronKinds } },
+          orderBy: { createdAt: "desc" },
+          take: limit,
+        })
       : [],
     wants("sync") ? db.syncJob.findMany({ orderBy: { startedAt: "desc" }, take: limit }) : [],
     wants("digest")
@@ -85,19 +96,26 @@ export async function getAutomationFeed(opts?: {
   for (const r of cronRuns) {
     const meta = CRON_KIND[r.kind];
     if (!meta || !wants(meta.kind)) continue;
-    const hadActivity = r.processed > 0 || r.failed > 0 || r.requeued > 0 || r.enqueued > 0;
+    // Event-driven runs (approve-time / runner / publish pushes record with
+    // their own source; see pushQueuedSupplierUploads recordRunAs) only exist
+    // because something was attempted — never bucket them as idle, even when
+    // the outcome was all flags (e.g. "no PO folder") rather than uploads.
+    const eventDriven = r.source !== "secret" && r.source !== "session";
+    const hadActivity =
+      r.processed > 0 || r.failed > 0 || r.requeued > 0 || r.enqueued > 0 || eventDriven;
     const detail =
       r.kind === "po-eans"
         ? `resolved ${r.processed} · requeued ${r.requeued} · failed ${r.failed}`
         : r.kind === "jobs"
           ? `enqueued ${r.enqueued} · rendered ${r.processed} · failed ${r.failed}`
-          : `uploaded ${r.processed} · failed ${r.failed} · backfilled ${r.enqueued}`;
+          : `uploaded ${r.processed} · failed ${r.failed} · backfilled ${r.enqueued}` +
+            (r.requeued > 0 ? ` · re-armed ${r.requeued}` : "");
     events.push({
       id: `cron:${r.id}`,
       at: r.createdAt,
       kind: meta.kind,
       title: meta.title,
-      source: r.source === "secret" ? "cron" : "operator",
+      source: r.source === "secret" ? "cron" : r.source === "session" ? "operator" : r.source,
       status: r.skipped
         ? "skipped"
         : r.failed > 0
