@@ -161,3 +161,51 @@ test("repeatBy 'cartonEan' with no cartons at all → falls back to one whole-st
   assert.equal(reps.length, 1);
   assert.equal(reps[0].isAssortment, undefined);
 });
+
+test("per-size customerItemNo/description narrow with the repetition row", () => {
+  const base = buildSampleStyleData();
+  const s: StyleData = {
+    ...base,
+    sizes: [
+      { label: "XS", ean13: "" },
+      { label: "S", ean13: "" },
+    ],
+    eanVariants: undefined,
+    customerItemNo: "XS: 7307204, S: 7307214",
+    description: "XS: HIPSTER 2PK ROSA XS, S: HIPSTER 2PK ROSA S,",
+  };
+  const reps = repetitionStyles(s, "size");
+  assert.equal(reps.length, 2);
+  assert.equal(reps[0].customerItemNo, "7307204");
+  assert.equal(reps[0].description, "HIPSTER 2PK ROSA XS");
+  assert.equal(reps[1].customerItemNo, "7307214");
+  assert.equal(reps[1].description, "HIPSTER 2PK ROSA S");
+});
+
+test("repeatBy 'cartonEan' rows narrow per-size text; assort row keeps the raw value", () => {
+  const base = buildSampleStyleData();
+  const perSize = base.carton.perSize!.slice(0, 2); // XS + S cartons
+  const s: StyleData = {
+    ...base,
+    carton: { ...base.carton, perSize },
+    customerItemNo: "XS: 7307204, S: 7307214",
+    description: "plain description, no per-size entries",
+  };
+  const reps = repetitionStyles(s, "cartonEan");
+  assert.equal(reps.length, 3); // 2 cartons + assort
+  assert.equal(reps[0].customerItemNo, "7307204");
+  assert.equal(reps[1].customerItemNo, "7307214");
+  // No size anchors → description untouched on every row.
+  assert.equal(reps[0].description, s.description);
+  // The assort row is whole-style — raw list preserved.
+  assert.equal(reps[2].isAssortment, true);
+  assert.equal(reps[2].customerItemNo, s.customerItemNo);
+});
+
+test("single-value customerItemNo unchanged by per-size repeat", () => {
+  const base = buildSampleStyleData();
+  const s: StyleData = { ...base, customerItemNo: "223609" };
+  for (const rep of repetitionStyles(s, "size")) {
+    assert.equal(rep.customerItemNo, "223609");
+  }
+});
