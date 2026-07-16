@@ -77,8 +77,9 @@ test("validateTokenRef accepts a sane barcode height and rejects the rest", () =
 });
 
 // ---------------------------------------------------------------------
-// Render — an explicit height prints the PNG at true physical size
-// (bars + digit row), a plain token keeps the font-scaled default.
+// Render — an explicit height prints the PNG at FIXED physical size
+// (bars + digit row), width fitted to the block within the 80–100%
+// magnification window; a plain token keeps the font-scaled default.
 // ---------------------------------------------------------------------
 
 function defWith(line: string) {
@@ -88,26 +89,35 @@ function defWith(line: string) {
         id: "p1",
         widthMm: 100,
         heightMm: 60,
-        blocks: [{ id: "b1", anchor: "top-left", lines: [line] }],
+        // cols 12 of the 12-col grid → the block spans the full page width,
+        // so the page size IS the width available to the barcode.
+        blocks: [{ id: "b1", anchor: "top-left", cols: 12, lines: [line] }],
       },
     ],
   });
 }
 
-test("{{barcode:ean13:8}} renders with an explicit ~11mm total img height; bars vary with the arg", async () => {
+function imgSize(html: string): { h: number; w: number } | null {
+  const m = /<img[^>]*style="height: ([0-9.]+)mm; width: ([0-9.]+)mm/.exec(html);
+  return m ? { h: Number(m[1]), w: Number(m[2]) } : null;
+}
+
+test("{{barcode:ean13:8}} renders at fixed physical size; bars vary with the arg", async () => {
   const style = buildSampleStyleData();
-  const html8 = await renderLayoutHtml(defWith("{{barcode:ean13:8}}"), style);
-  const html20 = await renderLayoutHtml(defWith("{{barcode:ean13:20}}"), style);
+  const s8 = imgSize(await renderLayoutHtml(defWith("{{barcode:ean13:8}}"), style));
+  const s20 = imgSize(await renderLayoutHtml(defWith("{{barcode:ean13:20}}"), style));
   const plain = await renderLayoutHtml(defWith("{{barcode:ean13}}"), style);
 
-  const h8 = Number(/<img[^>]*style="height: ([0-9.]+)mm"/.exec(html8)?.[1]);
-  const h20 = Number(/<img[^>]*style="height: ([0-9.]+)mm"/.exec(html20)?.[1]);
+  assert.ok(s8 && s20, "explicit-height barcodes carry inline width+height");
   // 8 mm bars + the EAN digit row → total a bit over 8 mm, well under 20.
-  assert.ok(h8 > 8 && h8 < 14, `total height for 8mm bars was ${h8}mm`);
-  assert.ok(h20 > 20 && h20 < 26, `total height for 20mm bars was ${h20}mm`);
-  assert.ok(h20 - h8 > 10 && h20 - h8 < 14, `bar delta was ${h20 - h8}mm, expected ≈12mm`);
-  // No arg → no inline height; the block's font-scaled CSS default applies.
-  assert.ok(!/<img[^>]*style="height:/.test(plain), "plain {{barcode:ean13}} must not set an inline height");
+  assert.ok(s8!.h > 8 && s8!.h < 14, `total height for 8mm bars was ${s8!.h}mm`);
+  assert.ok(s20!.h > 20 && s20!.h < 26, `total height for 20mm bars was ${s20!.h}mm`);
+  assert.ok(s20!.h - s8!.h > 10 && s20!.h - s8!.h < 14, `bar delta was ${s20!.h - s8!.h}mm, expected ≈12mm`);
+  // Block (100 mm) is wider than nominal → both print at 100% magnification.
+  assert.ok(s8!.w > 36 && s8!.w < 39, `width was ${s8!.w}mm, expected ≈37.5mm nominal`);
+  assert.equal(s8!.w, s20!.w, "magnification must not depend on the bar height");
+  // No arg → no inline size; the block's font-scaled CSS default applies.
+  assert.ok(!/<img[^>]*style="height:/.test(plain), "plain {{barcode:ean13}} must not set an inline size");
 });
 
 test("garbage height degrades to the default sizing instead of breaking the print", async () => {
@@ -115,4 +125,49 @@ test("garbage height degrades to the default sizing instead of breaking the prin
   const html = await renderLayoutHtml(defWith("{{barcode:ean13:99}}"), style);
   assert.ok(html.includes("ol-barcode"), "barcode still renders");
   assert.ok(!/<img[^>]*style="height:/.test(html), "out-of-range height must fall back to CSS default");
+});
+
+// ---------------------------------------------------------------------
+// Info-area size override — the point of the fixed size: the design
+// shrinks, the barcode doesn't.
+// ---------------------------------------------------------------------
+
+test("info-area shrink keeps the barcode at fixed physical size (bars exempt from fontScale)", async () => {
+  const style = buildSampleStyleData();
+  const def = defWith("{{barcode:ean13:8}}");
+  const full = imgSize(await renderLayoutHtml(def, style));
+  // Banderole-authored (100×60) printed on a mid size → fontScale < 1.
+  const shrunk = imgSize(
+    await renderLayoutHtml(def, style, { sizeOverrideMm: { widthMm: 50, heightMm: 30 } }),
+  );
+  assert.ok(full && shrunk);
+  assert.equal(shrunk!.h, full!.h, "bar height must not scale with the info-area size");
+  // 50 mm block still holds the full 37.5 mm symbol at 100%.
+  assert.equal(shrunk!.w, full!.w, "magnification unchanged while the block still fits 100%");
+});
+
+test("narrow block squeezes magnification down to — but not past — the 80% floor", async () => {
+  const style = buildSampleStyleData();
+  const def = defWith("{{barcode:ean13:8}}");
+  // Topcard-license-ish 32 mm: between the ~30 mm floor (80%) and nominal
+  // (~37.5 mm) → width fits the block exactly (≈85% magnification), bar
+  // height untouched.
+  const fitted = imgSize(
+    await renderLayoutHtml(def, style, { sizeOverrideMm: { widthMm: 32, heightMm: 24 } }),
+  );
+  assert.ok(fitted, "fitted barcode still renders as an img");
+  assert.ok(Math.abs(fitted!.w - 32) < 0.05, `width was ${fitted!.w}mm, expected 32mm (block-fitted)`);
+  assert.ok(fitted!.h > 8 && fitted!.h < 14, "bar height stays fixed while width fits");
+});
+
+test("block too narrow for 80% magnification → barcode-missing chip (blocks approval)", async () => {
+  const style = buildSampleStyleData();
+  const def = defWith("{{barcode:ean13:8}}");
+  // Hangtag/Socktag License (27.5×20 mm): 27.5 mm < the ~30 mm floor — an
+  // EAN-13 physically cannot print in-spec here, so the chip surfaces it at
+  // selection time instead of shipping an unscannable code.
+  const html = await renderLayoutHtml(def, style, { sizeOverrideMm: { widthMm: 27.5, heightMm: 20 } });
+  assert.ok(html.includes('class="barcode-missing"'), "must render the placeholder-counted chip");
+  assert.ok(/won't scan at this size/.test(html), "chip explains the problem");
+  assert.ok(!/<img[^>]*src="data:image\/png/.test(html), "no unscannable barcode image ships");
 });
