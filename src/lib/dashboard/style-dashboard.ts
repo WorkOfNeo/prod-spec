@@ -20,11 +20,13 @@
 // per output SLOT. Outputs with no queue row aren't approved yet ⇒ not uploaded,
 // not emailed.
 //
-// The summary (getStyleDashboardRows) deliberately does NOT run the heavy
-// per-style readiness walk (outputReadinessForStyle) for every style — it reuses
-// the PURE selectCurrentAssets/deriveOutputState helpers over a few batch
-// queries. The declared-but-not-generated ("future") outputs and per-field
-// detail surface on expand via getStyleOutputDetail → getCurrentOutputsForStyle.
+// The summary (getStyleDashboardRows) avoids the heavy per-style readiness walk
+// across the whole book — it reuses the PURE selectCurrentAssets /
+// deriveOutputState helpers over a few batch queries. It runs
+// outputReadinessForStyle only for the narrow subset whose gap could be a
+// doc-type keyword exclusion (phase 2), since that's the one thing the batch
+// data can't decide: it needs each style's rawData. Per-field detail still
+// surfaces on expand via getStyleOutputDetail → getCurrentOutputsForStyle.
 // =====================================================
 
 // db is lazy-imported inside each async fn (db.ts instantiates the Prisma
@@ -38,6 +40,9 @@ import {
   type OutputState,
 } from "@/lib/outputs/current-outputs";
 import { currentOutputBaseKeys } from "@/lib/tickets/orphan";
+// Type-only — output-readiness itself is import-safe, but the fn is lazy-loaded
+// below since it's only needed for the narrow exclusion pass.
+import type { ReadinessStyle } from "@/lib/styles/output-readiness";
 // parseProdSpecOutputs is lazy-imported in getStyleDashboardRows — its module
 // (prod-spec/config) transitively pulls in the DB client, which would break the
 // pure-helper unit tests if imported at the top level.
@@ -88,9 +93,11 @@ export type StyleRollup = {
   rejected: number;
   uploadedSlots: number;
   sentSlots: number;
-  // Declared outputs with no asset at all — never generated. Ready-to-generate,
-  // missing-fields and rule-excluded outputs all land here (expanding the style
-  // shows which); they're what "Run all" sweeps in.
+  // Enabled declared outputs with no asset that SHOULD have one — a real gap.
+  // Deliberately excludes the intentional cases (output disabled on the spec,
+  // operator-ignored, or skipped by a doc-type keyword rule), so this only
+  // counts outputs genuinely waiting to be generated — what "Run all" sweeps in.
+  // Expanding the style shows whether each is ready or missing fields.
   notGenerated: number;
 };
 
@@ -337,6 +344,15 @@ export async function getGenerationThroughput(): Promise<GenerationThroughput> {
 export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
   const { db } = await import("@/lib/db");
   const { parseProdSpecOutputs } = await import("@/lib/prod-spec/config");
+  const { ensureLayoutVariantsLoaded } = await import("@/lib/output-layouts/variants");
+  const { getVariant } = await import("@/lib/pdf/template-registry");
+  const { loadDocTypeExclusionRules } = await import("@/lib/pdf/doc-types-db");
+
+  // ProdSpec outputs can reference Output Builder layouts (`layout:<id>`), so
+  // the registry has to be loaded before any base key can be mapped to its
+  // document type below.
+  await ensureLayoutVariantsLoaded();
+
   const styles = await db.style.findMany({
     where: {
       jobs: {
@@ -365,7 +381,7 @@ export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
 
   // All non-FAILED assets (light — no pdf bytes), newest job first so
   // selectCurrentAssets can supersede per base. Grouped by style in memory.
-  const [assets, inflight, queueRows] = await Promise.all([
+  const [assets, inflight, queueRows, ignoreRows, exclusionRules] = await Promise.all([
     db.jobAsset.findMany({
       where: { job: { styleId: { in: ids }, status: { not: "FAILED" } } },
       orderBy: { job: { createdAt: "desc" } },
@@ -388,6 +404,13 @@ export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
       where: { styleId: { in: ids } },
       select: { styleId: true, variantKey: true, sharePointStatus: true, sentAt: true },
     }),
+    // Per-style operator ignores ("not wanted for THIS style"). An ignored
+    // output is deliberately never generated, so it isn't a gap. Fail-soft like
+    // output-ignores.ts — the table is additive and may predate a db:deploy.
+    db.styleOutputIgnore
+      .findMany({ where: { styleId: { in: ids } }, select: { styleId: true, variantKey: true } })
+      .catch(() => [] as Array<{ styleId: string; variantKey: string }>),
+    loadDocTypeExclusionRules(),
   ]);
 
   type AssetRow = (typeof assets)[number];
@@ -417,28 +440,67 @@ export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
     deliveryByStyle.set(q.styleId, m);
   }
 
-  const rows: StyleDashboardRow[] = [];
+  // Per-style operator ignores, keyed by base variantKey.
+  const ignoresByStyle = new Map<string, Set<string>>();
+  for (const r of ignoreRows) {
+    const s = ignoresByStyle.get(r.styleId) ?? new Set<string>();
+    s.add(r.variantKey);
+    ignoresByStyle.set(r.styleId, s);
+  }
+  // Document types that carry a keyword exclusion rule at all (e.g. WASHCARE /
+  // CARE_LABEL for socks + shoes). Only a gap in one of THESE could be an
+  // exclusion rather than a miss, so only styles with such a gap pay for the
+  // rawData load in phase 2.
+  const ruleDocTypes = new Set(
+    Object.entries(exclusionRules)
+      .filter(([, r]) => Array.isArray(r) && r.length > 0)
+      .map(([docType]) => docType),
+  );
+
+  // ---- Phase 1: current documents + the cheap part of the gap ----
+  type Pending = {
+    style: (typeof styles)[number];
+    docs: SlotDoc[];
+    outputNames: string[];
+    latestGeneratedAt: Date | null;
+    hasInflight: boolean;
+    ungenerated: Set<string>;
+  };
+  const pending: Pending[] = [];
+  const needsExclusionCheck: string[] = [];
+
   for (const style of styles) {
     const styleAssets = assetsByStyle.get(style.id) ?? [];
     const inf = inflightByStyle.get(style.id) ?? { all: false, bases: new Set<string>() };
     const delivery = deliveryByStyle.get(style.id) ?? new Map();
+    const parsed = parseProdSpecOutputs(style.prodSpec?.outputs ?? []);
 
-    // Declared base keys from the ProdSpec drive orphan-dropping in
-    // selectCurrentAssets. When a style has no active spec, fall back to its own
-    // asset bases so nothing is falsely dropped (the dashboard still shows what
-    // was generated).
-    let declared = currentOutputBaseKeys(parseProdSpecOutputs(style.prodSpec?.outputs ?? []));
+    // Orphan-dropping in selectCurrentAssets keys off ALL declared bases
+    // (enabled or not), matching current-outputs. When a style has no active
+    // spec, fall back to its own asset bases so nothing is falsely dropped.
+    let declared = currentOutputBaseKeys(parsed);
     if (declared.size === 0) {
       declared = new Set(styleAssets.map((a) => baseKey(a.variantKey, a.docType)));
     }
     const current = selectCurrentAssets(styleAssets, declared);
-
-    // Declared slots that produced no asset at all. The runner readiness-gates
-    // generation, so an output whose fields weren't resolved at run time is
-    // simply skipped and sits here until a sweep re-runs it — this is what "Run
-    // all" picks up, and what keeps a style from counting as delivered.
     const generatedBases = new Set(current.map((a) => baseKey(a.variantKey, a.docType)));
-    const notGenerated = [...declared].filter((b) => !generatedBases.has(b)).length;
+
+    // The gap: ENABLED declared outputs with no asset, minus the ones that are
+    // deliberately never generated — a disabled output and an operator-ignored
+    // output are both intentional, so neither is a gap. What survives is either
+    // genuinely never-run (the runner readiness-gates outputs, so one whose
+    // fields weren't resolved at run time was skipped and sits here until a
+    // sweep re-runs it — what "Run all" picks up) or excluded by a doc-type
+    // keyword rule, which phase 2 settles.
+    const ignored = ignoresByStyle.get(style.id);
+    const ungenerated = new Set(
+      [...currentOutputBaseKeys(parsed.filter((o) => o.enabled !== false))].filter(
+        (b) => !generatedBases.has(b) && !ignored?.has(b),
+      ),
+    );
+    if ([...ungenerated].some((b) => ruleDocTypes.has(getVariant(b)?.docType ?? ""))) {
+      needsExclusionCheck.push(style.id);
+    }
 
     const outputNames: string[] = [];
     let latestGeneratedAt: Date | null = null;
@@ -461,7 +523,63 @@ export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
       };
     });
 
-    const { rollup, states, uploadStates, emailStates } = rollupStyleSlots(docs, notGenerated);
+    pending.push({
+      style,
+      docs,
+      outputNames,
+      latestGeneratedAt,
+      hasInflight: inf.all || inf.bases.size > 0,
+      ungenerated,
+    });
+  }
+
+  // ---- Phase 2: settle keyword exclusions, for that subset only ----
+  // Runs the SAME readiness engine the runner uses, so "excluded" here can never
+  // disagree with what the runner skips or what the expanded detail shows. Only
+  // this subset loads rawData — doing it for every style is what made a correct
+  // exclusion check too expensive for the list.
+  if (needsExclusionCheck.length > 0) {
+    const { outputReadinessForStyle } = await import("@/lib/styles/output-readiness");
+    const checked = await db.style.findMany({
+      where: { id: { in: needsExclusionCheck } },
+      select: {
+        id: true,
+        rawData: true,
+        poNumber: true,
+        cartonEan: true,
+        supplier: { select: { country: true } },
+        eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, cartonEan: true } },
+        customer: { select: { config: true } },
+        prodSpec: { select: { outputs: true, columnMapping: true } },
+      },
+    });
+    const excludedByStyle = new Map<string, Set<string>>();
+    for (const s of checked) {
+      const readiness = outputReadinessForStyle(
+        s as ReadinessStyle,
+        exclusionRules,
+        undefined,
+        ignoresByStyle.get(s.id),
+      );
+      excludedByStyle.set(
+        s.id,
+        new Set(readiness.filter((r) => r.excluded === true).map((r) => r.variantKey.split("#")[0])),
+      );
+    }
+    for (const p of pending) {
+      const excluded = excludedByStyle.get(p.style.id);
+      if (!excluded) continue;
+      for (const b of excluded) p.ungenerated.delete(b);
+    }
+  }
+
+  // ---- Phase 3: roll up ----
+  const rows: StyleDashboardRow[] = pending.map((p) => {
+    const { style } = p;
+    const { rollup, states, uploadStates, emailStates } = rollupStyleSlots(
+      p.docs,
+      p.ungenerated.size,
+    );
 
     const searchBlob = [
       style.name,
@@ -469,29 +587,29 @@ export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
       style.customer?.name,
       style.businessAreaRef?.name,
       style.supplier?.name,
-      ...outputNames,
+      ...p.outputNames,
     ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
 
-    rows.push({
+    return {
       styleId: style.id,
       name: style.name,
       poNumber: style.poNumber,
       customer: style.customer?.name ?? null,
       businessArea: style.businessAreaRef?.name ?? null,
       supplier: style.supplier?.name ?? null,
-      hasInflight: inf.all || inf.bases.size > 0,
+      hasInflight: p.hasInflight,
       rollup,
       fullyDelivered: isFullyDelivered(rollup),
       states,
       uploadStates,
       emailStates,
-      latestGeneratedAt: latestGeneratedAt ? (latestGeneratedAt as Date).toISOString() : null,
+      latestGeneratedAt: p.latestGeneratedAt ? p.latestGeneratedAt.toISOString() : null,
       searchBlob,
-    });
-  }
+    };
+  });
 
   // In-flight styles first (that's the unclog view), then most-recent activity.
   rows.sort((a, b) => {
