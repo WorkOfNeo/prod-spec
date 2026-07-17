@@ -10,8 +10,13 @@ const STATE_CHIP: Record<OutputState, { cls: string; label: string }> = {
   REJECTED: { cls: "border-red-200 bg-red-50 text-red-700", label: "rejected" },
   BLOCKED: { cls: "border-amber-200 bg-amber-50 text-amber-800", label: "blocked" },
   TO_REVIEW: { cls: "border-blue-200 bg-blue-50 text-blue-700", label: "to review" },
-  GENERATING: { cls: "border-zinc-200 bg-zinc-50 text-zinc-500", label: "generating…" },
-  READY_TO_GENERATE: { cls: "border-zinc-200 bg-zinc-50 text-zinc-500", label: "queued" },
+  GENERATING: { cls: "border-blue-200 bg-blue-50 text-blue-700", label: "generating…" },
+  // Deliberately NOT "queued": this output has no generation job at all — it's
+  // declared and its fields resolve, but nothing has ever run it (the runner
+  // readiness-gates outputs, so it was skipped on the last run). "Run all"
+  // sweeps these in. Calling it "queued" collided with the Generation queue
+  // panel above, which counts real QUEUED/RUNNING jobs.
+  READY_TO_GENERATE: { cls: "border-amber-200 bg-amber-50 text-amber-800", label: "not generated" },
   AWAITING_DATA: { cls: "border-amber-200 bg-amber-50 text-amber-800", label: "missing fields" },
   EXCLUDED: { cls: "border-zinc-200 bg-zinc-50 text-zinc-500", label: "excluded" },
 };
@@ -26,13 +31,16 @@ function fmtDate(iso: string | null): string {
   });
 }
 
-function RollupChips({ row }: { row: StyleDashboardRow }) {
+function RollupChips({ row, green }: { row: StyleDashboardRow; green?: boolean }) {
   const r = row.rollup;
   const chips: { n: number; cls: string; label: string }[] = [
-    { n: r.generating, cls: "text-zinc-500", label: "generating" },
+    { n: r.generating, cls: "text-blue-700", label: "generating" },
     { n: r.toReview, cls: "text-blue-700", label: "to review" },
     { n: r.blocked, cls: "text-amber-700", label: "blocked" },
     { n: r.rejected, cls: "text-red-700", label: "rejected" },
+    // Surfaced on the collapsed row so a style that silently never generated an
+    // output is visible without expanding it.
+    { n: r.notGenerated, cls: "text-amber-700", label: "not generated" },
     { n: r.approved, cls: "text-emerald-700", label: "approved" },
   ];
   return (
@@ -40,15 +48,15 @@ function RollupChips({ row }: { row: StyleDashboardRow }) {
       {chips
         .filter((c) => c.n > 0)
         .map((c) => (
-          <span key={c.label} className={c.cls}>
+          <span key={c.label} className={green ? "text-emerald-50" : c.cls}>
             {c.n} {c.label}
           </span>
         ))}
-      <span className="text-zinc-400">·</span>
-      <span className="text-emerald-700">
+      <span className={green ? "text-emerald-200" : "text-zinc-400"}>·</span>
+      <span className={green ? "font-medium text-white" : "text-emerald-700"}>
         {r.uploadedSlots}/{r.generatedSlots} uploaded
       </span>
-      <span className="text-emerald-700">
+      <span className={green ? "font-medium text-white" : "text-emerald-700"}>
         {r.sentSlots}/{r.generatedSlots} sent
       </span>
     </span>
@@ -110,12 +118,23 @@ export function StyleRow({ row }: { row: StyleDashboardRow }) {
     }
   }
 
+  // Fully delivered = every declared output generated, approved, uploaded to
+  // SharePoint AND emailed to the supplier. Nothing left to do, so the whole
+  // row goes green and reads white.
+  const green = row.fullyDelivered;
+
   return (
     <details
-      className="group rounded-lg border border-zinc-200 bg-white"
+      className={`group rounded-lg border ${
+        green ? "border-emerald-600 bg-emerald-600" : "border-zinc-200 bg-white"
+      }`}
       onToggle={(e) => loadIfNeeded((e.currentTarget as HTMLDetailsElement).open)}
     >
-      <summary className="flex cursor-pointer list-none items-center gap-3 px-3 py-2 hover:bg-zinc-50 [&::-webkit-details-marker]:hidden">
+      <summary
+        className={`flex cursor-pointer list-none items-center gap-3 rounded-t-lg px-3 py-2 [&::-webkit-details-marker]:hidden ${
+          green ? "hover:bg-emerald-700" : "hover:bg-zinc-50"
+        }`}
+      >
         <svg
           viewBox="0 0 24 24"
           fill="none"
@@ -123,33 +142,50 @@ export function StyleRow({ row }: { row: StyleDashboardRow }) {
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform group-open:rotate-90"
+          className={`h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90 ${
+            green ? "text-emerald-200" : "text-zinc-400"
+          }`}
           aria-hidden="true"
         >
           <polyline points="9 18 15 12 9 6" />
         </svg>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2">
-            <span className="font-medium text-zinc-900">{row.name}</span>
-            {row.businessArea && <span className="text-xs text-zinc-500">{row.businessArea}</span>}
-            {row.hasInflight && (
+            <span className={`font-medium ${green ? "text-white" : "text-zinc-900"}`}>{row.name}</span>
+            {row.businessArea && (
+              <span className={`text-xs ${green ? "text-emerald-100" : "text-zinc-500"}`}>
+                {row.businessArea}
+              </span>
+            )}
+            {green && (
+              <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                delivered
+              </span>
+            )}
+            {row.hasInflight && !green && (
               <span className="rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
                 generating
               </span>
             )}
           </div>
-          <div className="truncate text-xs text-zinc-500">
+          <div className={`truncate text-xs ${green ? "text-emerald-100" : "text-zinc-500"}`}>
             {row.customer ?? "—"}
             {row.poNumber ? ` · PO ${row.poNumber}` : ""}
             {row.supplier ? ` · ${row.supplier}` : ""}
           </div>
         </div>
         <div className="hidden shrink-0 sm:block">
-          <RollupChips row={row} />
+          <RollupChips row={row} green={green} />
         </div>
       </summary>
 
-      <div className="border-t border-zinc-100 px-3 py-2">
+      {/* Body stays white even on a green row so the per-output pills and
+          SharePoint links keep their contrast. */}
+      <div
+        className={`border-t px-3 py-2 ${
+          green ? "rounded-b-lg border-emerald-500 bg-white" : "border-zinc-100"
+        }`}
+      >
         {/* Rollup is always shown on small screens where the summary hides it. */}
         <div className="mb-2 sm:hidden">
           <RollupChips row={row} />

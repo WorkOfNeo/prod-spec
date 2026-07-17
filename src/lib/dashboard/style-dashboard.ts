@@ -88,10 +88,20 @@ export type StyleRollup = {
   rejected: number;
   uploadedSlots: number;
   sentSlots: number;
+  // Declared outputs with no asset at all — never generated. Ready-to-generate,
+  // missing-fields and rule-excluded outputs all land here (expanding the style
+  // shows which); they're what "Run all" sweeps in.
+  notGenerated: number;
 };
 
 export type UploadState = "uploaded" | "not-uploaded";
 export type EmailState = "sent" | "not-sent";
+
+// The Output-state facet value set. A never-generated output has no document and
+// therefore no OutputState of its own in the rollup, so it gets a synthetic
+// value — otherwise the one case you most want to filter for ("this style has an
+// output that never generated") would be unfilterable.
+export type StyleFacetState = OutputState | "NOT_GENERATED";
 
 export type StyleDashboardRow = {
   styleId: string;
@@ -102,7 +112,10 @@ export type StyleDashboardRow = {
   supplier: string | null;
   hasInflight: boolean;
   rollup: StyleRollup;
-  states: OutputState[]; // distinct output states present (drives the state facet)
+  // Everything this style declares is generated, approved, uploaded to SharePoint
+  // AND emailed to the supplier — nothing left to do. Drives the green row.
+  fullyDelivered: boolean;
+  states: StyleFacetState[]; // distinct output states present (drives the state facet)
   uploadStates: UploadState[]; // among generated slots
   emailStates: EmailState[]; // among generated slots
   latestGeneratedAt: string | null; // ISO — most recent asset, for sort/display
@@ -146,9 +159,14 @@ type SlotDoc = {
 // documents (SLOT_STATE_PRIORITY), and it's "uploaded"/"emailed" when its
 // delivery row is. upload/email facet values are scoped to GENERATED slots (a
 // not-yet-approved output legitimately reads "not uploaded / not sent").
-export function rollupStyleSlots(docs: SlotDoc[]): {
+export function rollupStyleSlots(
+  docs: SlotDoc[],
+  // Declared slots with no asset — counted by the caller (declared bases minus
+  // generated bases); they have no document to bucket, so they're passed in.
+  notGenerated = 0,
+): {
   rollup: StyleRollup;
-  states: OutputState[];
+  states: StyleFacetState[];
   uploadStates: UploadState[];
   emailStates: EmailState[];
 } {
@@ -197,7 +215,8 @@ export function rollupStyleSlots(docs: SlotDoc[]): {
   if (sentSlots > 0) emailStates.push("sent");
   if (anyNotSent) emailStates.push("not-sent");
 
-  const states = (Object.keys(bucket) as OutputState[]).filter((s) => bucket[s] > 0);
+  const states: StyleFacetState[] = (Object.keys(bucket) as OutputState[]).filter((s) => bucket[s] > 0);
+  if (notGenerated > 0) states.push("NOT_GENERATED");
 
   return {
     rollup: {
@@ -209,11 +228,31 @@ export function rollupStyleSlots(docs: SlotDoc[]): {
       rejected: bucket.REJECTED,
       uploadedSlots,
       sentSlots,
+      notGenerated,
     },
     states,
     uploadStates,
     emailStates,
   };
+}
+
+// Pure: "nothing left to do" — every declared output is generated, every
+// generated slot is approved (nothing generating / to review / blocked /
+// rejected), and every one of them is BOTH uploaded to SharePoint and emailed
+// to the supplier. Deliberately conservative: it never reports done while
+// something is unfinished, so a style with a never-generated output (whatever
+// the reason) stays un-green.
+export function isFullyDelivered(rollup: StyleRollup): boolean {
+  return (
+    rollup.generatedSlots > 0 &&
+    rollup.notGenerated === 0 &&
+    rollup.generating === 0 &&
+    rollup.toReview === 0 &&
+    rollup.blocked === 0 &&
+    rollup.rejected === 0 &&
+    rollup.uploadedSlots === rollup.generatedSlots &&
+    rollup.sentSlots === rollup.generatedSlots
+  );
 }
 
 // ---- Live queue --------------------------------------------------------------
@@ -394,6 +433,13 @@ export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
     }
     const current = selectCurrentAssets(styleAssets, declared);
 
+    // Declared slots that produced no asset at all. The runner readiness-gates
+    // generation, so an output whose fields weren't resolved at run time is
+    // simply skipped and sits here until a sweep re-runs it — this is what "Run
+    // all" picks up, and what keeps a style from counting as delivered.
+    const generatedBases = new Set(current.map((a) => baseKey(a.variantKey, a.docType)));
+    const notGenerated = [...declared].filter((b) => !generatedBases.has(b)).length;
+
     const outputNames: string[] = [];
     let latestGeneratedAt: Date | null = null;
     const docs: SlotDoc[] = current.map((a) => {
@@ -415,7 +461,7 @@ export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
       };
     });
 
-    const { rollup, states, uploadStates, emailStates } = rollupStyleSlots(docs);
+    const { rollup, states, uploadStates, emailStates } = rollupStyleSlots(docs, notGenerated);
 
     const searchBlob = [
       style.name,
@@ -438,6 +484,7 @@ export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
       supplier: style.supplier?.name ?? null,
       hasInflight: inf.all || inf.bases.size > 0,
       rollup,
+      fullyDelivered: isFullyDelivered(rollup),
       states,
       uploadStates,
       emailStates,
