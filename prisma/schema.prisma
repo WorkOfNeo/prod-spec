@@ -1102,6 +1102,8 @@ model JobAsset {
   @@unique([jobId, variantKey])
   @@index([jobId])
   @@index([reviewStatus, docType])
+  // Style Dashboard counts assets generated per 1h/24h/7d window by createdAt.
+  @@index([createdAt])
   @@map("job_assets")
 }
 
