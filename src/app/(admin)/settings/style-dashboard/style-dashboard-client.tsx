@@ -2,23 +2,27 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FacetFilter, type FacetOption } from "@/components/facet-filter";
-import type { OutputState } from "@/lib/outputs/current-outputs";
 import type {
   GenerationQueue,
   GenerationThroughput,
   StyleDashboardRow,
+  StyleFacetState,
 } from "@/lib/dashboard/style-dashboard";
 import { DashboardTopBand } from "./dashboard-top-band";
 import { StyleRow } from "./style-row";
 
 const BLANK = "—"; // sentinel for a null customer / business area / supplier
 
-const STATE_LABEL: Record<OutputState, string> = {
+const STATE_LABEL: Record<StyleFacetState, string> = {
   GENERATING: "Generating",
   TO_REVIEW: "To review",
   BLOCKED: "Blocked",
   APPROVED: "Approved",
   REJECTED: "Rejected",
+  // Synthetic — a declared output that produced no document at all.
+  NOT_GENERATED: "Not generated",
+  // Per-document states that only a generated asset can carry, so these never
+  // reach the facet; listed for type completeness over the union.
   READY_TO_GENERATE: "Ready",
   AWAITING_DATA: "Missing fields",
   EXCLUDED: "Excluded",
@@ -36,7 +40,7 @@ const FACETS: {
   { key: "customer", label: "Customer", values: (r) => [r.customer ?? BLANK], labelOf: (v) => v },
   { key: "ba", label: "Business area", values: (r) => [r.businessArea ?? BLANK], labelOf: (v) => v },
   { key: "supplier", label: "Supplier", values: (r) => [r.supplier ?? BLANK], labelOf: (v) => v },
-  { key: "state", label: "Output state", values: (r) => r.states, labelOf: (v) => STATE_LABEL[v as OutputState] ?? v },
+  { key: "state", label: "Output state", values: (r) => r.states, labelOf: (v) => STATE_LABEL[v as StyleFacetState] ?? v },
   { key: "upload", label: "Upload", values: (r) => r.uploadStates, labelOf: (v) => UPLOAD_LABEL[v] ?? v },
   { key: "email", label: "Email", values: (r) => r.emailStates, labelOf: (v) => EMAIL_LABEL[v] ?? v },
 ];
@@ -94,8 +98,17 @@ export function StyleDashboardClient({
   }, [rows, tokens, selected]);
 
   // Grow the rendered slice as the sentinel scrolls into view.
+  //
+  // `visibleCount` is deliberately NOT a dependency: re-creating the observer on
+  // every bump makes it fire again immediately while the sentinel is still
+  // inside rootMargin, which cascades — 40 → 80 → … → the whole list in one go,
+  // re-rendering a growing list each step and locking the main thread. Keying on
+  // `hasMore` attaches the observer once per lazy run, so it only fires on a real
+  // intersection change (i.e. the user actually scrolling down to it); the
+  // "Show more" button is the manual fallback.
+  const hasMore = visibleCount < filtered.length;
   useEffect(() => {
-    if (visibleCount >= filtered.length) return;
+    if (!hasMore) return;
     const el = sentinel.current;
     if (!el) return;
     const io = new IntersectionObserver(
@@ -108,7 +121,7 @@ export function StyleDashboardClient({
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [visibleCount, filtered.length]);
+  }, [hasMore, filtered.length]);
 
   const activeFilters = tokens.length > 0 || FACET_KEYS.some((k) => (selected[k]?.length ?? 0) > 0);
 
@@ -170,7 +183,7 @@ export function StyleDashboardClient({
           {filtered.slice(0, visibleCount).map((r) => (
             <StyleRow key={r.styleId} row={r} />
           ))}
-          {visibleCount < filtered.length && (
+          {hasMore && (
             <div ref={sentinel} className="flex justify-center py-4">
               <button
                 type="button"

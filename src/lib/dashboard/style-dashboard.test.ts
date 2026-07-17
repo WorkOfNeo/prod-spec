@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { baseKey, rollupStyleSlots } from "./style-dashboard";
+import { baseKey, rollupStyleSlots, isFullyDelivered } from "./style-dashboard";
 
 // A slot document as rollupStyleSlots consumes it.
 function doc(
@@ -71,4 +71,38 @@ test("rollupStyleSlots — all uploaded + sent ⇒ no 'not-uploaded'/'not-sent' 
   ]);
   assert.deepEqual(uploadStates, ["uploaded"]);
   assert.deepEqual(emailStates, ["sent"]);
+});
+
+test("isFullyDelivered — every slot generated, approved, uploaded and sent", () => {
+  const { rollup } = rollupStyleSlots([
+    doc("a", "APPROVED", { uploaded: true, emailed: true }),
+    doc("b", "APPROVED", { uploaded: true, emailed: true }),
+  ]);
+  assert.equal(isFullyDelivered(rollup), true);
+});
+
+test("isFullyDelivered — a never-generated declared output keeps it un-delivered", () => {
+  // The KH30110 case: two outputs shipped, two never generated (the runner
+  // readiness-gated them). Not done, so not green.
+  const { rollup } = rollupStyleSlots([doc("a", "APPROVED", { uploaded: true, emailed: true })], 2);
+  assert.equal(rollup.notGenerated, 2);
+  assert.equal(isFullyDelivered(rollup), false);
+});
+
+test("isFullyDelivered — uploaded but not emailed is not delivered", () => {
+  const { rollup } = rollupStyleSlots([doc("a", "APPROVED", { uploaded: true })]);
+  assert.equal(isFullyDelivered(rollup), false);
+});
+
+test("isFullyDelivered — an undecided (to review) output keeps it un-delivered", () => {
+  const { rollup } = rollupStyleSlots([
+    doc("a", "APPROVED", { uploaded: true, emailed: true }),
+    doc("b", "TO_REVIEW", { uploaded: true, emailed: true }),
+  ]);
+  assert.equal(isFullyDelivered(rollup), false);
+});
+
+test("isFullyDelivered — a style with nothing generated is not delivered", () => {
+  const { rollup } = rollupStyleSlots([], 2);
+  assert.equal(isFullyDelivered(rollup), false);
 });
