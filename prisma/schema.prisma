@@ -1095,6 +1095,15 @@ model JobAsset {
   reviewedById     String?
   createdAt        DateTime          @default(now())
 
+  // SharePoint provenance, stamped by publishApprovedJob after a successful
+  // upload. Before this existed the file's webUrl survived only inside
+  // Log.payload, so no surface could link straight to the delivered file or
+  // sort by "newest delivered". Null = never uploaded (or uploaded before this
+  // column existed and not backfilled).
+  spFileUrl        String?
+  spFileId         String?
+  spUploadedAt     DateTime?
+
   job              Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
   reviewedBy       User?             @relation("AssetReviewer", fields: [reviewedById], references: [id])
   rejectionTickets RejectionTicket[]
@@ -1156,6 +1165,65 @@ enum TriggerSource {
   // BulkRunBatch. Email-suppressed (a 200-style run mustn't blast 200 review
   // emails); reviewers still get the in-app inbox entry per style.
   MANUAL_BULK
+}
+
+// A set of styles from the SAME PO that ship in ONE physical carton, so they
+// need ONE shared carton marking instead of one per style.
+//
+// The render itself is not new — it is the existing multi-style mechanism
+// (withSelectedSiblings → {{style2}}… + {{multipleStyles}}), which until now
+// was a one-off with nothing persisted. This table is what makes it durable:
+// the pick survives, it is reachable from every style in it, and the produced
+// JobAsset flows through the normal approve → upload path.
+//
+// The carton EAN is NOT stored — it is whatever the MAIN style's {{cartonEan}}
+// resolves to at render time, exactly as the existing dialog behaves. Storing a
+// copy would let it drift from the PO.
+//
+// Loose styleId/customerId refs with no relations, mirroring OutputDelivery and
+// StyleOutputIgnore, so adding this model never changes an existing select.
+model CartonGroup {
+  id           String  @id @default(cuid())
+  poNumber     String
+  customerId   String
+  // Slot 1. Supplies the carton barcode and prints first.
+  mainStyleId  String
+  variantKey   String
+  totalCartons Int?
+  // Resolved at creation: <PO>-<styleNumbers,>-Carton-Marking.pdf. Persisted
+  // because ungroup has to tell the reviewer which file to delete by name,
+  // long after the render is gone.
+  fileName     String
+  jobId        String?
+  jobAssetId   String?
+  createdById  String?
+  createdAt    DateTime @default(now())
+
+  // Ungroup is a SOFT delete. The group's PDF may already sit in the supplier's
+  // SharePoint folder and we never delete supplier files, so the row survives to
+  // keep telling the reviewer that a file out there needs removing by hand.
+  removedAt     DateTime?
+  removedById   String?
+  removedReason String?
+
+  styles CartonGroupStyle[]
+
+  @@index([poNumber])
+  @@index([customerId])
+  @@map("carton_groups")
+}
+
+model CartonGroupStyle {
+  cartonGroupId String
+  styleId       String
+  // 1 = main style; 2..8 map to the {{style2}}…{{style8}} slots.
+  slot          Int
+
+  group CartonGroup @relation(fields: [cartonGroupId], references: [id], onDelete: Cascade)
+
+  @@id([cartonGroupId, styleId])
+  @@index([styleId])
+  @@map("carton_group_styles")
 }
 
 model Log {

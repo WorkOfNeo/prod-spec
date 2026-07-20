@@ -69,6 +69,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                 >
                   Reviews
                 </Link>
+                {/* Carton markings, grouped by PO. Reviewer-facing (it is where
+                    "these styles ship in one box" gets declared), so it sits
+                    here rather than in the admin-only nav below. */}
+                <Link
+                  href="/carton-marking"
+                  className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+                >
+                  Carton marking
+                </Link>
                 <div className="my-2 border-t border-zinc-100" />
               </>
             )}
