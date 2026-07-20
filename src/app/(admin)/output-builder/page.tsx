@@ -11,6 +11,9 @@ import { getContrastAddressLogoDataUrl, getContrastLogoDataUrl } from "@/lib/out
 import { LayoutsList } from "./layouts-list";
 import { EXCLUSION_FIELDS } from "@/lib/outputs/exclusion";
 import { requireAdminPage } from "@/lib/auth-server";
+import { scanFilenameCollisions } from "@/lib/output-layouts/filename-collisions";
+import { OutputBuilderTabs } from "./tabs";
+import { FileNamesTab } from "./file-names-tab";
 
 export const dynamic = "force-dynamic";
 
@@ -23,10 +26,10 @@ export default async function OutputBuilderPage({
 }: {
   // ?docTypes=1 opens the Document types popup straight away — the layout
   // editor's "Manage types" link deep-links here.
-  searchParams: Promise<{ docTypes?: string }>;
+  searchParams: Promise<{ docTypes?: string; tab?: string }>;
 }) {
   await requireAdminPage();
-  const { docTypes: openDocTypesParam } = await searchParams;
+  const { docTypes: openDocTypesParam, tab } = await searchParams;
 
   const { role } = await getSessionWithRole();
   if (role !== "ADMIN") {
@@ -34,6 +37,27 @@ export default async function OutputBuilderPage({
       <div className="px-8 py-8">
         <h1 className="text-xl font-semibold tracking-tight">Output builder</h1>
         <p className="mt-3 text-sm text-zinc-500">The Output Builder is admin-only.</p>
+      </div>
+    );
+  }
+
+  // File-name collision report. Its own branch so the expensive usage joins
+  // below (specs, styles, generation counts) are skipped entirely — this view
+  // needs none of them.
+  if (tab === "file-names") {
+    const summaries = await scanFilenameCollisions();
+    return (
+      <div className="px-8 py-8">
+        <h1 className="text-xl font-semibold tracking-tight">Output builder</h1>
+        <p className="mt-1 text-sm text-zinc-500">
+          Split layouts that resolve several documents to the same file name — every duplicate is a file the
+          supplier never received.
+        </p>
+        {/* Badge counts LAYOUTS WITH COLLISIONS, matching the Layouts tab —
+            that view can only afford the cheap SQL count, and one badge must
+            not mean two different things. */}
+        <OutputBuilderTabs active="file-names" brokenCount={summaries.length} />
+        <FileNamesTab summaries={summaries} />
       </div>
     );
   }
@@ -166,9 +190,18 @@ export default async function OutputBuilderPage({
     };
   });
 
+  // Badge only — skip the per-layout live re-check (see liveVerdicts).
+  const collisionSummaries = await scanFilenameCollisions({ liveVerdicts: false, sampleCap: 1 });
+
   return (
     <LayoutsList
       layouts={layouts}
+      tabs={
+        <OutputBuilderTabs
+          active="layouts"
+          brokenCount={collisionSummaries.length}
+        />
+      }
       contrastLogoFound={contrastLogo !== null}
       contrastAddressLogoFound={contrastAddressLogo !== null}
       // Document types + keyword-exclusion rules now live in a popup opened
