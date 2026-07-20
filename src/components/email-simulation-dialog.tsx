@@ -31,6 +31,8 @@ const TYPE_LABELS: Record<string, string> = {
   TICKET_FIXED: "Fixed — ready for re-review (internal)",
   SUPPLIER_APPROVAL: "Supplier approval",
   INVITE: "Signup invitation",
+  NEW_COMBO: "New customer × business area combo",
+  PASSWORD_RESET: "Password reset link",
 };
 
 function formatBytes(bytes: number): string {

@@ -3,6 +3,10 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { APIError } from "better-auth/api";
 import { db } from "./db";
 import { checkInviteToken, consumeInvite } from "./invites/invites";
+import {
+  RESET_TOKEN_TTL_SECONDS,
+  sendPasswordResetEmail,
+} from "./password-reset";
 
 // Bootstrap-only allowlist: consulted ONLY while the users table is empty,
 // to let the very first admin in without an invite (nobody exists yet to
@@ -30,6 +34,19 @@ export const auth = betterAuth({
     enabled: true,
     autoSignIn: true,
     minPasswordLength: 12,
+    // Password reset. Without sendResetPassword the /request-password-reset
+    // endpoint refuses outright ("Reset password isn't enabled"), so this
+    // hook IS the feature — see src/lib/password-reset.ts for the two
+    // callers. Errors thrown here are swallowed and logged by better-auth;
+    // dispatchEmail doesn't throw anyway (a failure becomes a FAILED
+    // EmailLog row), so a dead Resend key can't 500 the request.
+    resetPasswordTokenExpiresIn: RESET_TOKEN_TTL_SECONDS,
+    // A reset means "I've lost control of this account" often enough that
+    // every other session should die with the old password.
+    revokeSessionsOnPasswordReset: true,
+    sendResetPassword: async ({ user, url }) => {
+      await sendPasswordResetEmail({ to: user.email, name: user.name, url });
+    },
   },
   session: {
     expiresIn: 60 * 60 * 24 * 30,

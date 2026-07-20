@@ -66,7 +66,10 @@ function LoginForm() {
       >
         {pending ? "Signing in…" : "Sign in"}
       </button>
-      <Link href="/signup" className="mt-2 text-center text-xs text-zinc-500 underline">
+      <Link href="/forgot-password" className="mt-2 text-center text-xs text-zinc-500 underline">
+        Forgot your password?
+      </Link>
+      <Link href="/signup" className="text-center text-xs text-zinc-500 underline">
         First time? Create an account
       </Link>
     </form>
