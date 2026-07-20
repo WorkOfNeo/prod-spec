@@ -1365,6 +1365,7 @@ enum EmailType {
   SUPPLIER_APPROVAL // job fully approved → supplier
   INVITE // signup invitation link → invitee
   NEW_COMBO // new (customer × business area) combo detected → admin heads-up
+  PASSWORD_RESET // password reset link → the account holder (self-service or admin-sent)
 }
 
 enum EmailStatus {

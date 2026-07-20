@@ -1,7 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
 
-const AUTH_PAGES = new Set(["/login", "/signup"]);
+// Pages reachable WITHOUT a session. Everything else redirects to /login.
+const AUTH_PAGES = new Set(["/login", "/signup", "/forgot-password", "/reset-password"]);
+
+// Of those, the ones that are pointless once you're signed in and so bounce
+// you onward. /reset-password is deliberately NOT here: following a reset
+// link while an old session is still alive is exactly the case where you
+// most need the page to open (and finishing the reset kills that session).
+const SIGNED_IN_REDIRECT = new Set(["/login", "/signup", "/forgot-password"]);
 
 export function proxy(request: NextRequest) {
   // Dev escape hatch — auth fully disabled (see AUTH_DISABLED in
@@ -13,7 +20,7 @@ export function proxy(request: NextRequest) {
   const sessionCookie = getSessionCookie(request);
   const { pathname } = request.nextUrl;
 
-  if (sessionCookie && AUTH_PAGES.has(pathname)) {
+  if (sessionCookie && SIGNED_IN_REDIRECT.has(pathname)) {
     return NextResponse.redirect(new URL("/styles", request.url));
   }
 
@@ -41,5 +48,7 @@ export const config = {
     "/users/:path*",
     "/login",
     "/signup",
+    "/forgot-password",
+    "/reset-password",
   ],
 };
