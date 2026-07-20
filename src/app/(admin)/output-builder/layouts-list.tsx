@@ -64,6 +64,7 @@ export function LayoutsList({
   docTypes,
   exclusionFields,
   openDocTypes = false,
+  tabs,
 }: {
   layouts: LayoutRow[];
   contrastLogoFound: boolean;
@@ -74,6 +75,9 @@ export function LayoutsList({
   exclusionFields: ExclusionFieldOption[];
   // Open the popup on mount (deep link from the editor's "Manage types").
   openDocTypes?: boolean;
+  // Server-rendered tab bar (Layouts / File names) — passed in rather than
+  // built here so the page owns which tab is active.
+  tabs?: React.ReactNode;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -347,6 +351,8 @@ export function LayoutsList({
           </button>
         </div>
       </div>
+
+      {tabs}
 
       {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
 
