@@ -6,12 +6,43 @@ import type { StyleEanStatus } from "@/generated/prisma/enums";
 // the persisted StyleEanStatus enum so the badge vocabulary is consistent
 // whether the data came from the DB or a fresh re-resolve.
 export type EanSize = {
+  // Persisted StyleEan.id — the handle the override API toggles/deletes by.
+  // Empty string only for rows synthesised outside the DB (e.g. a live scrape
+  // preview that was never stored).
+  id: string;
   size: string;
   ean13: string | null;
   variantLabel: string | null;
   // Carton EAN of the PO section this row came from (per colourway).
   cartonEan: string | null;
+  // Manual override state (style-page EAN panel). `excluded` = hidden from all
+  // rendering/tokens but kept for un-hiding; `manual` = hand-added row.
+  excluded: boolean;
+  manual: boolean;
 };
+
+// Map a persisted StyleEan row to the UI-facing EanSize. Pure (no server deps)
+// so both the page loader and the re-resolve endpoint build the view the same
+// way — including the manual/excluded flags the panel renders.
+export function toEanSize(row: {
+  id: string;
+  size: string;
+  ean13: string | null;
+  variantLabel: string | null;
+  cartonEan: string | null;
+  excluded: boolean;
+  manual: boolean;
+}): EanSize {
+  return {
+    id: row.id,
+    size: row.size,
+    ean13: row.ean13,
+    variantLabel: row.variantLabel,
+    cartonEan: row.cartonEan,
+    excluded: row.excluded,
+    manual: row.manual,
+  };
+}
 
 export type EanDiagnostics = {
   poNumber: string | null;

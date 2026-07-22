@@ -102,7 +102,7 @@ export async function renderProdSpecTestBundle(
       businessAreaRef: { select: { name: true } },
       eans: {
         orderBy: { position: "asc" },
-        select: { size: true, ean13: true, variantLabel: true, cartonEan: true },
+        select: { size: true, ean13: true, variantLabel: true, cartonEan: true, excluded: true },
       },
     },
   });

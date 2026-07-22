@@ -18,7 +18,8 @@ import {
 import { eanForSize } from "./monday-barcode-parse";
 import { eanResolveKey } from "./resolve-inputs";
 import { computeBatchSize } from "./batch-size";
-import type { EanView } from "./ean-view";
+import { type EanView, toEanSize } from "./ean-view";
+import { reconcileEans, type EanRow } from "./ean-overrides";
 
 // =====================================================
 // EAN resolution runner.
@@ -312,11 +313,22 @@ export async function resolveAndPersistStyleEans(
       })
     : null;
 
+  // Fold the operator's manual overrides (hidden rows + hand-added rows) back
+  // into this fresh scrape so they survive the wholesale replace below — an
+  // exclusion is matched by size+EAN and a manual row is re-appended. Without
+  // this, every scheduled re-resolve would silently undo a de-select.
+  const prevRows = await db.styleEan.findMany({
+    where: { styleId },
+    select: { size: true, ean13: true, variantLabel: true, cartonEan: true, excluded: true, manual: true },
+  });
+  const merged = reconcileEans(prevRows as EanRow[], sizeEans);
+
   await db.$transaction([
     // Replace the per-size rows wholesale — simplest correct way to keep
-    // style_eans in lockstep with the latest read (sizes can change).
+    // style_eans in lockstep with the latest read (sizes can change). The
+    // `merged` list carries forward the manual overrides.
     db.styleEan.deleteMany({ where: { styleId } }),
-    ...sizeEans.map((s, i) =>
+    ...merged.map((s, i) =>
       db.styleEan.create({
         data: {
           styleId,
@@ -325,6 +337,8 @@ export async function resolveAndPersistStyleEans(
           ean13: s.ean13,
           cartonEan: s.cartonEan,
           variantLabel: s.variantLabel,
+          excluded: s.excluded,
+          manual: s.manual,
         },
       }),
     ),
@@ -389,11 +403,20 @@ export async function resolveAndPersistStyleEans(
       ` | items/variants=${d?.parsedItemCount ?? "?"}/${d?.parsedVariantCount ?? "?"}`,
   );
 
+  // Return the PERSISTED rows (not the raw scrape) so the view reflects the
+  // merged state — manual rows included, exclusions flagged, each with its id
+  // for the override panel to target.
+  const persisted = await db.styleEan.findMany({
+    where: { styleId },
+    orderBy: { position: "asc" },
+    select: { id: true, size: true, ean13: true, variantLabel: true, cartonEan: true, excluded: true, manual: true },
+  });
+
   return {
     status: dbStatus,
     message,
     poFileName: result.poFileName,
-    sizeEans,
+    sizeEans: persisted.map(toEanSize),
     cartonEan,
     diagnostics: result.diagnostics,
   };

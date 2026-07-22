@@ -35,7 +35,7 @@ import { ReviewTab } from "./review-tab";
 import { HistoryTab } from "./history-tab";
 import { EanPanel } from "./ean-panel";
 import { PoPreview } from "./po-preview";
-import type { EanView } from "@/lib/po/ean-view";
+import { type EanView, toEanSize } from "@/lib/po/ean-view";
 import type { AssetReviewStatus } from "@/generated/prisma/enums";
 import { colorFromVariantLabel } from "@/lib/po/ean-format";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
@@ -622,12 +622,7 @@ export default async function StyleDetail({
     status: style.eanStatus,
     poFileName: style.poFileName,
     cartonEan: style.cartonEan,
-    sizeEans: style.eans.map((e) => ({
-      size: e.size,
-      ean13: e.ean13,
-      variantLabel: e.variantLabel,
-      cartonEan: e.cartonEan,
-    })),
+    sizeEans: style.eans.map(toEanSize),
   };
 
   // If the FK is missing but we have business-area text, see if any

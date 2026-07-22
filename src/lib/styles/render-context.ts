@@ -54,6 +54,10 @@ export type RenderableStyle = {
     // (which made repeatBy="cartonEan" generate only the assort row). Every query
     // feeding buildStyleData MUST select eans.cartonEan.
     cartonEan: string | null;
+    // Manual-override hide flag — REQUIRED (same rationale as cartonEan): an
+    // excluded row must never print, so every render loader MUST select it and
+    // buildStyleData filters excluded rows out before mapping.
+    excluded: boolean;
   }>;
   customer: { name: string; config: unknown };
   qrImage: { image: string } | null;
@@ -98,11 +102,17 @@ export async function buildStyleData(
   // renders on labels even when the mapped PO column isn't the one this
   // style's board populated — and the PO-PDF-resolved EANs / carton EAN so
   // barcodes render from the scrape. See effectiveStyleItem.
+  // Drop operator-hidden rows before anything renders — the excluded flag is
+  // the manual override's whole point (a de-selected barcode must not print).
+  // Filtered once here so every downstream consumer (ean-map, eanVariants,
+  // carton.perSize) sees the same effective set.
+  const visibleEans = style.eans.filter((e) => !e.excluded);
+
   const item = effectiveStyleItem({
     rawData: style.rawData,
     poNumber: style.poNumber,
     supplier: style.supplier,
-    eans: style.eans,
+    eans: visibleEans,
     cartonEan: style.cartonEan,
   }) as MondayItem;
 
@@ -140,7 +150,7 @@ export async function buildStyleData(
   // repeat-per-EAN — `sizes` is deduped by size via the ean-map string,
   // which silently drops second colourways. Colour parsed from the PO
   // variant label ("PI-35/38 Pink, 35/38" → "Pink").
-  styleData.eanVariants = style.eans
+  styleData.eanVariants = visibleEans
     .filter((e) => (e.ean13 ?? "").trim())
     .map((e) => ({
       size: e.size,
@@ -156,7 +166,7 @@ export async function buildStyleData(
   // that column is filled (it wins at resolve time, see ean-runner). The
   // repeat dedupes by carton EAN, so sizes sharing a carton collapse to one
   // marking.
-  styleData.carton.perSize = style.eans
+  styleData.carton.perSize = visibleEans
     .filter((e) => (e.cartonEan ?? "").trim())
     .map((e) => ({
       size: e.size,
@@ -222,7 +232,7 @@ async function loadSiblingStyles(
       supplier: { select: { country: true } },
       eans: {
         orderBy: { position: "asc" },
-        select: { size: true, ean13: true, variantLabel: true, cartonEan: true },
+        select: { size: true, ean13: true, variantLabel: true, cartonEan: true, excluded: true },
       },
     },
   });
@@ -231,7 +241,8 @@ async function loadSiblingStyles(
       rawData: row.rawData,
       poNumber: row.poNumber,
       supplier: row.supplier,
-      eans: row.eans,
+      // Hidden rows never print on a sibling's carton marking either.
+      eans: row.eans.filter((e) => !e.excluded),
       cartonEan: row.cartonEan,
     }) as MondayItem;
     const sd = mapMondayItemToStyleData(item, customerName, mapping);
@@ -266,7 +277,7 @@ export async function loadStyleRenderContext(styleId: string): Promise<StyleRend
       supplier: { select: { country: true } },
       eans: {
         orderBy: { position: "asc" },
-        select: { size: true, ean13: true, variantLabel: true, cartonEan: true },
+        select: { size: true, ean13: true, variantLabel: true, cartonEan: true, excluded: true },
       },
     },
   });

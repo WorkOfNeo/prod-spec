@@ -4,6 +4,11 @@ import { useState } from "react";
 import type { EanView, EanDiagnostics } from "@/lib/po/ean-view";
 import { eanStatusMeta } from "@/lib/po/ean-status-meta";
 import { colorFromVariantLabel } from "@/lib/po/ean-format";
+
+type OverrideOp =
+  | { op: "toggle"; id: string; excluded: boolean }
+  | { op: "add"; size: string; ean13: string }
+  | { op: "delete"; id: string };
 import { ScrapePanel } from "./scrape-panel";
 
 // Details-tab EAN panel. Shows the persisted PO → EAN resolution (per-size
@@ -21,7 +26,10 @@ export function EanPanel({
 }) {
   const [view, setView] = useState<EanView>(initial);
   const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [addSize, setAddSize] = useState("");
+  const [addEan, setAddEan] = useState("");
 
   async function resolve() {
     setLoading(true);
@@ -37,8 +45,38 @@ export function EanPanel({
     }
   }
 
+  // Send an override op. Returns true on success so callers can clear inputs.
+  async function override(op: OverrideOp): Promise<boolean> {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/styles/${styleId}/eans`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(op),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((body as { error?: string })?.error ?? `HTTP ${res.status}`);
+      setView(body as EanView);
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "request failed");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addRow() {
+    if (!addSize.trim() || !addEan.trim()) return;
+    if (await override({ op: "add", size: addSize.trim(), ean13: addEan.trim() })) {
+      setAddSize("");
+      setAddEan("");
+    }
+  }
+
   const meta = eanStatusMeta(view.status);
-  const hasEans = view.sizeEans.some((s) => s.ean13);
+  const hasEans = view.sizeEans.length > 0;
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-4">
@@ -65,32 +103,113 @@ export function EanPanel({
 
       {error && <div className="mt-2 text-xs text-red-600">{error}</div>}
 
-      {hasEans ? (
+      {hasEans || hasPo ? (
         <div className="mt-3">
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-zinc-400">
               <tr>
+                <th className="py-1 pr-3 font-medium" title="Untick to hide this EAN from all prints">
+                  Show
+                </th>
                 <th className="py-1 pr-4 font-medium">Size</th>
                 <th className="py-1 pr-4 font-medium">Color</th>
                 <th className="py-1 pr-4 font-medium">EAN</th>
-                <th className="py-1 font-medium">PO label</th>
+                <th className="py-1 pr-4 font-medium">PO label</th>
+                <th className="py-1 font-medium sr-only">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {view.sizeEans.map((s, i) => (
-                <tr key={i} className="border-t border-zinc-100">
+              {view.sizeEans.map((s) => (
+                <tr
+                  key={s.id}
+                  className={`border-t border-zinc-100 ${s.excluded ? "opacity-45" : ""}`}
+                >
+                  <td className="py-1 pr-3">
+                    <input
+                      type="checkbox"
+                      checked={!s.excluded}
+                      disabled={busy}
+                      title={s.excluded ? "Hidden from prints — tick to show" : "Untick to hide from prints"}
+                      onChange={() => override({ op: "toggle", id: s.id, excluded: !s.excluded })}
+                      className="h-4 w-4 cursor-pointer accent-zinc-800 disabled:opacity-40"
+                    />
+                  </td>
                   <td className="py-1 pr-4 text-zinc-600">{s.size}</td>
-                  <td className="py-1 pr-4 text-zinc-600">{colorFromVariantLabel(s.variantLabel) || "—"}</td>
+                  <td className="py-1 pr-4 text-zinc-600">
+                    {colorFromVariantLabel(s.variantLabel) || "—"}
+                  </td>
                   <td
                     className={`py-1 pr-4 tabular-nums ${
-                      s.ean13 ? "font-medium text-zinc-800" : "text-zinc-300"
+                      s.ean13
+                        ? `font-medium ${s.excluded ? "text-zinc-500 line-through" : "text-zinc-800"}`
+                        : "text-zinc-300"
                     }`}
                   >
                     {s.ean13 ?? "— no match"}
                   </td>
-                  <td className="py-1 text-xs text-zinc-400">{s.variantLabel ?? "—"}</td>
+                  <td className="py-1 pr-4 text-xs text-zinc-400">
+                    {s.manual ? (
+                      <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700">
+                        manual
+                      </span>
+                    ) : (
+                      (s.variantLabel ?? "—")
+                    )}
+                  </td>
+                  <td className="py-1 text-right">
+                    {s.manual && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => override({ op: "delete", id: s.id })}
+                        title="Delete this manually-added EAN"
+                        className="rounded px-1.5 text-xs text-red-500 hover:bg-red-50 disabled:opacity-40"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
+              {/* Add a missing EAN by hand — persists and survives re-resolve. */}
+              <tr className="border-t border-zinc-100">
+                <td className="py-1 pr-3 text-center text-zinc-300">+</td>
+                <td className="py-1 pr-4">
+                  <input
+                    value={addSize}
+                    onChange={(e) => setAddSize(e.target.value)}
+                    placeholder="Size"
+                    disabled={busy}
+                    className="w-16 rounded border border-zinc-300 px-1.5 py-0.5 text-sm"
+                  />
+                </td>
+                <td className="py-1 pr-4" />
+                <td className="py-1 pr-4">
+                  <input
+                    value={addEan}
+                    onChange={(e) => setAddEan(e.target.value.replace(/\D/g, ""))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") addRow();
+                    }}
+                    placeholder="13-digit EAN"
+                    inputMode="numeric"
+                    maxLength={13}
+                    disabled={busy}
+                    className="w-40 rounded border border-zinc-300 px-1.5 py-0.5 text-sm tabular-nums"
+                  />
+                </td>
+                <td className="py-1 pr-4" />
+                <td className="py-1 text-right">
+                  <button
+                    type="button"
+                    disabled={busy || !addSize.trim() || addEan.length !== 13}
+                    onClick={addRow}
+                    className="rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+                  >
+                    Add
+                  </button>
+                </td>
+              </tr>
             </tbody>
           </table>
           {view.cartonEan && (
@@ -98,14 +217,16 @@ export function EanPanel({
               carton <span className="font-medium text-zinc-800">{view.cartonEan}</span>
             </div>
           )}
+          <p className="mt-2 text-xs text-zinc-400">
+            Untick an EAN to hide it from all prints; add a row for a missing one. Both survive
+            re-resolve.
+          </p>
         </div>
       ) : (
         <p className="mt-3 text-sm text-zinc-500">
           {view.message
             ? view.message
-            : hasPo
-              ? "No EANs resolved yet — click Resolve to scrape the PO PDF for the per-size barcodes."
-              : "No PO number on this style yet."}
+            : "No PO number on this style yet."}
         </p>
       )}
 
