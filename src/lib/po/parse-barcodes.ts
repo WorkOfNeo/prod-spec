@@ -48,6 +48,14 @@ export type PoItem = {
    * style-number-shaped leading token (e.g. a Customer-Item-No layout).
    */
   styleNumber: string | null;
+  /**
+   * The section's Description header text with the "No." article no. stripped,
+   * e.g. "ILC02001: IL18672B+IL18672C - 2-Pack Shirts". Retained so a style
+   * can be matched by its NAME appearing in the header when the leading token
+   * is a pack/consignment code rather than the style number (see
+   * selectStyleItems' name-match tier). Null when there was no header text.
+   */
+  description: string | null;
   /** Per colour/size Barcode EANs. */
   variants: PoVariant[];
   /** Assortment / polybag / carton-level EANs (not per-size). */
@@ -151,6 +159,7 @@ export function parseBarcodeItems(raw: string): PoItem[] {
         contrastNo: null,
         customerItemNo: null,
         styleNumber: null,
+        description: null,
         variants: [],
         assortmentEans: [],
       };
@@ -168,10 +177,12 @@ export function parseBarcodeItems(raw: string): PoItem[] {
     // A Contrast "No." header line (no EAN on it) opens a new item. The text
     // after the "No." is the Description header — pull the style number off it.
     if (contrastNo && !standalone && !labeled) {
+      const header = line.replace(contrastNo, "").trim();
       current = {
         contrastNo,
         customerItemNo: custItem,
-        styleNumber: leadingStyleNumber(line.replace(contrastNo, "")),
+        styleNumber: leadingStyleNumber(header),
+        description: header || null,
         variants: [],
         assortmentEans: [],
       };
@@ -210,11 +221,11 @@ export function parseBarcodeItems(raw: string): PoItem[] {
       if (/^ASS\d*\b/i.test(label) || !label || labelIsEan) {
         if (labelIsEan) item.assortmentEans.push(label);
         item.assortmentEans.push(ean13);
-        // Backup style-number capture: the ASS row also reads
+        // Backup style-number/description capture: the ASS row also reads
         // "ASS1 PTQ60031 - Pyjamas …" — use it if the header line had none.
-        if (!item.styleNumber) {
-          item.styleNumber = leadingStyleNumber(label.replace(/^ASS\d*\s*/i, ""));
-        }
+        const assHeader = label.replace(/^ASS\d*\s*/i, "").trim();
+        if (!item.styleNumber) item.styleNumber = leadingStyleNumber(assHeader);
+        if (!item.description && assHeader) item.description = assHeader;
       } else {
         item.variants.push({ label: label.replace(/\s+/g, " ").trim(), ean13, unitsPer });
       }
@@ -265,11 +276,17 @@ export type StyleItemSelection =
 //   1. customerItemNo → that item alone (precise, where the PO carries it).
 //   2. styleNumber    → every section whose header style number matches; this
 //      is how Contrast POs identify styles and what makes a MULTI-style PO safe.
-//   3. reject         → the PO HAS style-number sections but none is ours; we
+//   3. styleName      → the style's name appears in EXACTLY ONE section's
+//      description header. Catches POs whose header leads with a pack/
+//      consignment code ("ILC02001: IL18672B+IL18672C - …") so the style
+//      number the mapper sees is the pack code, not the style — the real name
+//      still sits in the description. Only fires on a unique hit, so an absent
+//      or ambiguous name falls through untouched.
+//   4. reject         → the PO HAS style-number sections but none is ours; we
 //      must NOT fall through to "all items" (every style shares the same size
 //      run, so that silently leaks another style's EANs). The caller maps this
 //      to STYLE_NOT_IN_PO.
-//   4. all            → no style-number headers at all (a different/legacy PO
+//   5. all            → no style-number headers at all (a different/legacy PO
 //      layout): keep the old behaviour and aggregate every item's variants. A
 //      per-style-order PO lists one style's colourways (+ a 2-pack wrapper that
 //      carries only an assortment EAN), so this still collects a single style.
@@ -291,6 +308,16 @@ export function selectStyleItems(
   if (keys.size > 0) {
     const matches = items.filter((i) => i.styleNumber && keys.has(norm(i.styleNumber)));
     if (matches.length > 0) return { kind: "styleNumber", items: matches, poStyleNumbers };
+  }
+
+  // Name-in-description tier — only reached when style-number matching found
+  // nothing. Match the (normalised) style name against the section headers;
+  // use it ONLY when it pins exactly one section, so it can never silently
+  // pull in a second style's EANs (that stays the reject/all path below).
+  const nameKey = norm(opts.styleNumber ?? "");
+  if (nameKey.length >= 5) {
+    const named = items.filter((i) => i.description && norm(i.description).includes(nameKey));
+    if (named.length === 1) return { kind: "styleNumber", items: named, poStyleNumbers };
   }
 
   // No match. Reject ONLY when ALL of:
