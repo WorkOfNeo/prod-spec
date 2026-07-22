@@ -146,8 +146,8 @@ test("selectStyleItems — rejects when no section matches the style number", ()
 
 test("selectStyleItems — Customer Item No wins over style number when present", () => {
   const items: PoItem[] = [
-    { contrastNo: "C-1", customerItemNo: "316-246-1024", styleNumber: "AAA111", variants: [], assortmentEans: [] },
-    { contrastNo: "C-2", customerItemNo: "316-246-2048", styleNumber: "BBB222", variants: [], assortmentEans: [] },
+    { contrastNo: "C-1", customerItemNo: "316-246-1024", styleNumber: "AAA111", description: null, variants: [], assortmentEans: [] },
+    { contrastNo: "C-2", customerItemNo: "316-246-2048", styleNumber: "BBB222", description: null, variants: [], assortmentEans: [] },
   ];
   const sel = selectStyleItems(items, { customerItemNo: "316-246-2048", styleNumber: "AAA111" });
   assert.equal(sel.kind, "customerItemNo");
@@ -158,8 +158,8 @@ test("selectStyleItems — falls back to all items when the PO has no style head
   // A legacy/different layout where the parser found no style-number headers:
   // keep the old behaviour and aggregate every item (single-style PO + wrapper).
   const items: PoItem[] = [
-    { contrastNo: "C-1", customerItemNo: null, styleNumber: null, variants: [{ label: "M", ean13: "1111111111111", unitsPer: null }], assortmentEans: [] },
-    { contrastNo: "C-2", customerItemNo: null, styleNumber: null, variants: [{ label: "L", ean13: "2222222222222", unitsPer: null }], assortmentEans: [] },
+    { contrastNo: "C-1", customerItemNo: null, styleNumber: null, description: null, variants: [{ label: "M", ean13: "1111111111111", unitsPer: null }], assortmentEans: [] },
+    { contrastNo: "C-2", customerItemNo: null, styleNumber: null, description: null, variants: [{ label: "L", ean13: "2222222222222", unitsPer: null }], assortmentEans: [] },
   ];
   const sel = selectStyleItems(items, { styleNumber: "WHATEVER" });
   assert.equal(sel.kind, "all");
@@ -170,6 +170,7 @@ const item = (over: Partial<PoItem>): PoItem => ({
   contrastNo: null,
   customerItemNo: null,
   styleNumber: null,
+  description: null,
   variants: [],
   assortmentEans: [],
   ...over,
@@ -267,6 +268,80 @@ test("selectStyleItems — still rejects a clean single style number absent from
     item({ contrastNo: "C-2", styleNumber: "PTQ60032", variants: [{ label: "M", ean13: "2", unitsPer: null }] }),
   ];
   assert.equal(selectStyleItems(po, { styleNumber: "PTQ99999" }).kind, "reject");
+});
+
+test("selectStyleItems — pack-code header: matches each 2-pack style by name in the description", () => {
+  // Netto 2-pack PO (C-PO63422): each section's header leads with the pack
+  // code ("ILC02001:") so the parsed styleNumber is the pack code, not the
+  // style — but the style's name (IL18672B+IL18672C) sits in the description.
+  // The name-in-description tier must pin each style to ITS OWN section so the
+  // two sibling 2-packs don't each swallow all 8 EANs.
+  const raw = [
+    "No. Variant Description Barcode EAN Polybag EAN Carton SU per",
+    "C-33578 C-33578: ILC02001+ILC02002: 2pk shirts",
+    "5706323604424 5706323604424 10/10",
+    "C-33576 ILC02001: IL18672B+IL18672C - 2-Pack Shirts",
+    "A-S Colour A Black-Offwhite, S 5706323604349",
+    "A-M Colour A Black-Offwhite, M 5706323604356",
+    "C-33577 ILC02002: IL18672A+IL18672D - 2-Pack Shirts",
+    "A-S Colour A White-Navy, S 5706323604387",
+    "A-M Colour A White-Navy, M 5706323604394",
+  ].join("\n");
+  const po = parseBarcodeItems(raw);
+
+  const b = selectStyleItems(po, { styleNumber: "IL18672B+IL18672C" });
+  assert.equal(b.kind, "styleNumber");
+  assert.deepEqual(b.items.flatMap((i) => i.variants.map((v) => v.ean13)), [
+    "5706323604349",
+    "5706323604356",
+  ]);
+
+  const a = selectStyleItems(po, { styleNumber: "IL18672A+IL18672D" });
+  assert.equal(a.kind, "styleNumber");
+  assert.deepEqual(a.items.flatMap((i) => i.variants.map((v) => v.ean13)), [
+    "5706323604387",
+    "5706323604394",
+  ]);
+
+  // The shared 2-pack wrapper's carton EAN still resolves for each style.
+  assert.equal(cartonEanFor(b.items, po), "5706323604424");
+});
+
+test("selectStyleItems — consignment-code header: matches each style by its ILC code", () => {
+  // Netto 2-pack PO (C-PO63226): section headers carry ONLY the consignment
+  // code ("ILC01989 - Fleece pants"), and the style name (IL62778I+IL62779I)
+  // is nowhere on the page — so name-in-description can't help. Each style's
+  // text99__1 consignment code (passed as opts.consignmentCode) must pin it to
+  // its own section.
+  const raw = [
+    "No. Variant Description Barcode EAN Polybag EAN Carton SU per",
+    "C-33325 C-33325 ILC01990+ILC01989 2-pack fleece pants",
+    "5706323595722 5706323595722 8/8",
+    "C-33323 ILC01990 - Fleece pants",
+    "MI-M MIX, M 5706323595661",
+    "MI-L MIX, L 5706323595678",
+    "C-33324 ILC01989 - Fleece pants",
+    "MI-M MIX, M 5706323595692",
+    "MI-L MIX, L 5706323595708",
+  ].join("\n");
+  const po = parseBarcodeItems(raw);
+
+  const i = selectStyleItems(po, { styleNumber: "IL62778I+IL62779I", consignmentCode: "ILC01989" });
+  assert.equal(i.kind, "styleNumber");
+  assert.deepEqual(i.items.flatMap((x) => x.variants.map((v) => v.ean13)), [
+    "5706323595692",
+    "5706323595708",
+  ]);
+
+  const j = selectStyleItems(po, { styleNumber: "IL62778J+IL63366A", consignmentCode: "ILC01990" });
+  assert.equal(j.kind, "styleNumber");
+  assert.deepEqual(j.items.flatMap((x) => x.variants.map((v) => v.ean13)), [
+    "5706323595661",
+    "5706323595678",
+  ]);
+
+  // A bare-number / free-text consignment code must NOT widen the match.
+  assert.equal(selectStyleItems(po, { styleNumber: "NOPE000", consignmentCode: "1234" }).kind, "reject");
 });
 
 test("variantsWithSectionCarton — each colourway keeps its own section's carton", () => {

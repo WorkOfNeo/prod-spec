@@ -14,6 +14,11 @@ export type EanResolveInputs = {
   poNumber: string | null;
   customerItemNo: string;
   styleNumber: string;
+  // Consignment / article-group code (text99__1, e.g. "ILC01989"). An extra
+  // PO-section match key — NOT part of eanResolveKey, since it's a stable
+  // ingest-time code, and folding it into the fingerprint would re-key every
+  // style and stampede a re-resolve of the whole board on deploy.
+  consignmentCode: string;
   sizes: string[];
   colourCode: string;
 };
@@ -66,13 +71,14 @@ export function eanResolveInputs(
   );
   const styleNumber =
     readCol(rawData, mapping.styleNumber ?? "__name__", MANUAL_COLUMN_IDS.styleNumber) || styleName;
+  const consignmentCode = readCol(rawData, mapping.consignmentCode ?? "text99__1");
   const sizes = splitSizes(readCol(rawData, mapping.sizes ?? "sizes__1", MANUAL_COLUMN_IDS.sizes));
   const colourCode = readCol(
     rawData,
     mapping.colourCode ?? "dropdown__1",
     MANUAL_COLUMN_IDS.colourCode,
   );
-  return { poNumber, customerItemNo, styleNumber, sizes, colourCode };
+  return { poNumber, customerItemNo, styleNumber, consignmentCode, sizes, colourCode };
 }
 
 // Stable fingerprint of the resolve inputs. Stored on Style.eanResolveKey at

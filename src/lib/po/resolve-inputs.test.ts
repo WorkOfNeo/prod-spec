@@ -55,6 +55,20 @@ test("eanResolveInputs — styleNumber falls back to the style name", () => {
   assert.equal(inp.styleNumber, "PTQ60031");
 });
 
+test("eanResolveInputs — reads the consignment code from text99__1", () => {
+  const inp = eanResolveInputs(raw({ sizes__1: "M", text99__1: "ILC01989" }), mapping, "S1", "C-PO1");
+  assert.equal(inp.consignmentCode, "ILC01989");
+});
+
+test("eanResolveKey — the consignment code is NOT part of the fingerprint", () => {
+  // It's a stable ingest-time code and an extra match key only; folding it in
+  // would re-key every style and stampede a full re-resolve on deploy.
+  const a = eanResolveInputs(raw({ sizes__1: "M", text99__1: "ILC01989" }), mapping, "S1", "C-PO1");
+  const b = eanResolveInputs(raw({ sizes__1: "M", text99__1: "ILC01990" }), mapping, "S1", "C-PO1");
+  assert.notEqual(a.consignmentCode, b.consignmentCode);
+  assert.equal(eanResolveKey(a), eanResolveKey(b));
+});
+
 test("eanResolveKey — a bare size reorder is a real change (positions matter)", () => {
   const a = eanResolveInputs(raw({ sizes__1: "S, M" }), mapping, "S1", "C-PO1");
   const b = eanResolveInputs(raw({ sizes__1: "M, S" }), mapping, "S1", "C-PO1");
@@ -76,6 +90,7 @@ test("eanResolveKey — diagnostics round-trip matches the direct fingerprint", 
     poNumber: "C-PO1",
     customerItemNo: (inp.customerItemNo || null) ?? "",
     styleNumber: (inp.styleNumber || null) ?? "",
+    consignmentCode: "",
     sizes: inp.sizes,
     colourCode: (inp.colourCode || null) ?? "",
   });
