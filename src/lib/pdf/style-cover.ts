@@ -38,7 +38,7 @@ export async function buildStyleCoverPdf(
           supplier: { select: { name: true, country: true } },
           eans: {
             orderBy: { position: "asc" },
-            select: { size: true, ean13: true, variantLabel: true, cartonEan: true },
+            select: { size: true, ean13: true, variantLabel: true, cartonEan: true, excluded: true },
           },
           qrImage: { select: { image: true } },
           prodSpec: {

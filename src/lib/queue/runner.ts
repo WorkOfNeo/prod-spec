@@ -195,7 +195,7 @@ export async function processJob(jobId: string): Promise<void> {
           // fields at render time (see effectiveStyleItem). cartonEan is the
           // per-size carton feeding carton.perSize (repeatBy="cartonEan"); omit
           // it and that repeat generates only the assort row.
-          eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, variantLabel: true, cartonEan: true } },
+          eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, variantLabel: true, cartonEan: true, excluded: true } },
         },
       },
     },
@@ -234,7 +234,7 @@ export async function processJob(jobId: string): Promise<void> {
           cartonEan: true,
           eans: {
             orderBy: { position: "asc" },
-            select: { size: true, ean13: true, variantLabel: true, cartonEan: true },
+            select: { size: true, ean13: true, variantLabel: true, cartonEan: true, excluded: true },
           },
         },
       });

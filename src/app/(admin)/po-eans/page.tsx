@@ -2,6 +2,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import { getPoEanAutoRunEnabled, getAutomationMinPo } from "@/lib/settings/app-settings";
+import { toEanSize } from "@/lib/po/ean-view";
 import { PoEansTable, type PoEanRow, type PoEanFilter } from "./po-eans-table";
 import { PoEanAutoRunSetting } from "./po-ean-auto-run-setting";
 import { requireAdminPage } from "@/lib/auth-server";
@@ -119,7 +120,7 @@ export default async function PoEansPage({
         supplier: { select: { name: true } },
         eans: {
           orderBy: { position: "asc" },
-          select: { size: true, ean13: true, variantLabel: true, cartonEan: true },
+          select: { id: true, size: true, ean13: true, variantLabel: true, cartonEan: true, excluded: true, manual: true },
         },
       },
       orderBy: { updatedAt: "desc" },
@@ -150,12 +151,7 @@ export default async function PoEansPage({
       status: s.eanStatus,
       poFileName: s.poFileName,
       cartonEan: s.cartonEan,
-      sizeEans: s.eans.map((e) => ({
-        size: e.size,
-        ean13: e.ean13,
-        variantLabel: e.variantLabel,
-        cartonEan: e.cartonEan,
-      })),
+      sizeEans: s.eans.map(toEanSize),
     },
   }));
 
