@@ -955,6 +955,13 @@ model StyleEan {
   cartonEan    String?
   // The PO variant label we matched this size against (audit).
   variantLabel String?
+  // Manual override (style-page EAN panel). `excluded` hides a row from all
+  // rendering/tokens without deleting it — the operator's escape hatch when the
+  // scrape over-includes; it survives re-resolve (carried by size+ean13).
+  // `manual` marks a hand-added row (not from any scrape), which re-resolve
+  // always preserves.
+  excluded     Boolean  @default(false)
+  manual       Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
