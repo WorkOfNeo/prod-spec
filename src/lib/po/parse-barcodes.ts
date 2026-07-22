@@ -292,7 +292,7 @@ export type StyleItemSelection =
 //      carries only an assortment EAN), so this still collects a single style.
 export function selectStyleItems(
   items: PoItem[],
-  opts: { customerItemNo?: string; styleNumber?: string },
+  opts: { customerItemNo?: string; styleNumber?: string; consignmentCode?: string },
 ): StyleItemSelection {
   const poStyleNumbers = [
     ...new Set(items.map((i) => i.styleNumber).filter((s): s is string => Boolean(s))),
@@ -305,6 +305,14 @@ export function selectStyleItems(
   }
 
   const keys = styleKeys(opts.styleNumber ?? "");
+  // The consignment / article-group code (text99__1, e.g. "ILC01989") is how a
+  // multi-style Contrast PO keys its Barcodes sections when the header carries
+  // NO style number — "ILC01989 - Fleece pants" for a style Monday-named
+  // "IL62778I+IL62779I". Add it as an extra section key. Gated to code-shaped
+  // values (a letter AND a digit) so a bare number / free-text value can't
+  // widen the match; the PO side already never emits bare-number styleNumbers.
+  const cc = norm(opts.consignmentCode ?? "");
+  if (cc && /[a-z]/.test(cc) && /[0-9]/.test(cc)) keys.add(cc);
   if (keys.size > 0) {
     const matches = items.filter((i) => i.styleNumber && keys.has(norm(i.styleNumber)));
     if (matches.length > 0) return { kind: "styleNumber", items: matches, poStyleNumbers };

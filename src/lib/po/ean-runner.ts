@@ -304,6 +304,9 @@ export async function resolveAndPersistStyleEans(
         poNumber: d.poNumber,
         customerItemNo: d.customerItemNoOnStyle ?? "",
         styleNumber: d.styleNumberOnStyle ?? "",
+        // Not part of the fingerprint (eanResolveKey ignores it) — a
+        // placeholder to satisfy the input type.
+        consignmentCode: "",
         sizes: d.styleSizes,
         colourCode: d.colourCodeOnStyle ?? "",
       })

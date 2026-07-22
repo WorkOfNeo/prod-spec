@@ -127,6 +127,7 @@ export const STYLE_FIELD_LABELS = {
   businessArea: "Business area",
   // Runsven prior-solution master fields.
   customerItemNo: "Customer article no.",
+  consignmentCode: "Consignment code (ILC…)",
   barcodeNumber: "Barcode number",
   batchNo: "Batch no.",
   targetGroup: "Target group (buying dept)",

@@ -42,6 +42,12 @@ export const ColumnMappingSchema = z.object({
   // They flow into Style.rawData and surface on the Details tab; printable
   // outputs consume them as those templates get built.
   customerItemNo: z.string().optional(), // Customer Article number → 🔑 Customer Item No
+  // Consignment / article-group code (e.g. "ILC01989"). On a multi-style
+  // Contrast PO each Barcodes section header is keyed by THIS code
+  // ("ILC01989 - Fleece pants"), not by the style number — so it's an extra
+  // match key that lets a 2-pack style ("IL62778I+IL62779I") find its own
+  // section. Default: the Pre-Order board's text99__1 column.
+  consignmentCode: z.string().optional(),
   barcodeNumber: z.string().optional(), // Barcode number → Barcode Number
   batchNo: z.string().optional(), // Batch nr → Batch nr
   targetGroup: z.string().optional(), // Buying Dept → 🎯 Target Group
@@ -146,6 +152,7 @@ export const DEFAULT_COLUMN_MAPPING: Partial<ColumnMapping> = {
   klNumber: "text_mkv0ebfg", // KL No.
   price: "retail_prices__1", // Retail Prices
   customerItemNo: "text91__1", // 🔑 Customer Item No
+  consignmentCode: "text99__1", // Consignment / article-group code (ILC…)
   barcodeNumber: "numeric_mkta3mqk", // Barcode Number
   batchNo: "numeric_mkta7tzg", // Batch nr
   targetGroup: "status87__1", // 🎯 Target Group
@@ -218,6 +225,7 @@ export const MANUAL_COLUMN_IDS = {
   price: "manual.price",
   supplierEmail: "manual.supplierEmail",
   customerItemNo: "manual.customerItemNo",
+  consignmentCode: "manual.consignmentCode",
   barcodeNumber: "manual.barcodeNumber",
   batchNo: "manual.batchNo",
   targetGroup: "manual.targetGroup",

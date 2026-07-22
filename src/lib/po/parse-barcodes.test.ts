@@ -307,6 +307,43 @@ test("selectStyleItems — pack-code header: matches each 2-pack style by name i
   assert.equal(cartonEanFor(b.items, po), "5706323604424");
 });
 
+test("selectStyleItems — consignment-code header: matches each style by its ILC code", () => {
+  // Netto 2-pack PO (C-PO63226): section headers carry ONLY the consignment
+  // code ("ILC01989 - Fleece pants"), and the style name (IL62778I+IL62779I)
+  // is nowhere on the page — so name-in-description can't help. Each style's
+  // text99__1 consignment code (passed as opts.consignmentCode) must pin it to
+  // its own section.
+  const raw = [
+    "No. Variant Description Barcode EAN Polybag EAN Carton SU per",
+    "C-33325 C-33325 ILC01990+ILC01989 2-pack fleece pants",
+    "5706323595722 5706323595722 8/8",
+    "C-33323 ILC01990 - Fleece pants",
+    "MI-M MIX, M 5706323595661",
+    "MI-L MIX, L 5706323595678",
+    "C-33324 ILC01989 - Fleece pants",
+    "MI-M MIX, M 5706323595692",
+    "MI-L MIX, L 5706323595708",
+  ].join("\n");
+  const po = parseBarcodeItems(raw);
+
+  const i = selectStyleItems(po, { styleNumber: "IL62778I+IL62779I", consignmentCode: "ILC01989" });
+  assert.equal(i.kind, "styleNumber");
+  assert.deepEqual(i.items.flatMap((x) => x.variants.map((v) => v.ean13)), [
+    "5706323595692",
+    "5706323595708",
+  ]);
+
+  const j = selectStyleItems(po, { styleNumber: "IL62778J+IL63366A", consignmentCode: "ILC01990" });
+  assert.equal(j.kind, "styleNumber");
+  assert.deepEqual(j.items.flatMap((x) => x.variants.map((v) => v.ean13)), [
+    "5706323595661",
+    "5706323595678",
+  ]);
+
+  // A bare-number / free-text consignment code must NOT widen the match.
+  assert.equal(selectStyleItems(po, { styleNumber: "NOPE000", consignmentCode: "1234" }).kind, "reject");
+});
+
 test("variantsWithSectionCarton — each colourway keeps its own section's carton", () => {
   // A multi-colourway style is listed as one section per colour, each with its
   // own carton EAN. The Blue rows must carry the Blue carton and the Pink rows

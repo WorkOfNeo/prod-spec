@@ -127,7 +127,7 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
   // the 🎨 Colour code ("*A"/"*B" colourway marker — see colour-scope.ts) — all
   // read through the shared resolver so the runner's staleness fingerprint
   // (eanResolveKey) reads exactly the same values this scrape did.
-  const { customerItemNo, styleNumber, sizes, colourCode } = eanResolveInputs(
+  const { customerItemNo, styleNumber, consignmentCode, sizes, colourCode } = eanResolveInputs(
     style.rawData,
     mapping,
     style.name,
@@ -270,7 +270,7 @@ export async function resolveStyleEans(styleId: string): Promise<StyleEanResult>
   // Pick the PO section(s) for this style: Customer Item No → style number →
   // reject (PO has style sections, none ours) → all-items fallback. See
   // selectStyleItems for the full rationale.
-  const selection = selectStyleItems(parsed.items, { customerItemNo, styleNumber });
+  const selection = selectStyleItems(parsed.items, { customerItemNo, styleNumber, consignmentCode });
   const selectedItems = selection.items;
   // Carry each section's own carton EAN onto its variants so a multi-colourway
   // style (one section per colour) keeps the carton paired with the right
