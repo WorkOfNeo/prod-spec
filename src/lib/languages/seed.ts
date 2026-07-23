@@ -48,4 +48,5 @@ export const STANDARD_LANGUAGES: LanguageSeed[] = [
   { code: "pt",    name: "Portuguese",         nativeName: "Português",        sortOrder: 26 },
   { code: "ro-MD", name: "Moldovan",           nativeName: "Moldovenească",    sortOrder: 27 },
   { code: "nl-BE", name: "Belgian",            nativeName: "Vlaams",           sortOrder: 28 },
+  { code: "et",    name: "Estonian",           nativeName: "Eesti",            sortOrder: 29 },
 ];
