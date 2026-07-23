@@ -9,9 +9,10 @@ import { normaliseTranslationKey } from "@/lib/translations/lookup";
 //
 // The board's two empty "English" columns ("angielski", "Engelsk") have no
 // entry here and are skipped — the item Name IS the English source. Codes
-// match src/lib/languages/seed.ts (28 languages incl. en + 27 board cols).
+// match src/lib/languages/seed.ts (29 languages incl. en + 28 board cols).
 const TITLE_TO_LANG: Record<string, string> = {
   danish: "da",
+  estonian: "et",
   swedish: "sv",
   norwegian: "no",
   finnish: "fi",
