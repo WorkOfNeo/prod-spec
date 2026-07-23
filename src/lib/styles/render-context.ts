@@ -20,6 +20,7 @@ import type { MondayItem } from "@/lib/monday/client";
 import type { StyleData } from "@/lib/pdf/types";
 import { effectiveStyleItem } from "./resolved-fields";
 import { outputReadinessForStyle, type OutputReadiness } from "./output-readiness";
+import { readUseStyleBoardColour } from "@/lib/po/ean-override-actions";
 
 // =====================================================
 // Shared render context — the ONE place StyleData is assembled from a
@@ -175,6 +176,13 @@ export async function buildStyleData(
       colour: colourFromVariantLabel(e.variantLabel ?? null, e.size),
     }));
 
+  // Per-style colour-source override for repeat-per-EAN rendering. Read here
+  // (once, guarded) so BOTH render paths — the runner and the preview loader —
+  // pick it up with no per-caller wiring. Defaults to false (PO colour, the
+  // historical behaviour) when the column isn't present yet on a pre-db:deploy
+  // boot, exactly like the eanResolveKey staleness read.
+  styleData.useStyleBoardColour = await readUseStyleBoardColour(style.id);
+
   // Wash-care token repair: Monday dropdown labels can contain ", " and the
   // mapper's comma split shears them into unresolvable fragments. Re-join
   // against the catalogue so e.g. "Dry Clean, Any Solvent" stays one symbol.
@@ -271,6 +279,9 @@ export async function loadStyleRenderContext(styleId: string): Promise<StyleRend
 
   const style = await db.style.findUnique({
     where: { id: styleId },
+    // useStyleBoardColour is read (guarded) inside buildStyleData, not from this
+    // object — omit it so the preview loader survives a pre-db:deploy boot.
+    omit: { useStyleBoardColour: true },
     include: {
       customer: true,
       qrImage: true,

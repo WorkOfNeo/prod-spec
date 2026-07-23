@@ -5,8 +5,11 @@ import { resolveAndPersistStyleEans } from "@/lib/po/ean-runner";
 import {
   applyEanOverride,
   EanOverrideError,
+  loadStyleEanView,
   type EanOverrideOp,
 } from "@/lib/po/ean-override-actions";
+import { enqueueGenerationJob } from "@/lib/queue/enqueue";
+import { runPendingJobs } from "@/lib/queue/runner";
 
 export const runtime = "nodejs";
 // Downloading + parsing a PO PDF from SharePoint can take a few seconds.
@@ -30,16 +33,50 @@ function parseOp(body: unknown): EanOverrideOp | null {
   return null;
 }
 
-// Manual EAN override: hide / un-hide a scraped row, add a missing one, or
-// delete a hand-added one. Mutates style_eans directly (no SharePoint) and
-// returns the refreshed EanView. Overrides survive a later re-resolve (see
+// Manual EAN override: hide / un-hide a scraped row, add a missing one, delete
+// a hand-added one, or flip the per-style colour source for repeat-per-EAN
+// rendering. Mutates style_eans / Style directly (no SharePoint) and returns
+// the refreshed EanView. Overrides survive a later re-resolve (see
 // reconcileEans).
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const session = await getServerSession();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
   const { id } = await ctx.params;
-  const op = parseOp(await req.json().catch(() => null));
+  const body = await req.json().catch(() => null);
+
+  // Colour-source toggle: persist Style.useStyleBoardColour and re-render the
+  // style so the change is visible on its per-EAN barcodes. Kept out of
+  // applyEanOverride (which is deliberately SharePoint-/job-free) — it's a
+  // Style-level render preference, not a style_eans row edit.
+  if (body && typeof body === "object" && (body as { op?: unknown }).op === "colourSource") {
+    const useStyleBoardColour = (body as { useStyleBoardColour?: unknown }).useStyleBoardColour;
+    if (typeof useStyleBoardColour !== "boolean") {
+      return NextResponse.json({ error: "useStyleBoardColour must be a boolean" }, { status: 400 });
+    }
+    const updated = await db.style.updateMany({ where: { id }, data: { useStyleBoardColour } });
+    if (updated.count === 0) return NextResponse.json({ error: "Style not found" }, { status: 404 });
+
+    // Re-render so the toggle takes effect — but never step on an in-flight
+    // job (mirrors the style PATCH route's guard). Approved outputs are skipped
+    // by the runner regardless, so this refreshes the not-yet-approved ones.
+    let jobId: string | null = null;
+    const inflight = await db.job.count({
+      where: { styleId: id, status: { in: ["QUEUED", "RUNNING"] } },
+    });
+    if (inflight === 0) {
+      ({ jobId } = await enqueueGenerationJob({ styleId: id, triggerSource: "MANUAL_RERUN" }));
+      await db.log.create({
+        data: { jobId, level: "INFO", message: `colour source set to ${useStyleBoardColour ? "style board" : "PO"} — re-rendering` },
+      });
+      await runPendingJobs(1);
+    }
+
+    const view = await loadStyleEanView(id);
+    return NextResponse.json({ ...view, regenerated: jobId !== null });
+  }
+
+  const op = parseOp(body);
   if (!op) return NextResponse.json({ error: "Invalid override request" }, { status: 400 });
 
   try {

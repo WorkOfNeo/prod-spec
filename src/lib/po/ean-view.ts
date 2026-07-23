@@ -110,6 +110,12 @@ export type EanView = {
   poFileName: string | null;
   sizeEans: EanSize[];
   cartonEan: string | null;
+  /** Per-style colour source for repeat-per-EAN rendering: true = Style board
+   *  colour, false/undefined = PO variant-label colour (the default). Powers
+   *  the EAN panel's colour-source toggle. Optional so the many EanView
+   *  constructors that don't need it can omit it (the panel treats absent as
+   *  false). */
+  useStyleBoardColour?: boolean;
   /** Present after a live resolve (not persisted) — lets the UI/API show
    *  exactly which file was read and whether it contained barcodes. */
   diagnostics?: EanDiagnostics;

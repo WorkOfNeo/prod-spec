@@ -27,9 +27,36 @@ export function EanPanel({
   const [view, setView] = useState<EanView>(initial);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [colourBusy, setColourBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addSize, setAddSize] = useState("");
   const [addEan, setAddEan] = useState("");
+
+  const useStyleBoardColour = view.useStyleBoardColour ?? false;
+
+  // Flip the per-style colour source for repeat-per-EAN rendering and re-render
+  // the style so its barcodes reflect the choice. The response carries the
+  // refreshed EanView (with the persisted flag), so the toggle reflects DB
+  // truth even if an in-flight job blocked the re-render.
+  async function setColourSource(next: boolean) {
+    if (next === useStyleBoardColour || colourBusy) return;
+    setColourBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/styles/${styleId}/eans`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ op: "colourSource", useStyleBoardColour: next }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((body as { error?: string })?.error ?? `HTTP ${res.status}`);
+      setView(body as EanView);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "request failed");
+    } finally {
+      setColourBusy(false);
+    }
+  }
 
   async function resolve() {
     setLoading(true);
@@ -105,6 +132,43 @@ export function EanPanel({
 
       {hasEans || hasPo ? (
         <div className="mt-3">
+          {/* Per-style colour source for repeat-per-EAN prints. Default "PO
+              label" keeps each colourway distinct on multi-packs (one PO EAN
+              row per size × colour); "Style board" forces this style's board
+              colour on the per-EAN rows instead. Colour CODE is unaffected. */}
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+            <span className="font-medium text-zinc-600">Colour on per-EAN prints</span>
+            <div className="inline-flex overflow-hidden rounded-md border border-zinc-300">
+              {[
+                { v: false, label: "PO label" },
+                { v: true, label: "Style board" },
+              ].map((opt) => {
+                const active = useStyleBoardColour === opt.v;
+                return (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    disabled={colourBusy}
+                    onClick={() => setColourSource(opt.v)}
+                    className={`px-2.5 py-1 font-medium transition-colors disabled:opacity-40 ${
+                      active
+                        ? "bg-zinc-800 text-white"
+                        : "bg-white text-zinc-600 hover:bg-zinc-50"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="text-zinc-400">
+              {colourBusy
+                ? "saving & re-rendering…"
+                : useStyleBoardColour
+                  ? "using this style's board colour on every EAN row"
+                  : "using each PO variant's own colour (keeps multi-packs distinct)"}
+            </span>
+          </div>
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-zinc-400">
               <tr>
