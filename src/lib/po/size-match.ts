@@ -17,22 +17,41 @@ export function sizeRangeKey(s: string): string | null {
   return m ? `${m[1]}/${m[2]}` : null;
 }
 
+// The size-bearing portion of a PO variant label. A Contrast label prints the
+// canonical size LAST, after the final comma:
+//   "800406 .L-XL Light Grey Melange, XL"  → "XL"
+// Everything before that comma — notably the "<colour code>-" prefix — can
+// carry a stray size letter: ".L-" is the Light-Grey colour code, whose "L"
+// (bounded by "." and "-") otherwise reads as size L, so EVERY size row of a
+// ".L" colourway falsely matches "L". Scanning only the trailing segment keeps
+// a colour code from masquerading as a size. Labels with no trailing comma
+// (bare sizes passed by eanForSize, other PO layouts) are matched whole — the
+// pre-existing behaviour, so nothing regresses.
+function sizeHaystack(label: string): string {
+  const i = label.lastIndexOf(",");
+  if (i === -1) return label;
+  return label.slice(i + 1).trim() || label;
+}
+
 // True if a style `size` appears as a distinct token in a PO variant `label`
 // — e.g. "S/M" in "A-S/M Colour A Black-Black, S/M". Boundaries treat "/" as
 // part of a size token so "S" doesn't falsely match "S/M". Falls back to a
 // normalised substring for distinctive (≥3-char) sizes, then to the bare
 // numeric range — so a verbose customer size ("86–92 cm / 1½–2 år") still
-// matches the range the PO prints ("86/92").
+// matches the range the PO prints ("86/92"). Matching is scoped to the label's
+// trailing size segment (see sizeHaystack) so a "<colour code>-" prefix can't
+// masquerade as a size.
 export function labelHasSize(label: string, size: string): boolean {
   const s = size.toLowerCase().trim();
   if (!s) return false;
+  const hay = sizeHaystack(label);
   const re = new RegExp(`(^|[^a-z0-9/])${escapeRe(s)}([^a-z0-9/]|$)`, "i");
-  if (re.test(label.toLowerCase())) return true;
+  if (re.test(hay.toLowerCase())) return true;
   const ns = norm(size);
-  if (ns.length >= 3 && norm(label).includes(ns)) return true;
+  if (ns.length >= 3 && norm(hay).includes(ns)) return true;
   const key = sizeRangeKey(size);
   if (key) {
-    const labelCanon = label.replace(/[–—-]/g, "/");
+    const labelCanon = hay.replace(/[–—-]/g, "/");
     const reKey = new RegExp(`(^|[^\\d])${escapeRe(key)}([^\\d]|$)`);
     if (reKey.test(labelCanon)) return true;
   }
