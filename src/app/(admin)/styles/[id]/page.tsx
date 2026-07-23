@@ -36,6 +36,7 @@ import { HistoryTab } from "./history-tab";
 import { EanPanel } from "./ean-panel";
 import { PoPreview } from "./po-preview";
 import { type EanView, toEanSize } from "@/lib/po/ean-view";
+import { readUseStyleBoardColour } from "@/lib/po/ean-override-actions";
 import type { AssetReviewStatus } from "@/generated/prisma/enums";
 import { colorFromVariantLabel } from "@/lib/po/ean-format";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
@@ -178,6 +179,10 @@ export default async function StyleDetail({
 
   const style = await db.style.findUnique({
     where: { id },
+    // useStyleBoardColour is read separately (guarded, via readUseStyleBoardColour)
+    // so this page keeps loading before the additive column is deployed
+    // (db:deploy) — same hardening as the jobs.reviewEndedAt omit below.
+    omit: { useStyleBoardColour: true },
     include: {
       customer: true,
       supplier: true,
@@ -623,6 +628,7 @@ export default async function StyleDetail({
     poFileName: style.poFileName,
     cartonEan: style.cartonEan,
     sizeEans: style.eans.map(toEanSize),
+    useStyleBoardColour: await readUseStyleBoardColour(style.id),
   };
 
   // If the FK is missing but we have business-area text, see if any
@@ -883,7 +889,9 @@ function DetailsTab({
   outputCards,
   careDerived,
 }: {
-  style: NonNullable<Awaited<ReturnType<typeof db.style.findUnique>>> & {
+  // useStyleBoardColour is omitted from the page query (guarded read instead —
+  // see the findUnique above), so drop it from the prop type to match.
+  style: Omit<NonNullable<Awaited<ReturnType<typeof db.style.findUnique>>>, "useStyleBoardColour"> & {
     jobs: Array<{
       id: string;
       status: string;

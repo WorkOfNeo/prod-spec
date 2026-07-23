@@ -127,6 +127,15 @@ export type StyleData = {
     code: string;
   };
 
+  // Per-style override: when true, repeat-per-EAN rendering binds {{colourName}}
+  // to the Style board colour (`colour.name`) instead of the colour parsed from
+  // each PO variant label. Default (false/undefined) keeps the PO colour, which
+  // preserves multi-colourway packs (one PO EAN row per size × colour); flip it
+  // for a style whose PO label colour is wrong/messy. The colour CODE is
+  // unaffected — it always comes from the board. Set in buildStyleData
+  // (guarded), consumed by repetitionStyles in output-layouts/render.ts.
+  useStyleBoardColour?: boolean;
+
   // Product Group (board "🗂️ Product Group" dropdown — Socks / Shoes /
   // T-Shirt / …). Drives output-exclusion rules and is available as the
   // {{productGroup}} token. Empty when the column isn't mapped / populated.

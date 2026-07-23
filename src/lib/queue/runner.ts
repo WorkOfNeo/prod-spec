@@ -179,10 +179,11 @@ export async function processJob(jobId: string): Promise<void> {
     where: { id: jobId },
     include: {
       style: {
-        // eanResolveKey is read separately (guarded) by the staleness check —
-        // omit it here so this critical render query never selects a column
-        // that may not exist yet on a pre-db:deploy boot.
-        omit: { eanResolveKey: true },
+        // eanResolveKey (staleness check) and useStyleBoardColour (read by
+        // buildStyleData via readUseStyleBoardColour) are both read separately +
+        // guarded — omit them here so this critical render query never selects a
+        // column that may not exist yet on a pre-db:deploy boot.
+        omit: { eanResolveKey: true, useStyleBoardColour: true },
         include: {
           customer: true,
           qrImage: true,

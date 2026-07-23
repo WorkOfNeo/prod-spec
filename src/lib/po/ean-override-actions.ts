@@ -19,6 +19,23 @@ export type EanOverrideOp =
 
 export class EanOverrideError extends Error {}
 
+// Read Style.useStyleBoardColour, guarded so a pre-db:deploy boot (column not
+// yet migrated) degrades to false — the historical PO-colour behaviour —
+// instead of 500ing. Kept as its own query so callers that select an explicit
+// column set (loadStyleEanView) or use `include` (the style page) can pull the
+// flag without threading the possibly-missing column through their main query.
+export async function readUseStyleBoardColour(styleId: string): Promise<boolean> {
+  try {
+    const row = await db.style.findUnique({
+      where: { id: styleId },
+      select: { useStyleBoardColour: true },
+    });
+    return row?.useStyleBoardColour ?? false;
+  } catch {
+    return false;
+  }
+}
+
 // Rebuild the UI-facing view from the persisted rows (no re-resolve). Shares
 // the exact row→view mapping the page loader and the runner use.
 export async function loadStyleEanView(styleId: string): Promise<EanView> {
@@ -40,6 +57,7 @@ export async function loadStyleEanView(styleId: string): Promise<EanView> {
     poFileName: style.poFileName,
     cartonEan: style.cartonEan,
     sizeEans: style.eans.map(toEanSize),
+    useStyleBoardColour: await readUseStyleBoardColour(styleId),
   };
 }
 

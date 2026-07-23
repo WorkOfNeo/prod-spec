@@ -842,6 +842,17 @@ model Style {
   eanStatus           StyleEanStatus @default(NONE)
   // Carton / assortment-level EAN from the PO (single value, not per-size).
   cartonEan           String?
+  // Colour-source override for repeat-per-EAN rendering. Repeat-per-EAN
+  // normally binds each row's {{colourName}} to the colour PARSED FROM THE PO
+  // variant label — because a multi-colourway pack (2-pack A+B) has one PO EAN
+  // row per (size × colour), whereas the Style board carries a single colour
+  // and would silently collapse the pack to one colourway. When an operator
+  // knows the PO label colour is wrong/messy for a given style, this flag flips
+  // that one style back to the Style board colour ({{colourCode}}'s name) for
+  // per-EAN rows too. Default false = PO colour (the historical behaviour); the
+  // colour CODE always comes from the board regardless. Consumed in
+  // output-layouts/render.ts (repetitionStyles, repeatBy="ean").
+  useStyleBoardColour Boolean        @default(false)
   // Which PO PDF we matched, for audit/debug.
   poFileName          String?
   // When the last resolution attempt landed (success OR terminal failure).

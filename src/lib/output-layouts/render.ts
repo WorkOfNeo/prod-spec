@@ -128,7 +128,14 @@ export function repetitionStyles(
         allSizes,
         ...sizeScoped([{ label: v.size, ean13: v.ean13 }]),
         eanVariants: [v],
-        colour: v.colour ? { name: v.colour, code: style.colour?.code ?? "" } : style.colour,
+        // Colour name for this per-EAN row: normally the PO variant label's
+        // colour (v.colour), which keeps multi-colourway packs distinct. When
+        // the style opts into the board colour (useStyleBoardColour), keep
+        // style.colour instead. Either way the CODE stays the board's.
+        colour:
+          !style.useStyleBoardColour && v.colour
+            ? { name: v.colour, code: style.colour?.code ?? "" }
+            : style.colour,
         // Bind this colourway's own carton EAN so {{cartonEan}} /
         // {{barcode:cartonEan}} print the right carton per colour; fall back to
         // the style's representative carton when the row carries none.
