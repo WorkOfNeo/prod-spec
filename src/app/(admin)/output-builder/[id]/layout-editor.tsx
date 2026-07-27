@@ -31,6 +31,7 @@ import {
   MAX_SIBLING_SLOTS,
 } from "@/lib/output-layouts/token-meta";
 import { validateCalcExpression } from "@/lib/output-layouts/calc";
+import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
 import { PreviewFrame } from "@/components/output-preview";
 import { TokenAutocomplete, buildTokenSuggestions } from "@/components/token-autocomplete";
 
@@ -2512,16 +2513,24 @@ export function LayoutEditor({
               <div key={group} className="mt-3">
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">{group}</div>
                 <div className="mt-1.5 flex flex-wrap gap-1">
-                  {LAYOUT_TOKENS.filter((t) => t.group === group).map((t) => (
-                    <TokenChip
-                      key={t.key}
-                      token={`{{${t.key}}}`}
-                      title={`${t.label}${t.example ? ` — e.g. ${t.example}` : ""}`}
-                      disabled={!selBlock}
-                      value={showValues ? (tokenValues[t.key] ?? "") : undefined}
-                      onClick={() => insertToken(`{{${t.key}}}`)}
-                    />
-                  ))}
+                  {LAYOUT_TOKENS.filter((t) => t.group === group).flatMap((t) => {
+                    // A split carton qty offers bare + :solid + :assort chips;
+                    // every other token is a single bare chip.
+                    const args = t.arg === "cartonKind" ? ["", ...CARTON_QTY_KINDS] : [""];
+                    return args.map((a) => {
+                      const key = a ? `${t.key}:${a}` : t.key;
+                      return (
+                        <TokenChip
+                          key={key}
+                          token={`{{${key}}}`}
+                          title={`${t.label}${a ? ` (${a})` : ""}${t.example ? ` — e.g. ${t.example}` : ""}`}
+                          disabled={!selBlock}
+                          value={showValues ? (tokenValues[key] ?? "") : undefined}
+                          onClick={() => insertToken(`{{${key}}}`)}
+                        />
+                      );
+                    });
+                  })}
                 </div>
               </div>
             ))}

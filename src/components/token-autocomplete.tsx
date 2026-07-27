@@ -32,6 +32,7 @@ import {
   LOGO_SOURCES,
   CERT_SOURCES,
 } from "@/lib/output-layouts/token-meta";
+import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
 
 export type TokenSuggestion = {
   // The exact text inserted at the cursor, e.g. "{{madeIn:da}}".
@@ -79,6 +80,17 @@ export function buildTokenSuggestions(opts: {
         group: t.group,
         hint: t.example,
       });
+    } else if (t.arg === "cartonKind") {
+      // Bare (the plain value) plus the split selectors.
+      out.push({ insert: `{{${t.key}}}`, label: t.label, group: t.group, hint: t.example });
+      for (const kind of CARTON_QTY_KINDS) {
+        out.push({
+          insert: `{{${t.key}:${kind}}}`,
+          label: `${t.label} · ${kind}`,
+          group: t.group,
+          hint: t.example,
+        });
+      }
     } else {
       // Plain tokens and the optional-gap wash symbols insert bare.
       out.push({ insert: `{{${t.key}}}`, label: t.label, group: t.group, hint: t.example });
