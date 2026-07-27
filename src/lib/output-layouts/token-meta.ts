@@ -5,6 +5,7 @@
 // code). The matching server-side resolvers live in tokens.ts, keyed by
 // the same token keys — keep the two files in sync.
 // =====================================================
+import { CARTON_QTY_KINDS } from "./carton-qty";
 
 export type LayoutTokenKind = "text" | "barcode" | "symbols" | "image";
 
@@ -15,8 +16,10 @@ export type LayoutTokenMeta = {
   kind: LayoutTokenKind;
   // "lang" → the token takes a language argument ({{composition:da}});
   // "source" → barcode/logo source argument ({{barcode:cartonEan}});
-  // "gap" → optional numeric mm gap, e.g. {{washSymbols:0}} (0 mm gap).
-  arg?: "lang" | "source" | "gap";
+  // "gap" → optional numeric mm gap, e.g. {{washSymbols:0}} (0 mm gap);
+  // "cartonKind" → optional solid/assort selector on a split carton qty
+  //   ({{qtyPerCarton:assort}}); bare still resolves the plain value.
+  arg?: "lang" | "source" | "gap" | "cartonKind";
   // Optional SECOND argument (TOKEN_RE group 3, numeric-only).
   // "heightMm" → bar height in mm, e.g. {{barcode:ean13:8}} (8 mm bars).
   arg2?: "heightMm";
@@ -85,7 +88,14 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     kind: "text",
     example: "C-PO62831",
   },
-  { key: "qtyPerCarton", label: "Qty per carton", group: "Order & carton", kind: "text", example: "48" },
+  {
+    key: "qtyPerCarton",
+    label: "Qty per carton (:solid / :assort for a split value)",
+    group: "Order & carton",
+    kind: "text",
+    arg: "cartonKind",
+    example: "48 · {{qtyPerCarton:assort}}",
+  },
   { key: "cartonEan", label: "Carton EAN (number)", group: "Order & carton", kind: "text", example: "5701234567890" },
   { key: "assortEan", label: "Assortment EAN (number)", group: "Order & carton", kind: "text", example: "5701234567890" },
   {
@@ -346,6 +356,13 @@ export function validateTokenRef(key: string, arg?: string, arg2?: string): stri
     if (!Number.isFinite(n) || n < 0 || n > 20) {
       errs.push(`{{${key}:${arg}}} gap must be a number of mm between 0 and 20`);
     }
+  }
+  // "cartonKind" arg is optional (bare resolves the plain value); when
+  // present it must be solid or assort.
+  if (meta.arg === "cartonKind" && arg !== undefined && !CARTON_QTY_KINDS.includes(arg as never)) {
+    errs.push(
+      `{{${key}:${arg}}} — carton qty selector must be ${CARTON_QTY_KINDS.map((k) => `{{${key}:${k}}}`).join(" or ")}`,
+    );
   }
   if (!meta.arg && arg) {
     errs.push(`{{${key}}} does not take an argument (got ":${arg}")`);

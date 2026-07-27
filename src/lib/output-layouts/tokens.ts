@@ -10,6 +10,7 @@ import { ruleRequiredColumns } from "@/lib/pdf/spec-fields";
 import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-marking";
 import { tokenMeta, parseSiblingTokenKey, type BarcodeSource } from "./token-meta";
 import { formatCompositionLines } from "./composition";
+import { pickCartonQtyVariant } from "./carton-qty";
 import {
   calcsInLine,
   evaluateCalc,
@@ -149,8 +150,14 @@ const RESOLVERS: Record<string, TextResolver> = {
   // outerVE is the column's numeric parse; it's 0 when the buyer filled a
   // per-size "SIZE=qty" list instead, so fall back to the raw text — which
   // repetitionStyles narrows to the row's own size (size-scoped-text.ts).
-  qtyPerCarton: (s) =>
-    s.carton.outerVE ? String(s.carton.outerVE) : (s.cartonQtyRaw ?? "").trim(),
+  // :solid / :assort narrow a "Solid - 5 / Assort - 8" split to one number
+  // (see carton-qty.ts); a non-split value serves both, so bare and either
+  // arg resolve the same thing there.
+  qtyPerCarton: (s, arg) => {
+    const raw = (s.cartonQtyRaw ?? "").trim();
+    const base = s.carton.outerVE ? String(s.carton.outerVE) : raw;
+    return arg ? pickCartonQtyVariant(raw || base, arg) : base;
+  },
   cartonEan: (s) => (s.carton.ean13 && s.carton.ean13 !== EAN_SENTINEL ? s.carton.ean13 : ""),
   assortEan: (s) =>
     s.carton.assortEan && s.carton.assortEan !== EAN_SENTINEL ? s.carton.assortEan : "",

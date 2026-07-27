@@ -15,6 +15,7 @@ import {
   unresolvedTokens,
 } from "@/lib/output-layouts/tokens";
 import { LAYOUT_TOKENS } from "@/lib/output-layouts/token-meta";
+import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import { buildSampleStyleData } from "@/lib/pdf/sample-data";
 import { renderPdf } from "@/lib/pdf/renderer";
@@ -147,6 +148,11 @@ export async function POST(req: NextRequest) {
         tokenValues["barcode:ean13"] = resolveBarcodeValue(styleData, "ean13");
       } else if (t.arg === "lang") {
         tokenValues[`${t.key}:${valuesLang}`] = resolveTextToken(styleData, t.key, valuesLang);
+      } else if (t.arg === "cartonKind") {
+        tokenValues[t.key] = resolveTextToken(styleData, t.key);
+        for (const kind of CARTON_QTY_KINDS) {
+          tokenValues[`${t.key}:${kind}`] = resolveTextToken(styleData, t.key, kind);
+        }
       } else {
         tokenValues[t.key] = resolveTextToken(styleData, t.key);
       }
