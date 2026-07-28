@@ -136,12 +136,19 @@ function sameName(a: string, b: string): boolean {
 // two come straight off the resolved inputs.
 type LookalikeKeys = { name: string; consignmentCode: string; customerItemNo: string };
 
-function keysFor(row: LookalikeSourceRow, mapping: ColumnMapping): LookalikeKeys {
+// One pass over a row's Monday snapshot yields BOTH the match keys and the
+// size run — the snapshot walk is the only real cost here and there is no
+// reason to pay it twice per candidate.
+function resolveRow(
+  row: LookalikeSourceRow,
+  mapping: ColumnMapping,
+): LookalikeKeys & { sizes: string[] } {
   const resolved = eanResolveInputs(row.rawData, mapping, row.name, row.poNumber);
   return {
     name: row.name,
     consignmentCode: resolved.consignmentCode,
     customerItemNo: resolved.customerItemNo,
+    sizes: resolved.sizes,
   };
 }
 
@@ -175,7 +182,7 @@ export function findLookalikes(
   candidates: readonly LookalikeSourceRow[],
   mapping: ColumnMapping,
 ): LookalikeMatch[] {
-  const subjectKeys = keysFor(subject, mapping);
+  const subjectKeys = resolveRow(subject, mapping);
   const subjectPo = poKey(subject.poNumber);
 
   const matches: LookalikeMatch[] = [];
@@ -189,14 +196,15 @@ export function findLookalikes(
     // Same PO ⇒ not a lookalike, whatever else matches.
     if (poKey(c.poNumber) === subjectPo) continue;
 
-    const matchedOn = matchKeyFor(subjectKeys, keysFor(c, mapping));
+    const resolved = resolveRow(c, mapping);
+    const matchedOn = matchKeyFor(subjectKeys, resolved);
     if (!matchedOn) continue;
 
     matches.push({
       id: c.id,
       name: c.name,
       poNumber: c.poNumber,
-      sizes: eanResolveInputs(c.rawData, mapping, c.name, c.poNumber).sizes,
+      sizes: resolved.sizes,
       eanStatus: c.eanStatus,
       mondayItemId: c.mondayItemId,
       matchedOn,
