@@ -120,7 +120,14 @@ function buildUserMessage(input: {
 // Map the model's ids back onto the pointers WE built. Unknown ids are
 // silently dropped (a hallucinated pointer must never reach the UI as a link),
 // duplicates collapse, and the list is capped.
-function resolvePointers(ids: string[] | undefined, offered: ExplainPointer[]): ExplainPointer[] {
+//
+// Exported for tests: this function IS the guarantee that a fabricated link
+// can't reach a reviewer, so it's worth asserting directly rather than only
+// through the API call it sits behind.
+export function resolvePointers(
+  ids: string[] | undefined,
+  offered: ExplainPointer[],
+): ExplainPointer[] {
   if (!ids?.length) return [];
   const byId = new Map(offered.map((p) => [p.id, p]));
   const seen = new Set<string>();

@@ -53,6 +53,7 @@ import { parseCustomerConfig } from "@/lib/customers/config";
 import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
 import { SupplierFolderStatus, type PoFolderDelivery } from "./supplier-folder-status";
 import { RelatedRowsCardForStyle } from "./related-rows-card";
+import { FolderReconcilePanel } from "./folder-reconcile-panel";
 import { AskStylePanel } from "./ask-style-panel";
 import { parseFolderMatches } from "@/lib/sharepoint/po-folder-matches";
 import { LogStyleView } from "@/components/log-style-view";
@@ -818,6 +819,13 @@ export default async function StyleDetail({
           className=""
         />
       </div>
+
+      {/* Full width, not in the grid above: it lists filenames, which don't fit
+          a half-width cell. Answers "did the files actually land, and is what's
+          in the folder still what we think it is?" — the half the recurring
+          verify sweep can't cover, since that only re-checks rows it already
+          believes it uploaded. */}
+      <FolderReconcilePanel styleId={style.id} className="mt-4" />
 
       {customerConfig.skipSupplierDelivery && <SkipSupplierDeliveryBadge className="mt-4" />}
 
