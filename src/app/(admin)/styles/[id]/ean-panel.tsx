@@ -10,6 +10,7 @@ type OverrideOp =
   | { op: "add"; size: string; ean13: string }
   | { op: "delete"; id: string };
 import { ScrapePanel } from "./scrape-panel";
+import { EanResolveTracePanel } from "./ean-resolve-trace";
 
 // Details-tab EAN panel. Shows the persisted PO → EAN resolution (per-size
 // rows + carton) when present; when no EANs are resolved yet it surfaces a
@@ -293,6 +294,22 @@ export function EanPanel({
             : "No PO number on this style yet."}
         </p>
       )}
+
+      {/* Persisted first: this is the one that's here on page load, and it
+          answers "which source won / what did Monday hold" without re-running
+          anything. The live blocks below only appear right after a resolve. */}
+      {view.resolveTrace ? (
+        <EanResolveTracePanel trace={view.resolveTrace} />
+      ) : hasPo ? (
+        // Absent ≠ "nothing was found". Styles resolved before this snapshot
+        // existed have no trace until their next resolve — say so, or an empty
+        // space reads as a finding.
+        <p className="mt-3 rounded-md border border-zinc-100 bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
+          No resolve diagnostics recorded yet — they’re captured from the next
+          re-resolve onward. Run <span className="font-medium">Re-resolve</span> to see which source the
+          barcodes came from and what the Monday columns contained.
+        </p>
+      ) : null}
 
       {view.diagnostics?.poSections && view.diagnostics.poSections.length > 0 && (
         <ScrapePanel sections={view.diagnostics.poSections} />

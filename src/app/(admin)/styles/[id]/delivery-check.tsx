@@ -31,7 +31,25 @@ type Audit = {
   stale: string[];
   unqueued: Array<{ baseKey: string; name: string }>;
 };
-type Resp = { audit: Audit; collisions: Collision[]; acted?: boolean; actions?: string[] };
+// Last EAN resolve, carried by the audit route. A wrong barcode is a common
+// upstream cause of a delivery that looks complete but is wrong, so the source
+// is worth showing next to the file counts.
+type EanSummary = {
+  at: string;
+  status: string;
+  source: "po" | "monday" | "none";
+  poOutcome: string | null;
+  mondayOutcome: string;
+  sizesMissingEan: string[];
+  sizesMissingCarton: string[];
+};
+type Resp = {
+  audit: Audit;
+  collisions: Collision[];
+  ean?: EanSummary | null;
+  acted?: boolean;
+  actions?: string[];
+};
 
 export function DeliveryCheck({ styleId, canFixTemplate }: { styleId: string; canFixTemplate: boolean }) {
   const [data, setData] = useState<Resp | null>(null);
@@ -226,6 +244,9 @@ export function DeliveryCheck({ styleId, canFixTemplate }: { styleId: string; ca
             </Detail>
           ) : null}
 
+          {/* Where these files' barcodes came from. */}
+          {data!.ean ? <EanLine ean={data!.ean} /> : null}
+
           {a.stale.length > 0 ? (
             <Detail title={`${a.stale.length} unexpected file(s) in the folder`} tone="zinc">
               {a.stale.map((n) => (
@@ -242,6 +263,35 @@ export function DeliveryCheck({ styleId, canFixTemplate }: { styleId: string; ca
         </div>
       ) : null}
     </div>
+  );
+}
+
+const EAN_SOURCE: Record<string, { label: string; cls: string }> = {
+  po: { label: "PO PDF", cls: "border-emerald-200 bg-emerald-50/60 text-emerald-800" },
+  monday: { label: "Monday columns", cls: "border-teal-200 bg-teal-50/60 text-teal-800" },
+  none: { label: "not resolved", cls: "border-amber-200 bg-amber-50/60 text-amber-900" },
+};
+
+function EanLine({ ean }: { ean: EanSummary }) {
+  const meta = EAN_SOURCE[ean.source] ?? EAN_SOURCE.none;
+  return (
+    <details className={`rounded-md border px-3 py-2 ${meta.cls}`}>
+      <summary className="cursor-pointer font-medium">
+        Barcodes came from <span className="underline decoration-dotted">{meta.label}</span>
+        <span className="ml-1 font-normal opacity-75">· {new Date(ean.at).toLocaleString()}</span>
+      </summary>
+      <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px]">
+        {ean.poOutcome ? <li>PO scrape: {ean.poOutcome}</li> : null}
+        <li>Monday: {ean.mondayOutcome}</li>
+        {ean.sizesMissingEan.length > 0 ? (
+          <li className="font-medium">No EAN-13 for: {ean.sizesMissingEan.join(", ")}</li>
+        ) : null}
+        {ean.sizesMissingCarton.length > 0 ? (
+          <li>No carton EAN for: {ean.sizesMissingCarton.join(", ")}</li>
+        ) : null}
+      </ul>
+      <p className="mt-1 text-[11px] opacity-75">Full detail on the Details tab → Barcodes.</p>
+    </details>
   );
 }
 

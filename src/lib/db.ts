@@ -1,8 +1,11 @@
 import { PrismaClient } from "@/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
+// Typed off makeClient, not bare PrismaClient: the client-level `omit` below
+// narrows the client's generics, so a plain PrismaClient annotation no longer
+// matches what makeClient returns.
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
+  prisma: ReturnType<typeof makeClient> | undefined;
 };
 
 // pg-connection-string now treats `sslmode=require` as `verify-full`, which
@@ -33,6 +36,21 @@ function makeClient() {
 
   return new PrismaClient({
     adapter,
+    // Style.eanResolveTrace is a diagnostic blob nothing renders incidentally —
+    // only readEanResolveTrace wants it, and it asks by explicit select (which
+    // overrides this). Omitting it client-wide does two jobs:
+    //
+    //   • Payload: every `include: { style: … }` across the app (review queue,
+    //     dashboard, runner, publish, share portal) would otherwise carry the
+    //     whole trace on every row for nothing.
+    //   • Safety: an additive column breaks EVERY query that selects it until
+    //     `migrate deploy` has run. Per-call-site `omit` is how the codebase has
+    //     handled that before, but there are ~15 places that pull full Style
+    //     rows and missing one takes down a page — verified here: adding this
+    //     column 500'd /dashboard and the counts API through a nested
+    //     `include: { style: … }` three files away. One client-level omit closes
+    //     the whole class.
+    omit: { style: { eanResolveTrace: true } },
     log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
   });
 }
