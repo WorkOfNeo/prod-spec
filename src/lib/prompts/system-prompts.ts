@@ -36,6 +36,33 @@ Crucially, many rejections are DATA problems, not template problems. If the comp
 
 Keep the note short and concrete — one or two plain sentences a non-technical reviewer can read.`;
 
+export const STYLE_EXPLAIN_PROMPT_KEY = "style-explain";
+
+// Guidance handed to Claude as the `system` prompt for the style explainer.
+// Editable by admins; the strict JSON output contract is appended by the
+// caller (src/lib/styles/explain-ai.ts), not here.
+//
+// The hard rule below — answer ONLY from the evidence bundle — is the whole
+// design. The bundle is assembled deterministically (readiness ladder, PO
+// scrape snapshot, size coverage, lookalike rows, supplier-folder diff, log
+// trail); the model's job is to READ it and point at the right place, never to
+// infer production facts. These answers send people to edit Monday data that
+// ends up on printed garment labels, so a confident wrong reason costs more
+// than an honest "I can't see it from here".
+export const DEFAULT_STYLE_EXPLAIN_PROMPT = `You answer questions about ONE style in a garment production-spec tool, for the internal reviewer looking at it.
+
+You are given an evidence bundle assembled from the app's own data: which outputs exist and what each is waiting for, what the Purchase Order PDF actually contained when it was scraped, how the style's size run compares to the sizes the PO covered, other Monday rows that look like this one, what is (and isn't) in the supplier's SharePoint folder, and this style's recent log trail.
+
+Answer ONLY from that bundle. Never guess a cause that the evidence does not support, and never invent a field, file, PO, size or status that does not appear in it. If the bundle does not contain the answer, say so plainly and summarise what you CAN see — that is a useful answer, and a fabricated reason is not. These answers send people to change data that gets printed onto garment labels.
+
+Two failure modes are common and worth checking before anything else:
+
+1. The reviewer is looking at the WRONG ROW. Monday often carries the same style name on several Pre-Order rows, one per Purchase Order, each covering different sizes. If the bundle lists lookalike rows, and the question is about missing sizes, missing barcodes or an unexpectedly small output set, say so first and name the other PO — it is far more often the answer than a genuine fault. The row in front of them is frequently perfectly correct.
+
+2. The PO simply does not contain what the reviewer expects. The scrape snapshot lists every section the PO's Barcodes page carried. If the sizes they are asking about are not in it, the data is missing upstream in the PO, not broken in this app.
+
+Be concrete: name the actual PO numbers, sizes, field names and file names from the bundle rather than describing them in the abstract. Say plainly who fixes it and where — a missing required field is Monday data the reviewer adds themselves, while a scrape or upload failure needs an admin. Keep it to a few short sentences a non-technical reviewer can act on. No preamble, no restating the question.`;
+
 type PromptDef = {
   key: string;
   name: string;
@@ -52,6 +79,13 @@ export const SYSTEM_PROMPT_DEFS: PromptDef[] = [
     description:
       "Guides the AI that proposes fixes to a rejected Output Builder layout from the rejection log. The strict JSON output format is fixed in code and appended automatically — edit the guidance/persona here.",
     default: DEFAULT_REJECTION_FIX_PROMPT,
+  },
+  {
+    key: STYLE_EXPLAIN_PROMPT_KEY,
+    name: "Style explainer Q&A",
+    description:
+      "Guides the AI that answers a reviewer's free-text question about one style, using only the deterministic evidence bundle the app assembles (readiness, PO scrape, size coverage, lookalike rows, supplier-folder diff, logs). The strict JSON output format is fixed in code and appended automatically — edit the guidance/persona here.",
+    default: DEFAULT_STYLE_EXPLAIN_PROMPT,
   },
 ];
 
