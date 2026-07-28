@@ -58,8 +58,13 @@ export const MAX_PUSH_ATTEMPTS = 3;
 // Keyed on queuedAt (NOT lastPushAt, which every retry refreshes — that would
 // make the lease self-renewing and churn forever): re-arms (a new render, a
 // verify heal) reset queuedAt and grant a fresh lease; a gap nobody fixes ages
-// out of the sweep after a week but stays visible on /settings/approved.
-export const SENT_RETRY_LEASE_MS = 7 * 24 * 60 * 60 * 1000;
+// out of the sweep after a fortnight but stays visible on /settings/approved.
+//
+// Kept equal to verify's SENT_REVERIFY_WINDOW_MS on purpose: verify re-arms a
+// row to PENDING when its file has gone missing, and only this sweep can act on
+// that. A shorter lease here than there would let verify heal rows the push has
+// already stopped looking at — they'd sit PENDING forever, worse than before.
+export const SENT_RETRY_LEASE_MS = 14 * 24 * 60 * 60 * 1000;
 
 export type SupplierUploadSweep = {
   styles: number;
