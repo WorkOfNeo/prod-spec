@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { isValidEan13 } from "@/lib/pdf/barcode";
 import { type EanView, toEanSize } from "./ean-view";
+import { parseEanResolveTrace, type EanResolveTrace } from "./ean-trace";
 
 // =====================================================
 // Manual EAN overrides for one style (style-page EAN panel). These mutate
@@ -33,6 +34,24 @@ export async function readUseStyleBoardColour(styleId: string): Promise<boolean>
     return row?.useStyleBoardColour ?? false;
   } catch {
     return false;
+  }
+}
+
+// Read Style.eanResolveTrace, guarded exactly like readUseStyleBoardColour
+// above: an additive column, so a boot that precedes `db:deploy` degrades to
+// "no trace yet" rather than taking down every page that shows a style.
+export async function readEanResolveTrace(styleId: string): Promise<EanResolveTrace | null> {
+  try {
+    // Explicit select opts back in past the client-level omit in db.ts (this is
+    // the ONLY reader). Still try/catch'd: before `migrate deploy` the column
+    // doesn't exist, and a diagnostic panel must never take a page down.
+    const row = await db.style.findUnique({
+      where: { id: styleId },
+      select: { eanResolveTrace: true },
+    });
+    return parseEanResolveTrace(row?.eanResolveTrace);
+  } catch {
+    return null;
   }
 }
 

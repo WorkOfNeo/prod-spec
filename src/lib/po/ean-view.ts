@@ -1,4 +1,5 @@
 import type { StyleEanStatus } from "@/generated/prisma/enums";
+import type { EanResolveTrace } from "./ean-trace";
 
 // Shared, UI-facing shape for a style's resolved EANs. Type-only module so it
 // can be imported by both server code (runner, route, page) and the client
@@ -119,4 +120,10 @@ export type EanView = {
   /** Present after a live resolve (not persisted) — lets the UI/API show
    *  exactly which file was read and whether it contained barcodes. */
   diagnostics?: EanDiagnostics;
+  /** PERSISTED snapshot of the last resolve (Style.eanResolveTrace): which
+   *  source won, what the Monday barcode columns literally held, why the PO
+   *  scrape produced nothing. Unlike `diagnostics` this survives a reload, so
+   *  the panel can answer "where did this barcode come from" at any time.
+   *  Null/absent = no resolve has run since the field shipped. */
+  resolveTrace?: EanResolveTrace | null;
 };

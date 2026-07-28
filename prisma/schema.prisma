@@ -882,6 +882,22 @@ model Style {
   // re-resolves before building the PDFs. Null = never resolved / pre-feature
   // row (the runner backfills it on the next render without a forced re-scrape).
   eanResolveKey       String?
+  // Snapshot of what the LAST EAN resolve actually did — which source won, what
+  // the Monday barcode columns literally contained, and why the PO scrape
+  // produced nothing. Shaped by src/lib/po/ean-trace.ts.
+  //
+  // Until now the only persisted outcome was eanStatus, a single enum: a style
+  // reading "resolved (Monday)" gave no way to see that the PO scrape had failed
+  // first, what it looked for, or what the buyer had typed into the columns that
+  // saved it. The rich EanDiagnostics the resolver already builds was returned to
+  // the live caller and dropped (the panel says as much: "diagnostics aren't
+  // persisted, so it's empty until the Resolve button is clicked"), leaving only
+  // a Log row nobody reads per-style.
+  //
+  // Latest snapshot only — overwritten on every resolve, no history. Null =
+  // never resolved since this field shipped; the UI treats that as "run a
+  // re-resolve to populate", never as "nothing was found".
+  eanResolveTrace     Json?
   // Numeric value of the PO reference (last digit run of poNumber, e.g. 63144
   // for "C-PO63144") — see parsePoNumberValue in src/lib/po/po-number.ts. The
   // automation cutoff uses it: auto-scrape + the generation sweep only touch

@@ -14,7 +14,9 @@ import {
   resolveStyleEansFromMonday,
   readMondayCartonOverlay,
   type MondayFallbackResult,
+  type MondayCartonOverlay,
 } from "./monday-barcode-fallback";
+import { buildEanResolveTrace } from "./ean-trace";
 import { eanForSize } from "./monday-barcode-parse";
 import { eanResolveKey } from "./resolve-inputs";
 import { computeBatchSize } from "./batch-size";
@@ -221,6 +223,13 @@ export async function resolveAndPersistStyleEans(
   let cartonEan = result.cartonEan;
   let message = result.message;
 
+  // What the PO scrape alone produced, before any Monday source overwrites it —
+  // the trace attributes each size to its real source by diffing against this.
+  const poSizeEans = result.sizeEans;
+  const poWasReject = result.status === "style_not_in_po";
+  let mondayConsulted = false;
+  let cartonOverlay: MondayCartonOverlay | null = null;
+
   // Monday barcode fallback. When the PO scrape produced no usable EANs, read
   // the Pre-Order "Barcode Number" / "Carton Barcode number 1" text columns
   // instead of floating the row — but only once the PO retry budget is spent
@@ -233,6 +242,7 @@ export async function resolveAndPersistStyleEans(
         ?.eanAttempts ?? 0;
     const budgetSpent = priorAttempts + 1 >= MAX_EAN_ATTEMPTS;
     if (opts.forceMondayFallback || budgetSpent) {
+      mondayConsulted = true;
       mondayFallback = await resolveStyleEansFromMonday(styleId);
       if (mondayFallback) {
         sizeEans = mondayFallback.sizeEans;
@@ -254,7 +264,9 @@ export async function resolveAndPersistStyleEans(
   // same column. Product EANs (sizeEans[].ean13) are never touched here — they
   // still come from the PO scrape (or the fallback above).
   if (dbStatus !== "RESOLVED_FROM_MONDAY") {
+    mondayConsulted = true;
     const overlay = await readMondayCartonOverlay(styleId);
+    cartonOverlay = overlay;
     if (overlay) {
       sizeEans = sizeEans.map((s) => {
         const c = eanForSize(s.size, overlay.bySize);
@@ -323,6 +335,25 @@ export async function resolveAndPersistStyleEans(
   });
   const merged = reconcileEans(prevRows as EanRow[], sizeEans);
 
+  // Persisted "what did this resolve actually do" snapshot. Built from what we
+  // already have in hand (no extra reads) and written on EVERY resolve, so the
+  // style page can answer "which source won, and what did Monday literally
+  // contain" long after the live diagnostics are gone.
+  const resolveTrace = buildEanResolveTrace({
+    at: new Date(),
+    status: dbStatus,
+    message,
+    forced: opts.forceMondayFallback === true,
+    diagnostics: result.diagnostics,
+    poStatusWasReject: poWasReject,
+    poSizeEans,
+    finalSizeEans: sizeEans,
+    fallback: mondayFallback,
+    overlay: cartonOverlay,
+    mondayConsulted,
+    cartonEan,
+  });
+
   await db.$transaction([
     // Replace the per-size rows wholesale — simplest correct way to keep
     // style_eans in lockstep with the latest read (sizes can change). The
@@ -352,6 +383,7 @@ export async function resolveAndPersistStyleEans(
         eanResolveStartedAt: null,
         eanAttempts: resolved ? 0 : { increment: 1 },
         eanResolveKey: resolveKey,
+        eanResolveTrace: resolveTrace as unknown as object,
       },
     }),
     db.log.create({
@@ -419,6 +451,9 @@ export async function resolveAndPersistStyleEans(
     sizeEans: persisted.map(toEanSize),
     cartonEan,
     diagnostics: result.diagnostics,
+    // The trace we just persisted, so the panel updates in place after a
+    // Re-resolve without needing a page reload to read it back.
+    resolveTrace,
   };
 }
 

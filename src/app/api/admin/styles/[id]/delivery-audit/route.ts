@@ -4,6 +4,7 @@ import { canReview } from "@/lib/roles";
 import { db } from "@/lib/db";
 import { auditStyleDelivery, type StyleDeliveryAudit } from "@/lib/sharepoint/style-delivery-audit";
 import { analyseStyleFilenames, describeSuggestion } from "@/lib/output-layouts/filename-collisions";
+import { readEanResolveTrace } from "@/lib/po/ean-override-actions";
 import type { CandidateToken } from "@/lib/output-layouts/filename-collision-rules";
 
 export const runtime = "nodejs";
@@ -109,6 +110,25 @@ async function explainCollisions(
   return out;
 }
 
+// Compact last-EAN-resolve summary, carried alongside the delivery audit. A
+// missing or wrong barcode is the most common upstream cause of an output that
+// looks fine here but is wrong in the folder, so the two questions are worth
+// answering on one screen: "are the files there" and "where did their barcodes
+// come from". Full detail stays on the Details tab's EAN panel.
+async function eanSummary(styleId: string) {
+  const trace = await readEanResolveTrace(styleId);
+  if (!trace) return null;
+  return {
+    at: trace.at,
+    status: trace.status,
+    source: trace.monday.mode === "fallback" ? "monday" : (trace.po?.eansFound ?? 0) > 0 ? "po" : "none",
+    poOutcome: trace.po?.outcome ?? null,
+    mondayOutcome: trace.monday.outcome,
+    sizesMissingEan: trace.sizes.filter((s) => !s.ean13).map((s) => s.size),
+    sizesMissingCarton: trace.sizes.filter((s) => !s.cartonEan).map((s) => s.size),
+  };
+}
+
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -117,7 +137,10 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   const { id } = await ctx.params;
   const audit = await auditStyleDelivery(id);
   const collisions = await explainCollisions(id, audit);
-  return NextResponse.json({ ok: true, audit, collisions }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(
+    { ok: true, audit, collisions, ean: await eanSummary(id) },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -130,7 +153,7 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
 
   // Nothing to act on — don't spend Graph writes proving it.
   if (before.status === "disabled" || before.status === "unresolved" || before.status === "ambiguous") {
-    return NextResponse.json({ ok: true, acted: false, before, after: before, collisions: [] });
+    return NextResponse.json({ ok: true, acted: false, before, after: before, collisions: [], ean: await eanSummary(id) });
   }
 
   const actions: string[] = [];
@@ -229,5 +252,6 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     before,
     after,
     collisions,
+    ean: await eanSummary(id),
   });
 }
