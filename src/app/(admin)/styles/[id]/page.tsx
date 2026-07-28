@@ -36,6 +36,7 @@ import { HistoryTab } from "./history-tab";
 import { EanPanel } from "./ean-panel";
 import { PoPreview } from "./po-preview";
 import { type EanView, toEanSize } from "@/lib/po/ean-view";
+import { parsePoScrapeSnapshot } from "@/lib/po/scrape-snapshot";
 import { readUseStyleBoardColour } from "@/lib/po/ean-override-actions";
 import type { AssetReviewStatus } from "@/generated/prisma/enums";
 import { colorFromVariantLabel } from "@/lib/po/ean-format";
@@ -51,6 +52,8 @@ import { buildStyleData } from "@/lib/styles/render-context";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
 import { SupplierFolderStatus, type PoFolderDelivery } from "./supplier-folder-status";
+import { RelatedRowsCardForStyle } from "./related-rows-card";
+import { AskStylePanel } from "./ask-style-panel";
 import { parseFolderMatches } from "@/lib/sharepoint/po-folder-matches";
 import { LogStyleView } from "@/components/log-style-view";
 import { applyFieldOverrides } from "@/lib/pdf/pins";
@@ -629,6 +632,14 @@ export default async function StyleDetail({
     cartonEan: style.cartonEan,
     sizeEans: style.eans.map(toEanSize),
     useStyleBoardColour: await readUseStyleBoardColour(style.id),
+    // The last scrape's section dump, so the "what did this PO contain / why
+    // these sizes" panel renders on LOAD. It used to appear only after a
+    // Re-resolve (the dump lived in live diagnostics and nowhere else), which
+    // meant re-scraping SharePoint to see an answer we already had. Rows
+    // scraped before the column existed carry no timestamp of their own, so
+    // eanResolvedAt backs the "scraped at" line. Never throws — a legacy or
+    // hand-edited value just renders as "no snapshot".
+    scrapeSnapshot: parsePoScrapeSnapshot(style.poScrapeSnapshot, style.eanResolvedAt),
   };
 
   // If the FK is missing but we have business-area text, see if any
@@ -779,6 +790,14 @@ export default async function StyleDetail({
           )}
         </div>
       </div>
+
+      {/* Orientation before diagnosis: Monday duplicates a style row per PO
+          under the same name, so the first question is "am I on the right
+          row?", not "is this row ready?". Sits above the readiness notice
+          because a correct answer to the wrong row is still the wrong answer.
+          Renders nothing at all — no wrapper, no spacing — when this style has
+          no lookalikes, which is the norm. */}
+      <RelatedRowsCardForStyle styleId={style.id} />
 
       {/* Above the tabs, side by side: the pipeline readiness notice (a
           collapsible accordion) on the left, the Supplier folder / SharePoint
@@ -1256,6 +1275,11 @@ function DetailsTab({
           <EanPanel styleId={style.id} hasPo={Boolean(style.poNumber)} initial={eanView} />
         </div>
       </section>
+
+      {/* Last on the page on purpose: everything above already states the
+          facts, so this is for the question those panels didn't happen to
+          answer — the one that would otherwise have become a Slack message. */}
+      <AskStylePanel styleId={style.id} />
 
       <section className="mt-8">
         <h2 className="text-sm font-semibold text-zinc-700">Jobs</h2>
