@@ -49,7 +49,13 @@ export const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 // lastPushAt keeps the scan off ancient POs (whose folders operators may have
 // reorganised — re-arming those would resurrect long-dead uploads) while every
 // recent push, sent or not, gets audited against the real folder.
-export const SENT_REVERIFY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+//
+// Two weeks, not one: an output renamed or re-approved a fortnight after the
+// style shipped still needs auditing, and 7 days put a hard cliff barely past
+// the review turnaround. Matched by SENT_RETRY_LEASE_MS in the push sweep — if
+// verify re-arms a row the push must still be willing to retry it, or a heal
+// would strand the row in PENDING forever.
+export const SENT_REVERIFY_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 // Rows checked per run — caps the Graph calls a single tick makes.
 const DEFAULT_BUDGET = 60;
 
@@ -58,9 +64,12 @@ export type SupplierVerifySweep = {
   verified: number; // confirmed present in the folder
   healed: number; // folder resolved but file missing → re-armed to PENDING
   unresolved: number; // couldn't resolve/list the folder (permission/transient) — left as-is
+  // Documents lost to a shared file name (docs - distinct names) on rows that
+  // otherwise verify fine. NOT healable by re-pushing — needs a template fix.
+  collided: number;
 };
 
-const EMPTY: SupplierVerifySweep = { scanned: 0, verified: 0, healed: 0, unresolved: 0 };
+const EMPTY: SupplierVerifySweep = { scanned: 0, verified: 0, healed: 0, unresolved: 0, collided: 0 };
 
 export async function verifySupplierUploads(opts?: {
   budget?: number;
@@ -243,10 +252,33 @@ export async function verifySupplierUploads(opts?: {
       // Match against the SAME sanitized name the push writes to SharePoint —
       // otherwise a colon-bearing expected name never matches the uploaded
       // "layout-<id>" file and verify would re-arm a perfectly good row forever.
-      const present =
-        folderExists && names != null && expected.every((n) => names!.has(sanitizeFileName(n).toLowerCase()));
-      if (present) verifyIds.push(item.id);
-      else healIds.push(item.id);
+      //
+      // DISTINCT names, and the gap between the two counts is a real loss: when
+      // several documents of one slot resolve to the SAME name the push PUTs
+      // them all to that name and SharePoint keeps the last, so the slot is
+      // permanently short by (docs - distinct names). A Set-membership check
+      // can't see it — one file satisfies every duplicate expectation — which
+      // is why a style could sit at "6 approved, 4 delivered" indefinitely with
+      // every row stamped verified.
+      //
+      // Counted, never healed: re-arming would re-upload the same colliding
+      // names, land the same single file, and re-arm again every sweep forever.
+      // The fix is a file-name TEMPLATE edit, so this is surfaced (style page
+      // delivery check, Output Builder → File names) rather than retried.
+      const distinct = new Set(expected.map((n) => sanitizeFileName(n).toLowerCase()));
+      const lost = expected.length - distinct.size;
+      const present = folderExists && names != null && [...distinct].every((n) => names!.has(n));
+      if (present) {
+        verifyIds.push(item.id);
+        if (lost > 0) {
+          sweep.collided += lost;
+          console.warn(
+            `[supplier-verify] style ${styleId} slot ${item.variantKey}: ${expected.length} document(s) ` +
+              `share ${distinct.size} file name(s) — ${lost} can never reach the supplier folder. ` +
+              `Fix the layout's file-name template.`,
+          );
+        }
+      } else healIds.push(item.id);
     }
 
     if (verifyIds.length > 0) {

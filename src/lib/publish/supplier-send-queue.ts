@@ -159,41 +159,58 @@ export type ReconcileSummary = {
 // approval set (approvedBaseVariantKeys). The newest current document is the
 // representative on the queue row; the push sweep re-expands to all documents.
 // =====================================================
-export async function reconcileSupplierSendQueue(limit = 25): Promise<ReconcileSummary> {
+export async function reconcileSupplierSendQueue(
+  limitOrOpts: number | { limit?: number; styleIds?: string[] } = 25,
+): Promise<ReconcileSummary> {
+  const opts = typeof limitOrOpts === "number" ? { limit: limitOrOpts } : limitOrOpts;
+  const limit = opts.limit ?? 25;
+  // A named-style reconcile is a deliberate act (the per-style delivery
+  // re-check), so it bypasses BOTH scope guards below: the PO cutoff, and the
+  // "styles with any queue row are already captured" exclusion. That exclusion
+  // is what leaves a half-captured style uncovered — a style with 5 rows and a
+  // 6th approved slot whose enqueue hit the fail-soft catch is "captured" by
+  // the sweep's reckoning and no loop ever revisits it. Per-style, we re-walk
+  // every approved slot and let enqueueApprovedAsset (idempotent) fill the gap.
+  const targeted = opts.styleIds != null && opts.styleIds.length > 0;
+
   const { getSupplierSendMinPo } = await import("@/lib/settings/app-settings");
   const { getCurrentOutputsForStyle } = await import("@/lib/outputs/current-outputs");
 
   const summary: ReconcileSummary = { cutoff: null, scanned: 0, stylesEnqueued: 0, outputsEnqueued: 0 };
   const cutoff = await getSupplierSendMinPo();
   summary.cutoff = cutoff;
-  if (cutoff === null) return summary;
+  if (cutoff === null && !targeted) return summary;
 
   // Styles already captured (any queue row, sent or not) are the approve
   // paths' responsibility — exclude them so candidates shrink as we go.
-  const queued = await db.supplierSendQueueItem.findMany({
-    select: { styleId: true },
-    distinct: ["styleId"],
-  });
+  const queued = targeted
+    ? []
+    : await db.supplierSendQueueItem.findMany({
+        select: { styleId: true },
+        distinct: ["styleId"],
+      });
   const queuedStyleIds = queued.map((q) => q.styleId);
 
   // Over-fetch: some candidates' approvals turn out superseded/orphaned once
   // current-outputs resolves (nothing to enqueue) — scan past them so they
   // can't wedge the window shut, but never process more than `limit` styles.
-  const candidates = await db.style.findMany({
-    where: {
-      poSeq: { gte: cutoff },
-      ...(queuedStyleIds.length > 0 ? { id: { notIn: queuedStyleIds } } : {}),
-      jobs: {
-        some: {
-          status: { not: "FAILED" },
-          assets: { some: { reviewStatus: "APPROVED", placeholderCount: 0 } },
+  const candidates = targeted
+    ? (opts.styleIds as string[]).map((id) => ({ id }))
+    : await db.style.findMany({
+        where: {
+          poSeq: { gte: cutoff as number },
+          ...(queuedStyleIds.length > 0 ? { id: { notIn: queuedStyleIds } } : {}),
+          jobs: {
+            some: {
+              status: { not: "FAILED" },
+              assets: { some: { reviewStatus: "APPROVED", placeholderCount: 0 } },
+            },
+          },
         },
-      },
-    },
-    select: { id: true },
-    orderBy: { poSeq: "desc" },
-    take: Math.max(limit, 1) * 4,
-  });
+        select: { id: true },
+        orderBy: { poSeq: "desc" },
+        take: Math.max(limit, 1) * 4,
+      });
 
   for (const { id: styleId } of candidates) {
     if (summary.stylesEnqueued >= limit) break;

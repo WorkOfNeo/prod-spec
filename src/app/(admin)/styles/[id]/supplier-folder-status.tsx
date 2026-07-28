@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { SupplierFolderFileCount } from "./supplier-folder-file-count";
 import { PoFolderPicker } from "./po-folder-picker";
+import { DeliveryCheck } from "./delivery-check";
 
 // Supplier-folder push readiness for the Details panel. Shows WHERE in the
 // resolution chain a style stands, so a reviewer can confirm (or spot the gap)
@@ -34,6 +35,7 @@ export function SupplierFolderStatus({
   folderUrl,
   poNumber,
   delivery,
+  canFixTemplate = false,
   className = "mt-8",
 }: {
   styleId: string;
@@ -41,6 +43,8 @@ export function SupplierFolderStatus({
   folderUrl: string | null; // null ⇒ supplier has no folder link on the Suppliers board
   poNumber: string | null; // the PO whose folder we count files in
   delivery?: PoFolderDelivery | null; // null/absent ⇒ nothing queued for this style
+  // ADMIN — editing a layout's file-name template is shared across styles.
+  canFixTemplate?: boolean;
   // Root <section> classes — the caller controls spacing (defaults to a
   // standalone top margin; "" when placed in the above-tabs grid column).
   className?: string;
@@ -123,6 +127,11 @@ export function SupplierFolderStatus({
       </div>
 
       {delivery && delivery.total > 0 ? <PoFolderState styleId={styleId} delivery={delivery} /> : null}
+
+      {/* Slot counters above can read "all uploaded" while the folder is short:
+          a slot is one queue row however many PDFs it holds. This checks the
+          real folder, document by document. */}
+      {ready && hasPo ? <DeliveryCheck styleId={styleId} canFixTemplate={canFixTemplate} /> : null}
     </section>
   );
 }
@@ -166,10 +175,13 @@ function PoFolderState({ styleId, delivery }: { styleId: string; delivery: PoFol
           supplier’s SharePoint. The app never creates it; create the PO folder there and they upload on the next sweep.
         </>
       ) : uploaded >= total ? (
-        <>✓ All {total} approved output(s) are in the PO folder’s “APPROVED LAYOUTS” subfolder.</>
+        // "Uploaded" is per SLOT, and a slot can hold several PDFs — so this
+        // cannot promise every FILE arrived. The delivery check below counts
+        // documents against the real folder; that's the one that can.
+        <>✓ All {total} approved output slot(s) pushed to the PO folder’s “APPROVED LAYOUTS” subfolder.</>
       ) : uploaded > 0 ? (
         <>
-          {uploaded} of {total} output(s) uploaded to the PO folder; the rest are queued for the next sweep.
+          {uploaded} of {total} output slot(s) uploaded to the PO folder; the rest are queued for the next sweep.
         </>
       ) : (
         <>Queued — {total} approved output(s) will upload to the PO folder on the next sweep.</>

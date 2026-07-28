@@ -56,6 +56,9 @@ export async function POST(req: NextRequest) {
           `reconciled ${reconciled.outputsEnqueued} output(s) across ${reconciled.stylesEnqueued} style(s)` +
           (reconciled.cutoff === null ? " (no PO cutoff set — backfill idle)" : ` (PO ≥ ${reconciled.cutoff})`) +
           `; verify: ${verified.verified} ok / ${verified.healed} self-healed / ${verified.unresolved} unresolved` +
+          // A collision is a silent, permanent shortfall — say it out loud in
+          // the feed, because no retry counter will ever move for it.
+          (verified.collided > 0 ? ` / ${verified.collided} lost to duplicate file names` : "") +
           `; uploads: ${sweep.uploaded} ok / ${sweep.failed} failed / ${sweep.skipped} skipped` +
           (sweep.noFolder > 0 || sweep.ambiguous > 0
             ? ` / ${sweep.noFolder} no PO folder / ${sweep.ambiguous} ambiguous`
