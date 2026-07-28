@@ -816,6 +816,7 @@ export default async function StyleDetail({
           folderUrl={style.supplier?.sharepointUrl ?? null}
           poNumber={style.poNumber}
           delivery={supplierDelivery}
+          canFixTemplate={isAdmin}
           className=""
         />
       </div>

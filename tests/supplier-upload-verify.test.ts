@@ -75,11 +75,12 @@ before(() => {
   mock.module("@/lib/sharepoint/supplier-folder", {
     namedExports: {
       sanitizeName: (s: string) => s,
-      // mock.module replaces the module WHOLESALE, so every named export the
-      // subject imports has to be stubbed here. verify-supplier-uploads has
-      // imported sanitizeFileName since the expected-name comparison landed;
-      // without this the suite failed with "sanitizeFileName is not a
-      // function" — a mock gap, never a fault in the code under test.
+      // verify matches folder listings through this. Mocking the module
+      // replaces it wholesale, so omitting the export made every test in this
+      // file throw "sanitizeFileName is not a function" before reaching its
+      // assertions — the suite looked green-ish while guarding nothing.
+      // Identity is faithful here: no fixture name contains a character the
+      // real sanitiser would rewrite.
       sanitizeFileName: (s: string) => s,
       resolveSupplierFolder: async () => {
         if (scenario === "unresolved") throw new Error("share link would not resolve");
