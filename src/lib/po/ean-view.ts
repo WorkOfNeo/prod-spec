@@ -119,8 +119,11 @@ export type EanView = {
    *  constructors that don't need it can omit it (the panel treats absent as
    *  false). */
   useStyleBoardColour?: boolean;
-  /** Present after a live resolve (not persisted) — lets the UI/API show
-   *  exactly which file was read and whether it contained barcodes. */
+  /** Present only for the duration of a live resolve — the whole struct is far
+   *  too bulky (candidate list, PDF-text snippet) to keep per style, so it is
+   *  never persisted. Lets the UI/API show exactly which file was read and
+   *  whether it contained barcodes. Its poSections dump IS kept, trimmed, in
+   *  `scrapeSnapshot` below. */
   diagnostics?: EanDiagnostics;
   /** The last scrape's section dump, read back from Style.poScrapeSnapshot.
    *  The PAGE-LOAD source for the scrape panel: `diagnostics` above only

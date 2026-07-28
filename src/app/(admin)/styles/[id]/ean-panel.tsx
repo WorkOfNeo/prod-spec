@@ -4,12 +4,27 @@ import { useState } from "react";
 import type { EanView, EanDiagnostics } from "@/lib/po/ean-view";
 import { eanStatusMeta } from "@/lib/po/ean-status-meta";
 import { colorFromVariantLabel } from "@/lib/po/ean-format";
+import { computeSizeCoverage, type SizeCoverage } from "@/lib/po/scrape-snapshot";
 
 type OverrideOp =
   | { op: "toggle"; id: string; excluded: boolean }
   | { op: "add"; size: string; ean13: string }
   | { op: "delete"; id: string };
-import { ScrapePanel } from "./scrape-panel";
+import { ScrapePanel, type StoredScrapeProvenance } from "./scrape-panel";
+
+// Merge a server response onto the view we're already showing. The override /
+// colour-source endpoints rebuild the view from the style_eans rows only
+// (loadStyleEanView) and carry neither diagnostics nor the scrape snapshot, so
+// a plain replace would blank the "what did the PO contain" panel the instant
+// someone ticks a checkbox — and only a full page reload would bring it back.
+// Anything the response DOES carry still wins; this only fills the gaps.
+function mergeView(prev: EanView, next: EanView): EanView {
+  return {
+    ...next,
+    diagnostics: next.diagnostics ?? prev.diagnostics,
+    scrapeSnapshot: next.scrapeSnapshot ?? prev.scrapeSnapshot,
+  };
+}
 
 // Details-tab EAN panel. Shows the persisted PO → EAN resolution (per-size
 // rows + carton) when present; when no EANs are resolved yet it surfaces a
@@ -50,7 +65,7 @@ export function EanPanel({
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error((body as { error?: string })?.error ?? `HTTP ${res.status}`);
-      setView(body as EanView);
+      setView((prev) => mergeView(prev, body as EanView));
     } catch (e) {
       setError(e instanceof Error ? e.message : "request failed");
     } finally {
@@ -64,7 +79,8 @@ export function EanPanel({
     try {
       const res = await fetch(`/api/admin/styles/${styleId}/eans`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setView((await res.json()) as EanView);
+      const fresh = (await res.json()) as EanView;
+      setView((prev) => mergeView(prev, fresh));
     } catch (e) {
       setError(e instanceof Error ? e.message : "request failed");
     } finally {
@@ -84,7 +100,7 @@ export function EanPanel({
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error((body as { error?: string })?.error ?? `HTTP ${res.status}`);
-      setView(body as EanView);
+      setView((prev) => mergeView(prev, body as EanView));
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "request failed");
@@ -104,6 +120,35 @@ export function EanPanel({
 
   const meta = eanStatusMeta(view.status);
   const hasEans = view.sizeEans.length > 0;
+
+  // Two sources for "what did the PO contain": the live diagnostics of a
+  // resolve that just ran in this tab, and the snapshot persisted by the last
+  // scrape (Style.poScrapeSnapshot). Live wins because it's fresher — but only
+  // when it actually carries sections: a re-resolve that couldn't reach the PO
+  // returns diagnostics with an empty dump, and falling through to the stored
+  // one then keeps the explanation on screen instead of blanking it.
+  const live = view.diagnostics ?? null;
+  const snapshot = view.scrapeSnapshot ?? null;
+  const liveSections = live?.poSections ?? [];
+  const sections = liveSections.length > 0 ? liveSections : (snapshot?.sections ?? []);
+  const fromStored = liveSections.length === 0 && snapshot !== null;
+  const stored: StoredScrapeProvenance | null =
+    fromStored && snapshot
+      ? {
+          scrapedAt: snapshot.scrapedAt,
+          poFileName: snapshot.poFileName,
+          poFileWebUrl: snapshot.poFileWebUrl,
+          sectionCount: snapshot.sectionCount,
+          truncated: snapshot.truncated,
+        }
+      : null;
+
+  // Expectation vs reality in one line. The size run is whatever the scrape
+  // read off the board (splitSizes of the Sizes column, via eanResolveInputs),
+  // carried on both sources — so this says nothing at all until a scrape has
+  // happened, which is correct: with no PO read there is no "reality" half.
+  const scrapeSizes = live?.styleSizes ?? snapshot?.styleSizes ?? null;
+  const coverage = scrapeSizes ? computeSizeCoverage(scrapeSizes, view.sizeEans) : null;
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-4">
@@ -129,6 +174,8 @@ export function EanPanel({
       </div>
 
       {error && <div className="mt-2 text-xs text-red-600">{error}</div>}
+
+      {coverage && <SizeCoverageLine c={coverage} />}
 
       {hasEans || hasPo ? (
         <div className="mt-3">
@@ -294,18 +341,39 @@ export function EanPanel({
         </p>
       )}
 
-      {view.diagnostics?.poSections && view.diagnostics.poSections.length > 0 && (
-        <ScrapePanel sections={view.diagnostics.poSections} />
-      )}
+      {sections.length > 0 && <ScrapePanel sections={sections} stored={stored} />}
 
       {view.diagnostics && <Diagnostics d={view.diagnostics} />}
     </div>
   );
 }
 
-// Verification panel: did we read the right file, and did it contain
-// barcodes at all? Renders after a live resolve (diagnostics aren't
-// persisted, so it's empty until the Resolve button is clicked).
+// The one-line "is this all there should be?" statement — the question the
+// per-size table alone never answers. Every word of it is computed in
+// computeSizeCoverage (pure + tested); this only styles the clauses, because a
+// sentence assembled in JSX is a sentence nobody can write a test for.
+function SizeCoverageLine({ c }: { c: SizeCoverage }) {
+  return (
+    <p
+      className={`mt-2 text-xs leading-relaxed ${
+        c.complete ? "text-zinc-500" : "text-amber-800"
+      }`}
+    >
+      {c.parts.map((part, i) => (
+        <span key={i}>
+          {i > 0 && <span className="text-zinc-300"> · </span>}
+          <span className={i === 0 ? "font-medium" : ""}>{part}</span>
+        </span>
+      ))}
+    </p>
+  );
+}
+
+// Verification panel: did we read the right file, and did it contain barcodes
+// at all? Live-only — unlike the section dump above (which is persisted to
+// Style.poScrapeSnapshot), the full diagnostics with its candidate list and
+// PDF-text snippet is too bulky to store per style, so this stays empty until
+// Resolve / Re-resolve is clicked.
 function Diagnostics({ d }: { d: EanDiagnostics }) {
   return (
     <details className="mt-3 rounded-md border border-zinc-100 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
