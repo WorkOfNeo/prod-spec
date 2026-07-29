@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DocTypeEntry } from "@/lib/pdf/doc-types";
+import type { FileNamePreset } from "@/lib/settings/app-settings";
 import {
   DEFAULT_GRID_CELL_MM,
   LAYOUT_GRID_COLS,
@@ -22,6 +23,7 @@ import {
   type LayoutPage,
   type LayoutRect,
   type LayoutSettings,
+  type PageBorder,
   type SewingLine,
 } from "@/lib/output-layouts/schema";
 import {
@@ -315,6 +317,17 @@ export function LayoutEditor({
     updatePage({ foldLine: v });
   }
 
+  // Page border — one frame around the whole page, so a design doesn't need
+  // a dummy full-page block just to get an outline. Absent = off.
+  const pageBorder = page?.pageBorder;
+  function togglePageBorder(on: boolean) {
+    updatePage({ pageBorder: on ? { widthMm: 0.3, color: "#000000", insetMm: 0 } : undefined });
+  }
+  function updatePageBorder(patch: Partial<PageBorder>) {
+    if (!pageBorder) return;
+    updatePage({ pageBorder: { ...pageBorder, ...patch } });
+  }
+
   // Recompute the grid from a square cell size and remap existing blocks
   // proportionally into the new grid (clamped to fit) — keep what we can;
   // the user can then nudge anything the resize shifted.
@@ -572,6 +585,54 @@ export function LayoutEditor({
     const colSpan = Math.abs(d.curCol - d.startCol) + 1;
     const rowSpan = Math.abs(d.curRow - d.startRow) + 1;
     addRectBlock({ col, row, colSpan, rowSpan });
+  }
+
+  // ---- file-name presets -----------------------------------------------
+
+  // The shared library of file-name patterns (AppSetting-backed). Loaded
+  // once; every mutation returns the whole list, so we just replace it.
+  const [fileNamePresets, setFileNamePresets] = useState<FileNamePreset[]>([]);
+  const [presetBusy, setPresetBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/admin/output-layouts/file-name-presets")
+      .then((r) => (r.ok ? r.json() : { presets: [] }))
+      .then((b: { presets?: FileNamePreset[] }) => {
+        if (!cancelled) setFileNamePresets(b.presets ?? []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function mutatePresets(body: Record<string, unknown>) {
+    setPresetBusy(true);
+    try {
+      const res = await fetch("/api/admin/output-layouts/file-name-presets", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const parsed = (await res.json().catch(() => ({}))) as { presets?: FileNamePreset[] };
+      if (res.ok && parsed.presets) setFileNamePresets(parsed.presets);
+    } finally {
+      setPresetBusy(false);
+    }
+  }
+
+  function saveFileNamePreset() {
+    const pattern = settings.fileName.trim();
+    if (!pattern) return;
+    const label = window.prompt("Name this preset", pattern)?.trim();
+    if (label === undefined) return; // cancelled
+    void mutatePresets({ pattern, label: label || pattern });
+  }
+
+  function deleteFileNamePreset(preset: FileNamePreset) {
+    if (!window.confirm(`Remove the preset "${preset.label}"? Layouts already using it keep their file name.`)) return;
+    void mutatePresets({ deleteId: preset.id });
   }
 
   // ---- autosave --------------------------------------------------------
@@ -1680,6 +1741,60 @@ export function LayoutEditor({
               </select>
               <p className="mt-0.5 text-[10px] text-zinc-400">A dashed rule through the page centre.</p>
             </div>
+
+            {/* Page border — a frame around the WHOLE page, so a design
+                doesn't need an empty full-page block just to get an
+                outline. Decorative only: no tokens, no grid cells. */}
+            <div>
+              <label className="flex items-center gap-2 text-sm text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={!!pageBorder}
+                  onChange={(e) => togglePageBorder(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                />
+                Page border
+              </label>
+              {pageBorder ? (
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    defaultValue={String(pageBorder.widthMm).replace(".", ",")}
+                    onChange={(e) => {
+                      const v = parseMm(e.target.value);
+                      if (Number.isFinite(v) && v >= 0.1 && v <= 5) updatePageBorder({ widthMm: v });
+                    }}
+                    className="w-14 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                    aria-label="Border thickness (mm)"
+                  />
+                  <span className="text-[10px] text-zinc-400">thick</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    defaultValue={String(pageBorder.insetMm).replace(".", ",")}
+                    onChange={(e) => {
+                      const v = parseMm(e.target.value);
+                      if (Number.isFinite(v) && v >= 0 && v <= 50) updatePageBorder({ insetMm: v });
+                    }}
+                    className="w-14 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                    aria-label="Inset from page edge (mm)"
+                  />
+                  <span className="text-[10px] text-zinc-400">inset</span>
+                  <input
+                    type="color"
+                    value={pageBorder.color}
+                    onChange={(e) => updatePageBorder({ color: e.target.value })}
+                    className="ml-auto h-6 w-8 cursor-pointer rounded border border-zinc-200 bg-white p-0.5"
+                    aria-label="Border colour"
+                  />
+                </div>
+              ) : (
+                <p className="mt-0.5 text-[10px] text-zinc-400">
+                  Frames the whole page — thickness, inset from the edge and colour, in mm.
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Settings</div>
@@ -1757,6 +1872,66 @@ export function LayoutEditor({
                   "Text variables allowed · empty = default name"
                 )}
               </p>
+
+              {/* Preset library — shared across layouts (AppSetting), grown
+                  by whoever needs a new convention. Clicking one pastes its
+                  pattern into the field above; nothing is applied silently. */}
+              <div className="mt-2 rounded-md border border-zinc-100 bg-zinc-50/70 p-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">Presets</span>
+                  <button
+                    type="button"
+                    onClick={saveFileNamePreset}
+                    disabled={presetBusy || !settings.fileName.trim()}
+                    className="text-[11px] font-medium text-zinc-700 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300"
+                    title={
+                      settings.fileName.trim()
+                        ? "Save the current file name as a reusable preset"
+                        : "Type a file name first"
+                    }
+                  >
+                    + Save current
+                  </button>
+                </div>
+                {fileNamePresets.length === 0 ? (
+                  <p className="mt-1 text-[10px] text-zinc-400">
+                    No presets yet — type a file name and save it to reuse it on other layouts.
+                  </p>
+                ) : (
+                  <div className="mt-1.5 space-y-1">
+                    {fileNamePresets.map((p) => {
+                      const active = settings.fileName === p.pattern;
+                      return (
+                        <div key={p.id} className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => updateSettings({ fileName: p.pattern })}
+                            className={`min-w-0 flex-1 rounded border px-1.5 py-1 text-left ${
+                              active
+                                ? "border-zinc-300 bg-white"
+                                : "border-transparent hover:border-zinc-200 hover:bg-white"
+                            }`}
+                            title={p.pattern}
+                          >
+                            <span className="block truncate text-[11px] text-zinc-700">{p.label}</span>
+                            <span className="block truncate font-mono text-[10px] text-zinc-400">{p.pattern}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteFileNamePreset(p)}
+                            disabled={presetBusy}
+                            className="text-zinc-300 hover:text-red-600 disabled:hover:text-zinc-300"
+                            aria-label={`Remove preset ${p.label}`}
+                            title="Remove preset"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Carton numbering (X/Y) — eligibility only; standard
@@ -1919,6 +2094,21 @@ export function LayoutEditor({
                     `repeating-linear-gradient(to bottom, transparent 0, transparent calc(${100 / grid.rows}% - 1px), rgba(24,24,27,0.045) calc(${100 / grid.rows}% - 1px), rgba(24,24,27,0.045) ${100 / grid.rows}%)`,
                 }}
               />
+              {/* Page border preview — same geometry as the renderer's
+                  frame (inset in mm, scaled to the canvas). */}
+              {pageBorder ? (
+                <div
+                  className="pointer-events-none absolute"
+                  style={{
+                    left: pageBorder.insetMm * scale,
+                    top: pageBorder.insetMm * scale,
+                    right: pageBorder.insetMm * scale,
+                    bottom: pageBorder.insetMm * scale,
+                    border: `${Math.max(1, pageBorder.widthMm * scale)}px solid ${pageBorder.color}`,
+                  }}
+                  title="Page border"
+                />
+              ) : null}
               {page.blocks.map((block) => (
                 <CanvasBlock
                   key={blockId(block)}

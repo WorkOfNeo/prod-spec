@@ -449,3 +449,64 @@ function parseEmailList(raw: string): string[] {
   }
   return out;
 }
+
+const FILE_NAME_PRESETS_KEY = "outputFileNamePresets";
+
+// Saved "Output file name" patterns for the Output Builder — a shared,
+// user-grown library so the same naming convention doesn't get re-typed (and
+// mistyped) on every new layout. Stored as { presets: [{ id, label,
+// pattern }] }; the patterns are ordinary file-name expressions with
+// {{tokens}}, resolved by the usual runner path — nothing here is a
+// separate naming mechanism, it's just text the builder can paste in.
+//
+// Global by design: the convention belongs to the house, not to one admin.
+export type FileNamePreset = { id: string; label: string; pattern: string };
+
+const MAX_PRESETS = 60;
+
+// Tolerant of a stale/hand-edited row: anything that isn't a well-formed
+// entry is dropped rather than throwing, and ids are de-duped.
+export function normalizeFileNamePresets(raw: unknown): FileNamePreset[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: FileNamePreset[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const { id, label, pattern } = entry as Record<string, unknown>;
+    if (typeof id !== "string" || typeof pattern !== "string") continue;
+    const cleanId = id.trim().slice(0, 60);
+    const cleanPattern = pattern.trim().slice(0, 160);
+    if (!cleanId || !cleanPattern || seen.has(cleanId)) continue;
+    seen.add(cleanId);
+    out.push({
+      id: cleanId,
+      label: (typeof label === "string" ? label.trim() : "").slice(0, 80) || cleanPattern,
+      pattern: cleanPattern,
+    });
+    if (out.length >= MAX_PRESETS) break;
+  }
+  return out;
+}
+
+export async function getFileNamePresets(): Promise<FileNamePreset[]> {
+  return (await getFileNamePresetsRow()) ?? [];
+}
+
+// Same read, but distinguishing "never configured" (null) from "configured
+// and empty" ([]) — the API seeds the house conventions only in the first
+// case, so deleting every preset stays deleted.
+export async function getFileNamePresetsRow(): Promise<FileNamePreset[] | null> {
+  const row = await db.appSetting.findUnique({ where: { key: FILE_NAME_PRESETS_KEY } });
+  if (!row) return null;
+  return normalizeFileNamePresets((row.value as { presets?: unknown } | null)?.presets);
+}
+
+export async function setFileNamePresets(presets: ReadonlyArray<FileNamePreset>): Promise<FileNamePreset[]> {
+  const value = { presets: normalizeFileNamePresets(presets) };
+  await db.appSetting.upsert({
+    where: { key: FILE_NAME_PRESETS_KEY },
+    create: { key: FILE_NAME_PRESETS_KEY, value },
+    update: { value },
+  });
+  return value.presets;
+}
