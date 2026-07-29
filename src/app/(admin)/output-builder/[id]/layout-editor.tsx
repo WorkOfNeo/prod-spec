@@ -231,6 +231,13 @@ export function LayoutEditor({
   const [styles, setStyles] = useState<TestStyle[]>([]);
   const [styleIdx, setStyleIdx] = useState(0);
   const [stylesLoading, setStylesLoading] = useState(false);
+  // Has the test-style fetch produced an answer for the CURRENT context yet?
+  // Gates the live preview: a layout scoped to a customer × business area is
+  // going to get a real test style, so rendering SAMPLE data in the gap before
+  // it arrives just flashes a fully-populated label (sample EANs, sample
+  // carton) that a moment later empties out — which reads as "my data
+  // disappeared" rather than "this style has no carton EAN".
+  const [stylesSettled, setStylesSettled] = useState(false);
   const [styleQuery, setStyleQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -740,11 +747,17 @@ export function LayoutEditor({
     const ctxKey = `${customerId ?? ""}|${businessAreaId ?? ""}|${styleQuery.trim()}`;
     const contextChanged = ctxKey !== styleCtxRef.current;
     styleCtxRef.current = ctxKey;
+    // A new context means the current selection is about to be replaced —
+    // re-close the preview gate so the swap doesn't flash sample data either.
+    if (contextChanged) setStylesSettled(false);
     const t = window.setTimeout(async () => {
       if (!customerId || !businessAreaId) {
         if (!cancelled) {
           setStyles([]);
           setStylesLoading(false);
+          // Unscoped layout — no test style is coming, so sample data IS the
+          // preview. Open the gate rather than leaving it blank forever.
+          setStylesSettled(true);
         }
         return;
       }
@@ -775,7 +788,12 @@ export function LayoutEditor({
         setStyles(body.styles);
         setStyleIdx(keepIdx >= 0 ? keepIdx : 0);
       } finally {
-        if (!cancelled) setStylesLoading(false);
+        if (!cancelled) {
+          setStylesLoading(false);
+          // Settled either way — an empty / failed list must not wedge the
+          // preview shut; it falls through to sample data as before.
+          setStylesSettled(true);
+        }
       }
     }, 400);
     return () => {
@@ -790,6 +808,10 @@ export function LayoutEditor({
 
   useEffect(() => {
     if (!page) return;
+    // Wait for the test-style list before the FIRST render on a scoped layout
+    // (see stylesSettled) — otherwise the mount-time preview paints sample
+    // data and the real style immediately replaces it.
+    if (!stylesSettled) return;
     let cancelled = false;
     const t = window.setTimeout(async () => {
       try {
@@ -837,6 +859,7 @@ export function LayoutEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     JSON.stringify(def),
+    stylesSettled,
     testStyle?.id,
     pageIdx,
     showValues,
