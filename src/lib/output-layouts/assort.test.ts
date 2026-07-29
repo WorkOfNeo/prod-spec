@@ -12,12 +12,13 @@ let repetitionStyles: typeof import("./render").repetitionStyles;
 let barcodeSymbology: typeof import("./render").barcodeSymbology;
 let resolveBarcodeValue: typeof import("./tokens").resolveBarcodeValue;
 let resolveTextToken: typeof import("./tokens").resolveTextToken;
+let evaluateCalcForStyle: typeof import("./tokens").evaluateCalcForStyle;
 let buildSampleStyleData: typeof import("../pdf/sample-data").buildSampleStyleData;
 let ASSORT: string;
 
 before(async () => {
   ({ repetitionStyles, barcodeSymbology } = await import("./render"));
-  ({ resolveBarcodeValue, resolveTextToken } = await import("./tokens"));
+  ({ resolveBarcodeValue, resolveTextToken, evaluateCalcForStyle } = await import("./tokens"));
   ({ buildSampleStyleData } = await import("../pdf/sample-data"));
   ASSORT = buildSampleStyleData().carton.assortEan!; // sample master carton
 });
@@ -231,6 +232,72 @@ test("plain numeric carton qty → outerVE wins, repeat leaves it alone", () => 
   for (const rep of repetitionStyles(s, "size")) {
     assert.equal(resolveTextToken(rep, "qtyPerCarton"), "48");
   }
+});
+
+// A "Solid - N / Assort - M" split follows the repetition row automatically:
+// the size cartons take Solid, the assort master carton takes Assort — for
+// both the plain token and sum(qtyPerCarton).
+function splitStyle(): StyleData {
+  const base = buildSampleStyleData();
+  return {
+    ...base,
+    cartonQtyRaw: "Solid - 5 / Assort - 8",
+    carton: { ...base.carton, outerVE: 0, perSize: base.carton.perSize!.slice(0, 2) },
+  };
+}
+
+test("split carton qty · cartonEan repeat → size rows Solid, assort row Assort", () => {
+  const reps = repetitionStyles(splitStyle(), "cartonEan");
+  const assort = reps.filter((r) => r.isAssortment);
+  const solid = reps.filter((r) => !r.isAssortment);
+  assert.ok(solid.length >= 1 && assort.length === 1);
+  for (const r of solid) assert.equal(resolveTextToken(r, "qtyPerCarton"), "5");
+  assert.equal(resolveTextToken(assort[0], "qtyPerCarton"), "8");
+  // sum(qtyPerCarton) (single style → base only) tracks the row too.
+  for (const r of solid) assert.equal(evaluateCalcForStyle("sum(qtyPerCarton)", r), "5");
+  assert.equal(evaluateCalcForStyle("sum(qtyPerCarton)", assort[0]), "8");
+});
+
+test("split carton qty · standalone (no assort context) → Solid", () => {
+  assert.equal(resolveTextToken(splitStyle(), "qtyPerCarton"), "5");
+  assert.equal(evaluateCalcForStyle("sum(qtyPerCarton)", splitStyle()), "5");
+});
+
+test("explicit :solid / :assort override the row on a split value", () => {
+  const reps = repetitionStyles(splitStyle(), "cartonEan");
+  const assort = reps.find((r) => r.isAssortment)!;
+  const solid = reps.find((r) => !r.isAssortment)!;
+  assert.equal(resolveTextToken(assort, "qtyPerCarton", "solid"), "5");
+  assert.equal(resolveTextToken(solid, "qtyPerCarton", "assort"), "8");
+});
+
+test("multi-style assort carton → sum(qtyPerCarton) adds each style's Assort", () => {
+  const base = splitStyle();
+  const s: StyleData = {
+    ...base,
+    multipleStyles: true,
+    // Sibling carries its own split; on the assort carton it must contribute
+    // its Assort (10), not its Solid (7).
+    siblings: [
+      {
+        id: "sib",
+        styleNumber: "X2",
+        styleName: "",
+        description: "",
+        customerItemNo: "",
+        colourName: "",
+        colourCode: "",
+        sizes: "",
+        sizeRange: "",
+        qtyPerCarton: "7",
+        qtyPerCartonRaw: "Solid - 7 / Assort - 10",
+        cartonEan: "",
+        ean13: "",
+      },
+    ],
+  };
+  const assort = repetitionStyles(s, "cartonEan").find((r) => r.isAssortment)!;
+  assert.equal(evaluateCalcForStyle("sum(qtyPerCarton)", assort), "18"); // 8 + 10
 });
 
 test("single-value customerItemNo unchanged by per-size repeat", () => {
