@@ -157,6 +157,20 @@ export type SewingLine = z.infer<typeof SewingLineSchema>;
 export const FoldLineSchema = z.enum(["none", "horizontal", "vertical"]);
 export type FoldLine = z.infer<typeof FoldLineSchema>;
 
+// Page border — a frame drawn around the WHOLE page, so a design doesn't
+// need a dummy full-page block just to get an outline. Purely decorative:
+// carries no tokens, consumes no grid cells, never blocks approval.
+// `insetMm` pulls the frame in from the paper edge (0 = flush).
+export const PageBorderSchema = z.object({
+  widthMm: z.number().min(0.1).max(5).default(0.3),
+  color: z
+    .string()
+    .regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "hex colour like #000 or #1a1a1a")
+    .default("#000000"),
+  insetMm: z.number().min(0).max(50).default(0),
+});
+export type PageBorder = z.infer<typeof PageBorderSchema>;
+
 export const LayoutPageSchema = z
   .object({
     id: z.string().min(1).max(40),
@@ -167,6 +181,8 @@ export const LayoutPageSchema = z
     // grid cells, carry no tokens). See renderLayoutHtml's guide layer.
     sewingLines: z.array(SewingLineSchema).max(20).default([]),
     foldLine: FoldLineSchema.default("none"),
+    // Optional frame around the whole page (absent = no border).
+    pageBorder: PageBorderSchema.optional(),
     // Per-page placement grid. Absent ⇒ the legacy 12×12 (see pageGrid),
     // so existing layouts are untouched. The builder generates these from a
     // cell size (e.g. 4 mm → 25×19 on a 100×75 page) and can regenerate.

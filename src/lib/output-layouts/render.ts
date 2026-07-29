@@ -981,6 +981,18 @@ function renderGuides(page: LayoutPage): string {
   return parts.join("");
 }
 
+// Full-page frame (the "Page border" page setting) — one absolutely
+// positioned box inset from the paper edge. Drawn BEFORE the blocks so a
+// block that reaches the edge prints on top of it rather than under a rule.
+// Colour/width are schema-validated (hex + mm bounds), so they're safe to
+// inline. Absolute mm by design: the frame follows the paper, not the
+// info-area font scale.
+function renderPageBorder(page: LayoutPage): string {
+  const b = page.pageBorder;
+  if (!b) return "";
+  return `<div class="ol-page-border" style="inset: ${b.insetMm}mm; border: ${b.widthMm}mm solid ${b.color};"></div>`;
+}
+
 // Lay a flat list of (page × style) units into the final HTML document.
 // Each unit becomes one physical page with its own @page rule, so one
 // document can carry differently-sized pages AND many numbered carton
@@ -1003,7 +1015,7 @@ function emitLayoutDocument(
   const pagesHtml = emitted
     .map(({ page, repStyle }, i) => {
       const blocks = page.blocks.map((b) => renderBlock(b, page, repStyle, ctx)).join("");
-      return `<div class="ol-page ol-page-${i}">${blocks}${renderGuides(page)}</div>`;
+      return `<div class="ol-page ol-page-${i}">${renderPageBorder(page)}${blocks}${renderGuides(page)}</div>`;
     })
     .join("\n");
   // Append the fit-to-width script only when a block opts in.
@@ -1030,6 +1042,7 @@ function emitLayoutDocument(
      keeps a white chip (dark bars + number) so it stays scannable. */
   .ol-block.ol-binvert { background: #000; color: #fff; }
   .ol-block.ol-binvert .ol-barcode { background: #fff; color: #000; padding: ${(1 * ctx.fontScale).toFixed(3)}mm; border-radius: 1mm; }
+  .ol-page-border { position: absolute; pointer-events: none; z-index: 0; }
   .ol-guide { position: absolute; pointer-events: none; z-index: 5; }
   /* Dash patterns via gradients so sewing and fold read as distinct lines:
      sewing = long dashes (2.5/1.5 mm), fold = fine dashes (1/1 mm). */
