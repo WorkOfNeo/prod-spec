@@ -142,6 +142,11 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     cartonNumbering: settings.cartonNumbering,
     // Custom Carton Marking (multi-style box) — independent opt-in.
     multipleStyles: settings.multipleStyles,
+    // Only these two repeats rebind {{cartonEan}} to the repetition row's own
+    // carton (repetitionStyles in ./render.ts). "none" / "size" / "assort"
+    // print the style-level carton, so per-size cartons can't stand in for a
+    // missing Style.cartonEan on them — see TemplateVariant.perRowCartonEan.
+    perRowCartonEan: settings.repeatBy === "ean" || settings.repeatBy === "cartonEan",
     // Split per EAN: ONE FILE PER REPETITION ROW — repeat "size": per
     // size row; repeat "ean": per PO EAN row (size × colour,
     // {{colourName}} bound). Either way each file carries one EAN.
