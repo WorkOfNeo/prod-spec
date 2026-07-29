@@ -79,6 +79,18 @@ export type TemplateVariant = {
   // layouts whose settings.multipleStyles is on. Surfaces the carton
   // dialog's sibling multiselect; independent of cartonNumbering.
   multipleStyles?: boolean;
+  // Does this output bind a PER-ROW carton EAN when it renders? True for the
+  // repeats that rebind {{cartonEan}} per repetition row (repeatBy "ean" /
+  // "cartonEan" — see repetitionStyles in output-layouts/render.ts). False (or
+  // undefined) means the layout prints ONE carton for the whole style, taken
+  // from the style-level Style.cartonEan.
+  //
+  // Readiness needs the distinction: a style whose Monday/PO carton column
+  // lists per-size cartons but carries no "Assort - <EAN>" line has per-row
+  // cartons and a NULL Style.cartonEan. That satisfies a per-carton repeat, but
+  // a non-repeating layout would render a BLANK barcode — so the per-size rows
+  // must not count as "cartonEan is filled" for it.
+  perRowCartonEan?: boolean;
   // Optional multi-document rendering (Output Builder repeat-per-EAN):
   // one PDF per returned doc, persisted as JobAssets with variantKey
   // "<key>#<suffix>". fileName null → runner default + suffix. `dims` is the

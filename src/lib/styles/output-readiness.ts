@@ -115,12 +115,22 @@ export function outputReadinessForStyle(
   const hasRules = rules != null && Object.keys(rules).length > 0;
 
   // Per-size carton EANs (style_eans.cartonEan — the "Carton Barcode number 1"
-  // per-size values / PO section cartons) satisfy the cartonEan requirement.
-  // The renderer's repeatBy="cartonEan" split reads carton.perSize built from
-  // these SAME rows (render-context.ts), so a style with per-size cartons but
-  // no assort line (Style.cartonEan NULL by design since the Monday fallback
-  // stopped inventing one from an arbitrary size) must not read "awaiting
-  // data" — the runner would skip the very output the split can render.
+  // per-size values / PO section cartons) satisfy the cartonEan requirement —
+  // but ONLY for an output that rebinds {{cartonEan}} per repetition row
+  // (variant.perRowCartonEan: repeatBy "ean" / "cartonEan"). Such a split reads
+  // carton.perSize built from these SAME rows (render-context.ts), so a style
+  // with per-size cartons but no assort line (Style.cartonEan NULL by design
+  // since the Monday fallback stopped inventing one from an arbitrary size)
+  // must not read "awaiting data" — the runner would skip the very output the
+  // split can render.
+  //
+  // A NON-repeating layout is the opposite case: it prints the style-level
+  // carton, so per-size rows standing in for a NULL Style.cartonEan let it
+  // generate with a BLANK barcode. Those keep reporting cartonEan missing, and
+  // the runner holds the output at AWAITING_DATA instead of shipping an empty
+  // carton marking. Fix by giving the style an "Assort - <EAN>" line, or by
+  // switching the layout to a per-carton repeat.
+  //
   // Deliberately NOT injected through effectiveStyleItem: that item feeds the
   // render too, and a style-level stand-in would leak into {{cartonEan}} on
   // non-split rows.
@@ -137,9 +147,10 @@ export function outputReadinessForStyle(
     const keys = (variant?.readiness
       ? variant.readiness(resolve)
       : (variant?.requiredFields ?? [])) as DetailFieldKey[];
+    const cartonSatisfiedPerRow = hasPerSizeCarton && variant?.perRowCartonEan === true;
     const missing = keys
       .filter(
-        (f) => !pinned.has(f) && !resolve(f).trim() && !(f === "cartonEan" && hasPerSizeCarton),
+        (f) => !pinned.has(f) && !resolve(f).trim() && !(f === "cartonEan" && cartonSatisfiedPerRow),
       )
       .map((f) => ({ field: f, label: STYLE_FIELD_LABELS[f] }));
     // Exclusion: does this output's document type carry a keyword rule that

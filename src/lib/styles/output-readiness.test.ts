@@ -1,19 +1,46 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { outputReadinessForStyle, type ReadinessStyle } from "./output-readiness";
+import { setDynamicVariants } from "@/lib/pdf/template-registry";
 
 // ---------------------------------------------------------------------------
-// The cartonEan readiness gate must agree with the renderer: repeatBy=
-// "cartonEan" splits on the PER-SIZE cartons (style_eans.cartonEan), so a
-// style whose buyer filled the per-size "Carton Barcode number 1" lines but
-// no "Assort -" line (⇒ Style.cartonEan NULL, by design) is renderable and
-// must not read "awaiting data". Uses the coded Netto carton variant, whose
-// static gate requires cartonEan.
+// The cartonEan readiness gate must agree with the renderer, and the renderer
+// treats the two layout shapes differently:
+//
+//   • PER-ROW carton (repeatBy "ean" / "cartonEan", variant.perRowCartonEan):
+//     each repetition row binds its OWN carton from style_eans.cartonEan, so a
+//     style whose buyer filled the per-size "Carton Barcode number 1" lines but
+//     no "Assort -" line (⇒ Style.cartonEan NULL, by design) IS renderable and
+//     must not read "awaiting data".
+//   • STYLE-LEVEL carton (repeatBy "none", and every coded variant): prints the
+//     single Style.cartonEan. Per-size rows can't stand in — the output would
+//     ship with a BLANK barcode — so it must stay "awaiting data".
+//
+// The coded Netto carton variant is the style-level case (it reads
+// style.carton.ean13 directly); PER_ROW_VARIANT below stands in for a layout
+// with a per-carton repeat.
 // ---------------------------------------------------------------------------
 
 const CARTON_VARIANT = "netto-dk-privatelabel-carton-marking";
+const PER_ROW_VARIANT = "layout:test-per-carton";
 
-function styleWith(over: Partial<ReadinessStyle>): ReadinessStyle {
+// A minimal Output Builder-shaped variant with a per-carton repeat — the same
+// requiredFields gate as the coded one, but perRowCartonEan on.
+setDynamicVariants([
+  {
+    key: PER_ROW_VARIANT,
+    docType: "CARTON_MARKING",
+    name: "Test per-carton layout",
+    description: "Test fixture — per-carton repeat",
+    requiredFields: ["cartonEan"],
+    defaultWidthMm: 105,
+    defaultHeightMm: 148,
+    perRowCartonEan: true,
+    render: async () => "",
+  },
+]);
+
+function styleWith(over: Partial<ReadinessStyle>, variantKey = CARTON_VARIANT): ReadinessStyle {
   return {
     // Manual columns satisfy the variant's other requirements (cartonQty,
     // description; empty deliveryTerm ⇒ DDP branch ⇒ poNumber, injected from
@@ -29,15 +56,15 @@ function styleWith(over: Partial<ReadinessStyle>): ReadinessStyle {
     poNumber: "C-PO00001",
     customer: { config: {} },
     prodSpec: {
-      outputs: [{ variantKey: CARTON_VARIANT, enabled: true, widthMm: 105, heightMm: 148 }],
+      outputs: [{ variantKey, enabled: true, widthMm: 105, heightMm: 148 }],
       columnMapping: {},
     },
     ...over,
   };
 }
 
-function cartonReadiness(style: ReadinessStyle) {
-  const r = outputReadinessForStyle(style).find((o) => o.variantKey === CARTON_VARIANT);
+function cartonReadiness(style: ReadinessStyle, variantKey = CARTON_VARIANT) {
+  const r = outputReadinessForStyle(style).find((o) => o.variantKey === variantKey);
   assert.ok(r, "carton output present in readiness");
   return r;
 }
@@ -48,18 +75,27 @@ test("no carton anywhere → cartonEan missing, not ready", () => {
   assert.ok(r.missing.some((m) => m.field === "cartonEan"));
 });
 
-test("per-size cartons only (no assort line ⇒ Style.cartonEan NULL) → ready", () => {
-  const r = cartonReadiness(
-    styleWith({
-      cartonEan: null,
-      eans: [
-        { size: "M/L", ean13: "7070001349999", cartonEan: "7070001349999" },
-        { size: "XL/XXL", ean13: "7070001350001", cartonEan: "7070001350001" },
-      ],
-    }),
-  );
+const PER_SIZE_ONLY: Partial<ReadinessStyle> = {
+  cartonEan: null,
+  eans: [
+    { size: "M/L", ean13: "7070001349999", cartonEan: "7070001349999" },
+    { size: "XL/XXL", ean13: "7070001350001", cartonEan: "7070001350001" },
+  ],
+};
+
+test("per-size cartons only + PER-ROW carton repeat → ready", () => {
+  const r = cartonReadiness(styleWith(PER_SIZE_ONLY, PER_ROW_VARIANT), PER_ROW_VARIANT);
   assert.equal(r.ready, true);
   assert.ok(!r.missing.some((m) => m.field === "cartonEan"));
+});
+
+// The regression this guard exists for: CO60053 (Ge-kås) had five per-size
+// cartons from Monday and no assort line, and its non-repeating carton marking
+// generated anyway — with an empty {{barcode:cartonEan}}.
+test("per-size cartons only + STYLE-LEVEL carton output → still missing", () => {
+  const r = cartonReadiness(styleWith(PER_SIZE_ONLY));
+  assert.equal(r.ready, false);
+  assert.ok(r.missing.some((m) => m.field === "cartonEan"));
 });
 
 test("blank per-size cartons don't count", () => {
