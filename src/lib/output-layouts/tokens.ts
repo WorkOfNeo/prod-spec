@@ -150,13 +150,20 @@ const RESOLVERS: Record<string, TextResolver> = {
   // outerVE is the column's numeric parse; it's 0 when the buyer filled a
   // per-size "SIZE=qty" list instead, so fall back to the raw text — which
   // repetitionStyles narrows to the row's own size (size-scoped-text.ts).
-  // :solid / :assort narrow a "Solid - 5 / Assort - 8" split to one number
-  // (see carton-qty.ts); a non-split value serves both, so bare and either
-  // arg resolve the same thing there.
+  //
+  // A "Solid - 5 / Assort - 8" split (carton-qty.ts) narrows to one number:
+  //   • an explicit :solid / :assort arg always wins;
+  //   • otherwise the value follows THIS repetition row — the assort master
+  //     carton (repeatBy "assort"/"cartonEan" flags isAssortment) takes the
+  //     assort number, every solid carton (per-size row, or a standalone
+  //     non-repeat carton) takes the solid number.
+  // A non-split value has neither marker, so pickCartonQtyVariant hands it
+  // back untouched and the row/arg makes no difference.
   qtyPerCarton: (s, arg) => {
     const raw = (s.cartonQtyRaw ?? "").trim();
     const base = s.carton.outerVE ? String(s.carton.outerVE) : raw;
-    return arg ? pickCartonQtyVariant(raw || base, arg) : base;
+    const kind = arg ?? (s.isAssortment ? "assort" : "solid");
+    return pickCartonQtyVariant(raw || base, kind);
   },
   cartonEan: (s) => (s.carton.ean13 && s.carton.ean13 !== EAN_SENTINEL ? s.carton.ean13 : ""),
   assortEan: (s) =>
@@ -262,6 +269,12 @@ export function projectSiblingStyle(style: StyleData, id: string): SiblingStyle 
     sizes: resolveTextToken(style, "sizes"),
     sizeRange: resolveTextToken(style, "sizeRange"),
     qtyPerCarton: resolveTextToken(style, "qtyPerCarton"),
+    // The un-narrowed carton-qty text ("Solid - 5 / Assort - 8"), so
+    // sum(qtyPerCarton) on an assort master carton can narrow EVERY sibling
+    // to the assort variant (a sibling isn't itself the assort row — the
+    // BASE row's kind decides the whole carton). qtyPerCarton above is the
+    // sibling's own solid/plain value for the {{styleNQtyPerCarton}} token.
+    qtyPerCartonRaw: (style.cartonQtyRaw ?? "").trim(),
     cartonEan: resolveTextToken(style, "cartonEan"),
     ean13: resolveTextToken(style, "ean13"),
   };
@@ -326,10 +339,26 @@ function calcCtxForStyle(style: StyleData): CalcFieldCtx {
   return {
     field: (key) => resolveTextToken(style, key),
     aggregate: (suffix) => {
-      const fn = SIBLING_FIELD_RESOLVERS[suffix.toLowerCase()];
+      const lower = suffix.toLowerCase();
+      const pool = style.multipleStyles ? (style.siblings ?? []) : [];
+      // sum(qtyPerCarton) & co. follow THIS repetition row: on the assort
+      // master carton every style (base + siblings) contributes its assort
+      // number, on a solid carton its solid number. The base already narrows
+      // via resolveTextToken (no arg → row kind); siblings narrow from their
+      // raw split by the SAME base-row kind (a sibling isn't the assort row).
+      if (lower === "qtypercarton") {
+        const kind = style.isAssortment ? "assort" : "solid";
+        const base = resolveTextToken(style, "qtyPerCarton").trim();
+        return {
+          base,
+          siblings: pool.map((s) =>
+            pickCartonQtyVariant(s.qtyPerCartonRaw ?? s.qtyPerCarton, kind).trim(),
+          ),
+        };
+      }
+      const fn = SIBLING_FIELD_RESOLVERS[lower];
       if (!fn) return { base: "", siblings: [] };
       const base = (fn(projectSiblingStyle(style, "self")) ?? "").trim();
-      const pool = style.multipleStyles ? (style.siblings ?? []) : [];
       return { base, siblings: pool.map((s) => (fn(s) ?? "").trim()) };
     },
   };

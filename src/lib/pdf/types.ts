@@ -27,6 +27,10 @@ export type SiblingStyle = {
   sizes: string;
   sizeRange: string;
   qtyPerCarton: string;
+  // Un-narrowed carton-qty text ("Solid - 5 / Assort - 8") so an assort-carton
+  // sum can pick this sibling's assort number. Optional: only projectSiblingStyle
+  // sets it; older/hand-built siblings fall back to qtyPerCarton.
+  qtyPerCartonRaw?: string;
   cartonEan: string;
   ean13: string;
 };
