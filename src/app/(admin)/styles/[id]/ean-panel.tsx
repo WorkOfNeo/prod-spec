@@ -104,6 +104,12 @@ export function EanPanel({
 
   const meta = eanStatusMeta(view.status);
   const hasEans = view.sizeEans.length > 0;
+  // The one carton every VISIBLE size shares, if they do — the client-side twin
+  // of unambiguousCartonEan (hidden rows don't print, so they don't count).
+  const cartonValues = new Set(
+    view.sizeEans.filter((s) => !s.excluded).map((s) => (s.cartonEan ?? "").trim()).filter(Boolean),
+  );
+  const soleCarton = cartonValues.size === 1 ? [...cartonValues][0] : null;
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-4">
@@ -309,11 +315,20 @@ export function EanPanel({
               assort / master carton{" "}
               <span className="font-medium text-zinc-800">{view.cartonEan}</span>
             </div>
+          ) : soleCarton ? (
+            // Every size carries the SAME carton — that one value IS the
+            // style's carton, so a non-repeating layout prints it. Mirrors
+            // unambiguousCartonEan on the server; don't let the two drift.
+            <div className="mt-2 text-xs tabular-nums text-zinc-500">
+              style carton <span className="font-medium text-zinc-800">{soleCarton}</span>{" "}
+              <span className="text-zinc-400">— every size shares this one</span>
+            </div>
           ) : (
             <div className="mt-2 text-xs text-zinc-400">
-              No assort / master carton — the barcode column carries no “Assort - …” line. Layouts
-              that print one carton per style ({"{{cartonEan}}"} without a per-carton repeat) have
-              nothing to show; use a per-carton repeat to print the per-size cartons above.
+              No single style carton — the sizes carry different cartons and there’s no “Assort - …”
+              line. Layouts that print one carton per style ({"{{cartonEan}}"} without a per-carton
+              repeat) have nothing to show; use a per-carton repeat to print the per-size cartons
+              above.
             </div>
           )}
           <p className="mt-2 text-xs text-zinc-400">

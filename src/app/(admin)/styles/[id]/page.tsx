@@ -7,6 +7,7 @@ import {
   resolveMappedField,
   STYLE_FIELD_LABELS,
   effectiveStyleItem,
+  unambiguousCartonEan,
   type ResolvedSpecField,
 } from "@/lib/styles/resolved-fields";
 import type { MondayItem } from "@/lib/monday/client";
@@ -611,7 +612,19 @@ export default async function StyleDetail({
     { label: "Monday board id", value: style.mondayBoardId },
     { label: "Group", value: style.groupTitle },
     { label: "PO number", value: style.poNumber },
-    { label: "Carton EAN", value: style.cartonEan },
+    {
+      label: "Carton EAN",
+      // The style-level carton: the assort line, or the per-size cartons when
+      // they agree on one value. When they differ there IS no style-level
+      // carton — say how many the style carries instead of "—", which reads as
+      // "no cartons resolved" when they're listed in the panel further down.
+      value:
+        style.cartonEan ||
+        unambiguousCartonEan(style.eans) ||
+        (style.eans.some((e) => (e.cartonEan ?? "").trim())
+          ? `${style.eans.filter((e) => (e.cartonEan ?? "").trim()).length} per size — no single carton`
+          : null),
+    },
     {
       label: "SharePoint folder",
       value: style.styleFolderUrl ? "Open ↗" : null,
@@ -1205,12 +1218,15 @@ function DetailsTab({
                       f.value ? "text-zinc-800" : isMissing ? "text-amber-700" : "text-zinc-300"
                     }`}
                   >
-                    {f.field === "ean13" && f.value.includes("=") ? (
+                    {(f.field === "ean13" || f.field === "cartonEan") &&
+                    f.value.includes("=") ? (
                       // Per-size EAN map ("S=570…,M=570…") — one line per
                       // size instead of an unreadable comma run. Duplicate
                       // sizes (multi-colourway POs) keep their own lines,
                       // with the colourway named when the resolved PO rows
-                      // know it.
+                      // know it. Carton EAN takes the same shape when the
+                      // style has per-size cartons but no single style-level
+                      // one (resolveStyleSpecFields).
                       <div className="space-y-0.5 font-mono text-xs">
                         {f.value.split(",").map((pair, j) => {
                           const [size, ean] = pair.split("=");

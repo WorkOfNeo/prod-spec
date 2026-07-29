@@ -59,6 +59,44 @@ export function formatEanMap(
     .join(",");
 }
 
+// The style's carton EAN when the per-size rows agree on ONE value.
+//
+// Style.cartonEan is set only from a real "Assort - <EAN>" line, so a style
+// whose buyer typed per-size cartons has it NULL — and every style-level
+// surface (the Carton EAN field, readiness, {{cartonEan}} on a non-repeating
+// layout) then reads "missing" even though the carton is sitting right there
+// on the EAN rows.
+//
+// When every per-size carton is the SAME value, there is no ambiguity: that
+// one carton IS the style's carton, and printing it whole-style is exactly
+// right. When they DIFFER there is no single style carton to speak of — an
+// arbitrary size's value would print on every carton label — so this returns
+// null and the style-level surfaces keep saying so (the per-size cartons are
+// still what a per-carton repeat prints, and what the EAN panel lists).
+export function unambiguousCartonEan(
+  eans: ReadonlyArray<{ cartonEan?: string | null }> | null | undefined,
+): string | null {
+  if (!eans) return null;
+  const distinct = new Set(
+    eans.map((e) => (e.cartonEan ?? "").trim()).filter((v) => v !== ""),
+  );
+  return distinct.size === 1 ? [...distinct][0] : null;
+}
+
+// Per-size carton EANs as the same "size=ean,size=ean" map string formatEanMap
+// produces, for DISPLAY only (resolveStyleSpecFields). Never injected into the
+// render item: {{cartonEan}} takes one carton, not a map — which is the whole
+// reason unambiguousCartonEan above refuses to pick one when they differ.
+export function formatCartonMap(
+  eans: ReadonlyArray<{ size: string; cartonEan?: string | null }> | null | undefined,
+): string {
+  if (!eans) return "";
+  return eans
+    .filter((e) => e.size.trim() && e.cartonEan?.trim())
+    .map((e) => `${e.size.trim()}=${e.cartonEan!.trim()}`)
+    .join(",");
+}
+
 // Build the MondayItem a style resolves against, injecting the fallback
 // sources above under each field's manual.* id (the universal fallback that
 // resolveMappedField / the PDF mapper already consult). Mapping-based reads
@@ -72,7 +110,7 @@ export function effectiveStyleItem(style: {
   poNumber?: string | null;
   supplier?: { country?: string | null } | null;
   // Resolved PO barcodes (style_eans, ordered by position) + carton EAN.
-  eans?: ReadonlyArray<{ size: string; ean13: string | null }> | null;
+  eans?: ReadonlyArray<{ size: string; ean13: string | null; cartonEan?: string | null }> | null;
   cartonEan?: string | null;
 }): MondayItem | null {
   const item = style.rawData as MondayItem | null;
@@ -81,7 +119,11 @@ export function effectiveStyleItem(style: {
     ["poNumber", style.poNumber],
     ["countryOfOrigin", style.supplier?.country],
     ["ean13", formatEanMap(style.eans)],
-    ["cartonEan", style.cartonEan],
+    // Assort line first; failing that, the per-size cartons when they agree on
+    // one value (see unambiguousCartonEan). NOT a per-size fallback in general
+    // — a style whose sizes carry DIFFERENT cartons has no style-level carton,
+    // and inventing one here would print it on every carton label.
+    ["cartonEan", style.cartonEan || unambiguousCartonEan(style.eans)],
     // The master/assortment carton is the same resolved value, surfaced under
     // its own field so {{assortEan}} survives per-EAN repeat narrowing (where
     // {{cartonEan}} is rebound to each size's own carton).
@@ -161,7 +203,11 @@ export function resolveStyleSpecFields(style: {
   customer: { config: unknown };
   poNumber?: string | null;
   supplier?: { country?: string | null } | null;
-  eans?: ReadonlyArray<{ size: string; ean13: string | null }> | null;
+  eans?: ReadonlyArray<{
+    size: string;
+    ean13: string | null;
+    cartonEan?: string | null;
+  }> | null;
   cartonEan?: string | null;
 }): ResolvedSpecField[] {
   const original = style.rawData as MondayItem | null;
@@ -169,11 +215,23 @@ export function resolveStyleSpecFields(style: {
   const mapping = parseCustomerConfig(style.customer.config).columnMapping;
   const sources = FALLBACK_SOURCE as Partial<Record<keyof ColumnMapping, string>>;
   return FIELD_ORDER.map((field) => {
-    const value = resolveMappedField(item, mapping, field);
+    let value = resolveMappedField(item, mapping, field);
     // Fallback is in use when the un-injected item resolved empty but the
     // effective (injected) one has a value.
     const fromMapped = resolveMappedField(original, mapping, field);
-    const fallback = !fromMapped && value ? sources[field] : undefined;
+    let fallback = !fromMapped && value ? sources[field] : undefined;
+    // Carton EAN with nothing at style level: the style may still carry a
+    // carton PER SIZE (the buyer's "Carton Barcode number 1" list, no "Assort"
+    // line). Showing "missing" there is simply wrong — the cartons exist, they
+    // just aren't ONE value. Display the map; the UI renders it a line per
+    // size, same as the per-size EANs directly above it.
+    if (field === "cartonEan" && !value) {
+      const perSize = formatCartonMap(style.eans);
+      if (perSize) {
+        value = perSize;
+        fallback = "per-size cartons";
+      }
+    }
     return { field, label: STYLE_FIELD_LABELS[field], value, fallback };
   });
 }

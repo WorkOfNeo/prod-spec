@@ -58,7 +58,16 @@ export type ReadinessStyle = {
   // per-row cartonEan is REQUIRED on the row shape (not optional) so a
   // caller whose select forgets it fails tsc instead of silently gating
   // carton outputs on the style-level field alone (see hasPerSizeCarton).
-  eans?: ReadonlyArray<{ size: string; ean13: string | null; cartonEan: string | null }> | null;
+  // `excluded` mirrors the render path: buildStyleData drops operator-hidden
+  // rows before it derives carton.perSize / the style-level carton, so
+  // readiness must judge the same visible set or the two disagree on a style
+  // whose hidden row is the only one carrying a different carton.
+  eans?: ReadonlyArray<{
+    size: string;
+    ean13: string | null;
+    cartonEan: string | null;
+    excluded?: boolean;
+  }> | null;
   cartonEan?: string | null;
   customer: { config: unknown };
   prodSpec: { outputs: unknown; columnMapping: unknown } | null;
@@ -110,7 +119,10 @@ export function outputReadinessForStyle(
   if (enabledOutputs.length === 0) return [];
 
   const mapping = effectiveMapping(style);
-  const item = effectiveStyleItem(style) as MondayItem | null;
+  // Hidden rows dropped before resolution, same as the render path — see
+  // `visibleEans` below, which this shares.
+  const visibleEans = (style.eans ?? []).filter((e) => !e.excluded);
+  const item = effectiveStyleItem({ ...style, eans: visibleEans }) as MondayItem | null;
   const resolve = (f: keyof ColumnMapping) => resolveMappedField(item, mapping, f);
   const hasRules = rules != null && Object.keys(rules).length > 0;
 
@@ -131,10 +143,17 @@ export function outputReadinessForStyle(
   // carton marking. Fix by giving the style an "Assort - <EAN>" line, or by
   // switching the layout to a per-carton repeat.
   //
-  // Deliberately NOT injected through effectiveStyleItem: that item feeds the
-  // render too, and a style-level stand-in would leak into {{cartonEan}} on
-  // non-split rows.
-  const hasPerSizeCarton = (style.eans ?? []).some((e) => (e.cartonEan ?? "").trim() !== "");
+  // ONE exception, and it's handled upstream rather than here: when every
+  // per-size carton is the SAME value, effectiveStyleItem injects it as the
+  // style-level cartonEan (unambiguousCartonEan), so `resolve("cartonEan")`
+  // below is already non-empty and a non-repeating layout prints that carton —
+  // correctly, because there's only one. Ambiguous styles inject nothing, so
+  // the per-row rule is still the only thing that can satisfy them.
+  //
+  // Hidden rows are dropped first (`visibleEans`, built above): buildStyleData
+  // filters `excluded` before it derives carton.perSize, so counting them here
+  // would let readiness pass on a carton the render will never emit.
+  const hasPerSizeCarton = visibleEans.some((e) => (e.cartonEan ?? "").trim() !== "");
 
   return enabledOutputs.map((output) => {
     const variant = getVariant(output.variantKey);

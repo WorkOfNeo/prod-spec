@@ -116,3 +116,56 @@ test("style-level carton (assort line) still satisfies on its own", () => {
   const r = cartonReadiness(styleWith({ cartonEan: "5701234567890", eans: [] }));
   assert.equal(r.ready, true);
 });
+
+// ---------------------------------------------------------------------------
+// The unambiguous case: every size shares ONE carton, so there's no arbitrary
+// pick to make — effectiveStyleItem injects it and even a style-level output
+// resolves it. This is the ONLY way per-size cartons satisfy a non-repeating
+// layout; the differing case above must stay blocked.
+// ---------------------------------------------------------------------------
+
+const ONE_SHARED_CARTON: Partial<ReadinessStyle> = {
+  cartonEan: null,
+  eans: [
+    { size: "M/L", ean13: "7070001349999", cartonEan: "7070001353354" },
+    { size: "XL/XXL", ean13: "7070001350001", cartonEan: "7070001353354" },
+  ],
+};
+
+test("one carton shared by every size satisfies a STYLE-LEVEL output", () => {
+  const r = cartonReadiness(styleWith(ONE_SHARED_CARTON));
+  assert.equal(r.ready, true);
+  assert.ok(!r.missing.some((m) => m.field === "cartonEan"));
+});
+
+test("one carton shared by every size also satisfies a per-row output", () => {
+  const r = cartonReadiness(styleWith(ONE_SHARED_CARTON, PER_ROW_VARIANT), PER_ROW_VARIANT);
+  assert.equal(r.ready, true);
+});
+
+// Hidden rows never print, so they can't decide the style's carton either.
+// Readiness has to judge the same visible set buildStyleData renders from.
+test("an excluded row's differing carton doesn't spoil the shared value", () => {
+  const r = cartonReadiness(
+    styleWith({
+      cartonEan: null,
+      eans: [
+        { size: "M/L", ean13: "7070001349999", cartonEan: "7070001353354" },
+        { size: "XL/XXL", ean13: "7070001350001", cartonEan: "7070001353354" },
+        { size: "3XL", ean13: "7070001350018", cartonEan: "5706323374662", excluded: true },
+      ],
+    }),
+  );
+  assert.equal(r.ready, true);
+});
+
+test("an excluded row's carton can't satisfy the gate on its own", () => {
+  const r = cartonReadiness(
+    styleWith({
+      cartonEan: null,
+      eans: [{ size: "M/L", ean13: "7070001349999", cartonEan: "7070001353354", excluded: true }],
+    }),
+  );
+  assert.equal(r.ready, false);
+  assert.ok(r.missing.some((m) => m.field === "cartonEan"));
+});
