@@ -11,6 +11,7 @@ import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-
 import { tokenMeta, parseSiblingTokenKey, type BarcodeSource } from "./token-meta";
 import { formatCompositionLines } from "./composition";
 import { pickCartonQtyVariant } from "./carton-qty";
+import { pickSizeItems } from "./size-scoped-text";
 import {
   calcsInLine,
   evaluateCalc,
@@ -62,7 +63,23 @@ const RESOLVERS: Record<string, TextResolver> = {
   customerName: (s) => s.customerName,
   // Same fallback chain the Netto carton template uses: Description
   // column → EN product name → style name.
-  description: (s) => s.description || tFor(s.productNameTranslations, "en") || s.styleName,
+  // Bare {{description}} is untouched. The optional ":size" argument narrows
+  // an UNLABELLED per-size list ("Kalsonger Svart S 5-pack, … XL 5-pack") to
+  // the repetition row's own size — the shape repetitionStyles' anchor-based
+  // narrowing can't see (no "SIZE:" separators). Opt-in per block so no
+  // published layout changes; see pickSizeItems for the matching rules.
+  //
+  // Composes with the anchor narrowing already applied to s.description: if
+  // that fired, the value is a single entry and this pass is a no-op. Outside
+  // a repetition (or on an assortment row) s.sizes IS the whole run, so every
+  // item matches and the full list prints, exactly as bare {{description}}.
+  description: (s, arg) => {
+    const base = s.description || tFor(s.productNameTranslations, "en") || s.styleName;
+    if (arg !== "size") return base;
+    const rowLabels = s.sizes.map((x) => x.label).filter(Boolean);
+    const allLabels = (s.allSizes ?? s.sizes).map((x) => x.label).filter(Boolean);
+    return pickSizeItems(base, allLabels, rowLabels) ?? base;
+  },
   // Every selected style's description, comma-joined — the base style
   // first, then each picked sibling in slot order (the {{style2Description}}…
   // slot family collapsed into one list so a template needn't hard-code the

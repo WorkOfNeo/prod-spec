@@ -135,10 +135,15 @@ export async function resolveTicketLayout(
 }
 
 // The `usage` line for one token in the catalogue handed to the model.
-function tokenUsage(key: string, arg: "lang" | "source" | "gap" | "cartonKind" | undefined): string {
+function tokenUsage(
+  key: string,
+  arg: "lang" | "source" | "gap" | "cartonKind" | "sizeScope" | undefined,
+): string {
   if (arg === "lang") return `{{${key}:<lang>}}`;
   if (arg === "gap") return `{{${key}}} (optional mm gap, e.g. {{${key}:0}})`;
   if (arg === "cartonKind") return `{{${key}}} (optional :solid / :assort for a "Solid - 5 / Assort - 8" value)`;
+  if (arg === "sizeScope")
+    return `{{${key}}} (optional :size — on a per-size repeat, prints only this size's entry of a comma-separated per-size list)`;
   if (arg === "source") {
     const sources =
       key === "barcode" ? BARCODE_SOURCES : key === "logo" ? LOGO_SOURCES : key === "cert" ? CERT_SOURCES : [];

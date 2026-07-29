@@ -7,6 +7,9 @@
 // =====================================================
 import { CARTON_QTY_KINDS } from "./carton-qty";
 
+// The single accepted "sizeScope" argument — {{description:size}}.
+export const SIZE_SCOPE_ARG = "size";
+
 export type LayoutTokenKind = "text" | "barcode" | "symbols" | "image";
 
 export type LayoutTokenMeta = {
@@ -19,7 +22,10 @@ export type LayoutTokenMeta = {
   // "gap" → optional numeric mm gap, e.g. {{washSymbols:0}} (0 mm gap);
   // "cartonKind" → optional solid/assort selector on a split carton qty
   //   ({{qtyPerCarton:assort}}); bare still resolves the plain value.
-  arg?: "lang" | "source" | "gap" | "cartonKind";
+  // "sizeScope" → optional ":size" selector that narrows an unlabelled
+  //   per-size list to the repetition row's size ({{description:size}});
+  //   bare still resolves the whole value.
+  arg?: "lang" | "source" | "gap" | "cartonKind" | "sizeScope";
   // Optional SECOND argument (TOKEN_RE group 3, numeric-only).
   // "heightMm" → bar height in mm, e.g. {{barcode:ean13:8}} (8 mm bars).
   arg2?: "heightMm";
@@ -39,7 +45,14 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     example: "IL97261",
   },
   { key: "customerName", label: "Customer name", group: "Style", kind: "text", example: "Netto A/S" },
-  { key: "description", label: "Description", group: "Style", kind: "text", example: "T-Shirt Paw Patrol – Blue" },
+  {
+    key: "description",
+    label: "Description (:size picks this size's entry from a per-size list)",
+    group: "Style",
+    kind: "text",
+    arg: "sizeScope",
+    example: "T-Shirt Paw Patrol – Blue · {{description:size}}",
+  },
   {
     key: "multipleStylesDescriptions",
     label: "All selected styles' descriptions, comma-joined (multi-style; falls back to the single Description)",
@@ -363,6 +376,11 @@ export function validateTokenRef(key: string, arg?: string, arg2?: string): stri
     errs.push(
       `{{${key}:${arg}}} — carton qty selector must be ${CARTON_QTY_KINDS.map((k) => `{{${key}:${k}}}`).join(" or ")}`,
     );
+  }
+  // "sizeScope" arg is optional (bare resolves the whole value); the only
+  // accepted selector is ":size".
+  if (meta.arg === "sizeScope" && arg !== undefined && arg !== SIZE_SCOPE_ARG) {
+    errs.push(`{{${key}:${arg}}} — the only size selector is {{${key}:${SIZE_SCOPE_ARG}}}`);
   }
   if (!meta.arg && arg) {
     errs.push(`{{${key}}} does not take an argument (got ":${arg}")`);

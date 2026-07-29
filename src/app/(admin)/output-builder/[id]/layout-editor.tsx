@@ -31,6 +31,7 @@ import {
   tokenMeta,
   SIBLING_FIELDS,
   MAX_SIBLING_SLOTS,
+  SIZE_SCOPE_ARG,
 } from "@/lib/output-layouts/token-meta";
 import { validateCalcExpression } from "@/lib/output-layouts/calc";
 import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
@@ -2704,9 +2705,15 @@ export function LayoutEditor({
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">{group}</div>
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   {LAYOUT_TOKENS.filter((t) => t.group === group).flatMap((t) => {
-                    // A split carton qty offers bare + :solid + :assort chips;
-                    // every other token is a single bare chip.
-                    const args = t.arg === "cartonKind" ? ["", ...CARTON_QTY_KINDS] : [""];
+                    // A split carton qty offers bare + :solid + :assort chips,
+                    // a size-scoped field bare + :size; every other token is a
+                    // single bare chip.
+                    const args =
+                      t.arg === "cartonKind"
+                        ? ["", ...CARTON_QTY_KINDS]
+                        : t.arg === "sizeScope"
+                          ? ["", SIZE_SCOPE_ARG]
+                          : [""];
                     return args.map((a) => {
                       const key = a ? `${t.key}:${a}` : t.key;
                       return (
