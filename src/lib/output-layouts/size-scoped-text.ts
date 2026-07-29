@@ -91,3 +91,96 @@ export function narrowSizeScopedText(
   }
   return picked.length > 0 ? picked.join(", ") : text;
 }
+
+// =====================================================
+// Strategy 2 — UNLABELLED per-size item lists.
+//
+// The narrowing above needs an explicit "<size><sep>" anchor. Buyers also
+// fill a description column as a plain comma-separated list where the size
+// is a WORD INSIDE each item, with no separator at all:
+//
+//   "Kalsonger Svart S 5-pack, Kalsonger Svart M 5-pack, … Kalsonger Svart
+//    XL\n5-pack, Kalsonger Svart XXL\n5-pack"
+//
+// findAnchors sees no anchors there and hands the whole list back, so every
+// repetition row printed all five entries. pickSizeItems is the opt-in
+// second pass behind {{description:size}}.
+//
+// Deliberately NOT automatic: unlike an anchored list, "a comma list whose
+// items happen to contain size words" is a guess, and applying it to every
+// repeating layout would change what already-published layouts print. The
+// token argument makes it a per-block decision.
+//
+// Matching rules:
+//   • split on commas only (newlines inside an item are wrap artefacts —
+//     Monday wraps long values, e.g. "XL\n5-pack" — so they're normalised
+//     to a space, never treated as item boundaries);
+//   • an item belongs to a size when that size appears as a WHOLE WORD;
+//     longest label first, so "XXL" claims its item before "XL" or "L" can;
+//   • the size word STAYS in the printed text — it's the buyer's own copy
+//     for that size, reproduced verbatim.
+//
+// Same fallback contract as above: anything ambiguous prints the raw value
+// rather than blanking or guessing.
+//   • fewer than 2 items → not a list, print as-is
+//   • no item matches the row's size(s) → print as-is
+// Positional mapping (item N ⇒ size N) is deliberately NOT attempted, the
+// same product decision the barcode parser makes: a list without labels is
+// never guessed at.
+// =====================================================
+
+// Whole-word test for a size label inside an item. The label may contain
+// regex metacharacters ("4-5 ÅR", "86/92"), so it's escaped; \b is unreliable
+// against "/" and non-ASCII, so boundaries are asserted as "not a letter or
+// digit" on either side. Space-insensitive to match sizeKey's semantics.
+function itemHasSizeWord(item: string, label: string): boolean {
+  const collapsed = item.replace(/\s+/g, " ");
+  const esc = label.replace(/\s+/g, " ").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Allow the label's internal spaces to match any run of whitespace.
+  const pattern = esc.replace(/ /g, "\\s+");
+  return new RegExp(`(?<![\\p{L}\\p{N}])${pattern}(?![\\p{L}\\p{N}])`, "iu").test(collapsed);
+}
+
+// Narrow an unlabelled comma-separated per-size list to the row's size(s).
+// `allSizeLabels` is the style's full size run (the label vocabulary);
+// `rowSizeLabels` the size(s) this repetition row covers. Multiple matches
+// (an assortment row covering the whole run) join with ", " — so a
+// non-repeating layout keeps printing the full list.
+export function pickSizeItems(
+  raw: string | undefined,
+  allSizeLabels: readonly string[],
+  rowSizeLabels: readonly string[],
+): string | undefined {
+  if (raw === undefined) return undefined;
+  if (!raw.trim() || rowSizeLabels.length === 0) return raw;
+
+  const items = raw
+    .split(",")
+    .map((s) => s.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  if (items.length < 2) return raw;
+
+  // Longest label first so "XXL" wins its item before "XL" / "L" is tried.
+  const byLength = [...new Set(allSizeLabels.filter((l) => l.trim()))].sort(
+    (a, b) => b.length - a.length,
+  );
+  const claimed = new Map<string, string>(); // item → the size that owns it
+  for (const item of items) {
+    const hit = byLength.find((label) => itemHasSizeWord(item, label));
+    if (hit) claimed.set(item, hit);
+  }
+  if (claimed.size === 0) return raw;
+
+  const wantedKeys = new Set(rowSizeLabels.map((l) => l.replace(/\s+/g, "").toUpperCase()));
+  const picked = items.filter((item) => {
+    const owner = claimed.get(item);
+    return owner !== undefined && wantedKeys.has(owner.replace(/\s+/g, "").toUpperCase());
+  });
+  // Nothing matched, or EVERY item matched (no repetition / an assortment row
+  // covering the whole run) ⇒ nothing was narrowed. Hand back the raw value
+  // byte-for-byte rather than a re-joined copy, so {{description:size}} outside
+  // a repetition is indistinguishable from bare {{description}} — including any
+  // wrap newlines the buyer's text carries.
+  if (picked.length === 0 || picked.length === items.length) return raw;
+  return picked.join(", ");
+}
