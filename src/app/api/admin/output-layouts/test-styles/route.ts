@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-server";
-import { LayoutDefSchema } from "@/lib/output-layouts/schema";
+import { LayoutDefSchema, hasPerRowCartonEan, layoutSettings } from "@/lib/output-layouts/schema";
 import { layoutReadinessColumns } from "@/lib/output-layouts/tokens";
 import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
 import { parseProdSpecColumnMapping } from "@/lib/prod-spec/config";
@@ -82,7 +82,13 @@ export async function POST(req: NextRequest) {
         rawData: true,
         cartonEan: true,
         supplier: { select: { country: true } },
-        eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, variantLabel: true } },
+        // cartonEan is REQUIRED here, not incidental: without it the picker
+        // can't see a style's per-size cartons and labels a per-carton-repeat
+        // layout's perfectly renderable styles "missing Carton EAN".
+        eans: {
+          orderBy: { position: "asc" },
+          select: { size: true, ean13: true, variantLabel: true, cartonEan: true },
+        },
         customer: { select: { config: true } },
       },
     }),
@@ -91,6 +97,10 @@ export async function POST(req: NextRequest) {
       select: { columnMapping: true },
     }),
   ]);
+
+  // Does this layout bind a carton per repetition row? Decides whether a
+  // style's per-size cartons count toward the cartonEan requirement below.
+  const perRowCarton = hasPerRowCartonEan(layoutSettings(definition));
 
   const ranked = styles
     .map((style) => {
@@ -106,7 +116,17 @@ export async function POST(req: NextRequest) {
       const resolve = (f: keyof ColumnMapping) => resolveMappedField(item, mapping, f);
 
       const required = layoutReadinessColumns(definition, resolve);
-      const missing = required.filter((f) => !resolve(f).trim());
+      // Mirrors output-readiness: on a layout that rebinds {{cartonEan}} per
+      // repetition row, the style's per-size cartons satisfy the requirement
+      // even when Style.cartonEan is NULL (normal for a style whose carton
+      // column carries no "Assort - <EAN>" line). Without this the picker
+      // disagreed with the Run gate — it ranked such styles last and labelled
+      // them "missing Carton EAN" while the layout renders them fine.
+      const hasPerSizeCarton =
+        perRowCarton && style.eans.some((e) => (e.cartonEan ?? "").trim() !== "");
+      const missing = required.filter(
+        (f) => !resolve(f).trim() && !(f === "cartonEan" && hasPerSizeCarton),
+      );
       return {
         id: style.id,
         name: style.name,

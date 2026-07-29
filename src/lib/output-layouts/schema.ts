@@ -314,6 +314,18 @@ export const LayoutDefSchema = z.object({
 });
 export type LayoutDef = z.infer<typeof LayoutDefSchema>;
 
+// Does this layout bind a PER-ROW carton EAN? True for the repeats that
+// rebind {{cartonEan}} per repetition row (repetitionStyles in ./render.ts);
+// "none" / "size" / "assort" print the single style-level Style.cartonEan.
+//
+// The single source of truth for that distinction — TemplateVariant
+// .perRowCartonEan (readiness) and the Output Builder's test-style picker
+// both read it, so the picker can't label a style "missing Carton EAN" that
+// readiness considers ready and the renderer prints fine.
+export function hasPerRowCartonEan(settings: LayoutSettings): boolean {
+  return settings.repeatBy === "ean" || settings.repeatBy === "cartonEan";
+}
+
 export function layoutSettings(def: LayoutDef): LayoutSettings {
   return (
     def.settings ?? {
