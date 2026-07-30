@@ -96,48 +96,6 @@ export default async function WashSymbolsPage() {
         </div>
       </div>
 
-      {(coverage.unmappedLabels.length > 0 || coverage.missingArtwork.length > 0) && (
-        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {coverage.unmappedLabels.length > 0 && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-              <div className="text-sm font-semibold text-amber-900">
-                {coverage.unmappedLabels.length} of {coverage.optionCount} Monday wash-care options
-                don&rsquo;t resolve to a symbol
-              </div>
-              <p className="mt-1 text-xs text-amber-800">
-                A style carrying one of these prints a dashed placeholder tile AND skips
-                care-line suppression (the token carries no action — &ldquo;Do not iron&rdquo;
-                wouldn&rsquo;t drop ironing lines). Map each label via a symbol&rsquo;s{" "}
-                <code className="font-mono">mondayValue</code>, or create the missing symbol.
-              </p>
-              <ul className="mt-2 max-h-48 space-y-0.5 overflow-y-auto text-xs text-amber-900">
-                {coverage.unmappedLabels.map((label) => (
-                  <li key={label} className="truncate" title={label}>
-                    · {label}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {coverage.missingArtwork.length > 0 && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-              <div className="text-sm font-semibold text-amber-900">
-                {coverage.missingArtwork.length} active symbols have no artwork yet
-              </div>
-              <p className="mt-1 text-xs text-amber-800">
-                They render as dashed name tiles on every output that uses them — fine for
-                review, blocked at approval. Upload the SVG on each symbol below.
-              </p>
-              <ul className="mt-2 max-h-48 space-y-0.5 overflow-y-auto font-mono text-xs text-amber-900">
-                {coverage.missingArtwork.map((code) => (
-                  <li key={code}>· {code}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-
       <WashSymbolList
         initialSymbols={symbols.map((s) => ({
           id: s.id,
@@ -151,6 +109,9 @@ export default async function WashSymbolsPage() {
           translations: (s.translations as Record<string, string>) ?? {},
         }))}
         knownLanguages={knownLanguages}
+        unmappedLabels={coverage.unmappedLabels}
+        optionCount={coverage.optionCount}
+        missingArtwork={coverage.missingArtwork}
       />
     </div>
   );

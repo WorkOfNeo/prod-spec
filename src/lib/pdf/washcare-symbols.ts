@@ -63,23 +63,24 @@ export function rejoinWashTokens(tokens: string[], map: WashcareSymbolMap): stri
   const out: string[] = [];
   let i = 0;
   while (i < tokens.length) {
-    if (getWashcareSymbol(map, tokens[i])) {
-      out.push(tokens[i]);
-      i += 1;
-      continue;
-    }
-    // Try the longest join first so "A, B, C" labels win over "A, B".
-    let merged: { token: string; consumed: number } | null = null;
-    for (let end = tokens.length; end > i + 1; end--) {
+    // Try the longest span first so a more specific compound match (e.g.
+    // "Any Solvent except Trichloroethylene, Delicate") wins over a shorter
+    // prefix that also happens to resolve on its own ("Any Solvent except
+    // Trichloroethylene" alone is a valid symbol too) — checking the bare
+    // token first would lock that in before the longer join is even tried.
+    // Falls back to the bare token (span length 1) when nothing longer
+    // resolves, so already-correct single-token cases are unaffected.
+    let matched: { token: string; consumed: number } | null = null;
+    for (let end = tokens.length; end > i; end--) {
       const candidate = tokens.slice(i, end).join(", ");
       if (getWashcareSymbol(map, candidate)) {
-        merged = { token: candidate, consumed: end - i };
+        matched = { token: candidate, consumed: end - i };
         break;
       }
     }
-    if (merged) {
-      out.push(merged.token);
-      i += merged.consumed;
+    if (matched) {
+      out.push(matched.token);
+      i += matched.consumed;
     } else {
       out.push(tokens[i]);
       i += 1;

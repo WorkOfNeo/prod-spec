@@ -49,18 +49,43 @@ type Symbol = {
 // is what gets shown next to each input.
 type LanguageInfo = { code: string; name: string };
 
+// Turn an unmapped Monday label into a reasonable starting `code` so the
+// operator isn't stuck inventing one from scratch — the field stays fully
+// editable in the dialog for when the auto-slug isn't the name they want.
+function slugifyWashCode(label: string): string {
+  const slug = label
+    .normalize("NFKD")
+    .replace(new RegExp("[\\u0300-\\u036f]", "g"), "") // strip accents (combining diacritical marks)
+    .toLowerCase()
+    // NFKD already decomposed "℃"/"℉" into "°C"/"°F" above, so dropping the
+    // bare degree sign here leaves the unit letter — "40℃" becomes "40c",
+    // which reads fine as part of a code.
+    .replace(/°/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return (slug || "symbol").slice(0, 64);
+}
+
 export function WashSymbolList({
   initialSymbols,
   knownLanguages,
+  unmappedLabels,
+  optionCount,
+  missingArtwork,
 }: {
   initialSymbols: Symbol[];
   knownLanguages: LanguageInfo[];
+  unmappedLabels: string[];
+  optionCount: number;
+  missingArtwork: string[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [editing, setEditing] = useState<Symbol | null>(null);
-  const [creating, setCreating] = useState(false);
+  // false = closed, true = blank "+ New symbol", string = creating from that
+  // unmapped Monday label (dialog opens pre-filled with it).
+  const [creating, setCreating] = useState<boolean | string>(false);
 
   async function seed() {
     setBusy(true);
@@ -114,6 +139,60 @@ export function WashSymbolList({
 
   return (
     <>
+      {(unmappedLabels.length > 0 || missingArtwork.length > 0) && (
+        <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {unmappedLabels.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <div className="text-sm font-semibold text-amber-900">
+                {unmappedLabels.length} of {optionCount} Monday wash-care options don&rsquo;t
+                resolve to a symbol
+              </div>
+              <p className="mt-1 text-xs text-amber-800">
+                A style carrying one of these prints a dashed placeholder tile AND skips
+                care-line suppression (the token carries no action — &ldquo;Do not iron&rdquo;
+                wouldn&rsquo;t drop ironing lines). If this is the same instruction under a
+                renamed Monday label, open the existing symbol&rsquo;s <strong>Edit</strong> below
+                and update its <code className="font-mono">mondayValue</code> instead of creating
+                a duplicate — otherwise, create the missing symbol.
+              </p>
+              <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs text-amber-900">
+                {unmappedLabels.map((label) => (
+                  <li key={label} className="flex items-center justify-between gap-2">
+                    <span className="truncate" title={label}>
+                      · {label}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCreating(label)}
+                      disabled={busy}
+                      className="shrink-0 rounded border border-amber-300 bg-white px-1.5 py-0.5 text-[10px] font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                    >
+                      Create symbol
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {missingArtwork.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <div className="text-sm font-semibold text-amber-900">
+                {missingArtwork.length} active symbols have no artwork yet
+              </div>
+              <p className="mt-1 text-xs text-amber-800">
+                They render as dashed name tiles on every output that uses them — fine for
+                review, blocked at approval. Upload the SVG on each symbol below.
+              </p>
+              <ul className="mt-2 max-h-48 space-y-0.5 overflow-y-auto font-mono text-xs text-amber-900">
+                {missingArtwork.map((code) => (
+                  <li key={code}>· {code}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -166,8 +245,13 @@ export function WashSymbolList({
 
       {creating && (
         <SymbolDialog
-          title="New wash-care symbol"
+          title={typeof creating === "string" ? `New symbol · ${creating}` : "New wash-care symbol"}
           mode="create"
+          prefill={
+            typeof creating === "string"
+              ? { code: slugifyWashCode(creating), name: creating, mondayValue: creating }
+              : undefined
+          }
           knownLanguages={knownLanguages}
           onClose={() => setCreating(false)}
           onSaved={() => {
@@ -246,6 +330,7 @@ function SymbolDialog({
   title,
   mode,
   symbol,
+  prefill,
   knownLanguages,
   onClose,
   onSaved,
@@ -253,14 +338,18 @@ function SymbolDialog({
   title: string;
   mode: "create" | "edit";
   symbol?: Symbol;
+  // Starting values for a fresh "create" dialog opened from an unmapped
+  // Monday label — ignored in "edit" mode, where `symbol` already wins.
+  // Every field stays editable; this only saves re-typing the label.
+  prefill?: { code?: string; name?: string; mondayValue?: string };
   knownLanguages: LanguageInfo[];
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [code, setCode] = useState(symbol?.code ?? "");
-  const [name, setName] = useState(symbol?.name ?? "");
+  const [code, setCode] = useState(symbol?.code ?? prefill?.code ?? "");
+  const [name, setName] = useState(symbol?.name ?? prefill?.name ?? "");
   const [svg, setSvg] = useState(symbol?.svg ?? "");
-  const [mondayValue, setMondayValue] = useState(symbol?.mondayValue ?? "");
+  const [mondayValue, setMondayValue] = useState(symbol?.mondayValue ?? prefill?.mondayValue ?? "");
   const [active, setActive] = useState(symbol?.active ?? true);
   const [action, setAction] = useState<LaunderingAction | "">(symbol?.action ?? "");
   const [restrictive, setRestrictive] = useState(symbol?.restrictive ?? false);
