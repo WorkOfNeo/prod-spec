@@ -203,7 +203,16 @@ const RESOLVERS: Record<string, TextResolver> = {
   batchNo: (s) => s.batchNo ?? "",
   prodNumber: (s) => s.prodNumber ?? "",
   lot: (s) => s.carton.lot ?? "",
-  klNumber: (s) => s.carton.klNumber ?? "",
+  // Bare {{klNumber}} is untouched. The optional ":size" argument narrows an
+  // UNLABELLED per-size list the same way {{description:size}} does — see
+  // pickSizeItems for the matching rules.
+  klNumber: (s, arg) => {
+    const base = s.carton.klNumber ?? "";
+    if (arg !== "size") return base;
+    const rowLabels = s.sizes.map((x) => x.label).filter(Boolean);
+    const allLabels = (s.allSizes ?? s.sizes).map((x) => x.label).filter(Boolean);
+    return pickSizeItems(base, allLabels, rowLabels) ?? base;
+  },
   supplierNumber: (s) => s.carton.supplierNumber ?? "",
 
   // Carton serial — set per carton by the carton-prints endpoint; empty

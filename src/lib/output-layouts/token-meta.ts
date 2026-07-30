@@ -140,7 +140,14 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   { key: "batchNo", label: "Batch no", group: "Order & carton", kind: "text", example: "48835447" },
   { key: "prodNumber", label: "Prod number", group: "Order & carton", kind: "text", example: "GI10024" },
   { key: "lot", label: "Lot", group: "Order & carton", kind: "text", example: "LOT-22" },
-  { key: "klNumber", label: "KL number", group: "Order & carton", kind: "text", example: "KL 1042" },
+  {
+    key: "klNumber",
+    label: "KL number (:size picks this size's entry from a per-size list)",
+    group: "Order & carton",
+    kind: "text",
+    arg: "sizeScope",
+    example: "KL 1042 · {{klNumber:size}}",
+  },
   { key: "supplierNumber", label: "Supplier number", group: "Order & carton", kind: "text", example: "60112" },
   {
     key: "deliveryTerm",
