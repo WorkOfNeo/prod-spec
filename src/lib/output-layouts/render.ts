@@ -278,6 +278,26 @@ type RenderCtx = {
   customLogoWidthPct: number;
 };
 
+// Does this page set print a certification mark that one of the rendered
+// styles actually DECLARES? {{cert:x}} is gated on the style's Monday
+// "Certificates" column, so a style declaring none needs no library at all
+// — and skipping the load keeps the conditional-certificate-page case (which
+// is by definition a style WITHOUT the cert) free of a DB round-trip.
+function printsDeclaredCert(pages: LayoutPage[], styles: StyleData[]): boolean {
+  for (const page of pages) {
+    for (const block of page.blocks) {
+      for (const line of block.lines) {
+        for (const m of line.matchAll(new RegExp(TOKEN_RE.source, "g"))) {
+          const source = m[2];
+          if (m[1] !== "cert" || !source) continue;
+          if (styles.some((s) => certDeclaredBy(s.certificates, source))) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 function defUsesToken(pages: LayoutPage[], key: string): boolean {
   for (const page of pages) {
     for (const block of page.blocks) {
@@ -768,7 +788,16 @@ function blockTypography(block: LayoutBlock, fontScale: number): string {
   );
 }
 
-function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx: RenderCtx): string {
+// A rendered block plus whether it actually put anything on the sheet for
+// this style — the input to the page's "omit when empty" decision. `hasInk`
+// is false for a block whose every line resolved to nothing (renderLine
+// dropped it) and for authored blank lines, which render as whitespace.
+// Chrome the block carries regardless of content — its border, the page
+// frame, sewing/fold guides — deliberately does NOT count: a bordered but
+// empty cert box is still an empty page.
+type RenderedBlock = { html: string; hasInk: boolean };
+
+function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx: RenderCtx): RenderedBlock {
   const { cols: gridCols, rows: gridRows } = pageGrid(page);
   const marg = page.margins ?? { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 };
   // Physical content width of this block (page is already the FINAL print
@@ -786,11 +815,11 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
     : 0;
   const blockWidthMm = Math.max(0, outerW - borderPad);
 
-  const lines = block.lines
+  const rendered = block.lines
     .map((line) => renderLine(applyConditionalsForStyle(line, style), style, ctx, blockWidthMm))
-    .filter((l): l is string => l !== null)
-    .map((l) => `<div class="ol-line">${l || "&nbsp;"}</div>`)
-    .join("");
+    .filter((l): l is string => l !== null);
+  const hasInk = rendered.some((l) => l.trim() !== "");
+  const lines = rendered.map((l) => `<div class="ol-line">${l || "&nbsp;"}</div>`).join("");
 
   if (block.rect) {
     const r = block.rect;
@@ -809,7 +838,10 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
       `text-align: ${block.align ?? "left"}; ` +
       blockBorder(block, ctx.fontScale) +
       blockTypography(block, ctx.fontScale);
-    return `<div class="ol-block ol-rect${block.invert ? " ol-binvert" : ""}${block.fitWidth ? " ol-fit" : ""}${block.fitHeight ? " ol-fith" : ""}" style="${styleAttr}">${lines}</div>`;
+    return {
+      html: `<div class="ol-block ol-rect${block.invert ? " ol-binvert" : ""}${block.fitWidth ? " ol-fit" : ""}${block.fitHeight ? " ol-fith" : ""}" style="${styleAttr}">${lines}</div>`,
+      hasInk,
+    };
   }
 
   const anchor = block.anchor ?? "top-left";
@@ -820,7 +852,10 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
     blockBorder(block, ctx.fontScale) +
     blockTypography(block, ctx.fontScale) +
     ANCHOR_CSS[anchor];
-  return `<div class="ol-block ol-${anchor}${block.invert ? " ol-binvert" : ""}${block.fitWidth ? " ol-fit" : ""}${block.fitHeight ? " ol-fith" : ""}" style="${styleAttr}">${lines}</div>`;
+  return {
+    html: `<div class="ol-block ol-${anchor}${block.invert ? " ol-binvert" : ""}${block.fitWidth ? " ol-fit" : ""}${block.fitHeight ? " ol-fith" : ""}" style="${styleAttr}">${lines}</div>`,
+    hasInk,
+  };
 }
 
 type PreparedLayoutRender = {
@@ -910,7 +945,7 @@ async function prepareLayoutRender(
     defUsesToken(pages, "washSymbols") ? loadWashcareSymbols() : Promise.resolve(null),
     usesLogo ? getContrastLogoDataUrl() : Promise.resolve(null),
     usesLogo ? getContrastAddressLogoDataUrl() : Promise.resolve(null),
-    defUsesToken(pages, "cert") ? loadCertificates() : Promise.resolve(null),
+    printsDeclaredCert(pages, repStyles) ? loadCertificates() : Promise.resolve(null),
   ]);
   // The custom logo is per layout — supplied by the caller, not loaded here.
   const customLogo = opts.customLogo ?? null;
@@ -1036,6 +1071,10 @@ function renderPageBorder(page: LayoutPage): string {
 // Each unit becomes one physical page with its own @page rule, so one
 // document can carry differently-sized pages AND many numbered carton
 // copies — Chromium renders the whole thing in a single pass.
+//
+// Blocks are rendered BEFORE the page list is fixed, because a page marked
+// `omitWhenEmpty` only survives if it printed something for THIS style —
+// see keptUnits.
 function emitLayoutDocument(
   prep: PreparedLayoutRender,
   emitted: Array<{ page: LayoutPage; repStyle: StyleData }>,
@@ -1043,7 +1082,34 @@ function emitLayoutDocument(
 ): string {
   const { ctx } = prep;
 
-  const pageCss = emitted
+  const rendered = emitted.map(({ page, repStyle }) => {
+    const blocks = page.blocks.map((b) => renderBlock(b, page, repStyle, ctx));
+    return {
+      page,
+      html: blocks.map((b) => b.html).join(""),
+      hasInk: blocks.some((b) => b.hasInk),
+    };
+  });
+
+  // Conditional pages: a page that opted into `omitWhenEmpty` and resolved
+  // to nothing for this repetition row leaves the document entirely — the
+  // certificate-page case (a page whose only content is {{cert:oekotex}}
+  // would otherwise print as a blank sheet on every style that doesn't
+  // declare the cert). Decided per (page × repetition row), so a per-EAN
+  // repeat can drop the page from one row's file and keep it in another's.
+  //
+  // Production only: the builder preview must keep showing every page so
+  // it stays editable (and there, a gated token renders an amber chip
+  // rather than nothing, so the page isn't "empty" anyway).
+  //
+  // A document must never end up with zero pages — Chromium would still
+  // emit one blank sheet, which is worse than the page we tried to drop —
+  // so if everything would go, nothing does.
+  const surviving =
+    ctx.mode === "production" ? rendered.filter((u) => !(u.page.omitWhenEmpty && !u.hasInk)) : rendered;
+  const keptUnits = surviving.length > 0 ? surviving : rendered;
+
+  const pageCss = keptUnits
     .map(
       ({ page: p }, i) => `
   @page olp${i} { size: ${p.widthMm}mm ${p.heightMm}mm; margin: 0; }
@@ -1051,19 +1117,26 @@ function emitLayoutDocument(
     )
     .join("");
 
-  const pagesHtml = emitted
-    .map(({ page, repStyle }, i) => {
-      const blocks = page.blocks.map((b) => renderBlock(b, page, repStyle, ctx)).join("");
-      return `<div class="ol-page ol-page-${i}">${renderPageBorder(page)}${blocks}${renderGuides(page)}</div>`;
-    })
+  const pagesHtml = keptUnits
+    .map(
+      ({ page, html }, i) =>
+        `<div class="ol-page ol-page-${i}">${renderPageBorder(page)}${html}${renderGuides(page)}</div>`,
+    )
     .join("\n");
   // Append the fit-to-width script only when a block opts in.
-  const usesFit = emitted.some(({ page }) => page.blocks.some((b) => b.fitWidth || b.fitHeight));
+  const usesFit = keptUnits.some(({ page }) => page.blocks.some((b) => b.fitWidth || b.fitHeight));
   const body = usesFit ? `${pagesHtml}\n${FIT_SCRIPT}` : pagesHtml;
 
   return htmlDocument({
     title,
-    pageSize: { kind: "mm", widthMm: prep.pages[0].widthMm, heightMm: prep.pages[0].heightMm },
+    // Default @page size = the FIRST PRINTED page (not the first authored
+    // one), so dropping a leading page doesn't leave the document defaulting
+    // to a size nothing uses. Every page still carries its own named rule.
+    pageSize: {
+      kind: "mm",
+      widthMm: keptUnits[0]?.page.widthMm ?? prep.pages[0].widthMm,
+      heightMm: keptUnits[0]?.page.heightMm ?? prep.pages[0].heightMm,
+    },
     body,
     barcodeFont: prep.barcodeFont,
     extraCss: `

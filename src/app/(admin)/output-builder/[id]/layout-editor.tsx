@@ -496,6 +496,7 @@ export function LayoutEditor({
           margins: { ...last.margins },
           sewingLines: [],
           foldLine: "none",
+          omitWhenEmpty: false,
           blocks: [],
         },
       ],
@@ -1492,6 +1493,14 @@ export function LayoutEditor({
                 <div className="font-mono text-[11px] text-zinc-400">
                   {p.widthMm} × {p.heightMm} mm
                 </div>
+                {p.omitWhenEmpty ? (
+                  <div
+                    className="text-[10px] font-medium text-amber-600"
+                    title="This page is left out of the PDF when nothing on it resolves for the style"
+                  >
+                    skips when empty
+                  </div>
+                ) : null}
                 {def.pages.length > 1 ? (
                   <button
                     type="button"
@@ -1647,6 +1656,28 @@ export function LayoutEditor({
                   </button>
                 ))}
               </div>
+            </div>
+            {/* Conditional page — the certificate-page case: a page whose only
+                content is a gated mark prints blank on every style that
+                doesn't declare it. With this on, the page is left out of the
+                PDF instead. Opt-in per page: a deliberately blank page (a
+                plain back side) must keep printing as authored. */}
+            <div>
+              <label className="flex items-center gap-2 text-sm text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={!!page?.omitWhenEmpty}
+                  onChange={(e) => updatePage({ omitWhenEmpty: e.target.checked })}
+                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                />
+                Skip page when empty
+              </label>
+              <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-400">
+                Leaves this page out of the printed PDF when nothing on it resolves for the style — a
+                page whose only content is <span className="font-mono">{"{{cert:oekotex}}"}</span>{" "}
+                disappears on styles without OEKO-TEX instead of printing blank. Borders and guides
+                don&apos;t count as content, and the preview always shows the page.
+              </p>
             </div>
             {def.pages.length > 1 ? (
               <button

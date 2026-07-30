@@ -20,7 +20,7 @@ every new layout against — keep it current.
 
 A layout's `definition` JSON is `{ pages: [...], settings: {...} }`:
 
-- **Page** — own mm size, a placement **grid** (`gridCols × gridRows`), print guides (`sewingLines`, `foldLine`, `margins`), and **blocks**.
+- **Page** — own mm size, a placement **grid** (`gridCols × gridRows`), print guides (`sewingLines`, `foldLine`, `margins`), an optional `omitWhenEmpty` (see "Conditional pages"), and **blocks**.
 - **Block** — placed by a grid **rect** (`col/row/colSpan/rowSpan`); carries styling (`fontPt`, `bold`, `align`, `valign`, `invert`, `border` + `pad`, `fitWidth`) and its text as **`lines: []`** containing `{{tokens}}`.
 - **Settings** — `repeatBy`, `splitBy`, `fileName`, `cartonNumbering`, `multipleStyles`, `customLogoWidthPct`.
 
@@ -79,6 +79,32 @@ runs when that branch is taken). One line, like conditionals.
   token would (`qtyPerCarton` → cartonQty).
 - Bad syntax / unknown fields are **publish blockers** (and red chips on the
   canvas), like malformed conditionals.
+
+## Conditional pages ("skip page when empty")
+
+A page can carry content that only some styles have — the classic one is a page
+whose whole job is the OEKO-TEX mark. `{{cert:oekotex}}` prints **only** on a
+style that declares the cert, so on every other style that page came out as a
+blank sheet in the middle of the set.
+
+Tick **Skip page when empty** in *Page settings* (schema: `page.omitWhenEmpty`)
+and that page is left out of the printed PDF whenever nothing on it resolves for
+the style. A 3-page care label whose last page is only the mark prints as 2 pages
+for a style without OEKO-TEX, and 3 for one with it.
+
+- **Opt-in per page.** Off by default, so a deliberately blank page (a plain back
+  side) keeps printing exactly as authored.
+- **What counts as content**: anything a block actually prints — resolved tokens,
+  literal wording, barcodes, symbols, placeholder chips. Chrome does **not**:
+  block borders, the page border, sewing/fold guides. So `Certified
+  {{cert:oekotex}}` keeps the page (the word "Certified" prints), while a bordered
+  box holding only the mark doesn't.
+- **Decided per repetition row**, so a `repeatBy: ean` layout can drop the page
+  from one size's file and keep it in another's.
+- **Preview always shows the page** — it has to stay editable; the gated mark
+  shows its amber "not on style" chip there. Use *Open PDF* to see the real
+  page count.
+- A layout never renders to zero pages: if *every* page would drop, none does.
 
 ## Repeat & split
 

@@ -183,6 +183,17 @@ export const LayoutPageSchema = z
     foldLine: FoldLineSchema.default("none"),
     // Optional frame around the whole page (absent = no border).
     pageBorder: PageBorderSchema.optional(),
+    // Drop this page from the PRINTED document when nothing on it resolves
+    // for the style being rendered. The case it exists for: a page whose
+    // only content is a certification mark ({{cert:oekotex}}) — the mark
+    // prints only on styles that declare the cert, so on every other style
+    // that page would come out as a blank sheet. With this on, the page
+    // simply isn't there; a 3-page care label becomes 2 pages.
+    // Off by default, and deliberately opt-in per page: a blank page can
+    // also be intentional (a plain back side), and those must keep printing
+    // exactly as authored. See emitLayoutDocument in ./render.ts for what
+    // counts as "empty" (guides and frames don't).
+    omitWhenEmpty: z.boolean().default(false),
     // Per-page placement grid. Absent ⇒ the legacy 12×12 (see pageGrid),
     // so existing layouts are untouched. The builder generates these from a
     // cell size (e.g. 4 mm → 25×19 on a 100×75 page) and can regenerate.
@@ -498,6 +509,7 @@ export function defaultLayoutDef(): LayoutDef {
         margins: { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 },
         sewingLines: [],
         foldLine: "none",
+        omitWhenEmpty: false,
         gridCols: grid.cols,
         gridRows: grid.rows,
         blocks: [],
