@@ -12,6 +12,7 @@ import { tokenMeta, parseSiblingTokenKey, type BarcodeSource } from "./token-met
 import { formatCompositionLines } from "./composition";
 import { pickCartonQtyVariant } from "./carton-qty";
 import { pickSizeItems } from "./size-scoped-text";
+import { formatSizeRatio, parseSizeRatio, pickSizeRatioForSizes } from "./size-ratio";
 import {
   calcsInLine,
   evaluateCalc,
@@ -148,6 +149,18 @@ const RESOLVERS: Record<string, TextResolver> = {
       .map((x) => x.label)
       .filter(Boolean)
       .join(" - "),
+  // Assortment ratio as flat text — "S: 1, M: 2, L: 2". The optional
+  // ":size" argument narrows to the repetition row's own size (just the
+  // number, "2"), matching how {{description:size}} behaves.
+  sizeRatio: (s, arg) => {
+    const entries = sizeRatioEntries(s);
+    if (arg !== "size") return formatSizeRatio(entries);
+    return pickSizeRatioForSizes(entries, s.sizes.map((x) => x.label).filter(Boolean));
+  },
+  // Text stand-in for the assortment TABLE: the renderer draws a real
+  // <table>, but readiness checks, show-values and file names resolve
+  // tokens as text, so this backs those with the same data.
+  assortmentTable: (s) => formatSizeRatio(sizeRatioEntries(s)),
   price: (s) =>
     s.price
       ? `${s.price.amount.toFixed(2)}${s.price.currency ? ` ${s.price.currency}` : ""}`
@@ -249,6 +262,17 @@ const RESOLVERS: Record<string, TextResolver> = {
   // draws the actual artwork; this backs show-values + unresolved checks).
   washSymbols: (s) => s.washSymbols.join(", "),
 };
+
+// The style's assortment ratio, one entry per size. Always paired against
+// the FULL size run (`allSizes` when a repetition has narrowed `sizes`), so
+// a per-size or per-EAN repeat still prints the whole assortment on every
+// row — the table describes the pack, not the row. THE shared entry point:
+// the renderer's <table> and the text tokens both call it, so they can
+// never show different numbers.
+export function sizeRatioEntries(style: StyleData) {
+  const labels = (style.allSizes ?? style.sizes).map((x) => x.label).filter(Boolean);
+  return parseSizeRatio(style.sizeRatioRaw, labels);
+}
 
 // ---------------------------------------------------------------------
 // Sibling styles — the {{style2}}/{{style3Name}}… slot tokens. A slot's
@@ -417,6 +441,11 @@ const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   size: ["sizes"],
   sizeRange: ["sizes"],
   sizeRangeCoop: ["sizes"],
+  // Both need the size run to pair against AND the ratio column itself —
+  // a style missing either can't print an assortment, so the output gates
+  // as AWAITING_DATA rather than rendering an empty table.
+  sizeRatio: ["sizes", "sizeRatio"],
+  assortmentTable: ["sizes", "sizeRatio"],
   price: ["price"],
   poNumber: ["poNumber"],
   customerOrderNo: ["customerOrderNo"],

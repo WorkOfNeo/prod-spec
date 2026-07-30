@@ -10,7 +10,10 @@ import { CARTON_QTY_KINDS } from "./carton-qty";
 // The single accepted "sizeScope" argument — {{description:size}}.
 export const SIZE_SCOPE_ARG = "size";
 
-export type LayoutTokenKind = "text" | "barcode" | "symbols" | "image";
+// "table" tokens render a real <table> rather than inline text, so they own
+// the whole line they sit on (the renderer draws them like the barcode /
+// symbol kinds, straight to HTML).
+export type LayoutTokenKind = "text" | "barcode" | "symbols" | "image" | "table";
 
 export type LayoutTokenMeta = {
   key: string;
@@ -82,6 +85,21 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     example: "98/104",
   },
   { key: "sizeRange", label: "Size range", group: "Style", kind: "text", example: "86/92–110/116" },
+  {
+    key: "sizeRatio",
+    label: "Size ratio, flat text (:size picks the current row's ratio)",
+    group: "Style",
+    kind: "text",
+    arg: "sizeScope",
+    example: "S: 1, M: 2, L: 2 · {{sizeRatio:size}}",
+  },
+  {
+    key: "assortmentTable",
+    label: "Assortment table — sizes across the top, ratio underneath",
+    group: "Style",
+    kind: "table",
+    example: "Size | 98/104 | 110/116 …",
+  },
   {
     key: "sizeRangeCoop",
     label: "Size range, current size enlarged (Coop)",
