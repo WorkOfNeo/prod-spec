@@ -329,11 +329,13 @@ export function RerunStylesPanel({
         <div className="min-w-0">
           <p className="text-sm font-medium text-zinc-800">Run styles</p>
           <p className="mt-0.5 text-xs text-zinc-500">
-            Every style on this prod spec. <span className="font-medium text-zinc-700">Generate
-            new outputs</span> renders only what has never generated — that&apos;s what adding an
-            output to this spec creates, and it also runs automatically on save.{" "}
-            <span className="font-medium text-zinc-700">Run all</span> is wider: every output that
-            isn&apos;t approved (new/missing, rejected, awaiting review).
+            Every style on this prod spec.{" "}
+            <span className="font-medium text-zinc-700">Generate new outputs</span>{" "}
+            renders only what has never generated — that&apos;s what adding an output to this spec
+            creates, and it also runs automatically on save.{" "}
+            <span className="font-medium text-zinc-700">Run all</span>{" "}
+            is wider: every output that isn&apos;t approved (new/missing, rejected, awaiting
+            review).
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
