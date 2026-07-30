@@ -225,6 +225,12 @@ export function EanPanel({
                 <th className="py-1 pr-4 font-medium">Size</th>
                 <th className="py-1 pr-4 font-medium">Color</th>
                 <th className="py-1 pr-4 font-medium">EAN</th>
+                <th
+                  className="py-1 pr-4 font-medium"
+                  title="Per-size carton EAN — from the PO section or Monday's “Carton Barcode number 1” column"
+                >
+                  Carton
+                </th>
                 <th className="py-1 pr-4 font-medium">PO label</th>
                 <th className="py-1 font-medium sr-only">Actions</th>
               </tr>
@@ -257,6 +263,23 @@ export function EanPanel({
                     }`}
                   >
                     {s.ean13 ?? "— no match"}
+                  </td>
+                  {/* Per-size carton EAN. Shown even when Style.cartonEan (the
+                      master/assort) is null — a style whose Monday carton column
+                      lists per-size cartons but carries no "Assort - …" line has
+                      NO style-level carton by design, and the single carton line
+                      under the table used to make that read as "carton EANs never
+                      resolved". */}
+                  <td
+                    className={`py-1 pr-4 tabular-nums ${
+                      s.cartonEan
+                        ? s.excluded
+                          ? "text-zinc-400 line-through"
+                          : "text-zinc-600"
+                        : "text-zinc-300"
+                    }`}
+                  >
+                    {s.cartonEan ?? "—"}
                   </td>
                   <td className="py-1 pr-4 text-xs text-zinc-400">
                     {s.manual ? (
@@ -310,6 +333,7 @@ export function EanPanel({
                   />
                 </td>
                 <td className="py-1 pr-4" />
+                <td className="py-1 pr-4" />
                 <td className="py-1 text-right">
                   <button
                     type="button"
@@ -323,9 +347,20 @@ export function EanPanel({
               </tr>
             </tbody>
           </table>
-          {view.cartonEan && (
+          {/* Style.cartonEan = the MASTER / assortment carton, set only from a
+              real "Assort - <EAN>" line. Absent is normal for a solid style, so
+              say what's missing rather than showing nothing — the per-size
+              cartons in the table above are a separate thing. */}
+          {view.cartonEan ? (
             <div className="mt-2 text-xs tabular-nums text-zinc-500">
-              carton <span className="font-medium text-zinc-800">{view.cartonEan}</span>
+              assort / master carton{" "}
+              <span className="font-medium text-zinc-800">{view.cartonEan}</span>
+            </div>
+          ) : (
+            <div className="mt-2 text-xs text-zinc-400">
+              No assort / master carton — the barcode column carries no “Assort - …” line. Layouts
+              that print one carton per style ({"{{cartonEan}}"} without a per-carton repeat) have
+              nothing to show; use a per-carton repeat to print the per-size cartons above.
             </div>
           )}
           <p className="mt-2 text-xs text-zinc-400">

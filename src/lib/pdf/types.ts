@@ -27,6 +27,10 @@ export type SiblingStyle = {
   sizes: string;
   sizeRange: string;
   qtyPerCarton: string;
+  // Un-narrowed carton-qty text ("Solid - 5 / Assort - 8") so an assort-carton
+  // sum can pick this sibling's assort number. Optional: only projectSiblingStyle
+  // sets it; older/hand-built siblings fall back to qtyPerCarton.
+  qtyPerCartonRaw?: string;
   cartonEan: string;
   ean13: string;
 };
@@ -95,6 +99,15 @@ export type StyleData = {
   // can narrow it to the row's size and {{qtyPerCarton}} can fall back to
   // it when outerVE didn't parse. Optional: non-mapper constructors omit it.
   cartonQtyRaw?: string;
+
+  // Raw "Size Ratio" column text — how many pieces of each size make up an
+  // assortment, in the size column's own order. Kept VERBATIM (never
+  // narrowed by repetitionStyles, unlike cartonQtyRaw) because the
+  // assortment table always prints the whole run, even on a per-size
+  // repetition row. Parsed by output-layouts/size-ratio.ts; backs
+  // {{assortmentTable}} / {{sizeRatio}}. Optional: non-mapper constructors
+  // omit it.
+  sizeRatioRaw?: string;
 
   carton: {
     klNumber: string;

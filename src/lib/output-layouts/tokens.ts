@@ -11,6 +11,8 @@ import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-
 import { tokenMeta, parseSiblingTokenKey, type BarcodeSource } from "./token-meta";
 import { formatCompositionLines } from "./composition";
 import { pickCartonQtyVariant } from "./carton-qty";
+import { pickSizeItems } from "./size-scoped-text";
+import { formatSizeRatio, parseSizeRatio, pickSizeRatioForSizes } from "./size-ratio";
 import {
   calcsInLine,
   evaluateCalc,
@@ -62,7 +64,23 @@ const RESOLVERS: Record<string, TextResolver> = {
   customerName: (s) => s.customerName,
   // Same fallback chain the Netto carton template uses: Description
   // column → EN product name → style name.
-  description: (s) => s.description || tFor(s.productNameTranslations, "en") || s.styleName,
+  // Bare {{description}} is untouched. The optional ":size" argument narrows
+  // an UNLABELLED per-size list ("Kalsonger Svart S 5-pack, … XL 5-pack") to
+  // the repetition row's own size — the shape repetitionStyles' anchor-based
+  // narrowing can't see (no "SIZE:" separators). Opt-in per block so no
+  // published layout changes; see pickSizeItems for the matching rules.
+  //
+  // Composes with the anchor narrowing already applied to s.description: if
+  // that fired, the value is a single entry and this pass is a no-op. Outside
+  // a repetition (or on an assortment row) s.sizes IS the whole run, so every
+  // item matches and the full list prints, exactly as bare {{description}}.
+  description: (s, arg) => {
+    const base = s.description || tFor(s.productNameTranslations, "en") || s.styleName;
+    if (arg !== "size") return base;
+    const rowLabels = s.sizes.map((x) => x.label).filter(Boolean);
+    const allLabels = (s.allSizes ?? s.sizes).map((x) => x.label).filter(Boolean);
+    return pickSizeItems(base, allLabels, rowLabels) ?? base;
+  },
   // Every selected style's description, comma-joined — the base style
   // first, then each picked sibling in slot order (the {{style2Description}}…
   // slot family collapsed into one list so a template needn't hard-code the
@@ -131,6 +149,18 @@ const RESOLVERS: Record<string, TextResolver> = {
       .map((x) => x.label)
       .filter(Boolean)
       .join(" - "),
+  // Assortment ratio as flat text — "S: 1, M: 2, L: 2". The optional
+  // ":size" argument narrows to the repetition row's own size (just the
+  // number, "2"), matching how {{description:size}} behaves.
+  sizeRatio: (s, arg) => {
+    const entries = sizeRatioEntries(s);
+    if (arg !== "size") return formatSizeRatio(entries);
+    return pickSizeRatioForSizes(entries, s.sizes.map((x) => x.label).filter(Boolean));
+  },
+  // Text stand-in for the assortment TABLE: the renderer draws a real
+  // <table>, but readiness checks, show-values and file names resolve
+  // tokens as text, so this backs those with the same data.
+  assortmentTable: (s) => formatSizeRatio(sizeRatioEntries(s)),
   price: (s) =>
     s.price
       ? `${s.price.amount.toFixed(2)}${s.price.currency ? ` ${s.price.currency}` : ""}`
@@ -150,13 +180,20 @@ const RESOLVERS: Record<string, TextResolver> = {
   // outerVE is the column's numeric parse; it's 0 when the buyer filled a
   // per-size "SIZE=qty" list instead, so fall back to the raw text — which
   // repetitionStyles narrows to the row's own size (size-scoped-text.ts).
-  // :solid / :assort narrow a "Solid - 5 / Assort - 8" split to one number
-  // (see carton-qty.ts); a non-split value serves both, so bare and either
-  // arg resolve the same thing there.
+  //
+  // A "Solid - 5 / Assort - 8" split (carton-qty.ts) narrows to one number:
+  //   • an explicit :solid / :assort arg always wins;
+  //   • otherwise the value follows THIS repetition row — the assort master
+  //     carton (repeatBy "assort"/"cartonEan" flags isAssortment) takes the
+  //     assort number, every solid carton (per-size row, or a standalone
+  //     non-repeat carton) takes the solid number.
+  // A non-split value has neither marker, so pickCartonQtyVariant hands it
+  // back untouched and the row/arg makes no difference.
   qtyPerCarton: (s, arg) => {
     const raw = (s.cartonQtyRaw ?? "").trim();
     const base = s.carton.outerVE ? String(s.carton.outerVE) : raw;
-    return arg ? pickCartonQtyVariant(raw || base, arg) : base;
+    const kind = arg ?? (s.isAssortment ? "assort" : "solid");
+    return pickCartonQtyVariant(raw || base, kind);
   },
   cartonEan: (s) => (s.carton.ean13 && s.carton.ean13 !== EAN_SENTINEL ? s.carton.ean13 : ""),
   assortEan: (s) =>
@@ -166,7 +203,16 @@ const RESOLVERS: Record<string, TextResolver> = {
   batchNo: (s) => s.batchNo ?? "",
   prodNumber: (s) => s.prodNumber ?? "",
   lot: (s) => s.carton.lot ?? "",
-  klNumber: (s) => s.carton.klNumber ?? "",
+  // Bare {{klNumber}} is untouched. The optional ":size" argument narrows an
+  // UNLABELLED per-size list the same way {{description:size}} does — see
+  // pickSizeItems for the matching rules.
+  klNumber: (s, arg) => {
+    const base = s.carton.klNumber ?? "";
+    if (arg !== "size") return base;
+    const rowLabels = s.sizes.map((x) => x.label).filter(Boolean);
+    const allLabels = (s.allSizes ?? s.sizes).map((x) => x.label).filter(Boolean);
+    return pickSizeItems(base, allLabels, rowLabels) ?? base;
+  },
   supplierNumber: (s) => s.carton.supplierNumber ?? "",
 
   // Carton serial — set per carton by the carton-prints endpoint; empty
@@ -226,6 +272,17 @@ const RESOLVERS: Record<string, TextResolver> = {
   washSymbols: (s) => s.washSymbols.join(", "),
 };
 
+// The style's assortment ratio, one entry per size. Always paired against
+// the FULL size run (`allSizes` when a repetition has narrowed `sizes`), so
+// a per-size or per-EAN repeat still prints the whole assortment on every
+// row — the table describes the pack, not the row. THE shared entry point:
+// the renderer's <table> and the text tokens both call it, so they can
+// never show different numbers.
+export function sizeRatioEntries(style: StyleData) {
+  const labels = (style.allSizes ?? style.sizes).map((x) => x.label).filter(Boolean);
+  return parseSizeRatio(style.sizeRatioRaw, labels);
+}
+
 // ---------------------------------------------------------------------
 // Sibling styles — the {{style2}}/{{style3Name}}… slot tokens. A slot's
 // field suffix (canonical-cased by parseSiblingTokenKey) maps here to one
@@ -262,6 +319,12 @@ export function projectSiblingStyle(style: StyleData, id: string): SiblingStyle 
     sizes: resolveTextToken(style, "sizes"),
     sizeRange: resolveTextToken(style, "sizeRange"),
     qtyPerCarton: resolveTextToken(style, "qtyPerCarton"),
+    // The un-narrowed carton-qty text ("Solid - 5 / Assort - 8"), so
+    // sum(qtyPerCarton) on an assort master carton can narrow EVERY sibling
+    // to the assort variant (a sibling isn't itself the assort row — the
+    // BASE row's kind decides the whole carton). qtyPerCarton above is the
+    // sibling's own solid/plain value for the {{styleNQtyPerCarton}} token.
+    qtyPerCartonRaw: (style.cartonQtyRaw ?? "").trim(),
     cartonEan: resolveTextToken(style, "cartonEan"),
     ean13: resolveTextToken(style, "ean13"),
   };
@@ -326,10 +389,26 @@ function calcCtxForStyle(style: StyleData): CalcFieldCtx {
   return {
     field: (key) => resolveTextToken(style, key),
     aggregate: (suffix) => {
-      const fn = SIBLING_FIELD_RESOLVERS[suffix.toLowerCase()];
+      const lower = suffix.toLowerCase();
+      const pool = style.multipleStyles ? (style.siblings ?? []) : [];
+      // sum(qtyPerCarton) & co. follow THIS repetition row: on the assort
+      // master carton every style (base + siblings) contributes its assort
+      // number, on a solid carton its solid number. The base already narrows
+      // via resolveTextToken (no arg → row kind); siblings narrow from their
+      // raw split by the SAME base-row kind (a sibling isn't the assort row).
+      if (lower === "qtypercarton") {
+        const kind = style.isAssortment ? "assort" : "solid";
+        const base = resolveTextToken(style, "qtyPerCarton").trim();
+        return {
+          base,
+          siblings: pool.map((s) =>
+            pickCartonQtyVariant(s.qtyPerCartonRaw ?? s.qtyPerCarton, kind).trim(),
+          ),
+        };
+      }
+      const fn = SIBLING_FIELD_RESOLVERS[lower];
       if (!fn) return { base: "", siblings: [] };
       const base = (fn(projectSiblingStyle(style, "self")) ?? "").trim();
-      const pool = style.multipleStyles ? (style.siblings ?? []) : [];
       return { base, siblings: pool.map((s) => (fn(s) ?? "").trim()) };
     },
   };
@@ -371,6 +450,11 @@ const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   size: ["sizes"],
   sizeRange: ["sizes"],
   sizeRangeCoop: ["sizes"],
+  // Both need the size run to pair against AND the ratio column itself —
+  // a style missing either can't print an assortment, so the output gates
+  // as AWAITING_DATA rather than rendering an empty table.
+  sizeRatio: ["sizes", "sizeRatio"],
+  assortmentTable: ["sizes", "sizeRatio"],
   price: ["price"],
   poNumber: ["poNumber"],
   customerOrderNo: ["customerOrderNo"],

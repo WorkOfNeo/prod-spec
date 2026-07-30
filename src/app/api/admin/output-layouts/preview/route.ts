@@ -14,7 +14,7 @@ import {
   resolveTextToken,
   unresolvedTokens,
 } from "@/lib/output-layouts/tokens";
-import { LAYOUT_TOKENS } from "@/lib/output-layouts/token-meta";
+import { LAYOUT_TOKENS, SIZE_SCOPE_ARG } from "@/lib/output-layouts/token-meta";
 import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import { buildSampleStyleData } from "@/lib/pdf/sample-data";
@@ -153,6 +153,17 @@ export async function POST(req: NextRequest) {
         for (const kind of CARTON_QTY_KINDS) {
           tokenValues[`${t.key}:${kind}`] = resolveTextToken(styleData, t.key, kind);
         }
+      } else if (t.arg === "sizeScope") {
+        tokenValues[t.key] = resolveTextToken(styleData, t.key);
+        // styleData here is the WHOLE style (the preview isn't inside a
+        // repetition), so :size resolves to the full list — same as bare.
+        // The narrowing shows up in the per-EAN split previews, which build
+        // their own repetition rows.
+        tokenValues[`${t.key}:${SIZE_SCOPE_ARG}`] = resolveTextToken(
+          styleData,
+          t.key,
+          SIZE_SCOPE_ARG,
+        );
       } else {
         tokenValues[t.key] = resolveTextToken(styleData, t.key);
       }

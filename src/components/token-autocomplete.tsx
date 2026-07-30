@@ -31,6 +31,7 @@ import {
   BARCODE_SOURCES,
   LOGO_SOURCES,
   CERT_SOURCES,
+  SIZE_SCOPE_ARG,
 } from "@/lib/output-layouts/token-meta";
 import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
 
@@ -91,6 +92,15 @@ export function buildTokenSuggestions(opts: {
           hint: t.example,
         });
       }
+    } else if (t.arg === "sizeScope") {
+      // Bare (the whole value) plus the per-size selector.
+      out.push({ insert: `{{${t.key}}}`, label: t.label, group: t.group, hint: t.example });
+      out.push({
+        insert: `{{${t.key}:${SIZE_SCOPE_ARG}}}`,
+        label: `${t.label} · this size only`,
+        group: t.group,
+        hint: t.example,
+      });
     } else {
       // Plain tokens and the optional-gap wash symbols insert bare.
       out.push({ insert: `{{${t.key}}}`, label: t.label, group: t.group, hint: t.example });

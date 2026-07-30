@@ -8,7 +8,7 @@ import {
   resolveLayoutFileName,
   staticRequiredColumns,
 } from "./tokens";
-import { layoutSettings, type LayoutSettings } from "./schema";
+import { hasPerRowCartonEan, layoutSettings, type LayoutSettings } from "./schema";
 import { renderLayoutHtml, repetitionStyles } from "./render";
 import { pinnableFieldsInDef } from "./tokens";
 import { applyFieldOverrides } from "@/lib/pdf/pins";
@@ -142,6 +142,11 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     cartonNumbering: settings.cartonNumbering,
     // Custom Carton Marking (multi-style box) — independent opt-in.
     multipleStyles: settings.multipleStyles,
+    // Only the per-row repeats rebind {{cartonEan}} to the repetition row's
+    // own carton, so only they let per-size cartons stand in for a missing
+    // Style.cartonEan — see TemplateVariant.perRowCartonEan. The predicate is
+    // shared with the test-style picker (hasPerRowCartonEan in ./schema).
+    perRowCartonEan: hasPerRowCartonEan(settings),
     // Split per EAN: ONE FILE PER REPETITION ROW — repeat "size": per
     // size row; repeat "ean": per PO EAN row (size × colour,
     // {{colourName}} bound). Either way each file carries one EAN.
