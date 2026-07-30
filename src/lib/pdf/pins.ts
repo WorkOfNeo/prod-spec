@@ -99,6 +99,11 @@ export function applyFieldOverrides(style: StyleData, rawOverrides: unknown): St
       case "countryOfOrigin":
         next.countryOfOrigin = v;
         break;
+      case "sizeRatio":
+        // Stored raw — the assortment parser reads whatever shape the
+        // reviewer types, exactly as it reads the buyer's own column.
+        next.sizeRatioRaw = v;
+        break;
     }
   }
   return next;
@@ -157,6 +162,8 @@ export function readPinnableField(style: StyleData, field: PinnableField): strin
       return style.poNumber ?? "";
     case "countryOfOrigin":
       return style.countryOfOrigin ?? "";
+    case "sizeRatio":
+      return style.sizeRatioRaw ?? "";
   }
 }
 

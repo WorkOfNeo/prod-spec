@@ -23,6 +23,11 @@ export const ColumnMappingSchema = z.object({
   productNameTranslations: z.string().optional(),
   washCare: z.string().optional(),
   sizes: z.string().optional(),
+  // "Size Ratio" — how many pieces of each size go in an assortment,
+  // hand-typed by buyers in the size column's own order (the order the
+  // EANs follow). Free text with six live shapes; see output-layouts/
+  // size-ratio.ts for the parser and {{assortmentTable}} for the output.
+  sizeRatio: z.string().optional(),
   ean13: z.string().optional(),
   klNumber: z.string().optional(),
   supplierNumber: z.string().optional(),
@@ -145,6 +150,7 @@ export const DEFAULT_COLUMN_MAPPING: Partial<ColumnMapping> = {
   poNumber: "text44__1", // #️⃣ PO Number
   countryOfOrigin: "mirror__1", // 🌍 Country of Origin (mirror → display_value)
   sizes: "sizes__1", // Sizes
+  sizeRatio: "text76__1", // Size Ratio
   washCare: "dropdown_mktbzd1f", // Wash Care Symbols
   lot: "numeric_mktagw13", // Lot No
   cartonQty: "text2__1", // Qty/Carton
@@ -213,6 +219,7 @@ export const MANUAL_COLUMN_IDS = {
   productNameTranslations: "manual.productNameTranslations",
   washCare: "manual.washCare",
   sizes: "manual.sizes",
+  sizeRatio: "manual.sizeRatio",
   ean13: "manual.ean13",
   klNumber: "manual.klNumber",
   supplierNumber: "manual.supplierNumber",

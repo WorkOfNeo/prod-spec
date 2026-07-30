@@ -31,6 +31,7 @@ import {
   langArgsInDef,
   resolveBarcodeValue,
   resolveTextToken,
+  sizeRatioEntries,
 } from "./tokens";
 
 // =====================================================
@@ -646,6 +647,23 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx, blockWidthMm
       continue;
     }
 
+    // Assortment table — a real <table>, sizes across the top and the
+    // ratio underneath, so a style prospect shows the pack at a glance.
+    // Drawn here rather than via the text resolver for the same reason
+    // sizeRangeCoop is: the markup has to survive escaping.
+    if (meta.kind === "table" && key === "assortmentTable") {
+      const rendered = renderAssortmentTableHtml(style);
+      if (rendered) {
+        html += rendered;
+        hadValue = true;
+      } else if (ctx.mode === "preview") {
+        // No readable ratio for this style — the same amber chip an empty
+        // text token gets, so the operator sees a data gap, not a bug.
+        html += `<span class="ol-miss">assortmentTable?</span>`;
+      }
+      continue;
+    }
+
     // Coop size range: every size joined " - ", with the CURRENT
     // repetition's size (style.sizes[0], narrowed by repetitionStyles)
     // enlarged. Drawn here rather than via the text resolver so the
@@ -685,6 +703,27 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx, blockWidthMm
   // Drop token-only lines whose tokens all came up empty (production).
   if (ctx.mode === "production" && hadToken && !hadValue && !literal.trim()) return null;
   return applyInlineMarkdown(html);
+}
+
+// The assortment table: one column per size with the ratio beneath, plus a
+// leading label column. Returns "" when the style has no readable ratio, so
+// the caller can drop the line (production) or chip it (preview).
+//
+// Sizes with no value still get a column — the header must stay aligned
+// with the style's real size run, and a visibly empty cell is the honest
+// rendering of "the buyer didn't give this size a ratio".
+function renderAssortmentTableHtml(style: StyleData): string {
+  const entries = sizeRatioEntries(style);
+  if (entries.length === 0) return "";
+
+  const head = entries.map((e) => `<th>${escapeHtml(e.size)}</th>`).join("");
+  const body = entries.map((e) => `<td>${escapeHtml(e.qty)}</td>`).join("");
+  return (
+    `<table class="ol-assort">` +
+    `<tr><th class="ol-assort-lbl">Size</th>${head}</tr>` +
+    `<tr><th class="ol-assort-lbl">Qty</th>${body}</tr>` +
+    `</table>`
+  );
 }
 
 // Very small inline formatting vocabulary: **bold** and _italic_
@@ -1062,6 +1101,22 @@ function emitLayoutDocument(
   .ol-fit .ol-line { white-space: nowrap; word-break: normal; }
   /* Coop size range: enlarge the current size within the dash-joined run. */
   .ol-size-current { font-size: 1.6em; font-weight: 700; }
+  /* Assortment table — sizes across the top, ratio underneath. Sized in em
+     so it follows the block's fontPt (and the fit scripts) like any other
+     content. Hairline rules scale with fontScale so the grid stays crisp on
+     a small label and doesn't turn heavy on a big prospect sheet. */
+  /* auto (not fixed) layout so the leading Size/Qty column shrinks to its
+     own text and the size columns take the rest — a fixed layout ignores
+     the label column's width and lets a long size label ("3-9 Months")
+     collide with it. */
+  .ol-assort { border-collapse: collapse; width: 100%; table-layout: auto; margin: 0.2em 0; }
+  .ol-assort th, .ol-assort td {
+    border: ${(0.2 * ctx.fontScale).toFixed(3)}mm solid currentColor;
+    padding: 0.15em 0.4em; text-align: center; word-break: break-word;
+  }
+  /* The size header row and the leading label column read as headings. */
+  .ol-assort tr:first-child th { font-weight: 700; }
+  .ol-assort-lbl { font-weight: 700; text-align: left; white-space: nowrap; width: 1%; }
   .ol-barcode { display: inline-block; text-align: center; max-width: 100%; }
   .ol-barcode img { display: block; height: var(--ol-bc-h, 16mm); width: auto; max-width: 100%; margin-left: auto; margin-right: auto; }
   .ol-ean-number { margin-top: ${(1 * ctx.fontScale).toFixed(3)}mm; font-size: var(--ol-bc-num, 10pt); letter-spacing: 0.08em; }

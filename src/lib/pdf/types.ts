@@ -100,6 +100,15 @@ export type StyleData = {
   // it when outerVE didn't parse. Optional: non-mapper constructors omit it.
   cartonQtyRaw?: string;
 
+  // Raw "Size Ratio" column text — how many pieces of each size make up an
+  // assortment, in the size column's own order. Kept VERBATIM (never
+  // narrowed by repetitionStyles, unlike cartonQtyRaw) because the
+  // assortment table always prints the whole run, even on a per-size
+  // repetition row. Parsed by output-layouts/size-ratio.ts; backs
+  // {{assortmentTable}} / {{sizeRatio}}. Optional: non-mapper constructors
+  // omit it.
+  sizeRatioRaw?: string;
+
   carton: {
     klNumber: string;
     supplierNumber: string;

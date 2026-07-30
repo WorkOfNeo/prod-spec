@@ -34,7 +34,8 @@ export type PinnableField =
   | "customerOrderNo"
   | "deliveryTerm"
   | "poNumber"
-  | "countryOfOrigin";
+  | "countryOfOrigin"
+  | "sizeRatio";
 
 export const PINNABLE_FIELDS: PinnableField[] = [
   "customerName",
@@ -57,6 +58,9 @@ export const PINNABLE_FIELDS: PinnableField[] = [
   "deliveryTerm",
   "poNumber",
   "countryOfOrigin",
+  // Free text, and blank on ~40% of live styles — so a reviewer can fill
+  // the assortment ratio inline when an output is blocked on it.
+  "sizeRatio",
 ];
 
 // Human labels for the pin picker. Mirrors STYLE_FIELD_LABELS wording for
@@ -82,6 +86,7 @@ export const PINNABLE_FIELD_LABELS: Record<PinnableField, string> = {
   deliveryTerm: "Delivery term (FOB/DDP)",
   poNumber: "PO number",
   countryOfOrigin: "Country of origin",
+  sizeRatio: "Size ratio (assortment)",
 };
 
 export function isPinnableField(key: string): key is PinnableField {

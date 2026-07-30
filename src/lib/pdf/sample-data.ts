@@ -61,7 +61,23 @@ export function buildSampleStyleData(): StyleData {
     // real symbols on one row.
     washSymbols: ["wash30", "bleach_no", "tumble_no", "iron_medium", "dryclean_no"],
 
-    sizes: [{ label: "M", ean13: ean13("570012345678") }],
+    // The full size run the carton.perSize block below already assumes.
+    // Only M carries a product EAN — the normal partial state before the PO
+    // barcodes are scraped — so {{ean13}} and the barcode preview are
+    // unchanged while size-run tokens ({{sizes}}, {{assortmentTable}}) get
+    // something realistic to draw.
+    sizes: [
+      { label: "XS", ean13: "" },
+      { label: "S", ean13: "" },
+      { label: "M", ean13: ean13("570012345678") },
+      { label: "L", ean13: "" },
+      { label: "XL", ean13: "" },
+      { label: "XXL", ean13: "" },
+    ],
+
+    // A Size Ratio in the commonest live shape (positional, size order) so
+    // the assortment table previews as a real pack.
+    sizeRatioRaw: "1,2,3,3,2,1",
 
     carton: {
       klNumber: "KL-8842",
