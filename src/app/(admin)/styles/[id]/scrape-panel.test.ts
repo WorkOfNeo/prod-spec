@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ScrapePanel, type PoSection } from "./scrape-panel";
+import { ScrapePanel, type PoSection, type StoredScrapeProvenance } from "./scrape-panel";
 
 // Real C-PO63315 scrape sections (PTQ60031 is the style being resolved).
 const SECTIONS: PoSection[] = [
@@ -80,4 +80,55 @@ test("ScrapePanel — reject case: none matched, nothing stored", () => {
   assert.match(html, /no per-size EANs were stored/);
   // With no selected section there is no resolved-field tag at all.
   assert.doesNotMatch(html, /EAN-13 \(per size\)/);
+});
+
+test("ScrapePanel — a live dump carries no provenance header", () => {
+  // Nothing was passed for `stored`, so this is a resolve that just ran; it
+  // must NOT claim to be stored (that line is the only thing distinguishing
+  // the two on screen).
+  const html = renderToStaticMarkup(createElement(ScrapePanel, { sections: SECTIONS }));
+  assert.doesNotMatch(html, /Stored scrape/);
+  assert.doesNotMatch(html, /re-resolve for a fresh read/);
+});
+
+test("ScrapePanel — a stored dump says when it was scraped and from which file", () => {
+  const stored: StoredScrapeProvenance = {
+    scrapedAt: "2026-07-28T09:15:00.000Z",
+    poFileName: "Purchase Order C-PO63315.pdf",
+    poFileWebUrl: "https://sharepoint.example/po.pdf",
+    sectionCount: 3,
+    truncated: false,
+  };
+  const html = renderToStaticMarkup(createElement(ScrapePanel, { sections: SECTIONS, stored }));
+
+  assert.match(html, /Stored scrape/);
+  // The machine-readable timestamp is what pins the provenance; the rendered
+  // label is locale/timezone-dependent, so assert on the dateTime attribute.
+  assert.match(html, /datetime="2026-07-28T09:15:00\.000Z"/i);
+  assert.match(html, /Purchase Order C-PO63315\.pdf/);
+  assert.match(html, /https:\/\/sharepoint\.example\/po\.pdf/);
+  assert.match(html, /re-resolve for a fresh read/);
+  // The sections themselves still render exactly as for a live dump.
+  assert.match(html, /3 sections found/);
+  assert.match(html, /5706323599140/);
+});
+
+test("ScrapePanel — a truncated stored dump admits it isn't the whole PO", () => {
+  // The snapshot caps what it stores, so the section list on screen can be
+  // shorter than the PO really was — say so, or "3 sections found" is a lie.
+  const stored: StoredScrapeProvenance = {
+    scrapedAt: null,
+    poFileName: null,
+    poFileWebUrl: null,
+    sectionCount: 140,
+    truncated: true,
+  };
+  const html = renderToStaticMarkup(createElement(ScrapePanel, { sections: SECTIONS, stored }));
+
+  assert.match(html, /140 sections found/);
+  assert.match(html, /showing 3 of 140 sections/);
+  assert.match(html, /stored dump is capped/);
+  // No timestamp and no file name on this row — neither clause should render
+  // an empty shell.
+  assert.doesNotMatch(html, /Stored scrape from/);
 });

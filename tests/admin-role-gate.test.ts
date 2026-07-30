@@ -92,7 +92,14 @@ before(() => {
   // Happy-path executors → spies (also keeps Puppeteer/render stack unloaded).
   mock.module("@/lib/queue/runner", { namedExports: { runPendingJobs } });
   mock.module("@/lib/queue/enqueue", { namedExports: { enqueueGenerationJob: mock.fn(async () => ({ jobId: "job-1" })) } });
-  mock.module("@/lib/po/ean-runner", { namedExports: { runPendingEanResolutions } });
+  // Both named exports the route imports must be stubbed — mock.module swaps
+  // the module wholesale, so a missing one surfaces as "not a function" at the
+  // call site rather than as a mock error. estimateEanBatchSize hits cron_run
+  // for its samples, so it needs a stub here regardless of the assertion; the
+  // fixed value just has to be a plausible batch size.
+  mock.module("@/lib/po/ean-runner", {
+    namedExports: { runPendingEanResolutions, estimateEanBatchSize: async () => 5 },
+  });
   mock.module("@/lib/tickets/run-ticket-job", { namedExports: { runTicketJob: mock.fn(async () => ({ jobStatus: "DONE", jobId: "job-1", latestAsset: null })), TicketRunError } });
   mock.module("@/lib/settings/app-settings", {
     namedExports: {

@@ -15,6 +15,7 @@ import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config"
 import { isArchivedGroup } from "@/lib/import/heuristics";
 import { getDoneGroupPoCutoff } from "@/lib/settings/app-settings";
 import { activeStylesWhere, resolveDoneCutoffIds } from "@/lib/styles/active-filter";
+import { loadLookalikeChips } from "@/lib/styles/related";
 import { StylesTable } from "./styles-table";
 import { DonePoCutoffSetting } from "./done-po-cutoff-setting";
 import { eanStatusMeta } from "@/lib/po/ean-status-meta";
@@ -112,6 +113,19 @@ export default async function StylesPage() {
   // Per-style operator ignores — ignored outputs drop out of the readiness
   // counts below (they're decided, not pending work).
   const ignoredByStyle = await loadIgnoredOutputKeysByStyle(styles.map((s) => s.id));
+
+  // Lookalike rows — "this style name exists on more than one PO". The wrong
+  // row gets picked HERE, during search, before anything is opened, so the
+  // warning has to live on the list and not only on the style page (which is
+  // the backstop, src/app/(admin)/styles/[id]/related-rows-card.tsx). ONE
+  // indexed query for the whole page — three scalar columns, no rawData, no
+  // N+1 — so it costs essentially nothing next to the ~4k-row query above
+  // that already pulls every style's full Monday snapshot. Not filtered to the
+  // active set on purpose: a twin parked in a hidden Done/Templates group is
+  // exactly the row a reviewer can't see and still needs warning about.
+  const lookalikeChips = await loadLookalikeChips(
+    styles.map((s) => ({ id: s.id, name: s.name, poNumber: s.poNumber })),
+  );
 
   // Opt-in columns are HYDRATED only when visible, so the ~4k-row payload stays
   // small and the two batched rollup queries only run when their column is on.
@@ -259,6 +273,9 @@ export default async function StylesPage() {
             name: s.name,
             poNumber: s.poNumber,
             customerName: s.customer.name,
+            // "1 of 2 rows with this name" — null (the common case) renders
+            // nothing. See loadLookalikeChips above.
+            lookalike: lookalikeChips.get(s.id) ?? null,
             // ── Identity & links (always small; hydrated regardless) ──
             supplierName: s.supplier?.name ?? null,
             supplierCountry: s.supplier?.country ?? null,

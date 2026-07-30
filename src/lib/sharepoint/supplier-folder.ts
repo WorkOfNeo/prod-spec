@@ -200,6 +200,76 @@ export async function listChildFileNames(driveId: string, folderItemId: string):
   return names;
 }
 
+// One file inside a folder, with the identity a caller needs to ACT on it.
+// lastModifiedAt is the raw Graph ISO string (Graph returns it as a string and
+// we never do date maths on it — the reconcile UI just shows "changed on …" so
+// a human can see a rename happened weeks after approval).
+export type ChildFile = {
+  id: string;
+  name: string;
+  webUrl: string | null;
+  size: number | null;
+  lastModifiedAt: string | null;
+};
+
+// Graph returns lastModifiedDateTime for drive items, but the shared
+// SharedDriveItem shape in shares.ts (used by the scrape/download paths) never
+// needed it. Widen locally rather than touching that shared type — every other
+// consumer of SharedDriveItem would otherwise have to care.
+type DatedDriveItem = SharedDriveItem & { lastModifiedDateTime?: string };
+
+// The SAME listing as listChildFileNames — same paging, same $top, same 403
+// handling — but returning each file's id + webUrl + size + modified time
+// instead of just a Set of lowercased names.
+//
+// Deliberately a SECOND function rather than a widening of listChildFileNames:
+// the self-heal verify and the cron call that one on a hot path and only ever
+// ask "is this name present?", and quietly changing its return type (or making
+// it do more work per page) would shift behaviour under the sweep that keeps
+// supplier folders correct. Two small functions that page identically is the
+// cheaper risk.
+//
+// The per-style folder reconcile needs the ids: "adopt this hand-renamed file"
+// is a Graph PATCH on an item id (renameDriveItem), and a name alone can't
+// address one. findChildFile can fetch a single known name by path, but the
+// reconcile has to enumerate files it does NOT have names for — that is the
+// whole point of the unexpected-side diff.
+export async function listChildFiles(driveId: string, folderItemId: string): Promise<ChildFile[]> {
+  const client = getGraphClient();
+  const out: ChildFile[] = [];
+  // `id` MUST be in $select for the same reason listChildFolders documents:
+  // Graph returns ONLY the selected properties, so omitting it makes every
+  // child fail the guard below and the folder silently reads as empty.
+  let next: string | null =
+    `/drives/${driveId}/items/${folderItemId}/children?$select=id,name,webUrl,file,size,lastModifiedDateTime&$top=200`;
+  try {
+    while (next) {
+      const page = (await client.api(next).get()) as {
+        value?: DatedDriveItem[];
+        "@odata.nextLink"?: string;
+      };
+      for (const it of page.value ?? []) {
+        if (it.file && it.id && it.name) {
+          out.push({
+            id: it.id,
+            name: it.name,
+            webUrl: it.webUrl ?? null,
+            size: it.size ?? null,
+            lastModifiedAt: it.lastModifiedDateTime ?? null,
+          });
+        }
+      }
+      next = page["@odata.nextLink"] ?? null;
+    }
+  } catch (err) {
+    if (statusCodeOf(err) === 403) {
+      throw new SharePointWriteForbiddenError(`SharePoint denied access (403) — ${WRITE_FORBIDDEN_HINT}`);
+    }
+    throw err;
+  }
+  return out;
+}
+
 export type ChildFolder = { id: string; name: string; webUrl: string | null; childCount: number };
 
 // List the immediate SUB-FOLDERS (not files) of (driveId + folderItemId), paged.

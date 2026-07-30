@@ -20,6 +20,9 @@ import {
   type StyleColumnKey,
 } from "@/lib/styles/table-columns";
 import type { SupplierUploadRollup, ReviewRollup } from "@/lib/styles/table-rollups";
+// Type-only on purpose: related.ts imports @/lib/db, and only an erased
+// `import type` keeps Prisma out of this client bundle.
+import type { LookalikeChip } from "@/lib/styles/related";
 import { mondayItemUrl } from "@/lib/monday/url";
 import { eanStatusMeta, EAN_STATUS_META } from "@/lib/po/ean-status-meta";
 import { BLANK_BA_VALUES } from "@/lib/import/heuristics";
@@ -156,6 +159,10 @@ export type StyleRow = {
   id: string;
   name: string;
   poNumber: string | null;
+  // Set when this style's name also exists on another PO's Monday row — the
+  // "1 of 2 rows with this name" chip. Null (the common case) renders nothing.
+  // Computed server-side in ONE bulk query; see src/lib/styles/related.ts.
+  lookalike: LookalikeChip | null;
   customerName: string;
   // Customer.config.skipSupplierDelivery — shows a "Delivers own" chip next
   // to the customer so the row isn't mistaken for one that sends supplier
@@ -486,6 +493,17 @@ export function StylesTable({
             >
               {s.name}
             </Link>
+            {/* Same style name on more than one PO. The wrong row gets picked
+                HERE, mid-search, before anything is opened — the style page's
+                related-rows card is only the backstop. */}
+            {s.lookalike && (
+              <span
+                className="mt-0.5 inline-block rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                title={`Also on ${s.lookalike.otherPoNumbers.join(", ")} — check you are on the right Purchase Order`}
+              >
+                {s.lookalike.position} of {s.lookalike.total} rows with this name
+              </span>
+            )}
           </td>
         );
       case "po":

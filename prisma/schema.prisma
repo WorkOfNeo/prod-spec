@@ -882,6 +882,18 @@ model Style {
   // re-resolves before building the PDFs. Null = never resolved / pre-feature
   // row (the runner backfills it on the next render without a forced re-scrape).
   eanResolveKey       String?
+  // Trimmed snapshot of the LAST PO scrape's per-section dump — the shape in
+  // src/lib/po/scrape-snapshot.ts (every section the Barcodes page carried,
+  // each variant label + EAN, and whether this style's resolve used it).
+  // Previously this lived only in EanDiagnostics.poSections, which was built
+  // on every scrape and then explicitly dropped before the Log write, so the
+  // answer to "what did this PO actually contain?" survived a few hundred ms
+  // inside the runner and was gone by the time anyone opened the style. Now
+  // it is persisted so the scrape panel — and the style explainer — can answer
+  // that on page load instead of forcing a re-scrape of SharePoint. Trimmed
+  // (no text snippet, capped sections/variants) to keep the row small.
+  // Null = never scraped, or scraped before this field existed.
+  poScrapeSnapshot    Json?
   // Numeric value of the PO reference (last digit run of poNumber, e.g. 63144
   // for "C-PO63144") — see parsePoNumberValue in src/lib/po/po-number.ts. The
   // automation cutoff uses it: auto-scrape + the generation sweep only touch
@@ -922,6 +934,12 @@ model Style {
   @@index([prodSpecId])
   @@index([qrImageId])
   @@index([poNumber])
+  // Lookalike detection: the "same style name, different PO" query behind the
+  // related-rows card / list chip. Monday can carry the SAME style name on
+  // several Pre-Order rows (one per PO), which is the single biggest source of
+  // "this style looks wrong" reports — a reviewer opens the wrong row. Indexed
+  // so that lookup is cheap enough to run on every list render.
+  @@index([name])
   @@index([groupTitle])
   @@index([eanStatus])
   // Windowed EAN claim/sweep filters PENDING by eanQueuedAt.

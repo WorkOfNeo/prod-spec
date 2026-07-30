@@ -19,6 +19,7 @@ import { eanForSize } from "./monday-barcode-parse";
 import { eanResolveKey } from "./resolve-inputs";
 import { computeBatchSize } from "./batch-size";
 import { type EanView, toEanSize } from "./ean-view";
+import { buildPoScrapeSnapshot, parsePoScrapeSnapshot } from "./scrape-snapshot";
 import { reconcileEans, type EanRow } from "./ean-overrides";
 
 // =====================================================
@@ -59,6 +60,23 @@ const RETRYABLE: DbEanStatus[] = [
 // The non-resolved outcomes where the Monday barcode-column fallback is worth
 // trying — the same set that can float. Kept as a Set for the persist path.
 const FLOATABLE_DB = new Set<DbEanStatus>(FLOATABLE_STATUSES as readonly DbEanStatus[]);
+
+// Resolver outcomes that mean "we actually located, downloaded AND parsed the
+// PO PDF" — the only ones whose diagnostics carry a real poSections dump, and
+// therefore the only ones worth persisting as a scrape snapshot.
+//
+// Note this is keyed on the RESOLVER's status, not the DB status: the Monday
+// barcode fallback below can rewrite a PO_NOT_FOUND into RESOLVED_FROM_MONDAY,
+// and that must not be mistaken for "the PO was read".
+//
+// STYLE_NOT_IN_PO (style_not_in_po) and PO_FOUND_NO_EANS (no_eans) are IN the
+// set deliberately: those are exactly the cases a human needs explained — "the
+// PO opened fine, here is every section it listed, none of them is yours". The
+// remaining statuses (po_not_found / no_supplier_folder / no_po / error, which
+// covers a SharePoint search failure, a failed download and an unreadable PDF)
+// all produce an EMPTY poSections, so writing them would clobber a good prior
+// snapshot with nothing every time SharePoint hiccups.
+const PO_WAS_READ = new Set<ResolveStatus>(["ok", "partial", "no_eans", "style_not_in_po"]);
 
 export type EanRunSummary = {
   processed: number;
@@ -275,8 +293,9 @@ export async function resolveAndPersistStyleEans(
 
   // Diagnostics trail: the PO-scrape verdict (why it failed) plus, when we fell
   // back, a summary of what the Monday columns held. poSections (the per-section
-  // scrape dump) is a live-UI affordance only — strip it so it doesn't bloat
-  // every Log row.
+  // scrape dump) is still stripped here — logs stay lean — but it is no longer
+  // discarded: a trimmed copy goes onto Style.poScrapeSnapshot just below, which
+  // is where the style page reads it from on load.
   const logPayload = {
     ...(result.diagnostics ? { ...result.diagnostics, poSections: undefined } : {}),
     ...(mondayFallback
@@ -313,6 +332,20 @@ export async function resolveAndPersistStyleEans(
       })
     : null;
 
+  // The "what did this PO actually contain?" dump, trimmed for storage. This
+  // is the answer to the most common "something's up with this style" report
+  // (the PO for THIS Monday row only carried two size groups; the rest were on
+  // a different row under another PO) — it was computed on every scrape and
+  // then dropped, so a reader had to trigger a whole new SharePoint scrape to
+  // see something we already knew. Stamped with the SAME instant that goes onto
+  // Style.eanResolvedAt below so the two can never disagree about "when".
+  //
+  // Only written when the PO was genuinely opened and parsed (see PO_WAS_READ):
+  // a transient SharePoint failure yields an empty dump, and overwriting a good
+  // snapshot with that would erase the explanation exactly when it's needed.
+  const scrapedAt = new Date();
+  const snapshot = d && PO_WAS_READ.has(result.status) ? buildPoScrapeSnapshot(d, scrapedAt) : null;
+
   // Fold the operator's manual overrides (hidden rows + hand-added rows) back
   // into this fresh scrape so they survive the wholesale replace below — an
   // exclusion is matched by size+EAN and a manual row is re-appended. Without
@@ -348,10 +381,13 @@ export async function resolveAndPersistStyleEans(
         eanStatus: dbStatus,
         cartonEan,
         poFileName: result.poFileName,
-        eanResolvedAt: new Date(),
+        eanResolvedAt: scrapedAt,
         eanResolveStartedAt: null,
         eanAttempts: resolved ? 0 : { increment: 1 },
         eanResolveKey: resolveKey,
+        // Spread, not `poScrapeSnapshot: snapshot` — writing null on a PO we
+        // never opened would wipe the last good dump (see PO_WAS_READ).
+        ...(snapshot ? { poScrapeSnapshot: snapshot } : {}),
       },
     }),
     db.log.create({
@@ -412,6 +448,24 @@ export async function resolveAndPersistStyleEans(
     select: { id: true, size: true, ean13: true, variantLabel: true, cartonEan: true, excluded: true, manual: true },
   });
 
+  // Hand the panel a snapshot either way: the one this run wrote, or — when the
+  // PO couldn't be opened — whatever the last good scrape left behind. A failed
+  // re-resolve should not blank the "here's what the PO contained" panel; that
+  // history is the most useful thing on screen at precisely that moment.
+  // No eanResolvedAt fallback for the "when" here (unlike the page loader):
+  // this run just overwrote that column, so it would date a stale snapshot to
+  // the failed attempt. Better to show no timestamp than a wrong one.
+  const scrapeSnapshot =
+    snapshot ??
+    parsePoScrapeSnapshot(
+      (
+        await db.style.findUnique({
+          where: { id: styleId },
+          select: { poScrapeSnapshot: true },
+        })
+      )?.poScrapeSnapshot,
+    );
+
   return {
     status: dbStatus,
     message,
@@ -419,6 +473,7 @@ export async function resolveAndPersistStyleEans(
     sizeEans: persisted.map(toEanSize),
     cartonEan,
     diagnostics: result.diagnostics,
+    scrapeSnapshot,
   };
 }
 

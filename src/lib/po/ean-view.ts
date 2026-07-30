@@ -1,4 +1,5 @@
 import type { StyleEanStatus } from "@/generated/prisma/enums";
+import type { PoScrapeSnapshot } from "./scrape-snapshot";
 
 // Shared, UI-facing shape for a style's resolved EANs. Type-only module so it
 // can be imported by both server code (runner, route, page) and the client
@@ -88,8 +89,10 @@ export type EanDiagnostics = {
   variantsExcludedByColour: number;
   /** Every section parsed from the PO's Barcodes page, each flagged with
    *  whether this resolve selected it (`selected`). Powers the "full scrape,
-   *  green = used" panel. Live-only: trimmed from the persisted Log payload to
-   *  keep logs lean, so it's present after a fresh resolve, not on page load. */
+   *  green = used" panel. Still trimmed from the persisted Log payload (logs
+   *  stay lean) — but no longer thrown away: a trimmed copy is stored on
+   *  Style.poScrapeSnapshot, so the panel also renders on page load without a
+   *  re-scrape. See src/lib/po/scrape-snapshot.ts. */
   poSections: Array<{
     styleNumber: string | null;
     contrastNo: string | null;
@@ -116,7 +119,18 @@ export type EanView = {
    *  constructors that don't need it can omit it (the panel treats absent as
    *  false). */
   useStyleBoardColour?: boolean;
-  /** Present after a live resolve (not persisted) — lets the UI/API show
-   *  exactly which file was read and whether it contained barcodes. */
+  /** Present only for the duration of a live resolve — the whole struct is far
+   *  too bulky (candidate list, PDF-text snippet) to keep per style, so it is
+   *  never persisted. Lets the UI/API show exactly which file was read and
+   *  whether it contained barcodes. Its poSections dump IS kept, trimmed, in
+   *  `scrapeSnapshot` below. */
   diagnostics?: EanDiagnostics;
+  /** The last scrape's section dump, read back from Style.poScrapeSnapshot.
+   *  The PAGE-LOAD source for the scrape panel: `diagnostics` above only
+   *  exists for the few hundred ms of a live resolve, so before this field a
+   *  reader had to click Re-resolve (and re-scrape SharePoint) to see an
+   *  answer the system had already computed. Live `diagnostics` still wins
+   *  when present — it's fresher — and this fills in otherwise. Null/absent =
+   *  never scraped, or scraped before the column existed. */
+  scrapeSnapshot?: PoScrapeSnapshot | null;
 };
