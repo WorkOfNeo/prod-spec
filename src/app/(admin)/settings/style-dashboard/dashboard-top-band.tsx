@@ -39,9 +39,18 @@ function ageSeconds(item: QueueItem, nowMs: number): number {
 export function DashboardTopBand({
   initialQueue,
   initialThroughput,
+  gap,
+  gapFilterOn,
+  onToggleGapFilter,
 }: {
   initialQueue: GenerationQueue;
   initialThroughput: GenerationThroughput;
+  // Book-wide output gap: styles that declare an output which has never
+  // produced a document, and the slot count across them. Computed by the parent
+  // from the loaded rows.
+  gap: { styles: number; slots: number };
+  gapFilterOn: boolean;
+  onToggleGapFilter: () => void;
 }) {
   const [queue, setQueue] = useState<GenerationQueue>(initialQueue);
   const [throughput, setThroughput] = useState<GenerationThroughput>(initialThroughput);
@@ -157,6 +166,57 @@ export function DashboardTopBand({
         </table>
         <div className="mt-2 text-[11px] text-zinc-400">
           Generated = documents rendered · Sent = outputs emailed to the supplier.
+        </div>
+
+        {/* Output gap — the "an output was added and these styles never got it"
+            number. Clicking it applies the existing "Not generated" state facet
+            so the list below shows exactly the styles behind the count. */}
+        <div className="mt-3 border-t border-zinc-100 pt-3">
+          <button
+            type="button"
+            onClick={onToggleGapFilter}
+            aria-pressed={gapFilterOn}
+            disabled={gap.styles === 0 && !gapFilterOn}
+            className={`w-full rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-default ${
+              gapFilterOn
+                ? "border-amber-300 bg-amber-50"
+                : gap.styles > 0
+                  ? "border-zinc-200 hover:border-amber-300 hover:bg-amber-50/50"
+                  : "border-zinc-100"
+            }`}
+            title={
+              gap.styles === 0
+                ? "Every style has generated every output its prod spec declares."
+                : gapFilterOn
+                  ? "Clear the filter"
+                  : "Show only these styles"
+            }
+          >
+            <div className="flex items-baseline gap-2">
+              <span
+                className={`text-2xl font-semibold tracking-tight tabular-nums ${
+                  gap.styles > 0 ? "text-amber-700" : "text-zinc-400"
+                }`}
+              >
+                {gap.styles.toLocaleString()}
+              </span>
+              <span className="text-sm text-zinc-500">
+                style{gap.styles === 1 ? "" : "s"} missing outputs
+              </span>
+              {gap.slots > 0 && (
+                <span className="ml-auto text-xs tabular-nums text-zinc-500">
+                  {gap.slots.toLocaleString()} document{gap.slots === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+            <div className="mt-0.5 text-[11px] text-zinc-400">
+              {gap.styles === 0
+                ? "Every declared output has generated."
+                : gapFilterOn
+                  ? "Filtering the list below · click to clear"
+                  : "Declared on the prod spec, never rendered · click to filter"}
+            </div>
+          </button>
         </div>
       </div>
 

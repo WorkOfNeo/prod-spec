@@ -42,6 +42,11 @@ export type StyleGenDecision =
 //      (a non-FAILED asset). REJECTED / AWAITING_REVIEW / APPROVED outputs are
 //      therefore never redone; only never-succeeded ones remain. This is where
 //      "don't auto-regenerate a rejected output" lives.
+//
+// Stamps Style.outputsCheckedVersion on every SETTLED outcome (enqueued /
+// nothing_pending / floated) so the sweep's version-gap candidate class doesn't
+// re-offer the same style every tick. `in_flight` is deliberately NOT stamped —
+// it's transient, and the style must be re-offered once its job lands.
 export async function maybeEnqueueStyleGeneration(
   styleId: string,
   triggerSource: TriggerSource,
@@ -50,11 +55,33 @@ export async function maybeEnqueueStyleGeneration(
   const autoOn = opts.autoGenerateEnabled ?? (await getAutoGenerateEnabled());
   if (!autoOn) return { enqueued: false, reason: "auto_off" };
 
-  const style = await db.style.findUnique({
-    where: { id: styleId },
-    select: { prodSpec: { select: { active: true } } },
-  });
-  if (!style?.prodSpec?.active) return { enqueued: false, reason: "prodspec_inactive" };
+  // outputsVersion is additive — before its db:deploy the select would throw and
+  // take the whole sweep with it, so fall back to the version-free read. A null
+  // version simply means "nothing to stamp"; the gate below is unaffected.
+  let spec: { active: boolean; outputsVersion: number | null } | null;
+  try {
+    const row = await db.style.findUnique({
+      where: { id: styleId },
+      select: { prodSpec: { select: { active: true, outputsVersion: true } } },
+    });
+    spec = row?.prodSpec ?? null;
+  } catch {
+    const row = await db.style.findUnique({
+      where: { id: styleId },
+      select: { prodSpec: { select: { active: true } } },
+    });
+    spec = row?.prodSpec ? { active: row.prodSpec.active, outputsVersion: null } : null;
+  }
+  if (!spec?.active) return { enqueued: false, reason: "prodspec_inactive" };
+
+  // Read the spec's version BEFORE the readiness walk: an edit landing mid-check
+  // must leave the style behind (re-swept next tick), never stamp over the newer
+  // version with a decision made against the older output set.
+  const specVersion = spec.outputsVersion;
+  const settle = async <T extends StyleGenDecision>(decision: T): Promise<T> => {
+    await stampOutputsChecked(styleId, specVersion);
+    return decision;
+  };
 
   const inflight = await db.job.count({
     where: { styleId, status: { in: ["QUEUED", "RUNNING"] } },
@@ -62,13 +89,30 @@ export async function maybeEnqueueStyleGeneration(
   if (inflight > 0) return { enqueued: false, reason: "in_flight" };
 
   const failures = await db.job.count({ where: { styleId, status: "FAILED" } });
-  if (failures >= MAX_GEN_ATTEMPTS) return { enqueued: false, reason: "floated" };
+  if (failures >= MAX_GEN_ATTEMPTS) return settle({ enqueued: false, reason: "floated" });
 
   const variantKeys = await pendingOutputKeysForStyle(styleId);
-  if (variantKeys.length === 0) return { enqueued: false, reason: "nothing_pending" };
+  if (variantKeys.length === 0) return settle({ enqueued: false, reason: "nothing_pending" });
 
   const { jobId } = await enqueueGenerationJob({ styleId, triggerSource, variantKeys });
-  return { enqueued: true, jobId, variantKeys };
+  return settle({ enqueued: true, jobId, variantKeys });
+}
+
+// Record that this style has been evaluated against `version` of its spec's
+// output set. Fail-soft and guarded: the column is additive, so a pre-db:deploy
+// deployment must degrade to "the version gap never closes" (the sweep re-checks
+// and finds nothing_pending — wasteful but correct) rather than throwing the
+// whole sweep. Never moves the stamp backwards.
+async function stampOutputsChecked(styleId: string, version: number | null): Promise<void> {
+  if (version === null) return; // column not deployed — nothing to record
+  try {
+    await db.style.updateMany({
+      where: { id: styleId, outputsCheckedVersion: { lt: version } },
+      data: { outputsCheckedVersion: version },
+    });
+  } catch {
+    // column not deployed yet — nothing to record
+  }
 }
 
 export type GenSweepSummary = {
@@ -127,21 +171,44 @@ export async function sweepReadyStyleGenerations(limit = 10): Promise<GenSweepSu
   // is the bounded backstop.
   const minPo = await getGenerationMinPo();
 
-  // Cheap prefilter: pre-generation styles on an active ProdSpec with no job
-  // already in flight. Over-fetch — many candidates will have nothing pending
-  // (already generated) and get skipped by the per-style gate below.
-  const candidates = await db.style.findMany({
+  const overFetch = Math.max(limit, 1) * 5;
+  const poWindow = minPo !== null ? [{ poSeq: { gte: minPo } }, { poSeq: null }] : null;
+
+  // Candidate class 1 — pre-generation styles on an active ProdSpec with no job
+  // already in flight. Over-fetch: many will have nothing pending (already
+  // generated) and get skipped by the per-style gate below.
+  const preGeneration = await db.style.findMany({
     where: {
       prodSpecId: { not: null },
       prodSpec: { is: { active: true } },
       status: { in: ["PENDING", "READY"] },
       jobs: { none: { status: { in: ["QUEUED", "RUNNING"] } } },
-      ...(minPo !== null ? { OR: [{ poSeq: { gte: minPo } }, { poSeq: null }] } : {}),
+      ...(poWindow ? { OR: poWindow } : {}),
     },
     select: { id: true },
     orderBy: { updatedAt: "desc" },
-    take: Math.max(limit, 1) * 5,
+    take: overFetch,
   });
+
+  // Candidate class 2 — already-generated styles whose spec has DECLARED A NEW
+  // OUTPUT since they were last checked. Class 1 can never see these: the runner
+  // moves a style to AWAITING_REVIEW on its first successful render, and it
+  // never returns to PENDING/READY, so without this arm an output added to a
+  // spec reaches only its never-generated styles and silently skips the rest.
+  //
+  // Prisma can't compare two columns, so this resolves the handful of active
+  // specs first and asks per-spec ("styles of spec X below version N") — an
+  // index scan on (prodSpecId, outputsCheckedVersion). Only specs that have
+  // actually gained an output (outputsVersion > 0) are queried, so on a book
+  // where nobody has edited a spec this costs one cheap query and nothing else.
+  const versionGap = await findVersionGapStyles(overFetch, poWindow);
+
+  // Class 1 first: a style waiting for its FIRST outputs is more urgent than one
+  // topping up an extra document. Deduped — a style can qualify under both.
+  const seen = new Set<string>();
+  const candidates = [...preGeneration, ...versionGap].filter((c) =>
+    seen.has(c.id) ? false : (seen.add(c.id), true),
+  );
 
   for (const { id } of candidates) {
     if (summary.enqueued >= limit) break;
@@ -158,4 +225,47 @@ export async function sweepReadyStyleGenerations(limit = 10): Promise<GenSweepSu
     }
   }
   return summary;
+}
+
+// Styles whose spec declares outputs they've never been evaluated for. Two
+// queries regardless of book size: one for the active specs that have gained an
+// output, one OR'd lookup across them.
+//
+// Fail-soft on the whole thing: the two columns are additive, so before
+// db:deploy this returns nothing and the sweep behaves exactly as it did — the
+// new candidate class simply doesn't exist yet.
+async function findVersionGapStyles(
+  take: number,
+  poWindow: Array<Record<string, unknown>> | null,
+): Promise<Array<{ id: string }>> {
+  try {
+    const specs = await db.prodSpec.findMany({
+      where: { active: true, outputsVersion: { gt: 0 } },
+      select: { id: true, outputsVersion: true },
+    });
+    if (specs.length === 0) return [];
+
+    return await db.style.findMany({
+      where: {
+        archivedAt: null,
+        deletedAt: null,
+        jobs: { none: { status: { in: ["QUEUED", "RUNNING"] } } },
+        ...(poWindow ? { OR: poWindow } : {}),
+        // AND-ed alongside the PO window above (Prisma merges the sibling `OR`
+        // with this nested one via AND), so a parked style stays parked.
+        AND: {
+          OR: specs.map((s) => ({
+            prodSpecId: s.id,
+            outputsCheckedVersion: { lt: s.outputsVersion },
+          })),
+        },
+      },
+      select: { id: true },
+      orderBy: { updatedAt: "desc" },
+      take,
+    });
+  } catch {
+    // outputsVersion / outputsCheckedVersion not deployed yet.
+    return [];
+  }
 }
