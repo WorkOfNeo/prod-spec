@@ -58,6 +58,7 @@ export function RerunStylesPanel({
   const [listLoading, setListLoading] = useState(true);
   const [batch, setBatch] = useState<Batch | null>(null);
   const [submittingAll, setSubmittingAll] = useState(false);
+  const [submittingMissing, setSubmittingMissing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [query, setQuery] = useState("");
@@ -212,6 +213,69 @@ export function RerunStylesPanel({
     }
   }
 
+  // Styles / slots in the MISSING bucket only — outputs that have never
+  // generated. This is what adding an output to the spec creates, and the only
+  // scope the automatic fan-out ever runs. Computed off the same list the table
+  // shows so the button's count can't disagree with what it enqueues.
+  const missingSummary = useMemo(() => {
+    let styles = 0;
+    let slots = 0;
+    for (const r of list?.rows ?? []) {
+      if (r.inFlight || r.missingKeys.length === 0) continue;
+      styles++;
+      slots += r.missingKeys.length;
+    }
+    return { styles, slots };
+  }, [list]);
+
+  const runMissingDisabledReason = unsaved
+    ? "Save your output changes first"
+    : !specActive
+      ? "Activate this prod spec to run its styles"
+      : list && missingSummary.styles === 0
+        ? "Nothing new — every style has every declared output"
+        : null;
+
+  async function runMissing() {
+    if (!list || missingSummary.styles === 0 || submittingMissing || activeRun) return;
+    if (runMissingDisabledReason) return;
+    const ok = window.confirm(
+      `Generate ${missingSummary.slots} missing output${missingSummary.slots === 1 ? "" : "s"} ` +
+        `across ${missingSummary.styles} style${missingSummary.styles === 1 ? "" : "s"}?\n\n` +
+        `Only outputs that have NEVER generated. Approved, rejected and awaiting-review ` +
+        `documents are left untouched. Renders in the background — safe to leave this page.`,
+    );
+    if (!ok) return;
+    setSubmittingMissing(true);
+    setError(null);
+    setDismissed(false);
+    try {
+      const res = await fetch(base, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: "missing" }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { batchId?: string | null; error?: string };
+      if (!res.ok) {
+        setError(data.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      if (!data.batchId) {
+        setError("Nothing to generate — the styles may have started generating elsewhere.");
+        const l = await fetchList();
+        if (l) setList(l);
+        return;
+      }
+      window.localStorage.setItem(storageKey, data.batchId);
+      const b = await fetchBatch(data.batchId);
+      if (b) setBatch(b);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Request failed");
+    } finally {
+      setSubmittingMissing(false);
+    }
+  }
+
   async function runOne(row: StyleRunRow) {
     if (row.inFlight || row.variantKeys.length === 0 || runningRows.has(row.id)) return;
     if (unsaved || !specActive) return;
@@ -265,28 +329,60 @@ export function RerunStylesPanel({
         <div className="min-w-0">
           <p className="text-sm font-medium text-zinc-800">Run styles</p>
           <p className="mt-0.5 text-xs text-zinc-500">
-            Every style on this prod spec. Run one, or run all — every output that isn&apos;t{" "}
-            <span className="font-medium text-zinc-700">approved</span> regenerates (new/missing,
-            rejected, and awaiting review); approved work is left alone.
+            Every style on this prod spec. <span className="font-medium text-zinc-700">Generate
+            new outputs</span> renders only what has never generated — that&apos;s what adding an
+            output to this spec creates, and it also runs automatically on save.{" "}
+            <span className="font-medium text-zinc-700">Run all</span> is wider: every output that
+            isn&apos;t approved (new/missing, rejected, awaiting review).
           </p>
         </div>
-        <button
-          type="button"
-          onClick={runAll}
-          disabled={
-            submittingAll ||
-            listLoading ||
-            list == null ||
-            list.toRerun === 0 ||
-            activeRun ||
-            Boolean(runAllDisabledReason)
-          }
-          title={runAllDisabledReason ?? "Run every style with outputs to regenerate on this prod spec"}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
-        >
-          <RunAllIcon />
-          {submittingAll ? "Starting…" : `Run all${list ? ` (${list.toRerun})` : ""}`}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Missing-only — the safe, everyday action after adding an output.
+              Listed first and styled as the primary of the pair because it's
+              what an operator wants nine times out of ten; "Run all" is the
+              bigger hammer next to it. */}
+          <button
+            type="button"
+            onClick={runMissing}
+            disabled={
+              submittingMissing ||
+              submittingAll ||
+              listLoading ||
+              list == null ||
+              missingSummary.styles === 0 ||
+              activeRun ||
+              Boolean(runMissingDisabledReason)
+            }
+            title={
+              runMissingDisabledReason ??
+              `Generate the ${missingSummary.slots} output${missingSummary.slots === 1 ? "" : "s"} that have never rendered, across ${missingSummary.styles} style${missingSummary.styles === 1 ? "" : "s"}. Approved / rejected / in-review work is untouched.`
+            }
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
+          >
+            <PlusIcon />
+            {submittingMissing
+              ? "Starting…"
+              : `Generate new outputs${list ? ` (${missingSummary.styles})` : ""}`}
+          </button>
+          <button
+            type="button"
+            onClick={runAll}
+            disabled={
+              submittingAll ||
+              submittingMissing ||
+              listLoading ||
+              list == null ||
+              list.toRerun === 0 ||
+              activeRun ||
+              Boolean(runAllDisabledReason)
+            }
+            title={runAllDisabledReason ?? "Run every style with outputs to regenerate on this prod spec"}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+          >
+            <RunAllIcon />
+            {submittingAll ? "Starting…" : `Run all${list ? ` (${list.toRerun})` : ""}`}
+          </button>
+        </div>
       </div>
 
       {/* Summary counts + filter. */}
@@ -607,6 +703,20 @@ function Spinner({ className = "h-4 w-4" }: { className?: string }) {
     >
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className="h-3.5 w-3.5"
+      aria-hidden="true"
+    >
+      <path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z" />
     </svg>
   );
 }

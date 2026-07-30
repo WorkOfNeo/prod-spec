@@ -37,6 +37,11 @@ export async function enqueueBulkRun(input: {
   runnable: RunnableStyle[];
   // Stored on the batch for the progress widget. Falls back to "N styles".
   label: string;
+  // Defaults to MANUAL_BULK (a human clicked a bulk button). SPEC_OUTPUT_ADDED
+  // marks the automatic fan-out fired when a save adds an output to the spec —
+  // same enqueue mechanics, but the run list must not attribute it to a click
+  // nobody made. Both are email-suppressed the same way.
+  triggerSource?: "MANUAL_BULK" | "SPEC_OUTPUT_ADDED";
   user: { id: string | null; email: string | null };
 }): Promise<BulkRunResult> {
   const { runnable } = input;
@@ -50,7 +55,7 @@ export async function enqueueBulkRun(input: {
     id: randomUUID(),
     styleId: r.id,
     prodSpecId: r.prodSpecId, // analytics snapshot, same as enqueueGenerationJob
-    triggerSource: "MANUAL_BULK" as const,
+    triggerSource: input.triggerSource ?? ("MANUAL_BULK" as const),
     status: "QUEUED" as const,
     variantKeys: r.variantKeys,
   }));

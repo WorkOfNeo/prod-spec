@@ -125,9 +125,45 @@ export function StyleDashboardClient({
 
   const activeFilters = tokens.length > 0 || FACET_KEYS.some((k) => (selected[k]?.length ?? 0) > 0);
 
+  // The output gap, book-wide: styles carrying a declared output that has never
+  // produced a document, and how many such slots that is. Derived from the rows
+  // already loaded (rollup.notGenerated is computed server-side and excludes the
+  // intentional cases — disabled, operator-ignored, keyword-excluded), so this
+  // costs nothing extra.
+  const gap = useMemo(() => {
+    let styles = 0;
+    let slots = 0;
+    for (const r of rows) {
+      if (r.rollup.notGenerated === 0) continue;
+      styles++;
+      slots += r.rollup.notGenerated;
+    }
+    return { styles, slots };
+  }, [rows]);
+
+  const gapFilterOn = (selected.state ?? []).includes("NOT_GENERATED");
+  const toggleGapFilter = () => {
+    setSelected((prev) => {
+      const cur = prev.state ?? [];
+      return {
+        ...prev,
+        state: cur.includes("NOT_GENERATED")
+          ? cur.filter((v) => v !== "NOT_GENERATED")
+          : [...cur, "NOT_GENERATED"],
+      };
+    });
+    resetWindow();
+  };
+
   return (
     <>
-      <DashboardTopBand initialQueue={initialQueue} initialThroughput={initialThroughput} />
+      <DashboardTopBand
+        initialQueue={initialQueue}
+        initialThroughput={initialThroughput}
+        gap={gap}
+        gapFilterOn={gapFilterOn}
+        onToggleGapFilter={toggleGapFilter}
+      />
 
       {/* Filter bar */}
       <div className="mt-8 flex flex-wrap items-center gap-2">

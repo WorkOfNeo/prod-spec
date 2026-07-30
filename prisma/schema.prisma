@@ -552,6 +552,15 @@ model ProdSpec {
   // Per-doc-type config: { WASHCARE: { enabled: true, widthMm: 30, heightMm: 60 }, ... }
   // See ProdSpecOutputsSchema in src/lib/prod-spec/config.ts.
   outputs                  Json     @default("{}")
+  // Monotonic counter bumped by the PATCH endpoint whenever the ENABLED output
+  // set GAINS a key (an output added, or a disabled one switched back on).
+  // Paired with Style.outputsCheckedVersion: a style whose checked version is
+  // behind its spec's has declared outputs it has never been evaluated for, so
+  // the backlog sweep pulls it in even though it long since left PENDING/READY.
+  // Without this the sweep's status filter makes every already-generated style
+  // permanently invisible to a newly added output. Removals deliberately do NOT
+  // bump — nothing needs generating for an output that no longer exists.
+  outputsVersion           Int      @default(0)
   // Optional logo (SVG markup) used by templates that render a
   // customer × business-area branded header (e.g. care-label-01). Stored
   // as text so it travels with the row and inlines into the PDF without
@@ -830,6 +839,13 @@ model Style {
   groupId             String?
   groupTitle          String?
   rawData             Json           @default("{}")
+  // The ProdSpec.outputsVersion this style was last evaluated against by the
+  // generation gate. Behind the spec's version ⇒ the spec has declared outputs
+  // this style has never been checked for, so the backlog sweep picks it up
+  // regardless of `status` (an already-generated style is otherwise invisible
+  // to the sweep forever). Stamped by maybeEnqueueStyleGeneration once the
+  // style is settled for that version — see src/lib/queue/generation-sweep.ts.
+  outputsCheckedVersion Int          @default(0)
   completionPct       Int            @default(0)
   missingFields       Json           @default("[]")
   status              StyleStatus    @default(PENDING)
@@ -934,6 +950,10 @@ model Style {
   @@index([prodSpecId])
   @@index([qrImageId])
   @@index([poNumber])
+  // Backlog sweep, second candidate class: "styles of spec X whose checked
+  // output version is behind X's". Composite so the sweep's per-spec OR arm is
+  // an index scan rather than a walk of every style on the spec.
+  @@index([prodSpecId, outputsCheckedVersion])
   // Lookalike detection: the "same style name, different PO" query behind the
   // related-rows card / list chip. Monday can carry the SAME style name on
   // several Pre-Order rows (one per PO), which is the single biggest source of
@@ -1183,6 +1203,12 @@ enum TriggerSource {
   // src/lib/po/ean-runner.ts. Kept distinct so dashboards can tell
   // "generated because barcodes landed" apart from a Monday sync.
   EAN_RESOLVED
+  // Job enqueued because an admin ADDED an output to the ProdSpec: the save
+  // fans the new output out over the spec's existing styles automatically
+  // (missing-only — approved / rejected / awaiting-review work is untouched).
+  // Kept distinct from MANUAL_BULK so the run list can say "new output added"
+  // rather than attributing a bulk-run click nobody made.
+  SPEC_OUTPUT_ADDED
   // Job enqueued by the periodic backlog sweep (/api/jobs/run?sweep=1, driven
   // by the Railway cron): pulls every active style with ready, ungenerated
   // outputs through generation, gradually. Email-suppressed like EAN_RESOLVED.

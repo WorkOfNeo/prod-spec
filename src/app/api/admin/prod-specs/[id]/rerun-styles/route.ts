@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin } from "@/lib/roles";
 import { enqueueBulkRun } from "@/lib/queue/bulk-run";
-import { listProdSpecStyleRuns } from "@/lib/outputs/prod-spec-rerun";
+import { enqueueMissingOutputsForSpec, listProdSpecStyleRuns } from "@/lib/outputs/prod-spec-rerun";
 import { getVariant } from "@/lib/pdf/template-registry";
 
 export const runtime = "nodejs";
@@ -49,17 +49,23 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 // Optional JSON body { variantKey } scopes the run to ONE output: the per-output
 // "Run all" button on each Outputs-tab row. Only that output's base key is
 // enqueued, and only for the styles where it's missing / rejected / changed.
+//
+// Optional JSON body { scope: "missing" } narrows to outputs that have NEVER
+// generated — the "Generate new outputs" button. Same scope the automatic
+// fan-out uses, so clicking it and waiting for the sweep produce identical work.
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const g = await gate();
   if (!g.ok) return g.res;
   const { id } = await ctx.params;
 
-  // Optional per-output scope. Tolerate an empty/absent body (spec-wide run).
-  const body = (await req.json().catch(() => ({}))) as { variantKey?: unknown };
+  // Optional per-output / missing-only scope. Tolerate an empty/absent body
+  // (spec-wide run).
+  const body = (await req.json().catch(() => ({}))) as { variantKey?: unknown; scope?: unknown };
   const scopeKey =
     typeof body.variantKey === "string" && body.variantKey.trim().length > 0
       ? body.variantKey.split("#")[0] // compare against base keys
       : null;
+  const missingOnly = body.scope === "missing";
 
   const spec = await db.prodSpec.findUnique({ where: { id }, select: { name: true, active: true } });
   if (!spec) return NextResponse.json({ error: "Prod spec not found" }, { status: 404 });
@@ -70,6 +76,26 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       { error: "This prod spec is inactive — activate it before rerunning its styles." },
       { status: 409 },
     );
+  }
+
+  // Missing-only: delegate to the shared fan-out so the button and the on-save
+  // automation can't drift. Ignores `variantKey` — the two scopes aren't
+  // combined anywhere in the UI.
+  if (missingOnly) {
+    const fan = await enqueueMissingOutputsForSpec({
+      prodSpecId: id,
+      label: `New outputs: ${spec.name}`,
+      triggerSource: "MANUAL_BULK",
+      user: { id: g.userId, email: g.email },
+    });
+    return NextResponse.json({
+      ok: true,
+      batchId: fan.batchId,
+      enqueued: fan.enqueued,
+      slots: fan.slots,
+      skippedInFlight: fan.skippedInFlight,
+      scope: "missing",
+    });
   }
 
   // Same source of truth as the list the operator is looking at: run the rows

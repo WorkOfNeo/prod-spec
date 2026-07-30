@@ -366,6 +366,13 @@ export type StyleRunRow = {
   // rejected + changed + pending). Empty ⇒ nothing to regenerate (all approved,
   // or no ready outputs at all). The per-row Run button posts exactly these keys.
   variantKeys: string[];
+  // The strict subset of `variantKeys` in the "missing" bucket — ready outputs
+  // this style has NEVER generated. This is what an output ADDED to the spec
+  // produces, and it's the only scope the automatic paths ever run: touching
+  // rejected / changed / awaiting-review work on a spec edit would push
+  // hundreds of PDFs back through review for a millimetre nudge. The
+  // "Generate new outputs" button posts exactly these.
+  missingKeys: string[];
   missing: number;
   rejected: number;
   changed: number;
@@ -503,6 +510,7 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
     const isInflight = inflightSet.has(c.id);
 
     const variantKeys: string[] = [];
+    const missingKeys: string[] = [];
     let missingN = 0;
     let rejectedN = 0;
     let changedN = 0;
@@ -520,8 +528,10 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
       const bucket = classifyOutput(state?.get(b), currentKeys.get(b) ?? null, currentVersions.get(b) ?? null);
       if (bucket === "ok") continue;
       variantKeys.push(o.variantKey);
-      if (bucket === "missing") missingN++;
-      else if (bucket === "rejected") rejectedN++;
+      if (bucket === "missing") {
+        missingKeys.push(o.variantKey);
+        missingN++;
+      } else if (bucket === "rejected") rejectedN++;
       else if (bucket === "changed") changedN++;
       else pendingN++;
       // Per-output tallies mirror what "Run all" for that output would enqueue:
@@ -547,6 +557,7 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
       status: c.status,
       readyCount,
       variantKeys,
+      missingKeys,
       missing: missingN,
       rejected: rejectedN,
       changed: changedN,
@@ -575,6 +586,64 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
     byOutput: Object.fromEntries(byOutput),
     rows,
   };
+}
+
+// =====================================================
+// Missing-only fan-out — the shared tail for "this spec declares an output some
+// of its styles have never generated; go make it".
+//
+// Used by BOTH automatic paths and the manual button, so they can't drift:
+//   • PATCH /api/admin/prod-specs/[id] when the save ADDS an output
+//   • the "Generate new outputs (N)" button in the editor
+//
+// Deliberately narrower than "Run all": only the `missing` bucket. Approved,
+// rejected and awaiting-review documents are never touched, so adding one
+// output to a spec with 200 styles produces exactly 200 new PDFs — not 200
+// styles' worth of re-review.
+// =====================================================
+
+export type MissingFanOut = {
+  batchId: string | null;
+  // Styles enqueued (one job each, scoped to that style's missing keys).
+  enqueued: number;
+  // Missing output slots across those styles — the "N new PDFs" number.
+  slots: number;
+  // Styles that have missing outputs but are already mid-run, so they were
+  // skipped. The sweep picks them up on a later tick.
+  skippedInFlight: number;
+};
+
+export async function enqueueMissingOutputsForSpec(input: {
+  prodSpecId: string;
+  // Batch label prefix; the style count is appended by enqueueBulkRun's default
+  // when this is blank.
+  label: string;
+  triggerSource: "SPEC_OUTPUT_ADDED" | "MANUAL_BULK";
+  user: { id: string | null; email: string | null };
+}): Promise<MissingFanOut> {
+  const { enqueueBulkRun } = await import("@/lib/queue/bulk-run");
+  const list = await listProdSpecStyleRuns(input.prodSpecId);
+
+  const runnable: RunnableStyle[] = [];
+  let slots = 0;
+  let skippedInFlight = 0;
+  for (const r of list.rows) {
+    if (r.missingKeys.length === 0) continue;
+    if (r.inFlight) {
+      skippedInFlight++;
+      continue;
+    }
+    runnable.push({ id: r.id, prodSpecId: input.prodSpecId, variantKeys: r.missingKeys });
+    slots += r.missingKeys.length;
+  }
+
+  const { batchId, enqueued } = await enqueueBulkRun({
+    runnable,
+    label: input.label,
+    triggerSource: input.triggerSource,
+    user: input.user,
+  });
+  return { batchId, enqueued, slots, skippedInFlight };
 }
 
 // Defensive parse of the spec's outputs JSON — a malformed blob yields no

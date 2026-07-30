@@ -6,12 +6,21 @@ import {
   BundlePageSettingsSchema,
   ProdSpecOutputsSchema,
   parseProdSpecLanguages,
+  parseProdSpecOutputs,
 } from "@/lib/prod-spec/config";
 import { ColumnMappingSchema, RequiredFieldSchema } from "@/lib/customers/config";
 import { resolveTicketsForRemovedOutputs } from "@/lib/tickets/rejection-tickets";
 import { currentOutputBaseKeys } from "@/lib/tickets/orphan";
+import { gainedOutputKeys } from "@/lib/prod-spec/outputs-version";
+import { enqueueMissingOutputsForSpec } from "@/lib/outputs/prod-spec-rerun";
+import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
 
 export const runtime = "nodejs";
+// A save that ADDS an output also plans + enqueues the fan-out over the spec's
+// styles (readiness walk + one createMany). Enqueue-only — the PDFs render in
+// the background — but a spec with hundreds of styles needs more than the
+// default to get through the plan.
+export const maxDuration = 60;
 
 const PATCH_SCHEMA = z.object({
   name: z.string().min(1).max(200).optional(),
@@ -160,5 +169,108 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
   }
 
-  return NextResponse.json({ prodSpec: result, resolvedOrphanTickets });
+  // Output ADDED → fan it out over the spec's existing styles, automatically.
+  //
+  // Without this an added output only ever reaches styles that have never
+  // generated: the backlog sweep's status filter makes already-generated styles
+  // invisible to it, so the rest sit with a declared-but-missing output until
+  // somebody notices and clicks Run all. Bumping `outputsVersion` is what lets
+  // the sweep find them; the immediate fan-out below is what makes it feel
+  // instant instead of "some time in the next five minutes".
+  //
+  // Scope is MISSING-ONLY on purpose — approved, rejected and awaiting-review
+  // documents are never touched, so this can't turn a spec edit into a re-review
+  // of the whole book. Best-effort throughout: the operator's save has already
+  // committed, and a fan-out failure must not surface as a failed save (the
+  // sweep is the backstop either way).
+  let outputsFanOut: FanOutSummary | null = null;
+  if (d.outputs !== undefined) {
+    try {
+      outputsFanOut = await fanOutAddedOutputs({
+        prodSpecId: id,
+        specName: result.name,
+        active: result.active,
+        previousOutputs: existing.outputs,
+        nextOutputs: d.outputs,
+        user: { id: auth.userId, email: null },
+      });
+    } catch (err) {
+      console.warn(`[prod-specs] new-output fan-out skipped for ${id}: ${(err as Error).message}`);
+    }
+  }
+
+  return NextResponse.json({ prodSpec: result, resolvedOrphanTickets, outputsFanOut });
+}
+
+type FanOutSummary = {
+  // Base keys the save introduced — non-empty is what triggers everything below.
+  addedKeys: string[];
+  // Null when nothing was enqueued: spec inactive, auto-generate off, or every
+  // style already covered. `reason` says which.
+  batchId: string | null;
+  enqueued: number;
+  slots: number;
+  skippedInFlight: number;
+  reason: "enqueued" | "no_new_outputs" | "spec_inactive" | "auto_off" | "nothing_to_do";
+};
+
+async function fanOutAddedOutputs(input: {
+  prodSpecId: string;
+  specName: string;
+  active: boolean;
+  previousOutputs: unknown;
+  nextOutputs: Array<{ variantKey: string; enabled?: boolean }>;
+  user: { id: string | null; email: string | null };
+}): Promise<FanOutSummary> {
+  const nothing = (reason: FanOutSummary["reason"], addedKeys: string[] = []): FanOutSummary => ({
+    addedKeys,
+    batchId: null,
+    enqueued: 0,
+    slots: 0,
+    skippedInFlight: 0,
+    reason,
+  });
+
+  // A malformed stored blob parses to [] — every current key then reads as
+  // "added", which would fan out the whole spec. Treat a parse failure as "no
+  // reliable before-state" and skip rather than mass-enqueue.
+  let previous: Array<{ variantKey: string; enabled?: boolean }>;
+  try {
+    previous = parseProdSpecOutputs(input.previousOutputs);
+  } catch {
+    return nothing("no_new_outputs");
+  }
+
+  const addedKeys = gainedOutputKeys(previous, input.nextOutputs);
+  if (addedKeys.length === 0) return nothing("no_new_outputs");
+
+  // Bump first, unconditionally: even when the fan-out below can't run right now
+  // (inactive spec, auto-generate off), the version gap is what makes the sweep
+  // pick these styles up once the blocker clears.
+  await db.prodSpec.update({
+    where: { id: input.prodSpecId },
+    data: { outputsVersion: { increment: 1 } },
+  });
+
+  // The same two gates the auto-generate paths use. An inactive spec would
+  // no-op every job in the runner; the master switch off means "sync, never
+  // generate".
+  if (!input.active) return nothing("spec_inactive", addedKeys);
+  if (!(await getAutoGenerateEnabled())) return nothing("auto_off", addedKeys);
+
+  const fan = await enqueueMissingOutputsForSpec({
+    prodSpecId: input.prodSpecId,
+    label: `New output${addedKeys.length === 1 ? "" : "s"}: ${input.specName}`,
+    triggerSource: "SPEC_OUTPUT_ADDED",
+    user: input.user,
+  });
+
+  return {
+    addedKeys,
+    batchId: fan.batchId,
+    enqueued: fan.enqueued,
+    slots: fan.slots,
+    skippedInFlight: fan.skippedInFlight,
+    reason: fan.enqueued > 0 ? "enqueued" : "nothing_to_do",
+  };
 }
