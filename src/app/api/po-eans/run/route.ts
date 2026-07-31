@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { runPendingEanResolutions, estimateEanBatchSize } from "@/lib/po/ean-runner";
+import { runPendingEanResolutions, runEanRecycle, estimateEanBatchSize } from "@/lib/po/ean-runner";
 import { EAN_BATCH } from "@/lib/po/batch-size";
+import { RECYCLE_CRON_KIND } from "@/lib/po/ean-status-meta";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin } from "@/lib/roles";
@@ -114,7 +115,37 @@ export async function POST(req: NextRequest) {
       },
     });
   }
-  return NextResponse.json(summary);
+
+  // Recycle lane: a couple of gave-up rows per sweep tick get another scrape,
+  // least-recently-checked first (see runEanRecycle). Rides this tick so there
+  // is no second Railway cron to register. Skipped on the high-frequency
+  // post-ingest nudge — that one exists to resolve the style just ingested.
+  // Never fails the drain: a recycle problem must not take out the fast lane.
+  let recycle: Awaited<ReturnType<typeof runEanRecycle>> | null = null;
+  if (sweep || source === "session") {
+    const recycleStartedAt = Date.now();
+    try {
+      recycle = await runEanRecycle();
+      // Only record ticks that did work — 288 empty rows a day would bury the
+      // /automation activity feed, and the 24h quota sums `processed` anyway.
+      if (recycle.checked > 0) {
+        await db.cronRun.create({
+          data: {
+            kind: RECYCLE_CRON_KIND,
+            source,
+            processed: recycle.checked,
+            styleIds: recycle.styleIds,
+            note: `re-checked ${recycle.checked} gave-up · recovered ${recycle.recovered}`,
+            durationMs: Date.now() - recycleStartedAt,
+          },
+        });
+      }
+    } catch (err) {
+      console.error("[ean-recycle] pass failed:", (err as Error).message);
+    }
+  }
+
+  return NextResponse.json({ ...summary, recycle });
 }
 
 export function GET() {

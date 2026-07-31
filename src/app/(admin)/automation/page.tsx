@@ -41,6 +41,9 @@ const EAN_ORDER = [
   "RESOLVED_FROM_MONDAY",
   "PO_FOUND_NO_EANS",
   "PO_NOT_FOUND",
+  // Was missing here, so the whole "style not in PO" bucket rendered no chip
+  // and those styles were invisible on this page.
+  "STYLE_NOT_IN_PO",
   "ERROR",
   "NONE",
 ] as const;
@@ -121,7 +124,11 @@ export default async function AutomationPage({
 // ---------------------------------------------------------------- Pipeline
 
 async function PipelineTab() {
-  const [snapshot, eanGroups, jobGroups, styleGroups, rerunnableResolved, minPo] =
+  // Needed to scope the "parked queue" count below, so it's read up front
+  // rather than alongside the counts that depend on it.
+  const minPo = await getAutomationMinPo();
+
+  const [snapshot, eanGroups, jobGroups, styleGroups, rerunnableResolved, parkedPending] =
     await Promise.all([
       getPipelineSnapshot(),
       db.style.groupBy({
@@ -137,7 +144,17 @@ async function PipelineTab() {
           eanStatus: { in: ["RESOLVED", "PARTIAL"] },
         },
       }),
-      getAutomationMinPo(),
+      // "queued" is a global count, but a PENDING row below the PO cutoff can
+      // never be claimed — the chip alone reads as "we're getting to it".
+      // Count them so the page can say plainly that they're parked.
+      minPo === null
+        ? Promise.resolve(0)
+        : db.style.count({
+            where: {
+              eanStatus: "PENDING",
+              OR: [{ poSeq: { lt: minPo } }, { poSeq: null }],
+            },
+          }),
     ]);
 
   const eanCounts = new Map(eanGroups.map((g) => [g.eanStatus as string, g._count._all]));
@@ -227,6 +244,16 @@ async function PipelineTab() {
               );
             })}
           </div>
+          {parkedPending > 0 && (
+            <p className="mt-2 text-xs text-zinc-500">
+              <strong className="tabular-nums">{parkedPending.toLocaleString()}</strong> of the
+              queued styles sit below the PO cutoff ({minPo}) — the runner can never claim them,
+              so they are <em>parked</em>, not waiting.{" "}
+              <Link href="/po-eans?scope=parked" className="underline hover:text-zinc-700">
+                Review parked
+              </Link>
+            </p>
+          )}
         </div>
         <div>
           <h2 className="mb-2 text-sm font-semibold text-zinc-900">Generation jobs</h2>
