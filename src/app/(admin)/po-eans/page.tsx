@@ -6,7 +6,12 @@ import { toEanSize } from "@/lib/po/ean-view";
 import { PoEansTable, type PoEanRow, type PoEanFilter } from "./po-eans-table";
 import { PoEanAutoRunSetting } from "./po-ean-auto-run-setting";
 import { requireAdminPage } from "@/lib/auth-server";
-import { EAN_STATUS_META, FLOATABLE_STATUSES, MAX_EAN_ATTEMPTS } from "@/lib/po/ean-status-meta";
+import {
+  EAN_STATUS_META,
+  FLOATABLE_STATUSES,
+  MAX_EAN_ATTEMPTS,
+  eanLane,
+} from "@/lib/po/ean-status-meta";
 import type { StyleEanStatus } from "@/generated/prisma/enums";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +20,11 @@ export const dynamic = "force-dynamic";
 // recent window so a deep-linked badge (e.g. "gave up 74") lands on the whole
 // set, not a recent slice.
 const FILTERED_TAKE = 500;
+
+// How deep to read the recycle queue when estimating "next check". Beyond this
+// the estimate saturates (reported as the far end of the queue) rather than
+// costing an unbounded scan — the in-scope pile is cutoff-bounded and small.
+const RECYCLE_QUEUE_SCAN = 2000;
 
 // The Colour code ("🎨 Color Code" dropdown, e.g. "*A"/"*B") off the raw Monday
 // snapshot. Two colourways of the same style share a style NUMBER but differ by
@@ -104,7 +114,7 @@ export default async function PoEansPage({
     ? { poNumber: { not: null } }
     : { poNumber: { not: null }, ...scopeWhere };
 
-  const [styles, activeCount, parkedCount, statusGroups, floatedCount] = await Promise.all([
+  const [styles, activeCount, parkedCount, statusGroups, floatedCount, recycleQueue] = await Promise.all([
     db.style.findMany({
       where: rowsWhere,
       select: {
@@ -117,6 +127,7 @@ export default async function PoEansPage({
         cartonEan: true,
         poFileName: true,
         eanResolvedAt: true,
+        poSeq: true,
         supplier: { select: { name: true } },
         eans: {
           orderBy: { position: "asc" },
@@ -137,23 +148,66 @@ export default async function PoEansPage({
     // True per-status totals across the scope (not just the loaded window).
     db.style.groupBy({ by: ["eanStatus"], where: countsWhere, _count: { _all: true } }),
     db.style.count({ where: floatedWhere }),
+    // The recycle queue in service order (least-recently-checked first), so a
+    // row's position gives it an honest "next check" estimate. Only in-scope
+    // (at/above the PO cutoff) rows are ever recycled — parked ones are not in
+    // this list and are labelled as such instead of being promised a re-check.
+    db.style.findMany({
+      where: {
+        ...floatedWhere,
+        ...(minPo !== null ? { poSeq: { gte: minPo } } : {}),
+      },
+      select: { id: true },
+      orderBy: { eanResolvedAt: "asc" },
+      take: RECYCLE_QUEUE_SCAN,
+    }),
   ]);
 
-  const rows: PoEanRow[] = styles.map((s) => ({
-    id: s.id,
-    name: s.name,
-    colourCode: readColourCode(s.rawData),
-    poNumber: s.poNumber ?? "",
-    supplierName: s.supplier?.name ?? null,
-    resolvedAt: s.eanResolvedAt ? formatDate(s.eanResolvedAt) : null,
-    eanAttempts: s.eanAttempts,
-    initial: {
+  // id → how many rows the cycle serves before it. Rows past the scan window
+  // fall back to the window size, which errs toward a LATER estimate.
+  const recycleRank = new Map(recycleQueue.map((r, i) => [r.id, i]));
+  const now = new Date();
+
+  const rows: PoEanRow[] = styles.map((s) => {
+    const lane = eanLane({
       status: s.eanStatus,
-      poFileName: s.poFileName,
-      cartonEan: s.cartonEan,
-      sizeEans: s.eans.map(toEanSize),
-    },
-  }));
+      attempts: s.eanAttempts,
+      poSeq: s.poSeq,
+      cutoff: minPo,
+      lastCheckedAt: s.eanResolvedAt,
+      aheadInQueue: recycleRank.get(s.id) ?? RECYCLE_QUEUE_SCAN,
+      now,
+    });
+    return {
+      id: s.id,
+      name: s.name,
+      colourCode: readColourCode(s.rawData),
+      poNumber: s.poNumber ?? "",
+      supplierName: s.supplier?.name ?? null,
+      resolvedAt: s.eanResolvedAt ? formatDate(s.eanResolvedAt) : null,
+      eanAttempts: s.eanAttempts,
+      lane:
+        lane.kind === "cycling"
+          ? {
+              kind: "cycling" as const,
+              // "due now" reads truthfully for a row the cycle just hasn't
+              // reached yet; a future date is a real estimate.
+              nextCheck:
+                lane.nextCheckAt.getTime() <= now.getTime()
+                  ? "due now"
+                  : formatDate(lane.nextCheckAt),
+            }
+          : lane.kind === "parked"
+            ? { kind: "parked" as const, cutoff: minPo ?? 0 }
+            : { kind: "active" as const },
+      initial: {
+        status: s.eanStatus,
+        poFileName: s.poFileName,
+        cartonEan: s.cartonEan,
+        sizeEans: s.eans.map(toEanSize),
+      },
+    };
+  });
 
   // True per-status totals (from the DB, within the current scope) for the chips.
   const counts: Record<string, number> = {};
