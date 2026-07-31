@@ -304,6 +304,53 @@ test("multi-style assort carton → sum(qtyPerCarton) adds each style's Assort",
 });
 
 // ---------------------------------------------------------------------------
+// The inner/outer PACK PAIR — the other axis a carton-qty cell can carry.
+// "Solid= 5/20" is 5 per inner box, 20 per outer carton; bare {{qtyPerCarton}}
+// takes the first number, so a layout printing it on an "Outer box" line is a
+// box level off. :inner / :outer name the level.
+// ---------------------------------------------------------------------------
+
+function pairStyle(raw: string): StyleData {
+  const base = buildSampleStyleData();
+  return { ...base, cartonQtyRaw: raw, carton: { ...base.carton, outerVE: 0 } };
+}
+
+test(":inner / :outer split a labelled pack pair", () => {
+  const s = pairStyle("Solid= 5/20");
+  assert.equal(resolveTextToken(s, "qtyPerCarton", "inner"), "5");
+  assert.equal(resolveTextToken(s, "qtyPerCarton", "outer"), "20");
+  // Bare keeps taking the first number — unchanged behaviour.
+  assert.equal(resolveTextToken(s, "qtyPerCarton"), "5");
+});
+
+test(":inner / :outer split a bare pack pair", () => {
+  assert.equal(resolveTextToken(pairStyle("6/18"), "qtyPerCarton", "inner"), "6");
+  assert.equal(resolveTextToken(pairStyle("6/18"), "qtyPerCarton", "outer"), "18");
+  // Equal levels are still a pair.
+  assert.equal(resolveTextToken(pairStyle("8/8"), "qtyPerCarton", "outer"), "8");
+  assert.equal(resolveTextToken(pairStyle("30/30"), "qtyPerCarton", "inner"), "30");
+});
+
+test(":inner / :outer on a NON-pair fall through instead of blanking", () => {
+  // One number serves both box levels.
+  const plain = buildSampleStyleData();
+  const ve = String(plain.carton.outerVE);
+  assert.equal(resolveTextToken(plain, "qtyPerCarton", "inner"), ve);
+  assert.equal(resolveTextToken(plain, "qtyPerCarton", "outer"), ve);
+  // A Solid/Assort split is the OTHER axis — :outer must not eat its slash.
+  assert.equal(resolveTextToken(splitStyle(), "qtyPerCarton", "outer"), "5");
+  // A "(5+5)=10" total is two sub-styles, not a pair — left verbatim.
+  const total = pairStyle("KH10058 A+ KH10058 C (5+5)=10");
+  assert.equal(resolveTextToken(total, "qtyPerCarton", "outer"), "KH10058 A+ KH10058 C (5+5)=10");
+});
+
+test("a reviewer's pinned pack pair still splits by level", () => {
+  const pinned = applyFieldOverrides(buildSampleStyleData(), { cartonQty: "5/20" });
+  assert.equal(resolveTextToken(pinned, "qtyPerCarton", "inner"), "5");
+  assert.equal(resolveTextToken(pinned, "qtyPerCarton", "outer"), "20");
+});
+
+// ---------------------------------------------------------------------------
 // A reviewer's inline "Carton qty" edit has to beat the raw column text. The
 // pin used to write only carton.outerVE, which {{qtyPerCarton}} never reads
 // when a raw cell is present — so on exactly the styles worth correcting (a
