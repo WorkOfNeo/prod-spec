@@ -14,12 +14,15 @@ let resolveBarcodeValue: typeof import("./tokens").resolveBarcodeValue;
 let resolveTextToken: typeof import("./tokens").resolveTextToken;
 let evaluateCalcForStyle: typeof import("./tokens").evaluateCalcForStyle;
 let buildSampleStyleData: typeof import("../pdf/sample-data").buildSampleStyleData;
+let applyFieldOverrides: typeof import("../pdf/pins").applyFieldOverrides;
+let readPinnableField: typeof import("../pdf/pins").readPinnableField;
 let ASSORT: string;
 
 before(async () => {
   ({ repetitionStyles, barcodeSymbology } = await import("./render"));
   ({ resolveBarcodeValue, resolveTextToken, evaluateCalcForStyle } = await import("./tokens"));
   ({ buildSampleStyleData } = await import("../pdf/sample-data"));
+  ({ applyFieldOverrides, readPinnableField } = await import("../pdf/pins"));
   ASSORT = buildSampleStyleData().carton.assortEan!; // sample master carton
 });
 
@@ -298,6 +301,71 @@ test("multi-style assort carton → sum(qtyPerCarton) adds each style's Assort",
   };
   const assort = repetitionStyles(s, "cartonEan").find((r) => r.isAssortment)!;
   assert.equal(evaluateCalcForStyle("sum(qtyPerCarton)", assort), "18"); // 8 + 10
+});
+
+// ---------------------------------------------------------------------------
+// A reviewer's inline "Carton qty" edit has to beat the raw column text. The
+// pin used to write only carton.outerVE, which {{qtyPerCarton}} never reads
+// when a raw cell is present — so on exactly the styles worth correcting (a
+// Solid/Assort split, a per-size list) the edit silently did nothing and the
+// editor pre-filled blank.
+// ---------------------------------------------------------------------------
+
+test("cartonQty pin pre-fills the number that PRINTS, not the numeric parse", () => {
+  // Split cell: outerVE is 0, so the old read showed "" next to a PDF saying 5.
+  assert.equal(readPinnableField(splitStyle(), "cartonQty"), "5");
+  const assort = repetitionStyles(splitStyle(), "cartonEan").find((r) => r.isAssortment)!;
+  assert.equal(readPinnableField(assort, "cartonQty"), "8");
+  // A plain numeric cell still reads back as its number.
+  const plain = buildSampleStyleData();
+  assert.equal(readPinnableField(plain, "cartonQty"), String(plain.carton.outerVE));
+});
+
+test("cartonQty pin overrides a Solid/Assort split on every row", () => {
+  const pinned = applyFieldOverrides(splitStyle(), { cartonQty: "12" });
+  assert.equal(resolveTextToken(pinned, "qtyPerCarton"), "12");
+  // The split is gone, so the assort master carton takes the pinned value too
+  // — the reviewer forced ONE number for this output.
+  for (const rep of repetitionStyles(pinned, "cartonEan")) {
+    assert.equal(resolveTextToken(rep, "qtyPerCarton"), "12");
+  }
+  // Calc aggregates follow the same resolver, so sum() can't disagree.
+  assert.equal(evaluateCalcForStyle("sum(qtyPerCarton)", pinned), "12");
+});
+
+test("cartonQty pin may itself be a split — narrowing still applies", () => {
+  const pinned = applyFieldOverrides(buildSampleStyleData(), {
+    cartonQty: "Solid - 6 / Assort - 9",
+  });
+  const reps = repetitionStyles(pinned, "cartonEan");
+  assert.equal(resolveTextToken(reps.find((r) => r.isAssortment)!, "qtyPerCarton"), "9");
+  assert.equal(resolveTextToken(reps.find((r) => !r.isAssortment)!, "qtyPerCarton"), "6");
+});
+
+test("cartonQty pin beats a per-size list (no size anchor → verbatim)", () => {
+  const base = buildSampleStyleData();
+  const perSize: StyleData = {
+    ...base,
+    cartonQtyRaw: "S=10,M=12,L=14",
+    carton: { ...base.carton, outerVE: 0 },
+  };
+  // Un-pinned, each size row narrows to its own qty…
+  const rows = repetitionStyles(perSize, "size");
+  assert.ok(new Set(rows.map((r) => resolveTextToken(r, "qtyPerCarton"))).size > 1);
+  // …pinned, every row prints the forced number.
+  for (const rep of repetitionStyles(applyFieldOverrides(perSize, { cartonQty: "20" }), "size")) {
+    assert.equal(resolveTextToken(rep, "qtyPerCarton"), "20");
+  }
+});
+
+test("cartonQty pin with no raw cell keeps its existing meaning", () => {
+  // The 125 overrides already stored in prod are all on styles with an empty
+  // carton-qty cell — they printed via outerVE and must keep printing the same.
+  const base = buildSampleStyleData();
+  const noRaw: StyleData = { ...base, cartonQtyRaw: undefined, carton: { ...base.carton, outerVE: 0 } };
+  const pinned = applyFieldOverrides(noRaw, { cartonQty: "40" });
+  assert.equal(resolveTextToken(pinned, "qtyPerCarton"), "40");
+  assert.equal(pinned.carton.outerVE, 40);
 });
 
 test("single-value customerItemNo unchanged by per-size repeat", () => {
