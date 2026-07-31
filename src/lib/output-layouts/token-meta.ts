@@ -23,8 +23,10 @@ export type LayoutTokenMeta = {
   // "lang" → the token takes a language argument ({{composition:da}});
   // "source" → barcode/logo source argument ({{barcode:cartonEan}});
   // "gap" → optional numeric mm gap, e.g. {{washSymbols:0}} (0 mm gap);
-  // "cartonKind" → optional solid/assort selector on a split carton qty
-  //   ({{qtyPerCarton:assort}}); bare still resolves the plain value.
+  // "cartonKind" → optional selector on a carton qty that carries more than
+  //   one number: solid/assort for a "Solid - 5 / Assort - 8" split, or
+  //   inner/outer for a "5/20" pack pair ({{qtyPerCarton:outer}});
+  //   bare still resolves the plain value.
   // "sizeScope" → optional ":size" selector that narrows an unlabelled
   //   per-size list to the repetition row's size ({{description:size}});
   //   bare still resolves the whole value.
@@ -121,11 +123,11 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   },
   {
     key: "qtyPerCarton",
-    label: "Qty per carton (:solid / :assort for a split value)",
+    label: "Qty per carton (:solid / :assort for a split · :inner / :outer for a 5/20 pair)",
     group: "Order & carton",
     kind: "text",
     arg: "cartonKind",
-    example: "48 · {{qtyPerCarton:assort}}",
+    example: "48 · {{qtyPerCarton:assort}} · {{qtyPerCarton:outer}}",
   },
   { key: "cartonEan", label: "Carton EAN (number)", group: "Order & carton", kind: "text", example: "5701234567890" },
   { key: "assortEan", label: "Assortment EAN (number)", group: "Order & carton", kind: "text", example: "5701234567890" },

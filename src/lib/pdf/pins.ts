@@ -1,6 +1,7 @@
 import type { StyleData, SiblingStyle } from "./types";
 import { computeEan13Checksum, isValidEan13 } from "./barcode";
 import { parseFieldOverrides, type PinnableField } from "./pins-meta";
+import { pickCartonQtyVariant } from "@/lib/output-layouts/carton-qty";
 
 // =====================================================
 // Per-output field pins — StyleData application (server side).
@@ -56,6 +57,14 @@ export function applyFieldOverrides(style: StyleData, rawOverrides: unknown): St
         break;
       case "cartonQty":
         next.carton.outerVE = Number(v) || 0;
+        // outerVE is only the NUMERIC parse of the column. {{qtyPerCarton}}
+        // reads `cartonQtyRaw` first — that's where a "Solid - 5 / Assort - 8"
+        // split or a per-size "SIZE=qty" list lives — so pinning outerVE alone
+        // was silently shadowed by the buyer's cell on exactly the styles a
+        // reviewer needs to correct. Store the typed string raw, the same way
+        // sizeRatio does: a plain number prints as-is, and a reviewer who
+        // types a split keeps the solid/assort narrowing.
+        next.cartonQtyRaw = v;
         break;
       case "cartonEan":
         next.carton.ean13 = ensureValidEan(v);
@@ -128,8 +137,15 @@ export function readPinnableField(style: StyleData, field: PinnableField): strin
       return style.colour?.name ?? "";
     case "colourCode":
       return style.colour?.code ?? "";
-    case "cartonQty":
-      return style.carton.outerVE ? String(style.carton.outerVE) : "";
+    case "cartonQty": {
+      // Mirror the {{qtyPerCarton}} resolver so the editor pre-fills the number
+      // that PRINTS on this document. Reading outerVE alone showed a blank on
+      // every split / per-size cell (its numeric parse is 0) — the reviewer saw
+      // an empty box next to a label that clearly had a value on the PDF.
+      const raw = (style.cartonQtyRaw ?? "").trim();
+      const base = style.carton.outerVE ? String(style.carton.outerVE) : raw;
+      return pickCartonQtyVariant(raw || base, style.isAssortment ? "assort" : "solid");
+    }
     case "cartonEan":
       return style.carton.ean13 ?? "";
     case "assortEan":

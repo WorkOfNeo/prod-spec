@@ -10,7 +10,7 @@ import { ruleRequiredColumns } from "@/lib/pdf/spec-fields";
 import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-marking";
 import { tokenMeta, parseSiblingTokenKey, type BarcodeSource } from "./token-meta";
 import { formatCompositionLines } from "./composition";
-import { pickCartonQtyVariant } from "./carton-qty";
+import { pickCartonQtyPair, pickCartonQtyVariant } from "./carton-qty";
 import { pickSizeItems } from "./size-scoped-text";
 import { formatSizeRatio, parseSizeRatio, pickSizeRatioForSizes } from "./size-ratio";
 import {
@@ -189,11 +189,19 @@ const RESOLVERS: Record<string, TextResolver> = {
   //     non-repeat carton) takes the solid number.
   // A non-split value has neither marker, so pickCartonQtyVariant hands it
   // back untouched and the row/arg makes no difference.
+  //
+  // :inner / :outer are the OTHER axis — the box level, from a pack pair
+  // ("Solid= 5/20" → inner 5, outer 20). A cell that isn't a pair carries one
+  // number for both levels, so those args fall through to the rules above
+  // rather than printing nothing.
   qtyPerCarton: (s, arg) => {
     const raw = (s.cartonQtyRaw ?? "").trim();
     const base = s.carton.outerVE ? String(s.carton.outerVE) : raw;
-    const kind = arg ?? (s.isAssortment ? "assort" : "solid");
-    return pickCartonQtyVariant(raw || base, kind);
+    const source = raw || base;
+    const level = arg === "inner" || arg === "outer" ? pickCartonQtyPair(source, arg) : null;
+    if (level != null) return level;
+    const kind = arg === "solid" || arg === "assort" ? arg : s.isAssortment ? "assort" : "solid";
+    return pickCartonQtyVariant(source, kind);
   },
   cartonEan: (s) => (s.carton.ean13 && s.carton.ean13 !== EAN_SENTINEL ? s.carton.ean13 : ""),
   assortEan: (s) =>

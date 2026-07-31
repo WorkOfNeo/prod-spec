@@ -2759,8 +2759,9 @@ export function LayoutEditor({
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">{group}</div>
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   {LAYOUT_TOKENS.filter((t) => t.group === group).flatMap((t) => {
-                    // A split carton qty offers bare + :solid + :assort chips,
-                    // a size-scoped field bare + :size; every other token is a
+                    // A multi-number carton qty offers bare + :solid/:assort
+                    // (the split) + :inner/:outer (the pack pair) chips, a
+                    // size-scoped field bare + :size; every other token is a
                     // single bare chip.
                     const args =
                       t.arg === "cartonKind"
