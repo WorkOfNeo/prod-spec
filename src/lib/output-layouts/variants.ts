@@ -12,6 +12,8 @@ import { hasPerRowCartonEan, layoutSettings, type LayoutSettings } from "./schem
 import { renderLayoutHtml, repetitionStyles } from "./render";
 import { pinnableFieldsInDef } from "./tokens";
 import { applyFieldOverrides } from "@/lib/pdf/pins";
+import { mergeLineValues } from "@/lib/outputs/output-line-values";
+import { documentLines } from "./lines";
 
 // =====================================================
 // Layout → TemplateVariant bridge (SERVER-ONLY — imports db).
@@ -127,12 +129,13 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     // Single-file path — also taken when a REPEATING layout has
     // splitBy "none": renderLayoutHtml expands every repetition into one
     // document, so the whole run still ships as exactly one PDF.
-    render: (style, dims) =>
+    render: (style, dims, lineOverrides) =>
       renderLayoutHtml(def, style, {
         mode: "production",
         title: row.name,
         sizeOverrideMm: row.isInfoArea ? dims : undefined,
         customLogo: row.customLogo,
+        lineOverrides,
       }),
     fileNameFor: (style) => {
       const expr = settings.fileName;
@@ -152,7 +155,7 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     // {{colourName}} bound). Either way each file carries one EAN.
     renderMany:
       settings.repeatBy !== "none" && settings.splitBy === "ean"
-        ? (style, dims, perDocOverrides) =>
+        ? (style, dims, perDocOverrides, lineOverrides) =>
             Promise.all(
               splitFilePlan(settings, style).map(async ({ suffix, fileName, repStyle }) => ({
                 suffix,
@@ -166,6 +169,12 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
                     mode: "production",
                     sizeOverrideMm: row.isInfoArea ? dims : undefined,
                     customLogo: row.customLogo,
+                    // Whole-output line rewrites, with THIS document's layered
+                    // over them — same base/per-doc precedence as fields.
+                    lineOverrides: mergeLineValues(
+                      lineOverrides?.base,
+                      lineOverrides?.perDoc?.get(suffix),
+                    ),
                   },
                 ),
               })),
@@ -177,6 +186,10 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
       settings.repeatBy !== "none" && settings.splitBy === "ean"
         ? (style) => splitFilePlan(settings, style).map(({ suffix, repStyle }) => ({ suffix, style: repStyle }))
         : undefined,
+    // Every text line this layout prints, resolved against the given style —
+    // the review-time line editor's rows. `def` is already in scope here, so
+    // the review page never has to re-load the layout.
+    lines: (style, overrides) => documentLines(def, style, overrides),
     // Pre-run preview: the same plan WITHOUT rendering — what the style
     // page shows as "files the next run will generate".
     filesPreview: (style) =>

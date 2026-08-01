@@ -44,6 +44,11 @@ import {
   loadStyleFieldValues,
   mergeFieldOverrides,
 } from "@/lib/outputs/output-field-values";
+import {
+  loadStyleLineValues,
+  mergeLineValues,
+  splitLineValues,
+} from "@/lib/outputs/output-line-values";
 
 const STALE_RUNNING_MS = 15 * 60 * 1000;
 
@@ -328,6 +333,12 @@ export async function processJob(jobId: string): Promise<void> {
   // previously-blocked output through this gate) and the render merge below (so
   // the value actually prints). Fail-soft empty until db:deploy lands the table.
   const fieldValues = await loadStyleFieldValues(job.styleId);
+  // Per-style reviewer LINE rewrites (the catch-all beside field values, for
+  // text no field pin can reach — including layout literals). Render-time only:
+  // deliberately NOT consulted by the readiness gate, because rewriting a line
+  // doesn't supply the missing column the rest of the output still needs.
+  // Fail-soft empty until db:deploy lands the table.
+  const lineValues = await loadStyleLineValues(job.styleId);
 
   const readyKeys = new Set(
     (prodSpec
@@ -552,6 +563,8 @@ export async function processJob(jobId: string): Promise<void> {
       for (const [k, v] of fieldValues) {
         if (k.startsWith(docPrefix)) perDocOverrides.set(k.slice(docPrefix.length), v as Record<string, string>);
       }
+      // Same base-vs-per-document split for line rewrites.
+      const lines = splitLineValues(lineValues, baseKey);
       // Printed size — the info-area size override (admin pick or custom)
       // when the variant is an info area, else the output's own dims.
       const dims = effectiveOutputDims(output, variant.isInfoArea ?? false, infoAreaSizes);
@@ -564,6 +577,9 @@ export async function processJob(jobId: string): Promise<void> {
           renderStyle,
           dims,
           perDocOverrides.size > 0 ? perDocOverrides : undefined,
+          lines.base || lines.perDoc.size > 0
+            ? { base: lines.base, perDoc: lines.perDoc }
+            : undefined,
         );
         for (const doc of docs) {
           const pdf = await renderPdf({ html: doc.html });
@@ -589,7 +605,13 @@ export async function processJob(jobId: string): Promise<void> {
       if (variant.staticPdf) {
         pdf = await variant.staticPdf();
       } else {
-        const html = await variant.render(renderStyle, dims);
+        // Single-document output: only the base key can carry line rewrites,
+        // but merge anyway so a stray "#suffix" row can never be silently lost.
+        const html = await variant.render(
+          renderStyle,
+          dims,
+          mergeLineValues(lines.base, undefined),
+        );
         placeholderCount = countPlaceholderMarkers(html);
         pdf = await renderPdf({ html });
       }

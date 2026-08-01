@@ -188,6 +188,40 @@ model StyleOutputFieldValue {
   @@map("style_output_field_values")
 }
 
+// Per-(style × output × LINE) reviewer text overrides — the catch-all escape
+// hatch beside StyleOutputFieldValue. A field value fixes DATA (and therefore
+// every output using it); a line value rewrites ONE line of ONE document,
+// including layout text that is hardcoded and backed by no column at all
+// ("Inner box: 8 pair") — which no field edit can ever reach.
+//
+// `lineKey` addresses the line within the layout definition as
+// "<pageId>|<blockId>|<lineIndex>" (see lineOverrideKey). Both ids are stable:
+// LayoutPage.id is required by the schema and parseLayoutDef injects a
+// deterministic LayoutBlock.id into every block.
+//
+// `value` is a SOURCE line, not literal output — tokens and {{if}} conditionals
+// inside it resolve exactly as an authored line would, so a reviewer can type
+// plain text OR repoint the line at a different token. Max length mirrors
+// LayoutBlockSchema's per-line 500-char cap.
+model StyleOutputLineValue {
+  id          String   @id @default(cuid())
+  styleId     String
+  // BASE key ("layout:<id>") = every PDF of the output; "<base>#<suffix>" =
+  // one document of a repeat-per-EAN output. Same convention as
+  // StyleOutputFieldValue / StyleOutputIgnore.
+  variantKey  String
+  lineKey     String
+  value       String
+  outputName  String? // display snapshot for logs
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([styleId, variantKey, lineKey])
+  @@index([styleId])
+  @@map("style_output_line_values")
+}
+
 // Nightly supplier-send queue (WS2). One row per approved (style, output).
 // Populated the moment an output is approved (manual or auto) — ALWAYS, even
 // while sending is flag-gated off — so /settings/approved can show exactly
