@@ -21,6 +21,7 @@ function settings(repeatBy: LayoutSettings["repeatBy"]): LayoutSettings {
     cartonNumbering: false,
     multipleStyles: false,
     customLogoWidthPct: 100,
+  rules: [],
   };
 }
 

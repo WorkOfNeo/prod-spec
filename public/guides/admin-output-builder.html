@@ -391,6 +391,7 @@
         <div class="vh">⚙️ Settings tab</div>
         <div class="vd"><b>Generation activity</b> — how many PDFs this output has ever produced (total / approved / pending / rejected), across how many styles, and when it last ran.</div>
         <div class="vd"><b>Auto-approve outputs</b> — a switch that marks this output's assets <b>approved the moment they generate</b>, skipping the manual review queue. Two guards stay: a print-unsafe document (missing artwork or EAN) still falls back to manual review, and a person still presses <b>“Approve all &amp; publish”</b> on the style to send to the supplier.</div>
+        <div class="vd"><b>Generation rules</b> — <i>which styles</i> this output is made for. With no rule it generates for every style whose Prod Spec declares it. <b>Generate when</b> narrows it to matching styles only — a barcode sticker that exists just for shoes is <b>Generate when · Product group · contains · shoes</b>, and no other style gets it. <b>Don't generate when</b> is the opposite: an exception carved out of the default. Keywords are comma-separated and case-insensitive (“contains” matches substrings, “equals” needs the whole field), a Don't-generate match always wins, and a skipped output shows its reason on the style and review screens instead of looking like missing work. The same editor sits in <b>Document types</b> (next to <i>New layout</i>) when a rule should cover a whole type rather than one output.</div>
       </div>
       <div class="variant">
         <div class="vh">🗂️ Reviews tab</div>

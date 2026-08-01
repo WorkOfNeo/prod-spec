@@ -267,6 +267,20 @@ export function pageGrid(page: { gridCols?: number; gridRows?: number }): { cols
   };
 }
 
+// One per-output generation rule ("generate only when…" / "never when…").
+// Shape-mirrors OutputRule in src/lib/outputs/exclusion.ts — the engine that
+// evaluates it — so this parse is the write-side guard for the very JSON the
+// matcher reads. `field` is a synced ColumnMapping key (productGroup, …),
+// validated as a non-empty string rather than an enum: a rule whose field is
+// later dropped from the offered list must still round-trip through the editor
+// instead of turning the whole layout definition invalid.
+export const LayoutRuleSchema = z.object({
+  field: z.string().min(1).max(60),
+  op: z.enum(["contains", "equals"]).default("contains"),
+  keywords: z.array(z.string().max(120)).max(50),
+  mode: z.enum(["exclude", "include"]).default("exclude"),
+});
+
 // Per-layout output settings (the editor's "Settings" card).
 export const LayoutSettingsSchema = z.object({
   // "ean": the whole layout repeats once per size/EAN row of the style —
@@ -316,6 +330,15 @@ export const LayoutSettingsSchema = z.object({
   // height auto-scales to preserve aspect. The image itself is stored per
   // layout on OutputLayout.customLogo (uploaded in the builder).
   customLogoWidthPct: z.number().min(1).max(100).default(100),
+  // WHETHER this output is generated for a style at all — the per-output
+  // twin of the doc-type keyword rules (Output Builder → Document types).
+  // "include": generate ONLY for styles that match (a barcode sticker that
+  // exists just for shoes); "exclude": never generate for styles that match.
+  // Evaluated by src/lib/outputs/exclusion.ts, exposed to the runner and the
+  // readiness gate as TemplateVariant.generationRules. Empty = no gate: the
+  // output generates for every style whose Prod Spec declares it, exactly as
+  // before this setting existed.
+  rules: z.array(LayoutRuleSchema).max(50).default([]),
 });
 export type LayoutSettings = z.infer<typeof LayoutSettingsSchema>;
 
@@ -346,6 +369,7 @@ export function layoutSettings(def: LayoutDef): LayoutSettings {
       cartonNumbering: false,
       multipleStyles: false,
       customLogoWidthPct: 100,
+      rules: [],
     }
   );
 }

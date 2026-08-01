@@ -7,6 +7,7 @@ import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { LAYOUT_VARIANT_PREFIX } from "@/lib/output-layouts/variants";
 import { generationStatsForLayout } from "@/lib/output-layouts/stats";
 import { loadDocTypes } from "@/lib/pdf/doc-types-db";
+import { EXCLUSION_FIELDS } from "@/lib/outputs/exclusion";
 import { LayoutEditor } from "./layout-editor";
 import { requireAdminPage } from "@/lib/auth-server";
 
@@ -130,6 +131,9 @@ export default async function OutputLayoutEditorPage(props: { params: Promise<{ 
       stats={stats}
       recentAssets={recentAssets}
       prodSpecs={prodSpecs}
+      // Fields the Settings tab's generation rules can gate on — same list the
+      // Document types popup uses, so both rule scopes offer the same choices.
+      ruleFields={[...EXCLUSION_FIELDS]}
     />
   );
 }

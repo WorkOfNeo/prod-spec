@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-server";
 import { TEMPLATE_VARIANTS } from "@/lib/pdf/template-registry";
-import { parseExclusionRules, type ExclusionRule } from "@/lib/outputs/exclusion";
+import { parseOutputRules, type OutputRule } from "@/lib/outputs/exclusion";
 
 export const runtime = "nodejs";
 
@@ -11,6 +11,10 @@ const RULE_SCHEMA = z.object({
   field: z.string().min(1).max(60),
   op: z.enum(["contains", "equals"]),
   keywords: z.array(z.string().max(120)).max(50),
+  // "exclude" (don't generate when it matches) is the default and what every
+  // rule written before modes existed means; "include" flips it to "generate
+  // ONLY when it matches". See src/lib/outputs/exclusion.ts.
+  mode: z.enum(["exclude", "include"]).optional(),
 });
 
 // Either a label rename, the exclusion rules, or both. Both are safe any time
@@ -40,18 +44,18 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ value: st
     return NextResponse.json({ error: "Invalid body", details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const data: { label?: string; exclusionRules?: ExclusionRule[] } = {};
+  const data: { label?: string; exclusionRules?: OutputRule[] } = {};
   if (parsed.data.label !== undefined) data.label = parsed.data.label.trim();
   // Normalise through the shared parser (trims keywords, drops blanks/empties)
   // so the stored JSON is always clean regardless of what the client sent.
   if (parsed.data.exclusionRules !== undefined) {
-    data.exclusionRules = parseExclusionRules(parsed.data.exclusionRules);
+    data.exclusionRules = parseOutputRules(parsed.data.exclusionRules);
   }
 
   try {
     const row = await db.docTypeDef.update({ where: { value }, data });
     return NextResponse.json({
-      type: { value: row.value, label: row.label, rules: parseExclusionRules(row.exclusionRules) },
+      type: { value: row.value, label: row.label, rules: parseOutputRules(row.exclusionRules) },
     });
   } catch (err) {
     const code = (err as { code?: string }).code;

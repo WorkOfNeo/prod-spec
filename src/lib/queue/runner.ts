@@ -5,7 +5,7 @@ import { buildStyleData } from "@/lib/styles/render-context";
 import { outputReadinessForStyle, effectiveMapping } from "@/lib/styles/output-readiness";
 import { effectiveStyleItem, resolveMappedField } from "@/lib/styles/resolved-fields";
 import { loadDocTypeExclusionRules, loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
-import { matchExclusionRules, exclusionReasonText } from "@/lib/outputs/exclusion";
+import { matchOutputRulesFor, exclusionReasonText } from "@/lib/outputs/exclusion";
 import { docTypeLabel } from "@/lib/pdf/doc-types";
 import { applyCartonBarcodePrefs, applyFieldOverrides } from "@/lib/pdf/pins";
 import { countPlaceholderMarkers } from "@/lib/pdf/placeholders";
@@ -466,37 +466,40 @@ export async function processJob(jobId: string): Promise<void> {
   // isn't applied yet; outputs then fall back to their stored dims.
   const infoAreaSizes = await loadInfoAreaSizeMap();
 
-  // Output-exclusion: a doc-type keyword rule can skip EVERY output of that
-  // type for this style (e.g. socks/shoes → no wash-care). Resolved through the
-  // SAME field resolver readiness/render use, so the runner and the review page
-  // can never disagree on what's skipped. Empty before db:deploy ⇒ nothing
-  // excluded. `excludedOutputs` lets us tell "all outputs intentionally
-  // skipped" apart from a real misconfiguration below.
+  // Output-exclusion: a keyword rule can skip an output for this style —
+  // either one of the OUTPUT's own (the layout's Settings tab: "only generate
+  // when Product group contains shoes") or one on its DOC TYPE, which skips
+  // every output of that type (e.g. socks/shoes → no wash-care). Resolved
+  // through the SAME field resolver readiness/render use, so the runner and the
+  // review page can never disagree on what's skipped. Doc-type rules are empty
+  // before db:deploy ⇒ only output-level rules apply. `excludedOutputs` lets us
+  // tell "all outputs intentionally skipped" apart from a real misconfiguration
+  // below.
   const exclusionRules = await loadDocTypeExclusionRules();
   // Per-style operator ignores — skipped exactly like a rule hit, and counted
   // into excludedOutputs so an all-ignored run reads as intentionally empty
   // rather than NO_OUTPUTS.
   const ignoredKeys = await loadIgnoredOutputKeys(job.styleId);
-  const exclusionActive = Object.keys(exclusionRules).length > 0;
-  const exclusionLabels = exclusionActive ? await loadDocTypeLabels() : {};
-  const resolveExclusionField: ((field: string) => string) | null = exclusionActive
-    ? (() => {
-        const rStyle = {
-          rawData: job.style.rawData,
-          poNumber: job.style.poNumber,
-          supplier: job.style.supplier,
-          eans: job.style.eans,
-          cartonEan: job.style.cartonEan,
-          customer: { config: job.style.customer.config },
-          prodSpec: prodSpec
-            ? { outputs: prodSpec.outputs, columnMapping: prodSpec.columnMapping }
-            : null,
-        };
-        const item = effectiveStyleItem(rStyle);
-        const mapping = effectiveMapping(rStyle);
-        return (f: string) => resolveMappedField(item, mapping, f as keyof ColumnMapping);
-      })()
-    : null;
+  const exclusionLabels = await loadDocTypeLabels();
+  // Built unconditionally: an output can carry rules of its own, so there is no
+  // cheap "are any rules configured?" check to gate this on — and it's pure
+  // in-memory work over data the job already loaded.
+  const resolveExclusionField: (field: string) => string = (() => {
+    const rStyle = {
+      rawData: job.style.rawData,
+      poNumber: job.style.poNumber,
+      supplier: job.style.supplier,
+      eans: job.style.eans,
+      cartonEan: job.style.cartonEan,
+      customer: { config: job.style.customer.config },
+      prodSpec: prodSpec
+        ? { outputs: prodSpec.outputs, columnMapping: prodSpec.columnMapping }
+        : null,
+    };
+    const item = effectiveStyleItem(rStyle);
+    const mapping = effectiveMapping(rStyle);
+    return (f: string) => resolveMappedField(item, mapping, f as keyof ColumnMapping);
+  })();
   const excludedOutputs: string[] = [];
 
   for (const output of outputs) {
@@ -526,18 +529,24 @@ export async function processJob(jobId: string): Promise<void> {
       });
       continue;
     }
-    // Doc-type keyword exclusion — skip (don't render) and record WHY, so the
-    // review surfaces an "Excluded" reason instead of a perpetual "awaiting".
-    if (resolveExclusionField) {
-      const hit = matchExclusionRules(exclusionRules[variant.docType], resolveExclusionField);
-      if (hit) {
-        const reason = exclusionReasonText(hit, docTypeLabel(variant.docType, exclusionLabels));
-        excludedOutputs.push(variant.key);
-        await db.log.create({
-          data: { jobId: job.id, level: "INFO", message: `skipping output ${variant.key}: ${reason}` },
-        });
-        continue;
-      }
+    // Keyword rules (the output's own, then its doc type's) — skip (don't
+    // render) and record WHY, so the review surfaces an "Excluded" reason
+    // instead of a perpetual "awaiting".
+    const decided = matchOutputRulesFor(
+      variant.generationRules,
+      exclusionRules[variant.docType],
+      resolveExclusionField,
+    );
+    if (decided) {
+      const reason = exclusionReasonText(
+        decided.hit,
+        decided.scope === "output" ? variant.name : docTypeLabel(variant.docType, exclusionLabels),
+      );
+      excludedOutputs.push(variant.key);
+      await db.log.create({
+        data: { jobId: job.id, level: "INFO", message: `skipping output ${variant.key}: ${reason}` },
+      });
+      continue;
     }
     try {
       // Per-output pins ("customerName is ALWAYS …") and the carton barcode
@@ -834,18 +843,21 @@ export async function processJob(jobId: string): Promise<void> {
   const bundlePages: BundlePage[] = [];
   // Required-packaging manifest for the cover: EVERY declared output for this
   // style — not just what THIS run regenerated — minus the ones skipped for this
-  // style (doc-type keyword rule or operator ignore), resolved through the SAME
-  // filters the render loop uses so the cover and the review page agree. Each
-  // approved output shows its confirmed size; the rest are flagged "Awaiting
-  // Contrast confirmation" so the supplier expects them in a later delivery.
+  // style (a keyword rule on the output or its type, or an operator ignore),
+  // resolved through the SAME filters the render loop uses so the cover and the
+  // review page agree. Each approved output shows its confirmed size; the rest
+  // are flagged "Awaiting Contrast confirmation" so the supplier expects them
+  // in a later delivery.
   const coverRows = declaredEnabledOutputs.flatMap((o) => {
     const variant = resolveOutputVariant(o);
     if (!variant) return [];
     if (ignoredKeys.has(variant.key)) return [];
-    if (resolveExclusionField) {
-      const hit = matchExclusionRules(exclusionRules[variant.docType], resolveExclusionField);
-      if (hit) return [];
-    }
+    const skipped = matchOutputRulesFor(
+      variant.generationRules,
+      exclusionRules[variant.docType],
+      resolveExclusionField,
+    );
+    if (skipped) return [];
     const dims = effectiveOutputDims(o, variant.isInfoArea ?? false, infoAreaSizes);
     return [
       {

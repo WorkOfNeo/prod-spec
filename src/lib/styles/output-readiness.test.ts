@@ -23,9 +23,14 @@ import { setDynamicVariants } from "@/lib/pdf/template-registry";
 
 const CARTON_VARIANT = "netto-dk-privatelabel-carton-marking";
 const PER_ROW_VARIANT = "layout:test-per-carton";
+// A layout with a per-OUTPUT generation rule (Output Builder → Settings):
+// "only generate for shoes". Needs no fields, so readiness turns purely on
+// the rule.
+const SHOE_ONLY_VARIANT = "layout:test-shoe-sticker";
 
-// A minimal Output Builder-shaped variant with a per-carton repeat — the same
-// requiredFields gate as the coded one, but perRowCartonEan on.
+// Minimal Output Builder-shaped variants: a per-carton repeat (same
+// requiredFields gate as the coded one, but perRowCartonEan on), and the
+// shoes-only sticker.
 setDynamicVariants([
   {
     key: PER_ROW_VARIANT,
@@ -36,6 +41,19 @@ setDynamicVariants([
     defaultWidthMm: 105,
     defaultHeightMm: 148,
     perRowCartonEan: true,
+    render: async () => "",
+  },
+  {
+    key: SHOE_ONLY_VARIANT,
+    docType: "STICKER",
+    name: "Shoe barcode sticker",
+    description: "Test fixture — generate only for shoes",
+    requiredFields: [],
+    defaultWidthMm: 40,
+    defaultHeightMm: 20,
+    generationRules: [
+      { field: "productGroup", op: "contains", keywords: ["shoes"], mode: "include" },
+    ],
     render: async () => "",
   },
 ]);
@@ -115,4 +133,41 @@ test("blank per-size cartons don't count", () => {
 test("style-level carton (assort line) still satisfies on its own", () => {
   const r = cartonReadiness(styleWith({ cartonEan: "5701234567890", eans: [] }));
   assert.equal(r.ready, true);
+});
+
+// ---------------------------------------------------------------------------
+// Per-OUTPUT generation rules ride on the variant, so they apply even when the
+// caller passes no doc-type rule map — the case every rerun/enqueue path hits.
+// ---------------------------------------------------------------------------
+
+function stickerReadiness(productGroup: string) {
+  const style = styleWith(
+    {
+      rawData: {
+        id: "1",
+        name: "TEST1",
+        column_values: [{ id: "manual.productGroup", type: "text", text: productGroup, value: null }],
+      },
+    },
+    SHOE_ONLY_VARIANT,
+  );
+  const r = outputReadinessForStyle(style).find((o) => o.variantKey === SHOE_ONLY_VARIANT);
+  assert.ok(r, "sticker output present in readiness");
+  return r;
+}
+
+test("output rule 'only for shoes' — a shoe style generates", () => {
+  const r = stickerReadiness("Kids Shoes");
+  assert.equal(r.excluded, undefined);
+  assert.equal(r.ready, true);
+});
+
+test("output rule 'only for shoes' — anything else is excluded, with the reason", () => {
+  const r = stickerReadiness("Socks");
+  assert.equal(r.excluded, true);
+  // The output's own rule names the OUTPUT, not its document type.
+  assert.equal(
+    r.exclusionReason,
+    "Not generated — Product group doesn’t contain “shoes” (Shoe barcode sticker rule)",
+  );
 });

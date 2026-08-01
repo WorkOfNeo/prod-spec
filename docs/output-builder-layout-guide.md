@@ -111,6 +111,34 @@ for a style without OEKO-TEX, and 3 for one with it.
 - `repeatBy: "ean"` + `splitBy: "ean"` → one PDF per size/EAN; `{{size}}` / `{{barcode:ean13}}` bind to that row. Use for care-label sets — the universal pages repeat into each size's file.
 - `repeatBy: "none"` → one document. Use for carton markings.
 
+## Generation rules (which styles get this output)
+
+Set in the layout's **Settings** tab; stored on the def as
+`settings.rules: [{ mode, field, op, keywords }]` and surfaced to the runner as
+`TemplateVariant.generationRules`.
+
+- `mode: "include"` → **generate ONLY when** a rule matches. Several include
+  rules are alternatives (any one is enough).
+- `mode: "exclude"` (the default) → **never generate when** it matches. An
+  exclude match always wins over a satisfied include.
+- `field` is a synced `ColumnMapping` key (`productGroup`, `targetGroup`, …),
+  `op` is `contains` (substring) or `equals` (whole field), keywords are
+  case-insensitive.
+- A field that resolves to nothing matches nothing — so an include-only output
+  stays un-generated until that field is synced.
+
+Example — a barcode sticker only for shoes:
+
+```json
+{ "mode": "include", "field": "productGroup", "op": "contains", "keywords": ["shoes"] }
+```
+
+The same rules can be set for a whole document type in *Output Builder →
+Document types* (`DocTypeDef.exclusionRules`); both gates must pass. Either way
+the runner skips the output, logs why, and the style/review screens show the
+reason instead of an "awaiting data" that never clears. Engine + shape:
+`src/lib/outputs/exclusion.ts`.
+
 ## Verify before publish
 
 Render a sample-data proof the same way the app does, then read the PDF:

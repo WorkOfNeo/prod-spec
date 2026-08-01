@@ -447,8 +447,9 @@ export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
     s.add(r.variantKey);
     ignoresByStyle.set(r.styleId, s);
   }
-  // Document types that carry a keyword exclusion rule at all (e.g. WASHCARE /
-  // CARE_LABEL for socks + shoes). Only a gap in one of THESE could be an
+  // Document types that carry a keyword rule at all (e.g. WASHCARE /
+  // CARE_LABEL for socks + shoes). Only a gap in one of these — or in an
+  // output with rules of its own, checked alongside below — could be an
   // exclusion rather than a miss, so only styles with such a gap pay for the
   // rawData load in phase 2.
   const ruleDocTypes = new Set(
@@ -498,7 +499,15 @@ export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
         (b) => !generatedBases.has(b) && !ignored?.has(b),
       ),
     );
-    if ([...ungenerated].some((b) => ruleDocTypes.has(getVariant(b)?.docType ?? ""))) {
+    if (
+      [...ungenerated].some((b) => {
+        const v = getVariant(b);
+        // Either the OUTPUT carries its own rules (Output Builder Settings
+        // tab) or its document type does — both can turn this gap into an
+        // intentional exclusion, so both make phase 2 worth paying for.
+        return (v?.generationRules?.length ?? 0) > 0 || ruleDocTypes.has(v?.docType ?? "");
+      })
+    ) {
       needsExclusionCheck.push(style.id);
     }
 

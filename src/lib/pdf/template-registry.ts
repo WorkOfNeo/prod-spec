@@ -1,6 +1,7 @@
 import type { ColumnMapping } from "@/lib/customers/config";
 import type { StyleData } from "./types";
 import type { PinnableField } from "./pins-meta";
+import type { OutputRule } from "@/lib/outputs/exclusion";
 import { renderCareLabel01Html } from "./templates/care-label-01";
 import { renderCareLabel02Html } from "./templates/care-label-02";
 import { renderNettoWashCareLabelHtml } from "./templates/netto-dk-privatelabel/wash-care-label";
@@ -138,6 +139,16 @@ export type TemplateVariant = {
   // WITHOUT rendering anything. Output Builder layouts implement it
   // repeat/split-aware; variants without it emit exactly one file.
   filesPreview?: (style: StyleData) => Array<{ suffix: string | null; fileName: string | null }>;
+  // Per-OUTPUT generation rules (Output Builder layouts — the Settings tab's
+  // "Generate when / Don't generate when"). Decide WHETHER this output is
+  // produced for a style at all, on top of the doc-type-wide rules: e.g. a
+  // barcode sticker with an "include" rule on productGroup contains "shoes"
+  // is skipped for every other style, with the reason surfaced on the review.
+  // Riding on the variant (rather than a map the caller loads) means every
+  // path that resolves a variant — runner, readiness gate, rerun surfaces —
+  // gets them for free and none can forget to. Coded variants leave it
+  // undefined (= no output-level gate); see src/lib/outputs/exclusion.ts.
+  generationRules?: OutputRule[];
   // Static-pdf passthrough (print specs with renderStrategy 'static-pdf'):
   // the artifact is these bytes VERBATIM — graphic-heavy artwork the app
   // must not redraw. Every artifact-emitting path (job runner, preview

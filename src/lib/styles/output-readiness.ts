@@ -7,7 +7,7 @@ import { pinnedColumnKeys } from "@/lib/pdf/pins-meta";
 import { docTypeLabel } from "@/lib/pdf/doc-types";
 import { loadDocTypeExclusionRules } from "@/lib/pdf/doc-types-db";
 import {
-  matchExclusionRules,
+  matchOutputRulesFor,
   exclusionReasonText,
   type DocTypeRulesMap,
 } from "@/lib/outputs/exclusion";
@@ -35,7 +35,8 @@ export type OutputReadiness = {
   name: string;
   ready: boolean;
   missing: MissingDetailField[];
-  // A doc-type keyword rule matched this style — OR the operator ignored the
+  // A keyword rule decided this output isn't for this style (one of the
+  // output's own, or one on its document type) — OR the operator ignored the
   // output for this style — so it won't be generated (and that's intentional).
   // When excluded, `ready`/`missing` are moot — callers treat the output as
   // decided, not as pending work.
@@ -91,6 +92,7 @@ export function outputReadinessForStyle(
   // Doc-type keyword exclusion rules (loadDocTypeExclusionRules). Optional so
   // existing callers stay exclusion-agnostic; pass them to mark outputs whose
   // type matches as excluded. `docTypeLabels` only flavours the reason text.
+  // Rules set on an OUTPUT itself always apply — they arrive on the variant.
   rules?: DocTypeRulesMap,
   docTypeLabels?: Record<string, string>,
   // Per-style operator ignores (loadIgnoredOutputKeys) — base variantKeys the
@@ -153,15 +155,21 @@ export function outputReadinessForStyle(
         (f) => !pinned.has(f) && !resolve(f).trim() && !(f === "cartonEan" && cartonSatisfiedPerRow),
       )
       .map((f) => ({ field: f, label: STYLE_FIELD_LABELS[f] }));
-    // Exclusion: does this output's document type carry a keyword rule that
-    // matches the style? Resolved through the SAME field resolver as
-    // readiness, so the runner (which also calls this) and the review page
-    // can never disagree on whether an output is skipped.
+    // Exclusion: does a keyword rule say this output isn't generated for this
+    // style — either one of ITS OWN rules (the layout's Settings tab, e.g.
+    // "only for Product group contains shoes") or one on its document type?
+    // Resolved through the SAME field resolver as readiness, so the runner
+    // (which also calls this) and the review page can never disagree on
+    // whether an output is skipped.
+    //
+    // The output's own rules ride on the variant, so they apply even when a
+    // caller passes no doc-type map — nothing to load, nothing to forget.
     const docType = variant?.docType;
-    const hit =
-      hasRules && docType
-        ? matchExclusionRules(rules[docType], (f) => resolve(f as keyof ColumnMapping))
-        : null;
+    const decided = matchOutputRulesFor(
+      variant?.generationRules,
+      hasRules && docType ? rules[docType] : undefined,
+      (f) => resolve(f as keyof ColumnMapping),
+    );
     // An explicit per-style ignore wins over (and reads clearer than) a rule
     // hit — both mark the output excluded either way.
     const isIgnored = ignoredKeys?.has(output.variantKey) === true;
@@ -172,12 +180,17 @@ export function outputReadinessForStyle(
       missing,
       ...(isIgnored
         ? { excluded: true, ignored: true, exclusionReason: IGNORED_EXCLUSION_REASON }
-        : hit
+        : decided
           ? {
               excluded: true,
+              // An output-scope rule names the OUTPUT ("(Shoe barcode rule)"),
+              // a type-scope one names the type ("(Wash care rule)") — the
+              // reader can go straight to where it's configured.
               exclusionReason: exclusionReasonText(
-                hit,
-                docTypeLabel(docType ?? "", docTypeLabels),
+                decided.hit,
+                decided.scope === "output"
+                  ? (variant?.name ?? output.variantKey)
+                  : docTypeLabel(docType ?? "", docTypeLabels),
               ),
             }
           : {}),

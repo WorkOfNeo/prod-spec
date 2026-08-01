@@ -1,9 +1,9 @@
 import { db } from "@/lib/db";
 import { DEFAULT_DOC_TYPES, type DocTypeEntry } from "./doc-types";
 import {
-  parseExclusionRules,
+  parseOutputRules,
   type DocTypeRulesMap,
-  type ExclusionRule,
+  type OutputRule,
 } from "@/lib/outputs/exclusion";
 
 // =====================================================
@@ -55,7 +55,7 @@ export async function loadDocTypeExclusionRules(): Promise<DocTypeRulesMap> {
     const rows = await db.docTypeDef.findMany({ select: { value: true, exclusionRules: true } });
     const out: DocTypeRulesMap = {};
     for (const r of rows) {
-      const rules = parseExclusionRules(r.exclusionRules);
+      const rules = parseOutputRules(r.exclusionRules);
       if (rules.length > 0) out[r.value] = rules;
     }
     return out;
@@ -77,8 +77,8 @@ export type DocTypeWithUsage = DocTypeEntry & {
     templates: number; // legacy coded-template rows
     builtinVariants: boolean; // a CODED registry variant uses it (code-pinned)
   };
-  // Keyword exclusion rules for this type, surfaced into the manager editor.
-  rules: ExclusionRule[];
+  // Keyword rules for this type, surfaced into the manager editor.
+  rules: OutputRule[];
 };
 
 // Catalogue + usage counts — drives the management card and its delete

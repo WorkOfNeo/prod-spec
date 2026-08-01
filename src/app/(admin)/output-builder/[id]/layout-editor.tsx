@@ -36,6 +36,7 @@ import {
 import { validateCalcExpression } from "@/lib/output-layouts/calc";
 import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
 import { PreviewFrame } from "@/components/output-preview";
+import { OutputRulesEditor, type RuleFieldOption } from "@/components/output-rules-editor";
 import { TokenAutocomplete, buildTokenSuggestions } from "@/components/token-autocomplete";
 
 // =====================================================
@@ -151,6 +152,7 @@ export function LayoutEditor({
   stats,
   recentAssets,
   prodSpecs,
+  ruleFields,
 }: {
   layout: LayoutProps;
   customers: Customer[];
@@ -164,6 +166,10 @@ export function LayoutEditor({
   // Prod Specs that reference this layout (layout:<id>) — listed in the
   // delete confirmation so the operator sees what loses the output.
   prodSpecs: Array<{ id: string; name: string; customerName: string }>;
+  // Synced style fields a generation rule can gate on (EXCLUSION_FIELDS) —
+  // the same list the Document types popup offers, passed in so this client
+  // component doesn't reach into the resolver's label table itself.
+  ruleFields: RuleFieldOption[];
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<LayoutTab>("customizer");
@@ -1306,6 +1312,13 @@ export function LayoutEditor({
             {key === "reviews" && stats.pendingReview > 0 ? (
               <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-px text-[11px] font-semibold text-amber-700">
                 {stats.pendingReview}
+              </span>
+            ) : null}
+            {/* This output doesn't generate for every style — say so where the
+                operator looks first, not only inside the tab. */}
+            {key === "settings" && settings.rules.length > 0 ? (
+              <span className="ml-1.5 rounded-full bg-emerald-100 px-1.5 py-px text-[11px] font-semibold text-emerald-700">
+                {settings.rules.length} rule{settings.rules.length === 1 ? "" : "s"}
               </span>
             ) : null}
           </button>
@@ -3059,6 +3072,36 @@ export function LayoutEditor({
                 ? `last generated ${new Date(stats.lastGeneratedAt).toLocaleString()}`
                 : "never generated yet"}
             </p>
+          </section>
+
+          {/* Generation rules — WHICH styles get this output. The per-output
+              twin of the doc-type rules in the "Document types" popup, sharing
+              their editor; saved with the layout by the normal autosave. */}
+          <section className="rounded-lg border border-zinc-200 bg-white p-5">
+            <h2 className="text-sm font-semibold text-zinc-800">Generation rules</h2>
+            <p className="mt-1 mb-3 text-sm leading-relaxed text-zinc-500">
+              Which styles this output is generated for. Without a rule it generates for every
+              style whose Prod Spec declares it. Add{" "}
+              <span className="font-medium text-zinc-700">Generate when</span> to narrow it to
+              matching styles only — a barcode sticker that exists just for shoes is{" "}
+              <span className="whitespace-nowrap font-medium text-zinc-700">
+                Generate when · Product group · contains · shoes
+              </span>{" "}
+              — or <span className="font-medium text-zinc-700">Don’t generate when</span> to carve
+              out exceptions. The runner, the style page and the review all read the same rule, so a
+              skipped output shows its reason instead of sitting there as missing work.
+            </p>
+            <OutputRulesEditor
+              subject={name.trim() || "This output"}
+              initialRules={settings.rules}
+              fields={ruleFields}
+              onChange={(rules) => updateSettings({ rules })}
+              footer={
+                <span className="text-[11px] text-zinc-400">
+                  Saved with the layout — no separate save.
+                </span>
+              }
+            />
           </section>
 
           {/* Auto-approve — skip review queue, keep manual send */}

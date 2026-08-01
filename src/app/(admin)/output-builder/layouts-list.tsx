@@ -25,6 +25,9 @@ type LayoutRow = {
   autoApprove: boolean;
   pageCount: number;
   defInvalid: boolean;
+  // Plain-English form of this layout's own generation rules (Settings tab) —
+  // empty when it generates for every style that declares it.
+  ruleSummaries: string[];
   customerName: string | null;
   businessAreaName: string | null;
   updatedAt: string;
@@ -593,6 +596,14 @@ export function LayoutsList({
                           title="Outputs skip the manual review queue (a person still sends to the supplier)"
                         >
                           Auto-approve
+                        </span>
+                      ) : null}
+                      {l.ruleSummaries.length > 0 ? (
+                        <span
+                          className="shrink-0 rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700"
+                          title={`Only generated for some styles — ${l.ruleSummaries.join(" · ")}`}
+                        >
+                          {l.ruleSummaries.length} rule{l.ruleSummaries.length === 1 ? "" : "s"}
                         </span>
                       ) : null}
                     </div>

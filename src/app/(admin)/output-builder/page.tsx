@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
-import { parseLayoutDef } from "@/lib/output-layouts/schema";
+import { layoutSettings, parseLayoutDef } from "@/lib/output-layouts/schema";
 import { docTypeLabel } from "@/lib/pdf/doc-types";
 import { loadDocTypeLabels, loadDocTypesWithUsage } from "@/lib/pdf/doc-types-db";
 import { LAYOUT_VARIANT_PREFIX } from "@/lib/output-layouts/variants";
@@ -9,7 +9,7 @@ import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { TEMPLATE_VARIANTS } from "@/lib/pdf/template-registry";
 import { getContrastAddressLogoDataUrl, getContrastLogoDataUrl } from "@/lib/output-layouts/logos";
 import { LayoutsList } from "./layouts-list";
-import { EXCLUSION_FIELDS } from "@/lib/outputs/exclusion";
+import { EXCLUSION_FIELDS, ruleSentence } from "@/lib/outputs/exclusion";
 import { requireAdminPage } from "@/lib/auth-server";
 import { scanFilenameCollisions } from "@/lib/output-layouts/filename-collisions";
 import { OutputBuilderTabs } from "./tabs";
@@ -158,8 +158,14 @@ export default async function OutputBuilderPage({
   const layouts = rows.map((l) => {
     let pageCount = 0;
     let defInvalid = false;
+    // This layout's own generation rules ("only for shoes"), read back as
+    // sentences for the list badge — the outputs that DON'T run for every
+    // style are worth spotting without opening each one.
+    let ruleSummaries: string[] = [];
     try {
-      pageCount = parseLayoutDef(l.definition).pages.length;
+      const def = parseLayoutDef(l.definition);
+      pageCount = def.pages.length;
+      ruleSummaries = layoutSettings(def).rules.map(ruleSentence);
     } catch {
       // invalid definition — editable, but show as such
       defInvalid = true;
@@ -179,6 +185,7 @@ export default async function OutputBuilderPage({
       autoApprove: l.autoApprove,
       pageCount,
       defInvalid,
+      ruleSummaries,
       customerName: l.customer?.name ?? null,
       businessAreaName: l.businessArea?.name ?? null,
       updatedAt: l.updatedAt.toISOString(),

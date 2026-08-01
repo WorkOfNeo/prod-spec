@@ -141,6 +141,10 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
       const expr = settings.fileName;
       return expr ? resolveLayoutFileName(expr, style) : null;
     },
+    // Per-output "generate only when / never when" rules (Settings tab).
+    // Carried on the variant so the runner and the readiness gate apply them
+    // wherever they resolve this output — no extra load, nothing to thread.
+    generationRules: settings.rules,
     // Manual carton-numbered prints are offered for layouts that opt in.
     cartonNumbering: settings.cartonNumbering,
     // Custom Carton Marking (multi-style box) — independent opt-in.
