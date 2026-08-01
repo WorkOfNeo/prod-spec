@@ -78,7 +78,13 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   { key: "colourCode", label: "Colour code", group: "Style", kind: "text", example: "19-3920" },
   { key: "productGroup", label: "Product group", group: "Style", kind: "text", example: "3-Pack Socks" },
   { key: "campaignWeek", label: "Campaign week", group: "Style", kind: "text", example: "C182813" },
-  { key: "sizes", label: "Sizes (all)", group: "Style", kind: "text", example: "86/92, 98/104, 110/116" },
+  {
+    key: "sizes",
+    label: "Sizes (all — or the repetition row's)",
+    group: "Style",
+    kind: "text",
+    example: "86/92, 98/104, 110/116",
+  },
   {
     key: "size",
     label: "Size (current — first, or the repetition's)",
@@ -86,7 +92,13 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     kind: "text",
     example: "98/104",
   },
-  { key: "sizeRange", label: "Size range", group: "Style", kind: "text", example: "86/92–110/116" },
+  {
+    key: "sizeRange",
+    label: "Size range (the FULL run, on every repetition)",
+    group: "Style",
+    kind: "text",
+    example: "86/92–110/116",
+  },
   {
     key: "sizeRatio",
     label: "Size ratio, flat text (:size picks the current row's ratio)",
