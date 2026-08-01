@@ -134,23 +134,26 @@ const RESOLVERS: Record<string, TextResolver> = {
           .filter(Boolean)
           .join("-")
       : s.sizes[0]?.label ?? "",
-  // "first–last" of the style's FULL size run — read off allSizes (the
-  // pre-repetition list preserved by repetitionStyles), so a per-size /
-  // per-EAN split file still prints the WHOLE run. The range is a property
-  // of the style, not of the row: a sticker that says "sizes available for
-  // this product" must read the same on every per-EAN file. {{size}} is the
-  // row's own size and {{sizes}} the row's list — those stay narrowed.
+  // EVERY size in the style's full run, listed — "S, M, L, XL, XXL", not
+  // the "S–XXL" endpoints. That's what the print specs mean by a size range:
+  // Coop's price tag prints "Str.: S - M - L - XL - XXL" and Tokmanni's
+  // polybag "Tästä tuotteesta saatavana koot: 23/26-27/30-31/34" — both
+  // enumerate. A shopper reads the list to find their size; endpoints alone
+  // don't tell them the in-between sizes exist.
+  //
+  // Read off allSizes (the pre-repetition list preserved by repetitionStyles)
+  // so a per-size / per-EAN split file still prints the WHOLE run. The run is
+  // a property of the style, not of the row: a sticker saying "sizes available
+  // for this product" must read the same on every per-EAN file. {{size}} is
+  // the row's own size and {{sizes}} the row's list — those stay narrowed.
   // EXCEPTION: a carton row (repeatBy="cartonEan") deliberately covers a
-  // GROUP of sizes — the ones sharing that carton — so it ranges over the
-  // row, staying consistent with {{sizes}} on the same row.
-  sizeRange: (s) => {
-    const labels = (s.isCartonRow ? s.sizes : s.allSizes ?? s.sizes)
+  // GROUP of sizes — the ones sharing that carton — so it lists the row,
+  // staying consistent with {{sizes}} on the same row.
+  sizeRange: (s) =>
+    (s.isCartonRow ? s.sizes : s.allSizes ?? s.sizes)
       .map((x) => x.label)
-      .filter(Boolean);
-    if (labels.length === 0) return "";
-    if (labels.length === 1) return labels[0];
-    return `${labels[0]}–${labels[labels.length - 1]}`;
-  },
+      .filter(Boolean)
+      .join(", "),
   // Every size in the run joined by " - " (the full pre-repetition list,
   // preserved on allSizes). The renderer draws this specially so the
   // CURRENT repetition's size is enlarged; this plain value backs
