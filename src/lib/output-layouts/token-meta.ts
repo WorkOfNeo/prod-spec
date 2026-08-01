@@ -94,10 +94,10 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   },
   {
     key: "sizeRange",
-    label: "Size range (the FULL run, on every repetition)",
+    label: "Size range — every size listed, on every repetition",
     group: "Style",
     kind: "text",
-    example: "86/92–110/116",
+    example: "86/92, 98/104, 110/116",
   },
   {
     key: "sizeRatio",
