@@ -61,7 +61,15 @@ export type TemplateVariant = {
   // layouts it's derived from the tokens in the definition; coded variants
   // leave it undefined and callers fall back to `requiredFields` ∩ pinnable.
   editableFields?: PinnableField[];
-  render: (style: StyleData, dims: OutputDims) => Promise<string>;
+  // `lineOverrides` (Output Builder only): reviewer line rewrites for this
+  // document, keyed by lineOverrideKey — the escape hatch for text no field pin
+  // can reach, including layout literals. Coded variants render from TSX and
+  // have no addressable lines, so they ignore it. See output-line-values.ts.
+  render: (
+    style: StyleData,
+    dims: OutputDims,
+    lineOverrides?: Record<string, string>,
+  ) => Promise<string>;
   // True for "info area" Output Builder layouts (OutputLayout.isInfoArea):
   // the print size is switchable per style, so `dims` (the resolved
   // InfoAreaSize / custom size) OVERRIDES the layout's page dimensions at
@@ -99,10 +107,17 @@ export type TemplateVariant = {
   // by the doc's `suffix`, layered on top of the (already whole-output-
   // overridden) style so a reviewer can correct a value on ONE PDF of a
   // repeat-per-EAN output. Absent / no match ⇒ the row renders unchanged.
+  // `lineOverrides.base` applies to EVERY document of the output (the default —
+  // a hardcoded literal is identical on all of them); `lineOverrides.perDoc`
+  // layers one document's rewrites on top, keyed by that doc's `suffix`.
   renderMany?: (
     style: StyleData,
     dims: OutputDims,
     perDocOverrides?: ReadonlyMap<string, Record<string, string>>,
+    lineOverrides?: {
+      base?: Record<string, string>;
+      perDoc?: ReadonlyMap<string, Record<string, string>>;
+    },
   ) => Promise<Array<{ suffix: string; fileName: string | null; html: string }>>;
   // The per-document styles a multi-doc (repeat-per-EAN) output would render —
   // one entry per PDF, its `suffix` matching renderMany/filesPreview and the
@@ -110,6 +125,14 @@ export type TemplateVariant = {
   // review-time editor pre-fill each PDF card with ITS values. Undefined for
   // single-document outputs.
   docStyles?: (style: StyleData) => Array<{ suffix: string; style: StyleData }>;
+  // Every text line this output prints, with what each currently resolves to —
+  // the review page's catch-all line editor. Only Output Builder layouts have
+  // addressable lines; coded variants leave this undefined and the editor says
+  // so rather than pretending there is nothing to fix.
+  lines?: (
+    style: StyleData,
+    overrides: Record<string, string> | undefined,
+  ) => import("@/lib/output-layouts/lines").DocumentLine[];
   // Optional pre-run files preview: the per-file plan (suffix + custom
   // name, null = runner default) the NEXT run would emit for a style,
   // WITHOUT rendering anything. Output Builder layouts implement it
@@ -188,7 +211,10 @@ export const TEMPLATE_VARIANTS: TemplateVariant[] = [
       "description",
       ...ruleRequiredColumns(ORDER_NO_RULE, resolve),
     ],
-    render: renderNettoCartonMarkingHtml,
+    // Wrapped rather than passed by reference: this renderer accepts an
+    // optional third PrintSpec argument the registry never supplies, and
+    // `render`'s third parameter is now the reviewer's line overrides.
+    render: (style, dims) => renderNettoCartonMarkingHtml(style, dims),
   },
   // Spec-driven variants — one per wired print spec file (src/print-specs/**),
   // rendered by per-family renderers. See src/lib/pdf/print-spec-variants.ts.

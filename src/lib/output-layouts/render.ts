@@ -19,6 +19,7 @@ import {
   type LayoutPage,
 } from "./schema";
 import { tokenMeta, type BarcodeSource, type LogoSource } from "./token-meta";
+import { lineOverrideKey } from "./line-keys";
 import { narrowSizeScopedText } from "./size-scoped-text";
 import { CALC_RE, fieldsInCalcExpression } from "./calc";
 import { getContrastAddressLogoDataUrl, getContrastLogoDataUrl } from "./logos";
@@ -240,6 +241,13 @@ export type LayoutRenderOptions = {
   // (variant render closure from OutputLayout.customLogo, or the builder
   // preview route by layout id) — there is no global custom logo anymore.
   customLogo?: string | null;
+  // Reviewer line overrides for THIS document: lineOverrideKey(page, block,
+  // index) → replacement SOURCE line. Substituted for the authored line before
+  // conditionals and tokens run, so an override resolves exactly as an authored
+  // line would. The escape hatch for text no field pin can reach — see
+  // output-line-values.ts. Absent on every non-reviewer path (builder preview,
+  // proofs), which keeps this inert by default.
+  lineOverrides?: Record<string, string>;
 };
 
 // Keep an overridden page size inside the LayoutPage schema's mm bounds.
@@ -276,6 +284,9 @@ type RenderCtx = {
   // Print width of the {{logo:custom}} image as a % of its block (height
   // auto). %-based, so it already scales with the page — no fontScale.
   customLogoWidthPct: number;
+  // Reviewer line overrides (see LayoutRenderOptions.lineOverrides).
+  // undefined on every path that isn't a reviewer-corrected render.
+  lineOverrides?: Record<string, string>;
 };
 
 // Does this page set print a certification mark that one of the rendered
@@ -815,8 +826,24 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
     : 0;
   const blockWidthMm = Math.max(0, outerW - borderPad);
 
+  // A reviewer line override replaces the AUTHORED source line before
+  // conditionals and tokens run — so an override resolves exactly as an
+  // authored line would (plain text passes through; a token inside it still
+  // resolves). This is the single place any text on any document can be
+  // rewritten, which is what makes hardcoded literals correctable at all.
   const rendered = block.lines
-    .map((line) => renderLine(applyConditionalsForStyle(line, style), style, ctx, blockWidthMm))
+    .map((line, i) => {
+      const override =
+        ctx.lineOverrides && block.id
+          ? ctx.lineOverrides[lineOverrideKey(page.id, block.id, i)]
+          : undefined;
+      return renderLine(
+        applyConditionalsForStyle(override ?? line, style),
+        style,
+        ctx,
+        blockWidthMm,
+      );
+    })
     .filter((l): l is string => l !== null);
   const hasInk = rendered.some((l) => l.trim() !== "");
   const lines = rendered.map((l) => `<div class="ol-line">${l || "&nbsp;"}</div>`).join("");
@@ -957,6 +984,7 @@ async function prepareLayoutRender(
     certs,
     fontScale,
     customLogoWidthPct: settings.customLogoWidthPct,
+    lineOverrides: opts.lineOverrides,
   };
 
   return { pages, repStyles, ctx, barcodeFont: style.barcodeFont };

@@ -5,6 +5,7 @@ import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin, canReview } from "@/lib/roles";
 import { AssetActions } from "./asset-actions";
 import { OutputFieldEditor } from "./output-field-editor";
+import { OutputLineEditor } from "./output-line-editor";
 import { OutputBulkActions } from "./output-bulk-actions";
 import { SupplierPushActions } from "./supplier-push-actions";
 import { ReviewClaim } from "./claim-review";
@@ -20,6 +21,8 @@ import { applyFieldOverrides, readPinnableField } from "@/lib/pdf/pins";
 import { PINNABLE_FIELDS, isPinnableField } from "@/lib/pdf/pins-meta";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import type { StyleData } from "@/lib/pdf/types";
+import type { DocumentLine } from "@/lib/output-layouts/lines";
+import { mergeLineValues } from "@/lib/outputs/output-line-values";
 import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
 import { baseVariantKey } from "@/lib/tickets/orphan";
 import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
@@ -87,11 +90,22 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   if (!style) notFound();
 
   const { loadStyleFieldValues } = await import("@/lib/outputs/output-field-values");
-  const [outputs, docTypeLabels, fieldValuesByKey, renderContext, infoAreaSizes, infoAreaSizeMap] =
+  const { loadStyleLineValues } = await import("@/lib/outputs/output-line-values");
+  const [
+    outputs,
+    docTypeLabels,
+    fieldValuesByKey,
+    lineValuesByKey,
+    renderContext,
+    infoAreaSizes,
+    infoAreaSizeMap,
+  ] =
     await Promise.all([
       getCurrentOutputsForStyle(id),
       loadDocTypeLabels(),
       loadStyleFieldValues(id),
+      // Reviewer LINE rewrites — the catch-all editor's current values.
+      loadStyleLineValues(id),
       // StyleData for pre-filling the field editor with each output's current
       // resolved values. Fail-soft: a preview-build hiccup just means blank
       // pre-fills, never a broken review page.
@@ -386,6 +400,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
                     canEditFields={canEditFields}
                     styleData={styleData}
                     fieldValuesByKey={fieldValuesByKey}
+                    lineValuesByKey={lineValuesByKey}
                     infoArea={infoAreaFor(o)}
                   />
                 ))}
@@ -552,23 +567,59 @@ function outputFieldEditorProps(
     isPinnableField,
   );
   const resolved: Record<string, string> = {};
-  if (styleData) {
-    // Multi-doc PDF → read from that document's per-row style (colour / carton
-    // EAN differ per PDF).
-    let src = styleData;
-    const hashIdx = variantKey.indexOf("#");
-    if (hashIdx >= 0 && variant?.docStyles) {
-      const suffix = variantKey.slice(hashIdx + 1);
-      const match = variant.docStyles(styleData).find((d) => d.suffix === suffix);
-      if (match) src = match.style;
-      // The shared, whole-output override (e.g. a pre-generation missing-field
-      // fill) is the baseline the per-PDF value layers over.
-      const baseOverride = fieldValuesByKey.get(baseKey);
-      if (baseOverride) src = applyFieldOverrides(src, baseOverride);
-    }
+  const src = documentStyle(variantKey, styleData, fieldValuesByKey);
+  if (src) {
     for (const f of PINNABLE_FIELDS) resolved[f] = readPinnableField(src, f);
   }
   return { fields: [...new Set(editable)], resolved };
+}
+
+// The StyleData ONE document renders from: the per-row style for a multi-doc
+// PDF (colour / carton EAN differ per PDF) with the shared whole-output field
+// override folded in, so it matches what actually printed. Shared by the field
+// editor's pre-fill and the line editor's resolved values — they must agree.
+function documentStyle(
+  variantKey: string,
+  styleData: StyleData | null,
+  fieldValuesByKey: ReadonlyMap<string, Record<string, string>>,
+): StyleData | null {
+  if (!styleData) return null;
+  const baseKey = variantKey.split("#")[0];
+  const variant = getVariant(baseKey);
+  let src = styleData;
+  const hashIdx = variantKey.indexOf("#");
+  if (hashIdx >= 0 && variant?.docStyles) {
+    const suffix = variantKey.slice(hashIdx + 1);
+    const match = variant.docStyles(styleData).find((d) => d.suffix === suffix);
+    if (match) src = match.style;
+    const baseOverride = fieldValuesByKey.get(baseKey);
+    if (baseOverride) src = applyFieldOverrides(src, baseOverride);
+  }
+  return src;
+}
+
+// Rows for the catch-all line editor: every line THIS document prints, with the
+// reviewer's rewrites already folded in (base ∪ per-document, per-document
+// winning — the same precedence the renderer applies), resolved against the
+// same StyleData the field editor pre-fills from.
+function outputLineEditorProps(
+  variantKey: string,
+  styleData: StyleData | null,
+  fieldValuesByKey: ReadonlyMap<string, Record<string, string>>,
+  lineValuesByKey: ReadonlyMap<string, Record<string, string>>,
+): { lines: DocumentLine[]; isMultiDoc: boolean } {
+  const baseKey = variantKey.split("#")[0];
+  const variant = getVariant(baseKey);
+  const src = documentStyle(variantKey, styleData, fieldValuesByKey);
+  if (!variant?.lines || !src) return { lines: [], isMultiDoc: false };
+  const overrides = mergeLineValues(
+    lineValuesByKey.get(baseKey),
+    variantKey === baseKey ? undefined : lineValuesByKey.get(variantKey),
+  );
+  return {
+    lines: variant.lines(src, overrides),
+    isMultiDoc: (variant.docStyles?.(styleData!)?.length ?? 1) > 1,
+  };
 }
 
 // Props for the in-card info-area print-size picker — null on non-info-area
@@ -595,6 +646,7 @@ function OutputReviewCard({
   canEditFields = false,
   styleData = null,
   fieldValuesByKey,
+  lineValuesByKey,
   infoArea = null,
 }: {
   o: CurrentOutput;
@@ -611,6 +663,8 @@ function OutputReviewCard({
   // history cards.
   styleData?: StyleData | null;
   fieldValuesByKey?: ReadonlyMap<string, Record<string, string>>;
+  // Reviewer line rewrites, base + per-document keys (absent on history cards).
+  lineValuesByKey?: ReadonlyMap<string, Record<string, string>>;
 }) {
   const previewUrl = `/api/admin/jobs/${o.jobId}/preview?variantKey=${encodeURIComponent(o.variantKey)}`;
   // Carton-capable outputs (numbering / multi-style) get an in-review Customize
@@ -782,24 +836,55 @@ function OutputReviewCard({
               fieldValuesByKey ?? new Map(),
             );
             const setCount = Object.keys(overrides).length;
+            const { lines, isMultiDoc } = outputLineEditorProps(
+              o.variantKey,
+              styleData,
+              fieldValuesByKey ?? new Map(),
+              lineValuesByKey ?? new Map(),
+            );
+            const editedLines = lines.filter((l) => l.overridden).length;
             return (
-              <details className="border-t border-zinc-100 px-3 py-2">
-                <summary className="cursor-pointer text-[11px] font-medium text-zinc-500 hover:text-zinc-700">
-                  Edit fields{setCount > 0 ? ` (${setCount} edited)` : ""}
-                </summary>
-                <div className="mt-2">
-                  <OutputFieldEditor
-                    styleId={styleId}
-                    variantKey={o.variantKey}
-                    outputName={o.name}
-                    submitLabel="Save & re-render"
-                    fields={fields}
-                    resolved={resolved}
-                    overrides={overrides}
-                    allowAdd
-                  />
-                </div>
-              </details>
+              <>
+                <details className="border-t border-zinc-100 px-3 py-2">
+                  <summary className="cursor-pointer text-[11px] font-medium text-zinc-500 hover:text-zinc-700">
+                    Edit fields{setCount > 0 ? ` (${setCount} edited)` : ""}
+                  </summary>
+                  <div className="mt-2">
+                    <OutputFieldEditor
+                      styleId={styleId}
+                      variantKey={o.variantKey}
+                      outputName={o.name}
+                      submitLabel="Save & re-render"
+                      fields={fields}
+                      resolved={resolved}
+                      overrides={overrides}
+                      allowAdd
+                    />
+                  </div>
+                </details>
+                {/* The catch-all: every line the document prints, editable
+                    whether or not a field backs it — the only way to reach text
+                    hardcoded in the layout. Below the field editor on purpose:
+                    a field edit fixes the DATA (and every output using it) and
+                    keeps tracking Monday, so it's the better fix when it
+                    applies; a line edit freezes this one line of this
+                    document. */}
+                <details className="border-t border-zinc-100 px-3 py-2">
+                  <summary className="cursor-pointer text-[11px] font-medium text-zinc-500 hover:text-zinc-700">
+                    Edit any line{editedLines > 0 ? ` (${editedLines} edited)` : ""}
+                  </summary>
+                  <div className="mt-2">
+                    <OutputLineEditor
+                      styleId={styleId}
+                      variantKey={o.variantKey}
+                      baseKey={baseKey}
+                      outputName={o.name}
+                      lines={lines}
+                      isMultiDoc={isMultiDoc}
+                    />
+                  </div>
+                </details>
+              </>
             );
           })()
         : null}
