@@ -32,6 +32,7 @@ import {
   LOGO_SOURCES,
   CERT_SOURCES,
   SIZE_SCOPE_ARG,
+  SIZE_FORMS,
 } from "@/lib/output-layouts/token-meta";
 import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
 
@@ -101,6 +102,18 @@ export function buildTokenSuggestions(opts: {
         group: t.group,
         hint: t.example,
       });
+    } else if (t.arg === "sizeForm") {
+      // Bare (the label as authored) plus the two halves of a two-form
+      // size label — "86-92 cm / 1½-2 år" as centimetres or as age.
+      out.push({ insert: `{{${t.key}}}`, label: t.label, group: t.group, hint: t.example });
+      for (const form of SIZE_FORMS) {
+        out.push({
+          insert: `{{${t.key}:${form}}}`,
+          label: `${t.label} · ${form === "year" ? "age only" : "measurement only"}`,
+          group: t.group,
+          hint: t.example,
+        });
+      }
     } else {
       // Plain tokens and the optional-gap wash symbols insert bare.
       out.push({ insert: `{{${t.key}}}`, label: t.label, group: t.group, hint: t.example });

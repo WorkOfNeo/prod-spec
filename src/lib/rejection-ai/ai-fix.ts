@@ -15,6 +15,7 @@ import {
   CERT_SOURCES,
   validateTokenRef,
   validateLineConditionals,
+  type LayoutTokenMeta,
 } from "@/lib/output-layouts/token-meta";
 import { layoutIdFromVariantKey, layoutVariantKey } from "@/lib/output-layouts/variant-keys";
 import { refreshLayoutVariants } from "@/lib/output-layouts/variants";
@@ -135,15 +136,16 @@ export async function resolveTicketLayout(
 }
 
 // The `usage` line for one token in the catalogue handed to the model.
-function tokenUsage(
-  key: string,
-  arg: "lang" | "source" | "gap" | "cartonKind" | "sizeScope" | undefined,
-): string {
+// Typed off LayoutTokenMeta so a new argument kind can't be added without
+// this catalogue being taught to describe it.
+function tokenUsage(key: string, arg: LayoutTokenMeta["arg"]): string {
   if (arg === "lang") return `{{${key}:<lang>}}`;
   if (arg === "gap") return `{{${key}}} (optional mm gap, e.g. {{${key}:0}})`;
   if (arg === "cartonKind") return `{{${key}}} (optional :solid / :assort for a "Solid - 5 / Assort - 8" value)`;
   if (arg === "sizeScope")
     return `{{${key}}} (optional :size — on a per-size repeat, prints only this size's entry of a comma-separated per-size list)`;
+  if (arg === "sizeForm")
+    return `{{${key}}} (optional :numeric / :year — on a two-form size label like "86-92 cm / 1½-2 år", prints only the measurement or only the age)`;
   if (arg === "source") {
     const sources =
       key === "barcode" ? BARCODE_SOURCES : key === "logo" ? LOGO_SOURCES : key === "cert" ? CERT_SOURCES : [];

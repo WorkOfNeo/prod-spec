@@ -54,6 +54,30 @@ The colours are authorable per block:
 
 Both are **optional and independent**: leave one out and that side falls back to the historic pair (`#000000` background, `#ffffff` text), so every inverted block authored before this stays black-and-white until someone changes it. In the builder they appear as a swatch + hex field under the Invert checkbox, each with a **reset** back to the default.
 
+## Two-form size labels — cm or age
+
+Kids' size runs often arrive with both forms in one label:
+
+```
+86-92 cm / 1½-2 år, 98-104 cm / 3-4 år, 110-116 cm / 5-6 år, 122-128 cm / 7-8 år
+```
+
+Which half prints is a per-output choice, made with an argument on `{{sizeRangeCoop}}`:
+
+| Token | Prints |
+|---|---|
+| `{{sizeRangeCoop}}` | `86-92 cm / 1½-2 år - 98-104 cm / 3-4 år - …` (as authored) |
+| `{{sizeRangeCoop:numeric}}` | `86-92 cm - 98-104 cm - …` |
+| `{{sizeRangeCoop:year}}` | `1½-2 år - 3-4 år - …` |
+
+Rules (`src/lib/output-layouts/size-form.ts`):
+
+- **The split is by the age unit** — `år` / `aar` / `ar`, `mdr` / `måned(er)`, `year(s)` / `yr(s)`, `month(s)` / `mth(s)`, `jahr(e)` — never by the slash alone. A size that IS slash-written (`86/92`, `23/26`) is therefore never cut in half.
+- **Either half may come first**; the measurement keeps its own slashes and spacing (`86 / 92 cm / 1½-2 år` → `86 / 92 cm`).
+- **No age half ⇒ the label prints as authored** for every form, so a form is safe to set on a layout whose styles don't all carry both. Same "never blank a printed field" contract as the size-scoped text fields.
+- **Sizes that narrow onto the same text collapse to one entry** (two ages sharing a measurement) — and the current repetition's size still enlarges that entry.
+- Bare (no argument) is a byte-for-byte passthrough, so published layouts are untouched.
+
 ## Centre hole (die-cut hang hole)
 
 `page.centerHole` marks the punch on a hang tag — `{ diameterMm, edge: "top" | "bottom", offsetMm }`. The hole is always centred across the page; `offsetMm` is measured from the named edge to the hole's **centre** (same convention as a sewing line's offset), so Ø 5 mm at offset 8 from the top leaves 5.5 mm of clear stock above it.
@@ -66,6 +90,7 @@ It's a **print guide**, like the sewing and fold lines: a dashed circle on the c
 - **Barcodes**: `{{barcode:ean13}}` (size EAN), `{{barcode:cartonEan}}` (carton EAN).
 - **Symbols / logos / certs**: `{{washSymbols}}`, `{{logo:contrastAddress}}` / `{{logo:custom}}`, `{{cert:oekotex}}` / `{{cert:fsc}}`.
 - **Order / size**: `{{size}}` (the current row inside a repeat), `{{sizes}}`, `{{poNumber}}`, `{{orderNo}}` (FOB → customer order, else PO), `{{qtyPerCarton}}`, `{{lot}}`, `{{customerItemNo}}`, `{{customerOrderNo}}`, `{{description}}`, `{{campaignWeek}}`.
+- **Size range (Coop)**: `{{sizeRangeCoop}}` — the whole run joined " - " with the current row's size enlarged; `:numeric` / `:year` pick one half of a two-form label (see below).
 - **Conditionals**: `{{if deliveryTerm == FOB}}…{{else}}…{{endif}}` (one line, text tokens only).
 - **Calculated**: `{{= sum(qtyPerCarton) }}` — arithmetic over field values; see "Calculated fields" below.
 
