@@ -13,15 +13,15 @@ every new layout against — keep it current.
 - [ ] **Every token resolves** on a real style (0 unresolved). Image tokens (`{{logo:…}}`, `{{cert:…}}`) need artwork in the library or they print a placeholder chip that blocks approval.
 - [ ] **Languages**: all required langs present for `{{composition:xx}}`, `{{careInstructions:xx}}`, `{{madeIn:xx}}`.
 - [ ] **Repeat/split**: per-size docs use `repeatBy: ean` + `splitBy: ean`; one-per-carton docs use `repeatBy: none`.
-- [ ] **Guides**: sewing/fold lines where the label seams/folds (care labels: top sewing line ~5 mm).
+- [ ] **Guides**: sewing/fold lines where the label seams/folds (care labels: top sewing line ~5 mm); a **centre hole** where a hang tag is punched.
 - [ ] **Scoped** to customer + business area, **proof rendered** and eyeballed vs the approved artwork, then **published**.
 
 ## The model
 
 A layout's `definition` JSON is `{ pages: [...], settings: {...} }`:
 
-- **Page** — own mm size, a placement **grid** (`gridCols × gridRows`), print guides (`sewingLines`, `foldLine`, `margins`), an optional `omitWhenEmpty` (see "Conditional pages"), and **blocks**.
-- **Block** — placed by a grid **rect** (`col/row/colSpan/rowSpan`); carries styling (`fontPt`, `bold`, `align`, `valign`, `invert`, `border` + `pad`, `fitWidth`) and its text as **`lines: []`** containing `{{tokens}}`.
+- **Page** — own mm size, a placement **grid** (`gridCols × gridRows`), print guides (`sewingLines`, `foldLine`, `centerHole`, `margins`), an optional `omitWhenEmpty` (see "Conditional pages"), and **blocks**.
+- **Block** — placed by a grid **rect** (`col/row/colSpan/rowSpan`); carries styling (`fontPt`, `bold`, `align`, `valign`, `invert` + `invertBg`/`invertText`, `border` + `pad`, `fitWidth`) and its text as **`lines: []`** containing `{{tokens}}`.
 - **Settings** — `repeatBy`, `splitBy`, `fileName`, `cartonNumbering`, `multipleStyles`, `customLogoWidthPct`.
 
 The `layout:<id>` key is what a ProdSpec's `outputs[]` points at; one stable string ties the spec (what to print) → the registry (how to render) → the JobAsset (what was produced).
@@ -45,7 +45,20 @@ When unsure, open the closest existing layout in the DB and copy its grid + font
 
 ## Emphasis: inverted boxes
 
-Use `invert` (white text on solid black) for highlight fields — e.g. the carton customer-item-no and the `DK` country chip. A barcode inside an inverted block keeps a white chip so it stays scannable.
+Use `invert` for highlight fields — e.g. the carton customer-item-no and the `DK` country chip. A barcode inside an inverted block keeps a white chip so it stays scannable.
+
+The colours are authorable per block:
+
+- `invertBg` — the box colour, hex (`#000` or `#1a1a1a`).
+- `invertText` — the text on it, hex.
+
+Both are **optional and independent**: leave one out and that side falls back to the historic pair (`#000000` background, `#ffffff` text), so every inverted block authored before this stays black-and-white until someone changes it. In the builder they appear as a swatch + hex field under the Invert checkbox, each with a **reset** back to the default.
+
+## Centre hole (die-cut hang hole)
+
+`page.centerHole` marks the punch on a hang tag — `{ diameterMm, edge: "top" | "bottom", offsetMm }`. The hole is always centred across the page; `offsetMm` is measured from the named edge to the hole's **centre** (same convention as a sewing line's offset), so Ø 5 mm at offset 8 from the top leaves 5.5 mm of clear stock above it.
+
+It's a **print guide**, like the sewing and fold lines: a dashed circle on the canvas and in the render, nothing knocked out of the design, no tokens, no grid cells, never a blocker for approval. Use it to keep content clear of what the punch removes.
 
 ## Tokens (cheat sheet)
 

@@ -7,6 +7,9 @@ import type { DocTypeEntry } from "@/lib/pdf/doc-types";
 import type { FileNamePreset } from "@/lib/settings/app-settings";
 import {
   DEFAULT_GRID_CELL_MM,
+  HEX_COLOR_RE,
+  INVERT_BG,
+  INVERT_TEXT,
   LAYOUT_GRID_COLS,
   LAYOUT_GRID_ROWS,
   LayoutDefSchema,
@@ -14,9 +17,11 @@ import {
   blockId,
   effectiveBorderPad,
   gridFromCellMm,
+  invertColors,
   layoutSettings,
   pageGrid,
   tokensInDef,
+  type CenterHole,
   type FoldLine,
   type LayoutBlock,
   type LayoutDef,
@@ -63,6 +68,12 @@ const PT_TO_MM = 25.4 / 72;
 // mm input accepts a comma OR dot decimal ("7,5" → 7.5).
 function parseMm(raw: string): number {
   return Number(String(raw).replace(",", ".").trim());
+}
+
+// The mm value back as text for a field or a readout: comma decimal, and
+// float noise trimmed (8 − 5/2 must read "5,5", not "5,500000000000001").
+function mmText(mm: number): string {
+  return String(Number(mm.toFixed(2))).replace(".", ",");
 }
 
 
@@ -340,6 +351,17 @@ export function LayoutEditor({
   function updatePageBorder(patch: Partial<PageBorder>) {
     if (!pageBorder) return;
     updatePage({ pageBorder: { ...pageBorder, ...patch } });
+  }
+
+  // Centre hang hole — the die-cut punch, horizontally centred with its
+  // CENTRE a fixed distance from the top or bottom edge. Absent = none.
+  const centerHole = page?.centerHole;
+  function toggleCenterHole(on: boolean) {
+    updatePage({ centerHole: on ? { diameterMm: 5, edge: "top", offsetMm: 8 } : undefined });
+  }
+  function updateCenterHole(patch: Partial<CenterHole>) {
+    if (!centerHole) return;
+    updatePage({ centerHole: { ...centerHole, ...patch } });
   }
 
   // Recompute the grid from a square cell size and remap existing blocks
@@ -1863,6 +1885,74 @@ export function LayoutEditor({
                 </p>
               )}
             </div>
+
+            {/* Centre hole — the die-cut hang hole. Always centred across
+                the page; the offset places its CENTRE from the chosen
+                edge. Drawn as a dashed circle on the canvas and in the
+                true render so content can be kept clear of the punch. */}
+            <div>
+              <label className="flex items-center gap-2 text-sm text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={!!centerHole}
+                  onChange={(e) => toggleCenterHole(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                />
+                Centre hole
+              </label>
+              {centerHole ? (
+                <>
+                  <div className="mt-1.5 flex items-center gap-1.5">
+                    {/* Uncontrolled so a "7,5" decimal can be typed freely;
+                        keyed by page so switching pages re-seeds them. */}
+                    <input
+                      key={`hole-d-${page.id}`}
+                      type="text"
+                      inputMode="decimal"
+                      defaultValue={mmText(centerHole.diameterMm)}
+                      onChange={(e) => {
+                        const v = parseMm(e.target.value);
+                        if (Number.isFinite(v) && v >= 0.5 && v <= 100) updateCenterHole({ diameterMm: v });
+                      }}
+                      className="w-14 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                      aria-label="Hole diameter (mm)"
+                    />
+                    <span className="text-[10px] text-zinc-400">Ø mm</span>
+                    <select
+                      value={centerHole.edge}
+                      onChange={(e) => updateCenterHole({ edge: e.target.value as CenterHole["edge"] })}
+                      className="ml-auto rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700"
+                    >
+                      <option value="top">From top</option>
+                      <option value="bottom">From bottom</option>
+                    </select>
+                    <input
+                      key={`hole-o-${page.id}`}
+                      type="text"
+                      inputMode="decimal"
+                      defaultValue={mmText(centerHole.offsetMm)}
+                      onChange={(e) => {
+                        const v = parseMm(e.target.value);
+                        if (Number.isFinite(v) && v >= 0 && v <= 1000) updateCenterHole({ offsetMm: v });
+                      }}
+                      className="w-14 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                      aria-label="Distance from the edge to the hole centre (mm)"
+                    />
+                    <span className="text-[10px] text-zinc-400">mm</span>
+                  </div>
+                  <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
+                    Measured to the hole&rsquo;s <b className="font-medium text-zinc-500">centre</b> —{" "}
+                    {mmText(Math.max(0, centerHole.offsetMm - centerHole.diameterMm / 2))} mm of clear
+                    stock between the {centerHole.edge} edge and the punch.
+                  </p>
+                </>
+              ) : (
+                <p className="mt-0.5 text-[10px] text-zinc-400">
+                  A punched hang hole, centred across the page — diameter in mm and the distance from the
+                  top or bottom edge. Printed as a dashed guide, like the sewing and fold lines.
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Settings</div>
@@ -2227,6 +2317,27 @@ export function LayoutEditor({
                     borderLeft: "1px dashed rgba(82,82,91,0.9)",
                   }}
                   title="Folding line — vertical centre"
+                />
+              ) : null}
+              {/* Centre hole — same geometry as the renderer's die outline:
+                  centred across the page, its centre offsetMm from the
+                  chosen edge. */}
+              {centerHole ? (
+                <div
+                  className="pointer-events-none absolute rounded-full"
+                  style={{
+                    width: centerHole.diameterMm * scale,
+                    height: centerHole.diameterMm * scale,
+                    left: (page.widthMm / 2 - centerHole.diameterMm / 2) * scale,
+                    top:
+                      ((centerHole.edge === "bottom"
+                        ? page.heightMm - centerHole.offsetMm
+                        : centerHole.offsetMm) -
+                        centerHole.diameterMm / 2) *
+                      scale,
+                    border: "1px dashed rgba(82,82,91,0.9)",
+                  }}
+                  title={`Centre hole — Ø ${mmText(centerHole.diameterMm)} mm, centre ${mmText(centerHole.offsetMm)} mm from ${centerHole.edge}`}
                 />
               ) : null}
               {ghost ? (
@@ -2680,15 +2791,43 @@ export function LayoutEditor({
                     )}
                   </div>
                 ) : null}
-                <label className="flex items-center gap-2 text-xs text-zinc-600">
-                  <input
-                    type="checkbox"
-                    checked={selBlock.invert ?? false}
-                    onChange={(e) => updateBlock(blockId(selBlock), { invert: e.target.checked })}
-                    className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
-                  />
-                  Invert block (white text on black)
-                </label>
+                {/* Invert — a solid box with contrasting text. The colour
+                    pair is optional: leave it and the block prints the
+                    historic black/white, so nothing already published
+                    changes. */}
+                <div>
+                  <label className="flex items-center gap-2 text-xs text-zinc-600">
+                    <input
+                      type="checkbox"
+                      checked={selBlock.invert ?? false}
+                      onChange={(e) => updateBlock(blockId(selBlock), { invert: e.target.checked })}
+                      className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                    />
+                    Invert block (solid background, contrasting text)
+                  </label>
+                  {selBlock.invert ? (
+                    <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                      <HexColorField
+                        key={`${blockId(selBlock)}-invert-bg`}
+                        label="Background"
+                        value={invertColors(selBlock).bg}
+                        isDefault={selBlock.invertBg === undefined}
+                        onChange={(hex) => updateBlock(blockId(selBlock), { invertBg: hex })}
+                        onReset={() => updateBlock(blockId(selBlock), { invertBg: undefined })}
+                        fallback={INVERT_BG}
+                      />
+                      <HexColorField
+                        key={`${blockId(selBlock)}-invert-text`}
+                        label="Text"
+                        value={invertColors(selBlock).text}
+                        isDefault={selBlock.invertText === undefined}
+                        onChange={(hex) => updateBlock(blockId(selBlock), { invertText: hex })}
+                        onReset={() => updateBlock(blockId(selBlock), { invertText: undefined })}
+                        fallback={INVERT_TEXT}
+                      />
+                    </div>
+                  ) : null}
+                </div>
                 <label className="flex items-center gap-2 text-xs text-zinc-600">
                   <input
                     type="checkbox"
@@ -3386,6 +3525,11 @@ function CanvasBlock({
           })(),
         }
       : {}),
+    // An inverted block paints its authored pair here too, so the canvas
+    // shows the colours you picked without waiting for the render below.
+    ...(block.invert
+      ? { backgroundColor: invertColors(block).bg, color: invertColors(block).text }
+      : {}),
   };
 
   const badgePos: React.CSSProperties = { top: -8, left: -8 };
@@ -3493,6 +3637,86 @@ function blockSummary(block: LayoutBlock): { kind: string | null; text: string; 
   const nonEmpty = lines.filter((l) => l.trim().length > 0);
   const text = nonEmpty[0]?.trim() || "(empty)";
   return { kind, text, extra: Math.max(0, nonEmpty.length - 1) };
+}
+
+// <input type="color"> only accepts the 6-digit form — a valid 3-digit hex
+// (#abc) would silently show as black in the swatch, so expand it.
+function expandHex(hex: string): string {
+  const m = /^#([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])$/.exec(hex);
+  return m ? `#${m[1]}${m[1]}${m[2]}${m[2]}${m[3]}${m[3]}` : hex;
+}
+
+// One authored colour: a swatch and a typed hex field over the same value,
+// plus a reset back to the inherited default. The text field keeps whatever
+// you're typing (so a half-finished "#1a" doesn't snap back) and only commits
+// when it parses as hex — the "#" is optional. Mount it with a key carrying
+// the block id so switching blocks re-seeds the field.
+function HexColorField({
+  label,
+  value,
+  isDefault,
+  fallback,
+  onChange,
+  onReset,
+}: {
+  label: string;
+  // The colour in force — the authored hex, or the inherited default.
+  value: string;
+  // True while nothing is authored, so `value` IS the default.
+  isDefault: boolean;
+  fallback: string;
+  onChange: (hex: string) => void;
+  onReset: () => void;
+}) {
+  const [text, setText] = useState(value);
+  function commit(raw: string) {
+    setText(raw);
+    const trimmed = raw.trim();
+    const hex = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+    if (HEX_COLOR_RE.test(hex)) onChange(hex.toLowerCase());
+  }
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-1">
+        <label className="text-[10px] text-zinc-400">{label}</label>
+        {isDefault ? (
+          <span className="text-[9px] text-zinc-300" title={`Default — prints ${fallback}`}>
+            default
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setText(fallback);
+              onReset();
+            }}
+            className="text-[9px] text-zinc-400 hover:text-zinc-700"
+            title={`Back to the default ${fallback}`}
+          >
+            reset
+          </button>
+        )}
+      </div>
+      <div className="mt-0.5 flex items-center gap-1">
+        <input
+          type="color"
+          value={expandHex(value)}
+          onChange={(e) => commit(e.target.value)}
+          className="h-6 w-7 shrink-0 cursor-pointer rounded border border-zinc-200 bg-white p-0.5"
+          aria-label={`${label} colour`}
+        />
+        <input
+          type="text"
+          value={text}
+          onChange={(e) => commit(e.target.value)}
+          spellCheck={false}
+          placeholder={fallback}
+          className="w-full min-w-0 rounded-md border border-zinc-200 px-1.5 py-1 font-mono text-[11px] tabular-nums"
+          aria-label={`${label} hex value`}
+        />
+      </div>
+    </div>
+  );
 }
 
 function TokenChip({

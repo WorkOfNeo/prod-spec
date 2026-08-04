@@ -11,6 +11,7 @@ import {
   TOKEN_RE,
   conditionalsInLine,
   effectiveBorderPad,
+  invertColors,
   layoutSettings,
   pageGrid,
   type LayoutAnchor,
@@ -782,6 +783,17 @@ function blockBorder(block: LayoutBlock, fontScale: number): string {
   return `border: ${(block.border.widthMm * fontScale).toFixed(3)}mm solid ${block.border.color}; ${pad}`;
 }
 
+// Inverted block colours, inlined per block. Both sides are schema-validated
+// hex, so they're safe to drop straight into the style attribute. An invert
+// with no authored colours resolves to the historic #000/#fff (invertColors),
+// which is what the .ol-binvert class rule paints anyway — the inline pair
+// simply lets each block carry its own.
+function blockInvert(block: LayoutBlock): string {
+  if (!block.invert) return "";
+  const { bg, text } = invertColors(block);
+  return `background: ${bg}; color: ${text}; `;
+}
+
 function blockTypography(block: LayoutBlock, fontScale: number): string {
   // Graphics scale with the block's font size: 9 pt is the classic size
   // (16 mm bars / 10 pt digits / 6 mm symbols). fontScale shrinks the whole
@@ -864,6 +876,7 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
       `display: flex; flex-direction: column; justify-content: ${justify}; ` +
       `text-align: ${block.align ?? "left"}; ` +
       blockBorder(block, ctx.fontScale) +
+      blockInvert(block) +
       blockTypography(block, ctx.fontScale);
     return {
       html: `<div class="ol-block ol-rect${block.invert ? " ol-binvert" : ""}${block.fitWidth ? " ol-fit" : ""}${block.fitHeight ? " ol-fith" : ""}" style="${styleAttr}">${lines}</div>`,
@@ -877,6 +890,7 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
     `width: ${widthMm.toFixed(2)}mm; ` +
     `text-align: ${block.align ?? ANCHOR_ALIGN[anchor]}; ` +
     blockBorder(block, ctx.fontScale) +
+    blockInvert(block) +
     blockTypography(block, ctx.fontScale) +
     ANCHOR_CSS[anchor];
   return {
@@ -1080,6 +1094,19 @@ function renderGuides(page: LayoutPage): string {
   } else if (page.foldLine === "vertical") {
     parts.push(`<div class="ol-guide ol-fold ol-fold-v"></div>`);
   }
+  // Centre hang hole — a dashed circle where the punch goes, horizontally
+  // centred (50%, so it stays centred under an info-area size override) with
+  // its CENTRE offsetMm from the named edge. Absolute mm on the vertical, like
+  // the sewing offsets: the hole is a physical die, not a scaled graphic.
+  // Outline only — nothing is knocked out, so a design that prints through the
+  // punch area still prints exactly as authored.
+  const hole = page.centerHole;
+  if (hole) {
+    const pos = hole.edge === "bottom" ? "bottom" : "top";
+    parts.push(
+      `<div class="ol-guide ol-hole ol-hole-${pos}" style="${pos}: ${hole.offsetMm}mm; width: ${hole.diameterMm}mm; height: ${hole.diameterMm}mm;"></div>`,
+    );
+  }
   return parts.join("");
 }
 
@@ -1178,8 +1205,10 @@ function emitLayoutDocument(
   .ol-page:last-child { page-break-after: auto; }
   ${pageCss}
   .ol-block { position: absolute; }
-  /* Per-block invert — that block prints white-on-black. A barcode inside
-     keeps a white chip (dark bars + number) so it stays scannable. */
+  /* Per-block invert — that block prints its text on a solid box. The colours
+     are inlined per block (blockInvert); this rule is the black/white default
+     they fall back to. A barcode inside keeps a white chip (dark bars +
+     number) so it stays scannable whatever the box colour is. */
   .ol-block.ol-binvert { background: #000; color: #fff; }
   .ol-block.ol-binvert .ol-barcode { background: #fff; color: #000; padding: ${(1 * ctx.fontScale).toFixed(3)}mm; border-radius: 1mm; }
   .ol-page-border { position: absolute; pointer-events: none; z-index: 0; }
@@ -1189,6 +1218,12 @@ function emitLayoutDocument(
   .ol-sew { left: 0; right: 0; height: 0.3mm; background: repeating-linear-gradient(to right, #111 0 2.5mm, transparent 2.5mm 4mm); }
   .ol-fold-h { left: 0; right: 0; top: 50%; height: 0.3mm; transform: translateY(-50%); background: repeating-linear-gradient(to right, #555 0 1mm, transparent 1mm 2mm); }
   .ol-fold-v { top: 0; bottom: 0; left: 50%; width: 0.3mm; transform: translateX(-50%); background: repeating-linear-gradient(to bottom, #555 0 1mm, transparent 1mm 2mm); }
+  /* Centre hang hole — the die outline, dashed like the fold line. Size and
+     vertical offset are inlined per page; the transform puts the CENTRE on
+     that offset (and on the page's horizontal midline). */
+  .ol-hole { left: 50%; border: 0.3mm dashed #555; border-radius: 50%; }
+  .ol-hole-top { transform: translate(-50%, -50%); }
+  .ol-hole-bottom { transform: translate(-50%, 50%); }
   /* flex-shrink:0 is load-bearing: .ol-block is a FIXED-height flex column
      (the drawn grid cell), so without it an over-full block shrinks each
      line's BOX toward min-height (1em) while the wrapped text inside still
