@@ -43,6 +43,12 @@ export function gridFromCellMm(
   return { cols: clamp(widthMm / cell), rows: clamp(heightMm / cell) };
 }
 
+// Every colour on a layout is authored as a hex string — one shared pattern
+// (block border, page border, inverted block colours) so a colour that the
+// builder accepts is a colour the renderer can inline into CSS unescaped.
+export const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+const HEX_COLOR_MSG = "hex colour like #000 or #1a1a1a";
+
 export const LAYOUT_ANCHORS = [
   "top-left",
   "top-right",
@@ -83,7 +89,7 @@ export const LayoutBlockSchema = z.object({
   border: z
     .object({
       widthMm: z.number().min(0.1).max(5),
-      color: z.string().regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "hex colour like #000 or #1a1a1a"),
+      color: z.string().regex(HEX_COLOR_RE, HEX_COLOR_MSG),
       // Legacy single inner-padding value (mm) — one pad on every side.
       // Still accepted; parseLayoutDef migrates it into `pad` and the
       // renderer falls back to it (effectiveBorderPad), so old layouts
@@ -109,10 +115,18 @@ export const LayoutBlockSchema = z.object({
   // typed value and clamps to the same bounds, so the two never disagree.
   fontPt: z.number().min(1).max(144).default(9),
   bold: z.boolean().default(false),
-  // Invert just THIS block: black background, white text (appearance only —
-  // doesn't touch tokens or generation). A barcode inside keeps a white chip
-  // so it stays scannable.
+  // Invert just THIS block: solid background, contrasting text (appearance
+  // only — doesn't touch tokens or generation). A barcode inside keeps a
+  // white chip so it stays scannable.
   invert: z.boolean().default(false),
+  // The two colours an inverted block prints in, as hex. BOTH optional and
+  // absent by default: a block that turned `invert` on before these existed
+  // keeps the historic pair — black box, white text (INVERT_BG / INVERT_TEXT)
+  // — so every layout in the field prints as it does today. Resolve
+  // via invertColors() — the ONE place that fallback lives, shared by the
+  // renderer and the builder canvas so they can never disagree.
+  invertBg: z.string().regex(HEX_COLOR_RE, HEX_COLOR_MSG).optional(),
+  invertText: z.string().regex(HEX_COLOR_RE, HEX_COLOR_MSG).optional(),
   // Fit to width: render every line on ONE line, auto-scaling the font (up
   // or down) so it exactly fills the block width regardless of character
   // count. fontPt becomes the starting size; the renderer's fit script does
@@ -142,6 +156,22 @@ export function effectiveBorderPad(
   return { topMm: v, rightMm: v, bottomMm: v, leftMm: v };
 }
 
+// What "invert" meant before the colours were authorable — black box, white
+// text. Every existing inverted block resolves to exactly this.
+export const INVERT_BG = "#000000";
+export const INVERT_TEXT = "#ffffff";
+
+// The colours an inverted block prints in: the authored hex pair, each side
+// falling back to the historic black/white independently (so setting only the
+// text colour keeps the black box). Same role as effectiveBorderPad — the one
+// fallback both the renderer and the builder canvas read.
+export function invertColors(block: {
+  invertBg?: string;
+  invertText?: string;
+}): { bg: string; text: string } {
+  return { bg: block.invertBg ?? INVERT_BG, text: block.invertText ?? INVERT_TEXT };
+}
+
 // A printed sewing-line guide: a full-width horizontal rule a fixed
 // distance from the top or bottom edge (the seam allowance). Fractional mm
 // allowed (e.g. 7.5). Multiple per page.
@@ -163,13 +193,24 @@ export type FoldLine = z.infer<typeof FoldLineSchema>;
 // `insetMm` pulls the frame in from the paper edge (0 = flush).
 export const PageBorderSchema = z.object({
   widthMm: z.number().min(0.1).max(5).default(0.3),
-  color: z
-    .string()
-    .regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, "hex colour like #000 or #1a1a1a")
-    .default("#000000"),
+  color: z.string().regex(HEX_COLOR_RE, HEX_COLOR_MSG).default("#000000"),
   insetMm: z.number().min(0).max(50).default(0),
 });
 export type PageBorder = z.infer<typeof PageBorderSchema>;
+
+// A die-cut hole through the page — the hang hole on a tag. Always
+// horizontally centred; `offsetMm` is the distance from the named edge to the
+// hole's CENTRE (same convention as a sewing line's offset), so a 5 mm hole
+// with offset 8 from the top leaves 5.5 mm of clear stock above it.
+// A print GUIDE like the sewing/fold lines: drawn as a dashed circle so the
+// operator can see what the punch removes and keep content clear of it. It
+// carries no tokens, consumes no grid cells and never blocks approval.
+export const CenterHoleSchema = z.object({
+  diameterMm: z.number().min(0.5).max(100).default(5),
+  edge: z.enum(["top", "bottom"]).default("top"),
+  offsetMm: z.number().min(0).max(1000).default(8),
+});
+export type CenterHole = z.infer<typeof CenterHoleSchema>;
 
 export const LayoutPageSchema = z
   .object({
@@ -183,6 +224,8 @@ export const LayoutPageSchema = z
     foldLine: FoldLineSchema.default("none"),
     // Optional frame around the whole page (absent = no border).
     pageBorder: PageBorderSchema.optional(),
+    // Optional die-cut hang hole, centred across the page (absent = none).
+    centerHole: CenterHoleSchema.optional(),
     // Drop this page from the PRINTED document when nothing on it resolves
     // for the style being rendered. The case it exists for: a page whose
     // only content is a certification mark ({{cert:oekotex}}) — the mark
