@@ -12,6 +12,7 @@ import { tokenMeta, parseSiblingTokenKey, type BarcodeSource } from "./token-met
 import { formatCompositionLines } from "./composition";
 import { pickCartonQtyPair, pickCartonQtyVariant } from "./carton-qty";
 import { pickSizeItems } from "./size-scoped-text";
+import { parseSizeForm, sizeFormEntries } from "./size-form";
 import { formatSizeRatio, parseSizeRatio, pickSizeRatioForSizes } from "./size-ratio";
 import {
   calcsInLine,
@@ -158,10 +159,18 @@ const RESOLVERS: Record<string, TextResolver> = {
   // preserved on allSizes). The renderer draws this specially so the
   // CURRENT repetition's size is enlarged; this plain value backs
   // readiness / show-values / file names.
-  sizeRangeCoop: (s) =>
-    (s.allSizes ?? s.sizes)
-      .map((x) => x.label)
-      .filter(Boolean)
+  //
+  // The optional form argument picks ONE half of a two-form label
+  // ("86-92 cm / 1½-2 år"): {{sizeRangeCoop:numeric}} prints the
+  // centimetres, {{sizeRangeCoop:year}} the age. Bare is unchanged — the
+  // label verbatim — and so is a label that carries no age half, which
+  // prints as authored either way (see size-form.ts).
+  sizeRangeCoop: (s, arg) =>
+    sizeFormEntries(
+      (s.allSizes ?? s.sizes).map((x) => x.label).filter(Boolean),
+      parseSizeForm(arg),
+    )
+      .map((e) => e.text)
       .join(" - "),
   // Assortment ratio as flat text — "S: 1, M: 2, L: 2". The optional
   // ":size" argument narrows to the repetition row's own size (just the

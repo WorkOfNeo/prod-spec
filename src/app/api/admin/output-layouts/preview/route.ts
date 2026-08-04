@@ -14,7 +14,7 @@ import {
   resolveTextToken,
   unresolvedTokens,
 } from "@/lib/output-layouts/tokens";
-import { LAYOUT_TOKENS, SIZE_SCOPE_ARG } from "@/lib/output-layouts/token-meta";
+import { LAYOUT_TOKENS, SIZE_SCOPE_ARG, SIZE_FORMS } from "@/lib/output-layouts/token-meta";
 import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import { buildSampleStyleData } from "@/lib/pdf/sample-data";
@@ -164,6 +164,13 @@ export async function POST(req: NextRequest) {
           t.key,
           SIZE_SCOPE_ARG,
         );
+      } else if (t.arg === "sizeForm") {
+        // Bare (labels as authored) plus each half, so the palette shows
+        // what ":numeric" and ":year" would actually print for this style.
+        tokenValues[t.key] = resolveTextToken(styleData, t.key);
+        for (const form of SIZE_FORMS) {
+          tokenValues[`${t.key}:${form}`] = resolveTextToken(styleData, t.key, form);
+        }
       } else {
         tokenValues[t.key] = resolveTextToken(styleData, t.key);
       }

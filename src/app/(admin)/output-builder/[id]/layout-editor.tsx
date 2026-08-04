@@ -37,6 +37,7 @@ import {
   SIBLING_FIELDS,
   MAX_SIBLING_SLOTS,
   SIZE_SCOPE_ARG,
+  SIZE_FORMS,
 } from "@/lib/output-layouts/token-meta";
 import { validateCalcExpression } from "@/lib/output-layouts/calc";
 import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
@@ -2913,14 +2914,17 @@ export function LayoutEditor({
                   {LAYOUT_TOKENS.filter((t) => t.group === group).flatMap((t) => {
                     // A multi-number carton qty offers bare + :solid/:assort
                     // (the split) + :inner/:outer (the pack pair) chips, a
-                    // size-scoped field bare + :size; every other token is a
-                    // single bare chip.
+                    // size-scoped field bare + :size, a two-form size run
+                    // bare + :numeric/:year; every other token is a single
+                    // bare chip.
                     const args =
                       t.arg === "cartonKind"
                         ? ["", ...CARTON_QTY_KINDS]
                         : t.arg === "sizeScope"
                           ? ["", SIZE_SCOPE_ARG]
-                          : [""];
+                          : t.arg === "sizeForm"
+                            ? ["", ...SIZE_FORMS]
+                            : [""];
                     return args.map((a) => {
                       const key = a ? `${t.key}:${a}` : t.key;
                       return (

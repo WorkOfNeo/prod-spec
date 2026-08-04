@@ -22,6 +22,7 @@ import {
 import { tokenMeta, type BarcodeSource, type LogoSource } from "./token-meta";
 import { lineOverrideKey } from "./line-keys";
 import { narrowSizeScopedText } from "./size-scoped-text";
+import { parseSizeForm, sizeFormEntries } from "./size-form";
 import { CALC_RE, fieldsInCalcExpression } from "./calc";
 import { getContrastAddressLogoDataUrl, getContrastLogoDataUrl } from "./logos";
 import {
@@ -700,15 +701,20 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx, blockWidthMm
     // repetition's size (style.sizes[0], narrowed by repetitionStyles)
     // enlarged. Drawn here rather than via the text resolver so the
     // highlight markup survives escaping.
+    //
+    // The optional form argument (:numeric / :year) prints one half of a
+    // two-form label — "86-92 cm / 1½-2 år" as either the centimetres or
+    // the age. The highlight still keys off the RAW label, so narrowing
+    // two sizes onto the same text enlarges that entry for both of them.
     if (key === "sizeRangeCoop") {
       const all = (style.allSizes ?? style.sizes).map((x) => x.label).filter(Boolean);
       if (all.length > 0) {
         const current = style.sizes[0]?.label ?? "";
-        html += all
-          .map((label) =>
-            label === current
-              ? `<span class="ol-size-current">${escapeHtml(label)}</span>`
-              : escapeHtml(label),
+        html += sizeFormEntries(all, parseSizeForm(arg))
+          .map((entry) =>
+            entry.labels.includes(current)
+              ? `<span class="ol-size-current">${escapeHtml(entry.text)}</span>`
+              : escapeHtml(entry.text),
           )
           .join(" - ");
         hadValue = true;

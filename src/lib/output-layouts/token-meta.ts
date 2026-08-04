@@ -6,9 +6,14 @@
 // the same token keys — keep the two files in sync.
 // =====================================================
 import { CARTON_QTY_KINDS } from "./carton-qty";
+import { SIZE_FORMS } from "./size-form";
 
 // The single accepted "sizeScope" argument — {{description:size}}.
 export const SIZE_SCOPE_ARG = "size";
+
+// Re-exported so the builder surfaces (palette, autocomplete) can offer the
+// size-form chips without reaching past this client-safe module.
+export { SIZE_FORMS };
 
 // "table" tokens render a real <table> rather than inline text, so they own
 // the whole line they sit on (the renderer draws them like the barcode /
@@ -30,7 +35,10 @@ export type LayoutTokenMeta = {
   // "sizeScope" → optional ":size" selector that narrows an unlabelled
   //   per-size list to the repetition row's size ({{description:size}});
   //   bare still resolves the whole value.
-  arg?: "lang" | "source" | "gap" | "cartonKind" | "sizeScope";
+  // "sizeForm" → optional half of a two-form size label ("86-92 cm /
+  //   1½-2 år"): numeric prints the measurement, year the age
+  //   ({{sizeRangeCoop:year}}); bare prints the label as authored.
+  arg?: "lang" | "source" | "gap" | "cartonKind" | "sizeScope" | "sizeForm";
   // Optional SECOND argument (TOKEN_RE group 3, numeric-only).
   // "heightMm" → bar height in mm, e.g. {{barcode:ean13:8}} (8 mm bars).
   arg2?: "heightMm";
@@ -116,10 +124,11 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   },
   {
     key: "sizeRangeCoop",
-    label: "Size range, current size enlarged (Coop)",
+    label: "Size range, current size enlarged (Coop) — :numeric / :year picks one half of \"86-92 cm / 1½-2 år\"",
     group: "Style",
     kind: "text",
-    example: "86/92 - 98/104 - 110/116",
+    arg: "sizeForm",
+    example: "86-92 cm - 98-104 cm · {{sizeRangeCoop:year}} → 1½-2 år - 3-4 år",
   },
   { key: "price", label: "Retail price", group: "Style", kind: "text", example: "29.00 DKK" },
 
@@ -420,6 +429,13 @@ export function validateTokenRef(key: string, arg?: string, arg2?: string): stri
   // accepted selector is ":size".
   if (meta.arg === "sizeScope" && arg !== undefined && arg !== SIZE_SCOPE_ARG) {
     errs.push(`{{${key}:${arg}}} — the only size selector is {{${key}:${SIZE_SCOPE_ARG}}}`);
+  }
+  // "sizeForm" arg is optional (bare prints the label as authored); when
+  // present it must name one half of a two-form size label.
+  if (meta.arg === "sizeForm" && arg !== undefined && !SIZE_FORMS.includes(arg as never)) {
+    errs.push(
+      `{{${key}:${arg}}} — size form must be ${SIZE_FORMS.map((f) => `{{${key}:${f}}}`).join(" or ")}`,
+    );
   }
   if (!meta.arg && arg) {
     errs.push(`{{${key}}} does not take an argument (got ":${arg}")`);
