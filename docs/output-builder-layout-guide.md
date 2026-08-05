@@ -78,6 +78,14 @@ Rules (`src/lib/output-layouts/size-form.ts`):
 - **Sizes that narrow onto the same text collapse to one entry** (two ages sharing a measurement) — and the current repetition's size still enlarges that entry.
 - Bare (no argument) is a byte-for-byte passthrough, so published layouts are untouched.
 
+## Rounded corners
+
+`page.cornerRadiusMm` is the corner radius of the die, in mm. Absent or `0` = square corners (every page authored before this).
+
+It is the **page** that rounds, not a drawn guide: `.ol-page` already clips its content, so a full-bleed or inverted block running into a corner prints the same curve the cutter makes instead of a square of ink the die would slice through. The `@page` box stays rectangular — the sheet it prints on is. A `pageBorder` curves with it **concentrically**, tightening by its own inset (`insetCornerRadiusMm`: radius 5 mm, inset 2 mm ⇒ a 3 mm frame corner; inset past the radius ⇒ square).
+
+In the builder the canvas and the print preview both show the rounded sheet. The canvas *shows* the radius without clipping to it — clipping there would swallow a corner block's delete badge and make that block undeletable.
+
 ## Centre hole (die-cut hang hole)
 
 `page.centerHole` marks the punch on a hang tag — `{ diameterMm, edge: "top" | "bottom", offsetMm }`. The hole is always centred across the page; `offsetMm` is measured from the named edge to the hole's **centre** (same convention as a sewing line's offset), so Ø 5 mm at offset 8 from the top leaves 5.5 mm of clear stock above it.
@@ -91,8 +99,35 @@ It's a **print guide**, like the sewing and fold lines: a dashed circle on the c
 - **Symbols / logos / certs**: `{{washSymbols}}`, `{{logo:contrastAddress}}` / `{{logo:custom}}`, `{{cert:oekotex}}` / `{{cert:fsc}}`.
 - **Order / size**: `{{size}}` (the current row inside a repeat), `{{sizes}}`, `{{poNumber}}`, `{{orderNo}}` (FOB → customer order, else PO), `{{qtyPerCarton}}`, `{{lot}}`, `{{customerItemNo}}`, `{{customerOrderNo}}`, `{{description}}`, `{{campaignWeek}}`.
 - **Size range (Coop)**: `{{sizeRangeCoop}}` — the whole run joined " - " with the current row's size enlarged; `:numeric` / `:year` pick one half of a two-form label (see below).
-- **Conditionals**: `{{if deliveryTerm == FOB}}…{{else}}…{{endif}}` (one line, text tokens only).
+- **Conditionals**: `{{if deliveryTerm == FOB}}…{{else}}…{{endif}}` (one line, text tokens only) — see "Conditional text" below for the three operators.
 - **Calculated**: `{{= sum(qtyPerCarton) }}` — arithmetic over field values; see "Calculated fields" below.
+
+## Conditional text — which operator to reach for
+
+One condition per line, no nesting, and the field must be a text token:
+
+| Operator | Test | Use it when |
+|---|---|---|
+| `==` / `!=` | the WHOLE field, trimmed + case-insensitive | the column holds exactly one of a few known values — `{{if deliveryTerm == FOB}}` |
+| `contains` / `!contains` | substring, case-insensitive | the column *mentions* a word inside a messier value — `{{if productGroup contains Set}}` |
+| `includes` / `!includes` | membership of a comma-separated list, per item, punctuation-insensitive (`OEKO-TEX` ≡ `OEKOTEX`) | the column is a list — `{{if certificates includes FSC}}` |
+
+`contains` mirrors the generation-rules engine's `contains` (`src/lib/outputs/exclusion.ts`), so "does this field mention X" means the same thing in a rule and in a line.
+
+**Worked example — a price label that knows a set from a single piece.** The
+customer's spec: *"If the Product Group on Monday is 'Set', the price label
+should display PER SÆT. Otherwise KR. for individual pieces."* That's one line
+in the block:
+
+```
+{{price}} {{if productGroup contains Set}}PER SÆT{{else}}KR.{{endif}}
+```
+
+`contains` rather than `==` because the column isn't always the bare word —
+`Set`, `Gift Set` and `SET 2-PACK` all print **PER SÆT**, while `3-Pack Socks`
+prints **KR.**. Use `==` instead when the column really is exactly `Set` and a
+`Sunset`-style false positive would matter. The Logic palette inserts this exact
+line from the `{{if … contains …}}` chip.
 
 ## Calculated fields
 

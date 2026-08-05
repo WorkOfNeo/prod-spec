@@ -25,10 +25,17 @@ export function PreviewFrame({
   html,
   widthMm,
   heightMm,
+  cornerRadiusMm,
 }: {
   html: string;
   widthMm: number;
   heightMm: number;
+  // The page's die corner radius, when it has one. The rendered page already
+  // clips its own content to that shape, but the white sheet behind it would
+  // still read as square — so the paper is rounded here too and you can see
+  // the cut you set. Multi-page previews stack inside one sheet, so this is
+  // only passed where a single page is shown (the builder).
+  cornerRadiusMm?: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -71,8 +78,13 @@ export function PreviewFrame({
       style={{ height: scale > 0 ? scaledH : heightMm * MM_TO_PX }}
     >
       <div
-        className="mx-auto bg-white shadow-md ring-1 ring-black/5"
-        style={{ width: naturalW * scale, height: scaledH }}
+        className="mx-auto overflow-hidden bg-white shadow-md ring-1 ring-black/5"
+        style={{
+          width: naturalW * scale,
+          height: scaledH,
+          // Scaled with the sheet, so the curve stays true to the mm.
+          borderRadius: cornerRadiusMm ? cornerRadiusMm * MM_TO_PX * scale : undefined,
+        }}
       >
         <iframe
           ref={iframeRef}

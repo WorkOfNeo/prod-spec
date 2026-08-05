@@ -155,6 +155,11 @@ export function buildTokenSuggestions(opts: {
     group: "Logic",
   });
   out.push({
+    insert: "{{if productGroup contains Set}}PER SÆT{{else}}KR.{{endif}}",
+    label: "if contains — the field mentions a word (Set / Gift Set / SET 2-PACK)",
+    group: "Logic",
+  });
+  out.push({
     insert: "{{if FIELD includes VALUE}}{{endif}}",
     label: "if includes — list condition",
     group: "Logic",

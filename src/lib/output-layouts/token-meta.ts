@@ -479,7 +479,7 @@ export function validateLineConditionals(
   // Anything control-shaped left over is malformed / orphaned.
   for (const m of consumed.matchAll(new RegExp(controlRe.source, "g"))) {
     errs.push(
-      `malformed conditional near "{{${m[1]}}}" — expected {{if field == VALUE}} or {{if field includes VALUE}} (…{{else}}…){{endif}} on one line`,
+      `malformed conditional near "{{${m[1]}}}" — expected {{if field == VALUE}}, {{if field contains VALUE}} or {{if field includes VALUE}} (…{{else}}…){{endif}} on one line`,
     );
   }
   for (const c of conds) {
