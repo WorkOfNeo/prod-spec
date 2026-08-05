@@ -17,6 +17,7 @@ import {
   blockId,
   effectiveBorderPad,
   gridFromCellMm,
+  insetCornerRadiusMm,
   invertColors,
   layoutSettings,
   pageGrid,
@@ -1887,6 +1888,36 @@ export function LayoutEditor({
               )}
             </div>
 
+            {/* Rounded corners — the die's corner radius. The page itself
+                rounds (content is clipped to the shape), and the page
+                border curves with it. 0 = square, as every page was. */}
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs text-zinc-500">Rounded corners</label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    key={`corner-${page.id}`}
+                    type="text"
+                    inputMode="decimal"
+                    defaultValue={mmText(page.cornerRadiusMm ?? 0)}
+                    onChange={(e) => {
+                      const v = parseMm(e.target.value);
+                      if (Number.isFinite(v) && v >= 0 && v <= 50)
+                        updatePage({ cornerRadiusMm: v > 0 ? v : undefined });
+                    }}
+                    className="w-16 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                    aria-label="Corner radius (mm)"
+                  />
+                  <span className="text-[10px] text-zinc-400">mm radius</span>
+                </div>
+              </div>
+              <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-400">
+                The corner radius of the cut. 0 = square. Content is clipped to the rounded shape, so a
+                block that runs into a corner prints the same curve the cutter makes — and the page border
+                curves with it.
+              </p>
+            </div>
+
             {/* Centre hole — the die-cut hang hole. Always centred across
                 the page; the offset places its CENTRE from the chosen
                 edge. Drawn as a dashed circle on the canvas and in the
@@ -2234,6 +2265,11 @@ export function LayoutEditor({
                 width: page.widthMm * scale,
                 height: page.heightMm * scale,
                 cursor: draw ? "crosshair" : "default",
+                // The die's rounded corners. Shown, not clipped: the true
+                // render clips content to this shape, but clipping HERE would
+                // swallow a corner block's delete badge (it sits outside the
+                // block) and make that block undeletable.
+                borderRadius: (page.cornerRadiusMm ?? 0) * scale,
               }}
             >
               {/* grid overlay — inset by the page margin */}
@@ -2264,6 +2300,8 @@ export function LayoutEditor({
                     right: pageBorder.insetMm * scale,
                     bottom: pageBorder.insetMm * scale,
                     border: `${Math.max(1, pageBorder.widthMm * scale)}px solid ${pageBorder.color}`,
+                    borderRadius:
+                      insetCornerRadiusMm(page.cornerRadiusMm, pageBorder.insetMm) * scale,
                   }}
                   title="Page border"
                 />
@@ -2404,7 +2442,12 @@ export function LayoutEditor({
             <div className="mt-2 rounded-lg border border-zinc-200 bg-zinc-50/60 p-6">
               {previewHtml ? (
                 <div className="mx-auto" style={{ maxWidth: Math.max(page.widthMm * 3.78, 280) }}>
-                  <PreviewFrame html={previewHtml} widthMm={page.widthMm} heightMm={page.heightMm} />
+                  <PreviewFrame
+                    html={previewHtml}
+                    widthMm={page.widthMm}
+                    heightMm={page.heightMm}
+                    cornerRadiusMm={page.cornerRadiusMm}
+                  />
                 </div>
               ) : (
                 <p className="py-10 text-center text-xs text-zinc-400">Rendering…</p>
@@ -3128,16 +3171,24 @@ export function LayoutEditor({
                   onClick={() => insertToken("{{if deliveryTerm == FOB}}{{customerOrderNo}}{{else}}{{poNumber}}{{endif}}")}
                 />
                 <TokenChip
+                  token="{{if … contains …}}"
+                  title='Substring condition — e.g. {{if productGroup contains Set}}PER SÆT{{else}}KR.{{endif}}: true when the field MENTIONS the word, so "Set", "Gift Set" and "SET 2-PACK" all match. Case-insensitive. Also supports !contains. Use ==/!= instead when the value must be the whole field.'
+                  disabled={!selBlock}
+                  onClick={() =>
+                    insertToken("{{if productGroup contains Set}}PER SÆT{{else}}KR.{{endif}}")
+                  }
+                />
+                <TokenChip
                   token="{{if … includes …}}"
-                  title='List condition — e.g. {{if certificates includes FSC}}FSC certified{{endif}}: true when one of the comma-separated values matches, ignoring case and punctuation (OEKO-TEX = OEKOTEX). Also supports !includes. Not a substring check. Note: the {{cert:…}} marks already self-gate on the Certificates field — this is for conditional TEXT.'
+                  title='List condition — e.g. {{if certificates includes FSC}}FSC certified{{endif}}: true when one of the comma-separated values matches, ignoring case and punctuation (OEKO-TEX = OEKOTEX). Also supports !includes. Not a substring check — use contains for that. Note: the {{cert:…}} marks already self-gate on the Certificates field — this is for conditional TEXT.'
                   disabled={!selBlock}
                   onClick={() => insertToken("{{if certificates includes FSC}}FSC certified{{endif}}")}
                 />
               </div>
               <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
-                One condition per line, no nesting. ==/!= compare the whole value; includes/!includes check a
-                comma-separated list. The {"{{cert:…}}"} marks already print only on styles that declare the
-                certificate, so no wrapper is needed for them.
+                One condition per line, no nesting. ==/!= compare the whole value; contains/!contains test for
+                a word anywhere in it; includes/!includes check a comma-separated list. The {"{{cert:…}}"} marks
+                already print only on styles that declare the certificate, so no wrapper is needed for them.
               </p>
             </div>
           </div>

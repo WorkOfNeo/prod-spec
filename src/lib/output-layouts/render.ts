@@ -11,6 +11,7 @@ import {
   TOKEN_RE,
   conditionalsInLine,
   effectiveBorderPad,
+  insetCornerRadiusMm,
   invertColors,
   layoutSettings,
   pageGrid,
@@ -1125,7 +1126,12 @@ function renderGuides(page: LayoutPage): string {
 function renderPageBorder(page: LayoutPage): string {
   const b = page.pageBorder;
   if (!b) return "";
-  return `<div class="ol-page-border" style="inset: ${b.insetMm}mm; border: ${b.widthMm}mm solid ${b.color};"></div>`;
+  // On a rounded page the frame curves WITH the die, tightening by its own
+  // inset so the two stay concentric (a frame 2 mm inside a 5 mm corner is a
+  // 3 mm corner). Square page ⇒ radius 0 ⇒ the rule is simply absent.
+  const r = insetCornerRadiusMm(page.cornerRadiusMm, b.insetMm);
+  const radius = r > 0 ? ` border-radius: ${r}mm;` : "";
+  return `<div class="ol-page-border" style="inset: ${b.insetMm}mm; border: ${b.widthMm}mm solid ${b.color};${radius}"></div>`;
 }
 
 // Lay a flat list of (page × style) units into the final HTML document.
@@ -1170,12 +1176,17 @@ function emitLayoutDocument(
     ctx.mode === "production" ? rendered.filter((u) => !(u.page.omitWhenEmpty && !u.hasInk)) : rendered;
   const keptUnits = surviving.length > 0 ? surviving : rendered;
 
+  // Rounded corners are a property of the DIE, not the paper: the @page box
+  // stays rectangular (the sheet is), while .ol-page carries the radius. With
+  // the existing overflow:hidden that clips content to the rounded shape, so a
+  // full-bleed block prints the curve the cutter makes.
   const pageCss = keptUnits
-    .map(
-      ({ page: p }, i) => `
+    .map(({ page: p }, i) => {
+      const radius = p.cornerRadiusMm && p.cornerRadiusMm > 0 ? ` border-radius: ${p.cornerRadiusMm}mm;` : "";
+      return `
   @page olp${i} { size: ${p.widthMm}mm ${p.heightMm}mm; margin: 0; }
-  .ol-page-${i} { page: olp${i}; width: ${p.widthMm}mm; height: ${p.heightMm}mm; }`,
-    )
+  .ol-page-${i} { page: olp${i}; width: ${p.widthMm}mm; height: ${p.heightMm}mm;${radius} }`;
+    })
     .join("");
 
   const pagesHtml = keptUnits

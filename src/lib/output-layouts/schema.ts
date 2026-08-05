@@ -212,6 +212,15 @@ export const CenterHoleSchema = z.object({
 });
 export type CenterHole = z.infer<typeof CenterHoleSchema>;
 
+// The radius a frame drawn `insetMm` inside a page of `radiusMm` should
+// carry so the two curves stay concentric — pull a rounded rectangle inward
+// and its corners tighten by the same amount, hitting square at the point the
+// inset reaches the radius. The ONE place that arithmetic lives, shared by the
+// renderer and the builder canvas (like effectiveBorderPad and pageGrid).
+export function insetCornerRadiusMm(radiusMm: number | undefined, insetMm: number): number {
+  return Math.max(0, (radiusMm ?? 0) - insetMm);
+}
+
 export const LayoutPageSchema = z
   .object({
     id: z.string().min(1).max(40),
@@ -226,6 +235,13 @@ export const LayoutPageSchema = z
     pageBorder: PageBorderSchema.optional(),
     // Optional die-cut hang hole, centred across the page (absent = none).
     centerHole: CenterHoleSchema.optional(),
+    // Rounded corners — the corner radius of the die, in mm. Absent or 0 ⇒
+    // square corners (every page authored before this). It is the PAGE that
+    // rounds: content is clipped to the rounded shape, so a full-bleed block
+    // in a corner prints the same curve the cutter makes instead of a square
+    // of ink the die would slice through. The frame (pageBorder) follows it
+    // concentrically — see renderPageBorder.
+    cornerRadiusMm: z.number().min(0).max(50).optional(),
     // Drop this page from the PRINTED document when nothing on it resolves
     // for the style being rendered. The case it exists for: a page whose
     // only content is a certification mark ({{cert:oekotex}}) — the mark
@@ -434,16 +450,18 @@ export const TOKEN_RE = /\{\{([a-zA-Z][a-zA-Z0-9]*)(?::([a-zA-Z0-9-]+))?(?::([0-
 // Single-level conditional inside one line:
 //   {{if deliveryTerm == FOB}}{{customerOrderNo}}{{else}}{{poNumber}}{{endif}}
 //   {{if certificates includes FSC}}{{cert:fsc}}{{endif}}
+//   {{if productGroup contains Set}}PER SÆT{{else}}KR.{{endif}}
 // Value may be quoted. ==/!= compare the whole value, trimmed +
 // case-insensitive; includes/!includes check the comma-separated list
-// (per-item, punctuation-insensitive — see conditionMatches). No nesting.
+// (per-item, punctuation-insensitive); contains/!contains are a plain
+// substring test — see conditionMatches. No nesting.
 export const IF_RE =
-  /\{\{if\s+([a-zA-Z][a-zA-Z0-9]*)\s*(==|!=|!includes|includes)\s*"?([^"{}]*?)"?\s*\}\}([\s\S]*?)(?:\{\{else\}\}([\s\S]*?))?\{\{endif\}\}/g;
+  /\{\{if\s+([a-zA-Z][a-zA-Z0-9]*)\s*(==|!=|!includes|includes|!contains|contains)\s*"?([^"{}]*?)"?\s*\}\}([\s\S]*?)(?:\{\{else\}\}([\s\S]*?))?\{\{endif\}\}/g;
 
 // Control tags for canvas highlighting / orphan detection.
 export const CONTROL_RE = /\{\{(if\b[^{}]*|else|endif)\}\}/g;
 
-export type ConditionOp = "==" | "!=" | "includes" | "!includes";
+export type ConditionOp = "==" | "!=" | "includes" | "!includes" | "contains" | "!contains";
 
 export type LineConditional = {
   field: string;
@@ -476,6 +494,18 @@ function bareToken(s: string): string {
 }
 
 export function conditionMatches(actual: string, op: ConditionOp, value: string): boolean {
+  if (op === "contains" || op === "!contains") {
+    // Plain SUBSTRING test, case-insensitive and trimmed — the same rule the
+    // generation-rules engine's "contains" uses (src/lib/outputs/exclusion.ts),
+    // so the two ways of asking "does this field mention X" agree.
+    // The case it exists for: a taxonomy value that carries the word rather
+    // than being it — "Set", "Gift Set" and "SET 2-PACK" all print PER SÆT
+    // from {{if productGroup contains Set}}. Use ==/!= when the value must
+    // match the WHOLE field.
+    const want = value.trim().toLowerCase();
+    const has = want !== "" && actual.toLowerCase().includes(want);
+    return op === "contains" ? has : !has;
+  }
   if (op === "includes" || op === "!includes") {
     // List membership: true when one of the actual value's comma-separated
     // items equals VALUE (punctuation/case-insensitive). Built for list

@@ -199,6 +199,7 @@
     <div class="note">
       <div class="h">Print guides — sewing lines, folding lines &amp; the centre hole</div>
       <p>Below the grid, add non-printing reference rules: a <b>sewing line</b> a fixed distance from the top or bottom edge (the seam allowance), and a <b>folding line</b> down or across the centre. They appear on the canvas and in the true render to help you place content, matching how the label is sewn or folded.</p>
+      <p style="margin-top:6px;"><b>Rounded corners</b> — the corner radius of the cut, in mm (0 = square). The page itself rounds: content is clipped to the shape, so a block that runs into a corner prints the same curve the cutter makes rather than a square of ink the die would slice through. A page border curves with it, tightening by its own inset. The canvas and the print preview both show the rounded sheet.</p>
       <p style="margin-top:6px;"><b>Centre hole</b> — the punched hang hole on a tag. Tick it, then set the <b>diameter in mm</b> and how far the hole sits <b>from the top or bottom</b> edge. It's always centred across the page, and the distance is measured to the hole's <b>centre</b> — the panel spells out how much clear stock that leaves (Ø 5 mm at 8 mm from the top = 5,5 mm of stock above it). It draws as a dashed circle on the canvas and in the render, so you can keep text and barcodes clear of what the punch removes; nothing is knocked out of the design.</p>
     </div>
   </div>
@@ -315,6 +316,7 @@
         <div class="vd">Conditional text, <b>one condition per line, no nesting</b>. The condition field must be a text variable.</div>
         <ul style="margin:7px 0 0;padding-left:15px;font-size:9.5px;color:#3f3f46;display:grid;gap:4px;">
           <li><span class="keyword">== / !=</span> compare the whole value, case-insensitively:<br><span class="ob-tok">{{if deliveryTerm == FOB}}…{{else}}…{{endif}}</span></li>
+          <li><span class="keyword">contains / !contains</span> test for a word <i>anywhere</i> in the value:<br><span class="ob-tok">{{if productGroup contains Set}}PER SÆT{{else}}KR.{{endif}}</span></li>
           <li><span class="keyword">includes / !includes</span> test a comma-separated list:<br><span class="ob-tok">{{if certificates includes FSC}}FSC certified{{endif}}</span></li>
         </ul>
       </div>
@@ -327,6 +329,13 @@
           <li><span class="keyword">round(…, decimals)</span> to tidy the result.</li>
         </ul>
       </div>
+    </div>
+
+    <div class="note">
+      <div class="h">Worked example — a price label that knows a set from a single piece</div>
+      <p>The requirement: <i>“If the Product Group on Monday is <b>Set</b>, the price label shows <b>PER SÆT</b>; otherwise <b>KR.</b> for individual pieces.”</i> That's one line in the block — no new output, no code:</p>
+      <p style="margin-top:6px;"><span class="ob-tok">{{price}} {{if productGroup contains Set}}PER SÆT{{else}}KR.{{endif}}</span></p>
+      <p style="margin-top:6px;">Use <span class="keyword">contains</span> rather than <span class="keyword">==</span> because the column isn't always the bare word: <b>Set</b>, <b>Gift Set</b> and <b>SET 2-PACK</b> all print PER SÆT, while <b>3-Pack Socks</b> prints KR. Switch to <span class="keyword">==</span> when the column really is exactly “Set” and a “Sunset”-style false positive would matter. The <b>Logic</b> palette inserts this exact line from the <span class="ob-tok it">{{if … contains …}}</span> chip.</p>
     </div>
 
     <div class="note warn">
