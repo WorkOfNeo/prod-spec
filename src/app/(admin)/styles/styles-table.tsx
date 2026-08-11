@@ -54,7 +54,11 @@ type TriState = "any" | "has" | "no";
 const NEXT_STATE: Record<TriState, TriState> = { any: "has", has: "no", no: "any" };
 
 const ATTR_FILTERS: ReadonlyArray<{ key: string; label: string; has: (r: StyleRow) => boolean }> = [
-  { key: "po", label: "PO", has: (r) => Boolean(r.poNumber && r.poNumber.trim()) },
+  // Reads the server-computed flag (hasPoNumber) rather than re-deriving it,
+  // so the chip and the default-view gate can't disagree about what counts as
+  // a PO number. Setting this chip to "No PO" is ALSO what reveals the rows
+  // the gate hides — see the filter loop.
+  { key: "po", label: "PO", has: (r) => !r.missingPo },
   // "Applied" = linked AND active. A linked-but-inactive spec counts as "No
   // Prod spec" here — it won't generate, so it shouldn't read as having a
   // working spec (see prodSpecActive in page.tsx).
@@ -200,6 +204,10 @@ export type StyleRow = {
   // Manually pulled into the styleboard for layout testing — surfaced via the
   // "Pulled" attribute chip (Settings ▸ Pull style by PO).
   pulledForTest: boolean;
+  // Server-computed: no PO number ("Navision Task") on the Monday row. Hidden
+  // from the default view — nothing generates without a PO, so these styles
+  // haven't entered the flow. Revealed by the "No PO" chip.
+  missingPo: boolean;
   lastSyncedAt: string;
   searchBlob: string;
   // ── Opt-in columns (hydrated only when the column is visible) ──
@@ -352,6 +360,16 @@ export function StylesTable({
     [archivedFlags],
   );
 
+  // Styles with no PO number ("Navision Task" unset on the Monday row). The
+  // server loads them (activeStylesWhere({ includeMissingPo: true })) but the
+  // flow starts at the PO, so they stay out of the default view. The reveal is
+  // the PO chip's third state: "No PO" shows exactly this set — no extra
+  // toggle, and the chip's own filter already narrows to it, so the two agree
+  // by construction.
+  const missingPoFlags = useMemo(() => rows.map((r) => r.missingPo), [rows]);
+  const missingPoCount = useMemo(() => missingPoFlags.filter(Boolean).length, [missingPoFlags]);
+  const revealMissingPo = (attrFilters.po ?? "any") === "no";
+
   // Distinct option lists (+counts) per facet, derived once from the loaded
   // rows — a value only appears if a real style carries it. Counts are over
   // all loaded rows (static); they don't react to other facets' selections
@@ -414,6 +432,7 @@ export function StylesTable({
     const eSet = fa.ean.length ? new Set(fa.ean) : null;
     return rows.filter((r, i) => {
       if (!showArchived && archivedFlags[i]) return false;
+      if (!revealMissingPo && missingPoFlags[i]) return false;
       // Value facets: OR within a facet (Set membership), AND across facets.
       if (cSet && !cSet.has(customerValue(r))) return false;
       if (bSet && !bSet.has(baValue(r))) return false;
@@ -430,7 +449,17 @@ export function StylesTable({
       if (!needle) return true;
       return r.searchBlob.includes(needle);
     });
-  }, [rows, q, showArchived, archivedFlags, attrFilters, activeAttrFilters, appliedFacets]);
+  }, [
+    rows,
+    q,
+    showArchived,
+    archivedFlags,
+    revealMissingPo,
+    missingPoFlags,
+    attrFilters,
+    activeAttrFilters,
+    appliedFacets,
+  ]);
 
   // The exact set the bulk "Run all outputs" action targets — the filtered
   // rows, in table order. The browser already holds the filtered list, so the
@@ -921,6 +950,21 @@ export function StylesTable({
           >
             Clear
           </button>
+        )}
+        {/* Says out loud that rows are being withheld, and names the one
+            click that brings them back — a silent gate is how "my style
+            vanished" tickets get written. */}
+        {missingPoCount > 0 && !revealMissingPo && (
+          <span className="text-xs text-zinc-400">
+            <span className="tabular-nums">{missingPoCount}</span> hidden — no PO number yet.{" "}
+            <button
+              type="button"
+              onClick={() => setAttrFilters((p) => ({ ...p, po: "no" }))}
+              className="underline hover:text-zinc-600"
+            >
+              Show them
+            </button>
+          </span>
         )}
       </div>
 

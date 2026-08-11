@@ -14,7 +14,7 @@ import { effectiveStyleItem, resolveMappedField } from "@/lib/styles/resolved-fi
 import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
 import { isArchivedGroup } from "@/lib/import/heuristics";
 import { getDoneGroupPoCutoff } from "@/lib/settings/app-settings";
-import { activeStylesWhere, resolveDoneCutoffIds } from "@/lib/styles/active-filter";
+import { activeStylesWhere, hasPoNumber, resolveDoneCutoffIds } from "@/lib/styles/active-filter";
 import { loadLookalikeChips } from "@/lib/styles/related";
 import { StylesTable } from "./styles-table";
 import { DonePoCutoffSetting } from "./done-po-cutoff-setting";
@@ -69,9 +69,16 @@ export default async function StylesPage() {
   // renders in <500 ms and the filtering UX is instant. Switch to
   // server-side pagination if the row count ever crosses ~20k.
   const styles = await db.style.findMany({
-      // Exactly the active set — not archived/deleted, Templates/Done hidden,
+      // The active set — not archived/deleted, Templates/Done hidden,
       // Done-cutoff styles re-admitted. Shared with /combos via activeStylesWhere.
-      where: await activeStylesWhere({ doneCutoff, doneCutoffIds }),
+      //
+      // includeMissingPo: this ONE surface loads the PO-less styles too. They
+      // are not in the flow (nothing generates without a PO) and the table
+      // hides them by default, but an operator chasing "where did my style
+      // go?" has to be able to find the row — so it ships to the browser
+      // behind the "No PO" chip rather than being filtered out in SQL. The
+      // gate itself still lives in activeStylesWhere, for every other caller.
+      where: await activeStylesWhere({ doneCutoff, doneCutoffIds, includeMissingPo: true }),
       include: {
         // config feeds the per-style required-field check below.
         customer: { select: { name: true, config: true } },
@@ -138,13 +145,18 @@ export default async function StylesPage() {
     wantReview ? loadAssetsByStyle(styleIds) : Promise.resolve(new Map<string, never>()),
   ]);
 
+  // The headline count is the LISTED set, not the loaded set — the PO-less
+  // rows ride along in the payload (see includeMissingPo above) but they are
+  // not on the board yet, so counting them here would overstate the work.
+  const listedCount = styles.filter((s) => hasPoNumber(s.poNumber)).length;
+
   return (
     <div className="px-8 py-8">
       <div className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Styles</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            {styles.length} {styles.length === 1 ? "style" : "styles"} on file. Search
+            {listedCount} {listedCount === 1 ? "style" : "styles"} on file. Search
             across name, customer, business area, PO# and status, or pick values in the
             Customer / Business Area / Group / Status / EAN dropdowns and press Apply.
           </p>
@@ -332,6 +344,10 @@ export default async function StylesPage() {
             // Manually pulled in for layout testing (Settings ▸ Pull style by
             // PO) — shown via the "Pulled" attribute chip.
             pulledForTest: s.pulledForTestAt != null,
+            // No "Navision Task" / PO number on the Monday row yet. Loaded but
+            // hidden from the default view — nothing can generate without a
+            // PO, so the flow hasn't started. The "No PO" chip reveals them.
+            missingPo: !hasPoNumber(s.poNumber),
             lastSyncedAt: formatDate(s.lastSyncedAt),
             searchBlob: [
               s.name,
