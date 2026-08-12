@@ -27,6 +27,17 @@ const PER_ROW_VARIANT = "layout:test-per-carton";
 // "only generate for shoes". Needs no fields, so readiness turns purely on
 // the rule.
 const SHOE_ONLY_VARIANT = "layout:test-shoe-sticker";
+// One rule-free variant per document type, standing in for the 181 real
+// outputs. "Shoes ⇒ HangTag only" is expressed at DOC-TYPE scope, so these
+// carry no rules of their own — exactly like the 58 static/legacy variants,
+// which have nowhere to put one.
+const BY_DOC_TYPE: Record<string, string> = {
+  HANGTAG: "layout:test-hangtag",
+  STICKER: "layout:test-sticker",
+  CARE_LABEL: "layout:test-care-label",
+  CARTON_MARKING: "layout:test-carton-marking",
+  WASHCARE: "layout:test-washcare",
+};
 
 // Minimal Output Builder-shaped variants: a per-carton repeat (same
 // requiredFields gate as the coded one, but perRowCartonEan on), and the
@@ -56,6 +67,16 @@ setDynamicVariants([
     ],
     render: async () => "",
   },
+  ...Object.entries(BY_DOC_TYPE).map(([docType, key]) => ({
+    key,
+    docType,
+    name: `Test ${docType}`,
+    description: `Test fixture — rule-free ${docType}`,
+    requiredFields: [],
+    defaultWidthMm: 40,
+    defaultHeightMm: 20,
+    render: async () => "",
+  })),
 ]);
 
 function styleWith(over: Partial<ReadinessStyle>, variantKey = CARTON_VARIANT): ReadinessStyle {
@@ -171,3 +192,89 @@ test("output rule 'only for shoes' — anything else is excluded, with the reaso
     "Not generated — Product group doesn’t contain “shoes” (Shoe barcode sticker rule)",
   );
 });
+
+// ---------------------------------------------------------------------------
+// "Product Group = Shoes ⇒ only the HangTag is created."
+//
+// Expressed as DOC-TYPE rule data, not code: one "never when Product group
+// contains shoe" rule on each non-HANGTAG document type. Doc-type scope is the
+// only scope that can carry this — per-OUTPUT rules live on
+// LayoutSettings.rules, which only Output Builder layouts have, and 58 of the
+// 181 live variants are static/legacy ones with nowhere to put one.
+//
+// The keyword is "shoe", not "shoes": the live Product Group taxonomy is free
+// text and carries "Sneaker shoe" alongside "Shoes" / "Swim Shoes" / "Womens
+// sports shoes". It is deliberately NOT "sneaker" or "slipper" — those would
+// swallow the ~90 sneaker-sock / slipper-sock styles, which are socks.
+// ---------------------------------------------------------------------------
+
+const SHOES_HANGTAG_ONLY_RULES = Object.fromEntries(
+  Object.keys(BY_DOC_TYPE)
+    .filter((dt) => dt !== "HANGTAG")
+    .map((dt) => [dt, [{ field: "productGroup", op: "contains" as const, keywords: ["shoe"] }]]),
+);
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+  STICKER: "Sticker",
+  CARE_LABEL: "Care label",
+  CARTON_MARKING: "Carton marking",
+  WASHCARE: "Wash care",
+};
+
+// A style declaring one output of EVERY document type — the worst case the
+// rule has to survive.
+function everyDocTypeReadiness(productGroup: string) {
+  const style: ReadinessStyle = {
+    ...styleWith({}),
+    rawData: {
+      id: "1",
+      name: "TEST1",
+      column_values: [{ id: "manual.productGroup", type: "text", text: productGroup, value: null }],
+    },
+    prodSpec: {
+      outputs: Object.values(BY_DOC_TYPE).map((variantKey) => ({
+        variantKey,
+        enabled: true,
+        widthMm: 40,
+        heightMm: 20,
+      })),
+      columnMapping: {},
+    },
+  };
+  return outputReadinessForStyle(style, SHOES_HANGTAG_ONLY_RULES, DOC_TYPE_LABELS);
+}
+
+function generated(productGroup: string): string[] {
+  return everyDocTypeReadiness(productGroup)
+    .filter((o) => !o.excluded)
+    .map((o) => o.variantKey);
+}
+
+for (const productGroup of ["Shoes", "Swim Shoes", "Womens sports shoes", "Sneaker shoe"]) {
+  test(`Product group “${productGroup}” → the HangTag and nothing else`, () => {
+    assert.deepEqual(generated(productGroup), [BY_DOC_TYPE.HANGTAG]);
+  });
+}
+
+test("the four suppressed outputs each say why, naming their document type", () => {
+  const excluded = everyDocTypeReadiness("Shoes").filter((o) => o.excluded);
+  assert.equal(excluded.length, 4);
+  assert.ok(
+    excluded.every((o) => o.exclusionReason?.endsWith("rule)")),
+    "every suppressed output carries a reason",
+  );
+  const sticker = excluded.find((o) => o.variantKey === BY_DOC_TYPE.STICKER);
+  assert.equal(
+    sticker?.exclusionReason,
+    "Not generated — Product group contains “shoe” (Sticker rule)",
+  );
+});
+
+// The out-of-scope guard: this must change nothing for any other product
+// group. "Swim Shorts" / "sweat shorts" / "Shorty Set" are live values that
+// contain "sho" — a sloppier keyword would silently kill their outputs.
+for (const productGroup of ["Swim Shorts", "sweat shorts", "Shorty Set", "3-Pack Socks", "T-Shirt"]) {
+  test(`Product group “${productGroup}” still generates all five outputs`, () => {
+    assert.deepEqual(generated(productGroup).sort(), Object.values(BY_DOC_TYPE).sort());
+  });
+}
