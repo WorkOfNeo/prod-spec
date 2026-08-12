@@ -22,6 +22,7 @@ const SETTINGS_ITEMS: Array<{ href: string; label: string }> = [
   { href: "/settings/info-area-sizes", label: "Info area sizes" },
   { href: "/settings/washcare-symbols", label: "Wash care symbols" },
   { href: "/settings/certificates", label: "Certificates" },
+  { href: "/settings/images", label: "Images" },
   { href: "/settings/qr-codes", label: "QR codes" },
   { href: "/translations", label: "Translations" },
   { href: "/countries", label: "Countries" },

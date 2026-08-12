@@ -2033,3 +2033,36 @@ model SystemPrompt {
 
   @@map("system_prompts")
 }
+
+// =====================================================
+// Layout images — DB-managed via /settings/images.
+// Reusable artwork placed by the Output Builder's {{image:<slug>}} token.
+//
+// The distinction from OutputLayout.customLogo ({{logo:custom}}): that is
+// ONE image per layout, stored on the layout row. These are a SHARED
+// library — a layout can place as many as it likes, and the same picture
+// is reused across layouts, so updating the artwork here updates every
+// layout that places it. Mirrors the Certificate / QrImage libraries.
+// =====================================================
+model LayoutImage {
+  id     String  @id @default(cuid())
+  // Human name — shown in the library and as the builder palette chip.
+  name   String
+  // The token argument: {{image:<slug>}}. Lowercase [a-z0-9-], unique.
+  // The slug IS the contract with published layout definitions, so
+  // renaming one orphans every layout that places it — the renderer then
+  // prints a `missing` chip, which blocks approval rather than silently
+  // shipping a blank. Rename deliberately.
+  slug   String  @unique
+  // Raw SVG markup OR a data URL ("data:image/png;base64,…"). Same dual
+  // storage as Certificate.logo / WashSymbol.svg. Optional so a row can be
+  // a placeholder until the artwork arrives.
+  image  String?
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active])
+  @@map("layout_images")
+}

@@ -53,12 +53,26 @@ export type TokenSuggestion = {
 export function buildTokenSuggestions(opts: {
   langSel: string;
   siblingSlot: number;
+  // Active rows of the image library — {{image:<slug>}} has no fixed source
+  // list, so the catalogue is only as complete as what the caller passes.
+  images?: Array<{ slug: string; name: string }>;
 }): TokenSuggestion[] {
-  const { langSel, siblingSlot } = opts;
+  const { langSel, siblingSlot, images = [] } = opts;
   const out: TokenSuggestion[] = [];
 
   for (const t of LAYOUT_TOKENS) {
-    if (t.arg === "source") {
+    if (t.arg === "imageSlug") {
+      // One entry per picture in the library, so typing "{{" then the
+      // picture's name finds it the same way a fixed token does.
+      for (const img of images) {
+        out.push({
+          insert: `{{${t.key}:${img.slug}}}`,
+          label: `Image · ${img.name}`,
+          group: t.group,
+          hint: "Settings → Images",
+        });
+      }
+    } else if (t.arg === "source") {
       const sources =
         t.key === "barcode"
           ? BARCODE_SOURCES

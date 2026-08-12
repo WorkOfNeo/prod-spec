@@ -97,10 +97,45 @@ It's a **print guide**, like the sewing and fold lines: a dashed circle on the c
 - **Per language**: `{{composition:da}}`, `{{careInstructions:de}}`, `{{madeIn:en}}`, `{{country:xx}}`, `{{manufacturer:xx}}`.
 - **Barcodes**: `{{barcode:ean13}}` (size EAN), `{{barcode:cartonEan}}` (carton EAN).
 - **Symbols / logos / certs**: `{{washSymbols}}`, `{{logo:contrastAddress}}` / `{{logo:custom}}`, `{{cert:oekotex}}` / `{{cert:fsc}}`.
+- **Pictures**: `{{image:<name>}}` — any number per output, from the shared library (see below).
 - **Order / size**: `{{size}}` (the current row inside a repeat), `{{sizes}}`, `{{poNumber}}`, `{{orderNo}}` (FOB → customer order, else PO), `{{qtyPerCarton}}`, `{{lot}}`, `{{customerItemNo}}`, `{{customerOrderNo}}`, `{{description}}`, `{{campaignWeek}}`.
 - **Size range (Coop)**: `{{sizeRangeCoop}}` — the whole run joined " - " with the current row's size enlarged; `:numeric` / `:year` pick one half of a two-form label (see below).
 - **Conditionals**: `{{if deliveryTerm == FOB}}…{{else}}…{{endif}}` (one line, text tokens only) — see "Conditional text" below for the three operators.
 - **Calculated**: `{{= sum(qtyPerCarton) }}` — arithmetic over field values; see "Calculated fields" below.
+
+## Pictures — the image library vs the custom logo
+
+Two ways to put artwork on a layout, and the difference is how many:
+
+| | `{{logo:custom}}` | `{{image:<name>}}` |
+|---|---|---|
+| How many per layout | exactly one | as many as you like |
+| Where it lives | on the layout row (`OutputLayout.customLogo`) | shared library, *Settings → Images* |
+| Reused across layouts | no — re-uploaded per layout | yes — one row, every layout that places it |
+| Sizing | `customLogoWidthPct` (one setting per layout) | per token: `{{image:x:40}}` |
+
+New artwork belongs in the library. `{{logo:custom}}` still works exactly as it
+did — it just can't be the answer when an output needs a *second* picture,
+which is the whole reason the library exists.
+
+**Sizing.** Bare (`{{image:coop-hanger}}`) prints at the block's font-derived
+height, like a cert mark, so it drops onto a text line without thought. With a
+percentage (`{{image:coop-hanger:40}}`) the *width* becomes 40% of the block and
+the height follows the aspect ratio. The width rides on the token rather than a
+layout setting because one layout now carries several pictures at different
+sizes.
+
+**Names are the contract.** The slug in the token is the only link between a
+layout and its artwork — there's no foreign key, because the reference lives
+inside the layout's JSON. So renaming or deleting a library row that layouts
+still place is refused unless you confirm; the settings page lists which layouts
+would break. Deactivating a row is *not* a soft option: a disabled picture
+prints the same placeholder a missing one does.
+
+**Validation is by shape, not by list.** Any well-formed slug publishes, even
+one nobody has uploaded yet — that's a data gap, not an authoring error. It
+renders the standard `missing` chip, which blocks approval, so the gap surfaces
+on the proof rather than shipping as a blank.
 
 ## Conditional text — which operator to reach for
 
@@ -226,5 +261,5 @@ Render a sample-data proof the same way the app does, then read the PDF:
 ## Gotchas
 
 - **Don't clobber hand-edits.** After a layout is edited in the builder, do not re-run a create/upsert script — it overwrites the whole `definition` and wipes the edits. Read current DB state and make targeted updates.
-- **Placeholders.** `{{cert:…}}` / `{{logo:custom}}` print a placeholder until the artwork is uploaded (Settings → Certificates / the layout's logo); a placeholder is a print-unsafe block that blocks approval.
+- **Placeholders.** `{{cert:…}}` / `{{logo:custom}}` / `{{image:…}}` print a placeholder until the artwork is uploaded (Settings → Certificates / the layout's logo / Settings → Images); a placeholder is a print-unsafe block that blocks approval.
 - **New schema fields need a deploy.** Editing a layout to use a brand-new field (e.g. per-side `pad`) only renders correctly once the matching app version is deployed. Keep the legacy field as a fallback during the gap, or wait until it's live.
