@@ -15,6 +15,12 @@ import { PDFParse } from "pdf-parse";
 //     ("6937128542362  12/12") — polybag/carton-level EANs, captured
 //     separately in `assortmentEans`.
 //
+// The "No." column arrives in TWO shapes, both live: blank on the data rows
+// ("PI-86/92 Pink, 86/92 5706…907"), or carrying the customer's article number
+// on EVERY row ("1000561812 PI-86/92 Pink, 86/92 5706…907") for customers whose
+// orders have one. RE_LEADING_ARTICLE_NO normalises the second onto the first
+// before any row is classified.
+//
 // Each style section opens with a "No." header line — Contrast's internal
 // article number ("C-33423") followed by the Description header
 // "<style number> - <name>" ("PTQ60031 - Pyjamas"). One PO can carry many
@@ -86,6 +92,16 @@ const RE_CUSTOMER_ITEM = /\b\d{3}-\d{3}-\d{4}\b/; // 316-246-1024
 const RE_CONTRAST_NO = /\bC-\d{3,}\b/; // C-27865 (C-PO/C-SO have letters → excluded)
 const RE_STANDALONE_EAN = /^(\d{13})(?:\s+\d{1,4}\s*\/\s*\d{1,4})?\s*$/; // "693… 12/12"
 const RE_LABELED_EAN = /^(.+?)\s+(\d{13})(?:\s+(\d{1,4}\s*\/\s*\d{1,4}))?\s*$/;
+// The "No." column repeated on EVERY barcode row — a bare article number
+// ("1000561815 ASS1 PTQ60031 - Pyjamas …"). Contrast prints it only for
+// customers whose orders carry one; other POs leave the column blank, which is
+// why the same page layout arrives in two shapes. Stripped before a row is
+// classified: left in place it prefixes the label, so the assortment row no
+// longer STARTS with "ASS" (→ its carton EAN was filed as a size variant) and
+// the colour parser can't find the "<code>-<size> <colour>" prefix it needs.
+// Requires ≥6 digits AND following content, so a 13-digit standalone EAN line
+// and any real colour code ("PI-86/92", ".B-98/104") are untouched.
+const RE_LEADING_ARTICLE_NO = /^\d{6,}\s+(?=\S)/;
 
 // Pull the style number off a Description header, e.g. "PTQ60031 - Pyjamas" →
 // "PTQ60031". The style number is the leading token before the " - <name>"
@@ -206,7 +222,10 @@ export function parseBarcodeItems(raw: string): PoItem[] {
     // Labeled EAN row → per-size/colour variant, unless it's an
     // assortment ("ASS1"/"ASS2") line.
     if (labeled) {
-      let label = labeled[1].trim();
+      // Drop the "No." column before anything reads the label — see
+      // RE_LEADING_ARTICLE_NO. Both the ASS test below and the downstream colour
+      // parser (colourFromVariantLabel) anchor on the label's FIRST token.
+      let label = labeled[1].trim().replace(RE_LEADING_ARTICLE_NO, "");
       const ci = label.match(RE_CUSTOMER_ITEM)?.[0];
       if (ci) {
         if (!item.customerItemNo) item.customerItemNo = ci;

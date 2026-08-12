@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { MONDAY_PRE_ORDER_BARCODE_COLS } from "@/lib/monday/boards";
 import { parseCustomerConfig, MANUAL_COLUMN_IDS, type ColumnMapping } from "@/lib/customers/config";
 import { parseProdSpecColumnMapping } from "@/lib/prod-spec/config";
-import { parseBarcodeField, eanForSize } from "./monday-barcode-parse";
+import { parseBarcodeField, eanForSize, masterCartonEan } from "./monday-barcode-parse";
 import type { SizeEan } from "./resolve-style-eans";
 
 // =====================================================
@@ -118,7 +118,7 @@ export async function resolveStyleEansFromMonday(styleId: string): Promise<Monda
 
   // Assort line → the single representative carton EAN (Style.cartonEan); else
   // the first per-size carton we did land.
-  const assortEan = carton.assort ?? product.assort ?? null;
+  const assortEan = masterCartonEan(carton) ?? product.assort ?? null;
   // Style.cartonEan is the MASTER / assortment carton (drives {{assortEan}} and
   // the assortment sticker). Use the real "Assort" line only — do NOT fall back
   // to a per-size carton, so a style with no assort stays detectable and
@@ -157,6 +157,11 @@ export async function readMondayCartonOverlay(styleId: string): Promise<MondayCa
   const cartonField = readCol(style.rawData, MONDAY_PRE_ORDER_BARCODE_COLS.carton);
   if (!cartonField) return null;
   const carton = parseBarcodeField(cartonField);
-  if (carton.bySize.length === 0 && !carton.assort) return null;
-  return { bySize: carton.bySize, assort: carton.assort, cartonField };
+  // masterCartonEan also accepts a lone unlabelled EAN — the shape a buyer who
+  // has ONE carton code for the style naturally types ("5706323601744") — so
+  // that column now wins over the PO scrape in every shape it arrives in, not
+  // just when the buyer happened to prefix it with "Assort - ".
+  const assort = masterCartonEan(carton);
+  if (carton.bySize.length === 0 && !assort) return null;
+  return { bySize: carton.bySize, assort, cartonField };
 }

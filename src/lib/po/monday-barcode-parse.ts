@@ -11,7 +11,10 @@
 //
 // Per the product decision we REQUIRE size labels: a bare list of several EANs
 // with no "SIZE:" prefixes is NOT positionally guessed (it lands in bareEans,
-// which the resolver only honours for a single-size style). Every value is
+// which the resolver only honours for a single-size style — plus, in the CARTON
+// column only, the lone-bare-EAN case that masterCartonEan reads as the master
+// carton, since a carton code with nothing to scope it to can only be the
+// style's). Every value is
 // validated as an EAN-13 (13 digits + check digit); invalid tokens are dropped
 // into `invalid` for audit, never used — a bad check digit fails bwip-js at render.
 
@@ -100,6 +103,21 @@ export function parseBarcodeField(text: string): ParsedBarcodeField {
     }
   }
   return out;
+}
+
+// The MASTER / assortment carton EAN a buyer meant in the "Carton Barcode
+// number 1" column. An explicit "Assort - <EAN>" line always wins. Failing
+// that, a lone unlabelled EAN in that column can only mean the carton for the
+// whole style — there is nothing else it could be scoped to — so it is promoted
+// too. Deliberately NOT applied to the "Barcode Number" column, where a bare
+// value is a per-size PRODUCT EAN (see the single-size exception in the
+// resolver), and deliberately narrow: the moment the buyer labelled ANY size,
+// or typed more than one bare value, the intent is ambiguous and we keep the
+// old "explicit Assort only" rule rather than guessing which one is the master.
+export function masterCartonEan(field: ParsedBarcodeField): string | null {
+  if (field.assort) return field.assort;
+  if (field.bySize.length === 0 && field.bareEans.length === 1) return field.bareEans[0];
+  return null;
 }
 
 // Look up the EAN for a style size among a field's labelled pairs. Reuses the
