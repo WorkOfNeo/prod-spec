@@ -3183,8 +3183,9 @@ export function LayoutEditor({
               </div>
               <p className="mt-1 text-[11px] text-zinc-400">
                 Shared pictures — place as many as you need on one output. Add a width to size one:{" "}
-                <code className="rounded bg-zinc-100 px-1 text-[10px]">{"{{image:slug:40}}"}</code> prints it at
-                40% of its block&apos;s width. Without a width it matches the block&apos;s font size.
+                <code className="rounded bg-zinc-100 px-1 text-[10px]">{"{{image:slug:40}}"}</code>{" "}
+                prints it at 40% of its block&apos;s width. Without a width it matches the block&apos;s
+                font size.
               </p>
               {libraryImages.length === 0 ? (
                 <p className="mt-1.5 text-[11px] text-amber-700">

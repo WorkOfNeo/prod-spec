@@ -42,8 +42,9 @@ export default async function LayoutImagesPage() {
           <code className="font-mono">{"{{image:<name>}}"}</code> — as many as an output needs, and the
           same picture on as many layouts as you like. Correct it here and every layout that places it
           follows. Add a width to size one:{" "}
-          <code className="font-mono">{"{{image:coop-hanger:40}}"}</code> prints it at 40% of its
-          block&apos;s width; without a width it matches the block&apos;s font size.
+          <code className="font-mono">{"{{image:coop-hanger:40}}"}</code>{" "}
+          prints it at 40% of its block&apos;s width; without a width it matches the block&apos;s font
+          size.
         </p>
       </div>
 
