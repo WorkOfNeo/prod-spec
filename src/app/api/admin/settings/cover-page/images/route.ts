@@ -19,6 +19,9 @@ export const runtime = "nodejs";
 //
 //   POST /api/admin/settings/cover-page/images   { dataUrl, fileName? }
 //   → { id, url }
+//
+// ADMIN + REVIEWER, matching the PATCH that saves the block itself — an editor
+// that can write the markdown but not its images would be half a tool.
 
 const BODY_SCHEMA = z.object({
   dataUrl: z.string().min(1).max(MAX_IMAGE_DATA_URL_CHARS, "image too large — keep it under ~5 MB"),
@@ -26,7 +29,7 @@ const BODY_SCHEMA = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const auth = await requireRole(["ADMIN"]);
+  const auth = await requireRole(["ADMIN", "REVIEWER"]);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   let body: unknown;

@@ -7,7 +7,11 @@ import { getCoverPageInfoMd, setCoverPageInfoMd } from "@/lib/settings/app-setti
 export const runtime = "nodejs";
 
 // The GLOBAL cover-page content block — markdown printed on the cover sheet of
-// every bundle, edited at /settings/cover-page. ADMIN only.
+// every bundle, edited at /settings/cover-page. ADMIN + REVIEWER: the block is
+// the supplier-facing standing text (e.g. "the pictogram is handed over by the
+// supplier"), which is reviewer knowledge, not configuration — so reviewers
+// maintain it themselves rather than queueing a request to an admin. It touches
+// no config: the only thing it can change is words on the cover sheet.
 //
 //   GET   /api/admin/settings/cover-page        → { markdown }
 //   PATCH /api/admin/settings/cover-page { markdown }
@@ -21,7 +25,7 @@ export async function GET() {
 const BODY_SCHEMA = z.object({ markdown: z.string().max(100_000) });
 
 export async function PATCH(req: NextRequest) {
-  const auth = await requireRole(["ADMIN"]);
+  const auth = await requireRole(["ADMIN", "REVIEWER"]);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   let body: unknown;

@@ -18,6 +18,11 @@ export const runtime = "nodejs";
 //
 //   POST /api/admin/prod-specs/<id>/images   { dataUrl, fileName? }
 //   → { id, url }
+//
+// ADMIN + REVIEWER, matching the narrow general-info PATCH next door: reviewers
+// author the General information text, so they need its images too. Uploading
+// an image mutates nothing but the image store — the markdown that references
+// it still has to go through that PATCH, which writes one column.
 
 const BODY_SCHEMA = z.object({
   dataUrl: z.string().min(1).max(MAX_IMAGE_DATA_URL_CHARS, "image too large — keep it under ~5 MB"),
@@ -25,7 +30,7 @@ const BODY_SCHEMA = z.object({
 });
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await requireRole(["ADMIN"]);
+  const auth = await requireRole(["ADMIN", "REVIEWER"]);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const { id } = await ctx.params;

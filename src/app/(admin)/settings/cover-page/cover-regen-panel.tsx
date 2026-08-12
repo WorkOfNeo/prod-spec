@@ -8,8 +8,20 @@ import { useCallback, useRef, useState } from "react";
 // runner only re-renders a cover when a run generates ≥1 output, and a fully-
 // approved style settles without rendering — so existing covers are otherwise
 // frozen. This drives the chunked sweep endpoint and shows live progress.
+//
+// Scoped mode (`prodSpecId`) narrows all of that to one Customer × Business
+// Area — what the General information tab needs, since that text prints only in
+// its own spec's covers. Same endpoint, same confirm, same idempotence; only
+// the prepared id list differs.
 
 type Phase = "idle" | "preparing" | "confirm" | "running" | "done" | "error";
+
+type Props = {
+  // Omitted ⇒ sweep the whole estate (the global cover block's blast radius).
+  prodSpecId?: string;
+  // Noun phrase for the scope, used in the panel copy, e.g. "this prod spec".
+  scopeLabel?: string;
+};
 
 // Styles rendered per request. Small so each POST finishes well inside the
 // route's maxDuration; the client loops until the id list is drained.
@@ -37,7 +49,7 @@ const ZERO: Totals = {
   pushErrors: 0,
 };
 
-export function CoverRegenPanel() {
+export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [prepared, setPrepared] = useState<Prepared | null>(null);
   const [deliver, setDeliver] = useState(true);
@@ -53,7 +65,7 @@ export function CoverRegenPanel() {
       const res = await fetch("/api/admin/settings/cover-page/regenerate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "prepare" }),
+        body: JSON.stringify({ mode: "prepare", ...(prodSpecId ? { prodSpecId } : {}) }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `Failed (${res.status})`);
       const data = (await res.json()) as Prepared;
@@ -64,7 +76,7 @@ export function CoverRegenPanel() {
       setError(e instanceof Error ? e.message : "Failed to prepare");
       setPhase("error");
     }
-  }, []);
+  }, [prodSpecId]);
 
   const run = useCallback(async () => {
     if (!prepared) return;
@@ -107,20 +119,41 @@ export function CoverRegenPanel() {
     stopRef.current = true;
   }, []);
 
+  // NB: a prepared id list belongs to the scope it was prepared for. Callers
+  // that can change `prodSpecId` must remount this panel (React `key`) so a
+  // stale list can't be "Start"ed against a different prod spec — the General
+  // information tab does that by keying its whole per-spec subtree.
   const total = prepared?.total ?? 0;
   const pct = total > 0 ? Math.round((totals.processed / total) * 100) : 0;
+  const scoped = Boolean(prodSpecId);
+  const scopeNoun = scopeLabel ?? "this prod spec";
 
   return (
     <div className="mt-10 rounded-lg border border-zinc-200 bg-white p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold text-zinc-800">Regenerate cover pages</h2>
+          <h2 className="text-sm font-semibold text-zinc-800">
+            {scoped ? "Apply to existing bundles" : "Regenerate cover pages"}
+          </h2>
           <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-zinc-500">
-            Rebuilds the cover PDF of every style that already has one, so the current cover format
-            and the block above take effect on existing styles — including ones already approved.
-            Outputs are not re-rendered and approvals are untouched. Delivered styles get the updated
-            cover pushed to their supplier&apos;s SharePoint folder and included in the next nightly
-            supplier email.
+            {scoped ? (
+              <>
+                Your edit already applies to everything generated from now on. This rebuilds the
+                cover PDF of styles under <strong>{scopeNoun}</strong> that were generated
+                <em> before</em> it — including ones already approved — so they pick up the new text.
+                Outputs are not re-rendered and approvals are untouched. Delivered styles get the
+                updated cover pushed to their supplier&apos;s SharePoint folder and included in the
+                next nightly supplier email.
+              </>
+            ) : (
+              <>
+                Rebuilds the cover PDF of every style that already has one, so the current cover
+                format and the block above take effect on existing styles — including ones already
+                approved. Outputs are not re-rendered and approvals are untouched. Delivered styles
+                get the updated cover pushed to their supplier&apos;s SharePoint folder and included
+                in the next nightly supplier email.
+              </>
+            )}
           </p>
         </div>
         {phase === "idle" && (
@@ -129,7 +162,7 @@ export function CoverRegenPanel() {
             onClick={prepare}
             className="shrink-0 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700"
           >
-            Regenerate all cover pages
+            {scoped ? "Apply to existing bundles" : "Regenerate all cover pages"}
           </button>
         )}
         {phase === "preparing" && (
@@ -240,7 +273,11 @@ export function CoverRegenPanel() {
       )}
 
       {phase === "done" && prepared?.total === 0 && (
-        <p className="mt-4 text-sm text-zinc-500">No styles have a generated cover yet — nothing to regenerate.</p>
+        <p className="mt-4 text-sm text-zinc-500">
+          {scoped
+            ? `No style under ${scopeNoun} has a generated cover yet — nothing to update. New bundles will carry your edit.`
+            : "No styles have a generated cover yet — nothing to regenerate."}
+        </p>
       )}
     </div>
   );
