@@ -692,7 +692,7 @@ export async function processJob(jobId: string): Promise<void> {
     // The style is fully approved and this run rendered nothing. The old
     // short-circuit returned HERE — before the cover step — so the cover kept
     // whatever it last showed, rendered while these outputs were still pending
-    // ("Awaiting Contrast confirmation"). Result: an all-approved style whose
+    // ("Waiting for Customer Information"). Result: an all-approved style whose
     // cover still says nothing is approved, and a re-run that never produces a
     // fresh cover (the exact IL22414 symptom).
     //
@@ -846,7 +846,7 @@ export async function processJob(jobId: string): Promise<void> {
   // style (a keyword rule on the output or its type, or an operator ignore),
   // resolved through the SAME filters the render loop uses so the cover and the
   // review page agree. Each approved output shows its confirmed size; the rest
-  // are flagged "Awaiting Contrast confirmation" so the supplier expects them
+  // are flagged "Waiting for Customer Information" so the supplier expects them
   // in a later delivery.
   const coverRows = declaredEnabledOutputs.flatMap((o) => {
     const variant = resolveOutputVariant(o);

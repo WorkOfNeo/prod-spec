@@ -54,7 +54,7 @@ export type BundleDocSummary = {
   fileCount: number | null;
   // Approval state for the required-packaging manifest. true ⇒ the layout is
   // approved (its size is confirmed); false ⇒ still in review, flagged
-  // "Awaiting Contrast confirmation" so the supplier expects it later;
+  // "Waiting for Customer Information" so the supplier expects it later;
   // undefined ⇒ caller doesn't track approval (no status shown).
   approved?: boolean;
 };
@@ -105,7 +105,7 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
   const hasPending = input.docs.some((d) => d.approved === false);
   const statusCell = (approved: boolean | undefined): string => {
     if (approved === true) return `<span class="ok">Approved</span>`;
-    if (approved === false) return `<span class="await">Awaiting Contrast confirmation</span>`;
+    if (approved === false) return `<span class="await">Waiting for Customer Information</span>`;
     return "—";
   };
   const rows = input.docs
@@ -148,7 +148,7 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
       sizes; artwork files are supplied at 1:1 scale with no bleed unless stated on the document
       itself.${
         hasPending
-          ? ` Items marked <strong>Awaiting Contrast confirmation</strong> are still under review — their
+          ? ` Items marked <strong>Waiting for Customer Information</strong> are still under review — their
       artwork will follow once approved, so please expect them.`
           : ""
       }

@@ -22,8 +22,8 @@ import { parseCustomerConfig } from "@/lib/customers/config";
 //   • a real delivery target — a linked supplier that isn't a self-delivering
 //     customer (config.skipSupplierDelivery), and
 //   • the style has ≥1 real output generated. A cover for a style with NO
-//     outputs is just the manifest with everything "Awaiting Contrast
-//     confirmation"; it must not be auto-shipped to the supplier folder on its
+//     outputs is just the manifest with everything "Waiting for Customer
+//     Information"; it must not be auto-shipped to the supplier folder on its
 //     own. The cover ships only once there's an actual layout to accompany.
 // =====================================================
 
@@ -51,8 +51,8 @@ export async function enqueueCoverForSupplier(
   if (parseCustomerConfig(style.customer.config).skipSupplierDelivery) return "not-delivered";
 
   // Don't auto-ship a cover for a style that has no real outputs yet — a
-  // cover-only bundle (the manifest with everything "Awaiting Contrast
-  // confirmation") must never land in the supplier folder on its own. Require
+  // cover-only bundle (the manifest with everything "Waiting for Customer
+  // Information") must never land in the supplier folder on its own. Require
   // ≥1 generated output document (any review status; framing pages — cover /
   // general info — and legacy null-key rows don't count). Same "has a generated
   // output" shape the /styles bulk-regen route uses.
