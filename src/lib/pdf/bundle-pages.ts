@@ -90,6 +90,24 @@ export type GeneralInfoInput = {
   settings?: PageSettings;
 };
 
+// Does this manifest have ≥1 not-yet-approved row?
+//
+// Two things key off this and they MUST agree:
+//   • the cover render — a pending row switches the Status column on, so the
+//     supplier reads the manifest as "what's still to come". When every row is
+//     approved (or approval isn't tracked, e.g. the editor preview) the sizes
+//     are all confirmed and the column would just be a wall of "Approved".
+//   • the "Regenerate cover pages" sweep — an all-approved cover prints no
+//     status wording at all, so re-rendering it changes nothing visible while
+//     still overwriting the supplier's file for a finished order. The sweep
+//     skips those (see refreshStyleCoverAsset's onlyWhenPending).
+//
+// Shared rather than duplicated: if these two ever disagreed, the sweep would
+// either skip covers that DO show pending wording or churn ones that don't.
+export function hasPendingRows(docs: ReadonlyArray<Pick<BundleDocSummary, "approved">>): boolean {
+  return docs.some((d) => d.approved === false);
+}
+
 export function renderCoverPageHtml(input: CoverPageInput): string {
   const settings = input.settings ?? DEFAULT_PAGE_SETTINGS;
   const meta: Array<[string, string]> = [
@@ -98,11 +116,7 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
     ...(input.supplierName ? ([["Supplier", input.supplierName]] as Array<[string, string]>) : []),
   ];
 
-  // Any pending (not-yet-approved) row switches the status column on, so the
-  // supplier reads it as a manifest of what's still to come. When every row is
-  // approved (or approval isn't tracked, e.g. the editor preview) the sizes are
-  // all confirmed and the extra column would just be a wall of "Approved".
-  const hasPending = input.docs.some((d) => d.approved === false);
+  const hasPending = hasPendingRows(input.docs);
   const statusCell = (approved: boolean | undefined): string => {
     if (approved === true) return `<span class="ok">Approved</span>`;
     if (approved === false) return `<span class="await">Waiting for Customer Information</span>`;

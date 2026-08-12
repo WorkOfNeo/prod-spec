@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
+import { buildRequiredPackagingForStyle } from "@/lib/outputs/required-packaging";
+import { hasPendingRows } from "@/lib/pdf/bundle-pages";
 import { buildStyleCoverPdf } from "@/lib/pdf/style-cover";
 import { toPlainBytes } from "@/lib/pdf/bytes";
 
@@ -27,6 +29,11 @@ export type CoverRefreshResult =
   // No cover asset exists yet (style never generated a bundle) — nothing to
   // refresh; it'll get the current format when it's first generated.
   | { styleId: string; status: "no-cover" }
+  // Every declared output is approved, so the cover's manifest prints no status
+  // wording at all — a rebuild would produce a visually identical page while
+  // overwriting the supplier's copy for a finished order. Only returned when
+  // the caller asks for it (onlyWhenPending).
+  | { styleId: string; status: "skipped-all-approved" }
   | { styleId: string; status: "error"; error: string };
 
 // The asset the review surfaces + supplier push treat as the style's current
@@ -53,12 +60,34 @@ export async function getCurrentCoverAsset(
 // this job's outputs are mid-approval). reviewStatus is left untouched: an
 // approved cover stays approved, so the supplier share link + SharePoint push
 // serve the new bytes without re-review.
-export async function refreshStyleCoverAsset(styleId: string): Promise<CoverRefreshResult> {
+export async function refreshStyleCoverAsset(
+  styleId: string,
+  opts?: {
+    // Skip styles whose every declared output is approved. Their manifest
+    // prints no status wording, so a rebuild is visually a no-op — but it still
+    // overwrites the cover in the supplier's folder for an order that's already
+    // finished. Off by default so the plain refresh path is unchanged.
+    onlyWhenPending?: boolean;
+  },
+): Promise<CoverRefreshResult> {
   const cover = await getCurrentCoverAsset(styleId);
   if (!cover) return { styleId, status: "no-cover" };
 
   try {
     const approvedBases = await approvedOutputBaseKeysForStyle(styleId);
+
+    // Same manifest the render builds, resolved through the same function, so
+    // the skip decision can't drift from what the page would actually show.
+    // Costs a second buildRequiredPackagingForStyle for styles we DO render —
+    // negligible next to the puppeteer pass it guards, and it saves that pass
+    // outright for every style it skips.
+    if (opts?.onlyWhenPending) {
+      const docs = await buildRequiredPackagingForStyle(styleId, {
+        approvedBaseKeysOverride: approvedBases,
+      });
+      if (!hasPendingRows(docs)) return { styleId, status: "skipped-all-approved" };
+    }
+
     const pdf = await buildStyleCoverPdf(cover.jobId, approvedBases);
     if (!pdf) {
       return { styleId, status: "error", error: "cover render returned null (job/style unloadable)" };
