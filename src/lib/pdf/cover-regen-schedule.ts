@@ -96,6 +96,13 @@ export async function runDueCoverRegens(): Promise<CoverRegenDrainResult> {
   await setCoverRegenQueue(withoutDue(queue, now));
 
   try {
+    // Deliberately NOT onlyPending. The bulk sweep skips all-approved styles
+    // (a rebuild there is visually a no-op that still overwrites a finished
+    // order's file), but this path is event-driven: it fires BECAUSE an output
+    // was just approved or rejected. The approval that makes a style fully
+    // approved is exactly the one whose cover must be re-rendered — to drop the
+    // Status column and show a clean all-Approved manifest. Skip it here and
+    // the supplier's copy would be frozen showing pending rows forever.
     const { outcomes, pushed } = await processCoverRefreshChunk(due, { deliver: true });
     return {
       processed: due.length,

@@ -77,13 +77,13 @@ export async function countDeliveredAmong(styleIds: string[]): Promise<number> {
 // still carries the re-armed row).
 export async function processCoverRefreshChunk(
   styleIds: string[],
-  opts: { deliver: boolean },
+  opts: { deliver: boolean; onlyPending?: boolean },
 ): Promise<CoverSweepChunkResult> {
   const outcomes: CoverSweepStyleOutcome[] = [];
   const requeuedStyleIds: string[] = [];
 
   for (const styleId of styleIds) {
-    const result = await refreshStyleCoverAsset(styleId);
+    const result = await refreshStyleCoverAsset(styleId, { onlyWhenPending: opts.onlyPending });
     if (opts.deliver && result.status === "refreshed") {
       try {
         const requeue = await enqueueCoverForSupplier(styleId, result.coverAssetId);

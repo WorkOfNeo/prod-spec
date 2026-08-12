@@ -20,8 +20,10 @@ export const maxDuration = 300;
 //
 //   POST { mode: "prepare", prodSpecId? }
 //     → { styleIds: string[], total, delivered }
-//   POST { mode: "process", styleIds: string[], deliver?: boolean }
-//     → { outcomes, pushed, pushErrors, refreshed, noCover, errors, requeued }
+//   POST { mode: "process", styleIds: string[], deliver?: boolean,
+//          onlyPending?: boolean }
+//     → { outcomes, pushed, pushErrors, refreshed, noCover, skippedApproved,
+//         errors, requeued }
 //
 // ADMIN + REVIEWER, because reviewers now author both texts the cover carries
 // (the global block and each spec's General information) and an edit nobody can
@@ -40,6 +42,11 @@ const PROCESS = z.object({
   // Bounded per request so one chunk always finishes inside maxDuration.
   styleIds: z.array(z.string().min(1)).min(1).max(25),
   deliver: z.boolean().default(true),
+  // Skip styles whose outputs are all approved — their manifest prints no
+  // status wording, so rebuilding is a visual no-op that still overwrites the
+  // supplier's copy for a finished order. Defaults ON: the sweep exists to
+  // propagate cover CHANGES, and an all-approved cover has none to show.
+  onlyPending: z.boolean().default(true),
 });
 const BODY = z.discriminatedUnion("mode", [PREPARE, PROCESS]);
 
@@ -61,11 +68,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ styleIds, total: styleIds.length, delivered });
   }
 
-  const { styleIds, deliver } = parsed.data;
-  const { outcomes, pushed, pushErrors } = await processCoverRefreshChunk(styleIds, { deliver });
+  const { styleIds, deliver, onlyPending } = parsed.data;
+  const { outcomes, pushed, pushErrors } = await processCoverRefreshChunk(styleIds, {
+    deliver,
+    onlyPending,
+  });
 
   const refreshed = outcomes.filter((o) => o.status === "refreshed").length;
   const noCover = outcomes.filter((o) => o.status === "no-cover").length;
+  const skippedApproved = outcomes.filter((o) => o.status === "skipped-all-approved").length;
   const errored = outcomes.filter((o) => o.status === "error");
   const requeued = outcomes.filter((o) => o.requeue === "queued").length;
 
@@ -89,6 +100,7 @@ export async function POST(req: NextRequest) {
     outcomes,
     refreshed,
     noCover,
+    skippedApproved,
     errors: errored.length,
     requeued,
     pushed,

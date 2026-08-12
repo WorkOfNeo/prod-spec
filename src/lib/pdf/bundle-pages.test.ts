@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renderCoverPageHtml, type CoverPageInput } from "./bundle-pages";
+import { renderCoverPageHtml, hasPendingRows, type CoverPageInput } from "./bundle-pages";
 
 // The cover document is general info's ONLY home in the bundle — the runner no
 // longer ships a standalone general-information PDF. These tests lock the two
@@ -93,4 +93,55 @@ test("all-approved cover shows no Status column and no pending label", () => {
   });
   assert.ok(!html.includes("<th>Status</th>"), "no Status column when nothing is pending");
   assert.ok(!html.includes(PENDING_LABEL), "no pending label when nothing is pending");
+});
+
+// hasPendingRows is the single predicate behind two decisions that must agree:
+// whether the cover PRINTS the pending wording, and whether the "Regenerate
+// cover pages" sweep bothers rebuilding + re-pushing that cover at all. If they
+// ever diverged, the sweep would skip covers that do show the wording, or churn
+// suppliers' files for finished orders. These tests pin them together.
+
+const doc = (approved?: boolean) => ({
+  displayName: "Doc",
+  widthMm: 10,
+  heightMm: 10,
+  fileCount: 1,
+  ...(approved === undefined ? {} : { approved }),
+});
+
+test("hasPendingRows — true only when a row is explicitly not approved", () => {
+  assert.equal(hasPendingRows([doc(false)]), true, "one pending row");
+  assert.equal(hasPendingRows([doc(true), doc(false)]), true, "mixed counts as pending");
+  assert.equal(hasPendingRows([doc(true), doc(true)]), false, "all approved");
+  assert.equal(hasPendingRows([]), false, "empty manifest");
+
+  // undefined ≠ pending. The editor preview passes no approval state at all;
+  // treating that as pending would make the sweep rebuild every such cover.
+  assert.equal(hasPendingRows([doc(undefined)]), false, "untracked approval is not pending");
+  assert.equal(hasPendingRows([doc(true), doc(undefined)]), false, "approved + untracked");
+});
+
+test("hasPendingRows agrees with what the cover actually renders", () => {
+  // The contract the sweep's skip relies on: predicate false ⇒ the rendered
+  // page contains no pending wording, so rebuilding it is a visual no-op.
+  for (const docs of [
+    [doc(true)],
+    [doc(true), doc(true)],
+    [doc(undefined)],
+    [doc(true), doc(undefined)],
+  ]) {
+    const html = renderCoverPageHtml({ ...baseInput, generalInfo: null, docs });
+    assert.equal(hasPendingRows(docs), false, "precondition: predicate says nothing pending");
+    assert.ok(!html.includes(PENDING_LABEL), "so the page shows no pending label");
+    assert.ok(!html.includes("<th>Status</th>"), "and no Status column");
+  }
+
+  // And the converse: predicate true ⇒ the wording IS on the page, so the
+  // sweep must NOT skip it.
+  for (const docs of [[doc(false)], [doc(true), doc(false)], [doc(false), doc(undefined)]]) {
+    const html = renderCoverPageHtml({ ...baseInput, generalInfo: null, docs });
+    assert.equal(hasPendingRows(docs), true, "precondition: predicate says pending");
+    assert.ok(html.includes(PENDING_LABEL), "so the page shows the pending label");
+    assert.ok(html.includes("<th>Status</th>"), "and the Status column");
+  }
 });

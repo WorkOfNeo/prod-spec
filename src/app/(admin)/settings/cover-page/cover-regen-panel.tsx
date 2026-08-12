@@ -33,6 +33,7 @@ type Totals = {
   processed: number;
   refreshed: number;
   noCover: number;
+  skippedApproved: number;
   errors: number;
   requeued: number;
   pushed: number;
@@ -43,6 +44,7 @@ const ZERO: Totals = {
   processed: 0,
   refreshed: 0,
   noCover: 0,
+  skippedApproved: 0,
   errors: 0,
   requeued: 0,
   pushed: 0,
@@ -53,6 +55,10 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [prepared, setPrepared] = useState<Prepared | null>(null);
   const [deliver, setDeliver] = useState(true);
+  // Default ON: an all-approved style's manifest prints no status wording, so
+  // rebuilding it is a visual no-op that still overwrites the supplier's copy
+  // for a finished order.
+  const [onlyPending, setOnlyPending] = useState(true);
   const [totals, setTotals] = useState<Totals>(ZERO);
   const [error, setError] = useState<string | null>(null);
   // Set by "Stop" — the run loop checks it between chunks and bails cleanly.
@@ -93,12 +99,13 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
         const res = await fetch("/api/admin/settings/cover-page/regenerate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: "process", styleIds: chunk, deliver }),
+          body: JSON.stringify({ mode: "process", styleIds: chunk, deliver, onlyPending }),
         });
         if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `Failed (${res.status})`);
         const data = (await res.json()) as Omit<Totals, "processed"> & { errors: number };
         acc.refreshed += data.refreshed;
         acc.noCover += data.noCover;
+        acc.skippedApproved += data.skippedApproved;
         acc.errors += data.errors;
         acc.requeued += data.requeued;
         acc.pushed += data.pushed;
@@ -113,7 +120,7 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
       setTotals({ ...acc });
     }
     setPhase("done");
-  }, [prepared, deliver]);
+  }, [prepared, deliver, onlyPending]);
 
   const stop = useCallback(() => {
     stopRef.current = true;
@@ -140,18 +147,21 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
               <>
                 Your edit already applies to everything generated from now on. This rebuilds the
                 cover PDF of styles under <strong>{scopeNoun}</strong> that were generated
-                <em> before</em> it — including ones already approved — so they pick up the new text.
-                Outputs are not re-rendered and approvals are untouched. Delivered styles get the
-                updated cover pushed to their supplier&apos;s SharePoint folder and included in the
-                next nightly supplier email.
+                <em> before</em> it, so they pick up the new text. Styles whose outputs are all
+                approved are skipped by default — you can include them at the confirm step. Outputs
+                are not re-rendered and approvals are untouched. Delivered styles get the updated
+                cover pushed to their supplier&apos;s SharePoint folder and included in the next
+                nightly supplier email.
               </>
             ) : (
               <>
                 Rebuilds the cover PDF of every style that already has one, so the current cover
-                format and the block above take effect on existing styles — including ones already
-                approved. Outputs are not re-rendered and approvals are untouched. Delivered styles
-                get the updated cover pushed to their supplier&apos;s SharePoint folder and included
-                in the next nightly supplier email.
+                format and the block above take effect on existing styles. Styles whose outputs are
+                all approved are skipped by default — their cover shows no status column, so a
+                rebuild would change nothing visible while still overwriting a finished order&apos;s
+                file. Outputs are not re-rendered and approvals are untouched. Delivered styles get
+                the updated cover pushed to their supplier&apos;s SharePoint folder and included in
+                the next nightly supplier email.
               </>
             )}
           </p>
@@ -185,6 +195,20 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
             This will rebuild <strong>{prepared.total}</strong> cover page
             {prepared.total === 1 ? "" : "s"}.
           </p>
+          <label className="mt-3 flex items-start gap-2 text-[13px] text-amber-900">
+            <input
+              type="checkbox"
+              checked={onlyPending}
+              onChange={(e) => setOnlyPending(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              Skip styles where every output is approved. Their manifest shows no
+              status column at all, so rebuilding changes nothing a supplier can see — but it
+              still overwrites the cover in the folder for an order that&rsquo;s already finished.
+              Uncheck only if you changed something that shows on every cover.
+            </span>
+          </label>
           <label className="mt-3 flex items-start gap-2 text-[13px] text-amber-900">
             <input
               type="checkbox"
@@ -249,6 +273,11 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
               <span>
                 Pushed to SharePoint <strong className="text-zinc-900">{totals.pushed}</strong>
                 {totals.pushErrors > 0 ? ` · ${totals.pushErrors} failed` : ""}
+              </span>
+            )}
+            {totals.skippedApproved > 0 && (
+              <span>
+                Skipped (all approved) <strong className="text-zinc-900">{totals.skippedApproved}</strong>
               </span>
             )}
             {totals.noCover > 0 && <span>No cover yet {totals.noCover}</span>}
