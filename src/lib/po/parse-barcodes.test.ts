@@ -12,7 +12,76 @@ import {
 // (C-PO63315) — nine styles, each section opening with "<No.> <style number> -
 // <name>". Captured verbatim from pdf-parse so the parser is tested against the
 // real layout without committing the customer PDF.
+//
+// Note the leading article number on every DATA row ("1000561812 ASS1 …"): this
+// customer's orders carry one, and Contrast repeats it down the "No." column.
+// An earlier transcription of this page dropped that column, which is precisely
+// why the assortment-row regression this fixture now guards went unnoticed —
+// the parser was green against text the real PDF never produces.
 const MULTI_STYLE_PAGE = [
+  "No. Variant Description Barcode EAN Polybag EAN Carton SU per",
+  "Polybag/Cart",
+  "on",
+  "C-33418 PTQ60032 - Pyjamas",
+  "1000561812 ASS1 PTQ60032 - Pyjamas 5706323598945 5706323598945 14/14",
+  "1000561812 PI-86/92 Pink, 86/92 5706323598907",
+  "1000561812 PI-98/104 Pink, 98/104 5706323598907",
+  "1000561812 PI-110/116 Pink, 110/116 5706323598907",
+  "1000561812 PI-122/128 Pink, 122/128 5706323598907",
+  "C-33419 PTQ20029 - Sweat shirt",
+  "1000561811 ASS1 PTQ20029 - Sweat shirt 5706323598990 5706323598990 12/12",
+  "1000561811 PI-86/92 Pink, 86/92 5706323598952",
+  "1000561811 PI-98/104 Pink, 98/104 5706323598952",
+  "1000561811 PI-110/116 Pink, 110/116 5706323598952",
+  "1000561811 PI-122/128 Pink, 122/128 5706323598952",
+  "C-33420 PTQ30031 - Dress",
+  "1000561817 ASS1 PTQ30031 - Dress 5706323599034 5706323599034 12/12",
+  "1000561817 PI-86/92 Pink, 86/92 5706323599003",
+  "1000561817 PI-98/104 Pink, 98/104 5706323599003",
+  "1000561817 PI-110/116 Pink, 110/116 5706323599003",
+  "C-33421 PTQ70037 - Sweat Set",
+  "1000561819 ASS1 PTQ70037 - Sweat Set 5706323599089 5706323599089 12/12",
+  "1000561819 GR-86/92 Green, 86/92 5706323599041",
+  "1000561819 GR-98/104 Green, 98/104 5706323599041",
+  "1000561819 GR-110/116 Green, 110/116 5706323599041",
+  "1000561819 GR-122/128 Green, 122/128 5706323599041",
+  "C-33422 PTQ10045 - T shirt",
+  "1000561818 ASS1 PTQ10045 - T shirt 5706323599133 5706323599133 14/14",
+  "1000561818 PI-86/92 Pink, 86/92 5706323599096",
+  "1000561818 PI-98/104 Pink, 98/104 5706323599096",
+  "1000561818 PI-110/116 Pink, 110/116 5706323599096",
+  "1000561818 PI-122/128 Pink, 122/128 5706323599096",
+  "C-33423 PTQ60031 - Pyjamas",
+  "1000561815 ASS1 PTQ60031 - Pyjamas 5706323599188 5706323599188 14/14",
+  "1000561815 .B-86/92 Blue, 86/92 5706323599140",
+  "1000561815 .B-98/104 Blue, 98/104 5706323599140",
+  "1000561815 .B-110/116 Blue, 110/116 5706323599140",
+  "1000561815 .B-122/128 Blue, 122/128 5706323599140",
+  "C-33424 PTQ70036 - Sweat set",
+  "1000561814 ASS1 PTQ70036 - Sweat set 5706323599232 5706323599232 12/12",
+  "1000561814 NA-86/92 Navy, 86/92 5706323599195",
+  "1000561814 NA-98/104 Navy, 98/104 5706323599195",
+  "1000561814 NA-110/116 Navy, 110/116 5706323599195",
+  "1000561814 NA-122/128 Navy, 122/128 5706323599195",
+  "C-33425 PTQ20027 - Sweat shirt",
+  "1000561816 ASS1 PTQ20027 - Sweat shirt 5706323599287 5706323599287 12/12",
+  "1000561816 NA-86/92 Navy, 86/92 5706323599249",
+  "1000561816 NA-98/104 Navy, 98/104 5706323599249",
+  "1000561816 NA-110/116 Navy, 110/116 5706323599249",
+  "1000561816 NA-122/128 Navy, 122/128 5706323599249",
+  "C-33426 PTQ10046 - T shirt",
+  "1000561813 ASS1 PTQ10046 - T shirt 5706323599331 5706323599331 14/14",
+  "1000561813 .B-86/92 Blue, 86/92 5706323599294",
+  "1000561813 .B-98/104 Blue, 98/104 5706323599294",
+  "1000561813 .B-110/116 Blue, 110/116 5706323599294",
+  "1000561813 .B-122/128 Blue, 122/128 5706323599294",
+  "Page 1\tPurchase Order C-PO63315 - Barcodes",
+].join("\n");
+
+// The SAME page shape from a customer whose orders have no article number, so
+// the "No." column is blank on the data rows. Both layouts are live; every
+// assertion below that holds for one must hold for the other.
+const MULTI_STYLE_PAGE_NO_ARTICLE_NO = [
   "No. Variant Description Barcode EAN Polybag EAN Carton SU per",
   "Polybag/Cart",
   "on",
@@ -113,6 +182,58 @@ test("parseBarcodeItems — captures the right variants + carton EAN per section
   );
   // The ASS row's carton EAN is captured as the assortment EAN.
   assert.equal(ptq60031.assortmentEans[0], "5706323599188");
+});
+
+test("parseBarcodeItems — the No. column is invisible: both live layouts parse alike", () => {
+  // The regression in one assertion. With the article number left on the row the
+  // ASS line no longer starts with "ASS", so its carton EAN was filed as a
+  // fourth size variant and the section carton came out null — on a page the
+  // parser was otherwise reading perfectly.
+  assert.deepEqual(
+    parseBarcodeItems(MULTI_STYLE_PAGE),
+    parseBarcodeItems(MULTI_STYLE_PAGE_NO_ARTICLE_NO),
+  );
+});
+
+// A real single-style PO (C-PO63372) from the same customer, captured verbatim.
+// Its section header carries no " - " before the name ("C-33492 MG10023
+// T-Shirt"), so it also covers leadingStyleNumber on the separator-less shape.
+const ARTICLE_NO_PAGE = [
+  "No. Variant Description Barcode EAN Polybag EAN Carton SU per",
+  "Polybag/Cart",
+  "on",
+  "C-33492 MG10023 T-Shirt",
+  "1000563466 ASS1 MG10023 T-Shirt 5706323601744 5706323601744 12/12",
+  "1000563466 OF-98/104 Offwhite, 98/104 5706323601706",
+  "1000563466 OF-110/116 Offwhite, 110/116 5706323601706",
+  "1000563466 OF-122/128 Offwhite, 122/128 5706323601706",
+  "Page 1\tPurchase Order C-PO63372 - Barcodes",
+].join("\n");
+
+test("parseBarcodeItems — article-number rows: carton captured, no phantom variant", () => {
+  const items = parseBarcodeItems(ARTICLE_NO_PAGE);
+  assert.equal(items.length, 1);
+  const [item] = items;
+  assert.equal(item.styleNumber, "MG10023");
+  assert.equal(item.contrastNo, "C-33492");
+  // The carton lands in the assortment bucket, where cartonEanFor reads it…
+  assert.deepEqual(item.assortmentEans, ["5706323601744"]);
+  assert.equal(cartonEanFor([item], items), "5706323601744");
+  // …and NOT as a fourth "size", which is where it used to end up.
+  assert.equal(item.variants.length, 3);
+  assert.deepEqual(
+    item.variants.map((v) => v.label),
+    ["OF-98/104 Offwhite, 98/104", "OF-110/116 Offwhite, 110/116", "OF-122/128 Offwhite, 122/128"],
+  );
+});
+
+test("parseBarcodeItems — a size label that is itself digits keeps its leading token", () => {
+  // The strip is deliberately narrow (≥6 digits + following content). A numeric
+  // colour/size code must survive it, or we would eat real label text.
+  const items = parseBarcodeItems(
+    ["C-33499 AB12345 - Socks", "12345 39/42 Black, 39/42 5706323601706"].join("\n"),
+  );
+  assert.equal(items[0].variants[0].label, "12345 39/42 Black, 39/42");
 });
 
 test("selectStyleItems — style-number match picks only that section", () => {

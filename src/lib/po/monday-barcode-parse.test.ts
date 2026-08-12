@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isValidEan13, parseBarcodeField, eanForSize } from "./monday-barcode-parse";
+import {
+  isValidEan13,
+  parseBarcodeField,
+  eanForSize,
+  masterCartonEan,
+} from "./monday-barcode-parse";
 
 // Real EAN-13s pulled from the Pre-Order barcode columns (all valid check digit).
 const S = "7070001349678";
@@ -66,6 +71,26 @@ test("parseBarcodeField — single bare EAN (IL97337)", () => {
   const p = parseBarcodeField("7070001353354");
   assert.deepEqual(p.bareEans, ["7070001353354"]);
   assert.equal(p.bySize.length, 0);
+});
+
+test("masterCartonEan — an explicit Assort line is the master carton", () => {
+  assert.equal(masterCartonEan(parseBarcodeField(`S:${S}, M: ${M}\nAssort - ${ASSORT}`)), ASSORT);
+});
+
+test("masterCartonEan — a lone unlabelled carton EAN is the master too", () => {
+  // The shape a buyer with ONE carton code for the style types. Nothing else in
+  // the carton column could scope it, so it is unambiguous — and this is what
+  // lets the Monday column override a PO scrape that produced no carton.
+  assert.equal(masterCartonEan(parseBarcodeField("5706323601744")), "5706323601744");
+});
+
+test("masterCartonEan — stays null when the intent is ambiguous", () => {
+  // Several bare values: we cannot tell which one is the master.
+  assert.equal(masterCartonEan(parseBarcodeField(`${S}, ${M}`)), null);
+  // A bare value alongside labelled sizes: probably a per-size carton, not the master.
+  assert.equal(masterCartonEan(parseBarcodeField(`S:${S}, ${ASSORT}`)), null);
+  // Nothing usable at all.
+  assert.equal(masterCartonEan(parseBarcodeField("")), null);
 });
 
 test("parseBarcodeField — invalid tokens are dropped into `invalid`, never bySize", () => {
