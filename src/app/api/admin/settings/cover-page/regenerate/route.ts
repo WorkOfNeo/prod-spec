@@ -14,16 +14,27 @@ export const maxDuration = 300;
 
 // "Regenerate cover pages" sweep — rebuilds the CURRENT cover of every style
 // that already has one so a new cover format / edited global cover block
-// reaches existing (incl. approved) styles without a full re-run. ADMIN only.
+// reaches existing (incl. approved) styles without a full re-run.
 // Client-driven + chunked: the browser calls `prepare` for the id list, then
 // POSTs bounded `process` chunks and shows progress. Idempotent throughout.
 //
-//   POST { mode: "prepare" }
+//   POST { mode: "prepare", prodSpecId? }
 //     → { styleIds: string[], total, delivered }
 //   POST { mode: "process", styleIds: string[], deliver?: boolean }
 //     → { outcomes, pushed, pushErrors, refreshed, noCover, errors, requeued }
+//
+// ADMIN + REVIEWER, because reviewers now author both texts the cover carries
+// (the global block and each spec's General information) and an edit nobody can
+// publish is only half a handover. It is NOT a quiet action: it overwrites
+// delivered covers and re-arms the supplier push + nightly digest, so `prepare`
+// returns the delivered count and the UI puts it behind an explicit confirm.
+// `prodSpecId` scopes the sweep to one Customer × Business Area — the blast
+// radius of a General-information edit.
 
-const PREPARE = z.object({ mode: z.literal("prepare") });
+const PREPARE = z.object({
+  mode: z.literal("prepare"),
+  prodSpecId: z.string().min(1).optional(),
+});
 const PROCESS = z.object({
   mode: z.literal("process"),
   // Bounded per request so one chunk always finishes inside maxDuration.
@@ -33,7 +44,7 @@ const PROCESS = z.object({
 const BODY = z.discriminatedUnion("mode", [PREPARE, PROCESS]);
 
 export async function POST(req: NextRequest) {
-  const auth = await requireRole(["ADMIN"]);
+  const auth = await requireRole(["ADMIN", "REVIEWER"]);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const parsed = BODY.safeParse(await req.json().catch(() => null));
@@ -45,7 +56,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (parsed.data.mode === "prepare") {
-    const styleIds = await listCoverRefreshableStyleIds();
+    const styleIds = await listCoverRefreshableStyleIds({ prodSpecId: parsed.data.prodSpecId });
     const delivered = await countDeliveredAmong(styleIds);
     return NextResponse.json({ styleIds, total: styleIds.length, delivered });
   }

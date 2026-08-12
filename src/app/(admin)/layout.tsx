@@ -13,9 +13,10 @@ import { PresencePing } from "@/components/presence-ping";
 // (Monday, catalogues, reference data) live under the Settings dropdown
 // rendered after this list — see SettingsNav.
 //
-// ADMIN-only: REVIEWERs are scoped to My tasks + the styles pages for now
-// (the sidebar hides the rest, and every admin-only page also enforces it
-// server-side via requireAdminPage — hiding a link is not access control).
+// ADMIN-only: REVIEWERs are scoped to My tasks, the styles pages and the
+// cover-page editor (the sidebar hides the rest, and every admin-only page also
+// enforces it server-side via requireAdminPage — hiding a link is not access
+// control; /settings/cover-page gates on canReview instead).
 const NAV: Array<{ href?: string; label?: string; divider?: true }> = [
   { href: "/styles", label: "Styles" },
   { href: "/combos", label: "New combos" },
@@ -97,12 +98,24 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                 <SettingsNav />
               </>
             ) : (
-              <Link
-                href="/styles"
-                className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
-              >
-                Styles
-              </Link>
+              <>
+                <Link
+                  href="/styles"
+                  className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+                >
+                  Styles
+                </Link>
+                {/* The bundle's front matter — the all-clients cover block and
+                    each client × business area's General information. Reviewers
+                    own this prose, so they get the one Settings page that holds
+                    it; the page itself gates on canReview. */}
+                <Link
+                  href="/settings/cover-page"
+                  className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+                >
+                  Cover page
+                </Link>
+              </>
             )}
             {/* Reviewer guides — reference docs, available to everyone signed in
                 (not gated by the review-flow flag or the admin role). */}

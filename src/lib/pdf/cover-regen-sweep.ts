@@ -32,11 +32,23 @@ export type CoverSweepChunkResult = {
 // Every style with a current (newest non-FAILED job) cover — the full sweep
 // target set. Distinct style ids; ordering is stable (ascending id) so
 // client-driven chunking covers the set exactly once.
-export async function listCoverRefreshableStyleIds(): Promise<string[]> {
+//
+// `prodSpecId` narrows the sweep to one Customer × Business Area. That's the
+// natural blast radius for a General-information edit: generalInfoMd lives on
+// the ProdSpec and prints inside the covers of that spec's styles only, so
+// re-rendering the whole estate for it would be pointless churn (and would
+// re-push unrelated suppliers). Scoped through the STYLE's current prodSpecId,
+// not the Job's: the cover renderer reads style.prodSpec, so the style's
+// present-day spec is what decides whose text a refreshed cover picks up — a
+// style re-pointed since its last job follows its new spec.
+export async function listCoverRefreshableStyleIds(
+  opts: { prodSpecId?: string } = {},
+): Promise<string[]> {
   const rows = await db.job.findMany({
     where: {
       status: { not: "FAILED" },
       assets: { some: { variantKey: COVER_VARIANT_KEY } },
+      ...(opts.prodSpecId ? { style: { prodSpecId: opts.prodSpecId } } : {}),
     },
     select: { styleId: true },
     distinct: ["styleId"],
