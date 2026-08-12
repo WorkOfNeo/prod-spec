@@ -1,9 +1,28 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireRole } from "@/lib/auth-server";
+import { getSessionWithRole } from "@/lib/auth-server";
+import { canReview } from "@/lib/roles";
 
 export const runtime = "nodejs";
+
+// getSessionWithRole + canReview rather than requireRole — the same shape as
+// styles/[id]/carton-customize, the other deliberate "REVIEWERs may do this"
+// route. It keeps the predicate in @/lib/roles (unit-tested, session-free) and
+// lets the gate be driven end-to-end in tests by mocking only the session.
+type Gate = { ok: true; userId: string } | { ok: false; res: NextResponse };
+
+async function gate(): Promise<Gate> {
+  const { session, role } = await getSessionWithRole();
+  if (!session) return { ok: false, res: NextResponse.json({ error: "Not signed in" }, { status: 401 }) };
+  if (!canReview(role)) {
+    return {
+      ok: false,
+      res: NextResponse.json({ error: "Requires role: ADMIN or REVIEWER" }, { status: 403 }),
+    };
+  }
+  return { ok: true, userId: session.user.id };
+}
 
 // The "General information" markdown of ONE Prod Spec (= one Customer ×
 // Business Area — the pair is unique on the row), as its own single-column
@@ -38,8 +57,8 @@ export const runtime = "nodejs";
 const BODY_SCHEMA = z.object({ markdown: z.string().max(100_000) });
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await requireRole(["ADMIN", "REVIEWER"]);
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const auth = await gate();
+  if (!auth.ok) return auth.res;
 
   const { id } = await ctx.params;
   const prodSpec = await db.prodSpec.findUnique({
@@ -52,8 +71,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 }
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await requireRole(["ADMIN", "REVIEWER"]);
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const auth = await gate();
+  if (!auth.ok) return auth.res;
 
   const { id } = await ctx.params;
 
