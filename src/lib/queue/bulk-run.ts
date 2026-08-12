@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 import { triggerRunner } from "@/lib/queue/trigger";
+import { HAS_PO_NUMBER_WHERE, hasPoNumber } from "@/lib/styles/active-filter";
 
 // One style to (re)generate, with the exact output variant keys to render.
 // An empty variantKeys array would mean "all enabled outputs" to the runner —
@@ -15,6 +16,10 @@ export type BulkRunResult = {
   // null when nothing was enqueued (empty runnable set).
   batchId: string | null;
   enqueued: number;
+  // Dropped here for having no PO number ("Navision Task"). Reported rather
+  // than thrown: a bulk action over a mixed selection should run the styles
+  // that are in the flow and tell the operator how many weren't.
+  skippedNoPo: number;
 };
 
 /**
@@ -39,8 +44,19 @@ export async function enqueueBulkRun(input: {
   label: string;
   user: { id: string | null; email: string | null };
 }): Promise<BulkRunResult> {
-  const { runnable } = input;
-  if (runnable.length === 0) return { batchId: null, enqueued: 0 };
+  // The PO gate for the bulk lane. This helper creates jobs with createMany and
+  // so never reaches enqueueGenerationJob's throw — the check has to happen
+  // here, on the one tail both bulk callers share. Queried in a single pass
+  // over the requested ids rather than trusting the callers to have filtered.
+  const withPo = await db.style.findMany({
+    where: { id: { in: input.runnable.map((r) => r.id) }, ...HAS_PO_NUMBER_WHERE },
+    select: { id: true, poNumber: true },
+  });
+  const allowed = new Set(withPo.filter((s) => hasPoNumber(s.poNumber)).map((s) => s.id));
+  const runnable = input.runnable.filter((r) => allowed.has(r.id));
+  const skippedNoPo = input.runnable.length - runnable.length;
+
+  if (runnable.length === 0) return { batchId: null, enqueued: 0, skippedNoPo };
 
   // Ids minted up front so a single createMany (not an N-deep await loop)
   // records them — keeps a multi-thousand-row run within maxDuration. No
@@ -75,5 +91,5 @@ export async function enqueueBulkRun(input: {
   // One immediate kick; the Railway cron keeps draining the backlog after.
   await triggerRunner();
 
-  return { batchId: batch.id, enqueued: runnable.length };
+  return { batchId: batch.id, enqueued: runnable.length, skippedNoPo };
 }

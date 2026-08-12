@@ -6,6 +6,7 @@ import { renderCartonCustomization } from "@/lib/output-layouts/carton-render";
 import { notifyReviewReady } from "@/lib/notifications/user-notifications";
 import { getReviewNotificationEmails } from "@/lib/settings/app-settings";
 import { claimReviewIfUnclaimed } from "@/lib/review-flow/claim";
+import { hasPoNumber } from "@/lib/styles/active-filter";
 
 export const runtime = "nodejs";
 // A carton numbering set can be many pages — one Chromium render, allow time.
@@ -69,8 +70,22 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     );
   }
 
-  const style = await db.style.findUnique({ where: { id }, select: { prodSpecId: true } });
+  const style = await db.style.findUnique({
+    where: { id },
+    select: { prodSpecId: true, poNumber: true },
+  });
   if (!style) return NextResponse.json({ error: "Style not found" }, { status: 404 });
+
+  // The PO gate. This route creates its job directly (RUNNING, not QUEUED — see
+  // below) and so never reaches enqueueGenerationJob's throw; without this check
+  // a customization would be the one way to render a style that has not entered
+  // the flow. 422, not 409: nothing is racing, the style just isn't eligible.
+  if (!hasPoNumber(style.poNumber)) {
+    return NextResponse.json(
+      { error: "This style has no PO number yet, so nothing can be generated for it" },
+      { status: 422 },
+    );
+  }
 
   // Create the job already RUNNING (never QUEUED) so the background runner
   // can't claim it and render a plain, non-customized output — we render it

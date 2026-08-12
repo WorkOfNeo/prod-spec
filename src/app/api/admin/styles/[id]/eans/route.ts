@@ -8,7 +8,7 @@ import {
   loadStyleEanView,
   type EanOverrideOp,
 } from "@/lib/po/ean-override-actions";
-import { enqueueGenerationJob } from "@/lib/queue/enqueue";
+import { enqueueGenerationJob, isMissingPoNumber } from "@/lib/queue/enqueue";
 import { runPendingJobs } from "@/lib/queue/runner";
 
 export const runtime = "nodejs";
@@ -65,11 +65,18 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       where: { styleId: id, status: { in: ["QUEUED", "RUNNING"] } },
     });
     if (inflight === 0) {
-      ({ jobId } = await enqueueGenerationJob({ styleId: id, triggerSource: "MANUAL_RERUN" }));
-      await db.log.create({
-        data: { jobId, level: "INFO", message: `colour source set to ${useStyleBoardColour ? "style board" : "PO"} — re-rendering` },
-      });
-      await runPendingJobs(1);
+      // A style with no PO number can't generate (enqueueGenerationJob throws).
+      // The colour-source toggle itself is already saved above, so swallow the
+      // gate and simply skip the re-render rather than failing the whole call.
+      try {
+        ({ jobId } = await enqueueGenerationJob({ styleId: id, triggerSource: "MANUAL_RERUN" }));
+        await db.log.create({
+          data: { jobId, level: "INFO", message: `colour source set to ${useStyleBoardColour ? "style board" : "PO"} — re-rendering` },
+        });
+        await runPendingJobs(1);
+      } catch (e) {
+        if (!isMissingPoNumber(e)) throw e;
+      }
     }
 
     const view = await loadStyleEanView(id);

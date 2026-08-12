@@ -6,6 +6,7 @@ import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin } from "@/lib/roles";
 import { triggerRunner } from "@/lib/queue/trigger";
 import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
+import { HAS_PO_NUMBER_WHERE } from "@/lib/styles/active-filter";
 import type { JobStatus } from "@/generated/prisma/enums";
 
 export const runtime = "nodejs";
@@ -46,9 +47,12 @@ export async function POST(req: NextRequest) {
 
   const requestedIds = [...new Set(parsed.data.styleIds)];
 
-  // Candidates: exist AND carry an active prod spec (no spec ⇒ can't generate).
+  // Candidates: exist AND carry a PO number AND an active prod spec (no PO ⇒
+  // not in the flow at all and hidden from /styles; no spec ⇒ can't generate).
+  // The PO clause is the list's own predicate, so a bulk action can't generate
+  // for a row the operator can't even see.
   const candidates = await db.style.findMany({
-    where: { id: { in: requestedIds }, prodSpec: { active: true } },
+    where: { id: { in: requestedIds }, ...HAS_PO_NUMBER_WHERE, prodSpec: { active: true } },
     select: { id: true, prodSpecId: true },
   });
   const candidateIds = candidates.map((c) => c.id);

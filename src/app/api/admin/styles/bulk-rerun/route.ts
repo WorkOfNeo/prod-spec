@@ -8,6 +8,7 @@ import { triggerRunner } from "@/lib/queue/trigger";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import { loadIgnoredOutputKeysByStyle } from "@/lib/outputs/output-ignores";
+import { HAS_PO_NUMBER_WHERE } from "@/lib/styles/active-filter";
 import type { JobStatus } from "@/generated/prisma/enums";
 
 export const runtime = "nodejs";
@@ -52,11 +53,12 @@ export async function POST(req: NextRequest) {
   // load them into the variant registry before the readiness walk resolves them.
   await ensureLayoutVariantsLoaded();
 
-  // Candidates: exist AND carry an active prod spec (no spec ⇒ can't generate).
+  // Candidates: exist AND carry a PO number AND an active prod spec (no PO ⇒
+  // not in the flow at all and hidden from /styles; no spec ⇒ can't generate).
   // Pull exactly the fields readiness reads (mirrors the /styles page query and
   // pendingOutputKeysForStyle) so the ready check here matches the real render.
   const candidates = await db.style.findMany({
-    where: { id: { in: requestedIds }, prodSpec: { active: true } },
+    where: { id: { in: requestedIds }, ...HAS_PO_NUMBER_WHERE, prodSpec: { active: true } },
     select: {
       id: true,
       prodSpecId: true,

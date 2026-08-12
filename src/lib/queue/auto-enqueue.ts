@@ -3,11 +3,13 @@ import type { TriggerSource } from "@/generated/prisma/enums";
 import { enqueueGenerationJob } from "./enqueue";
 import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
 import { pendingOutputKeysForStyle } from "@/lib/styles/output-readiness";
+import { hasPoNumber } from "@/lib/styles/active-filter";
 
 // Why the style was NOT auto-enqueued. Surfaced for logging/tests so a
 // caller can tell "switched off" apart from "already covered".
 export type AutoEnqueueSkip =
   | "auto_off"
+  | "no_po"
   | "prod_spec_inactive"
   | "in_flight"
   | "nothing_pending";
@@ -31,6 +33,9 @@ export type AutoEnqueueResult =
 //   1. autoGenerateEnabled — the global master switch (Settings). OFF ⇒
 //      sync the style but never generate. Pass a pre-read value in bulk
 //      loops so a 4k-item sync doesn't read AppSetting per row.
+//   1b. PO number — the Monday "Navision Task" cell. Empty ⇒ the row is a
+//      placeholder, not work: it syncs, it doesn't list (#290) and it does
+//      not generate. Same hasPoNumber predicate as the /styles gate.
 //   2. prodSpecActive — an inactive (auto-scaffolded, unreviewed) ProdSpec
 //      never auto-generates; an operator activates it first.
 //   3. in-flight — a QUEUED/RUNNING job already covers this style, so we
@@ -64,6 +69,19 @@ export async function autoEnqueueReadyOutputs(input: {
 
   const autoOn = input.autoGenerateEnabled ?? (await getAutoGenerateEnabled());
   if (!autoOn) return { enqueued: false, skipped: "auto_off", variantKeys: [] };
+
+  // The PO gate. A sync that lands fields on a style whose "Navision Task" cell
+  // is still empty must not start generating for it — the row is a placeholder
+  // until the buyer fills that cell, which is exactly why #290 keeps it off the
+  // list. Reported as a skip (not thrown) so a 4k-item Pre-Order sync walks past
+  // its placeholders quietly; enqueueGenerationJob is the hard backstop below.
+  const gateRow = await client.style.findUnique({
+    where: { id: input.styleId },
+    select: { poNumber: true },
+  });
+  if (!hasPoNumber(gateRow?.poNumber)) {
+    return { enqueued: false, skipped: "no_po", variantKeys: [] };
+  }
 
   if (!input.prodSpecActive) {
     return { enqueued: false, skipped: "prod_spec_inactive", variantKeys: [] };
