@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { COVER_CONTENT_SAVED_EVENT } from "./cover-content-events";
 
 // "Regenerate cover pages" — rebuilds the CURRENT cover of every style that
 // already has one, so a new cover format or an edit to the global block above
@@ -21,6 +22,14 @@ type Props = {
   prodSpecId?: string;
   // Noun phrase for the scope, used in the panel copy, e.g. "this prod spec".
   scopeLabel?: string;
+  // Server-rendered seed for the "cover text changed, existing bundles still
+  // show the old version" banner (coverContentIsStale). Kept as a seed rather
+  // than the source of truth so an edit made in THIS session flips it without
+  // a reload — see the save listener below.
+  initialStale?: boolean;
+  // Styles that currently have a cover, i.e. how many would be rebuilt. Shown
+  // in the banner so the prompt carries its own weight.
+  staleCount?: number;
 };
 
 // Styles rendered per request. Small so each POST finishes well inside the
@@ -51,7 +60,13 @@ const ZERO: Totals = {
   pushErrors: 0,
 };
 
-export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
+export function CoverRegenPanel({
+  prodSpecId,
+  scopeLabel,
+  initialStale = false,
+  staleCount = 0,
+}: Props = {}) {
+  const [stale, setStale] = useState(initialStale);
   const [phase, setPhase] = useState<Phase>("idle");
   const [prepared, setPrepared] = useState<Prepared | null>(null);
   const [deliver, setDeliver] = useState(true);
@@ -63,6 +78,25 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
   const [error, setError] = useState<string | null>(null);
   // Set by "Stop" — the run loop checks it between chunks and bails cleanly.
   const stopRef = useRef(false);
+
+  // The editors live in a sibling subtree (separate client components rendered
+  // by the server page), so there's no shared React state to hang this off.
+  // A window event is the least invasive signal that "the prose just changed"
+  // — the DB stamp is still the durable source of truth on next render.
+  useEffect(() => {
+    const onSaved = () => setStale(true);
+    window.addEventListener(COVER_CONTENT_SAVED_EVENT, onSaved);
+    return () => window.removeEventListener(COVER_CONTENT_SAVED_EVENT, onSaved);
+  }, []);
+
+  const dismissBanner = useCallback(async () => {
+    setStale(false);
+    await fetch("/api/admin/settings/cover-page/regenerate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "dismiss" }),
+    }).catch(() => {});
+  }, []);
 
   const prepare = useCallback(async () => {
     setPhase("preparing");
@@ -99,7 +133,15 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
         const res = await fetch("/api/admin/settings/cover-page/regenerate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: "process", styleIds: chunk, deliver, onlyPending }),
+          body: JSON.stringify({
+            mode: "process",
+            styleIds: chunk,
+            deliver,
+            onlyPending,
+            // Only the last chunk of an uninterrupted run stamps "covers are
+            // up to date"; a stopped run leaves the banner standing.
+            final: i + CHUNK >= prepared.styleIds.length,
+          }),
         });
         if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `Failed (${res.status})`);
         const data = (await res.json()) as Omit<Totals, "processed"> & { errors: number };
@@ -119,6 +161,8 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
       acc.processed += chunk.length;
       setTotals({ ...acc });
     }
+    // Ran to the end without "Stop" ⇒ the estate matches the current prose.
+    if (!stopRef.current) setStale(false);
     setPhase("done");
   }, [prepared, deliver, onlyPending]);
 
@@ -135,8 +179,47 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
   const scoped = Boolean(prodSpecId);
   const scopeNoun = scopeLabel ?? "this prod spec";
 
+  // Only worth saying while the panel is idle — once a run is prepared or
+  // going, the panel's own confirm/progress UI is the better signal.
+  const showStaleBanner = stale && (phase === "idle" || phase === "error");
+
   return (
     <div className="mt-10 rounded-lg border border-zinc-200 bg-white p-5">
+      {showStaleBanner && (
+        <div className="mb-5 rounded-md border border-amber-300 bg-amber-50 p-4">
+          <p className="text-sm font-medium text-amber-900">
+            Cover text changed — existing bundles still show the old version.
+          </p>
+          <p className="mt-1 text-[13px] leading-relaxed text-amber-900">
+            Your edit applies to everything generated from now on.{" "}
+            {staleCount > 0 ? (
+              <>
+                <strong>{staleCount.toLocaleString()}</strong> style
+                {staleCount === 1 ? " has" : "s have"} a cover from before it
+              </>
+            ) : (
+              <>Styles with a cover from before it</>
+            )}{" "}
+            — including any already delivered to a supplier — until you regenerate.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={prepare}
+              className="rounded-md bg-amber-900 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-amber-800"
+            >
+              Regenerate cover pages
+            </button>
+            <button
+              type="button"
+              onClick={dismissBanner}
+              className="rounded-md border border-amber-300 px-3 py-1.5 text-[13px] font-medium text-amber-900 hover:bg-amber-100"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-sm font-semibold text-zinc-800">

@@ -3,7 +3,12 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { canReview } from "@/lib/roles";
-import { getCoverPageInfoMd } from "@/lib/settings/app-settings";
+import {
+  getCoverPageInfoMd,
+  getCoverContentStamp,
+  coverContentIsStale,
+} from "@/lib/settings/app-settings";
+import { countCoverRefreshableStyles } from "@/lib/pdf/cover-regen-sweep";
 import { CoverPageEditor } from "./cover-page-editor";
 import { CoverRegenPanel } from "./cover-regen-panel";
 import { GeneralInfoEditor, type ProdSpecOption } from "./general-info-editor";
@@ -38,7 +43,10 @@ export default async function CoverPageSettingsPage({
 
   const tab: Tab = (await searchParams).tab === "general-info" ? "general-info" : "cover";
 
-  const [markdown, specRows] = await Promise.all([
+  // Seeds the "cover text changed, existing bundles are stale" banner. Both
+  // reads are fail-soft: a missing stamp or a slow count must not take the
+  // settings page down over a convenience prompt.
+  const [markdown, specRows, stamp, coverCount] = await Promise.all([
     getCoverPageInfoMd(),
     db.prodSpec.findMany({
       orderBy: [{ active: "desc" }, { name: "asc" }],
@@ -51,7 +59,10 @@ export default async function CoverPageSettingsPage({
         businessArea: { select: { name: true } },
       },
     }),
+    getCoverContentStamp().catch(() => null),
+    countCoverRefreshableStyles().catch(() => 0),
   ]);
+  const contentStale = stamp ? coverContentIsStale(stamp) : false;
 
   // Business areas can carry a blank name in live data — fall back so the
   // picker never renders a bare separator.
@@ -105,7 +116,7 @@ export default async function CoverPageSettingsPage({
           <div className="mt-6">
             <CoverPageEditor initialMarkdown={markdown} />
           </div>
-          <CoverRegenPanel />
+          <CoverRegenPanel initialStale={contentStale} staleCount={coverCount} />
         </>
       ) : (
         <GeneralInfoEditor prodSpecs={prodSpecs} />

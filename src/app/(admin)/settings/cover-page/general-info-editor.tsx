@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MarkdownEditor } from "@/components/markdown-editor";
 import { LazyOutputPreview } from "@/components/output-preview";
 import { CoverRegenPanel } from "./cover-regen-panel";
+import { announceCoverContentSaved } from "./cover-content-events";
 
 // Editor for ONE Prod Spec's "General information" — the pages that ship inside
 // the cover PDF, after the cover sheet. A Prod Spec is a Customer × Business
@@ -133,10 +134,13 @@ function SpecGeneralInfo({ prodSpec }: { prodSpec: ProdSpecOption }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ markdown: value }),
         });
-        if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(body?.error ?? `Save failed (${res.status})`);
-        }
+        const body = (await res.json().catch(() => null)) as
+          | { error?: string; contentChanged?: boolean }
+          | null;
+        if (!res.ok) throw new Error(body?.error ?? `Save failed (${res.status})`);
+        // Only a real change arms the stale banner — the debounce re-sends
+        // identical markdown routinely.
+        if (body?.contentChanged) announceCoverContentSaved();
         lastSavedRef.current = value;
         setSaveState("saved");
         setSavedAt(new Date().toLocaleTimeString());

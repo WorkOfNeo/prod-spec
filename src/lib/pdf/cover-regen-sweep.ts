@@ -57,6 +57,22 @@ export async function listCoverRefreshableStyleIds(
   return rows.map((r) => r.styleId);
 }
 
+// How many styles currently have a cover, i.e. how many a full sweep would
+// consider. Used by the stale-content banner so the prompt can say what it
+// would cost. Deliberately a COUNT, not listCoverRefreshableStyleIds().length —
+// the banner needs a number on every page render, not ~1,700 ids.
+export async function countCoverRefreshableStyles(): Promise<number> {
+  const rows = await db.job.findMany({
+    where: {
+      status: { not: "FAILED" },
+      assets: { some: { variantKey: COVER_VARIANT_KEY } },
+    },
+    select: { styleId: true },
+    distinct: ["styleId"],
+  });
+  return rows.length;
+}
+
 // Preview counts for the confirm dialog: (an upper bound on) how many of the
 // given styles are delivered to a supplier and would be re-pushed + re-notified.
 // Counts APPROVED styles with a linked supplier; the per-style requeue re-checks
