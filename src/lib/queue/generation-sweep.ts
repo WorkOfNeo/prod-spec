@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import type { TriggerSource } from "@/generated/prisma/enums";
 import { getAutoGenerateEnabled, getGenerationMinPo } from "@/lib/settings/app-settings";
 import { pendingOutputKeysForStyle } from "@/lib/styles/output-readiness";
+import { HAS_PO_NUMBER_WHERE, hasPoNumber } from "@/lib/styles/active-filter";
 import { enqueueGenerationJob } from "./enqueue";
 
 // =====================================================
@@ -21,6 +22,7 @@ export const MAX_GEN_ATTEMPTS = 3;
 
 export type StyleGenSkip =
   | "auto_off"
+  | "no_po"
   | "prodspec_inactive"
   | "in_flight"
   | "floated"
@@ -34,11 +36,13 @@ export type StyleGenDecision =
 // that fails wins. Does NOT trigger the runner — the caller fires it once.
 //
 //   1. auto-generate master switch (pass a pre-read value in bulk loops).
-//   2. ProdSpec ACTIVE — inactive scaffolds never auto-generate.
-//   3. in-flight guard — one QUEUED/RUNNING job at a time per style.
-//   4. float cap — a style with ≥ MAX_GEN_ATTEMPTS FAILED jobs is left for a
+//   2. PO number ("Navision Task") present — without one the style hasn't
+//      entered the flow at all, so it neither lists (#290) nor generates.
+//   3. ProdSpec ACTIVE — inactive scaffolds never auto-generate.
+//   4. in-flight guard — one QUEUED/RUNNING job at a time per style.
+//   5. float cap — a style with ≥ MAX_GEN_ATTEMPTS FAILED jobs is left for a
 //      human (a manual re-run that succeeds clears it).
-//   5. pendingOutputKeysForStyle — ready outputs MINUS those already generated
+//   6. pendingOutputKeysForStyle — ready outputs MINUS those already generated
 //      (a non-FAILED asset). REJECTED / AWAITING_REVIEW / APPROVED outputs are
 //      therefore never redone; only never-succeeded ones remain. This is where
 //      "don't auto-regenerate a rejected output" lives.
@@ -52,8 +56,13 @@ export async function maybeEnqueueStyleGeneration(
 
   const style = await db.style.findUnique({
     where: { id: styleId },
-    select: { prodSpec: { select: { active: true } } },
+    // poNumber rides along in the query that was already being made for
+    // prodSpec.active — the PO gate costs nothing extra here.
+    select: { poNumber: true, prodSpec: { select: { active: true } } },
   });
+  // Checked BEFORE enqueueGenerationJob would throw, so the sweep reports
+  // `no_po` on /automation instead of dying on a tick.
+  if (!hasPoNumber(style?.poNumber)) return { enqueued: false, reason: "no_po" };
   if (!style?.prodSpec?.active) return { enqueued: false, reason: "prodspec_inactive" };
 
   const inflight = await db.job.count({
@@ -86,6 +95,7 @@ export type GenSweepSummary = {
 
 const emptySkips = (): Record<StyleGenSkip, number> => ({
   auto_off: 0,
+  no_po: 0,
   prodspec_inactive: 0,
   in_flight: 0,
   floated: 0,
@@ -119,19 +129,27 @@ export async function sweepReadyStyleGenerations(limit = 10): Promise<GenSweepSu
   // Generation PO cutoff: the sweep only pulls styles at/above the configured
   // minimum PO (Style.poSeq >= minPo) — the historical backlog is parked.
   // Dedicated to generation (falls back to the scrape cutoff when unset, see
-  // getGenerationMinPo). null = no cutoff (whole backlog). Styles with no
-  // parseable PO (poSeq IS NULL) are NOT parked — they can't be placed on the
-  // PO timeline, and a ready output should still generate, so the filter is
-  // "poSeq >= minPo OR poSeq IS NULL". The event-driven paths (Monday webhook,
-  // EAN→gen handoff) still generate newly-ready styles regardless; this sweep
-  // is the bounded backstop.
+  // getGenerationMinPo). null = no cutoff (whole backlog).
+  //
+  // "poSeq IS NULL" is still admitted by the cutoff, and that is deliberate: it
+  // means a PO number that didn't PARSE onto the numeric timeline (an oddly
+  // formatted cell), not an absent one. A style with no PO at all is now
+  // excluded a line below by HAS_PO_NUMBER_WHERE — a different question, gated
+  // separately, so an unparseable-but-present PO keeps generating as before.
   const minPo = await getGenerationMinPo();
 
-  // Cheap prefilter: pre-generation styles on an active ProdSpec with no job
-  // already in flight. Over-fetch — many candidates will have nothing pending
-  // (already generated) and get skipped by the per-style gate below.
+  // Cheap prefilter: pre-generation styles that carry a PO number, sit on an
+  // active ProdSpec and have no job already in flight. Over-fetch — many
+  // candidates will have nothing pending (already generated) and get skipped by
+  // the per-style gate below.
+  //
+  // The PO clause is the list's own HAS_PO_NUMBER_WHERE, so the sweep can't
+  // start generating rows that /styles hides. maybeEnqueueStyleGeneration
+  // re-checks it per style (trim-aware) — this is only here so a backlog of
+  // PO-less placeholders can't eat the bounded candidate window.
   const candidates = await db.style.findMany({
     where: {
+      ...HAS_PO_NUMBER_WHERE,
       prodSpecId: { not: null },
       prodSpec: { is: { active: true } },
       status: { in: ["PENDING", "READY"] },

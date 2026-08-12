@@ -32,7 +32,12 @@ export function hasPoNumber(poNumber: string | null | undefined): boolean {
 // actually writes — NULL (column absent from the item) and "" (cell cleared).
 // The rare whitespace-only cell slips through here and is caught by
 // hasPoNumber on the surfaces that render rows.
-const HAS_PO_NUMBER_WHERE = {
+//
+// Exported because the GENERATION paths need the same predicate as the list:
+// the bulk candidate queries AND-in this clause, and the per-style gates call
+// hasPoNumber on the row they already loaded. One definition, so "on the board"
+// and "may generate" can never drift apart.
+export const HAS_PO_NUMBER_WHERE = {
   poNumber: { not: null, notIn: [""] },
 } satisfies Prisma.StyleWhereInput;
 

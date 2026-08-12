@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-server";
 import { MANUAL_COLUMN_IDS, parseCustomerConfig } from "@/lib/customers/config";
 import { evaluateCompletion } from "@/lib/monday/completion";
-import { enqueueGenerationJob } from "@/lib/queue/enqueue";
+import { enqueueGenerationJob, isMissingPoNumber } from "@/lib/queue/enqueue";
 import { runPendingJobs } from "@/lib/queue/runner";
 import { ensureProdSpecsForStyle } from "@/lib/prod-spec/ensure";
 import type { MondayItem } from "@/lib/monday/client";
@@ -202,7 +202,18 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ styleId: updated.id, regenerated: false });
   }
 
-  const { jobId } = await enqueueGenerationJob({ styleId: updated.id, triggerSource: "MANUAL_RERUN" });
+  // A style with no PO number can't generate (enqueueGenerationJob throws) —
+  // answer 422 with the reason rather than letting it surface as a 500.
+  let jobId: string;
+  try {
+    ({ jobId } = await enqueueGenerationJob({
+      styleId: updated.id,
+      triggerSource: "MANUAL_RERUN",
+    }));
+  } catch (e) {
+    if (isMissingPoNumber(e)) return NextResponse.json({ error: e.message }, { status: 422 });
+    throw e;
+  }
   await db.log.create({
     data: { jobId, level: "INFO", message: `style edited and re-rendered by ${auth.userId}` },
   });

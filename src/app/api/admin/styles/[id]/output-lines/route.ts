@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { canReview } from "@/lib/roles";
-import { enqueueGenerationJob } from "@/lib/queue/enqueue";
+import { enqueueGenerationJob, isMissingPoNumber } from "@/lib/queue/enqueue";
 import { runPendingJobs } from "@/lib/queue/runner";
 import { ignoreBaseKey } from "@/lib/outputs/output-field-values";
 import {
@@ -114,11 +114,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   // Scoped re-generation of just this output — same path as the per-output Run
   // button and /output-fields. The runner picks up the saved lines.
-  const { jobId } = await enqueueGenerationJob({
-    styleId: id,
-    triggerSource: "MANUAL_RERUN",
-    variantKeys: [baseKey],
-  });
+  // A style with no PO number can't generate (enqueueGenerationJob throws) —
+  // answer 422 with the reason rather than letting it surface as a 500.
+  let jobId: string;
+  try {
+    ({ jobId } = await enqueueGenerationJob({
+      styleId: id,
+      triggerSource: "MANUAL_RERUN",
+      variantKeys: [baseKey],
+    }));
+  } catch (e) {
+    if (isMissingPoNumber(e)) return NextResponse.json({ error: e.message }, { status: 422 });
+    throw e;
+  }
   await db.style.update({ where: { id }, data: { status: "GENERATING" } });
   const count = Object.keys(saved).length;
   await db.log.create({
