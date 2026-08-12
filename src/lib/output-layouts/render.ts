@@ -7,6 +7,7 @@ import {
   type WashcareSymbolMap,
 } from "@/lib/pdf/washcare-symbols";
 import { certDeclaredBy, findCertificate, loadCertificates, type CertificateMap } from "@/lib/pdf/certificates";
+import { findLayoutImage, loadLayoutImages, type LayoutImageMap } from "./images";
 import {
   TOKEN_RE,
   conditionalsInLine,
@@ -244,6 +245,11 @@ export type LayoutRenderOptions = {
   // (variant render closure from OutputLayout.customLogo, or the builder
   // preview route by layout id) — there is no global custom logo anymore.
   customLogo?: string | null;
+  // Pre-loaded image library for {{image:<slug>}}. Omitted on every real
+  // caller — the renderer loads it itself, and only when the definition
+  // places one. Present so a caller that already holds the map (and a unit
+  // test) can render without a DB round-trip.
+  layoutImages?: LayoutImageMap;
   // Reviewer line overrides for THIS document: lineOverrideKey(page, block,
   // index) → replacement SOURCE line. Substituted for the authored line before
   // conditionals and tokens run, so an override resolves exactly as an authored
@@ -279,6 +285,7 @@ type RenderCtx = {
   symbols: WashcareSymbolMap | null; // loaded only when {{washSymbols}} is used
   logos: { contrast: string | null; contrastAddress: string | null; custom: string | null }; // loaded only when {{logo:…}} is used
   certs: CertificateMap | null; // loaded only when {{cert:…}} is used
+  images: LayoutImageMap | null; // loaded only when {{image:…}} is used
   // Uniform shrink applied to font-derived sizes (font pt, barcode/symbol/
   // logo dimensions, borders, padding) so the whole design scales — not just
   // the grid-relative positions — when an info-area size override resizes the
@@ -648,6 +655,37 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx, blockWidthMm
       continue;
     }
 
+    if (meta.kind === "image" && key === "image") {
+      // A picture from the shared library (Settings → Images). Unlike
+      // {{logo:custom}} — one image per layout — a layout can place any
+      // number of these, which is the whole reason the library exists.
+      //
+      // Sizing: bare prints at the font-derived height, like a cert mark, so
+      // it sits on a text line without thought. {{image:x:40}} instead sets
+      // the WIDTH to 40% of the block (height auto) for artwork that has to
+      // hit a size on the box — the same choice {{logo:custom}} makes via
+      // its per-layout width setting, moved into the token because a layout
+      // now carries several images that need different widths.
+      const resolved = arg && ctx.images ? findLayoutImage(ctx.images, arg) : null;
+      if (resolved?.dataUrl) {
+        const pct = m[3] ? Number(m[3]) : null;
+        const alt = escapeHtml(resolved.name);
+        html +=
+          pct && Number.isFinite(pct)
+            ? `<span class="ol-img ol-img-w" style="width: ${pct}%"><img src="${resolved.dataUrl}" alt="${alt}" title="${alt}" /></span>`
+            : `<span class="ol-img"><img src="${resolved.dataUrl}" alt="${alt}" title="${alt}" /></span>`;
+      } else {
+        // No such slug, the row is deactivated, or it has no artwork yet.
+        // All three are the same thing to the operator — the picture the
+        // layout asks for isn't there — so all three get the visible
+        // `missing` chip that countPlaceholderMarkers() blocks approval on,
+        // rather than a silently blank spot on the print.
+        html += `<span class="missing">image:${escapeHtml(arg ?? "")} — no artwork in Settings → Images</span>`;
+      }
+      hadValue = true;
+      continue;
+    }
+
     if (meta.kind === "image") {
       const source = (arg ?? "contrast") as LogoSource;
       const dataUrl = ctx.logos[source];
@@ -988,12 +1026,16 @@ async function prepareLayoutRender(
   const repStyles: StyleData[] = repetitionStyles(style, settings.repeatBy);
 
   const usesLogo = defUsesToken(pages, "logo");
-  const [barcodes, symbols, contrastLogo, contrastAddressLogo, certs] = await Promise.all([
+  // The image library is loaded only when the definition places one, and
+  // skipped entirely when the caller already handed us the map.
+  const needsImages = opts.layoutImages === undefined && defUsesToken(pages, "image");
+  const [barcodes, symbols, contrastLogo, contrastAddressLogo, certs, loadedImages] = await Promise.all([
     buildBarcodeCache(repStyles, pages),
     defUsesToken(pages, "washSymbols") ? loadWashcareSymbols() : Promise.resolve(null),
     usesLogo ? getContrastLogoDataUrl() : Promise.resolve(null),
     usesLogo ? getContrastAddressLogoDataUrl() : Promise.resolve(null),
     printsDeclaredCert(pages, repStyles) ? loadCertificates() : Promise.resolve(null),
+    needsImages ? loadLayoutImages() : Promise.resolve(null),
   ]);
   // The custom logo is per layout — supplied by the caller, not loaded here.
   const customLogo = opts.customLogo ?? null;
@@ -1003,6 +1045,7 @@ async function prepareLayoutRender(
     symbols,
     logos: { contrast: contrastLogo, contrastAddress: contrastAddressLogo, custom: customLogo },
     certs,
+    images: opts.layoutImages ?? loadedImages,
     fontScale,
     customLogoWidthPct: settings.customLogoWidthPct,
     lineOverrides: opts.lineOverrides,
@@ -1283,6 +1326,14 @@ function emitLayoutDocument(
   .ol-logo-custom img { width: 100%; height: auto; max-width: 100%; }
   .ol-cert { display: inline-block; vertical-align: middle; max-width: 100%; }
   .ol-cert img { display: block; height: var(--ol-cert, 10mm); width: auto; max-width: 100%; }
+  /* Library images ({{image:<slug>}}): font-scaled height by default, so a
+     bare token drops onto a text line like a cert mark. With a width % —
+     {{image:x:40}} — width wins and the height follows the aspect ratio.
+     The width rules must follow the height ones to win on equal specificity. */
+  .ol-img { display: inline-block; vertical-align: middle; max-width: 100%; }
+  .ol-img img { display: block; height: var(--ol-logo, 10mm); width: auto; max-width: 100%; }
+  .ol-img-w { max-width: 100%; }
+  .ol-img-w img { width: 100%; height: auto; max-width: 100%; }
   .cert-missing {
     font-family: ui-monospace, monospace; font-size: 0.85em;
     background: #fef2f2; color: #b91c1c; border: 0.2mm dashed #ef4444;

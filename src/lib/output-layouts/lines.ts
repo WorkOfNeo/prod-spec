@@ -52,7 +52,9 @@ function graphicMarker(key: string, arg: string | undefined): string {
     case "symbols":
       return "[wash-care symbols]";
     case "image":
-      return `[${key === "cert" ? `certificate${arg ? `: ${arg}` : ""}` : "logo"}]`;
+      if (key === "cert") return `[certificate${arg ? `: ${arg}` : ""}]`;
+      if (key === "image") return `[image${arg ? `: ${arg}` : ""}]`;
+      return "[logo]";
     case "table":
       return "[assortment table]";
     default:

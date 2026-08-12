@@ -33,7 +33,8 @@ export default async function OutputLayoutEditorPage(props: { params: Promise<{ 
   }
 
   const { id } = await props.params;
-  const [layout, customers, businessAreas, languages, stats, recentAssetRows, specs] = await Promise.all([
+  const [layout, customers, businessAreas, languages, stats, recentAssetRows, specs, libraryImages] =
+    await Promise.all([
     db.outputLayout.findUnique({ where: { id } }),
     db.customer.findMany({
       where: { active: true },
@@ -71,6 +72,13 @@ export default async function OutputLayoutEditorPage(props: { params: Promise<{ 
     }),
     db.prodSpec.findMany({
       select: { id: true, name: true, outputs: true, customer: { select: { name: true } } },
+    }),
+    // The {{image:<slug>}} library — the palette and autocomplete offer one
+    // chip per active picture, since there's no fixed source list to read.
+    db.layoutImage.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+      select: { slug: true, name: true, image: true },
     }),
   ]);
   if (!layout) notFound();
@@ -128,6 +136,17 @@ export default async function OutputLayoutEditorPage(props: { params: Promise<{ 
       docTypes={await loadDocTypes()}
       businessAreas={businessAreas}
       languages={languages}
+      libraryImages={libraryImages.map((i) => ({
+        slug: i.slug,
+        name: i.name,
+        // Thumbnail for the palette chip — raw SVG markup is wrapped so the
+        // chip can use a plain <img src>, same convention as the library page.
+        dataUrl: !i.image
+          ? null
+          : i.image.startsWith("data:")
+            ? i.image
+            : `data:image/svg+xml;base64,${Buffer.from(i.image, "utf-8").toString("base64")}`,
+      }))}
       stats={stats}
       recentAssets={recentAssets}
       prodSpecs={prodSpecs}

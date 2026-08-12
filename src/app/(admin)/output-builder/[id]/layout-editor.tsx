@@ -156,11 +156,16 @@ type DrawState = {
   moved: boolean;
 };
 
+// One picture from the shared image library — a palette chip that inserts
+// {{image:<slug>}}. Reusable across layouts, unlike layout.customLogo.
+type LibraryImage = { slug: string; name: string; dataUrl: string | null };
+
 export function LayoutEditor({
   layout,
   customers,
   businessAreas,
   languages,
+  libraryImages,
   docTypes,
   stats,
   recentAssets,
@@ -171,6 +176,9 @@ export function LayoutEditor({
   customers: Customer[];
   businessAreas: BusinessArea[];
   languages: Language[];
+  // Active rows of the image library (Settings → Images), for the palette
+  // and the autocomplete catalogue.
+  libraryImages: LibraryImage[];
   // The doc-type catalogue (DB-managed) — options for the type select.
   docTypes: DocTypeEntry[];
   // Generation history for the Settings + Reviews tabs (server-computed).
@@ -285,8 +293,8 @@ export function LayoutEditor({
   // built for the current language + sibling slot so ":lang"/"styleN" tokens
   // insert the right variant.
   const tokenSuggestions = useMemo(
-    () => buildTokenSuggestions({ langSel, siblingSlot }),
-    [langSel, siblingSlot],
+    () => buildTokenSuggestions({ langSel, siblingSlot, images: libraryImages }),
+    [langSel, siblingSlot, libraryImages],
   );
 
   const [jsonText, setJsonText] = useState("");
@@ -3160,6 +3168,56 @@ export function LayoutEditor({
                   onClick={() => insertToken("{{cert:fsc}}")}
                 />
               </div>
+            </div>
+            <div className="mt-3">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">Images</span>
+                <a
+                  href="/settings/images"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[10px] text-zinc-400 underline hover:text-zinc-700"
+                >
+                  Manage library →
+                </a>
+              </div>
+              <p className="mt-1 text-[11px] text-zinc-400">
+                Shared pictures — place as many as you need on one output. Add a width to size one:{" "}
+                <code className="rounded bg-zinc-100 px-1 text-[10px]">{"{{image:slug:40}}"}</code> prints it at
+                40% of its block&apos;s width. Without a width it matches the block&apos;s font size.
+              </p>
+              {libraryImages.length === 0 ? (
+                <p className="mt-1.5 text-[11px] text-amber-700">
+                  The library is empty —{" "}
+                  <a href="/settings/images" target="_blank" rel="noreferrer" className="underline">
+                    upload a picture
+                  </a>{" "}
+                  to place it here.
+                </p>
+              ) : (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {libraryImages.map((img) => (
+                    <button
+                      key={img.slug}
+                      type="button"
+                      disabled={!selBlock}
+                      onClick={() => insertToken(`{{image:${img.slug}}}`)}
+                      title={`${img.name} — inserts {{image:${img.slug}}}. Add a width % to size it, e.g. {{image:${img.slug}:40}}`}
+                      className="flex items-center gap-1.5 rounded border border-zinc-200 bg-white px-1.5 py-1 text-[11px] text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+                    >
+                      {img.dataUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={img.dataUrl} alt="" className="h-4 w-4 object-contain" />
+                      ) : (
+                        <span className="text-amber-600" title="No artwork uploaded yet">
+                          ⚠
+                        </span>
+                      )}
+                      <span className="max-w-[9rem] truncate">{img.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="mt-3">
               <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">Logic</div>

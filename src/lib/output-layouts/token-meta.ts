@@ -7,6 +7,7 @@
 // =====================================================
 import { CARTON_QTY_KINDS } from "./carton-qty";
 import { SIZE_FORMS } from "./size-form";
+import { IMAGE_SLUG_RE } from "./image-slug";
 
 // The single accepted "sizeScope" argument — {{description:size}}.
 export const SIZE_SCOPE_ARG = "size";
@@ -38,10 +39,16 @@ export type LayoutTokenMeta = {
   // "sizeForm" → optional half of a two-form size label ("86-92 cm /
   //   1½-2 år"): numeric prints the measurement, year the age
   //   ({{sizeRangeCoop:year}}); bare prints the label as authored.
-  arg?: "lang" | "source" | "gap" | "cartonKind" | "sizeScope" | "sizeForm";
+  // "imageSlug" → REQUIRED name of a row in the image library
+  //   ({{image:coop-hanger}}). Unlike "source" this is validated by SHAPE,
+  //   not against a fixed list: the library is DB-managed, so operators add
+  //   artwork without a deploy. A slug with no row renders the standard
+  //   `missing` chip, which blocks approval.
+  arg?: "lang" | "source" | "gap" | "cartonKind" | "sizeScope" | "sizeForm" | "imageSlug";
   // Optional SECOND argument (TOKEN_RE group 3, numeric-only).
   // "heightMm" → bar height in mm, e.g. {{barcode:ean13:8}} (8 mm bars).
-  arg2?: "heightMm";
+  // "widthPct" → print width as a % of the block, e.g. {{image:x:40}}.
+  arg2?: "heightMm" | "widthPct";
   // Example value shown in the palette tooltip.
   example?: string;
 };
@@ -279,6 +286,16 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     arg: "source",
     example: "{{cert:oekotex}}",
   },
+  {
+    key: "image",
+    label:
+      "Picture from the image library (Settings → Images) — place as many as you like; optional width % of the block, e.g. {{image:coop-hanger:40}}",
+    group: "Barcodes & symbols",
+    kind: "image",
+    arg: "imageSlug",
+    arg2: "widthPct",
+    example: "{{image:coop-hanger}}",
+  },
 
   // ---- Sibling styles (Custom Carton Marking) ----
   // The slot tokens ({{style2}}, {{style3Name}}…) are recognised
@@ -437,19 +454,36 @@ export function validateTokenRef(key: string, arg?: string, arg2?: string): stri
       `{{${key}:${arg}}} — size form must be ${SIZE_FORMS.map((f) => `{{${key}:${f}}}`).join(" or ")}`,
     );
   }
+  // "imageSlug" is REQUIRED and checked by shape only — the library is
+  // DB-managed, so validating against today's rows would either reject a
+  // slug added after the layout was authored or force a deploy per picture.
+  // A well-formed slug with no row is a DATA gap, not an authoring error:
+  // it renders the `missing` chip and blocks approval at print time.
+  if (meta.arg === "imageSlug" && !IMAGE_SLUG_RE.test(arg ?? "")) {
+    errs.push(
+      `{{${key}${arg ? `:${arg}` : ""}}} needs an image name from Settings → Images, e.g. {{${key}:coop-hanger}}` +
+        ` (lowercase letters, digits and hyphens)`,
+    );
+  }
   if (!meta.arg && arg) {
     errs.push(`{{${key}}} does not take an argument (got ":${arg}")`);
   }
-  // Second argument — today only the barcode bar height in mm. Optional;
-  // when present it must be a sane printable bar height (2–40 mm).
+  // Second argument — a barcode's bar height in mm, or a library image's
+  // print width as a % of its block. Optional on both; when present it must
+  // be in range for that kind.
   if (arg2 !== undefined) {
-    if (meta.arg2 !== "heightMm") {
-      errs.push(`{{${key}${arg ? `:${arg}` : ""}}} does not take a second argument (got ":${arg2}")`);
-    } else {
+    if (meta.arg2 === "heightMm") {
       const n = Number(arg2);
       if (!Number.isFinite(n) || n < 2 || n > 40) {
         errs.push(`{{${key}:${arg}:${arg2}}} bar height must be a number of mm between 2 and 40`);
       }
+    } else if (meta.arg2 === "widthPct") {
+      const n = Number(arg2);
+      if (!Number.isFinite(n) || n < 1 || n > 100) {
+        errs.push(`{{${key}:${arg}:${arg2}}} width must be a percentage between 1 and 100`);
+      }
+    } else {
+      errs.push(`{{${key}${arg ? `:${arg}` : ""}}} does not take a second argument (got ":${arg2}")`);
     }
   }
   return errs;
