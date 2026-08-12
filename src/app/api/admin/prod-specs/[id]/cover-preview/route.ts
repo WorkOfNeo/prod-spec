@@ -44,7 +44,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       // Same size resolution as the runner (info-area picks honoured) so the
       // preview matches the generated cover. No approval status here — this is a
       // config preview with no style; the real per-job cover flags approved vs
-      // "Awaiting Contrast confirmation" from live review state.
+      // "Waiting for Customer Information" from live review state.
       const dims = effectiveOutputDims(o, variant?.isInfoArea ?? false, sizeMap);
       return {
         displayName: variant?.name ?? o.variantKey,

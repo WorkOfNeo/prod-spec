@@ -112,10 +112,10 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
 
   // Refresh the cover so the copy the supplier RECEIVES reflects the approval
   // state as of this publish: outputs approved by this send show their confirmed
-  // size, the rest stay "Awaiting Contrast confirmation". The cover was baked at
-  // generation while every output was still pending review, so without this the
-  // supplier's manifest would contradict the package (a label in the box reading
-  // "awaiting"). Rendered from the PROJECTED post-publish approval set — this
+  // size, the rest stay "Waiting for Customer Information". The cover was baked
+  // at generation while every output was still pending review, so without this
+  // the supplier's manifest would contradict the package (a label in the box
+  // reading "waiting"). Rendered from the PROJECTED post-publish approval set —
   // job's clean, non-rejected outputs are about to be cascaded to APPROVED, so
   // we add their bases to the durable-approval set the DB already holds. The
   // fresh PDF replaces the cover asset in BOTH the SharePoint upload (below) and

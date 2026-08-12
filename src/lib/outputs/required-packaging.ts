@@ -8,7 +8,7 @@ import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-pa
 //
 // The cover is what the supplier receives, so it doubles as a manifest: the
 // supplier sees the whole set of layouts to expect, with a confirmed size on
-// the ones Contrast has approved and an "Awaiting Contrast confirmation" flag on
+// the ones Contrast has approved and a "Waiting for Customer Information" flag on
 // the ones still in review — so a later delivery of the pending layouts is no
 // surprise. See renderCoverPageHtml in src/lib/pdf/bundle-pages.ts.
 //
