@@ -270,3 +270,35 @@ export function pickSizeRatioForSizes(
     .map((e) => e.qty)
     .join(", ");
 }
+
+// -----------------------------------------------------
+// Matrix lookups — the colour × size grid ({{sizeAt:N}} / {{sizeQty:N}})
+// -----------------------------------------------------
+
+// The quantity this run gives ONE size label, matched the same
+// space/case-insensitive way anchors are found. "" when the run doesn't
+// carry that size at all — which is what makes a matrix column line up
+// across styles whose size runs differ: a colour that isn't made in XL
+// leaves that cell blank instead of shifting its other numbers left.
+export function qtyForSizeLabel(entries: readonly SizeRatioEntry[], label: string): string {
+  const want = sizeKey(label);
+  if (!want) return "";
+  return entries.find((e) => sizeKey(e.size) === want)?.qty ?? "";
+}
+
+// Every quantity in the run added up — the row total ("9 PCS"). Blank
+// entries contribute nothing; a run with no numbers at all totals "" rather
+// than "0", so an unreadable ratio leaves the cell empty like every other
+// token instead of printing a confident zero onto a shipping document.
+export function totalSizeRatioQty(entries: readonly SizeRatioEntry[]): string {
+  let sum = 0;
+  let any = false;
+  for (const e of entries) {
+    const n = Number(e.qty);
+    if (e.qty && Number.isFinite(n)) {
+      sum += n;
+      any = true;
+    }
+  }
+  return any ? String(sum) : "";
+}

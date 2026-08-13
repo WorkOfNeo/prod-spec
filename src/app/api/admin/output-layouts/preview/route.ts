@@ -14,7 +14,12 @@ import {
   resolveTextToken,
   unresolvedTokens,
 } from "@/lib/output-layouts/tokens";
-import { LAYOUT_TOKENS, SIZE_SCOPE_ARG, SIZE_FORMS } from "@/lib/output-layouts/token-meta";
+import {
+  LAYOUT_TOKENS,
+  SIZE_SCOPE_ARG,
+  SIZE_FORMS,
+  MAX_ASSORT_COLUMNS,
+} from "@/lib/output-layouts/token-meta";
 import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import { buildSampleStyleData } from "@/lib/pdf/sample-data";
@@ -170,6 +175,14 @@ export async function POST(req: NextRequest) {
         tokenValues[t.key] = resolveTextToken(styleData, t.key);
         for (const form of SIZE_FORMS) {
           tokenValues[`${t.key}:${form}`] = resolveTextToken(styleData, t.key, form);
+        }
+      } else if (t.arg === "sizeIndex") {
+        // One value per addressable column, so "Show values" fills the
+        // matrix chips whichever column the picker is on. Columns past this
+        // style's run resolve empty — which is the honest preview of the
+        // blank boxes a shorter size run leaves on the form.
+        for (let n = 1; n <= MAX_ASSORT_COLUMNS; n++) {
+          tokenValues[`${t.key}:${n}`] = resolveTextToken(styleData, t.key, String(n));
         }
       } else {
         tokenValues[t.key] = resolveTextToken(styleData, t.key);

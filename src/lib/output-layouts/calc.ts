@@ -60,6 +60,10 @@ export const AGGREGATE_FIELDS: Record<string, string> = {
   qtyPerCarton: "QtyPerCarton",
   cartonEan: "CartonEan",
   ean13: "Ean13",
+  // The grand total of an assortment matrix: sum(sizeQtyTotal) adds every
+  // colour row's total, exactly as {{sizeQtyTotal}} + {{styleNSizeQtyTotal}}
+  // would read down the column.
+  sizeQtyTotal: "SizeQtyTotal",
 };
 
 const AGGREGATE_BY_LOWER = new Map(

@@ -31,6 +31,17 @@ export type SiblingStyle = {
   // sum can pick this sibling's assort number. Optional: only projectSiblingStyle
   // sets it; older/hand-built siblings fall back to qtyPerCarton.
   qtyPerCartonRaw?: string;
+  // This sibling's OWN assortment run, so a colour × size matrix can print
+  // its per-size quantities ({{styleNSizeQty:3}}). Both optional and only
+  // set by projectSiblingStyle: a hand-built sibling simply contributes no
+  // numbers, exactly as it contributes no qtyPerCartonRaw today.
+  //   sizeRatioRaw — the buyer's un-parsed Size Ratio text
+  //   sizeLabels   — the size run to pair it against, as a real list (the
+  //                  `sizes` string above is display text, and splitting it
+  //                  back apart is the punctuation guess size-ratio.ts
+  //                  exists to avoid)
+  sizeRatioRaw?: string;
+  sizeLabels?: string[];
   cartonEan: string;
   ean13: string;
 };

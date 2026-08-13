@@ -290,6 +290,14 @@ export function LayoutEditor({
   const [langSel, setLangSel] = useState(languages[0]?.code ?? "en");
   // Custom Carton Marking — which sibling slot the palette chips insert.
   const [siblingSlot, setSiblingSlot] = useState(2);
+  // Assortment matrix — which SIZE COLUMN the palette chips address. Shared
+  // by the matrix section and the sibling section, so building a row means
+  // picking a column once and clicking across.
+  const [matrixCol, setMatrixCol] = useState(1);
+  // How many columns the picker offers. The token accepts up to
+  // MAX_ASSORT_COLUMNS; a dozen covers every real size run without turning
+  // the dropdown into a scroll.
+  const MATRIX_COLS_OFFERED = 12;
 
   // The fuzzy-autofill catalogue for the content editor — mirrors the palette,
   // built for the current language + sibling slot so ":lang"/"styleN" tokens
@@ -3043,6 +3051,56 @@ export function LayoutEditor({
                 ))}
               </div>
             </div>
+            {/* Assortment matrix — the colour × size grid. Cells rather than
+                one {{assortmentTable}} block, because a customer form has
+                the grid ruled on it already and each box holds ONE value.
+                Columns are the style's size run; rows are the sibling slots
+                below, so both sections share the column picker. */}
+            <div className="mt-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">
+                  Assortment matrix
+                </span>
+                <select
+                  value={matrixCol}
+                  onChange={(e) => setMatrixCol(Number(e.target.value))}
+                  className="rounded border border-zinc-200 px-1 py-0.5 text-[11px] text-zinc-600"
+                  title="Which size column these chips address — column 1 is the first size in the run"
+                >
+                  {Array.from({ length: MATRIX_COLS_OFFERED }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>
+                      column {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="mt-1 text-[11px] text-zinc-400">
+                One box per cell, so a pre-ruled form fills in place. Columns follow the style&apos;s size run — a
+                column past its last size prints blank, which is how one layout serves a 4-size and a 7-size pack.
+                For further colours use the sibling chips below with the same column.
+              </p>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {LAYOUT_TOKENS.filter((t) => t.group === "Assortment matrix").map((t) => {
+                  const key = t.arg === "sizeIndex" ? `${t.key}:${matrixCol}` : t.key;
+                  return (
+                    <TokenChip
+                      key={key}
+                      token={`{{${key}}}`}
+                      title={`${t.label}${t.example ? ` — e.g. ${t.example}` : ""}`}
+                      disabled={!selBlock}
+                      value={showValues ? (tokenValues[key] ?? "") : undefined}
+                      onClick={() => insertToken(`{{${key}}}`)}
+                    />
+                  );
+                })}
+                <TokenChip
+                  token="{{= sum(sizeQtyTotal) }}"
+                  title="Grand total — every colour row's total added up"
+                  disabled={!selBlock}
+                  onClick={() => insertToken("{{= sum(sizeQtyTotal) }}")}
+                />
+              </div>
+            </div>
             <div className="mt-3">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">
@@ -3086,7 +3144,12 @@ export function LayoutEditor({
               </div>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 {SIBLING_FIELDS.map((f) => {
-                  const key = `style${siblingSlot}${f.suffix}`;
+                  // The assortment suffix carries the column picked above —
+                  // a bare {{styleNSizeQty}} would fail the publish gate.
+                  const key =
+                    f.arg === "sizeIndex"
+                      ? `style${siblingSlot}${f.suffix}:${matrixCol}`
+                      : `style${siblingSlot}${f.suffix}`;
                   return (
                     <TokenChip
                       key={key}

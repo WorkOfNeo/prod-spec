@@ -193,6 +193,45 @@ runs when that branch is taken). One line, like conditionals.
 - Bad syntax / unknown fields are **publish blockers** (and red chips on the
   canvas), like malformed conditionals.
 
+## Assortment: the table vs the matrix
+
+Two ways to print the pack, and the difference is who ruled the grid.
+
+`{{assortmentTable}}` draws its **own** `<table>` — sizes across the top, the
+ratio underneath — in one block. Right for a prospect, useless for a customer
+form that already has the boxes printed on it: you can't take it apart.
+
+The **matrix** tokens address one cell at a time, so a pre-ruled form fills in
+place — you draw the boxes on the grid and each one names a value:
+
+| | token |
+|---|---|
+| header, column N | `{{sizeAt:N}}` |
+| this style's qty, column N | `{{sizeQty:N}}` |
+| this style's row total | `{{sizeQtyTotal}}` |
+| **colour** N's row | `{{styleNColourName}}` + `{{styleNSizeQty:C}}` + `{{styleNSizeQtyTotal}}` |
+| grand total | `{{= sum(sizeQtyTotal) }}` |
+
+- **Columns are the style's size run**, style-scoped like `{{sizeRange}}` — a
+  per-size repeat still prints every column, not one column per file.
+- **A column past the last size is blank**, which is how one layout serves a
+  4-size and a 7-size pack: the form's spare boxes simply stay empty.
+- **Rows are the sibling slots** — row 1 is the base style, rows 2–8 the
+  styles picked in the carton dialog. An unpicked slot leaves its whole row
+  blank, so the same layout does a 1-colour and a 5-colour carton.
+- **Cells match by size LABEL, not position.** A colour made only up to L
+  leaves the XL box empty instead of sliding its L quantity across — that
+  failure would mis-declare the carton.
+- The index is **required** (`{{sizeQty:1}}`, not `{{sizeQty}}`) and is a
+  publish blocker when missing or out of range, like a malformed conditional.
+
+Both read the Pre-Order **Size Ratio** column, so both gate on `sizes` +
+`sizeRatio`. Watch the source shape: a positional value (`"1,1,2"`, ~64% of
+live rows) is the pack as typed, but a value where the buyer typed grand
+totals (`"S-2000, M-4000"`) is GCD-reduced to a **ratio** — right for a
+prospect, and not a piece count. Check the column before putting a matrix on
+a shipping document.
+
 ## Conditional pages ("skip page when empty")
 
 A page can carry content that only some styles have — the classic one is a page

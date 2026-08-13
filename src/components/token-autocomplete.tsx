@@ -36,6 +36,11 @@ import {
 } from "@/lib/output-layouts/token-meta";
 import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
 
+// How many assortment columns the autocomplete offers. The token itself
+// accepts up to MAX_ASSORT_COLUMNS; suggesting all 24 × 3 tokens would bury
+// everything else in the list, and a dozen covers every real size run.
+const MATRIX_COLUMNS_SUGGESTED = 12;
+
 export type TokenSuggestion = {
   // The exact text inserted at the cursor, e.g. "{{madeIn:da}}".
   insert: string;
@@ -128,9 +133,32 @@ export function buildTokenSuggestions(opts: {
           hint: t.example,
         });
       }
+    } else if (t.arg === "sizeIndex") {
+      // Never bare — the column is required. One entry per column so typing
+      // "{{sizeQty" offers the whole row and you pick the box you're in.
+      for (let n = 1; n <= MATRIX_COLUMNS_SUGGESTED; n++) {
+        out.push({
+          insert: `{{${t.key}:${n}}}`,
+          label: `${t.label.replace(/column N$/, `column ${n}`)}`,
+          group: t.group,
+          hint: t.example,
+        });
+      }
     } else {
       // Plain tokens and the optional-gap wash symbols insert bare.
       out.push({ insert: `{{${t.key}}}`, label: t.label, group: t.group, hint: t.example });
+    }
+  }
+
+  // Sibling matrix cells for the selected slot — the rows under the header.
+  for (const f of SIBLING_FIELDS) {
+    if (f.arg !== "sizeIndex") continue;
+    for (let n = 1; n <= MATRIX_COLUMNS_SUGGESTED; n++) {
+      out.push({
+        insert: `{{style${siblingSlot}${f.suffix}:${n}}}`,
+        label: `Style ${siblingSlot} · assortment qty in column ${n}`,
+        group: "Sibling styles",
+      });
     }
   }
 

@@ -8,12 +8,23 @@ import { sanitizeCareInstructions } from "@/lib/care-labels/format";
 import { getWashcareSymbol, loadWashcareSymbols } from "@/lib/pdf/washcare-symbols";
 import { ruleRequiredColumns } from "@/lib/pdf/spec-fields";
 import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-marking";
-import { tokenMeta, parseSiblingTokenKey, type BarcodeSource } from "./token-meta";
+import {
+  tokenMeta,
+  parseSiblingTokenKey,
+  SIBLING_FIELDS_WITH_ARG,
+  type BarcodeSource,
+} from "./token-meta";
 import { formatCompositionLines } from "./composition";
 import { pickCartonQtyPair, pickCartonQtyVariant } from "./carton-qty";
 import { pickSizeItems } from "./size-scoped-text";
 import { parseSizeForm, sizeFormEntries } from "./size-form";
-import { formatSizeRatio, parseSizeRatio, pickSizeRatioForSizes } from "./size-ratio";
+import {
+  formatSizeRatio,
+  parseSizeRatio,
+  pickSizeRatioForSizes,
+  qtyForSizeLabel,
+  totalSizeRatioQty,
+} from "./size-ratio";
 import {
   calcsInLine,
   evaluateCalc,
@@ -184,6 +195,26 @@ const RESOLVERS: Record<string, TextResolver> = {
   // <table>, but readiness checks, show-values and file names resolve
   // tokens as text, so this backs those with the same data.
   assortmentTable: (s) => formatSizeRatio(sizeRatioEntries(s)),
+  // ---- Assortment MATRIX (colour × size) ----------------------------
+  // {{assortmentTable}} draws its own <table>, which is right for a
+  // prospect and useless for a pre-printed form: a carton marking has the
+  // grid already ruled on it, one box per cell, and needs to address ONE
+  // value at a time. These three do that.
+  //
+  // Columns are the base style's size run and are shared by every row, so
+  // the header a design draws once stays true for every colour beneath it.
+  // The index is 1-based and reads as the operator counts columns.
+  sizeAt: (s, arg) => assortColumnLabels(s)[sizeIndexFromArg(arg)] ?? "",
+  // This style's quantity for column N. Looked up BY LABEL rather than by
+  // position so a run that skips a size can't shift its other numbers into
+  // the wrong columns.
+  sizeQty: (s, arg) => {
+    const label = assortColumnLabels(s)[sizeIndexFromArg(arg)];
+    return label ? qtyForSizeLabel(sizeRatioEntries(s), label) : "";
+  },
+  // This style's row total — every size added up ("9 PCS"). Also the field
+  // {{= sum(sizeQtyTotal) }} walks across slots for the grand total.
+  sizeQtyTotal: (s) => totalSizeRatioQty(sizeRatioEntries(s)),
   price: (s) =>
     s.price
       ? `${s.price.amount.toFixed(2)}${s.price.currency ? ` ${s.price.currency}` : ""}`
@@ -310,8 +341,25 @@ const RESOLVERS: Record<string, TextResolver> = {
 // the renderer's <table> and the text tokens both call it, so they can
 // never show different numbers.
 export function sizeRatioEntries(style: StyleData) {
-  const labels = (style.allSizes ?? style.sizes).map((x) => x.label).filter(Boolean);
-  return parseSizeRatio(style.sizeRatioRaw, labels);
+  return parseSizeRatio(style.sizeRatioRaw, assortColumnLabels(style));
+}
+
+// The columns of an assortment matrix: the base style's WHOLE size run,
+// never the repetition row's narrowed one. Style-scoped on purpose — the
+// same reason {{sizeRange}} is (see size-token scope): a matrix printed on
+// a per-size repeat must still show every column, or a 5-size assortment
+// comes out as five one-column tables.
+export function assortColumnLabels(style: StyleData): string[] {
+  return (style.allSizes ?? style.sizes).map((x) => x.label).filter(Boolean);
+}
+
+// ":N" → a 0-based column index. Anything that isn't a positive whole
+// number yields -1, so the lookup misses and the token renders empty
+// rather than throwing — the publish gate is what rejects a bad index at
+// authoring time (validateTokenRef), not the renderer.
+export function sizeIndexFromArg(arg?: string): number {
+  const n = Number(arg);
+  return Number.isInteger(n) && n >= 1 ? n - 1 : -1;
 }
 
 // ---------------------------------------------------------------------
@@ -323,7 +371,13 @@ export function sizeRatioEntries(style: StyleData) {
 // mapped StyleData using the SAME base resolvers, so a sibling can never
 // drift from how the style would render on its own.
 // ---------------------------------------------------------------------
-const SIBLING_FIELD_RESOLVERS: Record<string, (s: SiblingStyle) => string> = {
+// A slot's field resolvers. `columns` is the BASE style's size run — the
+// matrix header every row lines up under; only the assortment fields read
+// it, and only they take an :arg.
+const SIBLING_FIELD_RESOLVERS: Record<
+  string,
+  (s: SiblingStyle, arg: string | undefined, columns: readonly string[]) => string
+> = {
   "": (s) => s.styleNumber,
   number: (s) => s.styleNumber,
   name: (s) => s.styleName,
@@ -336,7 +390,24 @@ const SIBLING_FIELD_RESOLVERS: Record<string, (s: SiblingStyle) => string> = {
   qtypercarton: (s) => s.qtyPerCarton,
   cartonean: (s) => s.cartonEan,
   ean13: (s) => s.ean13,
+  // This sibling's quantity for the base's Nth size column, matched by
+  // LABEL — a colour whose run stops at L leaves the XL cell blank instead
+  // of sliding its numbers across.
+  sizeqty: (s, arg, columns) => {
+    const label = columns[sizeIndexFromArg(arg)];
+    if (!label) return "";
+    return qtyForSizeLabel(siblingRatioEntries(s), label);
+  },
+  sizeqtytotal: (s) => totalSizeRatioQty(siblingRatioEntries(s)),
 };
+
+// A sibling's own assortment run, parsed against its OWN sizes. Empty when
+// the sibling predates the projection (no sizeRatioRaw / sizeLabels), which
+// degrades to blank cells rather than borrowing the base's numbers.
+function siblingRatioEntries(s: SiblingStyle) {
+  if (!s.sizeRatioRaw || !s.sizeLabels?.length) return [];
+  return parseSizeRatio(s.sizeRatioRaw, s.sizeLabels);
+}
 
 export function projectSiblingStyle(style: StyleData, id: string): SiblingStyle {
   return {
@@ -356,6 +427,12 @@ export function projectSiblingStyle(style: StyleData, id: string): SiblingStyle 
     // BASE row's kind decides the whole carton). qtyPerCarton above is the
     // sibling's own solid/plain value for the {{styleNQtyPerCarton}} token.
     qtyPerCartonRaw: (style.cartonQtyRaw ?? "").trim(),
+    // This sibling's own assortment run + the sizes to pair it against, so
+    // a colour × size matrix can print its per-size numbers. Carried as a
+    // real list rather than re-split from `sizes` above — splitting display
+    // text back on punctuation is exactly what size-ratio.ts avoids.
+    sizeRatioRaw: (style.sizeRatioRaw ?? "").trim(),
+    sizeLabels: assortColumnLabels(style),
     cartonEan: resolveTextToken(style, "cartonEan"),
     ean13: resolveTextToken(style, "ean13"),
   };
@@ -382,11 +459,15 @@ export function resolveTextToken(style: StyleData, key: string, arg?: string): s
   // pool is pre-fetched in buildStyleData). They take no :arg.
   const sib = parseSiblingTokenKey(key);
   if (sib) {
-    if (arg) return "";
+    // Only the assortment fields take an argument (the column index); for
+    // every other suffix an :arg is still meaningless and resolves empty.
+    if (arg && !SIBLING_FIELDS_WITH_ARG.has(sib.suffix)) return "";
     const target = siblingForSlot(style, sib.slot);
     if (!target) return "";
     const fn = SIBLING_FIELD_RESOLVERS[sib.suffix.toLowerCase()];
-    return fn ? (fn(target) ?? "").trim() : "";
+    // Columns come from the BASE style, not the sibling — one header for
+    // the whole matrix.
+    return fn ? (fn(target, arg, assortColumnLabels(style)) ?? "").trim() : "";
   }
   const fn = RESOLVERS[key];
   if (!fn) return "";
@@ -439,8 +520,12 @@ function calcCtxForStyle(style: StyleData): CalcFieldCtx {
       }
       const fn = SIBLING_FIELD_RESOLVERS[lower];
       if (!fn) return { base: "", siblings: [] };
-      const base = (fn(projectSiblingStyle(style, "self")) ?? "").trim();
-      return { base, siblings: pool.map((s) => (fn(s) ?? "").trim()) };
+      // No aggregate field takes a column index — sum(sizeQtyTotal) adds
+      // whole rows, and a per-cell sum would be sum over the wrong axis.
+      // Columns still come from the base, as everywhere else.
+      const columns = assortColumnLabels(style);
+      const base = (fn(projectSiblingStyle(style, "self"), undefined, columns) ?? "").trim();
+      return { base, siblings: pool.map((s) => (fn(s, undefined, columns) ?? "").trim()) };
     },
   };
 }
@@ -486,6 +571,13 @@ const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   // as AWAITING_DATA rather than rendering an empty table.
   sizeRatio: ["sizes", "sizeRatio"],
   assortmentTable: ["sizes", "sizeRatio"],
+  // A matrix cell needs the same two columns the table does. {{sizeAt:N}}
+  // is the header and needs only the size run — a form whose header prints
+  // while a colour's numbers are missing is the honest rendering of that
+  // gap, and the qty tokens gate it.
+  sizeAt: ["sizes"],
+  sizeQty: ["sizes", "sizeRatio"],
+  sizeQtyTotal: ["sizes", "sizeRatio"],
   price: ["price"],
   poNumber: ["poNumber"],
   customerOrderNo: ["customerOrderNo"],

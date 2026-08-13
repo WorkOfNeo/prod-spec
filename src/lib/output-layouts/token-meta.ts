@@ -24,7 +24,13 @@ export type LayoutTokenKind = "text" | "barcode" | "symbols" | "image" | "table"
 export type LayoutTokenMeta = {
   key: string;
   label: string;
-  group: "Style" | "Order & carton" | "Per language" | "Barcodes & symbols" | "Sibling styles";
+  group:
+    | "Style"
+    | "Order & carton"
+    | "Per language"
+    | "Barcodes & symbols"
+    | "Sibling styles"
+    | "Assortment matrix";
   kind: LayoutTokenKind;
   // "lang" → the token takes a language argument ({{composition:da}});
   // "source" → barcode/logo source argument ({{barcode:cartonEan}});
@@ -44,7 +50,16 @@ export type LayoutTokenMeta = {
   //   not against a fixed list: the library is DB-managed, so operators add
   //   artwork without a deploy. A slug with no row renders the standard
   //   `missing` chip, which blocks approval.
-  arg?: "lang" | "source" | "gap" | "cartonKind" | "sizeScope" | "sizeForm" | "imageSlug";
+  // "sizeIndex" → REQUIRED 1-based assortment column ({{sizeQty:3}}).
+  arg?:
+    | "lang"
+    | "source"
+    | "gap"
+    | "cartonKind"
+    | "sizeScope"
+    | "sizeForm"
+    | "imageSlug"
+    | "sizeIndex";
   // Optional SECOND argument (TOKEN_RE group 3, numeric-only).
   // "heightMm" → bar height in mm, e.g. {{barcode:ean13:8}} (8 mm bars).
   // "widthPct" → print width as a % of the block, e.g. {{image:x:40}}.
@@ -128,6 +143,34 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     group: "Style",
     kind: "table",
     example: "Size | 98/104 | 110/116 …",
+  },
+  // The assortment as SEPARATE cells, for a form whose grid is already
+  // ruled (a customer carton marking). {{assortmentTable}} draws its own
+  // table and can't be taken apart; these address one cell at a time, so a
+  // colour × size matrix is just blocks on the builder grid — one row per
+  // style, {{styleNSizeQty:C}} down the rows and :C across the columns.
+  {
+    key: "sizeAt",
+    label: "Assortment matrix · size in column N",
+    group: "Assortment matrix",
+    kind: "text",
+    arg: "sizeIndex",
+    example: "{{sizeAt:1}} → S · {{sizeAt:4}} → XL",
+  },
+  {
+    key: "sizeQty",
+    label: "Assortment matrix · this style's qty in column N",
+    group: "Assortment matrix",
+    kind: "text",
+    arg: "sizeIndex",
+    example: "{{sizeQty:2}} → 7",
+  },
+  {
+    key: "sizeQtyTotal",
+    label: "Assortment matrix · this style's row total",
+    group: "Assortment matrix",
+    kind: "text",
+    example: "9",
   },
   {
     key: "sizeRangeCoop",
@@ -349,10 +392,19 @@ const SOURCES_BY_KEY: Record<string, readonly string[]> = {
 // offer. Slot N means up to N styles on one box (1 base + N-1 siblings).
 export const MAX_SIBLING_SLOTS = 8;
 
+// How many size columns an assortment matrix can address. Well past the
+// widest real run (a 7-column customer form, a 9-size children's range) and
+// far short of anything that would fit on a carton.
+export const MAX_ASSORT_COLUMNS = 24;
+
 // The field suffixes a sibling slot exposes. The empty suffix is the bare
 // {{styleN}} headline. tokens.ts maps each suffix (case-insensitively) to
 // a StyleData field — keep the two in sync.
-export const SIBLING_FIELDS: ReadonlyArray<{ suffix: string; label: string }> = [
+export const SIBLING_FIELDS: ReadonlyArray<{
+  suffix: string;
+  label: string;
+  arg?: LayoutTokenMeta["arg"];
+}> = [
   { suffix: "", label: "Style (number)" },
   { suffix: "Number", label: "Style number" },
   { suffix: "Name", label: "Style name" },
@@ -365,7 +417,17 @@ export const SIBLING_FIELDS: ReadonlyArray<{ suffix: string; label: string }> = 
   { suffix: "QtyPerCarton", label: "Qty per carton" },
   { suffix: "CartonEan", label: "Carton EAN" },
   { suffix: "Ean13", label: "EAN-13 (first size)" },
+  // The matrix row for this slot: one cell per column, plus its total.
+  // SizeQty is the only sibling field that takes an argument.
+  { suffix: "SizeQty", label: "Assortment qty in column N", arg: "sizeIndex" },
+  { suffix: "SizeQtyTotal", label: "Assortment row total" },
 ];
+
+// The suffixes whose tokens carry an :arg — everything else still resolves
+// empty when given one. Derived so the two can't drift.
+export const SIBLING_FIELDS_WITH_ARG: ReadonlySet<string> = new Set(
+  SIBLING_FIELDS.filter((f) => f.arg).map((f) => f.suffix),
+);
 
 // "style" + slot digits + optional field suffix. The digit requirement is
 // what keeps this from colliding with the static "styleName"/"styleNumber"
@@ -405,6 +467,10 @@ export function tokenMeta(key: string): LayoutTokenMeta | null {
       label: `Style ${sib.slot} · ${field?.label ?? "field"}`,
       group: "Sibling styles",
       kind: "text",
+      // Carried through so {{style2SizeQty:3}} validates by the same rule
+      // as {{sizeQty:3}} — without this the generic "does not take an
+      // argument" branch would reject every matrix cell but the first row.
+      ...(field?.arg ? { arg: field.arg } : {}),
     };
   }
   return null;
@@ -464,6 +530,19 @@ export function validateTokenRef(key: string, arg?: string, arg2?: string): stri
       `{{${key}${arg ? `:${arg}` : ""}}} needs an image name from Settings → Images, e.g. {{${key}:coop-hanger}}` +
         ` (lowercase letters, digits and hyphens)`,
     );
+  }
+  // "sizeIndex" is REQUIRED and must be a whole column number. Bounded
+  // only by MAX_ASSORT_COLUMNS, not by the style's actual size count — the
+  // layout is authored once for many styles, and a column past the end of a
+  // shorter run is a blank cell by design (the form's spare columns), not
+  // an authoring error.
+  if (meta.arg === "sizeIndex") {
+    const n = Number(arg);
+    if (!Number.isInteger(n) || n < 1 || n > MAX_ASSORT_COLUMNS) {
+      errs.push(
+        `{{${key}${arg ? `:${arg}` : ""}}} needs a size column number 1–${MAX_ASSORT_COLUMNS}, e.g. {{${key}:1}}`,
+      );
+    }
   }
   if (!meta.arg && arg) {
     errs.push(`{{${key}}} does not take an argument (got ":${arg}")`);
