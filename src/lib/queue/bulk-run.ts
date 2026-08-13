@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 import { triggerRunner } from "@/lib/queue/trigger";
 import { HAS_PO_NUMBER_WHERE, hasPoNumber } from "@/lib/styles/active-filter";
+import { getGenerationMinPo } from "@/lib/settings/app-settings";
+import { partitionByGenerationCutoff } from "@/lib/queue/generation-cutoff";
 
 // One style to (re)generate, with the exact output variant keys to render.
 // An empty variantKeys array would mean "all enabled outputs" to the runner —
@@ -20,6 +22,14 @@ export type BulkRunResult = {
   // than thrown: a bulk action over a mixed selection should run the styles
   // that are in the flow and tell the operator how many weren't.
   skippedNoPo: number;
+  // Dropped for sitting below the generation PO cutoff — parked backlog the
+  // automatic sweep would never touch either. Reported the same way, and
+  // overridable per call (see includeBelowCutoff): the cutoff is a default for
+  // bulk lanes, not a veto on a deliberate act.
+  skippedBelowCutoff: number;
+  // The cutoff that produced skippedBelowCutoff, so callers can say WHICH PO
+  // the line was drawn at instead of just a count. null = none configured.
+  cutoff: number | null;
 };
 
 /**
@@ -43,20 +53,39 @@ export async function enqueueBulkRun(input: {
   // Stored on the batch for the progress widget. Falls back to "N styles".
   label: string;
   user: { id: string | null; email: string | null };
+  // Run the parked backlog too. Default false: a bulk lane covers the styles
+  // the automatic sweep would also reach, and reports the rest rather than
+  // sweeping them along silently. The caller sets this when the operator has
+  // explicitly ticked "include the below-cutoff styles".
+  includeBelowCutoff?: boolean;
 }): Promise<BulkRunResult> {
   // The PO gate for the bulk lane. This helper creates jobs with createMany and
   // so never reaches enqueueGenerationJob's throw — the check has to happen
   // here, on the one tail both bulk callers share. Queried in a single pass
   // over the requested ids rather than trusting the callers to have filtered.
+  // poSeq rides along for the generation-cutoff split below at no extra cost.
   const withPo = await db.style.findMany({
     where: { id: { in: input.runnable.map((r) => r.id) }, ...HAS_PO_NUMBER_WHERE },
-    select: { id: true, poNumber: true },
+    select: { id: true, poNumber: true, poSeq: true },
   });
   const allowed = new Set(withPo.filter((s) => hasPoNumber(s.poNumber)).map((s) => s.id));
-  const runnable = input.runnable.filter((r) => allowed.has(r.id));
-  const skippedNoPo = input.runnable.length - runnable.length;
+  const withPoNumber = input.runnable.filter((r) => allowed.has(r.id));
+  const skippedNoPo = input.runnable.length - withPoNumber.length;
 
-  if (runnable.length === 0) return { batchId: null, enqueued: 0, skippedNoPo };
+  // …and the generation cutoff, applied on the same shared tail so no bulk lane
+  // can quietly reach further back than the one the operator was reading.
+  const cutoff = await getGenerationMinPo();
+  const poSeqById = new Map(withPo.map((s) => [s.id, s.poSeq]));
+  const { inScope, belowCutoff } = partitionByGenerationCutoff(
+    withPoNumber.map((r) => ({ ...r, poSeq: poSeqById.get(r.id) ?? null })),
+    input.includeBelowCutoff ? null : cutoff,
+  );
+  const runnable = inScope;
+  const skippedBelowCutoff = belowCutoff.length;
+
+  if (runnable.length === 0) {
+    return { batchId: null, enqueued: 0, skippedNoPo, skippedBelowCutoff, cutoff };
+  }
 
   // Ids minted up front so a single createMany (not an N-deep await loop)
   // records them — keeps a multi-thousand-row run within maxDuration. No
@@ -91,5 +120,5 @@ export async function enqueueBulkRun(input: {
   // One immediate kick; the Railway cron keeps draining the backlog after.
   await triggerRunner();
 
-  return { batchId: batch.id, enqueued: runnable.length, skippedNoPo };
+  return { batchId: batch.id, enqueued: runnable.length, skippedNoPo, skippedBelowCutoff, cutoff };
 }

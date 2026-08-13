@@ -55,11 +55,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const { id } = await ctx.params;
 
   // Optional per-output scope. Tolerate an empty/absent body (spec-wide run).
-  const body = (await req.json().catch(() => ({}))) as { variantKey?: unknown };
+  const body = (await req.json().catch(() => ({}))) as {
+    variantKey?: unknown;
+    includeBelowCutoff?: unknown;
+  };
   const scopeKey =
     typeof body.variantKey === "string" && body.variantKey.trim().length > 0
       ? body.variantKey.split("#")[0] // compare against base keys
       : null;
+  // Opt-in to the parked backlog. Default false — "Run all" covers the styles
+  // the automatic sweep would also reach, and reports the rest rather than
+  // sweeping a spec's whole history along with them.
+  const includeBelowCutoff = body.includeBelowCutoff === true;
 
   const spec = await db.prodSpec.findUnique({ where: { id }, select: { name: true, active: true } });
   if (!spec) return NextResponse.json({ error: "Prod spec not found" }, { status: 404 });
@@ -86,10 +93,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     .filter((r) => r.variantKeys.length > 0);
 
   const scopeName = scopeKey ? (getVariant(scopeKey)?.name ?? scopeKey) : null;
-  const { batchId, enqueued } = await enqueueBulkRun({
+  const { batchId, enqueued, skippedBelowCutoff, cutoff } = await enqueueBulkRun({
     runnable,
     label: scopeName ? `Prod spec: ${spec.name} · ${scopeName}` : `Prod spec: ${spec.name}`,
     user: { id: g.userId, email: g.email },
+    includeBelowCutoff,
   });
 
   const summary = scopeKey ? list.byOutput[scopeKey] : null;
@@ -97,6 +105,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     ok: true,
     batchId,
     enqueued,
+    // What the run deliberately left parked, and where the line was — so the
+    // panel can say "18 started · 91 below PO 63320 left out" instead of
+    // silently starting fewer jobs than the button implied.
+    skippedBelowCutoff,
+    cutoff,
     variantKey: scopeKey,
     withMissing: summary ? summary.missing : list.withMissing,
     withRejected: summary ? summary.rejected : list.withRejected,

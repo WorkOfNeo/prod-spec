@@ -53,6 +53,10 @@ export function BulkRunOutputs({
   const [finishedFresh, setFinishedFresh] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Non-error advisory: the run started, but the cutoff parked some of the
+  // selection. Distinct from `error` so a successful-but-partial run doesn't
+  // read as a failure.
+  const [notice, setNotice] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
   const active = batch != null && batch.finishedAt == null;
@@ -92,11 +96,23 @@ export function BulkRunOutputs({
 
   // Shared submit for both bulk actions — they differ only in endpoint,
   // confirm copy, and how a "nothing to do" response is explained.
+  // A parked-backlog skip, phrased so the operator knows it was a choice the
+  // cutoff made and where to change it.
+  function belowCutoffNote(data: { skippedBelowCutoff?: number; cutoff?: number | null }): string {
+    const n = data.skippedBelowCutoff ?? 0;
+    if (n === 0) return "";
+    return (
+      ` ${n} style${n === 1 ? "" : "s"} below PO ${data.cutoff} left out — parked backlog ` +
+      `(change the generation cutoff on /automation, or run those styles individually).`
+    );
+  }
+
   async function start(input: { url: string; confirmMsg: string; label: string; nothingMsg: (skipped: number) => string }) {
     if (styleIds.length === 0 || submitting || active) return;
     if (!window.confirm(input.confirmMsg)) return;
     setSubmitting(true);
     setError(null);
+    setNotice(null);
     setDismissed(false);
     try {
       const res = await fetch(input.url, {
@@ -108,6 +124,8 @@ export function BulkRunOutputs({
         batchId?: string | null;
         enqueued?: number;
         skipped?: number;
+        skippedBelowCutoff?: number;
+        cutoff?: number | null;
         error?: string;
       };
       if (!res.ok) {
@@ -115,8 +133,17 @@ export function BulkRunOutputs({
         return;
       }
       if (!data.batchId) {
-        setError(input.nothingMsg(data.skipped ?? styleIds.length));
+        setError(
+          input.nothingMsg(data.skipped ?? styleIds.length) + belowCutoffNote(data),
+        );
         return;
+      }
+      // Started, but not everything the operator selected: say which ones were
+      // left parked and why, rather than silently running a smaller set.
+      if ((data.skippedBelowCutoff ?? 0) > 0) {
+        setNotice(
+          `Started ${data.enqueued ?? 0} style(s).` + belowCutoffNote(data),
+        );
       }
       // Pick up the new batch and let the poll effect take over.
       const r = await loadLatest();
@@ -205,6 +232,11 @@ export function BulkRunOutputs({
       {error && (
         <span className="mr-auto rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-800">
           {error}
+        </span>
+      )}
+      {!error && notice && (
+        <span className="mr-auto rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs text-zinc-600">
+          {notice}
         </span>
       )}
       {showCompleted && batch && (

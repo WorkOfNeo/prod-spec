@@ -8,6 +8,8 @@ import { classifyOutput, type BaseAssetState, type OutputBucket } from "@/lib/ou
 import { parseProdSpecOutputs, type ProdSpecOutput } from "@/lib/prod-spec/config";
 import type { RunnableStyle } from "@/lib/queue/bulk-run";
 import { triggerKind, type TriggerKind } from "@/lib/queue/trigger-labels";
+import { isBelowGenerationCutoff } from "@/lib/queue/generation-cutoff";
+import { getGenerationMinPo } from "@/lib/settings/app-settings";
 
 // =====================================================
 // Prod-spec rerun plan — after an admin swaps or edits a ProdSpec's outputs,
@@ -340,6 +342,9 @@ export async function computeProdSpecRerunPlan(
 const RUN_LIST_SELECT = {
   ...CANDIDATE_SELECT,
   status: true,
+  // For the generation-cutoff split — the run list marks parked rows and
+  // "Run all" leaves them out by default (see queue/generation-cutoff.ts).
+  poSeq: true,
 } as const;
 
 // The newest job for a style, distilled for the "Last run" column.
@@ -374,6 +379,10 @@ export type StyleRunRow = {
   // A QUEUED/RUNNING job is already in flight — the row can't be re-run yet and
   // it's excluded from "Run all".
   inFlight: boolean;
+  // Below the generation PO cutoff: parked backlog the automatic sweep would
+  // never pick up either. The row still shows and its own Run button still
+  // works — "Run all" just leaves it out unless the operator opts in.
+  belowCutoff: boolean;
   // Newest job for this style, or null if it never ran.
   lastRun: StyleLastRun | null;
 };
@@ -383,11 +392,17 @@ export type StyleRunRow = {
 // variantKey. toRun = missing + rejected + changed + pending (everything not
 // approved).
 export type OutputRunSummary = {
+  // In-scope only — styles at/above the generation cutoff. This is what the
+  // per-output "Run all" button enqueues by default, so the label can't promise
+  // more than the run delivers (the route applies the same cutoff).
   toRun: number;
   missing: number;
   rejected: number;
   changed: number;
   pending: number;
+  // Parked backlog for this output, on top of toRun — surfaced so the button
+  // can say "+N parked" rather than silently under-running.
+  belowCutoff: number;
 };
 
 export type ProdSpecStyleRunList = {
@@ -398,6 +413,13 @@ export type ProdSpecStyleRunList = {
   generatedStyles: number;
   // Rows with ≥1 output to run and no in-flight job — the "Run all" universe.
   toRerun: number;
+  // Of those, how many sit BELOW the generation PO cutoff. "Run all" runs
+  // `toRerun - toRerunBelowCutoff` by default and offers the rest as an opt-in,
+  // so a spec whose backlog dwarfs its live orders can't be run by accident.
+  toRerunBelowCutoff: number;
+  // The cutoff those counts were split at (null = none configured), so the UI
+  // can name the PO instead of showing a bare number.
+  generationCutoff: number | null;
   withMissing: number;
   withRejected: number;
   withChanged: number;
@@ -412,6 +434,8 @@ const emptyRunList = (active: boolean): ProdSpecStyleRunList => ({
   totalStyles: 0,
   generatedStyles: 0,
   toRerun: 0,
+  toRerunBelowCutoff: 0,
+  generationCutoff: null,
   withMissing: 0,
   withRejected: 0,
   withChanged: 0,
@@ -430,6 +454,10 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
   // Output Builder layouts (layout:<id>) must be registered before the
   // readiness walk resolves them — same rule as the bulk plan.
   await ensureLayoutVariantsLoaded();
+
+  // The generation cutoff the rows are split at. Read once for the whole list
+  // so every row, the tally and the "Run all" button agree on one line.
+  const generationCutoff = await getGenerationMinPo();
 
   // EVERY active style on this spec — including never-generated ones (they show
   // as "never run"; running one generates all its ready outputs). Newest first
@@ -481,17 +509,24 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
 
   const rows: StyleRunRow[] = [];
   const byOutput = new Map<string, OutputRunSummary>();
-  const bumpOutput = (b: string, bucket: Exclude<OutputBucket, "ok">) => {
+  const bumpOutput = (b: string, bucket: Exclude<OutputBucket, "ok">, parked: boolean) => {
     let s = byOutput.get(b);
     if (!s) {
-      s = { toRun: 0, missing: 0, rejected: 0, changed: 0, pending: 0 };
+      s = { toRun: 0, missing: 0, rejected: 0, changed: 0, pending: 0, belowCutoff: 0 };
       byOutput.set(b, s);
+    }
+    // Parked styles are counted apart from toRun, because toRun IS the button's
+    // promise and the route will leave the parked ones out.
+    if (parked) {
+      s.belowCutoff++;
+      return;
     }
     s.toRun++;
     s[bucket]++;
   };
   let generatedStyles = 0;
   let toRerun = 0;
+  let toRerunBelowCutoff = 0;
   let withMissing = 0;
   let withRejected = 0;
   let withChanged = 0;
@@ -501,6 +536,9 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
     const state = stateByStyle.get(c.id);
     if (state && state.size > 0) generatedStyles++;
     const isInflight = inflightSet.has(c.id);
+    // Parked backlog? Decided once per style and read by both the per-output
+    // tallies below and the row itself.
+    const belowCutoff = isBelowGenerationCutoff(c.poSeq, generationCutoff);
 
     const variantKeys: string[] = [];
     let missingN = 0;
@@ -526,13 +564,14 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
       else pendingN++;
       // Per-output tallies mirror what "Run all" for that output would enqueue:
       // only styles that aren't already in flight.
-      if (!isInflight) bumpOutput(b, bucket);
+      if (!isInflight) bumpOutput(b, bucket, belowCutoff);
     }
 
     // "Run all" mirrors what the button will actually enqueue: runnable outputs
     // and not already in flight.
     if (variantKeys.length > 0 && !isInflight) {
       toRerun++;
+      if (belowCutoff) toRerunBelowCutoff++;
       if (missingN > 0) withMissing++;
       if (rejectedN > 0) withRejected++;
       if (changedN > 0) withChanged++;
@@ -552,6 +591,7 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
       changed: changedN,
       pending: pendingN,
       inFlight: isInflight,
+      belowCutoff,
       lastRun: lj
         ? {
             at: (lj.finishedAt ?? lj.startedAt ?? lj.createdAt).toISOString(),
@@ -568,6 +608,8 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
     totalStyles: candidates.length,
     generatedStyles,
     toRerun,
+    toRerunBelowCutoff,
+    generationCutoff,
     withMissing,
     withRejected,
     withChanged,
