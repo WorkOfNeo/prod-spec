@@ -12,10 +12,13 @@ import {
   TOKEN_RE,
   conditionalsInLine,
   effectiveBorderPad,
+  effectiveBorderSides,
   insetCornerRadiusMm,
   invertColors,
+  isFullBorder,
   layoutSettings,
   pageGrid,
+  type BorderSides,
   type LayoutAnchor,
   type LayoutBlock,
   type LayoutDef,
@@ -825,7 +828,22 @@ function blockBorder(block: LayoutBlock, fontScale: number): string {
     p.topMm || p.rightMm || p.bottomMm || p.leftMm
       ? `padding: ${mm(p.topMm)}mm ${mm(p.rightMm)}mm ${mm(p.bottomMm)}mm ${mm(p.leftMm)}mm; `
       : "";
-  return `border: ${(block.border.widthMm * fontScale).toFixed(3)}mm solid ${block.border.color}; ${pad}`;
+  const rule = `${(block.border.widthMm * fontScale).toFixed(3)}mm solid ${block.border.color}`;
+  return `${borderRuleCss(rule, effectiveBorderSides(block.border))} ${pad}`;
+}
+
+// The CSS for a rule on some subset of a box's edges. All four ⇒ the plain
+// `border:` shorthand, so every framed field and every page frame already in
+// the field renders the exact same HTML it did before sides existed. Fewer ⇒
+// only the edges that print get a declaration; `.ol-block` and
+// `.ol-page-border` set no border of their own, so the rest stay absent
+// (CSS's initial border-style is `none`) rather than needing to be cleared.
+function borderRuleCss(rule: string, sides: BorderSides): string {
+  if (isFullBorder(sides)) return `border: ${rule};`;
+  return (["top", "right", "bottom", "left"] as const)
+    .filter((s) => sides[s])
+    .map((s) => `border-${s}: ${rule};`)
+    .join(" ");
 }
 
 // Inverted block colours, inlined per block. Both sides are schema-validated
@@ -875,8 +893,12 @@ function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx
   const outerW = block.rect
     ? ((page.widthMm - marg.leftMm - marg.rightMm) * block.rect.colSpan) / gridCols
     : (page.widthMm * block.cols) / gridCols;
+  // Only the VERTICAL rules that actually print eat content width — a
+  // bottom-only rule costs nothing horizontally. All four sides on ⇒ 2 ×
+  // width, exactly as before.
+  const borderSides = effectiveBorderSides(block.border);
   const borderPad = block.border
-    ? (2 * block.border.widthMm +
+    ? (block.border.widthMm * ((borderSides.left ? 1 : 0) + (borderSides.right ? 1 : 0)) +
         effectiveBorderPad(block.border).leftMm +
         effectiveBorderPad(block.border).rightMm) *
       ctx.fontScale
@@ -1174,7 +1196,12 @@ function renderPageBorder(page: LayoutPage): string {
   // 3 mm corner). Square page ⇒ radius 0 ⇒ the rule is simply absent.
   const r = insetCornerRadiusMm(page.cornerRadiusMm, b.insetMm);
   const radius = r > 0 ? ` border-radius: ${r}mm;` : "";
-  return `<div class="ol-page-border" style="inset: ${b.insetMm}mm; border: ${b.widthMm}mm solid ${b.color};${radius}"></div>`;
+  // A frame can be authored on a subset of edges (a rule along the bottom of
+  // a carton marking, an L down one side). The box still spans the whole
+  // page, so a partial frame stays put and stays concentric with a rounded
+  // die — the missing edges simply aren't drawn.
+  const rule = borderRuleCss(`${b.widthMm}mm solid ${b.color}`, effectiveBorderSides(b));
+  return `<div class="ol-page-border" style="inset: ${b.insetMm}mm; ${rule}${radius}"></div>`;
 }
 
 // Lay a flat list of (page × style) units into the final HTML document.

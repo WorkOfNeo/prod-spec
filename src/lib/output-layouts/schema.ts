@@ -59,6 +59,37 @@ export const LAYOUT_ANCHORS = [
 export const LayoutAnchorSchema = z.enum(LAYOUT_ANCHORS);
 export type LayoutAnchor = z.infer<typeof LayoutAnchorSchema>;
 
+// Which edges of a border actually print. Shared by the block border and the
+// page frame — both are "a rule around a box", and both need the same escape
+// hatch: a single rule under a field (bottom only), an L, a rule down one
+// side. ABSENT means all four, so every border authored before this — and
+// every one drawn by ticking the box today — is a full frame exactly as it
+// was. Resolve through effectiveBorderSides, never by reading `sides`
+// directly, so the absent case can't drift between the renderer and the
+// builder canvas (same contract as effectiveBorderPad / invertColors).
+export const BorderSidesSchema = z.object({
+  top: z.boolean().default(true),
+  right: z.boolean().default(true),
+  bottom: z.boolean().default(true),
+  left: z.boolean().default(true),
+});
+export type BorderSides = z.infer<typeof BorderSidesSchema>;
+
+export const ALL_BORDER_SIDES: BorderSides = { top: true, right: true, bottom: true, left: true };
+
+// The edges a border prints on: the authored set if there is one, else all
+// four. The ONE place that fallback lives.
+export function effectiveBorderSides(border?: { sides?: BorderSides } | null): BorderSides {
+  return border?.sides ?? ALL_BORDER_SIDES;
+}
+
+// True when every edge prints — the case that must keep emitting the plain
+// `border:` shorthand, so the HTML for every layout in the field is byte-for-
+// byte what it was before per-side existed.
+export function isFullBorder(sides: BorderSides): boolean {
+  return sides.top && sides.right && sides.bottom && sides.left;
+}
+
 // Bounds are the generous max grid; the real per-page limit (gridCols/
 // gridRows) is enforced in LayoutPageSchema's superRefine, which has the
 // page in scope.
@@ -108,6 +139,11 @@ export const LayoutBlockSchema = z.object({
           leftMm: z.number().min(0).max(20).default(0),
         })
         .optional(),
+      // Which edges print. Absent = all four (effectiveBorderSides), so
+      // every framed field already out there is untouched. Dropping a side
+      // also stops it eating width: the block's content width subtracts only
+      // the vertical rules that actually print (see renderBlock).
+      sides: BorderSidesSchema.optional(),
     })
     .optional(),
   // Free font sizing: floor 1 pt (≈0.35 mm — below any real wash-care text)
@@ -195,6 +231,10 @@ export const PageBorderSchema = z.object({
   widthMm: z.number().min(0.1).max(5).default(0.3),
   color: z.string().regex(HEX_COLOR_RE, HEX_COLOR_MSG).default("#000000"),
   insetMm: z.number().min(0).max(50).default(0),
+  // Which edges of the frame print — absent = all four, so a frame turned on
+  // before this (or ticked on today) is the full rectangle it always was.
+  // Same shape and same resolver as a block border's sides.
+  sides: BorderSidesSchema.optional(),
 });
 export type PageBorder = z.infer<typeof PageBorderSchema>;
 
