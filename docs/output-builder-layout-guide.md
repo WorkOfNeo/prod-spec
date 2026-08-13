@@ -40,8 +40,13 @@ When unsure, open the closest existing layout in the DB and copy its grid + font
 ## Borders & padding
 
 - Add a `border` (width + hex colour) to framed fields.
-- **Padding is per-side** — `border.pad {topMm, rightMm, bottomMm, leftMm}`, edited with a **🔗 link / per-side** toggle (linked = one value for all sides). A new border defaults to **0.5 mm** so it's never flush.
+- **Sides are pickable** — `border.sides {top, right, bottom, left}`, four toggles under the width/colour row. A rule under one field, an L, a rule down one side: untick the edges you don't want. The last remaining edge can't be turned off — remove the border itself (width → **None**) instead.
+- **Absent `sides` means all four.** Every border authored before this — i.e. every border in the DB — keeps printing all round and emits the same `border:` shorthand it always did; only a partial set switches to per-edge rules. Resolve it through `effectiveBorderSides()`, never by reading `sides` directly.
+- Dropping a **vertical** rule gives its width back to the content: the block is `box-sizing: border-box`, so a fixed-size barcode inside a top-and-bottom-only border gets the full cell width.
+- **Padding is per-side** — `border.pad {topMm, rightMm, bottomMm, leftMm}`, edited with a **🔗 link / per-side** toggle (linked = one value for all sides). A new border defaults to **0.5 mm** so it's never flush. Padding is independent of sides: it still insets the text on an edge with no rule.
 - Legacy single `border.padMm` still works (read as the same pad on every side) and auto-migrates to `pad`.
+
+The **page frame** (`page.pageBorder`) takes the same `sides` object, with the same absent-means-all-four rule — so a carton marking can carry a single rule along one edge instead of a box. A partial frame still curves concentrically with a rounded die; the edges you dropped simply aren't drawn.
 
 ## Emphasis: inverted boxes
 

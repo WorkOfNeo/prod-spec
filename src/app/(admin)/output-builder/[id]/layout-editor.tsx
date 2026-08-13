@@ -16,12 +16,14 @@ import {
   TOKEN_RE,
   blockId,
   effectiveBorderPad,
+  effectiveBorderSides,
   gridFromCellMm,
   insetCornerRadiusMm,
   invertColors,
   layoutSettings,
   pageGrid,
   tokensInDef,
+  type BorderSides,
   type CenterHole,
   type FoldLine,
   type LayoutBlock,
@@ -1894,6 +1896,14 @@ export function LayoutEditor({
                   Frames the whole page — thickness, inset from the edge and colour, in mm.
                 </p>
               )}
+              {pageBorder ? (
+                <div className="mt-1.5">
+                  <BorderSidePicker
+                    sides={effectiveBorderSides(pageBorder)}
+                    onChange={(sides) => updatePageBorder({ sides })}
+                  />
+                </div>
+              ) : null}
             </div>
 
             {/* Rounded corners — the die's corner radius. The page itself
@@ -2298,7 +2308,8 @@ export function LayoutEditor({
                 }}
               />
               {/* Page border preview — same geometry as the renderer's
-                  frame (inset in mm, scaled to the canvas). */}
+                  frame (inset in mm, scaled to the canvas), drawn on the
+                  same subset of edges. */}
               {pageBorder ? (
                 <div
                   className="pointer-events-none absolute"
@@ -2307,7 +2318,10 @@ export function LayoutEditor({
                     top: pageBorder.insetMm * scale,
                     right: pageBorder.insetMm * scale,
                     bottom: pageBorder.insetMm * scale,
-                    border: `${Math.max(1, pageBorder.widthMm * scale)}px solid ${pageBorder.color}`,
+                    ...borderSideStyle(
+                      `${Math.max(1, pageBorder.widthMm * scale)}px solid ${pageBorder.color}`,
+                      effectiveBorderSides(pageBorder),
+                    ),
                     borderRadius:
                       insetCornerRadiusMm(page.cornerRadiusMm, pageBorder.insetMm) * scale,
                   }}
@@ -2750,6 +2764,14 @@ export function LayoutEditor({
                     </label>
                   ) : null}
                 </div>
+                {selBlock.border ? (
+                  <BorderSidePicker
+                    sides={effectiveBorderSides(selBlock.border)}
+                    onChange={(sides) =>
+                      updateBlock(blockId(selBlock), { border: { ...selBlock.border!, sides } })
+                    }
+                  />
+                ) : null}
                 {selBlock.border ? (
                   <div className="text-xs text-zinc-600">
                     <div className="flex items-center justify-between">
@@ -3632,7 +3654,10 @@ function CanvasBlock({
     textAlign: (block.align ?? "left") as React.CSSProperties["textAlign"],
     ...(block.border
       ? {
-          border: `${Math.max(block.border.widthMm * scale, 1)}px solid ${block.border.color}`,
+          ...borderSideStyle(
+            `${Math.max(block.border.widthMm * scale, 1)}px solid ${block.border.color}`,
+            effectiveBorderSides(block.border),
+          ),
           padding: (() => {
             const p = effectiveBorderPad(block.border);
             return `${p.topMm * scale}px ${p.rightMm * scale}px ${p.bottomMm * scale}px ${p.leftMm * scale}px`;
@@ -3758,6 +3783,81 @@ function blockSummary(block: LayoutBlock): { kind: string | null; text: string; 
 function expandHex(hex: string): string {
   const m = /^#([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])$/.exec(hex);
   return m ? `#${m[1]}${m[1]}${m[2]}${m[2]}${m[3]}${m[3]}` : hex;
+}
+
+// The canvas equivalent of the renderer's borderRuleCss: a CSS rule on only
+// the edges that print. Kept in the same shape as the renderer (resolve the
+// sides through effectiveBorderSides, then draw the ones that are on) so the
+// builder can never show a frame the PDF doesn't.
+function borderSideStyle(rule: string, sides: BorderSides): React.CSSProperties {
+  return {
+    borderTop: sides.top ? rule : undefined,
+    borderRight: sides.right ? rule : undefined,
+    borderBottom: sides.bottom ? rule : undefined,
+    borderLeft: sides.left ? rule : undefined,
+  };
+}
+
+// Which edges of a border print — four toggles over the same rule, shared by
+// the block border and the page frame. A border starts as all four (the
+// absent `sides` resolves that way), so ticking the border on still gives the
+// full frame it always did; untick an edge to get a single rule under a
+// field, an L, a rule down one side.
+//
+// The last remaining edge can't be turned off: a border with nothing drawn is
+// indistinguishable from no border, and "no border" already has its own
+// control (the width select / the Page border checkbox). Removing it there
+// keeps the def clean instead of leaving a 0-edge border behind.
+function BorderSidePicker({
+  sides,
+  onChange,
+}: {
+  sides: BorderSides;
+  onChange: (next: BorderSides) => void;
+}) {
+  const SIDES = [
+    ["top", "Top"],
+    ["right", "Right"],
+    ["bottom", "Bottom"],
+    ["left", "Left"],
+  ] as const;
+  const onCount = SIDES.filter(([k]) => sides[k]).length;
+  return (
+    <div className="text-xs text-zinc-600">
+      <div className="flex items-center justify-between">
+        <span>Sides</span>
+        {onCount < 4 ? (
+          <button
+            type="button"
+            onClick={() => onChange({ top: true, right: true, bottom: true, left: true })}
+            className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 hover:border-zinc-300"
+          >
+            all round
+          </button>
+        ) : null}
+      </div>
+      <div className="mt-1 flex overflow-hidden rounded-md border border-zinc-200">
+        {SIDES.map(([k, label]) => {
+          const on = sides[k];
+          const last = on && onCount === 1;
+          return (
+            <button
+              key={k}
+              type="button"
+              disabled={last}
+              onClick={() => onChange({ ...sides, [k]: !on })}
+              className={`flex-1 px-2 py-1 text-[11px] font-medium ${
+                on ? "bg-zinc-900 text-white" : "bg-white text-zinc-400 hover:bg-zinc-50"
+              } ${last ? "cursor-not-allowed opacity-80" : ""}`}
+              title={last ? "A border needs at least one side — remove the border instead." : `${label} edge`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 // One authored colour: a swatch and a typed hex field over the same value,

@@ -199,6 +199,7 @@
     <div class="note">
       <div class="h">Print guides — sewing lines, folding lines &amp; the centre hole</div>
       <p>Below the grid, add non-printing reference rules: a <b>sewing line</b> a fixed distance from the top or bottom edge (the seam allowance), and a <b>folding line</b> down or across the centre. They appear on the canvas and in the true render to help you place content, matching how the label is sewn or folded.</p>
+      <p style="margin-top:6px;"><b>Page border</b> — a frame around the whole page: thickness, <b>inset</b> from the paper edge and colour, all in mm. Like a block border it starts all the way round, and the <b>Top / Right / Bottom / Left</b> toggles let you keep only the edges you want — a single rule along the bottom of a carton marking, say, instead of a box.</p>
       <p style="margin-top:6px;"><b>Rounded corners</b> — the corner radius of the cut, in mm (0 = square). The page itself rounds: content is clipped to the shape, so a block that runs into a corner prints the same curve the cutter makes rather than a square of ink the die would slice through. A page border curves with it, tightening by its own inset. The canvas and the print preview both show the rounded sheet.</p>
       <p style="margin-top:6px;"><b>Centre hole</b> — the punched hang hole on a tag. Tick it, then set the <b>diameter in mm</b> and how far the hole sits <b>from the top or bottom</b> edge. It's always centred across the page, and the distance is measured to the hole's <b>centre</b> — the panel spells out how much clear stock that leaves (Ø 5 mm at 8 mm from the top = 5,5 mm of stock above it). It draws as a dashed circle on the canvas and in the render, so you can keep text and barcodes clear of what the punch removes; nothing is knocked out of the design.</p>
     </div>
@@ -259,7 +260,8 @@
       <div>
         <p style="font-size:10.5px;color:#3f3f46;">Box &amp; fit controls</p>
         <ul style="margin:6px 0 0;padding-left:16px;font-size:10px;color:#3f3f46;display:grid;gap:5px;">
-          <li><b>Border</b> — width (0.2–2&nbsp;mm), colour, and inner <b>padding</b> (linked or per side). A framed field.</li>
+          <li><b>Border</b> — width (0.2–2&nbsp;mm), colour, <b>sides</b>, and inner <b>padding</b> (linked or per side). A framed field.</li>
+          <li><b>Sides</b> — a border starts all the way round; untick <b>Top / Right / Bottom / Left</b> to draw only the edges you want (a single rule under a field, an L, a rule down one side). The last edge can't be unticked — set the width to <b>None</b> to drop the border instead.</li>
           <li><b>Invert</b> — text on a solid block. Black box / white text by default; pick any <b>background</b> and <b>text</b> colour with the swatch or by typing a hex value (<span class="keyword">#1a4d2e</span>), and <b>reset</b> puts either one back to the default.</li>
           <li><b>Fit width</b> — force the text onto one line and auto-scale it to fill the block's width.</li>
           <li><b>Shrink to fit cell</b> — reduce the text until it fits its box, so it never overflows onto neighbours.</li>
