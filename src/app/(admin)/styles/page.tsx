@@ -28,6 +28,7 @@ import {
 import {
   loadSupplierUploadRollups,
   loadAssetsByStyle,
+  loadReviewerByStyle,
   reviewRollupFor,
 } from "@/lib/styles/table-rollups";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
@@ -99,7 +100,14 @@ export default async function StylesPage() {
         // Style.status, which Monday re-syncs reset (see ingest.ts).
         jobs: { orderBy: { createdAt: "desc" }, take: 1, select: { status: true } },
       },
-      orderBy: { updatedAt: "desc" },
+      // Newest PURCHASE ORDER first — the reviewer's list opens on the work
+      // that just came in. poSeq is the PARSED number (ingest.ts), never the
+      // poNumber string: "C-PO9" sorts above "C-PO12345" lexicographically.
+      // Styles with no parsed PO sort last (they're not on the PO timeline);
+      // updatedAt breaks ties. The client re-applies the same order via
+      // sortByPoDesc, which is where it's tested — this keeps the payload
+      // already in that order so nothing re-flows on hydration.
+      orderBy: [{ poSeq: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }],
   });
 
   // Parse each customer's config once, not per style row. Yields both the
@@ -140,9 +148,12 @@ export default async function StylesPage() {
   const resolvedFieldKeys = visibleResolvedFieldKeys(visibleColumns);
   const wantUpload = needsSupplierUploadData(visibleColumns);
   const wantReview = needsReviewRollupData(visibleColumns);
-  const [supplierUploads, assetsByStyle] = await Promise.all([
+  const [supplierUploads, assetsByStyle, reviewerByStyle] = await Promise.all([
     wantUpload ? loadSupplierUploadRollups(styleIds) : Promise.resolve(new Map<string, never>()),
     wantReview ? loadAssetsByStyle(styleIds) : Promise.resolve(new Map<string, never>()),
+    // Not column-gated: the "Reviewer" facet needs a value on every row to
+    // build its option list, so this one always loads (one indexed query).
+    loadReviewerByStyle(styleIds),
   ]);
 
   // The headline count is the LISTED set, not the loaded set — the PO-less
@@ -156,9 +167,10 @@ export default async function StylesPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Styles</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            {listedCount} {listedCount === 1 ? "style" : "styles"} on file. Search
-            across name, customer, business area, PO# and status, or pick values in the
-            Customer / Business Area / Group / Status / EAN dropdowns and press Apply.
+            {listedCount} {listedCount === 1 ? "style" : "styles"} on file, newest PO
+            first. Search across name, customer, business area, PO# and status, or pick
+            values in the Customer / Business Area / Group / Status / Reviewer / EAN
+            dropdowns and press Apply.
           </p>
         </div>
         <Link
@@ -284,7 +296,13 @@ export default async function StylesPage() {
             id: s.id,
             name: s.name,
             poNumber: s.poNumber,
+            // Parsed PO number — the default sort key. Never sort on the
+            // poNumber string (see table-sort.ts).
+            poSeq: s.poSeq,
             customerName: s.customer.name,
+            // Who is reviewing: the claimer of the newest claimed job. Drives
+            // the Reviewer facet + the (opt-in) Reviewer column.
+            reviewerName: reviewerByStyle.get(s.id) ?? null,
             // "1 of 2 rows with this name" — null (the common case) renders
             // nothing. See loadLookalikeChips above.
             lookalike: lookalikeChips.get(s.id) ?? null,

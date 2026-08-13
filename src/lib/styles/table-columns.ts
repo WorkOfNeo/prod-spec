@@ -89,7 +89,8 @@ export type StyleColumnKey =
   // review & approval
   | "approved"
   | "fullyApproved"
-  | "awaitingReview";
+  | "awaitingReview"
+  | "reviewer";
 
 export type StyleColumnDef = {
   key: StyleColumnKey;
@@ -200,6 +201,9 @@ export const STYLE_TABLE_COLUMNS: ReadonlyArray<StyleColumnDef> = [
   { key: "approved", label: "Approved", group: "review" },
   { key: "fullyApproved", label: "Fully approved", group: "review" },
   { key: "awaitingReview", label: "Awaiting review", group: "review" },
+  // Who claimed the review. Always hydrated (the Reviewer facet needs it for
+  // every row), so unlike the rollup columns it costs nothing extra to show.
+  { key: "reviewer", label: "Reviewer", group: "review" },
 ];
 
 // The standard view: the original core columns (everything except Completion).

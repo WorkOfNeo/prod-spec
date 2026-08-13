@@ -25,7 +25,20 @@ import type { SupplierUploadRollup, ReviewRollup } from "@/lib/styles/table-roll
 import type { LookalikeChip } from "@/lib/styles/related";
 import { mondayItemUrl } from "@/lib/monday/url";
 import { eanStatusMeta, EAN_STATUS_META } from "@/lib/po/ean-status-meta";
-import { BLANK_BA_VALUES } from "@/lib/import/heuristics";
+import {
+  BLANK_VALUE,
+  EMPTY_FACETS,
+  FACET_KEYS,
+  buildFacetMatcher,
+  customerValue,
+  baValue,
+  groupValue,
+  reviewerValue,
+  sameSet,
+  type FacetKey,
+} from "@/lib/styles/table-filter";
+import { sortByPoDesc } from "@/lib/styles/table-sort";
+import { STYLES_FILTER_KEY } from "@/lib/styles/back-link";
 import type { EanView } from "@/lib/po/ean-view";
 import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
 import { ReadinessPill } from "@/components/output-readiness-notice";
@@ -66,47 +79,29 @@ const ATTR_FILTERS: ReadonlyArray<{ key: string; label: string; has: (r: StyleRo
   { key: "supplier", label: "Supplier", has: (r) => r.hasSupplier },
   // Manually pulled in for layout testing (Settings ▸ Pull style by PO).
   { key: "pulled", label: "Pulled", has: (r) => r.pulledForTest },
+  // Somebody has taken this style's review (Job.reviewClaimedBy). "No
+  // Reviewer" is the unclaimed pile — the one-click "what is nobody on?"
+  // question. WHICH reviewer is the Reviewer facet dropdown.
+  { key: "reviewer", label: "Reviewer", has: (r) => r.reviewerName != null },
 ];
 
-// The five value-picking facet dropdowns. Within a facet selections are OR'd
-// (Netto OR Børn); across facets they're AND'd (customer ∈ {…} AND status ∈
-// {…}). Options are derived from the loaded rows, so a value only appears if
-// a real style carries it — "based off actual data in the board".
-type FacetKey = "customer" | "ba" | "group" | "status" | "ean";
-const FACET_KEYS: readonly FacetKey[] = ["customer", "ba", "group", "status", "ean"];
-const EMPTY_FACETS: Record<FacetKey, string[]> = {
-  customer: [],
-  ba: [],
-  group: [],
-  status: [],
-  ean: [],
+// The value-picking facet dropdowns (Customer / Business Area / Group / Status
+// / Reviewer / EAN). Within a facet selections are OR'd (Netto OR Børn); across
+// facets they're AND'd (customer ∈ {…} AND reviewer ∈ {…}). Options are derived
+// from the loaded rows, so a value only appears if a real style carries it —
+// "based off actual data in the board".
+//
+// The keys, the row-value readers and the matching rules live in
+// @/lib/styles/table-filter (imported above) so they can be unit-tested; this
+// file owns only the UI (dropdowns, labels, chips).
+const FACET_LABELS: Record<FacetKey, string> = {
+  customer: "Customer",
+  ba: "Business Area",
+  group: "Group",
+  status: "Status",
+  reviewer: "Reviewer",
+  ean: "EAN",
 };
-
-// Sentinel so blank / "–" business areas and null groups collapse into one
-// selectable "(blank)" option instead of vanishing. The leading-space prefix
-// can't collide with a real (trimmed) value carried by a row.
-const BLANK_VALUE = "__blank__";
-
-function baValue(r: StyleRow): string {
-  const v = r.businessArea;
-  if (v == null) return BLANK_VALUE;
-  const t = v.trim();
-  return BLANK_BA_VALUES.has(t) ? BLANK_VALUE : t;
-}
-function groupValue(r: StyleRow): string {
-  const t = r.groupTitle?.trim();
-  return t ? t : BLANK_VALUE;
-}
-function customerValue(r: StyleRow): string {
-  return r.customerName.trim() || BLANK_VALUE;
-}
-
-// Two string[]s as unordered sets — drives the Apply button's dirty state.
-function sameSet(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  const s = new Set(a);
-  return b.every((v) => s.has(v));
-}
 
 // ── URL persistence ──────────────────────────────────────────────────────
 // The active filter (search + applied facets + attribute chips + archived)
@@ -123,13 +118,9 @@ type ParamReader = Pick<URLSearchParams, "get" | "getAll">;
 const ATTR_KEYS = new Set(ATTR_FILTERS.map((a) => a.key));
 
 function parseFacetsFromUrl(sp: ParamReader): Record<FacetKey, string[]> {
-  return {
-    customer: sp.getAll("customer"),
-    ba: sp.getAll("ba"),
-    group: sp.getAll("group"),
-    status: sp.getAll("status"),
-    ean: sp.getAll("ean"),
-  };
+  const out = { ...EMPTY_FACETS };
+  for (const k of FACET_KEYS) out[k] = sp.getAll(k);
+  return out;
 }
 
 function parseAttrsFromUrl(sp: ParamReader): Record<string, TriState> {
@@ -163,6 +154,14 @@ export type StyleRow = {
   id: string;
   name: string;
   poNumber: string | null;
+  // Parsed numeric PO (Style.poSeq) — the DEFAULT SORT KEY. Null when there's
+  // no PO or it doesn't parse; those rows sort last. Never sort on poNumber:
+  // "C-PO9" beats "C-PO12345" as a string. See @/lib/styles/table-sort.
+  poSeq: number | null;
+  // Who is reviewing — the reviewer who claimed this style's newest claimed
+  // job (Job.reviewClaimedBy). Null = unclaimed. Drives the Reviewer facet,
+  // the Reviewer attribute chip and the opt-in Reviewer column.
+  reviewerName: string | null;
   // Set when this style's name also exists on another PO's Monday row — the
   // "1 of 2 rows with this name" chip. Null (the common case) renders nothing.
   // Computed server-side in ONE bulk query; see src/lib/styles/related.ts.
@@ -323,6 +322,15 @@ export function StylesTable({
       "",
       qs ? `${window.location.pathname}?${qs}` : window.location.pathname,
     );
+    // …and stash it for the style page's Back link, so opening a style from a
+    // PO search and coming back lands on THAT PO instead of the whole table
+    // (see @/lib/styles/back-link). Best-effort: private-mode / quota errors
+    // must never break the table.
+    try {
+      window.sessionStorage.setItem(STYLES_FILTER_KEY, qs);
+    } catch {
+      /* no stash, no back link — the style's own PO is the fallback */
+    }
   }, [q, showArchived, attrFilters, appliedFacets]);
 
   // Per-row live EAN resolve results (manual "Resolve" button). A row's
@@ -380,6 +388,7 @@ export function StylesTable({
     const ba = new Map<string, number>();
     const group = new Map<string, number>();
     const status = new Map<string, number>();
+    const reviewer = new Map<string, number>();
     const ean = new Map<string, number>();
     const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1);
     for (const r of rows) {
@@ -387,13 +396,14 @@ export function StylesTable({
       bump(ba, baValue(r));
       bump(group, groupValue(r));
       bump(status, r.statusView.key);
+      bump(reviewer, reviewerValue(r));
       bump(ean, r.eanStatus);
     }
-    const alpha = (m: Map<string, number>): FacetOption[] =>
+    const alpha = (m: Map<string, number>, blankLabel = "(blank)"): FacetOption[] =>
       [...m.entries()]
         .map(([value, count]) => ({
           value,
-          label: value === BLANK_VALUE ? "(blank)" : value,
+          label: value === BLANK_VALUE ? blankLabel : value,
           count,
         }))
         .sort((a, b) =>
@@ -417,28 +427,23 @@ export function StylesTable({
       ba: alpha(ba),
       group: alpha(group),
       status: statusOpts,
+      // Unclaimed reviews are a real, useful selection ("what has nobody
+      // picked up?"), so they get a named option rather than "(blank)".
+      reviewer: alpha(reviewer, "(nobody yet)"),
       ean: eanOpts,
     };
   }, [rows]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    // Pre-build a Set per active facet so the row loop is membership-only.
-    const fa = appliedFacets;
-    const cSet = fa.customer.length ? new Set(fa.customer) : null;
-    const bSet = fa.ba.length ? new Set(fa.ba) : null;
-    const gSet = fa.group.length ? new Set(fa.group) : null;
-    const sSet = fa.status.length ? new Set(fa.status) : null;
-    const eSet = fa.ean.length ? new Set(fa.ean) : null;
-    return rows.filter((r, i) => {
+    // One predicate over every active facet, with its Sets pre-built, so the
+    // row loop stays membership-only. Rules live in table-filter.ts.
+    const matchFacets = buildFacetMatcher(appliedFacets);
+    const kept = rows.filter((r, i) => {
       if (!showArchived && archivedFlags[i]) return false;
       if (!revealMissingPo && missingPoFlags[i]) return false;
-      // Value facets: OR within a facet (Set membership), AND across facets.
-      if (cSet && !cSet.has(customerValue(r))) return false;
-      if (bSet && !bSet.has(baValue(r))) return false;
-      if (gSet && !gSet.has(groupValue(r))) return false;
-      if (sSet && !sSet.has(r.statusView.key)) return false;
-      if (eSet && !eSet.has(r.eanStatus)) return false;
+      // Value facets: OR within a facet, AND across facets.
+      if (!matchFacets(r)) return false;
       // Attribute presence filters (AND across all active chips).
       for (const a of activeAttrFilters) {
         const want = attrFilters[a.key];
@@ -449,6 +454,10 @@ export function StylesTable({
       if (!needle) return true;
       return r.searchBlob.includes(needle);
     });
+    // Newest PO first. The server already ships the rows in this order; the
+    // client re-applies it so the guarantee is testable (table-sort.test.ts)
+    // and survives any future client-side reordering of `rows`.
+    return sortByPoDesc(kept);
   }, [
     rows,
     q,
@@ -479,6 +488,12 @@ export function StylesTable({
     if (appliedFacets.group.length) parts.push(`Group: ${appliedFacets.group.map(lbl).join(", ")}`);
     if (appliedFacets.status.length)
       parts.push(`Status: ${appliedFacets.status.map((k) => statusLabels[k] ?? k).join(", ")}`);
+    if (appliedFacets.reviewer.length)
+      parts.push(
+        `Reviewer: ${appliedFacets.reviewer
+          .map((v) => (v === BLANK_VALUE ? "(nobody yet)" : v))
+          .join(", ")}`,
+      );
     if (appliedFacets.ean.length)
       parts.push(`EAN: ${appliedFacets.ean.map((k) => eanStatusMeta(k).label).join(", ")}`);
     for (const a of activeAttrFilters)
@@ -818,6 +833,20 @@ export function StylesTable({
             )}
           </td>
         );
+      case "reviewer":
+        return (
+          <td key={key} className="px-4 py-3 text-zinc-600">
+            {s.reviewerName ? (
+              <span className="block max-w-[180px] truncate" title={`Review claimed by ${s.reviewerName}`}>
+                {s.reviewerName}
+              </span>
+            ) : (
+              <span className="text-zinc-300" title="Nobody has claimed this review yet">
+                —
+              </span>
+            )}
+          </td>
+        );
       case "awaitingReview":
         return (
           <td key={key} className="px-4 py-3">
@@ -884,31 +913,39 @@ export function StylesTable({
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium text-zinc-400">Filter by</span>
         <FacetFilter
-          label="Customer"
+          label={FACET_LABELS.customer}
           options={facetOptions.customer}
           selected={draftFacets.customer}
           onChange={(n) => setFacet("customer", n)}
         />
         <FacetFilter
-          label="Business Area"
+          label={FACET_LABELS.ba}
           options={facetOptions.ba}
           selected={draftFacets.ba}
           onChange={(n) => setFacet("ba", n)}
         />
         <FacetFilter
-          label="Group"
+          label={FACET_LABELS.group}
           options={facetOptions.group}
           selected={draftFacets.group}
           onChange={(n) => setFacet("group", n)}
         />
         <FacetFilter
-          label="Status"
+          label={FACET_LABELS.status}
           options={facetOptions.status}
           selected={draftFacets.status}
           onChange={(n) => setFacet("status", n)}
         />
+        {/* Who is reviewing — the claimer of the style's newest claimed job.
+            "(nobody yet)" is the unclaimed pile. */}
         <FacetFilter
-          label="EAN"
+          label={FACET_LABELS.reviewer}
+          options={facetOptions.reviewer}
+          selected={draftFacets.reviewer}
+          onChange={(n) => setFacet("reviewer", n)}
+        />
+        <FacetFilter
+          label={FACET_LABELS.ean}
           options={facetOptions.ean}
           selected={draftFacets.ean}
           onChange={(n) => setFacet("ean", n)}
