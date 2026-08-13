@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { pushApprovedAssetsToSupplier, SupplierPushError } from "./push-to-supplier";
 import { parseCustomerConfig } from "@/lib/customers/config";
-import { getSupplierBatchSendEnabled } from "@/lib/settings/app-settings";
+import { getSupplierBatchSendEnabled, getSupplierSendMinPo } from "@/lib/settings/app-settings";
+import { deliverablePoWhere } from "@/lib/publish/supplier-send-cutoff";
 
 // =====================================================
 // Queue-driven supplier-folder upload (WS2b's missing half). Walks the unsent
@@ -110,8 +111,19 @@ export async function pushQueuedSupplierUploads(opts?: {
   const startedAt = Date.now();
   if (!(await getSupplierBatchSendEnabled())) return EMPTY_SWEEP;
 
+  // Below-cutoff orders are not delivered — and a file landing in the
+  // supplier's folder IS delivery, whether or not an email ever mentions it.
+  // Gated here as well as at enqueue and send because this sweep is reachable
+  // from paths that re-arm rows they didn't create (see supplier-send-cutoff.ts).
+  // Applies to the targeted styleIds form too: the per-style callers are
+  // approvals, cover regens and folder picks, none of which are a decision to
+  // deliver an order the cutoff excludes. The manual per-style push buttons do
+  // not come through this lib and are unaffected.
+  const cutoffWhere = deliverablePoWhere(await getSupplierSendMinPo());
+
   const items = await db.supplierSendQueueItem.findMany({
     where: {
+      ...cutoffWhere,
       // The sent-retry lease only bounds the GLOBAL cron sweep (it exists so a
       // gap nobody fixes stops churning Graph after a week). A push targeted at
       // specific styles is a deliberate act — an approval, the operator picking

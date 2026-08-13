@@ -103,8 +103,8 @@ export function SupplierSendCutoff({
         cutoff === null
           ? j.effective != null
             ? `Cleared — following the generation cutoff (PO ≥ ${j.effective}).`
-            : "Cleared — no cutoff anywhere, so the backfill stays idle."
-          : `Saved — backfill covers PO ≥ ${cutoff}.`,
+            : "Cleared — no cutoff anywhere, so every order is deliverable."
+          : `Saved — only PO ≥ ${cutoff} is delivered to suppliers.`,
       );
       if (cutoff === null) setValue("");
     } catch (e) {
@@ -118,17 +118,21 @@ export function SupplierSendCutoff({
     initialExplicit === null
       ? effective != null
         ? `Following the generation cutoff: PO ≥ ${effective}.`
-        : "No cutoff set anywhere — the backfill is idle until you set one."
+        : "No cutoff set anywhere — every order is deliverable until you set one."
       : null;
 
   return (
     <div className="rounded-lg border border-zinc-200 p-5">
-      <h2 className="text-sm font-semibold text-zinc-900">Backfill from PO</h2>
+      <h2 className="text-sm font-semibold text-zinc-900">Deliver from PO</h2>
       <p className="mt-1 text-sm text-zinc-600">
-        Styles approved <strong>before</strong> this system existed are reconciled into the queue by
-        the recurring sweep — but only from this PO number onward, so old orders never reach a
-        supplier folder or digest. Approvals made from now on are always captured, regardless of
-        this cutoff.
+        Orders below this PO number are <strong>never</strong> delivered to a supplier — not queued,
+        not uploaded to a supplier folder, not emailed in the nightly digest. It applies to every
+        path, including cover pages (which otherwise ship regardless of approval) and the backfill
+        that reconciles pre-existing approvals into the queue.
+      </p>
+      <p className="mt-1 text-xs text-zinc-500">
+        A style with no readable PO number is treated as below the cutoff. To deliver an older order
+        anyway, lower the cutoff or use the per-style push button on the style page.
       </p>
       <div className="mt-3 flex items-center gap-2">
         <input

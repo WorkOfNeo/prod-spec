@@ -59,14 +59,25 @@ export async function listCoverRefreshableStyleIds(
 
 // Preview counts for the confirm dialog: (an upper bound on) how many of the
 // given styles are delivered to a supplier and would be re-pushed + re-notified.
-// Counts APPROVED styles with a linked supplier; the per-style requeue re-checks
-// skipSupplierDelivery, so the real count can be a touch lower — surfaced as
-// "up to N". Takes the already-listed ids so `prepare` runs the distinct-style
-// query only once.
+// Counts APPROVED styles with a linked supplier that clear the supplier-send PO
+// cutoff; the per-style requeue re-checks skipSupplierDelivery, so the real
+// count can be a touch lower — surfaced as "up to N". Takes the already-listed
+// ids so `prepare` runs the distinct-style query only once.
+//
+// The cutoff belongs in this count, not just in the requeue: this number is what
+// the admin reads before pressing go, and before the 2026-08-13 incident it
+// silently included every old order in the book.
 export async function countDeliveredAmong(styleIds: string[]): Promise<number> {
   if (styleIds.length === 0) return 0;
+  const { getSupplierSendMinPo } = await import("@/lib/settings/app-settings");
+  const { deliverablePoWhere } = await import("@/lib/publish/supplier-send-cutoff");
   return db.style.count({
-    where: { id: { in: styleIds }, status: "APPROVED", supplierId: { not: null } },
+    where: {
+      id: { in: styleIds },
+      status: "APPROVED",
+      supplierId: { not: null },
+      ...deliverablePoWhere(await getSupplierSendMinPo()),
+    },
   });
 }
 

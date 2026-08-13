@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { dispatchEmail } from "@/lib/email/dispatch";
-import { getSupplierBatchSendEnabled } from "@/lib/settings/app-settings";
+import { getSupplierBatchSendEnabled, getSupplierSendMinPo } from "@/lib/settings/app-settings";
+import { isDeliverablePo } from "./supplier-send-cutoff";
 import { loadIgnoredOutputKeysByStyle } from "@/lib/outputs/output-ignores";
 import { combineSupplierRecipients } from "@/lib/suppliers/recipients";
 import { loadContactEmailsBySupplier } from "@/lib/suppliers/contact-emails";
@@ -24,6 +25,7 @@ type QueueItem = {
   displayName: string | null;
   customerId: string;
   supplierId: string | null;
+  poSeq: number | null;
 };
 
 export type PerSupplierOutcome = {
@@ -71,8 +73,32 @@ export async function runSupplierSendBatch(opts?: { source?: "midnight" | "manua
       displayName: true,
       customerId: true,
       supplierId: true,
+      poSeq: true,
     },
   })) as QueueItem[];
+
+  // The PO cutoff, applied to the thing that actually reaches a supplier. The
+  // enqueue paths keep below-cutoff rows out of the queue in the first place;
+  // this is the backstop that also covers rows queued before that gate existed
+  // and rows RE-ARMED by the several routes that flip push state without going
+  // through an enqueue (retry-floated, choose-po-folder, apply-filename-fix,
+  // reconcile-folder, monday/retro-link). Dropped rather than left pending —
+  // same treatment as the ignored-output and skip-delivery guards below, and
+  // for the same reason: a row nobody will ever send must not sit on
+  // /settings/approved forever claiming it is about to go out. Lowering the
+  // cutoff brings the style back via reconcileSupplierSendQueue, which is
+  // exactly what the backfill reconciler is for.
+  const cutoff = await getSupplierSendMinPo();
+  const belowCutoff = pending.filter((p) => !isDeliverablePo(p.poSeq, cutoff));
+  if (belowCutoff.length > 0) {
+    await db.supplierSendQueueItem.deleteMany({
+      where: { id: { in: belowCutoff.map((i) => i.id) } },
+    });
+    console.warn(
+      `[supplier-batch-send] dropped ${belowCutoff.length} queued item(s) below the supplier-send cutoff (PO ≥ ${cutoff}) across ${new Set(belowCutoff.map((i) => i.styleId)).size} style(s)`,
+    );
+    pending = pending.filter((p) => isDeliverablePo(p.poSeq, cutoff));
+  }
 
   // Send-time guard for the per-style operator ignore. The ignore endpoint
   // already deletes unsent rows, so this only catches items that slipped in
