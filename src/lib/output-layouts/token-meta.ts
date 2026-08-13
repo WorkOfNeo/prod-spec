@@ -137,7 +137,9 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     arg: "sizeForm",
     example: "86-92 cm - 98-104 cm · {{sizeRangeCoop:year}} → 1½-2 år - 3-4 år",
   },
-  { key: "price", label: "Retail price", group: "Style", kind: "text", example: "29.00 DKK" },
+  // Number only, comma decimals — the currency word in Monday's free-text
+  // column is stripped, because layouts print their own ("{{price}} KR").
+  { key: "price", label: "Retail price", group: "Style", kind: "text", example: "129,95" },
 
   // ---- Order & carton ----
   { key: "poNumber", label: "PO number (Contrast)", group: "Order & carton", kind: "text", example: "C-PO62831" },

@@ -156,9 +156,12 @@ export type StyleData = {
 
   price?: {
     amount: number;
-    // Only set when the source value carries an explicit ISO currency code.
-    // Otherwise omitted — we do NOT invent one. (Monday "Retail Currency"
-    // wiring is the planned follow-up; until then bare numbers print alone.)
+    // Never populated by the mapper: a currency word in Monday's free-text
+    // "Retail Prices" column is stripped, not lifted, because layouts print
+    // their own currency text (the Coop DR tag's line is "{{price}} KR") and
+    // the word buyers actually write — "KR" — is ambiguous across DKK/NOK/SEK.
+    // Kept on the type so a layout/token can still carry one if a real
+    // per-style currency source ever lands. See parsePrice in ./mapper.
     currency?: "EUR" | "DKK" | "NOK" | "SEK" | "GBP";
   };
 
