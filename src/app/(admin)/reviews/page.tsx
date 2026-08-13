@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { getReviewBoard } from "@/lib/dashboard/review-tasks";
@@ -60,7 +61,18 @@ export default async function ReviewsPage({
 
   return (
     <div className="px-8 py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Reviews</h1>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight">Reviews</h1>
+        {/* The numbers behind this board: throughput, step timings, first-pass
+            and turnaround rates, filterable by client / supplier / reviewer.
+            Reviewer-reachable, same as this page. */}
+        <Link
+          href="/reviews/dashboard"
+          className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+        >
+          Review dashboard
+        </Link>
+      </div>
       <p className="text-sm text-zinc-500">
         {tab === "queue"
           ? "Styles awaiting their first review, grouped by prod spec — customer and business area. Open a group to review its styles."
