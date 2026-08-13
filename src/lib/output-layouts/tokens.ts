@@ -184,9 +184,15 @@ const RESOLVERS: Record<string, TextResolver> = {
   // <table>, but readiness checks, show-values and file names resolve
   // tokens as text, so this backs those with the same data.
   assortmentTable: (s) => formatSizeRatio(sizeRatioEntries(s)),
+  // Comma decimals. Every customer on the board prints into a comma-decimal
+  // market (DK, SE, FI, DE), and the other price renderer — the spec-generic
+  // template family's "retailPrice" field — has always formatted this way,
+  // so the Output Builder was the odd one out. parsePrice strips the source
+  // currency word, so `currency` is normally absent and only the number
+  // prints; the layout supplies its own currency text ("{{price}} KR").
   price: (s) =>
     s.price
-      ? `${s.price.amount.toFixed(2)}${s.price.currency ? ` ${s.price.currency}` : ""}`
+      ? `${s.price.amount.toFixed(2).replace(".", ",")}${s.price.currency ? ` ${s.price.currency}` : ""}`
       : "",
 
   poNumber: (s) => s.poNumber ?? "",

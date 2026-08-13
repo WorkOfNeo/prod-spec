@@ -153,7 +153,10 @@ test("end to end: the label prints PER SÆT for a set and KR. for a single", asy
     );
     return /<div class="ol-line">([\s\S]*?)<\/div>/.exec(html)![1];
   };
-  assert.equal(await printed("Set"), "79.00 DKK PER SÆT");
-  assert.equal(await printed("Gift Set"), "79.00 DKK PER SÆT");
-  assert.equal(await printed("3-Pack Socks"), "79.00 DKK KR.");
+  // Comma decimals — {{price}} prints for comma-decimal markets. See
+  // mapper.test.ts; the subject of THIS test is the conditional, not the
+  // number format.
+  assert.equal(await printed("Set"), "79,00 DKK PER SÆT");
+  assert.equal(await printed("Gift Set"), "79,00 DKK PER SÆT");
+  assert.equal(await printed("3-Pack Socks"), "79,00 DKK KR.");
 });
