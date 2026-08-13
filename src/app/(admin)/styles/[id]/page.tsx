@@ -53,6 +53,7 @@ import { parseCustomerConfig } from "@/lib/customers/config";
 import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
 import { SupplierFolderStatus, type PoFolderDelivery } from "./supplier-folder-status";
 import { RelatedRowsCardForStyle } from "./related-rows-card";
+import { BackToStyles } from "./back-to-styles";
 import { FolderReconcilePanel } from "./folder-reconcile-panel";
 import { AskStylePanel } from "./ask-style-panel";
 import { parseFolderMatches } from "@/lib/sharepoint/po-folder-matches";
@@ -753,9 +754,9 @@ export default async function StyleDetail({
   return (
     <div className="px-8 py-8">
       <LogStyleView styleId={id} surface="STYLE" />
-      <Link href="/styles" className="text-xs text-zinc-500 underline">
-        ← All styles
-      </Link>
+      {/* Back to the list the reviewer came from — their PO search + filters,
+          or this style's own PO as the fallback. See back-to-styles.tsx. */}
+      <BackToStyles poNumber={style.poNumber} />
       <div className="mt-2 flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{style.name}</h1>

@@ -116,6 +116,40 @@ export async function loadAssetsByStyle(styleIds: string[]): Promise<Map<string,
   return out;
 }
 
+// ── Who is reviewing (review group) ─────────────────────────────────────────
+// The reviewer who CLAIMED this style's review (Job.reviewClaimedBy — stamped
+// by "Start review" and implicitly by the first approve/reject, see
+// lib/review-flow/claim.ts). A style can have several claimed jobs over its
+// life (re-runs carry the claim forward); the NEWEST claim wins, because that
+// is who is on the hook now.
+//
+// Unlike the two rollups above this always runs — the Reviewer facet needs a
+// value for every row to build its option list, not only when a column is on.
+// One indexed query (@@index([reviewClaimedById])), three small columns.
+export async function loadReviewerByStyle(styleIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (styleIds.length === 0) return out;
+  try {
+    const jobs = await db.job.findMany({
+      where: { styleId: { in: styleIds }, reviewClaimedById: { not: null } },
+      orderBy: { reviewClaimedAt: "desc" },
+      select: {
+        styleId: true,
+        reviewClaimedBy: { select: { name: true, email: true } },
+      },
+    });
+    for (const j of jobs) {
+      // Newest first, so the first claim seen for a style is the standing one.
+      if (out.has(j.styleId)) continue;
+      const who = j.reviewClaimedBy?.name?.trim() || j.reviewClaimedBy?.email?.trim();
+      if (who) out.set(j.styleId, who);
+    }
+  } catch {
+    return new Map();
+  }
+  return out;
+}
+
 export type ReviewRollup = {
   approved: number; // approved (+ print-safe) output bases
   generated: number; // output bases with a current asset
