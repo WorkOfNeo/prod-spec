@@ -30,6 +30,9 @@
 // =====================================================
 
 import type { Prisma } from "@/generated/prisma/client";
+// Pure + already unit-tested; style-dashboard.ts lazy-imports db inside its
+// async fns, so pulling this in keeps the pure half of this file DB-free.
+import { baseKey } from "./style-dashboard";
 
 // ---- Inputs (what the query layer hands the pure aggregator) -----------------
 
@@ -38,6 +41,8 @@ export type JobStatusLite = "QUEUED" | "RUNNING" | "AWAITING_REVIEW" | "APPROVED
 
 export type DashAsset = {
   jobId: string;
+  variantKey: string | null;
+  docType: string;
   reviewStatus: AssetReviewStatusLite;
   createdAt: Date;
   reviewedAt: Date | null;
@@ -178,6 +183,51 @@ function decided(assets: DashAsset[]): DashAsset[] {
 }
 
 /**
+ * The CURRENT decision set for an order — what "fully reviewed" has to mean.
+ *
+ * Every re-run is a new Job row and the old job's assets survive, so the raw
+ * asset list is a HISTORY, not a state. Bucketing over the history would leave
+ * an order that was rejected once and fixed afterwards reading "partially
+ * reviewed" forever. This applies the supersede rule: per output BASE, only the
+ * newest generating job's documents count; one row per full variant key.
+ *
+ * Deliberately NOT selectCurrentAssets() from outputs/current-outputs.ts.
+ * That helper additionally drops bases the ProdSpec no longer declares and
+ * bases excluded by a doc-type keyword rule — both of which need each style's
+ * parsed ProdSpec and rawData, a per-style walk far too heavy to run across the
+ * whole book for a dashboard. The consequence is narrow and worth stating: an
+ * order whose operator REMOVED an output after it was rejected still counts
+ * that stale rejection here, where the review screen would not. Superseding by
+ * newest job — the dominant case by far — is handled identically.
+ */
+export function currentAssets(style: DashStyle): DashAsset[] {
+  if (style.assets.length === 0) return [];
+  const jobOrder = new Map(style.jobs.map((j, i) => [j.id, i])); // ascending by createdAt
+  const rank = (a: DashAsset) => jobOrder.get(a.jobId) ?? -1;
+
+  const newestJobRankForBase = new Map<string, number>();
+  for (const a of style.assets) {
+    const b = baseKey(a.variantKey, a.docType);
+    const r = rank(a);
+    const seen = newestJobRankForBase.get(b);
+    if (seen === undefined || r > seen) newestJobRankForBase.set(b, r);
+  }
+
+  const seenKeys = new Set<string>();
+  const out: DashAsset[] = [];
+  // Newest job first, so the first row seen for a full key is the current one.
+  for (const a of [...style.assets].sort((x, y) => rank(y) - rank(x))) {
+    const b = baseKey(a.variantKey, a.docType);
+    if (rank(a) !== newestJobRankForBase.get(b)) continue; // an older generation
+    const key = a.variantKey ?? `doc:${a.docType}`;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    out.push(a);
+  }
+  return out;
+}
+
+/**
  * Item 1's classifier. Order matters — the first rule that fires wins.
  *
  * WAITING_FOR_INFO is a PROXY, and an honest one: a style that has never had a
@@ -188,7 +238,9 @@ function decided(assets: DashAsset[]): DashAsset[] {
  * over the whole book, and "never generated" answers the reviewer's question.
  */
 export function bucketStyle(style: DashStyle): StyleBucket {
-  const { jobs, assets } = style;
+  const { jobs } = style;
+  // State, not history — see currentAssets().
+  const assets = currentAssets(style);
   if (assets.length === 0) {
     // Nothing reviewable exists. Which of the three "not yet" states is it?
     if (jobs.length === 0) return "WAITING_FOR_INFO";
@@ -241,6 +293,9 @@ export function firstReviewToRegenerationMs(style: DashStyle): number | null {
  */
 export function firstReviewToFinalApprovalMs(style: DashStyle): number | null {
   if (bucketStyle(style) !== "FULLY_REVIEWED") return null;
+  // Spans the WHOLE review history — the first decision ever made on this
+  // order (typically a rejection on an earlier generation) to the approval
+  // that closed it. Using only the current set would measure the last sitting.
   const times = decided(style.assets).map((a) => a.reviewedAt!.getTime());
   if (times.length === 0) return null;
   const ms = Math.max(...times) - Math.min(...times);
@@ -517,6 +572,8 @@ export async function getReviewerDashboard(
       where: { job: { style: where } },
       select: {
         jobId: true,
+        variantKey: true,
+        docType: true,
         reviewStatus: true,
         createdAt: true,
         reviewedAt: true,
@@ -541,6 +598,8 @@ export async function getReviewerDashboard(
     if (!styleId) continue;
     const row: DashAsset = {
       jobId: a.jobId,
+      variantKey: a.variantKey,
+      docType: a.docType,
       reviewStatus: a.reviewStatus,
       createdAt: a.createdAt,
       reviewedAt: a.reviewedAt,

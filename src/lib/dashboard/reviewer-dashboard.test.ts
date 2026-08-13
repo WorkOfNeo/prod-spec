@@ -4,6 +4,7 @@ import {
   bucketStyle,
   computeReviewerDashboard,
   creationToFirstReviewMs,
+  currentAssets,
   firstPassOutcome,
   firstReviewToRegenerationMs,
   firstReviewToFinalApprovalMs,
@@ -21,13 +22,24 @@ function at(offsetMs: number): Date {
   return new Date(T0.getTime() + offsetMs);
 }
 
+let variantSeq = 0;
+
 function asset(
   jobId: string,
   reviewStatus: DashAsset["reviewStatus"],
-  opts: { createdAt?: number; reviewedAt?: number | null; by?: string | null } = {},
+  opts: {
+    createdAt?: number;
+    reviewedAt?: number | null;
+    by?: string | null;
+    variantKey?: string;
+  } = {},
 ): DashAsset {
   return {
     jobId,
+    // Distinct by default so each asset is its own output slot; pass an
+    // explicit variantKey to model the SAME output across generations.
+    variantKey: opts.variantKey ?? `layout:${++variantSeq}`,
+    docType: "CARTON",
     reviewStatus,
     createdAt: at(opts.createdAt ?? 0),
     reviewedAt: opts.reviewedAt == null ? null : at(opts.reviewedAt),
@@ -164,6 +176,93 @@ test("bucketStyle — every output approved is FULLY_REVIEWED", () => {
 
 test("bucketStyle — a decided-but-rejected style stays PARTIALLY_REVIEWED, never fully", () => {
   const s = style({ assets: [asset("j1", "REJECTED", { reviewedAt: HOUR })] });
+  assert.equal(bucketStyle(s), "PARTIALLY_REVIEWED");
+});
+
+// ---- Superseding: state vs history ------------------------------------------
+
+// The regression this guards: every re-run is a NEW job and the old job's
+// assets survive, so an order that was rejected once and fixed afterwards must
+// NOT read "partially reviewed" forever.
+function rejectedThenFixed(): DashStyle {
+  return style({
+    jobs: [
+      { id: "j1", status: "REJECTED", createdAt: T0 },
+      { id: "j2", status: "APPROVED", createdAt: at(DAY) },
+    ],
+    assets: [
+      asset("j1", "REJECTED", { variantKey: "layout:7", reviewedAt: 2 * HOUR }),
+      asset("j2", "APPROVED", { variantKey: "layout:7", createdAt: DAY, reviewedAt: DAY + HOUR }),
+    ],
+  });
+}
+
+test("currentAssets — a re-run supersedes the earlier generation of the same output", () => {
+  const cur = currentAssets(rejectedThenFixed());
+  assert.equal(cur.length, 1);
+  assert.equal(cur[0].jobId, "j2");
+  assert.equal(cur[0].reviewStatus, "APPROVED");
+});
+
+test("bucketStyle — rejected then regenerated and approved reads FULLY_REVIEWED", () => {
+  assert.equal(bucketStyle(rejectedThenFixed()), "FULLY_REVIEWED");
+});
+
+test("a fixed order still reports its full history in the timings", () => {
+  const s = rejectedThenFixed();
+  // The clock runs from the first decision (the rejection), not the last sitting.
+  assert.equal(firstReviewToFinalApprovalMs(s), DAY + HOUR - 2 * HOUR);
+  assert.equal(creationToFirstReviewMs(s), 2 * HOUR);
+  assert.equal(firstReviewToRegenerationMs(s), DAY - 2 * HOUR);
+  assert.equal(totalTurnaroundMs(s), DAY + HOUR);
+  // …and it was NOT right first time.
+  assert.equal(firstPassOutcome(s)?.clean, false);
+  // Both decisions still count as review work done.
+  const d = computeReviewerDashboard([s], {}, at(2 * DAY));
+  assert.equal(d.range.reviewed, 2);
+  assert.equal(d.buckets.FULLY_REVIEWED, 1);
+});
+
+test("currentAssets — a multi-document output collapses per base, newest job wins", () => {
+  // Two documents of one carton slot ("#L-A"/"#L-B"), re-run once.
+  const s = style({
+    jobs: [
+      { id: "j1", status: "REJECTED", createdAt: T0 },
+      { id: "j2", status: "AWAITING_REVIEW", createdAt: at(DAY) },
+    ],
+    assets: [
+      asset("j1", "REJECTED", { variantKey: "layout:9#L-A", reviewedAt: HOUR }),
+      asset("j1", "APPROVED", { variantKey: "layout:9#L-B", reviewedAt: HOUR }),
+      asset("j2", "APPROVED", { variantKey: "layout:9#L-A", createdAt: DAY, reviewedAt: DAY }),
+      asset("j2", "APPROVED", { variantKey: "layout:9#L-B", createdAt: DAY, reviewedAt: DAY }),
+    ],
+  });
+  const cur = currentAssets(s);
+  assert.equal(cur.length, 2);
+  assert.ok(cur.every((a) => a.jobId === "j2"));
+  assert.equal(bucketStyle(s), "FULLY_REVIEWED");
+});
+
+test("currentAssets — an output NOT regenerated keeps its earlier decision", () => {
+  // j2 only re-ran layout:1; layout:2's approval from j1 is still current.
+  const s = style({
+    jobs: [
+      { id: "j1", status: "REJECTED", createdAt: T0 },
+      { id: "j2", status: "AWAITING_REVIEW", createdAt: at(DAY) },
+    ],
+    assets: [
+      asset("j1", "REJECTED", { variantKey: "layout:1", reviewedAt: HOUR }),
+      asset("j1", "APPROVED", { variantKey: "layout:2", reviewedAt: HOUR }),
+      asset("j2", "PENDING_REVIEW", { variantKey: "layout:1", createdAt: DAY }),
+    ],
+  });
+  const cur = currentAssets(s);
+  assert.equal(cur.length, 2);
+  assert.deepEqual(
+    cur.map((a) => `${a.variantKey}:${a.reviewStatus}`).sort(),
+    ["layout:1:PENDING_REVIEW", "layout:2:APPROVED"],
+  );
+  // One output still awaits a decision ⇒ partially reviewed.
   assert.equal(bucketStyle(s), "PARTIALLY_REVIEWED");
 });
 
