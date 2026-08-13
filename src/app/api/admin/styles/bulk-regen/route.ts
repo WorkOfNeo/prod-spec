@@ -6,6 +6,8 @@ import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin } from "@/lib/roles";
 import { triggerRunner } from "@/lib/queue/trigger";
 import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
+import { getGenerationMinPo } from "@/lib/settings/app-settings";
+import { partitionByGenerationCutoff } from "@/lib/queue/generation-cutoff";
 import { HAS_PO_NUMBER_WHERE } from "@/lib/styles/active-filter";
 import type { JobStatus } from "@/generated/prisma/enums";
 
@@ -29,6 +31,11 @@ export const maxDuration = 60;
 const BODY = z.object({
   styleIds: z.array(z.string().min(1)).min(1).max(5000),
   label: z.string().max(300).optional(),
+  // Include styles below the generation PO cutoff. Default false — this lane
+  // runs what the automatic sweep would also reach and reports the parked rest,
+  // so a filter that happens to span old orders can't quietly regenerate the
+  // archive. See lib/queue/generation-cutoff.ts.
+  includeBelowCutoff: z.boolean().optional(),
 });
 
 const IN_FLIGHT: JobStatus[] = ["QUEUED", "RUNNING"];
@@ -53,7 +60,7 @@ export async function POST(req: NextRequest) {
   // for a row the operator can't even see.
   const candidates = await db.style.findMany({
     where: { id: { in: requestedIds }, ...HAS_PO_NUMBER_WHERE, prodSpec: { active: true } },
-    select: { id: true, prodSpecId: true },
+    select: { id: true, prodSpecId: true, poSeq: true },
   });
   const candidateIds = candidates.map((c) => c.id);
 
@@ -81,12 +88,26 @@ export async function POST(req: NextRequest) {
   });
   const inflightSet = new Set(inflight.map((j) => j.styleId));
 
-  const runnable = candidates.filter(
+  const eligible = candidates.filter(
     (c) => generatedStyleIds.has(c.id) && !inflightSet.has(c.id),
   );
 
+  // The generation cutoff, applied the same way the prod-spec panel applies it.
+  const cutoff = await getGenerationMinPo();
+  const { inScope: runnable, belowCutoff } = partitionByGenerationCutoff(
+    eligible,
+    parsed.data.includeBelowCutoff ? null : cutoff,
+  );
+
   if (runnable.length === 0) {
-    return NextResponse.json({ ok: true, batchId: null, enqueued: 0, skipped: requestedIds.length });
+    return NextResponse.json({
+      ok: true,
+      batchId: null,
+      enqueued: 0,
+      skipped: requestedIds.length,
+      skippedBelowCutoff: belowCutoff.length,
+      cutoff,
+    });
   }
 
   // One FULL job per style — variantKeys [] is the runner's "full regen"
@@ -126,5 +147,10 @@ export async function POST(req: NextRequest) {
     batchId: batch.id,
     enqueued: runnable.length,
     skipped: requestedIds.length - runnable.length,
+    // Called out separately from `skipped` (which lumps together "no spec",
+    // "never generated" and "in flight"): parked backlog is the one skip the
+    // operator can act on, by ticking include or lowering the cutoff.
+    skippedBelowCutoff: belowCutoff.length,
+    cutoff,
   });
 }

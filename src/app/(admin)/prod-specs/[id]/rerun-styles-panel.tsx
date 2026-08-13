@@ -61,6 +61,10 @@ export function RerunStylesPanel({
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [query, setQuery] = useState("");
+  // Opt-in to the parked backlog. Starts OFF every time the panel mounts — an
+  // operator who ran the old orders once shouldn't find the box still ticked
+  // next week.
+  const [includeBelowCutoff, setIncludeBelowCutoff] = useState(false);
   // Styles currently being run via their per-row button (inline fetch pending).
   const [runningRows, setRunningRows] = useState<Set<string>>(() => new Set());
   // Per-row failures, keyed by styleId — cleared when that row runs again.
@@ -178,9 +182,16 @@ export function RerunStylesPanel({
         : null;
 
   async function runAll() {
-    if (!list || list.toRerun === 0 || submittingAll || activeRun || runAllDisabledReason) return;
+    if (!list || runAllCount === 0 || submittingAll || activeRun || runAllDisabledReason) return;
     const ok = window.confirm(
-      `Run ${list.toRerun} style${list.toRerun === 1 ? "" : "s"} on this prod spec?\n\n` +
+      `Run ${runAllCount} style${runAllCount === 1 ? "" : "s"} on this prod spec?\n\n` +
+        (list.toRerunBelowCutoff > 0
+          ? includeBelowCutoff
+            ? `This INCLUDES ${list.toRerunBelowCutoff} style(s) below PO ${list.generationCutoff} — ` +
+              `parked backlog the automatic sweep never runs.\n\n`
+            : `${list.toRerunBelowCutoff} style(s) below PO ${list.generationCutoff} are left out ` +
+              `(tick "include" to run them too).\n\n`
+          : "") +
         `Regenerates every output that isn't approved — new/missing, rejected, and ` +
         `awaiting review. Approved outputs are left alone. Renders in the background — ` +
         `safe to leave this page.`,
@@ -190,7 +201,11 @@ export function RerunStylesPanel({
     setError(null);
     setDismissed(false);
     try {
-      const res = await fetch(base, { method: "POST" });
+      const res = await fetch(base, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ includeBelowCutoff }),
+      });
       const data = (await res.json().catch(() => ({}))) as { batchId?: string | null; error?: string };
       if (!res.ok) {
         setError(data.error ?? `HTTP ${res.status}`);
@@ -247,6 +262,15 @@ export function RerunStylesPanel({
     }
   }
 
+  // What "Run all" will actually enqueue — in-scope only unless the operator
+  // opted in. The button, the confirm text and the POST all read this one
+  // number, so the label can't promise more than the run delivers.
+  const runAllCount = list
+    ? includeBelowCutoff
+      ? list.toRerun
+      : list.toRerun - list.toRerunBelowCutoff
+    : 0;
+
   const totalRows = list?.rows.length ?? 0;
   const filtered = useMemo(() => {
     const all = list?.rows ?? [];
@@ -277,7 +301,7 @@ export function RerunStylesPanel({
             submittingAll ||
             listLoading ||
             list == null ||
-            list.toRerun === 0 ||
+            runAllCount === 0 ||
             activeRun ||
             Boolean(runAllDisabledReason)
           }
@@ -285,7 +309,7 @@ export function RerunStylesPanel({
           className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
         >
           <RunAllIcon />
-          {submittingAll ? "Starting…" : `Run all${list ? ` (${list.toRerun})` : ""}`}
+          {submittingAll ? "Starting…" : `Run all${list ? ` (${runAllCount})` : ""}`}
         </button>
       </div>
 
@@ -295,8 +319,22 @@ export function RerunStylesPanel({
           <span className="text-zinc-600">{list.totalStyles} styles</span>
           <span>· {list.generatedStyles} generated</span>
           <span className="inline-flex items-center gap-1">
-            · <Dot className="bg-zinc-900" /> {list.toRerun} to run
+            · <Dot className="bg-zinc-900" /> {runAllCount} to run
           </span>
+          {list.toRerunBelowCutoff > 0 && (
+            <label
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-800"
+              title={`Styles on a PO below ${list.generationCutoff} are parked backlog — the automatic sweep never runs them either. Their own Run button always works.`}
+            >
+              <input
+                type="checkbox"
+                checked={includeBelowCutoff}
+                onChange={(e) => setIncludeBelowCutoff(e.target.checked)}
+                className="h-3 w-3"
+              />
+              include {list.toRerunBelowCutoff} below PO {list.generationCutoff}
+            </label>
+          )}
           <div className="ml-auto">
             <input
               type="search"
@@ -441,6 +479,14 @@ function StyleRow({
           </Link>
           <div className="truncate text-[11px] text-zinc-400">
             {row.poNumber ? `PO ${row.poNumber}` : "no PO"} · {statusLabel(row.status)}
+            {row.belowCutoff && (
+              <span
+                className="ml-1.5 rounded bg-amber-50 px-1 text-[10px] font-medium text-amber-700"
+                title="Below the generation PO cutoff — parked backlog. Left out of “Run all” unless you tick include; this row’s own Run button still works."
+              >
+                parked
+              </span>
+            )}
           </div>
         </div>
 

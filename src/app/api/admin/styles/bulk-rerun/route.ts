@@ -8,6 +8,8 @@ import { triggerRunner } from "@/lib/queue/trigger";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import { loadIgnoredOutputKeysByStyle } from "@/lib/outputs/output-ignores";
+import { getGenerationMinPo } from "@/lib/settings/app-settings";
+import { partitionByGenerationCutoff } from "@/lib/queue/generation-cutoff";
 import { HAS_PO_NUMBER_WHERE } from "@/lib/styles/active-filter";
 import type { JobStatus } from "@/generated/prisma/enums";
 
@@ -24,6 +26,9 @@ export const maxDuration = 60;
 const BODY = z.object({
   styleIds: z.array(z.string().min(1)).min(1).max(5000),
   label: z.string().max(300).optional(),
+  // Include styles below the generation PO cutoff. Default false — same rule as
+  // bulk-regen and the prod-spec panel; see lib/queue/generation-cutoff.ts.
+  includeBelowCutoff: z.boolean().optional(),
 });
 
 const IN_FLIGHT: JobStatus[] = ["QUEUED", "RUNNING"];
@@ -64,6 +69,8 @@ export async function POST(req: NextRequest) {
       prodSpecId: true,
       rawData: true,
       poNumber: true,
+      // For the generation-cutoff split below.
+      poSeq: true,
       cartonEan: true,
       supplier: { select: { country: true } },
       eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, cartonEan: true } },
@@ -104,7 +111,12 @@ export async function POST(req: NextRequest) {
   // Per style: ready outputs MINUS already-generated. A style with nothing
   // pending (no ready outputs, or all already done) or one mid-flight is
   // skipped — running it would render placeholders or redo finished work.
-  const runnable: Array<{ id: string; prodSpecId: string | null; variantKeys: string[] }> = [];
+  const runnable: Array<{
+    id: string;
+    prodSpecId: string | null;
+    variantKeys: string[];
+    poSeq: number | null;
+  }> = [];
   // Per-style operator ignores — never enqueue those outputs (the runner
   // would skip them anyway; filtering here keeps the runnable set honest).
   const ignoredByStyle = await loadIgnoredOutputKeysByStyle(candidateIds);
@@ -117,18 +129,32 @@ export async function POST(req: NextRequest) {
       .map((o) => o.variantKey)
       .filter((k) => !generated?.has(k));
     if (pending.length === 0) continue;
-    runnable.push({ id: c.id, prodSpecId: c.prodSpecId, variantKeys: pending });
+    runnable.push({ id: c.id, prodSpecId: c.prodSpecId, variantKeys: pending, poSeq: c.poSeq });
   }
 
-  if (runnable.length === 0) {
-    return NextResponse.json({ ok: true, batchId: null, enqueued: 0, skipped: requestedIds.length });
+  // The generation cutoff, applied the same way every other bulk lane does.
+  const cutoff = await getGenerationMinPo();
+  const { inScope, belowCutoff } = partitionByGenerationCutoff(
+    runnable,
+    parsed.data.includeBelowCutoff ? null : cutoff,
+  );
+
+  if (inScope.length === 0) {
+    return NextResponse.json({
+      ok: true,
+      batchId: null,
+      enqueued: 0,
+      skipped: requestedIds.length,
+      skippedBelowCutoff: belowCutoff.length,
+      cutoff,
+    });
   }
 
   // One job per runnable style, SCOPED to its ready+pending outputs. Ids minted
   // up front for a single createMany (cf. enqueueGenerationJob). The runner
   // re-checks each variant's readiness at render time, so a field that regresses
   // between here and render still won't ship an incomplete output.
-  const jobs = runnable.map((r) => ({
+  const jobs = inScope.map((r) => ({
     id: randomUUID(),
     styleId: r.id,
     prodSpecId: r.prodSpecId, // analytics snapshot, same as enqueueGenerationJob
@@ -137,15 +163,15 @@ export async function POST(req: NextRequest) {
     variantKeys: r.variantKeys,
   }));
   await db.job.createMany({ data: jobs });
-  await db.style.updateMany({ where: { id: { in: runnable.map((r) => r.id) } }, data: { status: "GENERATING" } });
+  await db.style.updateMany({ where: { id: { in: inScope.map((r) => r.id) } }, data: { status: "GENERATING" } });
 
   const batch = await db.bulkRunBatch.create({
     data: {
       createdById: session.user.id,
       createdByEmail: session.user.email ?? null,
-      label: parsed.data.label?.trim() || `${runnable.length} styles`,
-      total: runnable.length,
-      styleIds: runnable.map((r) => r.id),
+      label: parsed.data.label?.trim() || `${inScope.length} styles`,
+      total: inScope.length,
+      styleIds: inScope.map((r) => r.id),
       jobIds: jobs.map((j) => j.id),
     },
     select: { id: true },
@@ -157,8 +183,12 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     batchId: batch.id,
-    enqueued: runnable.length,
-    skipped: requestedIds.length - runnable.length,
+    enqueued: inScope.length,
+    skipped: requestedIds.length - inScope.length,
+    // Separated from `skipped` on purpose: parked backlog is the one skip the
+    // operator can act on, by ticking include or lowering the cutoff.
+    skippedBelowCutoff: belowCutoff.length,
+    cutoff,
   });
 }
 

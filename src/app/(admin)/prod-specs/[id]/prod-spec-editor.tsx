@@ -137,9 +137,13 @@ export function ProdSpecEditor(props: Props) {
   // read PERSISTED outputs (not dirty) and the spec must be active.
   async function runOutputAll(variantKey: string, outputName: string) {
     const count = runList?.byOutput?.[variantKey]?.toRun ?? 0;
+    const parked = runList?.byOutput?.[variantKey]?.belowCutoff ?? 0;
     if (count <= 0 || runningOutput || status === "dirty" || status === "saving" || !active) return;
     const ok = window.confirm(
       `Run “${outputName}” on ${count} style${count === 1 ? "" : "s"}?\n\n` +
+        (parked > 0
+          ? `${parked} style(s) below the generation PO cutoff are left out — parked backlog.\n\n`
+          : "") +
         `Runs this output on every style where it isn't approved (new/missing, rejected, ` +
         `awaiting review). Approved work is left alone. Renders in the background; progress ` +
         `shows in “Run styles” below.`,
@@ -1226,7 +1230,9 @@ function OutputRunAllButton({
   specActive,
   onRun,
 }: {
-  summary: { toRun: number; missing: number; rejected: number; changed: number; pending: number } | undefined;
+  summary:
+    | { toRun: number; missing: number; rejected: number; changed: number; pending: number; belowCutoff?: number }
+    | undefined;
   listLoaded: boolean;
   running: boolean;
   busy: boolean;
@@ -1235,6 +1241,10 @@ function OutputRunAllButton({
   onRun: () => void;
 }) {
   const count = summary?.toRun ?? 0;
+  // Styles this output needs but that sit below the generation PO cutoff. They
+  // are NOT in `count` — the route parks them — so the button says so rather
+  // than quietly running fewer styles than its label implies.
+  const parked = summary?.belowCutoff ?? 0;
   const disabledReason = unsaved
     ? "Save your output changes first"
     : !specActive
@@ -1242,7 +1252,9 @@ function OutputRunAllButton({
       : !listLoaded
         ? "Loading styles…"
         : count === 0
-          ? "Every style is approved for this output"
+          ? parked > 0
+            ? `Every in-scope style is approved for this output (${parked} below the PO cutoff — run those from the style page)`
+            : "Every style is approved for this output"
           : null;
   const disabled = running || busy || count === 0 || Boolean(disabledReason);
   const prominent = count > 0 && !disabled;
