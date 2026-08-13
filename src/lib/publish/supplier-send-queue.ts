@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 import { parseCustomerConfig } from "@/lib/customers/config";
+import { isDeliverablePo } from "./supplier-send-cutoff";
 
 // Nightly supplier-send queue (WS2). One row per approved (style, output slot).
 //
@@ -51,6 +52,14 @@ export async function enqueueApprovedAsset(asset: ApprovableAsset): Promise<void
   // supplier delivery at all — keep their approvals out of the nightly queue
   // (and thereby out of the digest email and the supplier-folder push).
   if (parseCustomerConfig(style.customer.config).skipSupplierDelivery) return;
+
+  // Orders below the supplier-send PO cutoff are not delivered — keep them out
+  // of the queue entirely, so /settings/approved shows what will actually go
+  // out rather than rows the sender would discard. See supplier-send-cutoff.ts
+  // for why this is enforced on every path rather than at one choke point.
+  const { getSupplierSendMinPo } = await import("@/lib/settings/app-settings");
+  const cutoff = await getSupplierSendMinPo();
+  if (!isDeliverablePo(style.poSeq, cutoff)) return;
 
   const variantKey = baseKey(asset.variantKey, asset.docType);
 
@@ -165,12 +174,18 @@ export async function reconcileSupplierSendQueue(
   const opts = typeof limitOrOpts === "number" ? { limit: limitOrOpts } : limitOrOpts;
   const limit = opts.limit ?? 25;
   // A named-style reconcile is a deliberate act (the per-style delivery
-  // re-check), so it bypasses BOTH scope guards below: the PO cutoff, and the
-  // "styles with any queue row are already captured" exclusion. That exclusion
-  // is what leaves a half-captured style uncovered — a style with 5 rows and a
-  // 6th approved slot whose enqueue hit the fail-soft catch is "captured" by
-  // the sweep's reckoning and no loop ever revisits it. Per-style, we re-walk
-  // every approved slot and let enqueueApprovedAsset (idempotent) fill the gap.
+  // re-check), so it skips the sweep's "styles with any queue row are already
+  // captured" exclusion. That exclusion is what leaves a half-captured style
+  // uncovered — a style with 5 rows and a 6th approved slot whose enqueue hit
+  // the fail-soft catch is "captured" by the sweep's reckoning and no loop ever
+  // revisits it. Per-style, we re-walk every approved slot and let
+  // enqueueApprovedAsset (idempotent) fill the gap.
+  //
+  // It does NOT bypass the PO cutoff any more, even though it skips the cutoff
+  // FILTER on the candidate query below (there is no query to filter — the ids
+  // are handed in). enqueueApprovedAsset enforces the cutoff itself now, so a
+  // below-cutoff style re-checked by name simply enqueues nothing. See
+  // supplier-send-cutoff.ts for why there is no bypass anywhere.
   const targeted = opts.styleIds != null && opts.styleIds.length > 0;
 
   const { getSupplierSendMinPo } = await import("@/lib/settings/app-settings");

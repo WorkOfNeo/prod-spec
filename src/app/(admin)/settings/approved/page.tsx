@@ -23,6 +23,7 @@ import {
 } from "./supplier-send-actions";
 import { UploadProgress } from "./upload-progress";
 import { QueuedLoadMore } from "./queued-load-more";
+import { SupplierMessageButton } from "./supplier-message-dialog";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Approved & delivery" };
@@ -88,7 +89,13 @@ export default async function ApprovedDeliveryPage({
       take: 200,
       omit: { sharePointError: true },
     }),
-    db.supplierSendBatch.findMany({ orderBy: { createdAt: "desc" }, take: 15 }),
+    // Follow-up stamps read separately + guarded below, same as sharePointError:
+    // the columns don't exist until db:deploy runs the migration.
+    db.supplierSendBatch.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 15,
+      omit: { followUpAt: true, followUpCount: true },
+    }),
     db.supplierSendQueueItem.count({
       where: { sentAt: null, sharePointStatus: "FAILED", pushAttempts: { gte: MAX_PUSH_ATTEMPTS } },
     }),
@@ -112,6 +119,22 @@ export default async function ApprovedDeliveryPage({
     pushErrorById = new Map(errs.map((e) => [e.id, e.sharePointError as string]));
   } catch {
     // Column not migrated yet — surface no per-row error until db:deploy runs.
+  }
+
+  // Which recent sends already had a follow-up message. Same guarded read as
+  // above — before db:deploy the columns are absent and every row simply shows
+  // no follow-up, rather than the page 500-ing.
+  let followUpById = new Map<string, { at: Date; count: number }>();
+  try {
+    const stamps = await db.supplierSendBatch.findMany({
+      where: { id: { in: batches.map((b) => b.id) }, followUpAt: { not: null } },
+      select: { id: true, followUpAt: true, followUpCount: true },
+    });
+    followUpById = new Map(
+      stamps.map((s) => [s.id, { at: s.followUpAt as Date, count: s.followUpCount }]),
+    );
+  } catch {
+    // Not migrated yet — no follow-up shown until db:deploy runs.
   }
 
   // "Queued outputs" paging: queuedRefs is the exact unbounded total, `pending`
@@ -599,18 +622,20 @@ export default async function ApprovedDeliveryPage({
               <th className="px-4 py-2">Result</th>
               <th className="px-4 py-2">Suppliers</th>
               <th className="px-4 py-2">Per-supplier</th>
+              <th className="px-4 py-2">Follow up</th>
             </tr>
           </thead>
           <tbody>
             {batches.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-zinc-500">
+                <td colSpan={6} className="px-4 py-6 text-center text-zinc-500">
                   No batch has run yet. Use “Run batch now” above, or wait for the midnight cron.
                 </td>
               </tr>
             ) : (
               batches.map((b) => {
                 const per = (b.perSupplier as PerSup[]) ?? [];
+                const followUp = followUpById.get(b.id) ?? null;
                 return (
                   <tr key={b.id} className="border-t border-zinc-100 align-top">
                     <td className="px-4 py-2 text-xs text-zinc-500">
@@ -652,6 +677,18 @@ export default async function ApprovedDeliveryPage({
                             </li>
                           ))}
                         </ul>
+                      )}
+                    </td>
+                    <td className="px-4 py-2">
+                      {per.length === 0 ? (
+                        <span className="text-zinc-400">—</span>
+                      ) : (
+                        <SupplierMessageButton
+                          batchId={b.id}
+                          batchLabel={`${b.createdAt.toISOString().slice(0, 16).replace("T", " ")} · ${b.source} · ${b.sentCount}/${b.outputCount} output(s) sent to ${b.supplierCount} supplier(s)`}
+                          followUpAt={followUp ? followUp.at.toISOString() : null}
+                          followUpCount={followUp?.count ?? 0}
+                        />
                       )}
                     </td>
                   </tr>

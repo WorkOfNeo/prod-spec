@@ -314,6 +314,15 @@ model SupplierSendBatch {
   finishedAt     DateTime?
   createdAt      DateTime  @default(now())
 
+  // Follow-up messaging (/settings/approved → "Recent sends" → "Send email to
+  // suppliers"): when an admin last sent a custom message to this batch's
+  // suppliers, and how many suppliers it reached. Purely a record — the emails
+  // themselves are EmailLog rows of type SUPPLIER_MESSAGE. Kept on the batch so
+  // the row can show that a correction already went out, which is what stops
+  // the same 40 suppliers being apologised to twice.
+  followUpAt     DateTime?
+  followUpCount  Int       @default(0)
+
   @@index([createdAt])
   @@map("supplier_send_batches")
 }
@@ -1433,6 +1442,7 @@ enum EmailType {
   REVIEW_READY // job generated → internal reviewer
   TICKET_FIXED // rejection ticket marked fixed → internal reviewer
   SUPPLIER_APPROVAL // job fully approved → supplier
+  SUPPLIER_MESSAGE // admin-written follow-up to a past send batch → supplier
   INVITE // signup invitation link → invitee
   NEW_COMBO // new (customer × business area) combo detected → admin heads-up
   PASSWORD_RESET // password reset link → the account holder (self-service or admin-sent)

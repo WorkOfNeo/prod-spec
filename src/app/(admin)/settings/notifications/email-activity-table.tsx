@@ -26,6 +26,7 @@ const TYPE_LABELS: Record<string, string> = {
   REVIEW_READY: "Review ready",
   TICKET_FIXED: "Ticket fixed",
   SUPPLIER_APPROVAL: "Supplier approval",
+  SUPPLIER_MESSAGE: "Supplier message",
   INVITE: "Invite",
 };
 

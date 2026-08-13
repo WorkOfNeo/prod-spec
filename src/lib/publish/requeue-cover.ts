@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { parseCustomerConfig } from "@/lib/customers/config";
+import { isDeliverablePo } from "./supplier-send-cutoff";
 
 // =====================================================
 // Queue (or re-arm) a style's COVER row in the supplier-send queue. The cover is
@@ -20,14 +21,24 @@ import { parseCustomerConfig } from "@/lib/customers/config";
 //
 // Gates (approval is NOT one):
 //   • a real delivery target — a linked supplier that isn't a self-delivering
-//     customer (config.skipSupplierDelivery), and
+//     customer (config.skipSupplierDelivery),
 //   • the style has ≥1 real output generated. A cover for a style with NO
 //     outputs is just the manifest with everything "Waiting for Customer
 //     Information"; it must not be auto-shipped to the supplier folder on its
-//     own. The cover ships only once there's an actual layout to accompany.
+//     own. The cover ships only once there's an actual layout to accompany, and
+//   • the style clears the supplier-send PO cutoff.
+//
+// That last gate is why this function was at the centre of the 2026-08-13 mass
+// send. Because the cover is decoupled from approval AND re-armed on EVERY
+// generation, it is by far the most reachable way into the supplier queue: a
+// run of bulk regens armed a cover for ~700 styles and the midnight digest
+// mailed 43 suppliers about orders as old as PO 61331. Decoupling from approval
+// is deliberate and stays — the supplier SHOULD learn that work is underway and
+// how many outputs to expect. Decoupling from the PO cutoff was never a
+// decision; it was simply never wired up. It is now.
 // =====================================================
 
-export type CoverRequeueResult = "queued" | "not-delivered" | "no-outputs";
+export type CoverRequeueResult = "queued" | "not-delivered" | "no-outputs" | "below-cutoff";
 
 export async function enqueueCoverForSupplier(
   styleId: string,
@@ -49,6 +60,13 @@ export async function enqueueCoverForSupplier(
   // deliver their own goods; their styles never enter the queue.
   if (!style.supplierId) return "not-delivered";
   if (parseCustomerConfig(style.customer.config).skipSupplierDelivery) return "not-delivered";
+
+  // …and the order has to be one we deliver at all. Checked BEFORE the output
+  // count below so the cheap answer comes first, and so the cover-regen sweep's
+  // per-style outcome says "below-cutoff" rather than the misleading
+  // "no-outputs" for an old style that has plenty of them.
+  const { getSupplierSendMinPo } = await import("@/lib/settings/app-settings");
+  if (!isDeliverablePo(style.poSeq, await getSupplierSendMinPo())) return "below-cutoff";
 
   // Don't auto-ship a cover for a style that has no real outputs yet — a
   // cover-only bundle (the manifest with everything "Waiting for Customer
