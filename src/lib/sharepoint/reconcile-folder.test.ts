@@ -28,9 +28,14 @@ import {
 // --- fixtures -------------------------------------------------------------
 
 // An expected file with sane defaults; `over` names the bits a test cares about.
+// Defaults describe the ordinary case: this style's own document, whose stored
+// stamp and current template name agree (so previousFileName is null).
 const expected = (fileName: string, over: Partial<ExpectedFile> = {}): ExpectedFile => ({
   fileName,
   storedFileName: fileName,
+  previousFileName: null,
+  currentStoredFileName: fileName,
+  nameNote: null,
   variantKey: over.variantKey ?? `layout:${fileName}`,
   baseKey: over.baseKey ?? over.variantKey?.split("#")[0] ?? `layout:${fileName}`,
   name: over.name ?? fileName.replace(/\.pdf$/i, ""),
@@ -38,8 +43,26 @@ const expected = (fileName: string, over: Partial<ExpectedFile> = {}): ExpectedF
   jobAssetId: `asset-${fileName}`,
   queueItemId: `queue-${fileName}`, // queued by default — notQueued is the exception
   queueStatus: "UPLOADED",
+  styleId: "style-self",
+  styleName: "SELF",
+  isSelf: true,
   ...over,
 });
+
+// A document whose layout template was renamed after generation: the folder
+// still holds `was`, the config now asks for `now`.
+const renamedExpected = (now: string, was: string, over: Partial<ExpectedFile> = {}): ExpectedFile =>
+  expected(now, {
+    storedFileName: was,
+    previousFileName: was,
+    currentStoredFileName: now,
+    jobAssetId: `asset-${was}`,
+    ...over,
+  });
+
+// The same document, but owned by another style sharing the PO folder.
+const sibling = (fileName: string, over: Partial<ExpectedFile> = {}): ExpectedFile =>
+  expected(fileName, { styleId: "style-sibling", styleName: "SIBLING", isSelf: false, ...over });
 
 const present = (name: string, over: Partial<PresentFile> = {}): PresentFile => ({
   name,
@@ -265,6 +288,155 @@ test("diffFolderContents — every document of a split output is diffed separate
   assert.equal(diff.ok.length, 1);
   assert.deepEqual(diff.missing.map((m) => m.variantKey), ["layout:carton#M"]);
   assert.equal(diff.missing[0].queueItemId, "q-slot");
+});
+
+// --- renamed: the template moved, the file didn't -------------------------
+
+test("diffFolderContents — a template rename is RENAMED, not missing", () => {
+  // The whole point: the artwork is right there under its old name. Reporting
+  // it as missing sends someone hunting for a file that never moved.
+  const diff = diffFolderContents({
+    expected: [renamedExpected("EV30068-S-Grnn-Wash-Care-Label.pdf", "EV30068-S-Care-Label.pdf")],
+    present: [present("EV30068-S-Care-Label.pdf")],
+  });
+  assert.equal(diff.missing.length, 0, "it is not missing — it is present under the old name");
+  assert.equal(diff.unexpected.length, 0, "the old name is accounted for, so it is not unexplained either");
+  assert.equal(diff.renamed.length, 1);
+  assert.equal(diff.renamed[0].fileName, "EV30068-S-Grnn-Wash-Care-Label.pdf");
+  assert.equal(diff.renamed[0].previousFileName, "EV30068-S-Care-Label.pdf");
+  assert.equal(diff.renamed[0].staleItemId, "item-EV30068-S-Care-Label.pdf");
+});
+
+test("diffFolderContents — once the new name lands, the row is plain ok", () => {
+  const diff = diffFolderContents({
+    expected: [renamedExpected("EV30068-S-Grnn-Wash-Care-Label.pdf", "EV30068-S-Care-Label.pdf")],
+    present: [present("EV30068-S-Grnn-Wash-Care-Label.pdf")],
+  });
+  assert.equal(diff.ok.length, 1);
+  assert.equal(diff.renamed.length, 0);
+  assert.equal(diff.missing.length, 0);
+});
+
+test("diffFolderContents — neither name present is genuinely missing", () => {
+  const diff = diffFolderContents({
+    expected: [renamedExpected("new-name.pdf", "old-name.pdf")],
+    present: [],
+  });
+  assert.equal(diff.renamed.length, 0);
+  assert.deepEqual(diff.missing.map((m) => m.fileName), ["new-name.pdf"]);
+});
+
+test("diffFolderContents — the stale copy of a COLLIDED name is not deletable alone", () => {
+  // The live case: two styles on one PO stamped identical names, so they share
+  // ONE file in the folder. Both now want distinct names. Deleting the shared
+  // file on the first repair would take the other style's only copy with it.
+  const diff = diffFolderContents({
+    expected: [
+      renamedExpected("EV30068-S-Grnn-Wash-Care-Label.pdf", "EV30068-S-Care-Label.pdf"),
+      sibling("EV30068-S-Rd-Wash-Care-Label.pdf", {
+        storedFileName: "EV30068-S-Care-Label.pdf",
+        previousFileName: "EV30068-S-Care-Label.pdf",
+        currentStoredFileName: "EV30068-S-Rd-Wash-Care-Label.pdf",
+        jobAssetId: "asset-sibling",
+      }),
+    ],
+    present: [present("EV30068-S-Care-Label.pdf")],
+  });
+  assert.equal(diff.renamed.length, 2, "both styles are waiting under the same old name");
+  const self = diff.renamed.find((r) => r.isSelf);
+  assert.deepEqual(
+    self?.staleClaimedBy.map((s) => s.styleName),
+    ["SIBLING"],
+    "the sibling still relies on that file, so it must not be deleted yet",
+  );
+});
+
+test("diffFolderContents — the last style through CAN take the stale file", () => {
+  // Same folder, but the sibling has already been repaired: its stamp now
+  // matches its template, so it no longer claims the old name.
+  const diff = diffFolderContents({
+    expected: [
+      renamedExpected("EV30068-S-Grnn-Wash-Care-Label.pdf", "EV30068-S-Care-Label.pdf"),
+      sibling("EV30068-S-Rd-Wash-Care-Label.pdf", { jobAssetId: "asset-sibling" }),
+    ],
+    present: [present("EV30068-S-Care-Label.pdf"), present("EV30068-S-Rd-Wash-Care-Label.pdf")],
+  });
+  const self = diff.renamed.find((r) => r.isSelf);
+  assert.deepEqual(self?.staleClaimedBy, [], "nothing else needs the old file — it can go");
+});
+
+test("diffFolderContents — an unresolvable template keeps asking about the stored name", () => {
+  // previousFileName null (the loader's fallback when the template can't be
+  // resolved) must behave exactly as before this feature existed.
+  const diff = diffFolderContents({
+    expected: [expected("kept.pdf", { nameNote: "split row “4-5R” no longer exists — re-run this output" })],
+    present: [present("kept.pdf")],
+  });
+  assert.equal(diff.ok.length, 1);
+  assert.equal(diff.renamed.length, 0);
+});
+
+// --- PO-wide scope: the folder belongs to the order, not the style ---------
+
+test("diffFolderContents — a sibling style's file is NOT unexpected", () => {
+  // 1,582 of 2,625 live PO folders hold more than one style. Scoped to one
+  // style, every one of those siblings' files read as "nothing accounts for
+  // this" — the false alarm this widening removes.
+  const diff = diffFolderContents({
+    expected: [expected("mine.pdf"), sibling("theirs.pdf")],
+    present: [present("mine.pdf"), present("theirs.pdf")],
+  });
+  assert.equal(diff.unexpected.length, 0);
+  assert.equal(diff.ok.length, 2);
+  assert.deepEqual(
+    diff.ok.map((r) => [r.styleName, r.isSelf]),
+    [
+      ["SELF", true],
+      ["SIBLING", false],
+    ],
+    "every row says whose it is, so the panel can still lead with this style",
+  );
+});
+
+test("diffFolderContents — a file NO style on the PO accounts for is still unexpected", () => {
+  const diff = diffFolderContents({
+    expected: [expected("mine.pdf"), sibling("theirs.pdf")],
+    present: [present("mine.pdf"), present("theirs.pdf"), present("random-supplier-upload.pdf")],
+  });
+  assert.deepEqual(diff.unexpected.map((u) => u.fileName), ["random-supplier-upload.pdf"]);
+});
+
+test("diffFolderContents — a sibling's missing file is reported against the SIBLING", () => {
+  // Widening the expected set must not make another style's gaps look like this
+  // style's problem; the owner tag is what keeps them separable in the UI.
+  const diff = diffFolderContents({
+    expected: [expected("mine.pdf"), sibling("theirs.pdf")],
+    present: [present("mine.pdf")],
+  });
+  assert.equal(diff.missing.length, 1);
+  assert.equal(diff.missing[0].isSelf, false);
+  assert.equal(diff.missing[0].styleName, "SIBLING");
+});
+
+test("diffFolderContents — a rename guess carries the owner of the output it names", () => {
+  const diff = diffFolderContents({
+    expected: [sibling("Wash care label (DE).pdf")],
+    present: [present("Wash care label (DE) FINAL.pdf")],
+  });
+  assert.equal(diff.unexpected.length, 1);
+  assert.equal(diff.unexpected[0].likelyRenamedFrom?.styleName, "SIBLING");
+  assert.equal(diff.unexpected[0].likelyRenamedFrom?.isSelf, false);
+});
+
+test("diffFolderContents — notQueued counts a document present under its OLD name", () => {
+  // Someone pushed it by hand before the template changed. Saying "not in the
+  // folder" because the name moved on would be plainly wrong.
+  const diff = diffFolderContents({
+    expected: [renamedExpected("new.pdf", "old.pdf", { queueItemId: null, queueStatus: null })],
+    present: [present("old.pdf")],
+  });
+  assert.equal(diff.notQueued.length, 1);
+  assert.equal(diff.notQueued[0].present, true);
 });
 
 // --- state precedence -----------------------------------------------------

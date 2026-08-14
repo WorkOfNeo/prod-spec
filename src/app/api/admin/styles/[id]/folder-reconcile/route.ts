@@ -5,14 +5,18 @@ import {
   reconcileStyleFolder,
   rearmMissingUploads,
   adoptRenamedFile,
+  repushRenamedFiles,
   ReconcileApplyError,
 } from "@/lib/sharepoint/reconcile-folder";
 
 export const runtime = "nodejs";
 // A handful of sequential Graph reads (resolve link → list the supplier root's
-// folders → find the leaf → list its files), plus the current-outputs walk.
-// Same headroom as the supplier-folder file count, which does the same chain.
-export const maxDuration = 60;
+// folders → find the leaf → list its files), plus a current-outputs walk PER
+// STYLE sharing the PO folder. The repair adds an upload and a delete per file
+// on top of a fresh reconcile, so the ceiling is raised from the read-only 60:
+// the live worst case is 14 styles on one PO, and a repair that times out
+// halfway would leave the folder mid-repair.
+export const maxDuration = 300;
 
 // =====================================================
 // Per-style supplier-folder reconcile.
@@ -58,6 +62,7 @@ type ApplyBody = {
   queueItemIds?: unknown; // action: "rearm-missing"
   itemId?: unknown; // action: "adopt-renamed"
   toFileName?: unknown; // action: "adopt-renamed"
+  jobAssetIds?: unknown; // action: "repush-renamed"
 };
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -111,8 +116,32 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       return NextResponse.json({ ok: true, action, ...result });
     }
 
+    // ---- Repair documents whose layout template was renamed after approval:
+    // restamp the stored name, re-push the approved bytes under it, then remove
+    // the copy left behind under the old name. The ids are re-validated against
+    // a fresh diff inside the lib and scoped to THIS style, so a sibling's
+    // document on the same PO can't be repaired through this style's route.
+    //
+    // This one WRITES to the supplier's folder (an upload and a delete), which
+    // is why it is itemised like the others rather than a blanket "fix drift".
+    if (action === "repush-renamed") {
+      const jobAssetIds = Array.isArray(body.jobAssetIds)
+        ? body.jobAssetIds.filter((x): x is string => typeof x === "string")
+        : [];
+      if (jobAssetIds.length === 0) {
+        return NextResponse.json(
+          { error: "jobAssetIds is required — name the outputs to re-push (this action is never a blanket fix)." },
+          { status: 400 },
+        );
+      }
+      const result = await repushRenamedFiles({ styleId: id, jobAssetIds, userId: session.user.id });
+      return NextResponse.json({ ok: true, action, ...result });
+    }
+
     return NextResponse.json(
-      { error: `Unknown action “${action}” — expected "rearm-missing" or "adopt-renamed".` },
+      {
+        error: `Unknown action “${action}” — expected "rearm-missing", "adopt-renamed" or "repush-renamed".`,
+      },
       { status: 400 },
     );
   } catch (err) {

@@ -2076,3 +2076,58 @@ model LayoutImage {
   @@index([active])
   @@map("layout_images")
 }
+
+// One row per (supplier, purchase order) — the last known answer to "did every
+// approved document for this PO actually reach the supplier's folder?".
+//
+// Why this is stored rather than computed on demand: answering it costs ~5
+// sequential Graph calls per folder plus a current-outputs walk per style on
+// it. A fleet list of a few hundred POs cannot do that at render time, and the
+// whole point of the list is to surface the folder nobody thought to open. The
+// cron sweep fills these in on rotation; the detail page re-checks live, so a
+// stale row is never what a repair acts on.
+//
+// Counts only, no ledger payload: the list needs "22 of 68", and keeping the
+// per-document breakdown here would bloat every row to carry a picture that is
+// already out of date by the time anyone opens it.
+model PoDeliveryCheck {
+  id         String  @id @default(cuid())
+  supplierId String
+  poNumber   String
+  // Parsed PO number, for ordering the list newest-first without re-deriving
+  // it from the string (see table-sort.ts for why the string is never sorted).
+  poSeq      Int?
+  supplierName String?
+
+  // ReconcileState. Anything other than "ok"/"subfolder-missing" means the
+  // folder could not be listed and the counts below are NOT evidence of
+  // anything — a 403 must never read as "the files are gone".
+  state   String
+  // One human sentence: the delivery headline when listable, the state's own
+  // explanation when not.
+  message String?
+  folderUrl String?
+
+  styleCount    Int @default(0)
+  expectedDocs  Int @default(0)
+  deliveredDocs Int @default(0)
+  missingDocs   Int @default(0)
+  renamedDocs   Int @default(0)
+  // Documents that CANNOT land because another document on the same PO claims
+  // their file name. A naming defect, not a transfer failure — deliberately its
+  // own number so a repair never tries to push its way out of it.
+  collisionDocs Int @default(0)
+  strayFiles    Int @default(0)
+  staleFiles    Int @default(0)
+
+  fullyDelivered Boolean  @default(false)
+  checkedAt      DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([supplierId, poNumber])
+  @@index([fullyDelivered, poSeq])
+  @@index([checkedAt])
+  @@map("po_delivery_checks")
+}

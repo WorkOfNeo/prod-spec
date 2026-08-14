@@ -5,6 +5,7 @@ import {
   listChildFolders,
   resolvePoFolder,
   renameDriveItem,
+  deleteDriveItem,
   sanitizeFileName,
   SharePointWriteForbiddenError,
   type ChildFile,
@@ -33,6 +34,38 @@ import type { PoFolderMatch } from "./po-folder-matches";
 // the config accounts for" — even though both already hold the folder listing
 // in memory when they run. That direction is where hand-renames show up, and
 // it is the whole point of this module.
+//
+// TWO PROPERTIES THE FOLDER HAS THAT A NAIVE DIFF DOES NOT:
+//
+//   A. THE EXPECTED NAME IS THE TEMPLATE'S, NOT THE STAMP'S. An output is named
+//      once, at generation, onto JobAsset.fileName. Edit the layout's fileName
+//      template afterwards and that stamp goes stale — the runner will not
+//      regenerate an approved output, so the new name never lands. Comparing
+//      the folder against the STAMP therefore asks SharePoint about a name the
+//      config stopped meaning. Expected names here come from
+//      current-file-names.ts (the layout's template as it reads right now); the
+//      stamp is kept alongside as `previousFileName`, and a document whose two
+//      names disagree while the OLD one sits in the folder is its own bucket,
+//      `renamed`. That is a repair, not a mystery, and it is the ONLY bucket
+//      with a fully automatic fix (see repushRenamedFiles).
+//
+//   B. THE FOLDER IS PO-SCOPED; A STYLE IS NOT. One "<PO> - <customer> -
+//      <supplier>" folder holds EVERY style on that PO — 1,582 of 2,625 live PO
+//      folders hold more than one. Diffing the whole folder against ONE style's
+//      config therefore reports every sibling style's perfectly good file as
+//      "nothing accounts for this". The expected set is consequently the UNION
+//      over every style that resolves to this same folder, tagged with its owner
+//      so the panel can still lead with the style you are actually looking at.
+//      `unexpected` then means what it claims: no style on this PO accounts for
+//      it.
+//
+// (B) is also what makes (A)'s repair safe. push-to-supplier.ts assumes
+// "filenames are style-number-prefixed, so styles never clobber each other" —
+// which is false whenever two rows share a style number, and then the two styles
+// overwrite each other in the shared folder. Deleting a stale-named file after
+// re-pushing is only correct once we can see that NO OTHER style on the PO still
+// expects that name; without the union we would be deleting a sibling's only
+// copy. repushRenamedFiles refuses exactly that case.
 //
 // THREE deliberate differences from the sweeps, each load-bearing:
 //
@@ -98,8 +131,24 @@ export type ReconcileState =
 // is the whole point; a config-expected output with no queue row is a finding,
 // not an absence of data.
 export type ExpectedFile = {
-  fileName: string; // sanitizeFileName(storedFileName) — the name the push actually writes
-  storedFileName: string; // JobAsset.fileName as stored (pre-sanitisation)
+  // The name the folder is compared against: the layout's CURRENT fileName
+  // template, sanitised. Falls back to sanitize(storedFileName) when the
+  // template can't be resolved for this document (see `nameNote`) — an
+  // unresolvable template is a reason to keep asking about the old name, never
+  // a reason to invent a new one.
+  fileName: string;
+  storedFileName: string; // JobAsset.fileName as stored (pre-sanitisation) — the name the push writes TODAY
+  // sanitize(storedFileName) when it differs from `fileName` — i.e. the name
+  // this document used to have and the folder may still be holding. null when
+  // the template and the stamp agree, which is the ordinary case.
+  previousFileName: string | null;
+  // The un-sanitised current template result — what a restamp would write to
+  // JobAsset.fileName. null when there is nothing to restamp to.
+  currentStoredFileName: string | null;
+  // Why the current name could not be resolved, when it could not. Surfaced
+  // rather than swallowed: "we compared against the old name because the split
+  // row is gone" is a different situation from "the names agree".
+  nameNote: string | null;
   variantKey: string; // the DOCUMENT key ("<base>#<suffix>" for a split output)
   baseKey: string; // the SLOT key a queue row is keyed by
   name: string; // human display name of the output
@@ -107,6 +156,11 @@ export type ExpectedFile = {
   jobAssetId: string;
   queueItemId: string | null; // null ⇒ never queued (the invisible-to-verify case)
   queueStatus: string | null; // SupplierSendQueueItem.sharePointStatus, when queued
+  // ---- Owner. The folder is shared by every style on the PO, so each expected
+  // file has to say whose it is; `isSelf` is the style whose page this is.
+  styleId: string;
+  styleName: string;
+  isSelf: boolean;
 };
 
 // One file actually sitting in the folder right now.
@@ -122,7 +176,15 @@ export type PresentFile = {
 // present name. `confidence` is 0…1 — reported, never acted on automatically.
 export type RenameGuess = { fileName: string; confidence: number };
 
-export type MatchedRow = {
+// Every row the diff produces carries its owner, because the folder is shared
+// by every style on the PO and a row's meaning depends on whose it is.
+export type RowOwner = {
+  styleId: string;
+  styleName: string;
+  isSelf: boolean;
+};
+
+export type MatchedRow = RowOwner & {
   fileName: string;
   variantKey: string;
   name: string;
@@ -132,7 +194,33 @@ export type MatchedRow = {
   webUrl: string | null;
 };
 
-export type MissingRow = {
+// The layout's fileName template changed after this document was generated, and
+// the folder still holds the OLD name. Distinct from `missing` because the file
+// is not gone — it is right there under a name the config has moved on from,
+// and that is repairable end-to-end (restamp → re-push → delete the stale one).
+export type RenamedRow = RowOwner & {
+  fileName: string; // the name the template says it should have (sanitised)
+  // The un-sanitised template result — what the repair writes back to
+  // JobAsset.fileName so the push uploads under the new name. Always present on
+  // a renamed row: the row only exists BECAUSE the template resolved to
+  // something other than the stamp.
+  currentStoredFileName: string;
+  previousFileName: string; // the name it actually has in the folder right now
+  variantKey: string;
+  baseKey: string;
+  name: string;
+  jobAssetId: string;
+  queueItemId: string | null;
+  queueStatus: string | null;
+  staleItemId: string; // Graph item id of the old-named file
+  staleWebUrl: string | null;
+  // Other styles on this PO whose CURRENT config still expects the old name.
+  // Non-empty ⇒ the stale file is not ours alone to delete, and the repair
+  // re-pushes but leaves it. Empty is the ordinary case.
+  staleClaimedBy: Array<{ styleId: string; styleName: string }>;
+};
+
+export type MissingRow = RowOwner & {
   fileName: string;
   variantKey: string;
   baseKey: string;
@@ -151,10 +239,10 @@ export type UnexpectedRow = {
   size: number | null;
   lastModifiedAt: string | null;
   // The expected-but-missing output this file most plausibly IS, if any.
-  likelyRenamedFrom: (RenameGuess & { variantKey: string; name: string }) | null;
+  likelyRenamedFrom: (RenameGuess & { variantKey: string; name: string } & RowOwner) | null;
 };
 
-export type NotQueuedRow = {
+export type NotQueuedRow = RowOwner & {
   fileName: string;
   variantKey: string;
   baseKey: string;
@@ -166,6 +254,11 @@ export type NotQueuedRow = {
 
 export type FolderDiff = {
   ok: MatchedRow[];
+  // Present under the OLD name after a template change. Ordered before
+  // `missing` everywhere it is rendered: a renamed file is not a lost file, and
+  // conflating the two is what sends someone hunting for artwork that is
+  // sitting in front of them.
+  renamed: RenamedRow[];
   missing: MissingRow[];
   unexpected: UnexpectedRow[];
   notQueued: NotQueuedRow[];
@@ -186,8 +279,17 @@ export type FolderReconcile = {
   folderUrl: string | null; // the APPROVED LAYOUTS leaf itself
   folderPath: string | null; // "<PO folder> / APPROVED LAYOUTS", for the panel heading
   ambiguousMatches: PoFolderMatch[]; // populated only for "po-folder-ambiguous"
-  expectedCount: number;
+  expectedCount: number; // THIS style's expected documents
   presentCount: number;
+  // ---- The rest of the PO. The folder belongs to the purchase order, not to
+  // the style, so the panel has to be able to say "12 of these files are the
+  // other style on this PO" instead of calling them unaccounted-for.
+  poExpectedCount: number; // expected documents across EVERY style sharing this folder
+  siblingStyles: Array<{ styleId: string; styleName: string; expected: number }>;
+  // Styles on this PO that were NOT expanded because the cap was hit. Reported
+  // rather than dropped: a silently truncated union would quietly turn a
+  // sibling's files back into "unexpected", which is the bug this fixes.
+  siblingsTruncated: number;
   // The diff. Empty (and MEANINGLESS) for every state except "ok" and
   // "subfolder-missing" — read `state` first, never the array lengths.
   diff: FolderDiff;
@@ -332,18 +434,41 @@ export function matchRenames(
 // name that landed perfectly well as "…-layout-<id>-….pdf".
 const compareKey = (fileName: string) => sanitizeFileName(fileName).toLowerCase();
 
+// One entry per style, input order preserved — a style with five documents on
+// the same collided name is one thing for a human to go and fix, not five.
+function dedupeByStyle(rows: ExpectedFile[]): Array<{ styleId: string; styleName: string }> {
+  const seen = new Set<string>();
+  const out: Array<{ styleId: string; styleName: string }> = [];
+  for (const r of rows) {
+    if (seen.has(r.styleId)) continue;
+    seen.add(r.styleId);
+    out.push({ styleId: r.styleId, styleName: r.styleName });
+  }
+  return out;
+}
+
 // Pure diff of two file lists — no Graph, no DB, no clock. This is the whole
 // decision logic of the module and is what the unit tests exercise.
 //
-// Four buckets, and note that `notQueued` is ORTHOGONAL to the other three:
-//   • ok         — expected ∩ present.
-//   • missing    — expected ∖ present. The config says this file belongs in the
-//                  folder and it is not there.
-//   • unexpected — present ∖ expected. NEW SIGNAL: a file nothing in the current
-//                  config accounts for. Almost always a hand-rename (paired
-//                  with a `missing` below), sometimes a supplier's own upload,
-//                  occasionally an output removed from the ProdSpec whose file
-//                  was never cleaned up.
+// `expected` is the PO-WIDE union (every style sharing this folder), each row
+// carrying its owner. That is load-bearing for `unexpected`: scoped to one
+// style, a sibling's perfectly good file reads as unaccounted-for, and on live
+// data most PO folders are shared.
+//
+// Five buckets, and note that `notQueued` is ORTHOGONAL to the other four:
+//   • ok         — expected ∩ present, under the CURRENT template name.
+//   • renamed    — the current name is absent but the document's PREVIOUS name
+//                  (its JobAsset stamp, from before the template was edited) is
+//                  present. The file is there; only the name is behind. Checked
+//                  BEFORE `missing`, because a renamed file reported as missing
+//                  sends someone hunting for artwork that never moved.
+//   • missing    — expected ∖ present, under neither name. The config says this
+//                  file belongs in the folder and it is not there.
+//   • unexpected — present ∖ (every style's expected, old names included). A
+//                  file NO style on this PO accounts for. Almost always a
+//                  hand-rename (paired with a `missing` below), sometimes a
+//                  supplier's own upload, occasionally an output removed from
+//                  the ProdSpec whose file was never cleaned up.
 //   • notQueued  — expected by the CURRENT config with NO SupplierSendQueueItem
 //                  row behind it. This is a QUEUE-side finding, not a folder-side
 //                  one: such a file is usually also `missing`, and deliberately
@@ -366,9 +491,40 @@ export function diffFolderContents(input: {
     if (!presentByKey.has(k)) presentByKey.set(k, p);
   }
 
+  // Who still needs a given name — indexed under BOTH the name a document wants
+  // today and the name it still carries in the folder. Drives `staleClaimedBy`,
+  // and both halves are load-bearing on a collided PO:
+  //
+  //   • current name — a sibling whose config asks for that exact name; deleting
+  //     it would remove a file that style is actively relying on.
+  //   • previous name — a sibling whose OWN stale copy is that same file. Two
+  //     styles that stamped identical names share ONE file in the folder, so it
+  //     is the old copy of both, and it may only go once BOTH have been
+  //     re-pushed under their new names.
+  //
+  // The happy consequence is that the stale file survives until the last style
+  // stops needing it, and the repair says so instead of silently leaving it.
+  const claimants = new Map<string, ExpectedFile[]>();
+  const claim = (key: string, e: ExpectedFile) => {
+    const arr = claimants.get(key) ?? [];
+    arr.push(e);
+    claimants.set(key, arr);
+  };
+  for (const e of input.expected) {
+    claim(compareKey(e.fileName), e);
+    if (e.previousFileName) claim(compareKey(e.previousFileName), e);
+  }
+
   const ok: MatchedRow[] = [];
+  const renamed: RenamedRow[] = [];
   const missingExpected: ExpectedFile[] = [];
   const matchedKeys = new Set<string>();
+
+  const ownerOf = (e: ExpectedFile): RowOwner => ({
+    styleId: e.styleId,
+    styleName: e.styleName,
+    isSelf: e.isSelf,
+  });
 
   for (const e of input.expected) {
     const k = compareKey(e.fileName);
@@ -376,6 +532,7 @@ export function diffFolderContents(input: {
     if (hit) {
       matchedKeys.add(k);
       ok.push({
+        ...ownerOf(e),
         fileName: e.fileName,
         variantKey: e.variantKey,
         name: e.name,
@@ -384,9 +541,47 @@ export function diffFolderContents(input: {
         itemId: hit.itemId,
         webUrl: hit.webUrl,
       });
-    } else {
-      missingExpected.push(e);
+      continue;
     }
+
+    // The current name isn't there — is the name this document had BEFORE the
+    // template was edited? Then nothing is lost, the folder is just behind.
+    const prevKey = e.previousFileName ? compareKey(e.previousFileName) : null;
+    const stale = prevKey ? presentByKey.get(prevKey) : undefined;
+    if (prevKey && stale) {
+      // The stale name is accounted for — it is this document under its old
+      // name, NOT an unexplained file.
+      matchedKeys.add(prevKey);
+      renamed.push({
+        ...ownerOf(e),
+        fileName: e.fileName,
+        // A renamed row can only arise when the template resolved (otherwise
+        // fileName falls back to the stamp and previousFileName is null), so
+        // this is non-null by construction — the fallback keeps the type honest
+        // without inventing a name.
+        currentStoredFileName: e.currentStoredFileName ?? e.fileName,
+        previousFileName: e.previousFileName as string,
+        variantKey: e.variantKey,
+        baseKey: e.baseKey,
+        name: e.name,
+        jobAssetId: e.jobAssetId,
+        queueItemId: e.queueItemId,
+        queueStatus: e.queueStatus,
+        staleItemId: stale.itemId,
+        staleWebUrl: stale.webUrl,
+        // Anyone ELSE still tied to that file — by name today, or as their own
+        // un-repaired old copy. One entry per STYLE (a style with five documents
+        // on the same collided name is one thing to go and fix, not five).
+        staleClaimedBy: dedupeByStyle(
+          (claimants.get(prevKey) ?? []).filter(
+            (c) => c.jobAssetId !== e.jobAssetId && c.styleId !== e.styleId,
+          ),
+        ),
+      });
+      continue;
+    }
+
+    missingExpected.push(e);
   }
 
   const unexpectedPresent = input.present.filter((p) => !matchedKeys.has(compareKey(p.name)));
@@ -404,6 +599,7 @@ export function diffFolderContents(input: {
     const g = guessByMissing.get(sanitizeFileName(e.fileName));
     const target = g ? unexpectedPresent.find((p) => p.name === g.unexpected) : undefined;
     return {
+      ...ownerOf(e),
       fileName: e.fileName,
       variantKey: e.variantKey,
       baseKey: e.baseKey,
@@ -428,6 +624,7 @@ export function diffFolderContents(input: {
       likelyRenamedFrom:
         g && source
           ? {
+              ...ownerOf(source),
               fileName: source.fileName,
               variantKey: source.variantKey,
               name: source.name,
@@ -440,16 +637,22 @@ export function diffFolderContents(input: {
   const notQueued: NotQueuedRow[] = input.expected
     .filter((e) => e.queueItemId == null)
     .map((e) => ({
+      ...ownerOf(e),
       fileName: e.fileName,
       variantKey: e.variantKey,
       baseKey: e.baseKey,
       name: e.name,
       docType: e.docType,
       jobAssetId: e.jobAssetId,
-      present: presentByKey.has(compareKey(e.fileName)),
+      // Present under EITHER name — a document sitting there under its old name
+      // was manifestly pushed by hand, and saying "not in the folder" because
+      // the template moved on would be plainly wrong.
+      present:
+        presentByKey.has(compareKey(e.fileName)) ||
+        (e.previousFileName != null && presentByKey.has(compareKey(e.previousFileName))),
     }));
 
-  return { ok, missing, unexpected, notQueued };
+  return { ok, renamed, missing, unexpected, notQueued };
 }
 
 // -----------------------------------------------------
@@ -536,10 +739,11 @@ async function sharepointConfigured(): Promise<boolean> {
   return isSharepointConfigured();
 }
 
-type StyleRow = {
+export type StyleRow = {
   id: string;
   name: string;
   poNumber: string | null;
+  supplierId: string | null;
   supplierPoFolderName: string | null;
   supplierName: string | null;
   supplierFolderUrl: string | null;
@@ -555,6 +759,7 @@ async function loadStyle(styleId: string): Promise<StyleRow | null> {
       id: true,
       name: true,
       poNumber: true,
+      supplierId: true, // the folder is (supplier root → PO folder); both halves scope the siblings
       supplierPoFolderName: true, // the operator's manual pick — same input the push/verify use
       customer: { select: { config: true } },
       supplier: { select: { name: true, sharepointUrl: true } },
@@ -565,10 +770,64 @@ async function loadStyle(styleId: string): Promise<StyleRow | null> {
     id: style.id,
     name: style.name,
     poNumber: style.poNumber,
+    supplierId: style.supplierId,
     supplierPoFolderName: style.supplierPoFolderName,
     supplierName: style.supplier?.name ?? null,
     supplierFolderUrl: style.supplier?.sharepointUrl ?? null,
     skipSupplierDelivery: parseCustomerConfig(style.customer.config).skipSupplierDelivery,
+  };
+}
+
+// How many styles' configs one reconcile will expand. Each costs a
+// current-outputs walk and a render context, so this is a real bound — but the
+// live maximum for one (supplier, PO) is 14, so it is headroom rather than a
+// limit anyone should hit. Whatever it cuts is REPORTED (siblingsTruncated),
+// never silently dropped: a truncated union turns a sibling's files back into
+// "unexpected", which is the exact bug this expansion exists to fix.
+const MAX_SIBLING_STYLES = 20;
+
+// Every OTHER style that lands in this same PO folder.
+//
+// Scoped on (supplierId, poNumber) because that pair is what the folder
+// resolution is keyed on — same PO number under a different supplier is a
+// different supplier root and therefore a different folder entirely.
+//
+// The supplierPoFolderName filter is deliberately INCLUSIVE: a sibling that
+// pinned a different folder by hand is genuinely elsewhere and is excluded, but
+// a sibling with no pin (the overwhelmingly common case) resolves by PO match —
+// and the folder we resolved IS a PO match — so it is treated as sharing. The
+// asymmetry is on purpose. Wrongly including a style means we might not flag a
+// genuinely stray file; wrongly excluding one means we call its good files
+// suspicious. The second is the failure being fixed here, so bias to inclusion.
+async function loadSiblingStyles(
+  self: StyleRow,
+  resolvedPoFolderName: string | null,
+): Promise<{ styles: Array<{ id: string; name: string }>; truncated: number }> {
+  if (!self.poNumber || !self.supplierId) return { styles: [], truncated: 0 };
+  const { db } = await import("@/lib/db");
+
+  const rows = await db.style.findMany({
+    where: {
+      id: { not: self.id },
+      poNumber: self.poNumber,
+      supplierId: self.supplierId,
+      archivedAt: null,
+      deletedAt: null,
+    },
+    select: { id: true, name: true, supplierPoFolderName: true },
+    orderBy: { name: "asc" },
+  });
+
+  const sharing = rows.filter(
+    (r) =>
+      !r.supplierPoFolderName ||
+      !resolvedPoFolderName ||
+      r.supplierPoFolderName.trim().toLowerCase() === resolvedPoFolderName.trim().toLowerCase(),
+  );
+
+  return {
+    styles: sharing.slice(0, MAX_SIBLING_STYLES).map((r) => ({ id: r.id, name: r.name })),
+    truncated: Math.max(0, sharing.length - MAX_SIBLING_STYLES),
   };
 }
 
@@ -589,47 +848,135 @@ async function loadStyle(styleId: string): Promise<StyleRow | null> {
 // Queue rows are keyed by the SLOT (base variantKey); a split output is many
 // documents behind one row. So `queueItemId` is looked up per base and shared
 // by every document of that slot, exactly as verify expands slot → documents.
-async function loadExpectedFiles(styleId: string): Promise<ExpectedFile[]> {
+//
+// `fileName` is resolved from the layout's CURRENT template, not from the
+// JobAsset stamp — see (A) in the header. The stamp is kept as
+// `previousFileName` whenever the two disagree, which is what lets the diff say
+// "it's there, under the old name" instead of "it's gone".
+export async function loadExpectedFiles(
+  style: { id: string; name: string },
+  isSelf: boolean,
+  variantsAlreadyFresh: boolean,
+): Promise<ExpectedFile[]> {
   const { db } = await import("@/lib/db");
   const { getCurrentOutputsForStyle } = await import("@/lib/outputs/current-outputs");
+  const { resolveCurrentFileNames } = await import("./current-file-names");
 
   const [outputs, queueRows] = await Promise.all([
-    getCurrentOutputsForStyle(styleId),
+    getCurrentOutputsForStyle(style.id),
     db.supplierSendQueueItem.findMany({
-      where: { styleId },
+      where: { styleId: style.id },
       select: { id: true, variantKey: true, sharePointStatus: true },
     }),
   ]);
 
   const queueByBase = new Map(queueRows.map((r) => [r.variantKey, r]));
 
+  // The same filter verify uses (approved, no placeholders, has an asset, has a
+  // fileName) — the three surfaces have to agree on what belongs in the folder
+  // or they will fight over it.
+  const deliverable = outputs.filter(
+    (o) => o.jobAssetId != null && o.fileName != null && o.reviewStatus === "APPROVED" && o.placeholderCount === 0,
+  );
+
+  // Resolving current names needs the style's render context, which can fail
+  // (a style whose Monday data went away, a layout mid-publish). That must NOT
+  // sink the reconcile: with no template answers every document simply keeps
+  // its stamped name, which is exactly the pre-existing behaviour.
+  let currentNames: Awaited<ReturnType<typeof resolveCurrentFileNames>> = new Map();
+  try {
+    currentNames = await resolveCurrentFileNames(
+      style.id,
+      deliverable.map((o) => ({ jobAssetId: o.jobAssetId as string, variantKey: o.variantKey })),
+      { variantsAlreadyFresh },
+    );
+  } catch (err) {
+    console.warn(`[folder-reconcile] current-name resolution failed for style ${style.id}:`, err);
+  }
+
   const expected: ExpectedFile[] = [];
-  for (const o of outputs) {
-    if (o.jobAssetId == null || o.fileName == null) continue;
-    if (o.reviewStatus !== "APPROVED" || o.placeholderCount > 0) continue;
+  for (const o of deliverable) {
+    const jobAssetId = o.jobAssetId as string;
+    const stored = o.fileName as string;
     const baseKey = o.variantKey.split("#")[0] || `doc:${o.docType}`;
     const row = queueByBase.get(baseKey);
+
+    const resolution = currentNames.get(jobAssetId);
+    const currentStored = resolution?.kind === "resolved" ? resolution.fileName : null;
+    // No current answer ⇒ keep asking about the stamped name. Never invent one.
+    const fileName = sanitizeFileName(currentStored ?? stored);
+    const storedSanitised = sanitizeFileName(stored);
+
     expected.push({
-      fileName: sanitizeFileName(o.fileName),
-      storedFileName: o.fileName,
+      fileName,
+      storedFileName: stored,
+      previousFileName: storedSanitised.toLowerCase() === fileName.toLowerCase() ? null : storedSanitised,
+      currentStoredFileName: currentStored,
+      nameNote: resolution?.kind === "unresolvable" ? resolution.reason : null,
       variantKey: o.variantKey,
       baseKey,
       name: o.name,
       docType: o.docType,
-      jobAssetId: o.jobAssetId,
+      jobAssetId,
       queueItemId: row?.id ?? null,
       queueStatus: row?.sharePointStatus ?? null,
+      styleId: style.id,
+      styleName: style.name,
+      isSelf,
     });
   }
   return expected;
 }
 
-const EMPTY_DIFF: FolderDiff = { ok: [], missing: [], unexpected: [], notQueued: [] };
+// The PO-WIDE expected set: this style plus every sibling sharing the folder.
+//
+// The layout-variant force-refresh happens ONCE here and every per-style
+// resolution is told it is already fresh — it re-reads every published layout,
+// and paying that per sibling would make a shared PO folder measurably slower
+// for no gain.
+//
+// A sibling whose expected set throws is skipped rather than fatal: failing to
+// read style B must not stop the user from seeing style A's diff. The cost is
+// that B's files may show as unexpected, which is the status quo, not a
+// regression.
+async function loadPoFolderExpected(
+  self: StyleRow,
+  resolvedPoFolderName: string | null,
+): Promise<{
+  expected: ExpectedFile[];
+  selfCount: number;
+  siblingStyles: Array<{ styleId: string; styleName: string; expected: number }>;
+  siblingsTruncated: number;
+}> {
+  const { ensureLayoutVariantsLoaded } = await import("@/lib/output-layouts/variants");
+  await ensureLayoutVariantsLoaded(true);
+
+  const selfExpected = await loadExpectedFiles({ id: self.id, name: self.name }, true, true);
+
+  const { styles: siblings, truncated } = await loadSiblingStyles(self, resolvedPoFolderName);
+  const expected = [...selfExpected];
+  const siblingStyles: Array<{ styleId: string; styleName: string; expected: number }> = [];
+
+  for (const sib of siblings) {
+    try {
+      const rows = await loadExpectedFiles(sib, false, true);
+      expected.push(...rows);
+      siblingStyles.push({ styleId: sib.id, styleName: sib.name, expected: rows.length });
+    } catch (err) {
+      console.warn(`[folder-reconcile] sibling ${sib.id} expected-set failed:`, err);
+      siblingStyles.push({ styleId: sib.id, styleName: sib.name, expected: 0 });
+    }
+  }
+
+  return { expected, selfCount: selfExpected.length, siblingStyles, siblingsTruncated: truncated };
+}
+
+const EMPTY_DIFF: FolderDiff = { ok: [], renamed: [], missing: [], unexpected: [], notQueued: [] };
 
 // Where a resolution attempt landed, plus the leaf we can list (when we got
 // that far). Shared by the read path and by adopt's re-resolution so the two
 // can never disagree about which folder they are acting on.
-type FolderTarget = {
+export type FolderTarget = {
   state: ReconcileState;
   supplierFolderUrl: string | null;
   poFolderName: string | null;
@@ -644,7 +991,7 @@ type FolderTarget = {
 // The same chain, in the same order, as push-to-supplier and
 // verify-supplier-uploads. Every throw is caught and mapped to "unavailable" —
 // a 403/throttle/blip is never allowed to become a claim about file presence.
-async function resolveApprovedLayoutsFolder(style: StyleRow): Promise<FolderTarget> {
+export async function resolveApprovedLayoutsFolder(style: StyleRow): Promise<FolderTarget> {
   const base: FolderTarget = {
     state: "ok",
     supplierFolderUrl: null,
@@ -744,6 +1091,9 @@ async function runReconcile(
     ambiguousMatches: [],
     expectedCount: 0,
     presentCount: 0,
+    poExpectedCount: 0,
+    siblingStyles: [],
+    siblingsTruncated: 0,
     diff: EMPTY_DIFF,
     batchSendEnabled,
     checkedAt: new Date().toISOString(),
@@ -779,14 +1129,15 @@ async function runReconcile(
   // The expected set is worth computing even for "subfolder-missing": knowing
   // six approved outputs are waiting on a folder that was never created is far
   // more useful than "nothing to show".
-  let expected: ExpectedFile[];
+  let po: Awaited<ReturnType<typeof loadPoFolderExpected>>;
   try {
-    expected = await loadExpectedFiles(styleId);
+    po = await loadPoFolderExpected(resolved, target.poFolderName);
   } catch (err) {
     // Can't say what SHOULD be there ⇒ can't say anything is missing.
     console.warn(`[folder-reconcile] expected-set resolution failed for style ${styleId}:`, err);
     return { result: shell("unavailable", located), target, style: resolved };
   }
+  const expected = po.expected;
 
   let present: ChildFile[] = [];
   if (target.state === "ok") {
@@ -811,8 +1162,14 @@ async function runReconcile(
   return {
     result: shell(target.state, {
       ...located,
-      expectedCount: expected.length,
+      // expectedCount stays THIS style's document count — the headline on a
+      // style page must keep answering "how many of MY files should be here".
+      // The PO-wide total rides alongside it.
+      expectedCount: po.selfCount,
       presentCount: present.length,
+      poExpectedCount: expected.length,
+      siblingStyles: po.siblingStyles,
+      siblingsTruncated: po.siblingsTruncated,
       diff,
     }),
     target,
@@ -942,13 +1299,24 @@ export async function adoptRenamedFile(input: {
       "That file is no longer an unexpected file in this folder — re-check before adopting (it may already have been renamed or removed).",
     );
   }
+  // Scoped to THIS style's rows: the diff is PO-wide now, and adopting a file
+  // onto a SIBLING style's expected name from this style's page would be a
+  // cross-style write the user never asked for. Repairing a sibling means
+  // opening the sibling, where its own diff is the one on screen.
   const missing = current.diff.missing.find(
-    (m) => sanitizeFileName(m.fileName).toLowerCase() === sanitizeFileName(input.toFileName).toLowerCase(),
+    (m) =>
+      m.isSelf &&
+      sanitizeFileName(m.fileName).toLowerCase() === sanitizeFileName(input.toFileName).toLowerCase(),
   );
   if (!missing) {
+    const elsewhere = current.diff.missing.find(
+      (m) => sanitizeFileName(m.fileName).toLowerCase() === sanitizeFileName(input.toFileName).toLowerCase(),
+    );
     throw new ReconcileApplyError(
       409,
-      "That target name is not currently an expected-but-missing output for this style — re-check before adopting.",
+      elsewhere
+        ? `That name belongs to “${elsewhere.styleName}”, another style sharing this PO folder — open that style to adopt it there.`
+        : "That target name is not currently an expected-but-missing output for this style — re-check before adopting.",
     );
   }
 
@@ -983,6 +1351,220 @@ export async function adoptRenamedFile(input: {
   );
 
   return { adopted: true, fromFileName: unexpected.fileName, toFileName: newName, webUrl: res.webUrl ?? null };
+}
+
+export type RepushOutcome = {
+  jobAssetId: string;
+  variantKey: string;
+  name: string;
+  fromFileName: string; // the stale name it had in the folder
+  toFileName: string; // the name it now has
+  pushed: boolean;
+  webUrl: string | null;
+  staleDeleted: boolean;
+  // Populated when the stale file was deliberately LEFT — who still needs it.
+  staleLeftBecause: string | null;
+};
+
+export type RepushResult = {
+  repaired: number;
+  pushed: number;
+  staleDeleted: number;
+  staleLeft: number;
+  items: RepushOutcome[];
+};
+
+// Repair documents whose layout template was renamed after they were approved:
+// restamp the stored name, RE-PUSH the approved bytes under it, then remove the
+// copy sitting there under the old name.
+//
+// WHY RE-PUSH RATHER THAN RENAME IN PLACE. fix-output-filenames.ts repairs this
+// class of drift with a Graph PATCH — cheaper, keeps version history — and that
+// is the right move when the folder holds exactly one style's work. It is the
+// WRONG move here. Two styles sharing a PO and a style number stamp identical
+// names and overwrite each other in the shared folder, so the file called
+// "EV30068-S-Care-Label.pdf" may be either style's artwork and NOTHING in the
+// name says which. Renaming it would put one style's PDF under the other's
+// name — the exact failure the reviewer would never catch. Re-pushing takes the
+// bytes from JobAsset.pdf, which is unambiguously this document's own artwork.
+//
+// WHY NO REGENERATION. The PDFs are already correct and already approved; only
+// their names went stale. Regenerating would send every one of them back to
+// PENDING_REVIEW for no gain. Bytes, approval and review history are untouched.
+//
+// ORDER IS THE SAFETY PROPERTY: restamp → upload the new name → only then delete
+// the old one. The supplier's folder never passes through a state where the
+// document is absent. A push that fails leaves the stale file exactly where it
+// was, which is why the delete is a separate, later step and not a rollback.
+//
+// The delete is refused outright while ANY other style on the PO is still tied
+// to that file (staleClaimedBy) — see the diff's claimant index. Repair those
+// styles too and the last one through takes the file with it.
+export async function repushRenamedFiles(input: {
+  styleId: string;
+  jobAssetIds: string[];
+  userId?: string;
+}): Promise<RepushResult> {
+  const { db } = await import("@/lib/db");
+  const { pushApprovedAssetsToSupplier } = await import("./push-to-supplier");
+
+  // Re-validate against a FRESH reconcile rather than trusting the request:
+  // between the GET a user looked at and the POST they clicked, a sweep may
+  // have re-uploaded the file, someone may have fixed the name by hand, or the
+  // ProdSpec may have changed. Same discipline as adoptRenamedFile.
+  const { result: current, target } = await runReconcile(input.styleId);
+  if (current.state !== "ok" || !target || !target.driveId || !target.leafItemId) {
+    throw new ReconcileApplyError(409, current.message);
+  }
+
+  const wanted = new Set(input.jobAssetIds.filter((id) => typeof id === "string" && id.length > 0));
+  // Scoped to THIS style server-side, so an id from a sibling on the same PO
+  // can't be smuggled through the body — repairing a sibling means opening the
+  // sibling's own page, where its diff is the one on screen.
+  const rows = current.diff.renamed.filter((r) => r.isSelf && wanted.has(r.jobAssetId));
+  if (rows.length === 0) {
+    throw new ReconcileApplyError(
+      409,
+      "None of those outputs are currently waiting under an old name — re-check before repairing (they may already have been repaired).",
+    );
+  }
+
+  // ---- 1. Restamp. The push reads JobAsset.fileName, so this is what makes it
+  // upload under the new name rather than re-writing the old one.
+  for (const r of rows) {
+    await db.jobAsset
+      .update({ where: { id: r.jobAssetId }, data: { fileName: r.currentStoredFileName } })
+      .catch((err) => {
+        console.warn(`[folder-reconcile] restamp failed for ${r.jobAssetId}:`, err);
+      });
+  }
+
+  // ---- 2. Push the approved bytes under the new names. Throws on a folder or
+  // permission problem, which leaves the stale files untouched — correct, since
+  // nothing new has landed to replace them.
+  let push;
+  try {
+    push = await pushApprovedAssetsToSupplier({
+      styleId: input.styleId,
+      assetIds: rows.map((r) => r.jobAssetId),
+      userId: input.userId,
+    });
+  } catch (err) {
+    const { SupplierPushError } = await import("./push-to-supplier");
+    if (err instanceof SupplierPushError) {
+      throw new ReconcileApplyError(err.httpStatus === 403 ? 403 : 409, err.message);
+    }
+    throw err;
+  }
+  const pushedByAsset = new Map(push.pushed.map((p) => [p.assetId, p]));
+
+  // ---- 3. Delete the stale copies, but only the ones nothing needs any more.
+  //
+  // Same-style claimants are handled here rather than in the diff: two documents
+  // of THIS style on one collided name share a stale file, and it may only go
+  // once both have been re-pushed — i.e. only when both are in this batch.
+  const repairedAssets = new Set(rows.map((r) => r.jobAssetId));
+  const staleSharedWithin = new Map<string, string[]>();
+  for (const r of current.diff.renamed) {
+    if (!r.isSelf) continue;
+    const arr = staleSharedWithin.get(r.staleItemId) ?? [];
+    arr.push(r.jobAssetId);
+    staleSharedWithin.set(r.staleItemId, arr);
+  }
+
+  const items: RepushOutcome[] = [];
+  const deletedItems = new Set<string>();
+
+  for (const r of rows) {
+    const pushedFile = pushedByAsset.get(r.jobAssetId);
+    const outcome: RepushOutcome = {
+      jobAssetId: r.jobAssetId,
+      variantKey: r.variantKey,
+      name: r.name,
+      fromFileName: r.previousFileName,
+      toFileName: r.fileName,
+      pushed: pushedFile != null,
+      webUrl: pushedFile?.webUrl ?? null,
+      staleDeleted: false,
+      staleLeftBecause: null,
+    };
+
+    // Never delete on the strength of a push that didn't happen — that would be
+    // removing the supplier's only copy of the artwork.
+    if (!pushedFile) {
+      outcome.staleLeftBecause = "the re-upload didn't report this file — nothing was deleted";
+      items.push(outcome);
+      continue;
+    }
+
+    // Update the slot's queue row so the next verify agrees with the folder
+    // rather than re-arming against a name that no longer exists.
+    if (r.queueItemId) {
+      await db.supplierSendQueueItem
+        .update({
+          where: { id: r.queueItemId },
+          data: {
+            sharePointStatus: "UPLOADED",
+            sharePointUrl: pushedFile.webUrl ?? undefined,
+            sharePointVerifiedAt: null,
+          },
+        })
+        .catch(() => {});
+    }
+
+    if (deletedItems.has(r.staleItemId)) {
+      outcome.staleDeleted = true; // already removed for a sibling document in this batch
+      items.push(outcome);
+      continue;
+    }
+
+    if (r.staleClaimedBy.length > 0) {
+      const who = r.staleClaimedBy.map((s) => `“${s.styleName}”`).join(", ");
+      outcome.staleLeftBecause = `${who} on this PO still relies on “${r.previousFileName}” — repair that style too and the file goes with the last one`;
+      items.push(outcome);
+      continue;
+    }
+
+    const alsoMine = (staleSharedWithin.get(r.staleItemId) ?? []).filter((id) => !repairedAssets.has(id));
+    if (alsoMine.length > 0) {
+      outcome.staleLeftBecause = `${alsoMine.length} more output(s) on this style still sit under “${r.previousFileName}” — repair them in the same pass`;
+      items.push(outcome);
+      continue;
+    }
+
+    try {
+      const del = await deleteDriveItem(target.driveId as string, r.staleItemId);
+      outcome.staleDeleted = del.deleted || del.alreadyGone;
+      if (del.alreadyGone) outcome.staleLeftBecause = null;
+      deletedItems.add(r.staleItemId);
+    } catch (err) {
+      if (err instanceof SharePointWriteForbiddenError) {
+        // The new file IS uploaded; only the cleanup failed. Say exactly that
+        // rather than failing the whole repair.
+        outcome.staleLeftBecause = "SharePoint refused the delete (403) — the new file is uploaded, the old one is still there";
+      } else {
+        outcome.staleLeftBecause = `couldn't delete the old file — ${(err as Error).message.slice(0, 80)}`;
+      }
+    }
+    items.push(outcome);
+  }
+
+  const staleDeleted = items.filter((i) => i.staleDeleted).length;
+  await writeAuditLog(
+    input.styleId,
+    `folder reconcile: re-pushed ${items.filter((i) => i.pushed).length} renamed output(s) under their current template names` +
+      ` · removed ${staleDeleted} stale file(s)` +
+      (items.some((i) => i.staleLeftBecause) ? ` · ${items.filter((i) => i.staleLeftBecause).length} old file(s) left in place` : "") +
+      (input.userId ? ` · by user ${input.userId}` : ""),
+  );
+
+  return {
+    repaired: rows.length,
+    pushed: items.filter((i) => i.pushed).length,
+    staleDeleted,
+    staleLeft: items.filter((i) => i.staleLeftBecause != null).length,
+    items,
+  };
 }
 
 // Applying can refuse for reasons that are the USER's to resolve (the folder

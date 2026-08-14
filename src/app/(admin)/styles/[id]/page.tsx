@@ -827,7 +827,11 @@ export default async function StyleDetail({
           in the folder still what we think it is?" — the half the recurring
           verify sweep can't cover, since that only re-checks rows it already
           believes it uploaded. */}
-      <FolderReconcilePanel styleId={style.id} className="mt-4" />
+      <FolderReconcilePanel
+        styleId={style.id}
+        poNumber={style.poNumber}
+        className="mt-4"
+      />
 
       {customerConfig.skipSupplierDelivery && <SkipSupplierDeliveryBadge className="mt-4" />}
 

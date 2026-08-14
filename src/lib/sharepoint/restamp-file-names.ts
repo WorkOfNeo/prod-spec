@@ -1,7 +1,6 @@
 import { db } from "@/lib/db";
-import { getVariant } from "@/lib/pdf/template-registry";
-import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
+import { resolveCurrentFileNames, type NameableDocument } from "./current-file-names";
 
 // =====================================================
 // Re-stamp JobAsset.fileName from a layout's CURRENT file-name template —
@@ -21,10 +20,8 @@ import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 // review history all untouched. The next push then writes N distinct files
 // where it previously wrote one.
 //
-// Matching is by the split suffix carried in the variant key
-// ("layout:<id>#4-5R-Mix"), which is the runner's own stable per-document
-// discriminator — never by guessing from the stored name. A document whose
-// split row no longer exists is SKIPPED, not renamed to something plausible.
+// The resolution itself lives in current-file-names.ts, shared with the folder
+// reconcile so "what should this be called?" has exactly one answer in the app.
 // =====================================================
 
 export type RestampItem = {
@@ -63,84 +60,68 @@ export async function restampFileNamesForStyle(opts: {
   };
 
   // Force-fresh so a template saved moments ago is the one we resolve against.
+  // Done here rather than inside the resolver so the render-context failure
+  // below can be reported as its own skip.
   await ensureLayoutVariantsLoaded(true);
-
-  const ctx = await loadStyleRenderContext(opts.styleId);
-  if (!ctx) {
-    result.skips.push({ variantKey: "—", reason: "style render context unavailable" });
-    return result;
-  }
 
   const { getCurrentOutputsForStyle } = await import("@/lib/outputs/current-outputs");
   const outputs = await getCurrentOutputsForStyle(opts.styleId);
 
-  // Cache the split plan per base variant key — building it re-resolves every
-  // repetition row, and a split slot asks for the same plan once per document.
-  const planCache = new Map<string, Array<{ suffix: string | null; fileName: string | null }> | null>();
+  // Framing pages have no template, and a layout filter narrows to one layout.
+  // Both are decided BEFORE `scanned` is counted so the tally keeps meaning
+  // "documents this restamp actually considered".
+  const considered = outputs.filter((o) => {
+    if (o.jobAssetId == null || o.fileName == null) return false;
+    const baseKey = o.variantKey.split("#")[0];
+    if (!baseKey.startsWith("layout:")) return false;
+    if (opts.layoutId && baseKey !== `layout:${opts.layoutId}`) return false;
+    return true;
+  });
+  result.scanned = considered.length;
 
-  for (const o of outputs) {
-    if (o.jobAssetId == null || o.fileName == null) continue;
-    const [baseKey, hashSuffix] = o.variantKey.split("#");
-    if (!baseKey.startsWith("layout:")) continue; // framing pages have no template
-    if (opts.layoutId && baseKey !== `layout:${opts.layoutId}`) continue;
-    result.scanned += 1;
+  const docs: NameableDocument[] = considered.map((o) => ({
+    jobAssetId: o.jobAssetId as string,
+    variantKey: o.variantKey,
+  }));
+  const names = await resolveCurrentFileNames(opts.styleId, docs, { variantsAlreadyFresh: true });
 
-    let plan = planCache.get(baseKey);
-    if (plan === undefined) {
-      const variant = getVariant(baseKey);
-      plan = variant?.filesPreview?.(ctx.styleData) ?? null;
-      planCache.set(baseKey, plan);
-    }
-    if (!plan) {
+  if (names.size === 0 && considered.length > 0) {
+    result.skips.push({ variantKey: "—", reason: "style render context unavailable" });
+    result.skipped = considered.length;
+    return result;
+  }
+
+  for (const o of considered) {
+    const jobAssetId = o.jobAssetId as string;
+    const resolution = names.get(jobAssetId);
+
+    if (!resolution || resolution.kind === "unresolvable") {
       result.skipped += 1;
-      result.skips.push({ variantKey: o.variantKey, reason: "layout variant not loaded (unpublished?)" });
+      result.skips.push({
+        variantKey: o.variantKey,
+        reason: resolution?.kind === "unresolvable" ? resolution.reason : "no current name could be resolved",
+      });
       continue;
     }
-
-    // Non-split layout: one document for the whole style.
-    let target: string | null | undefined;
-    if (plan.length === 1 && plan[0].suffix === null) {
-      target = plan[0].fileName;
-    } else if (hashSuffix) {
-      const hit = plan.find((p) => p.suffix != null && p.suffix.toLowerCase() === hashSuffix.toLowerCase());
-      if (!hit) {
-        result.skipped += 1;
-        result.skips.push({
-          variantKey: o.variantKey,
-          reason: `split row “${hashSuffix}” no longer exists — re-run this output`,
-        });
-        continue;
-      }
-      target = hit.fileName;
-    } else {
-      // A split layout whose asset carries no suffix: the runner collapsed the
-      // split to one document. Only safe when the plan agrees it is single.
-      if (plan.length !== 1) {
-        result.skipped += 1;
-        result.skips.push({ variantKey: o.variantKey, reason: "can't tie this document to one split row" });
-        continue;
-      }
-      target = plan[0].fileName;
-    }
-
-    if (!target) {
-      // Empty template — the runner default applies and already carries the
-      // suffix, so there is nothing to correct.
-      result.unchanged += 1;
-      continue;
-    }
-    if (target === o.fileName) {
+    // "template-default" (empty template — the runner default already carries
+    // the suffix) and "no-template" both mean the stored name is correct.
+    if (resolution.kind !== "resolved" || resolution.fileName === o.fileName) {
       result.unchanged += 1;
       continue;
     }
 
     result.changed += 1;
-    result.items.push({ jobAssetId: o.jobAssetId, variantKey: o.variantKey, from: o.fileName, to: target });
+    result.items.push({
+      jobAssetId,
+      variantKey: o.variantKey,
+      from: o.fileName as string,
+      to: resolution.fileName,
+    });
     if (!dryRun) {
       await db.jobAsset
-        .update({ where: { id: o.jobAssetId }, data: { fileName: target } })
+        .update({ where: { id: jobAssetId }, data: { fileName: resolution.fileName } })
         .catch((err) => {
-          console.warn(`[restamp] could not update ${o.jobAssetId}:`, err);
+          console.warn(`[restamp] could not update ${jobAssetId}:`, err);
         });
     }
   }

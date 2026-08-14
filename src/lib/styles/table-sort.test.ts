@@ -18,7 +18,10 @@ const row = (poNumber: string | null, poSeq: number | null, updatedAtIso = "2026
 // list opened on an ancient order. poSeq is the parsed number, so it doesn't.
 // ---------------------------------------------------------------------------
 test("C-PO9 sorts BELOW C-PO12345 — a string sort would invert them", () => {
-  const rows = [row("C-PO9", 9), row("C-PO12345", 12345), row("C-PO12000", 63320)];
+  // poSeq must be the number parsed OUT of each poNumber — a fixture where the
+  // two disagree tests nothing about the string-vs-number inversion this case
+  // exists for.
+  const rows = [row("C-PO9", 9), row("C-PO12345", 12345), row("C-PO12000", 12000)];
 
   const byString = [...rows].sort((a, b) => (b.poNumber ?? "").localeCompare(a.poNumber ?? ""));
   assert.equal(byString[0].poNumber, "C-PO9", "sanity: a string sort really does put C-PO9 first");
