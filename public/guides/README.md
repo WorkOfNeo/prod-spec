@@ -35,8 +35,13 @@ statically and are not behind auth.
    pdfunite public/guides/00-cover.pdf public/guides/01-getting-around.pdf \
      public/guides/02-my-tasks.pdf public/guides/03-reviews-queue.pdf \
      public/guides/04-finding-a-style.pdf public/guides/05-reviewing-outputs.pdf \
-     public/guides/06-style-data.pdf public/guides/00-reviewer-handbook-all.pdf
+     public/guides/06-style-data.pdf public/guides/07-cover-page-text.pdf \
+     public/guides/00-reviewer-handbook-all.pdf
    ```
+
+   Adding or removing a reviewer guide also changes the "N of M" numbering in
+   every other guide's kicker and footer — update those too, or the booklet
+   contradicts itself.
 
 The in-app view updates the moment you save the HTML (no PDF needed); the PDF
 steps are only for the downloadable copies.
