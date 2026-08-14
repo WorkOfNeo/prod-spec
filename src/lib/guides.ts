@@ -66,6 +66,13 @@ export const GUIDES: Guide[] = [
     summary: "Care instructions, required fields, EAN barcodes & the PO PDF, and the Monday link.",
   },
   {
+    slug: "cover-page-text",
+    file: "07-cover-page-text.html",
+    title: "The cover page & General information",
+    summary:
+      "The two blocks of text in front of every bundle — writing them yourself, and pushing a change out to bundles already generated.",
+  },
+  {
     slug: "carton-barcode-format",
     file: "admin-carton-barcode.html",
     title: "Carton barcode format — EAN-128 vs EAN-13",
