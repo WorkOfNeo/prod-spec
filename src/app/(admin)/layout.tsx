@@ -19,6 +19,10 @@ import { PresencePing } from "@/components/presence-ping";
 // control; /settings/cover-page gates on canReview instead).
 const NAV: Array<{ href?: string; label?: string; divider?: true }> = [
   { href: "/styles", label: "Styles" },
+  // Delivery is keyed on the PURCHASE ORDER, not the style — the only view in
+  // which a style with nothing uploaded is visible. It gates on canReview, so
+  // it also appears in the reviewer list below.
+  { href: "/delivery", label: "Delivery" },
   { href: "/combos", label: "New combos" },
   { href: "/jobs", label: "Jobs" },
   { href: "/automation", label: "Automation" },
@@ -104,6 +108,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                   className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
                 >
                   Styles
+                </Link>
+                {/* Delivery gates on canReview, not admin: "did the supplier
+                    actually get the files?" is a reviewer's question, and the
+                    page is read-only until they press Repair. */}
+                <Link
+                  href="/delivery"
+                  className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+                >
+                  Delivery
                 </Link>
                 {/* The bundle's front matter — the all-clients cover block and
                     each client × business area's General information. Reviewers

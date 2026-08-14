@@ -739,7 +739,7 @@ async function sharepointConfigured(): Promise<boolean> {
   return isSharepointConfigured();
 }
 
-type StyleRow = {
+export type StyleRow = {
   id: string;
   name: string;
   poNumber: string | null;
@@ -853,7 +853,7 @@ async function loadSiblingStyles(
 // JobAsset stamp — see (A) in the header. The stamp is kept as
 // `previousFileName` whenever the two disagree, which is what lets the diff say
 // "it's there, under the old name" instead of "it's gone".
-async function loadExpectedFiles(
+export async function loadExpectedFiles(
   style: { id: string; name: string },
   isSelf: boolean,
   variantsAlreadyFresh: boolean,
@@ -976,7 +976,7 @@ const EMPTY_DIFF: FolderDiff = { ok: [], renamed: [], missing: [], unexpected: [
 // Where a resolution attempt landed, plus the leaf we can list (when we got
 // that far). Shared by the read path and by adopt's re-resolution so the two
 // can never disagree about which folder they are acting on.
-type FolderTarget = {
+export type FolderTarget = {
   state: ReconcileState;
   supplierFolderUrl: string | null;
   poFolderName: string | null;
@@ -991,7 +991,7 @@ type FolderTarget = {
 // The same chain, in the same order, as push-to-supplier and
 // verify-supplier-uploads. Every throw is caught and mapped to "unavailable" —
 // a 403/throttle/blip is never allowed to become a claim about file presence.
-async function resolveApprovedLayoutsFolder(style: StyleRow): Promise<FolderTarget> {
+export async function resolveApprovedLayoutsFolder(style: StyleRow): Promise<FolderTarget> {
   const base: FolderTarget = {
     state: "ok",
     supplierFolderUrl: null,

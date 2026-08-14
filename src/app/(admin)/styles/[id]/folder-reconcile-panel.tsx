@@ -142,6 +142,17 @@ export function FolderReconcilePanel({ styleId, className = "mt-8" }: FolderReco
       <h2 className="text-sm font-semibold text-zinc-700">
         Supplier folder check
         {data?.folderPath ? <span className="font-normal text-zinc-400"> · {data.folderPath}</span> : null}
+        {/* The folder is the PO's, and this panel only ever repairs THIS style.
+            The whole-PO ledger — including any sibling style with nothing
+            delivered — lives on its own page. */}
+        {data?.poNumber ? (
+          <>
+            {" · "}
+            <a href={`/delivery/${encodeURIComponent(data.poNumber)}`} className="font-normal underline text-zinc-500 hover:text-zinc-900">
+              whole PO
+            </a>
+          </>
+        ) : null}
       </h2>
       <button
         type="button"
