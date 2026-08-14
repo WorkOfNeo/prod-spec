@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { announceCoverContentSaved } from "./cover-content-events";
 import { MarkdownEditor } from "@/components/markdown-editor";
 import { LazyOutputPreview } from "@/components/output-preview";
 
@@ -29,10 +30,14 @@ export function CoverPageEditor({ initialMarkdown }: { initialMarkdown: string }
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ markdown: value }),
       });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error ?? `Save failed (${res.status})`);
-      }
+      const body = (await res.json().catch(() => null)) as
+        | { error?: string; contentChanged?: boolean }
+        | null;
+      if (!res.ok) throw new Error(body?.error ?? `Save failed (${res.status})`);
+      // The server tells us whether this actually changed the stored prose —
+      // the debounce re-sends identical markdown routinely, and announcing
+      // those would leave the stale banner permanently up.
+      if (body?.contentChanged) announceCoverContentSaved();
       lastSavedRef.current = value;
       setSaveState("saved");
       // Bump the preview refresh key so the A4 iframe refetches the saved copy.

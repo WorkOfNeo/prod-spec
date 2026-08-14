@@ -510,3 +510,79 @@ export async function setFileNamePresets(presets: ReadonlyArray<FileNamePreset>)
   });
   return value.presets;
 }
+
+const COVER_CONTENT_STAMP_KEY = "coverContentStamp";
+
+// Three timestamps behind the "your cover text changed, existing bundles still
+// show the old version" banner on /settings/cover-page.
+//
+// Editing the global cover block or a spec's General information only affects
+// NEWLY generated bundles; existing covers keep the old prose until someone
+// runs the "Regenerate cover pages" sweep. Nothing used to say so, and the gap
+// is invisible — the editor shows the new text, the supplier has the old one.
+//
+// Stored as timestamps rather than a boolean, and in the DB rather than
+// component state, so the signal survives a reload and is visible to ANY admin
+// or reviewer — not just whoever happened to type. Dismissing is per-estate for
+// the same reason: it's one shared piece of prose, not a personal to-do.
+//
+// Banner shows when changedAt is newer than BOTH regeneratedAt and dismissedAt.
+export type CoverContentStamp = {
+  // Last edit to the global block or any spec's General information.
+  changedAt: string | null;
+  // Last FULLY completed regenerate sweep (a stopped run doesn't count — see
+  // the `final` flag on the regenerate route).
+  regeneratedAt: string | null;
+  // Last time someone waved the banner away without running the sweep.
+  dismissedAt: string | null;
+};
+
+const EMPTY_STAMP: CoverContentStamp = { changedAt: null, regeneratedAt: null, dismissedAt: null };
+
+export async function getCoverContentStamp(): Promise<CoverContentStamp> {
+  const row = await db.appSetting.findUnique({ where: { key: COVER_CONTENT_STAMP_KEY } });
+  const v = (row?.value ?? null) as Partial<Record<keyof CoverContentStamp, unknown>> | null;
+  if (!v || typeof v !== "object") return EMPTY_STAMP;
+  const iso = (x: unknown): string | null => (typeof x === "string" && x ? x : null);
+  return {
+    changedAt: iso(v.changedAt),
+    regeneratedAt: iso(v.regeneratedAt),
+    dismissedAt: iso(v.dismissedAt),
+  };
+}
+
+// Fail-soft on purpose at every call site: a stamp hiccup must never break the
+// save (or the sweep) that triggered it. The banner is a convenience, not a
+// correctness gate — worst case it doesn't show, exactly as before it existed.
+async function patchCoverContentStamp(patch: Partial<CoverContentStamp>): Promise<void> {
+  const next = { ...(await getCoverContentStamp()), ...patch };
+  await db.appSetting.upsert({
+    where: { key: COVER_CONTENT_STAMP_KEY },
+    create: { key: COVER_CONTENT_STAMP_KEY, value: next },
+    update: { value: next },
+  });
+}
+
+export async function stampCoverContentChanged(at = new Date()): Promise<void> {
+  await patchCoverContentStamp({ changedAt: at.toISOString() });
+}
+
+export async function stampCoverRegenerated(at = new Date()): Promise<void> {
+  await patchCoverContentStamp({ regeneratedAt: at.toISOString() });
+}
+
+export async function stampCoverBannerDismissed(at = new Date()): Promise<void> {
+  await patchCoverContentStamp({ dismissedAt: at.toISOString() });
+}
+
+// Pure so it can be unit-tested without a DB. Newer-than-both, with a null
+// changedAt meaning "nothing has been edited since this feature shipped".
+export function coverContentIsStale(stamp: CoverContentStamp): boolean {
+  if (!stamp.changedAt) return false;
+  const changed = Date.parse(stamp.changedAt);
+  if (Number.isNaN(changed)) return false;
+  const settled = [stamp.regeneratedAt, stamp.dismissedAt]
+    .map((s) => (s ? Date.parse(s) : NaN))
+    .filter((n) => !Number.isNaN(n));
+  return settled.every((n) => changed > n);
+}

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { canReview } from "@/lib/roles";
+import { stampCoverContentChanged } from "@/lib/settings/app-settings";
 
 export const runtime = "nodejs";
 
@@ -90,7 +91,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     );
   }
 
-  const existing = await db.prodSpec.findUnique({ where: { id }, select: { id: true } });
+  const existing = await db.prodSpec.findUnique({
+    where: { id },
+    select: { id: true, generalInfoMd: true },
+  });
   if (!existing) return NextResponse.json({ error: "Prod spec not found" }, { status: 404 });
 
   // Blank ⇒ null, matching the main PATCH: an empty column is what suppresses
@@ -101,6 +105,14 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     data: { generalInfoMd: markdown.trim() ? markdown : null },
     select: { generalInfoMd: true, name: true },
   });
+
+  // This prose prints INSIDE the cover PDF, so an edit leaves every existing
+  // bundle for this spec stale until the regenerate sweep runs. Stamp only on a
+  // real change — the editor autosaves on a debounce and re-sends identical
+  // markdown routinely. Fail-soft: the banner is a convenience, never a reason
+  // to fail the save. See coverContentIsStale.
+  const contentChanged = (updated.generalInfoMd ?? "") !== (existing.generalInfoMd ?? "");
+  if (contentChanged) await stampCoverContentChanged().catch(() => {});
 
   await db.log
     .create({
@@ -113,5 +125,5 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     })
     .catch(() => {});
 
-  return NextResponse.json({ ok: true, markdown: updated.generalInfoMd ?? "" });
+  return NextResponse.json({ ok: true, markdown: updated.generalInfoMd ?? "", contentChanged });
 }

@@ -2,7 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-server";
-import { getCoverPageInfoMd, setCoverPageInfoMd } from "@/lib/settings/app-settings";
+import {
+  getCoverPageInfoMd,
+  setCoverPageInfoMd,
+  stampCoverContentChanged,
+} from "@/lib/settings/app-settings";
 
 export const runtime = "nodejs";
 
@@ -42,8 +46,14 @@ export async function PATCH(req: NextRequest) {
     );
   }
 
+  // Compare BEFORE writing: the editor autosaves on a debounce, so it re-sends
+  // identical markdown routinely (blur, re-render, a stray keystroke undone).
+  // Stamping on every PATCH would leave the banner permanently up.
+  const previous = await getCoverPageInfoMd();
   await setCoverPageInfoMd(parsed.data.markdown);
   const markdown = await getCoverPageInfoMd();
+  const contentChanged = markdown !== previous;
+  if (contentChanged) await stampCoverContentChanged().catch(() => {});
   await db.log.create({
     data: {
       level: "INFO",
@@ -51,5 +61,7 @@ export async function PATCH(req: NextRequest) {
     },
   });
 
-  return NextResponse.json({ ok: true, markdown });
+  // contentChanged drives the client's "existing bundles are stale" banner —
+  // it flips it on without waiting for a page reload.
+  return NextResponse.json({ ok: true, markdown, contentChanged });
 }
