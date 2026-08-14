@@ -47,6 +47,7 @@ import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
 import { PreviewFrame } from "@/components/output-preview";
 import { OutputRulesEditor, type RuleFieldOption } from "@/components/output-rules-editor";
 import { TokenAutocomplete, buildTokenSuggestions } from "@/components/token-autocomplete";
+import { ImageLibraryDialog, type LibraryImage } from "./image-library-dialog";
 
 // =====================================================
 // Output Builder editor — one layout, three panes:
@@ -158,16 +159,12 @@ type DrawState = {
   moved: boolean;
 };
 
-// One picture from the shared image library — a palette chip that inserts
-// {{image:<slug>}}. Reusable across layouts, unlike layout.customLogo.
-type LibraryImage = { slug: string; name: string; dataUrl: string | null };
-
 export function LayoutEditor({
   layout,
   customers,
   businessAreas,
   languages,
-  libraryImages,
+  libraryImages: initialLibraryImages,
   docTypes,
   stats,
   recentAssets,
@@ -294,10 +291,32 @@ export function LayoutEditor({
   // The fuzzy-autofill catalogue for the content editor — mirrors the palette,
   // built for the current language + sibling slot so ":lang"/"styleN" tokens
   // insert the right variant.
+  // The image library, kept in state so a picture uploaded from the dialog
+  // appears in the palette and the autocomplete immediately — no page
+  // refresh, which would interrupt the design the operator is mid-way
+  // through even though the definition itself autosaves.
+  const [libraryImages, setLibraryImages] = useState<LibraryImage[]>(initialLibraryImages);
+  // Dialog state: null = closed, "" = open on the gallery, a slug = open in
+  // "upload artwork for this token" mode.
+  const [imageDialog, setImageDialog] = useState<string | null>(null);
+
   const tokenSuggestions = useMemo(
     () => buildTokenSuggestions({ langSel, siblingSlot, images: libraryImages }),
     [langSel, siblingSlot, libraryImages],
   );
+
+  // {{image:<slug>}} tokens this layout places that the library can't fill.
+  // The token validates by shape, so typing one before the artwork exists is
+  // legitimate — but it prints a placeholder that blocks approval, so the
+  // gap is surfaced here with a one-click way to close it.
+  const missingImageSlugs = useMemo(() => {
+    const have = new Set(libraryImages.filter((i) => i.dataUrl).map((i) => i.slug));
+    const seen = new Set<string>();
+    for (const ref of tokensInDef(def)) {
+      if (ref.key === "image" && ref.arg && !have.has(ref.arg)) seen.add(ref.arg);
+    }
+    return [...seen];
+  }, [def, libraryImages]);
 
   const [jsonText, setJsonText] = useState("");
   const [jsonOpen, setJsonOpen] = useState(false);
@@ -1277,6 +1296,22 @@ export function LayoutEditor({
             </div>
           </div>
         </div>
+      ) : null}
+
+      {/* ---------- image library ---------- */}
+      {imageDialog !== null ? (
+        <ImageLibraryDialog
+          images={libraryImages}
+          forSlug={imageDialog || null}
+          canInsert={!!selBlock}
+          onInsert={insertToken}
+          onSaved={(img) =>
+            setLibraryImages((prev) => [...prev.filter((i) => i.slug !== img.slug), img].sort((a, b) =>
+              a.name.localeCompare(b.name),
+            ))
+          }
+          onClose={() => setImageDialog(null)}
+        />
       ) : null}
 
       {/* ---------- guide drawer ---------- */}
@@ -3194,27 +3229,58 @@ export function LayoutEditor({
             <div className="mt-3">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">Images</span>
-                <a
-                  href="/settings/images"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[10px] text-zinc-400 underline hover:text-zinc-700"
+                <button
+                  type="button"
+                  onClick={() => setImageDialog("")}
+                  className="text-[10px] font-medium text-zinc-500 underline hover:text-zinc-900"
                 >
-                  Manage library →
-                </a>
+                  Gallery / upload →
+                </button>
               </div>
-              <p className="mt-1 text-[11px] text-zinc-400">
-                Shared pictures — place as many as you need on one output. Add a width to size one:{" "}
-                <code className="rounded bg-zinc-100 px-1 text-[10px]">{"{{image:slug:40}}"}</code>{" "}
-                prints it at 40% of its block&apos;s width. Without a width it matches the block&apos;s
+              <p className="mt-1 text-[11px] leading-relaxed text-zinc-400">
+                Type{" "}
+                <code className="rounded bg-zinc-100 px-1 text-[10px]">{"{{image:name}}"}</code>{" "}
+                anywhere in a block — pick a name yourself. If the library already has that picture it
+                prints; if not, you&apos;ll get an <b>Upload</b> button right here and the artwork is
+                saved under the name you typed. Place as many as an output needs. A width sizes one:{" "}
+                <code className="rounded bg-zinc-100 px-1 text-[10px]">{"{{image:name:40}}"}</code>{" "}
+                prints it at 40% of its block&apos;s width; without one it matches the block&apos;s
                 font size.
               </p>
+
+              {missingImageSlugs.length > 0 && (
+                <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5">
+                  <p className="text-[11px] font-medium text-amber-800">
+                    {missingImageSlugs.length === 1 ? "This picture isn't" : "These pictures aren't"} in
+                    the library yet — {missingImageSlugs.length === 1 ? "it prints" : "they print"} a
+                    placeholder that blocks approval.
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {missingImageSlugs.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setImageDialog(s)}
+                        title={`Upload artwork for {{image:${s}}}`}
+                        className="rounded border border-amber-400 bg-white px-1.5 py-1 font-mono text-[11px] text-amber-900 hover:bg-amber-100"
+                      >
+                        {`{{image:${s}}}`} · Upload
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {libraryImages.length === 0 ? (
-                <p className="mt-1.5 text-[11px] text-amber-700">
+                <p className="mt-1.5 text-[11px] text-zinc-500">
                   The library is empty —{" "}
-                  <a href="/settings/images" target="_blank" rel="noreferrer" className="underline">
+                  <button
+                    type="button"
+                    onClick={() => setImageDialog("")}
+                    className="font-medium underline hover:text-zinc-900"
+                  >
                     upload a picture
-                  </a>{" "}
+                  </button>{" "}
                   to place it here.
                 </p>
               ) : (
