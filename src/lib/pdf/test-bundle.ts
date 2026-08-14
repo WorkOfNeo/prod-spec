@@ -15,7 +15,12 @@ import { countPlaceholderMarkers } from "@/lib/pdf/placeholders";
 import { defaultArtifactFileName } from "@/lib/pdf/template-registry";
 import { COVER_VARIANT_KEY, renderCoverPageHtml } from "@/lib/pdf/bundle-pages";
 import { buildRequiredPackagingForStyle } from "@/lib/outputs/required-packaging";
-import { parseCustomerConfig } from "@/lib/customers/config";
+import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
+import { loadDocTypeExclusionRules, loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
+import { docTypeLabel } from "@/lib/pdf/doc-types";
+import { exclusionReasonText, matchOutputRulesFor } from "@/lib/outputs/exclusion";
+import { effectiveStyleItem, resolveMappedField } from "@/lib/styles/resolved-fields";
+import { effectiveMapping } from "@/lib/styles/output-readiness";
 import {
   DEFAULT_OUTPUTS,
   parseBundlePageSettings,
@@ -37,11 +42,19 @@ import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-a
 //
 // The render path mirrors src/lib/queue/runner.ts#processJob deliberately:
 // same buildStyleData assembly, same output resolution + dims + pins +
-// carton prefs, same renderMany / static-pdf handling, same cover framing.
-// Keep the two in sync — if the runner's render loop changes, change this
-// loop too. The ONE intentional divergence: a single output that fails to
-// render becomes an error card here (so the operator sees WHICH output is
-// broken) instead of failing the whole bundle the way a job would.
+// carton prefs, same renderMany / static-pdf handling, same cover framing,
+// and the same generation-rule gate (an output the runner would skip is
+// skipped here too, with the reason surfaced as a warning). Keep the two in
+// sync — if the runner's render loop changes, change this loop too.
+//
+// TWO intentional divergences:
+//   • A single output that fails to render becomes an error card here (so the
+//     operator sees WHICH output is broken) instead of failing the whole
+//     bundle the way a job would.
+//   • Per-style operator ignores are NOT applied — a test renders an output
+//     the operator has ignored for this one style, so it can still be
+//     previewed. Keyword RULES are applied; a per-style ignore is a manual
+//     choice the operator can undo, not a property of the configuration.
 // =====================================================
 
 export type TestBundleDoc = {
@@ -155,6 +168,35 @@ export async function renderProdSpecTestBundle(
   // Per-style inline field values — merged with each output's pins below so the
   // test bundle mirrors what the runner would generate. Fail-soft empty.
   const fieldValues = await loadStyleFieldValues(styleId);
+
+  // Generation rules — an output's own ("only for shoes", the layout's Settings
+  // tab) or its DOC TYPE's ("shoes skip wash care"). The runner skips these
+  // outright, so a dry run that rendered them anyway would show the operator
+  // documents that can never be produced. Same loader + same field resolver as
+  // runner.ts#processJob, so the two can't disagree about what is skipped.
+  //
+  // NOTE: per-style operator ignores (loadIgnoredOutputKeys) are a SEPARATE
+  // gate the runner also applies; a test still renders those deliberately, so
+  // an operator can preview an output they've ignored for this one style.
+  const [exclusionRules, exclusionLabels] = await Promise.all([
+    loadDocTypeExclusionRules(),
+    loadDocTypeLabels(),
+  ]);
+  const resolveExclusionField: (field: string) => string = (() => {
+    const rStyle = {
+      rawData: style.rawData,
+      poNumber: style.poNumber,
+      supplier: style.supplier,
+      eans: style.eans,
+      cartonEan: style.cartonEan,
+      customer: { config: style.customer.config },
+      prodSpec: { outputs: prodSpec.outputs, columnMapping: prodSpec.columnMapping },
+    };
+    const item = effectiveStyleItem(rStyle);
+    const mapping = effectiveMapping(rStyle);
+    return (f: string) => resolveMappedField(item, mapping, f as keyof ColumnMapping);
+  })();
+
   const outputDocs: TestBundleDoc[] = [];
 
   for (const output of outputs) {
@@ -162,6 +204,25 @@ export async function renderProdSpecTestBundle(
     if (!variant) {
       warnings.push(
         `Output "${output.variantKey}" was skipped — it is no longer in the variant registry (a removed template or unpublished layout).`,
+      );
+      continue;
+    }
+    // Skip exactly what the runner would skip, and say why — the reason text is
+    // the same string the style/review surfaces show, naming the OUTPUT for its
+    // own rule or the document TYPE for a type-level one.
+    const decided = matchOutputRulesFor(
+      variant.generationRules,
+      exclusionRules[variant.docType],
+      resolveExclusionField,
+    );
+    if (decided) {
+      warnings.push(
+        `${variant.name} — ${exclusionReasonText(
+          decided.hit,
+          decided.scope === "output"
+            ? variant.name
+            : docTypeLabel(variant.docType, exclusionLabels),
+        )}`,
       );
       continue;
     }
