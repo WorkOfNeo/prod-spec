@@ -1,4 +1,4 @@
-import { isSharepointConfigured } from "@/lib/publish/publish-approved-job";
+import { isGraphConfigured } from "./auth";
 import {
   resolveSupplierFolder,
   listChildFolders,
@@ -62,7 +62,9 @@ export async function countPoFolderFiles(opts: {
   if (!hasSupplier) return { status: "no-supplier", poNumber, folders: [] };
   if (!supplierUrl) return { status: "no-link", poNumber, folders: [] };
   if (!poNumber) return { status: "no-po", poNumber, folders: [] };
-  if (!isSharepointConfigured()) return { status: "not-configured", poNumber, folders: [] };
+  // Graph credentials only — this counts files in the SUPPLIER's folder via a
+  // sharing link, which never involves SHAREPOINT_SITE_ID. See auth.ts.
+  if (!isGraphConfigured()) return { status: "not-configured", poNumber, folders: [] };
 
   try {
     const { driveId, itemId } = await resolveSupplierFolder(supplierUrl);

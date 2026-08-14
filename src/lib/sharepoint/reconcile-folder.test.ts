@@ -530,6 +530,23 @@ test("precheckReconcileState — a blank folder link / PO counts as absent", () 
   );
 });
 
+test("reconcileStateMessage — 'not configured' names the missing variable", () => {
+  // The bug this pins: the supplier-folder surfaces gated on a predicate that
+  // ALSO required SHAREPOINT_SITE_ID, which only the configured-site upload
+  // path uses. With the Azure credentials present but no site id, the folder
+  // check said "SharePoint credentials aren't configured" while the delivery
+  // audit — which gates on nothing and just calls Graph — worked fine. Naming
+  // the variable is what makes that diagnosable instead of baffling.
+  const msg = reconcileStateMessage("not-configured", { missingEnvVars: ["AZURE_CLIENT_SECRET"] });
+  assert.match(msg, /AZURE_CLIENT_SECRET/);
+  assert.match(msg, /Graph/i, "it is Graph credentials, not 'SharePoint' ones, that this path needs");
+  assert.doesNotMatch(
+    reconcileStateMessage("not-configured", { missingEnvVars: [] }),
+    /missing/,
+    "nothing missing ⇒ no dangling 'missing' clause",
+  );
+});
+
 test("reconcileStateMessage — an unreadable folder never claims files are gone", () => {
   const msg = reconcileStateMessage("unavailable");
   assert.match(msg, /not evidence that a file is gone/i);

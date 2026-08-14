@@ -691,7 +691,10 @@ export function precheckReconcileState(input: {
 
 // One human sentence per state. Kept here (not in the panel) so the API, any
 // future CLI and the UI all say the same thing about the same situation.
-export function reconcileStateMessage(state: ReconcileState, ctx?: { supplierName?: string | null; poNumber?: string | null }): string {
+export function reconcileStateMessage(
+  state: ReconcileState,
+  ctx?: { supplierName?: string | null; poNumber?: string | null; missingEnvVars?: string[] },
+): string {
   const supplier = ctx?.supplierName ? `“${ctx.supplierName}”` : "the supplier";
   const po = ctx?.poNumber ? `“${ctx.poNumber}”` : "this style's PO";
   switch (state) {
@@ -710,7 +713,13 @@ export function reconcileStateMessage(state: ReconcileState, ctx?: { supplierNam
     case "skip-delivery":
       return "This customer delivers its own goods (skipSupplierDelivery), so nothing is ever pushed to a supplier folder for this style.";
     case "not-configured":
-      return "SharePoint credentials aren't configured in this environment, so the folder can't be listed.";
+      // Name the variables. The previous wording sent people looking for
+      // "SharePoint credentials" in an environment that HAD working ones — the
+      // gate was asking for a site id this path never uses (see auth.ts).
+      return (
+        "Microsoft Graph credentials aren't configured in this environment, so the folder can't be listed" +
+        (ctx?.missingEnvVars?.length ? ` — missing ${ctx.missingEnvVars.join(", ")}.` : ".")
+      );
     case "po-folder-missing":
       return `No folder matching PO ${po} exists in ${supplier}'s SharePoint. The app never creates the PO folder — an employee must, and uploads then land on the next sweep.`;
     case "po-folder-ambiguous":
@@ -734,9 +743,13 @@ export function reconcileStateMessage(state: ReconcileState, ctx?: { supplierNam
 // shared with the PO-folder file count so the two agree) pulls in that whole
 // graph transitively.
 
+// isGraphConfigured, NOT publish-approved-job's isSharepointConfigured: this
+// module reaches the folder through a sharing link and never touches
+// SHAREPOINT_SITE_ID, so requiring it reported "not configured" in an
+// environment where every Graph call here works fine. See auth.ts.
 async function sharepointConfigured(): Promise<boolean> {
-  const { isSharepointConfigured } = await import("@/lib/publish/publish-approved-job");
-  return isSharepointConfigured();
+  const { isGraphConfigured } = await import("./auth");
+  return isGraphConfigured();
 }
 
 export type StyleRow = {
@@ -1075,6 +1088,10 @@ async function runReconcile(
   // Fail-soft — a settings hiccup must not sink a read-only diagnostic.
   const batchSendEnabled = await getSupplierBatchSendEnabled().catch(() => false);
   const style = await loadStyle(styleId);
+  // Named in the "not configured" message so the next person sees WHICH
+  // variable is absent rather than a blanket claim about credentials.
+  const { missingGraphEnvVars } = await import("./auth");
+  const missingEnvVars = missingGraphEnvVars();
 
   const shell = (state: ReconcileState, extra?: Partial<FolderReconcile>): FolderReconcile => ({
     styleId,
@@ -1082,7 +1099,11 @@ async function runReconcile(
     poNumber: style?.poNumber ?? null,
     supplierName: style?.supplierName ?? null,
     state,
-    message: reconcileStateMessage(state, { supplierName: style?.supplierName, poNumber: style?.poNumber }),
+    message: reconcileStateMessage(state, {
+      supplierName: style?.supplierName,
+      poNumber: style?.poNumber,
+      missingEnvVars,
+    }),
     supplierFolderUrl: null,
     poFolderName: null,
     poFolderUrl: null,
