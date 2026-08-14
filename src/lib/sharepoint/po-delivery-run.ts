@@ -1,4 +1,5 @@
 import { listChildFiles, sanitizeFileName, deleteDriveItem, SharePointWriteForbiddenError } from "./supplier-folder";
+import { missingGraphEnvVars } from "./auth";
 import { APPROVED_LAYOUTS_SUBFOLDER } from "./supplier-folder-names";
 import {
   loadExpectedFiles,
@@ -105,7 +106,11 @@ export async function checkPoDelivery(input: {
     supplierId: input.supplierId,
     supplierName: rep?.supplierName ?? null,
     state,
-    message: reconcileStateMessage(state, { supplierName: rep?.supplierName, poNumber: input.poNumber }),
+    message: reconcileStateMessage(state, {
+      supplierName: rep?.supplierName,
+      poNumber: input.poNumber,
+      missingEnvVars: missingGraphEnvVars(),
+    }),
     folderUrl: null,
     folderPath: null,
     poFolderUrl: null,
@@ -120,7 +125,9 @@ export async function checkPoDelivery(input: {
 
   if (!rep) return shell("style-not-found");
 
-  const { isSharepointConfigured } = await import("@/lib/publish/publish-approved-job");
+  // Graph credentials only — the PO folder is reached through the supplier's
+  // sharing link, never through SHAREPOINT_SITE_ID. See auth.ts.
+  const { isGraphConfigured } = await import("./auth");
   const blocked = precheckReconcileState({
     styleFound: true,
     hasSupplier: rep.supplierName != null,
@@ -130,7 +137,7 @@ export async function checkPoDelivery(input: {
     // customer. One style that does ship to the supplier means the folder is
     // real and has to be audited.
     skipSupplierDelivery: styles.every((s) => s.skipSupplierDelivery),
-    sharepointConfigured: isSharepointConfigured(),
+    sharepointConfigured: isGraphConfigured(),
   });
   if (blocked) return shell(blocked);
 
