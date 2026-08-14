@@ -8,12 +8,18 @@ import { sanitizeCareInstructions } from "@/lib/care-labels/format";
 import { getWashcareSymbol, loadWashcareSymbols } from "@/lib/pdf/washcare-symbols";
 import { ruleRequiredColumns } from "@/lib/pdf/spec-fields";
 import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-marking";
-import { tokenMeta, parseSiblingTokenKey, type BarcodeSource } from "./token-meta";
+import { tokenMeta, parseSiblingTokenKey, TABLE_TOTAL_ARG, type BarcodeSource } from "./token-meta";
 import { formatCompositionLines } from "./composition";
 import { pickCartonQtyPair, pickCartonQtyVariant } from "./carton-qty";
 import { pickSizeItems } from "./size-scoped-text";
 import { parseSizeForm, sizeFormEntries } from "./size-form";
-import { formatSizeRatio, parseSizeRatio, pickSizeRatioForSizes } from "./size-ratio";
+import {
+  formatSizeRatio,
+  formatSizeRatioTotal,
+  parseSizeRatio,
+  pickSizeRatioForSizes,
+  sumSizeRatio,
+} from "./size-ratio";
 import {
   calcsInLine,
   evaluateCalc,
@@ -182,8 +188,23 @@ const RESOLVERS: Record<string, TextResolver> = {
   },
   // Text stand-in for the assortment TABLE: the renderer draws a real
   // <table>, but readiness checks, show-values and file names resolve
-  // tokens as text, so this backs those with the same data.
-  assortmentTable: (s) => formatSizeRatio(sizeRatioEntries(s)),
+  // tokens as text, so this backs those with the same data. ":total" adds
+  // the summed row the table draws in its bottom-right corner, so "Show
+  // values" tells the operator what that extra cell will read.
+  assortmentTable: (s, arg) => {
+    const entries = sizeRatioEntries(s);
+    const flat = formatSizeRatio(entries);
+    if (arg !== TABLE_TOTAL_ARG || !flat) return flat;
+    const total = formatSizeRatioTotal(entries);
+    return total ? `${flat} (${total})` : flat;
+  },
+  // The same total on its own — the number only, so a layout can print it
+  // anywhere ("Total {{assortmentTotal}} PCS") instead of taking the table's
+  // corner cell. Empty when the ratio can't be read, exactly like the table.
+  assortmentTotal: (s) => {
+    const total = sumSizeRatio(sizeRatioEntries(s));
+    return total > 0 ? String(total) : "";
+  },
   // Comma decimals. Every customer on the board prints into a comma-decimal
   // market (DK, SE, FI, DE), and the other price renderer — the spec-generic
   // template family's "retailPrice" field — has always formatted this way,
@@ -487,11 +508,12 @@ const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   size: ["sizes"],
   sizeRange: ["sizes"],
   sizeRangeCoop: ["sizes"],
-  // Both need the size run to pair against AND the ratio column itself —
-  // a style missing either can't print an assortment, so the output gates
-  // as AWAITING_DATA rather than rendering an empty table.
+  // All three need the size run to pair against AND the ratio column
+  // itself — a style missing either can't print an assortment, so the
+  // output gates as AWAITING_DATA rather than rendering an empty table.
   sizeRatio: ["sizes", "sizeRatio"],
   assortmentTable: ["sizes", "sizeRatio"],
+  assortmentTotal: ["sizes", "sizeRatio"],
   price: ["price"],
   poNumber: ["poNumber"],
   customerOrderNo: ["customerOrderNo"],

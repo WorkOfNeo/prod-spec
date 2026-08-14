@@ -12,6 +12,9 @@ import { IMAGE_SLUG_RE } from "./image-slug";
 // The single accepted "sizeScope" argument — {{description:size}}.
 export const SIZE_SCOPE_ARG = "size";
 
+// The single accepted "tableTotal" argument — {{assortmentTable:total}}.
+export const TABLE_TOTAL_ARG = "total";
+
 // Re-exported so the builder surfaces (palette, autocomplete) can offer the
 // size-form chips without reaching past this client-safe module.
 export { SIZE_FORMS };
@@ -44,7 +47,17 @@ export type LayoutTokenMeta = {
   //   not against a fixed list: the library is DB-managed, so operators add
   //   artwork without a deploy. A slug with no row renders the standard
   //   `missing` chip, which blocks approval.
-  arg?: "lang" | "source" | "gap" | "cartonKind" | "sizeScope" | "sizeForm" | "imageSlug";
+  // "tableTotal" → optional ":total" on a table token, adding the summed
+  //   row ({{assortmentTable:total}}); bare draws the table alone.
+  arg?:
+    | "lang"
+    | "source"
+    | "gap"
+    | "cartonKind"
+    | "sizeScope"
+    | "sizeForm"
+    | "imageSlug"
+    | "tableTotal";
   // Optional SECOND argument (TOKEN_RE group 3, numeric-only).
   // "heightMm" → bar height in mm, e.g. {{barcode:ean13:8}} (8 mm bars).
   // "widthPct" → print width as a % of the block, e.g. {{image:x:40}}.
@@ -124,10 +137,18 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   },
   {
     key: "assortmentTable",
-    label: "Assortment table — sizes across the top, ratio underneath",
+    label: "Assortment table — sizes across the top, ratio underneath (:total adds the summed row)",
     group: "Style",
     kind: "table",
-    example: "Size | 98/104 | 110/116 …",
+    arg: "tableTotal",
+    example: "Size | 98/104 | 110/116 … · {{assortmentTable:total}} → … | 12 PCS",
+  },
+  {
+    key: "assortmentTotal",
+    label: "Assortment total — the table's qty row summed (number only, place it yourself)",
+    group: "Style",
+    kind: "text",
+    example: "12",
   },
   {
     key: "sizeRangeCoop",
@@ -455,6 +476,11 @@ export function validateTokenRef(key: string, arg?: string, arg2?: string): stri
     errs.push(
       `{{${key}:${arg}}} — size form must be ${SIZE_FORMS.map((f) => `{{${key}:${f}}}`).join(" or ")}`,
     );
+  }
+  // "tableTotal" arg is optional (bare draws the table alone); the only
+  // accepted selector is ":total".
+  if (meta.arg === "tableTotal" && arg !== undefined && arg !== TABLE_TOTAL_ARG) {
+    errs.push(`{{${key}:${arg}}} — the only table option is {{${key}:${TABLE_TOTAL_ARG}}}`);
   }
   // "imageSlug" is REQUIRED and checked by shape only — the library is
   // DB-managed, so validating against today's rows would either reject a

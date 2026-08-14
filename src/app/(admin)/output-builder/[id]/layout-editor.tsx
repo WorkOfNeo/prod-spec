@@ -41,6 +41,7 @@ import {
   MAX_SIBLING_SLOTS,
   SIZE_SCOPE_ARG,
   SIZE_FORMS,
+  TABLE_TOTAL_ARG,
 } from "@/lib/output-layouts/token-meta";
 import { validateCalcExpression } from "@/lib/output-layouts/calc";
 import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
@@ -2988,8 +2989,8 @@ export function LayoutEditor({
                     // A multi-number carton qty offers bare + :solid/:assort
                     // (the split) + :inner/:outer (the pack pair) chips, a
                     // size-scoped field bare + :size, a two-form size run
-                    // bare + :numeric/:year; every other token is a single
-                    // bare chip.
+                    // bare + :numeric/:year, the assortment table bare +
+                    // :total; every other token is a single bare chip.
                     const args =
                       t.arg === "cartonKind"
                         ? ["", ...CARTON_QTY_KINDS]
@@ -2997,7 +2998,9 @@ export function LayoutEditor({
                           ? ["", SIZE_SCOPE_ARG]
                           : t.arg === "sizeForm"
                             ? ["", ...SIZE_FORMS]
-                            : [""];
+                            : t.arg === "tableTotal"
+                              ? ["", TABLE_TOTAL_ARG]
+                              : [""];
                     return args.map((a) => {
                       const key = a ? `${t.key}:${a}` : t.key;
                       return (

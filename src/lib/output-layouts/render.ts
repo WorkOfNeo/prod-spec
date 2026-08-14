@@ -24,10 +24,11 @@ import {
   type LayoutDef,
   type LayoutPage,
 } from "./schema";
-import { tokenMeta, type BarcodeSource, type LogoSource } from "./token-meta";
+import { tokenMeta, TABLE_TOTAL_ARG, type BarcodeSource, type LogoSource } from "./token-meta";
 import { lineOverrideKey } from "./line-keys";
 import { narrowSizeScopedText } from "./size-scoped-text";
 import { parseSizeForm, sizeFormEntries } from "./size-form";
+import { formatSizeRatioTotal } from "./size-ratio";
 import { CALC_RE, fieldsInCalcExpression } from "./calc";
 import { getContrastAddressLogoDataUrl, getContrastLogoDataUrl } from "./logos";
 import {
@@ -727,7 +728,7 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx, blockWidthMm
     // Drawn here rather than via the text resolver for the same reason
     // sizeRangeCoop is: the markup has to survive escaping.
     if (meta.kind === "table" && key === "assortmentTable") {
-      const rendered = renderAssortmentTableHtml(style);
+      const rendered = renderAssortmentTableHtml(style, arg === TABLE_TOTAL_ARG);
       if (rendered) {
         html += rendered;
         hadValue = true;
@@ -792,16 +793,27 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx, blockWidthMm
 // Sizes with no value still get a column — the header must stay aligned
 // with the style's real size run, and a visibly empty cell is the honest
 // rendering of "the buyer didn't give this size a ratio".
-function renderAssortmentTableHtml(style: StyleData): string {
+//
+// {{assortmentTable:total}} adds ONE trailing column: the pack's total in
+// the bottom-right corner, on the qty row, under an empty corner header.
+// It sums exactly the numbers the qty row prints, so the table always adds
+// up for whoever reads it. A ratio that totals nothing drops the column
+// rather than printing "0 PCS".
+function renderAssortmentTableHtml(style: StyleData, withTotal: boolean): string {
   const entries = sizeRatioEntries(style);
   if (entries.length === 0) return "";
 
   const head = entries.map((e) => `<th>${escapeHtml(e.size)}</th>`).join("");
   const body = entries.map((e) => `<td>${escapeHtml(e.qty)}</td>`).join("");
+  const total = withTotal ? formatSizeRatioTotal(entries) : "";
   return (
     `<table class="ol-assort">` +
-    `<tr><th class="ol-assort-lbl">Size</th>${head}</tr>` +
-    `<tr><th class="ol-assort-lbl">Qty</th>${body}</tr>` +
+    `<tr><th class="ol-assort-lbl">Size</th>${head}` +
+    (total ? `<th class="ol-assort-total"></th>` : "") +
+    `</tr>` +
+    `<tr><th class="ol-assort-lbl">Qty</th>${body}` +
+    (total ? `<td class="ol-assort-total">${escapeHtml(total)}</td>` : "") +
+    `</tr>` +
     `</table>`
   );
 }
@@ -1340,6 +1352,10 @@ function emitLayoutDocument(
   /* The size header row and the leading label column read as headings. */
   .ol-assort tr:first-child th { font-weight: 700; }
   .ol-assort-lbl { font-weight: 700; text-align: left; white-space: nowrap; width: 1%; }
+  /* ":total" — the pack total in the bottom-right corner. Shrinks to its own
+     text like the label column, so adding it never squeezes the size
+     columns, and never wraps "12 PCS" onto two lines. */
+  .ol-assort-total { font-weight: 700; white-space: nowrap; width: 1%; }
   .ol-barcode { display: inline-block; text-align: center; max-width: 100%; }
   .ol-barcode img { display: block; height: var(--ol-bc-h, 16mm); width: auto; max-width: 100%; margin-left: auto; margin-right: auto; }
   .ol-ean-number { margin-top: ${(1 * ctx.fontScale).toFixed(3)}mm; font-size: var(--ol-bc-num, 10pt); letter-spacing: 0.08em; }

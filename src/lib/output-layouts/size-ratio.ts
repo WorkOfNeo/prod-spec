@@ -256,6 +256,28 @@ export function formatSizeRatio(entries: readonly SizeRatioEntry[]): string {
     .join(", ");
 }
 
+// The unit printed beside the assortment total. One constant so the table
+// cell and the text stand-in can never drift apart.
+export const ASSORT_TOTAL_UNIT = "PCS";
+
+// The pack's total: every number the table PRINTS, added up — "1,2,2,1" → 6.
+// Sizes the buyer gave no value contribute nothing (they show as an empty
+// cell, so they must not inflate the total), which means the total always
+// equals the qty row a reader can add up by hand.
+export function sumSizeRatio(entries: readonly SizeRatioEntry[]): number {
+  return entries.reduce((sum, e) => {
+    const n = Number(e.qty);
+    return e.qty && Number.isFinite(n) ? sum + n : sum;
+  }, 0);
+}
+
+// The total as it prints — "12 PCS". "" when the run totals nothing, so an
+// unreadable ratio drops the cell rather than printing a misleading 0.
+export function formatSizeRatioTotal(entries: readonly SizeRatioEntry[]): string {
+  const total = sumSizeRatio(entries);
+  return total > 0 ? `${total} ${ASSORT_TOTAL_UNIT}` : "";
+}
+
 // The ratio for the size(s) a repetition row was narrowed to — backs
 // {{sizeRatio:size}}. Several matches (a carton grouping sizes) join with
 // ", ", mirroring narrowSizeScopedText.
