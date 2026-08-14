@@ -33,6 +33,7 @@ import {
   CERT_SOURCES,
   SIZE_SCOPE_ARG,
   SIZE_FORMS,
+  TABLE_TOTAL_ARG,
 } from "@/lib/output-layouts/token-meta";
 import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
 
@@ -113,6 +114,16 @@ export function buildTokenSuggestions(opts: {
       out.push({
         insert: `{{${t.key}:${SIZE_SCOPE_ARG}}}`,
         label: `${t.label} · this size only`,
+        group: t.group,
+        hint: t.example,
+      });
+    } else if (t.arg === "tableTotal") {
+      // Bare (the table alone) plus the same table with the pack total in
+      // its bottom-right corner.
+      out.push({ insert: `{{${t.key}}}`, label: t.label, group: t.group, hint: t.example });
+      out.push({
+        insert: `{{${t.key}:${TABLE_TOTAL_ARG}}}`,
+        label: `${t.label} · with total`,
         group: t.group,
         hint: t.example,
       });

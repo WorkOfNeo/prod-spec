@@ -14,7 +14,12 @@ import {
   resolveTextToken,
   unresolvedTokens,
 } from "@/lib/output-layouts/tokens";
-import { LAYOUT_TOKENS, SIZE_SCOPE_ARG, SIZE_FORMS } from "@/lib/output-layouts/token-meta";
+import {
+  LAYOUT_TOKENS,
+  SIZE_SCOPE_ARG,
+  SIZE_FORMS,
+  TABLE_TOTAL_ARG,
+} from "@/lib/output-layouts/token-meta";
 import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import { buildSampleStyleData } from "@/lib/pdf/sample-data";
@@ -171,6 +176,15 @@ export async function POST(req: NextRequest) {
         for (const form of SIZE_FORMS) {
           tokenValues[`${t.key}:${form}`] = resolveTextToken(styleData, t.key, form);
         }
+      } else if (t.arg === "tableTotal") {
+        // Bare (the flat ratio) plus the same with the pack total appended,
+        // so the palette shows what the table's corner cell will read.
+        tokenValues[t.key] = resolveTextToken(styleData, t.key);
+        tokenValues[`${t.key}:${TABLE_TOTAL_ARG}`] = resolveTextToken(
+          styleData,
+          t.key,
+          TABLE_TOTAL_ARG,
+        );
       } else {
         tokenValues[t.key] = resolveTextToken(styleData, t.key);
       }
