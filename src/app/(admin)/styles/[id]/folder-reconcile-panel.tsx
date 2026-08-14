@@ -57,6 +57,12 @@ import type {
 // convention SupplierFolderStatus already uses on this page.
 export type FolderReconcilePanelProps = {
   styleId: string;
+  // Passed from the server so the "whole PO" link is on screen IMMEDIATELY —
+  // before the folder check has finished, and even if it fails outright. That
+  // link is how someone gets from "my style looks fine" to "a sibling on this
+  // PO has nothing delivered", so it must not depend on the very lookup that
+  // might be the thing going wrong.
+  poNumber?: string | null;
   className?: string;
 };
 
@@ -74,12 +80,16 @@ async function fetchReconcile(styleId: string, signal?: AbortSignal): Promise<Fo
   return body;
 }
 
-export function FolderReconcilePanel({ styleId, className = "mt-8" }: FolderReconcilePanelProps) {
+export function FolderReconcilePanel({ styleId, poNumber, className = "mt-8" }: FolderReconcilePanelProps) {
   const [data, setData] = useState<FolderReconcile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // Prefer the server's PO number; fall back to whatever the check reported, so
+  // the link still appears for a caller that didn't pass one.
+  const po = poNumber ?? data?.poNumber ?? null;
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -142,30 +152,35 @@ export function FolderReconcilePanel({ styleId, className = "mt-8" }: FolderReco
       <h2 className="text-sm font-semibold text-zinc-700">
         Supplier folder check
         {data?.folderPath ? <span className="font-normal text-zinc-400"> · {data.folderPath}</span> : null}
-        {/* The folder is the PO's, and this panel only ever repairs THIS style.
-            The whole-PO ledger — including any sibling style with nothing
-            delivered — lives on its own page. */}
-        {data?.poNumber ? (
-          <>
-            {" · "}
-            <a href={`/delivery/${encodeURIComponent(data.poNumber)}`} className="font-normal underline text-zinc-500 hover:text-zinc-900">
-              whole PO
-            </a>
-          </>
-        ) : null}
       </h2>
-      <button
-        type="button"
-        onClick={() => void refresh()}
-        disabled={loading || busy !== null}
-        className={`shrink-0 rounded-md border px-2 py-0.5 text-[11px] font-medium ${
-          loading || busy !== null
-            ? "cursor-not-allowed border-zinc-200 text-zinc-400"
-            : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
-        }`}
-      >
-        {loading ? "Checking…" : "Re-check"}
-      </button>
+      <div className="flex shrink-0 items-center gap-2">
+        {/* The folder is the PO's, and this panel only ever repairs THIS style.
+            The whole-PO ledger — every style sharing the folder, including any
+            with nothing delivered at all — is its own page, and this is the way
+            in. `poNumber` comes from the server so it is here before (and
+            regardless of) the folder check below. */}
+        {po ? (
+          <a
+            href={`/delivery/${encodeURIComponent(po)}`}
+            title={`Every style on PO ${po}, checked against this folder`}
+            className="rounded-md border border-sky-300 bg-white px-2 py-0.5 text-[11px] font-medium text-sky-700 hover:bg-sky-50"
+          >
+            Whole PO delivery ↗
+          </a>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          disabled={loading || busy !== null}
+          className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${
+            loading || busy !== null
+              ? "cursor-not-allowed border-zinc-200 text-zinc-400"
+              : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
+          }`}
+        >
+          {loading ? "Checking…" : "Re-check"}
+        </button>
+      </div>
     </div>
   );
 
