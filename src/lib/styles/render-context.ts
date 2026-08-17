@@ -6,7 +6,17 @@ import {
   type ColumnMapping,
   type CustomerConfig,
 } from "@/lib/customers/config";
-import { projectSiblingStyle } from "@/lib/output-layouts/tokens";
+import {
+  augmentCompositionTranslations,
+  augmentTranslatedFields,
+  projectSiblingStyle,
+} from "@/lib/output-layouts/tokens";
+import { parseLayoutDef, type LayoutDef } from "@/lib/output-layouts/schema";
+import { isLayoutVariantKey, layoutIdFromVariantKey } from "@/lib/output-layouts/variant-keys";
+import {
+  needsTranslationAugment,
+  translatedLangsInDefs,
+} from "@/lib/output-layouts/translated-langs";
 import { MAX_SIBLING_SLOTS } from "@/lib/output-layouts/token-meta";
 import {
   parseProdSpecColumnMapping,
@@ -322,6 +332,23 @@ export async function loadStyleRenderContext(styleId: string): Promise<StyleRend
     ? parseProdSpecOutputs(prodSpec.outputs).filter((o) => o.enabled !== false)
     : [];
 
+  // Resolve the per-language values the declared layouts print, exactly as
+  // renderLayoutHtml does before it draws them. Without this the review page's
+  // catch-all line editor and the field editor's pre-fills read
+  // {{composition:et}} / {{madeIn:fi}} / {{careInstructions:sv}} straight off
+  // StyleData and show them EMPTY, while the PDF next to them prints the
+  // translated text — a reviewer then "fixes" a line that was never wrong.
+  // (Observed on SOK · License · Price Sticker: the line editor showed ", ,"
+  // where the sticker prints "100% Polyesteri, 100% Polyester, 100% Polüester".)
+  //
+  // Deliberately scoped to THIS loader, not buildStyleData: the runner shares
+  // buildStyleData and augments inside renderLayoutHtml already, so putting it
+  // there would add two dictionary round-trips to generation for no gain.
+  const augmented = await augmentForDeclaredLayouts(
+    styleData,
+    outputs.map((o) => o.variantKey),
+  );
+
   const readiness = prodSpec
     ? outputReadinessForStyle({
         rawData: style.rawData,
@@ -336,11 +363,66 @@ export async function loadStyleRenderContext(styleId: string): Promise<StyleRend
 
   return {
     styleId,
-    styleData,
+    styleData: augmented,
     prodSpec: prodSpec ? { id: prodSpec.id, name: prodSpec.name } : null,
     outputs,
     readiness,
   };
+}
+
+// Fill in the translation-bank-backed values (composition per language, made-in
+// / country / care phrasing) that the given Output Builder layouts print, so a
+// SYNC token resolve off this StyleData agrees with the rendered PDF.
+//
+// Fail-soft throughout: a layout row that no longer parses, or a dictionary
+// that can't be read, just means no augmentation — the caller still gets a
+// usable StyleData, exactly as before this existed. Both augmenters are
+// idempotent (they skip languages already present), so renderLayoutHtml
+// re-running them downstream costs nothing and changes nothing.
+async function augmentForDeclaredLayouts(
+  styleData: StyleData,
+  variantKeys: readonly string[],
+): Promise<StyleData> {
+  const layoutIds = [
+    ...new Set(
+      variantKeys
+        .filter((k) => isLayoutVariantKey(k))
+        .map((k) => layoutIdFromVariantKey(k))
+        .filter((id): id is string => !!id),
+    ),
+  ];
+  if (layoutIds.length === 0) return styleData;
+
+  let defs: LayoutDef[];
+  try {
+    const rows = await db.outputLayout.findMany({
+      where: { id: { in: layoutIds } },
+      select: { definition: true },
+    });
+    defs = rows.flatMap((r) => {
+      try {
+        return [parseLayoutDef(r.definition)];
+      } catch {
+        return [];
+      }
+    });
+  } catch {
+    return styleData;
+  }
+  if (defs.length === 0) return styleData;
+
+  const langs = translatedLangsInDefs(defs);
+  if (!needsTranslationAugment(langs)) return styleData;
+
+  try {
+    let out = styleData;
+    if (langs.composition.length > 0) {
+      out = await augmentCompositionTranslations(out, langs.composition);
+    }
+    return await augmentTranslatedFields(out, langs);
+  } catch {
+    return styleData;
+  }
 }
 
 // Parse the colour out of a PO variant label. Observed shape:
