@@ -88,6 +88,14 @@ export const GUIDES: Guide[] = [
       "Every part of the Output Builder: pages & grid, drawing blocks, the variable palette, barcodes & logos, {{if}} logic and calculations, repeat & split, file names, carton numbering, and publishing.",
     adminOnly: true,
   },
+  {
+    slug: "rejection-triage",
+    file: "admin-rejection-triage.html",
+    title: "Triaging a rejection — output edit, code, human, or missing artwork",
+    summary:
+      "Which of four kinds a rejection or customer edit is, the three checks that decide it, worked cases, the traps that make you classify it wrong, and what to hand over per kind.",
+    adminOnly: true,
+  },
 ];
 
 /** Reviewer-visible guides (the handbook) — everyone signed in sees these. */
