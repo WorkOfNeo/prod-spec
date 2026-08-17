@@ -8,7 +8,8 @@ import type { StyleData } from "@/lib/pdf/types";
 process.env.DATABASE_URL ??= "postgresql://u:p@localhost:5432/db?sslmode=disable";
 
 let pickSizeForm: typeof import("./size-form").pickSizeForm;
-let sizeFormEntries: typeof import("./size-form").sizeFormEntries;
+let sizeFormRun: typeof import("./size-form").sizeFormRun;
+let splitSizeUnit: typeof import("./size-form").splitSizeUnit;
 let resolveTextToken: typeof import("./tokens").resolveTextToken;
 let repetitionStyles: typeof import("./render").repetitionStyles;
 let renderLayoutHtml: typeof import("./render").renderLayoutHtml;
@@ -16,7 +17,7 @@ let LayoutDefSchema: typeof import("./schema").LayoutDefSchema;
 let validateTokenRef: typeof import("./token-meta").validateTokenRef;
 
 before(async () => {
-  ({ pickSizeForm, sizeFormEntries } = await import("./size-form"));
+  ({ pickSizeForm, sizeFormRun, splitSizeUnit } = await import("./size-form"));
   ({ resolveTextToken } = await import("./tokens"));
   ({ repetitionStyles, renderLayoutHtml } = await import("./render"));
   ({ LayoutDefSchema } = await import("./schema"));
@@ -92,20 +93,41 @@ test("months and the English/German spellings count as an age", () => {
 });
 
 test("sizes that narrow onto the same text collapse to one entry", () => {
-  const entries = sizeFormEntries(
-    ["86-92 cm / 1-2 år", "86-92 cm / 2-3 år", "98-104 cm / 3-4 år"],
-    "numeric",
-  );
-  assert.deepEqual(entries.map((e) => e.text), ["86-92 cm", "98-104 cm"]);
+  const run = sizeFormRun(["86-92 cm / 1-2 år", "86-92 cm / 2-3 år", "98-104 cm / 3-4 år"], "numeric");
+  assert.deepEqual(run.entries.map((e) => e.text), ["86/92", "98/104"]);
   // …and the collapsed entry remembers BOTH sizes, so the renderer can
   // still enlarge it for either repetition row.
-  assert.deepEqual(entries[0].labels, ["86-92 cm / 1-2 år", "86-92 cm / 2-3 år"]);
+  assert.deepEqual(run.entries[0].labels, ["86-92 cm / 1-2 år", "86-92 cm / 2-3 år"]);
 });
 
 test("no form ⇒ a plain 1:1 passthrough, duplicates and all", () => {
-  const entries = sizeFormEntries(["86-92 cm / 1-2 år", "86-92 cm / 1-2 år"], null);
-  assert.equal(entries.length, 2);
-  assert.deepEqual(entries.map((e) => e.text), ["86-92 cm / 1-2 år", "86-92 cm / 1-2 år"]);
+  const run = sizeFormRun(["86-92 cm / 1-2 år", "86-92 cm / 1-2 år"], null);
+  assert.equal(run.entries.length, 2);
+  assert.deepEqual(run.entries.map((e) => e.text), ["86-92 cm / 1-2 år", "86-92 cm / 1-2 år"]);
+  assert.equal(run.joiner, " - ");
+  assert.equal(run.unit, "");
+});
+
+// ---- numbers and unit taken apart ------------------------------------
+
+test("a half splits into compacted numbers and its unit", () => {
+  assert.deepEqual(splitSizeUnit("98-104 cm"), { value: "98/104", unit: "cm" });
+  assert.deepEqual(splitSizeUnit("1½-2 år"), { value: "1½/2", unit: "år" });
+  assert.deepEqual(splitSizeUnit("3-6 mdr"), { value: "3/6", unit: "mdr" });
+  // Already slash-written, or written with spaces — one printed shape.
+  assert.deepEqual(splitSizeUnit("86 / 92 cm"), { value: "86/92", unit: "cm" });
+  // A single size keeps its single number.
+  assert.deepEqual(splitSizeUnit("110 cm"), { value: "110", unit: "cm" });
+  // No unit at all ⇒ numbers only, nothing to hoist.
+  assert.deepEqual(splitSizeUnit("86/92"), { value: "86/92", unit: "" });
+});
+
+test("a half carrying TWO units is left exactly as authored", () => {
+  // Compacting this would read as one four-part size; better odd than wrong.
+  assert.deepEqual(splitSizeUnit("1½-2 år / 18-24 mdr"), {
+    value: "1½-2 år / 18-24 mdr",
+    unit: "",
+  });
 });
 
 // ---- the token -------------------------------------------------------
@@ -117,27 +139,40 @@ test("{{sizeRangeCoop}} is unchanged — the labels as authored", () => {
   );
 });
 
-test("{{sizeRangeCoop:numeric}} prints the centimetres only", () => {
-  assert.equal(coop(makeStyle(), "numeric"), "86-92 cm - 98-104 cm - 110-116 cm - 122-128 cm - 134-140 cm");
+test("{{sizeRangeCoop:numeric}} prints the centimetres as one set, unit at the end", () => {
+  assert.equal(coop(makeStyle(), "numeric"), "86/92-98/104-110/116-122/128-134/140 cm");
 });
 
-test("{{sizeRangeCoop:year}} prints the ages only", () => {
-  assert.equal(coop(makeStyle(), "year"), "1½-2 år - 3-4 år - 5-6 år - 7-8 år - 9-10 år");
+test("{{sizeRangeCoop:year}} prints the ages the same way", () => {
+  assert.equal(coop(makeStyle(), "year"), "1½/2-3/4-5/6-7/8-9/10 år");
+});
+
+test("a unit is printed once, however many sizes carry it", () => {
+  assert.equal(coop(makeStyle(["62-68 cm / 3-6 mdr", "74-80 cm / 9-12 mdr"]), "year"), "3/6-9/12 mdr");
+  // …and a size that arrived WITHOUT the unit doesn't cost the run its own.
+  assert.equal(coop(makeStyle(["98-104 cm / 3-4 år", "110-116", "122-128 cm / 7-8 år"]), "numeric"),
+    "98/104-110/116-122/128 cm");
+});
+
+test("a run that genuinely mixes units keeps each one inline", () => {
+  // Months and years in the same column — a single trailing unit would be a
+  // lie, so each entry carries its own.
+  assert.equal(coop(makeStyle(["62-68 cm / 3-6 mdr", "98-104 cm / 3-4 år"]), "year"), "3/6 mdr-3/4 år");
 });
 
 test("a run without an age half prints the same for every form", () => {
   const style = makeStyle(["86/92", "98/104", "110/116"]);
-  const expected = "86/92 - 98/104 - 110/116";
-  assert.equal(coop(style), expected);
-  assert.equal(coop(style, "numeric"), expected);
-  assert.equal(coop(style, "year"), expected);
+  // Bare is the passthrough it always was; a form still sets the run.
+  assert.equal(coop(style), "86/92 - 98/104 - 110/116");
+  assert.equal(coop(style, "numeric"), "86/92-98/104-110/116");
+  assert.equal(coop(style, "year"), "86/92-98/104-110/116");
 });
 
 test("the whole run prints on every repetition, in the chosen form", () => {
   const reps = repetitionStyles(makeStyle(), "size");
   assert.equal(reps.length, 5);
   for (const rep of reps) {
-    assert.equal(coop(rep, "year"), "1½-2 år - 3-4 år - 5-6 år - 7-8 år - 9-10 år");
+    assert.equal(coop(rep, "year"), "1½/2-3/4-5/6-7/8-9/10 år");
   }
 });
 
@@ -169,7 +204,9 @@ test("the current repetition's size is enlarged in the chosen form", async () =>
   const html = await renderLayoutHtml(defWith("{{sizeRangeCoop:year}}"), rows[1], {
     mode: "production",
   });
-  assert.equal(printedRange(html), "1½-2 år - «3-4 år» - 5-6 år - 7-8 år - 9-10 år");
+  // The shared unit sits OUTSIDE the enlarged span — it belongs to the whole
+  // run, not to the size being called out.
+  assert.equal(printedRange(html), "1½/2-«3/4»-5/6-7/8-9/10 år");
 });
 
 test("a collapsed entry is enlarged for either size behind it", async () => {
@@ -179,7 +216,7 @@ test("a collapsed entry is enlarged for either size behind it", async () => {
     const html = await renderLayoutHtml(defWith("{{sizeRangeCoop:numeric}}"), row, {
       mode: "production",
     });
-    assert.equal(printedRange(html), "«86-92 cm» - 98-104 cm");
+    assert.equal(printedRange(html), "«86/92»-98/104 cm");
   }
 });
 

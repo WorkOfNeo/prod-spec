@@ -282,6 +282,15 @@ export const LayoutPageSchema = z
     // of ink the die would slice through. The frame (pageBorder) follows it
     // concentrically — see renderPageBorder.
     cornerRadiusMm: z.number().min(0).max(50).optional(),
+    // Draw the rounded die as a visible CUT LINE — a red dashed outline
+    // tracing the page edge, like the sewing/fold/hole guides. On by default
+    // wherever there IS a radius, because the curve is otherwise invisible in
+    // print: the sheet Chromium prints is rectangular, so a page whose corners
+    // carry no full-bleed ink comes out as a plain rectangle with nothing for
+    // the supplier to cut to. Turn it off for artwork that already shows the
+    // curve (a full-bleed background, or a pageBorder at inset 0). Ignored on
+    // a square page — there the cut IS the paper edge.
+    cutLine: z.boolean().default(true),
     // Drop this page from the PRINTED document when nothing on it resolves
     // for the style being rendered. The case it exists for: a page whose
     // only content is a certification mark ({{cert:oekotex}}) — the mark
@@ -646,6 +655,7 @@ export function defaultLayoutDef(): LayoutDef {
         margins: { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 },
         sewingLines: [],
         foldLine: "none",
+        cutLine: true,
         omitWhenEmpty: false,
         gridCols: grid.cols,
         gridRows: grid.rows,

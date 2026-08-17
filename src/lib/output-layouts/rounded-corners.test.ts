@@ -115,6 +115,50 @@ test("a frame on a SQUARE page never gains a radius", async () => {
   assert.ok(!f.includes("border-radius"), f);
 });
 
+// ---------------------------------------------------------------------
+// The cut line — the die drawn in red so it survives into print. The sheet
+// Chromium prints is a rectangle, so without a stroke a rounded page with no
+// full-bleed ink comes out square and the supplier has nothing to cut to.
+// ---------------------------------------------------------------------
+
+function cut(html: string): string | null {
+  const m = /<div class="ol-guide ol-cut" style="([^"]*)"/.exec(html);
+  return m ? m[1] : null;
+}
+
+test("a rounded page draws the cut line at the die's own radius", async () => {
+  const html = await renderLayoutHtml(defWith({ cornerRadiusMm: 3 }), buildSampleStyleData());
+  const c = cut(html);
+  assert.ok(c, "expected the cut line");
+  assert.ok(c.includes("border-radius: 3mm"), c);
+  // Red and dashed — a guide, not artwork — and flush to the page edge.
+  assert.ok(/\.ol-cut \{[^}]*inset: 0[^}]*dashed #ff0000/.test(html), "expected the red dashed rule");
+});
+
+test("a square page has no cut line — there the die IS the paper edge", async () => {
+  for (const page of [{}, { cornerRadiusMm: 0 }]) {
+    const html = await renderLayoutHtml(defWith(page), buildSampleStyleData());
+    assert.equal(cut(html), null);
+  }
+});
+
+test("the cut line can be turned off for artwork that already shows the curve", async () => {
+  const html = await renderLayoutHtml(
+    defWith({ cornerRadiusMm: 3, cutLine: false }),
+    buildSampleStyleData(),
+  );
+  assert.equal(cut(html), null);
+  // …and the die itself is untouched: the page still rounds and still clips.
+  assert.ok(pageRule(html).includes("border-radius: 3mm"), pageRule(html));
+});
+
+test("a page authored before this gets the cut line by default", () => {
+  // The point of default(true): the two live rounded layouts carry no such
+  // field, and they are exactly the ones that need the curve to print.
+  const parsed = defWith({ cornerRadiusMm: 3 });
+  assert.equal(parsed.pages[0].cutLine, true);
+});
+
 test("insetCornerRadiusMm is the shared concentric arithmetic", () => {
   assert.equal(insetCornerRadiusMm(5, 2), 3);
   assert.equal(insetCornerRadiusMm(5, 0), 5);

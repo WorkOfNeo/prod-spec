@@ -72,16 +72,20 @@ Which half prints is a per-output choice, made with an argument on `{{sizeRangeC
 | Token | Prints |
 |---|---|
 | `{{sizeRangeCoop}}` | `86-92 cm / 1½-2 år - 98-104 cm / 3-4 år - …` (as authored) |
-| `{{sizeRangeCoop:numeric}}` | `86-92 cm - 98-104 cm - …` |
-| `{{sizeRangeCoop:year}}` | `1½-2 år - 3-4 år - …` |
+| `{{sizeRangeCoop:numeric}}` | `86/92-98/104-110/116-122/128 cm` |
+| `{{sizeRangeCoop:year}}` | `1½/2-3/4-5/6-7/8 år` |
+
+A form doesn't just pick a half — it prints the run as **one set**: the pair inside a single size is slash-joined, the sizes are joined by `-`, and the unit is printed **once at the end**. Two delimiters doing two jobs, so `98/104-110/116` reads as two sizes where `98-104-110-116` would read as four. The input in Monday is unchanged; this is purely how it's recomputed for print.
 
 Rules (`src/lib/output-layouts/size-form.ts`):
 
 - **The split is by the age unit** — `år` / `aar` / `ar`, `mdr` / `måned(er)`, `year(s)` / `yr(s)`, `month(s)` / `mth(s)`, `jahr(e)` — never by the slash alone. A size that IS slash-written (`86/92`, `23/26`) is therefore never cut in half.
-- **Either half may come first**; the measurement keeps its own slashes and spacing (`86 / 92 cm / 1½-2 år` → `86 / 92 cm`).
-- **No age half ⇒ the label prints as authored** for every form, so a form is safe to set on a layout whose styles don't all carry both. Same "never blank a printed field" contract as the size-scoped text fields.
-- **Sizes that narrow onto the same text collapse to one entry** (two ages sharing a measurement) — and the current repetition's size still enlarges that entry.
-- Bare (no argument) is a byte-for-byte passthrough, so published layouts are untouched.
+- **Either half may come first**; however the pair was written — `98-104`, `98 / 104`, `98–104` — it prints one way.
+- **The unit is hoisted only when the run agrees on one.** A size that arrived without a unit doesn't cost the run its trailing `cm`; a run that genuinely mixes units (months *and* years in one column) keeps each unit inline instead, because a single trailing one would be a lie.
+- **No age half ⇒ the label still prints** for every form (compacted, but never blank), so a form is safe to set on a layout whose styles don't all carry both. Same "never blank a printed field" contract as the size-scoped text fields.
+- **Sizes that narrow onto the same text collapse to one entry** (two ages sharing a measurement) — and the current repetition's size still enlarges that entry. The shared unit sits *outside* the enlarged span: it belongs to the run, not to the size being called out.
+- **A half carrying two units** (`1½-2 år / 18-24 mdr`) is left exactly as authored — better odd than mangled.
+- Bare (no argument) is a byte-for-byte passthrough joined `" - "`, so layouts using the plain token are untouched.
 
 ## Rounded corners
 
@@ -90,6 +94,12 @@ Rules (`src/lib/output-layouts/size-form.ts`):
 It is the **page** that rounds, not a drawn guide: `.ol-page` already clips its content, so a full-bleed or inverted block running into a corner prints the same curve the cutter makes instead of a square of ink the die would slice through. The `@page` box stays rectangular — the sheet it prints on is. A `pageBorder` curves with it **concentrically**, tightening by its own inset (`insetCornerRadiusMm`: radius 5 mm, inset 2 mm ⇒ a 3 mm frame corner; inset past the radius ⇒ square).
 
 In the builder the canvas and the print preview both show the rounded sheet. The canvas *shows* the radius without clipping to it — clipping there would swallow a corner block's delete badge and make that block undeletable.
+
+### The cut line
+
+Clipping alone is invisible in print: the sheet Chromium prints is a **rectangle**, so a rounded page whose corners carry no full-bleed ink comes out square and the supplier has nothing to cut to. `page.cutLine` (default **on**, and only offered where there is a radius) traces the die in **red dashes** at the page edge — a print guide like the sewing/fold/hole lines: no tokens, no grid cells, never a blocker for approval.
+
+Turn it off for artwork that already shows the curve — a full-bleed background, or a `pageBorder` flush to the edge. On a square page it never draws: there the cut *is* the paper edge.
 
 ## Centre hole (die-cut hang hole)
 

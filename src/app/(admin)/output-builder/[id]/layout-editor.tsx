@@ -537,6 +537,7 @@ export function LayoutEditor({
           margins: { ...last.margins },
           sewingLines: [],
           foldLine: "none",
+          cutLine: true,
           omitWhenEmpty: false,
           blocks: [],
         },
@@ -1935,6 +1936,27 @@ export function LayoutEditor({
                 block that runs into a corner prints the same curve the cutter makes — and the page border
                 curves with it.
               </p>
+              {/* The die is invisible on a printed rectangle unless something
+                  draws it, so a rounded page gets a red cut line by default.
+                  Only offered where there IS a radius. */}
+              {(page.cornerRadiusMm ?? 0) > 0 ? (
+                <>
+                  <label className="mt-1.5 flex items-center gap-2 text-sm text-zinc-700">
+                    <input
+                      type="checkbox"
+                      checked={page.cutLine !== false}
+                      onChange={(e) => updatePage({ cutLine: e.target.checked })}
+                      className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                    />
+                    Show cut line
+                  </label>
+                  <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-400">
+                    Traces the die in red dashes so the curve is visible in print — the printed sheet is a
+                    rectangle, so without it a rounded page comes out square. Turn it off when the artwork
+                    already shows the curve (full-bleed colour, or a page border flush to the edge).
+                  </p>
+                </>
+              ) : null}
             </div>
 
             {/* Centre hole — the die-cut hang hole. Always centred across
@@ -2327,6 +2349,19 @@ export function LayoutEditor({
                       insetCornerRadiusMm(page.cornerRadiusMm, pageBorder.insetMm) * scale,
                   }}
                   title="Page border"
+                />
+              ) : null}
+              {/* Cut line — the rounded die traced in red, same geometry as
+                  the renderer's guide (page edge, the page's own radius). */}
+              {(page.cornerRadiusMm ?? 0) > 0 && page.cutLine !== false ? (
+                <div
+                  className="pointer-events-none absolute"
+                  style={{
+                    inset: 0,
+                    border: "1px dashed #ff0000",
+                    borderRadius: (page.cornerRadiusMm ?? 0) * scale,
+                  }}
+                  title={`Cut line — the ${mmText(page.cornerRadiusMm ?? 0)} mm die, printed as a red guide`}
                 />
               ) : null}
               {page.blocks.map((block) => (
