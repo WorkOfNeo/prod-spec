@@ -12,7 +12,7 @@ import { tokenMeta, parseSiblingTokenKey, TABLE_TOTAL_ARG, type BarcodeSource } 
 import { formatCompositionLines } from "./composition";
 import { pickCartonQtyPair, pickCartonQtyVariant } from "./carton-qty";
 import { pickSizeItems } from "./size-scoped-text";
-import { parseSizeForm, sizeFormEntries } from "./size-form";
+import { formatSizeFormRun, parseSizeForm, sizeFormRun } from "./size-form";
 import {
   formatSizeRatio,
   formatSizeRatioTotal,
@@ -167,17 +167,15 @@ const RESOLVERS: Record<string, TextResolver> = {
   // readiness / show-values / file names.
   //
   // The optional form argument picks ONE half of a two-form label
-  // ("86-92 cm / 1½-2 år"): {{sizeRangeCoop:numeric}} prints the
-  // centimetres, {{sizeRangeCoop:year}} the age. Bare is unchanged — the
-  // label verbatim — and so is a label that carries no age half, which
-  // prints as authored either way (see size-form.ts).
+  // ("86-92 cm / 1½-2 år") and prints the run as a SET rather than a list:
+  // {{sizeRangeCoop:numeric}} → "98/104-110/116-122/128 cm", :year →
+  // "3/4-5/6-7/8 år" — the pair inside one size slash-joined, sizes joined
+  // by "-", the unit once at the end (see size-form.ts). Bare is unchanged:
+  // the labels verbatim, joined " - ".
   sizeRangeCoop: (s, arg) =>
-    sizeFormEntries(
-      (s.allSizes ?? s.sizes).map((x) => x.label).filter(Boolean),
-      parseSizeForm(arg),
-    )
-      .map((e) => e.text)
-      .join(" - "),
+    formatSizeFormRun(
+      sizeFormRun((s.allSizes ?? s.sizes).map((x) => x.label).filter(Boolean), parseSizeForm(arg)),
+    ),
   // Assortment ratio as flat text — "S: 1, M: 2, L: 2". The optional
   // ":size" argument narrows to the repetition row's own size (just the
   // number, "2"), matching how {{description:size}} behaves.

@@ -27,7 +27,7 @@ import {
 import { tokenMeta, TABLE_TOTAL_ARG, type BarcodeSource, type LogoSource } from "./token-meta";
 import { lineOverrideKey } from "./line-keys";
 import { narrowSizeScopedText } from "./size-scoped-text";
-import { parseSizeForm, sizeFormEntries } from "./size-form";
+import { parseSizeForm, sizeFormRun } from "./size-form";
 import { formatSizeRatioTotal } from "./size-ratio";
 import { CALC_RE, fieldsInCalcExpression } from "./calc";
 import { getContrastAddressLogoDataUrl, getContrastLogoDataUrl } from "./logos";
@@ -747,19 +747,24 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx, blockWidthMm
     //
     // The optional form argument (:numeric / :year) prints one half of a
     // two-form label — "86-92 cm / 1½-2 år" as either the centimetres or
-    // the age. The highlight still keys off the RAW label, so narrowing
-    // two sizes onto the same text enlarges that entry for both of them.
+    // the age — and prints the run as a set: "98/104-110/116-122/128 cm",
+    // with the unit once at the end. The highlight still keys off the RAW
+    // label, so narrowing two sizes onto the same text enlarges that entry
+    // for both of them; the shared unit stays outside it (it belongs to the
+    // whole run, not to the size being called out).
     if (key === "sizeRangeCoop") {
       const all = (style.allSizes ?? style.sizes).map((x) => x.label).filter(Boolean);
       if (all.length > 0) {
         const current = style.sizes[0]?.label ?? "";
-        html += sizeFormEntries(all, parseSizeForm(arg))
+        const run = sizeFormRun(all, parseSizeForm(arg));
+        html += run.entries
           .map((entry) =>
             entry.labels.includes(current)
               ? `<span class="ol-size-current">${escapeHtml(entry.text)}</span>`
               : escapeHtml(entry.text),
           )
-          .join(" - ");
+          .join(run.joiner);
+        if (run.unit) html += escapeHtml(` ${run.unit}`);
         hadValue = true;
       } else if (ctx.mode === "preview") {
         html += `<span class="ol-miss">sizeRangeCoop?</span>`;
@@ -1191,6 +1196,16 @@ function renderGuides(page: LayoutPage): string {
       `<div class="ol-guide ol-hole ol-hole-${pos}" style="${pos}: ${hole.offsetMm}mm; width: ${hole.diameterMm}mm; height: ${hole.diameterMm}mm;"></div>`,
     );
   }
+  // Cut line — the rounded die traced in red, so the curve is VISIBLE on the
+  // printed sheet. The page already clips its content to the shape, but the
+  // paper Chromium prints is a rectangle: without ink on the corners there is
+  // nothing to show the cutter (or the supplier proofing the file) where the
+  // die goes. Drawn at inset 0 with the page's own radius, so it sits exactly
+  // on the cut; box-sizing: border-box keeps the stroke inside the clip.
+  // Only on a rounded page — a square die is the paper edge itself.
+  if ((page.cornerRadiusMm ?? 0) > 0 && page.cutLine !== false) {
+    parts.push(`<div class="ol-guide ol-cut" style="border-radius: ${page.cornerRadiusMm}mm;"></div>`);
+  }
   return parts.join("");
 }
 
@@ -1321,6 +1336,9 @@ function emitLayoutDocument(
      vertical offset are inlined per page; the transform puts the CENTRE on
      that offset (and on the page's horizontal midline). */
   .ol-hole { left: 50%; border: 0.3mm dashed #555; border-radius: 50%; }
+  /* Cut line — the rounded die, red so it reads as a guide and not as
+     artwork. Radius is inlined per page; inset 0 puts it on the cut itself. */
+  .ol-cut { inset: 0; border: 0.3mm dashed #ff0000; }
   .ol-hole-top { transform: translate(-50%, -50%); }
   .ol-hole-bottom { transform: translate(-50%, 50%); }
   /* flex-shrink:0 is load-bearing: .ol-block is a FIXED-height flex column
