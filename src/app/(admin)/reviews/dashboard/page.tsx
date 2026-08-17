@@ -179,8 +179,11 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
             One order = one style. Use the filters to scope every card below.
           </p>
         </div>
-        <Link href="/reviews" className="text-sm text-blue-600 hover:underline">
-          ← Back to reviews
+        <Link
+          href="/reviews"
+          className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          View review list
         </Link>
       </div>
 
