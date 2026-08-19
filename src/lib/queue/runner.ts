@@ -36,6 +36,7 @@ import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
 import { assembleRequiredPackagingDocs } from "@/lib/outputs/required-packaging";
 import { renderStyleCoverPdf } from "@/lib/pdf/cover";
 import { coverFileName } from "@/lib/pdf/cover-file-name";
+import { getSupplierSendMinPo } from "@/lib/settings/app-settings";
 import { buildStyleCoverPdf } from "@/lib/pdf/style-cover";
 import { toPlainBytes } from "@/lib/pdf/bytes";
 import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
@@ -717,7 +718,12 @@ export async function processJob(jobId: string): Promise<void> {
         })
         .catch(() => {});
     }
-    const refreshedCoverName = coverFileName(styleData.styleNumber, styleData.colour);
+    const refreshedCoverName = coverFileName({
+      styleNumber: styleData.styleNumber,
+      colour: styleData.colour,
+      poSeq: job.style.poSeq,
+      minPo: await getSupplierSendMinPo(),
+    });
     await db.$transaction([
       // This job generated no output assets, so deleteMany is a no-op for those;
       // the carried-forward approved assets live on earlier jobs and survive. We
@@ -902,7 +908,12 @@ export async function processJob(jobId: string): Promise<void> {
       docType: "COVER",
       variantKey: COVER_VARIANT_KEY,
       displayName: "Cover page",
-      fileName: coverFileName(styleData.styleNumber, styleData.colour),
+      fileName: coverFileName({
+        styleNumber: styleData.styleNumber,
+        colour: styleData.colour,
+        poSeq: job.style.poSeq,
+        minPo: await getSupplierSendMinPo(),
+      }),
       pdf: coverPdf,
     });
   } catch (err) {

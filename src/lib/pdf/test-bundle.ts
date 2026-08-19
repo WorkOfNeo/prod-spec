@@ -30,6 +30,7 @@ import {
 } from "@/lib/prod-spec/config";
 import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 import { coverFileName } from "./cover-file-name";
+import { getSupplierSendMinPo } from "@/lib/settings/app-settings";
 
 // =====================================================
 // Test-bundle renderer — a DRY RUN of the job runner.
@@ -352,7 +353,12 @@ export async function renderProdSpecTestBundle(
       kind: "cover",
       variantKey: COVER_VARIANT_KEY,
       name: generalInfoMd ? "Cover page · incl. general information" : "Cover page",
-      fileName: coverFileName(styleData.styleNumber, styleData.colour),
+      fileName: coverFileName({
+        styleNumber: styleData.styleNumber,
+        colour: styleData.colour,
+        poSeq: style.poSeq,
+        minPo: await getSupplierSendMinPo(),
+      }),
       widthMm: 210,
       heightMm: 297,
       staticPdf: false,

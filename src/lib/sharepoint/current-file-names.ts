@@ -3,6 +3,7 @@ import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { coverFileName } from "@/lib/pdf/cover-file-name";
 import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
+import { getSupplierSendMinPo } from "@/lib/settings/app-settings";
 
 // =====================================================
 // "What should this document be called RIGHT NOW?" — resolve a style's already-
@@ -79,6 +80,10 @@ export async function resolveCurrentFileNames(
   const ctx = await loadStyleRenderContext(styleId);
   if (!ctx) return out;
 
+  // Read once per call: the cover's name depends on the delivery cutoff, and
+  // re-reading it per document would be one query per file for a constant.
+  const coverMinPo = await getSupplierSendMinPo();
+
   // The split plan per base variant key. Building one re-resolves every
   // repetition row, and a split slot asks for the same plan once per document —
   // so cache it, but PER CALL: the plan is a function of this style's data and
@@ -97,7 +102,12 @@ export async function resolveCurrentFileNames(
     if (baseKey === COVER_VARIANT_KEY) {
       out.set(doc.jobAssetId, {
         kind: "resolved",
-        fileName: coverFileName(ctx.styleData.styleNumber, ctx.styleData.colour),
+        fileName: coverFileName({
+          styleNumber: ctx.styleData.styleNumber,
+          colour: ctx.styleData.colour,
+          poSeq: ctx.poSeq,
+          minPo: coverMinPo,
+        }),
       });
       continue;
     }
