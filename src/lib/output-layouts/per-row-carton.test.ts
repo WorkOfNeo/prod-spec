@@ -28,6 +28,7 @@ function settings(repeatBy: LayoutSettings["repeatBy"]): LayoutSettings {
 test("per-row repeats: the row's own carton is bound", () => {
   assert.equal(hasPerRowCartonEan(settings("ean")), true);
   assert.equal(hasPerRowCartonEan(settings("cartonEan")), true);
+  assert.equal(hasPerRowCartonEan(settings("cartonEanSizeOnly")), true);
 });
 
 test("style-level repeats: one carton for the whole style", () => {

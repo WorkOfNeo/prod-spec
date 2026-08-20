@@ -112,7 +112,7 @@ export function varyingTokens(rows: RepetitionRow[]): CandidateToken[] {
 export function suffixFor(repStyle: StyleData, repeatBy: LayoutSettings["repeatBy"], i: number, seen: Map<string, number>): string {
   const sizePart = (repStyle.sizes[0]?.label ?? "").replace(/[^\w.-]+/g, "");
   const colourPart =
-    repeatBy === "ean" || repeatBy === "cartonEan"
+    repeatBy === "ean" || repeatBy === "cartonEan" || repeatBy === "cartonEanSizeOnly"
       ? (repStyle.colour?.name ?? "").replace(/[^\w.-]+/g, "").slice(0, 16)
       : "";
   let suffix =
