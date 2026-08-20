@@ -67,15 +67,18 @@ Kids' size runs often arrive with both forms in one label:
 86-92 cm / 1½-2 år, 98-104 cm / 3-4 år, 110-116 cm / 5-6 år, 122-128 cm / 7-8 år
 ```
 
-Which half prints is a per-output choice, made with an argument on `{{sizeRangeCoop}}`:
+Which half prints is a per-output choice, made with an argument on `{{sizeRangeCoop}}` (the whole run) or `{{size}}` (the current row's one size):
 
 | Token | Prints |
 |---|---|
 | `{{sizeRangeCoop}}` | `86-92 cm / 1½-2 år - 98-104 cm / 3-4 år - …` (as authored) |
 | `{{sizeRangeCoop:numeric}}` | `86/92-98/104-110/116-122/128 cm` |
 | `{{sizeRangeCoop:year}}` | `1½/2-3/4-5/6-7/8 år` |
+| `{{size}}` | `98-104 cm / 3-4 år` (as authored) |
+| `{{size:numeric}}` | `98/104 cm` |
+| `{{size:year}}` | `3/4 år` |
 
-A form doesn't just pick a half — it prints the run as **one set**: the pair inside a single size is slash-joined, the sizes are joined by `-`, and the unit is printed **once at the end**. Two delimiters doing two jobs, so `98/104-110/116` reads as two sizes where `98-104-110-116` would read as four. The input in Monday is unchanged; this is purely how it's recomputed for print.
+A form doesn't just pick a half — it prints as **one set**: the pair inside a single size is slash-joined and the unit is printed once, after the value(s). On `{{sizeRangeCoop}}` this also joins the sizes with `-`, so two delimiters do two jobs — `98/104-110/116` reads as two sizes where `98-104-110-116` would read as four. The input in Monday is unchanged; this is purely how it's recomputed for print.
 
 Rules (`src/lib/output-layouts/size-form.ts`):
 
@@ -113,7 +116,7 @@ It's a **print guide**, like the sewing and fold lines: a dashed circle on the c
 - **Barcodes**: `{{barcode:ean13}}` (size EAN), `{{barcode:cartonEan}}` (carton EAN).
 - **Symbols / logos / certs**: `{{washSymbols}}`, `{{logo:contrastAddress}}` / `{{logo:custom}}`, `{{cert:oekotex}}` / `{{cert:fsc}}`.
 - **Pictures**: `{{image:<name>}}` — any number per output, from the shared library (see below).
-- **Order / size**: `{{size}}` (the current row inside a repeat), `{{sizes}}`, `{{poNumber}}`, `{{orderNo}}` (FOB → customer order, else PO), `{{qtyPerCarton}}`, `{{lot}}`, `{{customerItemNo}}`, `{{customerOrderNo}}`, `{{description}}`, `{{campaignWeek}}`.
+- **Order / size**: `{{size}}` (the current row inside a repeat; `:numeric` / `:year` pick one half of a two-form label, see below), `{{sizes}}`, `{{poNumber}}`, `{{orderNo}}` (FOB → customer order, else PO), `{{qtyPerCarton}}`, `{{lot}}`, `{{customerItemNo}}`, `{{customerOrderNo}}`, `{{description}}`, `{{campaignWeek}}`.
 - **Size range (Coop)**: `{{sizeRangeCoop}}` — the whole run joined " - " with the current row's size enlarged; `:numeric` / `:year` pick one half of a two-form label (see below).
 - **Conditionals**: `{{if deliveryTerm == FOB}}…{{else}}…{{endif}}` (one line, text tokens only) — see "Conditional text" below for the three operators.
 - **Calculated**: `{{= sum(qtyPerCarton) }}` — arithmetic over field values; see "Calculated fields" below.
