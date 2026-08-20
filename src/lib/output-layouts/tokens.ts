@@ -134,13 +134,21 @@ const RESOLVERS: Record<string, TextResolver> = {
   // every size (hyphen-joined, slug-safe for file names) instead of just the
   // first. Keeps a per-carton file name like "…-Carton Marking-{{size}}" from
   // naming the assort PDF after one arbitrary size.
-  size: (s) =>
-    s.isAssortment
-      ? (s.allSizes ?? s.sizes)
-          .map((x) => x.label)
-          .filter(Boolean)
-          .join("-")
-      : s.sizes[0]?.label ?? "",
+  // The optional form argument picks ONE half of a two-form label
+  // ("86-92 cm / 1½-2 år"), same as {{sizeRangeCoop:numeric}} / :year — the
+  // single current size prints in cm or in age instead of both. Bare is
+  // unchanged. Reuses sizeFormRun/formatSizeFormRun even for the one-label
+  // case so a unit-bearing label formats identically to the range token
+  // ("86/92 cm").
+  size: (s, arg) => {
+    const form = parseSizeForm(arg);
+    if (s.isAssortment) {
+      const labels = (s.allSizes ?? s.sizes).map((x) => x.label).filter(Boolean);
+      return form ? formatSizeFormRun(sizeFormRun(labels, form)) : labels.join("-");
+    }
+    const label = s.sizes[0]?.label ?? "";
+    return form ? formatSizeFormRun(sizeFormRun([label], form)) : label;
+  },
   // EVERY size in the style's full run, listed — "S, M, L, XL, XXL", not
   // the "S–XXL" endpoints. That's what the print specs mean by a size range:
   // Coop's price tag prints "Str.: S - M - L - XL - XXL" and Tokmanni's

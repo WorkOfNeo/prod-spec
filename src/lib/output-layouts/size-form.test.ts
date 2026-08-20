@@ -56,6 +56,7 @@ function makeStyle(labels: string[] = COOP_RUN, over: Partial<StyleData> = {}): 
 }
 
 const coop = (s: StyleData, arg?: string) => resolveTextToken(s, "sizeRangeCoop", arg);
+const size = (s: StyleData, arg?: string) => resolveTextToken(s, "size", arg);
 
 // ---- the picker ------------------------------------------------------
 
@@ -176,6 +177,37 @@ test("the whole run prints on every repetition, in the chosen form", () => {
   }
 });
 
+// ---- {{size}} in a chosen form -----------------------------------------
+
+test("{{size}} is unchanged — the current row's label as authored", () => {
+  assert.equal(size(makeStyle()), "86-92 cm / 1½-2 år");
+});
+
+test("{{size:numeric}} / {{size:year}} print one half of the current row's size", () => {
+  assert.equal(size(makeStyle(), "numeric"), "86/92 cm");
+  assert.equal(size(makeStyle(), "year"), "1½/2 år");
+});
+
+test("{{size:numeric}} follows the repetition, not just the first size", () => {
+  const rows = repetitionStyles(makeStyle(), "size");
+  assert.equal(size(rows[1], "numeric"), "98/104 cm");
+  assert.equal(size(rows[1], "year"), "3/4 år");
+});
+
+test("{{size:numeric}} on a run without an age half prints the plain size", () => {
+  const style = makeStyle(["86/92", "98/104", "110/116"]);
+  assert.equal(size(style), "86/92");
+  assert.equal(size(style, "numeric"), "86/92");
+  assert.equal(size(style, "year"), "86/92");
+});
+
+test("on the assortment row, {{size:numeric}} sets the whole run like sizeRangeCoop", () => {
+  const style = makeStyle(COOP_RUN, { isAssortment: true, allSizes: makeStyle().sizes });
+  assert.equal(size(style), "86-92 cm / 1½-2 år-98-104 cm / 3-4 år-110-116 cm / 5-6 år-122-128 cm / 7-8 år-134-140 cm / 9-10 år");
+  assert.equal(size(style, "numeric"), "86/92-98/104-110/116-122/128-134/140 cm");
+  assert.equal(size(style, "year"), "1½/2-3/4-5/6-7/8-9/10 år");
+});
+
 // ---- the render (the enlarged current size) --------------------------
 
 function defWith(line: string) {
@@ -233,6 +265,15 @@ test("publish accepts the two forms and rejects anything else", () => {
   assert.deepEqual(validateTokenRef("sizeRangeCoop", "numeric"), []);
   assert.deepEqual(validateTokenRef("sizeRangeCoop", "year"), []);
   const errs = validateTokenRef("sizeRangeCoop", "cm");
+  assert.equal(errs.length, 1);
+  assert.match(errs[0], /size form must be/);
+});
+
+test("{{size}} accepts the same two forms and rejects anything else", () => {
+  assert.deepEqual(validateTokenRef("size"), []);
+  assert.deepEqual(validateTokenRef("size", "numeric"), []);
+  assert.deepEqual(validateTokenRef("size", "year"), []);
+  const errs = validateTokenRef("size", "cm");
   assert.equal(errs.length, 1);
   assert.match(errs[0], /size form must be/);
 });

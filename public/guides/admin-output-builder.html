@@ -292,11 +292,12 @@
 
     <div class="note">
       <div class="h">Size runs that carry two forms — cm <i>and</i> age</div>
-      <p>Kids' size columns are often filled with both forms in one label: <span class="keyword">86-92 cm / 1½-2 år, 98-104 cm / 3-4 år, …</span>. Which one a label prints is <b>per output</b> — the palette offers three chips for the Coop size range:</p>
+      <p>Kids' size columns are often filled with both forms in one label: <span class="keyword">86-92 cm / 1½-2 år, 98-104 cm / 3-4 år, …</span>. Which one a label prints is <b>per output</b> — the palette offers the same <span class="keyword">:numeric</span> / <span class="keyword">:year</span> chips on both the Coop size range and the plain size:</p>
       <ul style="margin:6px 0 0;padding-left:16px;font-size:10px;color:#3f3f46;display:grid;gap:4px;">
         <li><span class="ob-tok">{{sizeRangeCoop}}</span> — the label as the buyer wrote it: <span class="keyword">86-92 cm / 1½-2 år - 98-104 cm / 3-4 år</span></li>
-        <li><span class="ob-tok">{{sizeRangeCoop:numeric}}</span> — the measurement only: <span class="keyword">86-92 cm - 98-104 cm</span></li>
-        <li><span class="ob-tok">{{sizeRangeCoop:year}}</span> — the age only: <span class="keyword">1½-2 år - 3-4 år</span></li>
+        <li><span class="ob-tok">{{sizeRangeCoop:numeric}}</span> — the measurement only, one set: <span class="keyword">86/92-98/104 cm</span></li>
+        <li><span class="ob-tok">{{sizeRangeCoop:year}}</span> — the age only, one set: <span class="keyword">1½/2-3/4 år</span></li>
+        <li><span class="ob-tok">{{size:numeric}}</span> / <span class="ob-tok">{{size:year}}</span> — the same split on the CURRENT row's one size: <span class="keyword">98/104 cm</span> / <span class="keyword">3/4 år</span></li>
       </ul>
       <p style="margin-top:6px;">The split is by the <b>age unit</b> (år, mdr, years, months…), never by the slash on its own — so a size that <i>is</i> slash-written, like <span class="keyword">86/92</span>, is never cut in half. A run with no age half prints as authored for every chip, so a form is safe to set on a layout whose styles don't all carry both. Sizes that end up printing the same text (two ages sharing one measurement) collapse to one entry, and the current size is still enlarged.</p>
     </div>

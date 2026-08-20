@@ -41,9 +41,10 @@ export type LayoutTokenMeta = {
   //   bare still resolves the whole value.
   // "sizeForm" → optional half of a two-form size label ("86-92 cm /
   //   1½-2 år"): numeric prints the measurement, year the age
-  //   ({{sizeRangeCoop:year}}); either way the run prints as a set —
-  //   "86/92-98/104 cm", unit once at the end. Bare prints the labels as
-  //   authored.
+  //   ({{sizeRangeCoop:year}}, {{size:year}}). On the single-size token
+  //   ({{size}}) this picks that one size's half; on the run token
+  //   ({{sizeRangeCoop}}) the whole run prints as a set — "86/92-98/104 cm",
+  //   unit once at the end. Bare prints the label(s) as authored.
   // "imageSlug" → REQUIRED name of a row in the image library
   //   ({{image:coop-hanger}}). Unlike "source" this is validated by SHAPE,
   //   not against a fixed list: the library is DB-managed, so operators add
@@ -117,10 +118,11 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   },
   {
     key: "size",
-    label: "Size (current — first, or the repetition's)",
+    label: "Size (current — first, or the repetition's) — :numeric / :year picks one half of a two-form label",
     group: "Style",
     kind: "text",
-    example: "98/104",
+    arg: "sizeForm",
+    example: "98-104 cm / 3-4 år · {{size:numeric}} → 98/104 cm · {{size:year}} → 3/4 år",
   },
   {
     key: "sizeRange",
