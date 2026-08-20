@@ -286,3 +286,57 @@ test("matching is case-insensitive and uses the sanitised name the push writes",
   });
   assert.equal(ledger.totals.deliveredDocs, 1, "sanitizeFileName rewrites the colon before upload");
 });
+
+// --- the cover ------------------------------------------------------------
+//
+// The cover used to be absent from the expected set entirely: every folder
+// audit filtered on reviewStatus === "APPROVED", and the cover is a framing
+// manifest that ships while still PENDING_REVIEW. So a PO whose colourways
+// overwrote each other's cover reported a clean ledger — which is how a
+// supplier received two covers for four styles with nothing noticing.
+// isExpectedInSupplierFolder now admits it; these guard the counting once it
+// is in.
+
+test("two styles sharing a cover name collide, exactly like any other document", () => {
+  const ledger = buildDeliveryLedger({
+    expected: [
+      doc("00-ab10001-cover-page.pdf", {
+        variantKey: "__cover__",
+        name: "Cover page",
+        styleId: "style-blue",
+        styleName: "AB10001",
+      }),
+      doc("00-ab10001-cover-page.pdf", {
+        variantKey: "__cover__",
+        name: "Cover page",
+        styleId: "style-yellow",
+        styleName: "AB10001",
+      }),
+    ],
+    present: [file("00-ab10001-cover-page.pdf")],
+  });
+
+  assert.equal(ledger.totals.collisionNames, 1);
+  assert.equal(ledger.totals.collisionDocs, 1, "one of the two covers can never land");
+  // And it must name the reason a human can act on: two Style ROWS, one number.
+  const group = ledger.names.find((g) => g.wanted > 1)!;
+  assert.ok(
+    group.distinguishers.some((d) => /different styles/i.test(d)),
+    `expected a cross-style distinguisher, got: ${group.distinguishers.join("; ")}`,
+  );
+});
+
+test("covers named per colourway do NOT collide", () => {
+  // The other half of the same guard: once the name carries the colourway the
+  // ledger must report both covers as ordinary, delivered documents.
+  const ledger = buildDeliveryLedger({
+    expected: [
+      doc("00-ab10001-blue-cover-page.pdf", { variantKey: "__cover__", styleId: "style-blue", styleName: "AB10001" }),
+      doc("00-ab10001-yellow-cover-page.pdf", { variantKey: "__cover__", styleId: "style-yellow", styleName: "AB10001" }),
+    ],
+    present: [file("00-ab10001-blue-cover-page.pdf"), file("00-ab10001-yellow-cover-page.pdf")],
+  });
+
+  assert.equal(ledger.totals.collisionDocs, 0);
+  assert.equal(ledger.totals.deliveredDocs, 2);
+});

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { getSupplierBatchSendEnabled } from "@/lib/settings/app-settings";
 import { layoutIdFromVariantKey } from "@/lib/output-layouts/variant-keys";
+import { isExpectedInSupplierFolder } from "@/lib/outputs/folder-expected";
 import {
   resolveSupplierFolder,
   findChildFolder,
@@ -137,10 +138,16 @@ export async function collectExpectedDocs(styleId: string): Promise<{
     // Fall through — the stored representatives below still describe the push.
   }
 
+  // The shared "does this belong in the folder?" rule — approval PLUS the cover,
+  // which ships unapproved by design (enqueueCoverForSupplier). The cover used
+  // to reach the expected set only through the representative FALLBACK below,
+  // which needs a supplier-send queue row to exist: a cover that was never
+  // enqueued was simply absent from this check, and one that was enqueued
+  // arrived without its docType or layout context and so never took part in the
+  // collision grouping. Naming it here makes it an ordinary expected document.
   const approvedByBase = new Map<string, typeof outputs>();
   for (const o of outputs) {
-    if (o.jobAssetId == null) continue;
-    if (o.reviewStatus !== "APPROVED" || o.placeholderCount > 0) continue;
+    if (!isExpectedInSupplierFolder(o)) continue;
     const b = baseKeyOf(o.variantKey, o.docType);
     const arr = approvedByBase.get(b) ?? [];
     arr.push(o);
@@ -206,6 +213,12 @@ export async function collectExpectedDocs(styleId: string): Promise<{
   const unqueued: AuditUnqueued[] = [];
   for (const [base, docs] of approvedByBase) {
     if (rowKeys.has(base)) continue;
+    // Deliberately the NARROW approval rule, not isExpectedInSupplierFolder: an
+    // un-queued cover is not a capture failure. enqueueCoverForSupplier has its
+    // own preconditions (a linked supplier, a customer that isn't
+    // self-delivering, and at least one real generated output), so a cover with
+    // no queue row is usually correctly absent — reporting it here would be
+    // noise on every style that has yet to generate an output.
     const allApproved = docs.every(
       (d) => d.reviewStatus === "APPROVED" && d.placeholderCount === 0 && d.state === "APPROVED",
     );

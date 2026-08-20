@@ -12,6 +12,7 @@ import {
 } from "./supplier-folder";
 import { APPROVED_LAYOUTS_SUBFOLDER } from "./supplier-folder-names";
 import type { PoFolderMatch } from "./po-folder-matches";
+import { isExpectedInSupplierFolder } from "@/lib/outputs/folder-expected";
 
 // =====================================================
 // Per-style, on-demand, BIDIRECTIONAL folder reconcile — "what is actually in
@@ -885,12 +886,19 @@ export async function loadExpectedFiles(
 
   const queueByBase = new Map(queueRows.map((r) => [r.variantKey, r]));
 
-  // The same filter verify uses (approved, no placeholders, has an asset, has a
-  // fileName) — the three surfaces have to agree on what belongs in the folder
-  // or they will fight over it.
-  const deliverable = outputs.filter(
-    (o) => o.jobAssetId != null && o.fileName != null && o.reviewStatus === "APPROVED" && o.placeholderCount === 0,
-  );
+  // One shared answer to "does this belong in the folder?" — see
+  // isExpectedInSupplierFolder. It is the approval rule PLUS the cover, which
+  // ships unapproved by design; spelling the rule out inline here is what used
+  // to leave the cover out of every folder audit.
+  //
+  // NOTE verify-supplier-uploads.ts deliberately still applies the narrower
+  // approval-only filter. It is the AUTOMATIC self-heal (it re-arms a row whose
+  // file it cannot find, and the push sweep then uploads it), so admitting
+  // covers there would re-upload every cover whose name changed and leave the
+  // old-named file behind — the orphan the rename-in-place sweep exists to
+  // avoid. It should adopt this predicate once the cover renames have been run
+  // through "Fix output filenames".
+  const deliverable = outputs.filter(isExpectedInSupplierFolder);
 
   // Resolving current names needs the style's render context, which can fail
   // (a style whose Monday data went away, a layout mid-publish). That must NOT
