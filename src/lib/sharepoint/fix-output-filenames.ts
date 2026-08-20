@@ -3,6 +3,9 @@ import type { StyleData } from "@/lib/pdf/types";
 import { getVariant } from "@/lib/pdf/template-registry";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
+import { coverFileName } from "@/lib/pdf/cover-file-name";
+import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
+import { getSupplierSendMinPo } from "@/lib/settings/app-settings";
 import { layoutIdFromVariantKey } from "@/lib/output-layouts/variant-keys";
 import { getSharedItem } from "./shares";
 import {
@@ -38,7 +41,7 @@ import { APPROVED_LAYOUTS_SUBFOLDER } from "./supplier-folder-names";
 // (old → new per file) touching neither SharePoint nor the DB.
 // =====================================================
 
-export type FixAction = "rename" | "delete-stale" | "ok" | "skip" | "failed";
+export type FixAction = "rename" | "delete-stale" | "rearm" | "ok" | "skip" | "failed";
 
 export type FixItem = {
   styleId: string;
@@ -56,6 +59,7 @@ export type FixResult = {
   needFix: number; // rows whose name differs from the template
   renamed: number; // files renamed in place (apply only)
   deletedStale: number; // stale duplicates removed because the correct name already existed
+  rearmed: number; // no file under EITHER name — stored name corrected + re-queued for upload
   alreadyCorrect: number;
   skipped: number;
   failed: number;
@@ -110,12 +114,35 @@ function suffixFromStored(stored: string, layoutId: string): string | null {
 //   { name }  → the correct name for this exact file
 //   { skip }  → surfaced as skipped, with a reason
 //   null      → genuine no-op (empty template / variant unavailable)
-function correctNameForRow(row: Row, styleData: StyleData, stored: string): NameResult {
+function correctNameForRow(
+  row: Row,
+  styleData: StyleData,
+  stored: string,
+  cover: { poSeq: number | null; minPo: number | null },
+): NameResult {
   const [baseKey, hashSuffix] = row.variantKey.split("#");
+
+  // The cover has no layout template but it DOES have a current name, and it is
+  // the one document whose name changed shape (the colourway moved into it). It
+  // belongs in THIS sweep rather than in a re-upload: renaming the file in place
+  // keeps the supplier's folder holding exactly one cover per style. Re-uploading
+  // under the new name would leave the old-named file sitting beside it, which is
+  // indistinguishable from a second product.
+  if (baseKey === COVER_VARIANT_KEY) {
+    return {
+      name: coverFileName({
+        styleNumber: styleData.styleNumber,
+        colour: styleData.colour,
+        poSeq: cover.poSeq,
+        minPo: cover.minPo,
+      }),
+    };
+  }
+
   const variant = getVariant(baseKey);
   if (!variant) {
-    // Framing pages (__cover__ etc.) and other non-layout keys are never
-    // renamed — a genuine no-op, not a skip worth surfacing.
+    // Other framing pages and non-layout keys are never renamed — a genuine
+    // no-op, not a skip worth surfacing.
     return baseKey.startsWith("layout:") ? { skip: "layout variant not loaded (unpublished?)" } : null;
   }
 
@@ -178,6 +205,9 @@ export async function fixOutputFileNames(opts?: {
   const limit = opts?.limit ?? DEFAULT_LIMIT;
 
   await ensureLayoutVariantsLoaded(true); // force-fresh so a just-saved template is used
+  // One read for the whole sweep — the cover's name depends on the delivery
+  // cutoff, which cannot change mid-sweep.
+  const coverMinPo = await getSupplierSendMinPo();
 
   const rows: Row[] = await db.supplierSendQueueItem.findMany({
     where: {
@@ -194,6 +224,7 @@ export async function fixOutputFileNames(opts?: {
     needFix: 0,
     renamed: 0,
     deletedStale: 0,
+    rearmed: 0,
     alreadyCorrect: 0,
     skipped: 0,
     failed: 0,
@@ -250,7 +281,10 @@ export async function fixOutputFileNames(opts?: {
         result.skipped += 1;
         continue;
       }
-      const res = correctNameForRow(row, ctx.styleData, stored);
+      const res = correctNameForRow(row, ctx.styleData, stored, {
+        poSeq: ctx.poSeq,
+        minPo: coverMinPo,
+      });
       if (!res) continue; // genuine no-op (empty template / no split match to make)
       if ("skip" in res) {
         pushItem(result, row, styleName, sanitizeFileName(stored), "—", "skip", res.skip);
@@ -306,9 +340,33 @@ export async function fixOutputFileNames(opts?: {
       }
 
       if (!existingStale) {
-        setItem(item, "skip", "file not found in folder (moved or already cleaned)");
-        result.skipped += 1;
-        result.needFix -= 1;
+        // Neither name is in the folder. For a COLLIDING pair this is the normal
+        // second act: two styles shared one physical file, the first style just
+        // renamed it to its own name, and this style's cover was never really
+        // there — its push was overwritten long ago. Skipping would leave the
+        // style with no cover at all and a stored name pointing at a file that
+        // no longer exists, which is exactly the "unexpected old file name"
+        // state this sweep exists to end.
+        //
+        // So: correct the stored name and put the row back to PENDING. The push
+        // sweep then uploads THIS style's own bytes under its own new name.
+        // sentAt is deliberately untouched — a re-upload is not a re-send, and
+        // clearing it would pull the style into the nightly supplier digest.
+        await writeBack(p, null);
+        await db.supplierSendQueueItem
+          .update({
+            where: { id: p.row.id },
+            data: {
+              sharePointStatus: "PENDING",
+              sharePointUrl: null,
+              sharePointVerifiedAt: null,
+              pushAttempts: 0,
+              queuedAt: new Date(),
+            },
+          })
+          .catch(() => {});
+        result.rearmed += 1;
+        setItem(item, "rearm", "no file under either name — re-queued to upload under the new name");
         continue;
       }
 

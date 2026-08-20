@@ -29,6 +29,8 @@ import {
   type ProdSpecOutput,
 } from "@/lib/prod-spec/config";
 import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
+import { coverFileName } from "./cover-file-name";
+import { getSupplierSendMinPo } from "@/lib/settings/app-settings";
 
 // =====================================================
 // Test-bundle renderer — a DRY RUN of the job runner.
@@ -320,7 +322,6 @@ export async function renderProdSpecTestBundle(
   // the outputs so its document table reflects the final list, presented
   // FIRST so it opens the bundle. Runner-identical framing.
   const businessAreaName = style.businessAreaRef?.name ?? style.businessArea ?? null;
-  const slug = styleData.styleNumber.replace(/[^a-z0-9-]+/gi, "-").toLowerCase();
   const pageSettings = parseBundlePageSettings(prodSpec.bundlePageSettings);
   const generalInfoMd = prodSpec.generalInfoMd?.trim();
   const coverInfoMd = (await getCoverPageInfoMd().catch(() => "")).trim();
@@ -352,7 +353,12 @@ export async function renderProdSpecTestBundle(
       kind: "cover",
       variantKey: COVER_VARIANT_KEY,
       name: generalInfoMd ? "Cover page · incl. general information" : "Cover page",
-      fileName: `00-${slug}-cover-page.pdf`,
+      fileName: coverFileName({
+        styleNumber: styleData.styleNumber,
+        colour: styleData.colour,
+        poSeq: style.poSeq,
+        minPo: await getSupplierSendMinPo(),
+      }),
       widthMm: 210,
       heightMm: 297,
       staticPdf: false,

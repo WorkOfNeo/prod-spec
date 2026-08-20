@@ -267,6 +267,9 @@ async function loadSiblingStyles(
 
 export type StyleRenderContext = {
   styleId: string;
+  // The style's position on the PO timeline. Carried here so cover naming can
+  // apply the delivery cutoff without a second query — see cover-file-name.ts.
+  poSeq: number | null;
   styleData: StyleData;
   prodSpec: { id: string; name: string } | null;
   outputs: ProdSpecOutput[];
@@ -336,6 +339,7 @@ export async function loadStyleRenderContext(styleId: string): Promise<StyleRend
 
   return {
     styleId,
+    poSeq: style.poSeq ?? null,
     styleData,
     prodSpec: prodSpec ? { id: prodSpec.id, name: prodSpec.name } : null,
     outputs,

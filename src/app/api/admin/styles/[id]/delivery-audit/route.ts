@@ -155,10 +155,11 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
   try {
     const { fixOutputFileNames } = await import("@/lib/sharepoint/fix-output-filenames");
     const fixed = await fixOutputFileNames({ styleIds: [id] });
-    if (fixed.renamed > 0 || fixed.deletedStale > 0) {
+    if (fixed.renamed > 0 || fixed.deletedStale > 0 || fixed.rearmed > 0) {
       actions.push(
         `renamed ${fixed.renamed} file(s) in place` +
-          (fixed.deletedStale > 0 ? `, removed ${fixed.deletedStale} stale duplicate(s)` : ""),
+          (fixed.deletedStale > 0 ? `, removed ${fixed.deletedStale} stale duplicate(s)` : "") +
+          (fixed.rearmed > 0 ? `, re-queued ${fixed.rearmed} for upload under the new name` : ""),
       );
     }
   } catch (err) {

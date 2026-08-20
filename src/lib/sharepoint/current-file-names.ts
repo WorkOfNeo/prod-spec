@@ -1,6 +1,9 @@
 import { getVariant } from "@/lib/pdf/template-registry";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
+import { coverFileName } from "@/lib/pdf/cover-file-name";
+import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
+import { getSupplierSendMinPo } from "@/lib/settings/app-settings";
 
 // =====================================================
 // "What should this document be called RIGHT NOW?" — resolve a style's already-
@@ -36,7 +39,7 @@ import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 export type CurrentNameResolution =
   | { kind: "resolved"; fileName: string } // the template's answer, un-sanitised
   | { kind: "template-default" } // empty template ⇒ the runner default stands and already carries the suffix
-  | { kind: "no-template" } // framing page (__cover__ …) — never had a template
+  | { kind: "no-template" } // framing page (general info) — never had a template
   | { kind: "unresolvable"; reason: string }; // say why; never guess a name
 
 // The minimum a document has to carry to be nameable. Deliberately NOT the whole
@@ -77,6 +80,10 @@ export async function resolveCurrentFileNames(
   const ctx = await loadStyleRenderContext(styleId);
   if (!ctx) return out;
 
+  // Read once per call: the cover's name depends on the delivery cutoff, and
+  // re-reading it per document would be one query per file for a constant.
+  const coverMinPo = await getSupplierSendMinPo();
+
   // The split plan per base variant key. Building one re-resolves every
   // repetition row, and a split slot asks for the same plan once per document —
   // so cache it, but PER CALL: the plan is a function of this style's data and
@@ -86,8 +93,27 @@ export async function resolveCurrentFileNames(
   for (const doc of docs) {
     const [baseKey, hashSuffix] = doc.variantKey.split("#");
 
-    // Framing pages (__cover__, general info) are named by the bundle, not by a
-    // layout template. Nothing to resolve, and nothing wrong.
+    // The cover has no layout template, but it DOES have a current name: the
+    // bundle's own naming rule, which now carries the style's colour. Resolving
+    // it here is what lets a cover be re-named in place — regenerating one
+    // instead would re-arm its queue row (enqueueCoverForSupplier clears
+    // sentAt) and put the style back into the nightly supplier digest, i.e. an
+    // email, for a change that is only ever a rename.
+    if (baseKey === COVER_VARIANT_KEY) {
+      out.set(doc.jobAssetId, {
+        kind: "resolved",
+        fileName: coverFileName({
+          styleNumber: ctx.styleData.styleNumber,
+          colour: ctx.styleData.colour,
+          poSeq: ctx.poSeq,
+          minPo: coverMinPo,
+        }),
+      });
+      continue;
+    }
+
+    // Other framing pages (general info) are named by the bundle and have no
+    // per-style variation to resolve. Nothing to do, and nothing wrong.
     if (!baseKey.startsWith("layout:")) {
       out.set(doc.jobAssetId, { kind: "no-template" });
       continue;

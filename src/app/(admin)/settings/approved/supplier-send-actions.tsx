@@ -386,7 +386,7 @@ type FixItem = {
   docType: string;
   currentName: string;
   correctName: string;
-  action: "rename" | "delete-stale" | "ok" | "skip" | "failed";
+  action: "rename" | "delete-stale" | "rearm" | "ok" | "skip" | "failed";
   note?: string;
 };
 type FixResult = {
@@ -395,6 +395,7 @@ type FixResult = {
   needFix?: number;
   renamed?: number;
   deletedStale?: number;
+  rearmed?: number;
   alreadyCorrect?: number;
   skipped?: number;
   failed?: number;
@@ -452,7 +453,12 @@ export function FixFilenamesButton() {
   }
 
   const result = applied ?? preview;
-  const renames = (result?.items ?? []).filter((i) => i.action === "rename" || i.action === "delete-stale");
+  // "rearm" belongs in this list too: it is a name change the operator asked
+  // for, just delivered by an upload rather than a PATCH because the folder
+  // held no file under either name.
+  const renames = (result?.items ?? []).filter(
+    (i) => i.action === "rename" || i.action === "delete-stale" || i.action === "rearm",
+  );
 
   return (
     <div className="flex flex-col gap-2">
@@ -484,11 +490,17 @@ export function FixFilenamesButton() {
           <div>
             {applied ? "Done — " : "Preview — "}
             <span className="font-medium text-zinc-800">
-              {applied ? (result.renamed ?? 0) + (result.deletedStale ?? 0) : result.needFix ?? 0}
+              {applied
+                ? (result.renamed ?? 0) + (result.deletedStale ?? 0) + (result.rearmed ?? 0)
+                : result.needFix ?? 0}
             </span>{" "}
-            {applied ? "renamed" : "to rename"} of {result.scanned ?? 0} uploaded output(s){" "}
+            {applied ? "corrected" : "to rename"} of {result.scanned ?? 0} uploaded output(s){" "}
             <span className="text-zinc-400">
               ({result.alreadyCorrect ?? 0} already correct
+              {/* A re-arm is NOT a rename: the file was in the folder under
+                  neither name (the usual cause is a collision the first style
+                  just un-picked), so it is queued to upload instead. */}
+              {(result.rearmed ?? 0) > 0 ? `, ${result.rearmed} re-queued to upload` : ""}
               {(result.skipped ?? 0) > 0 ? `, ${result.skipped} skipped` : ""}
               {(result.failed ?? 0) > 0 ? `, ${result.failed} failed` : ""})
             </span>

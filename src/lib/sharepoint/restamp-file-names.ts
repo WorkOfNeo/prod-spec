@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
+import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { resolveCurrentFileNames, type NameableDocument } from "./current-file-names";
 
 // =====================================================
@@ -67,12 +68,19 @@ export async function restampFileNamesForStyle(opts: {
   const { getCurrentOutputsForStyle } = await import("@/lib/outputs/current-outputs");
   const outputs = await getCurrentOutputsForStyle(opts.styleId);
 
-  // Framing pages have no template, and a layout filter narrows to one layout.
-  // Both are decided BEFORE `scanned` is counted so the tally keeps meaning
-  // "documents this restamp actually considered".
+  // General-info framing pages have no template, and a layout filter narrows to
+  // one layout. Both are decided BEFORE `scanned` is counted so the tally keeps
+  // meaning "documents this restamp actually considered".
+  //
+  // The COVER is included in an un-filtered restamp: it is named by the bundle
+  // rule rather than a layout template, but that rule now carries the style's
+  // colour, so a cover generated before the colour existed is exactly as stale
+  // as a layout document whose template moved. A layoutId-scoped restamp still
+  // skips it — that caller is repairing one layout, not the bundle.
   const considered = outputs.filter((o) => {
     if (o.jobAssetId == null || o.fileName == null) return false;
     const baseKey = o.variantKey.split("#")[0];
+    if (baseKey === COVER_VARIANT_KEY) return !opts.layoutId;
     if (!baseKey.startsWith("layout:")) return false;
     if (opts.layoutId && baseKey !== `layout:${opts.layoutId}`) return false;
     return true;

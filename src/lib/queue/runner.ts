@@ -35,6 +35,8 @@ import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-suppl
 import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
 import { assembleRequiredPackagingDocs } from "@/lib/outputs/required-packaging";
 import { renderStyleCoverPdf } from "@/lib/pdf/cover";
+import { coverFileName } from "@/lib/pdf/cover-file-name";
+import { getSupplierSendMinPo } from "@/lib/settings/app-settings";
 import { buildStyleCoverPdf } from "@/lib/pdf/style-cover";
 import { toPlainBytes } from "@/lib/pdf/bytes";
 import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
@@ -716,7 +718,12 @@ export async function processJob(jobId: string): Promise<void> {
         })
         .catch(() => {});
     }
-    const coverFileName = `00-${styleSlug(styleData.styleNumber)}-cover-page.pdf`;
+    const refreshedCoverName = coverFileName({
+      styleNumber: styleData.styleNumber,
+      colour: styleData.colour,
+      poSeq: job.style.poSeq,
+      minPo: await getSupplierSendMinPo(),
+    });
     await db.$transaction([
       // This job generated no output assets, so deleteMany is a no-op for those;
       // the carried-forward approved assets live on earlier jobs and survive. We
@@ -730,7 +737,7 @@ export async function processJob(jobId: string): Promise<void> {
                 docType: "COVER",
                 variantKey: COVER_VARIANT_KEY,
                 displayName: "Cover page",
-                fileName: coverFileName,
+                fileName: refreshedCoverName,
                 pdf: toPlainBytes(coverPdf),
                 placeholderCount: 0,
                 // Fully approved + the cover auto-ships (delivery is decoupled
@@ -838,7 +845,6 @@ export async function processJob(jobId: string): Promise<void> {
     pdf: Buffer;
   };
   const businessAreaName = job.style.businessAreaRef?.name ?? job.style.businessArea ?? null;
-  const slug = styleSlug(styleData.styleNumber);
   const pageSettings = parseBundlePageSettings(prodSpec?.bundlePageSettings);
   const bundlePages: BundlePage[] = [];
   // Required-packaging manifest for the cover: EVERY declared output for this
@@ -902,7 +908,12 @@ export async function processJob(jobId: string): Promise<void> {
       docType: "COVER",
       variantKey: COVER_VARIANT_KEY,
       displayName: "Cover page",
-      fileName: `00-${slug}-cover-page.pdf`,
+      fileName: coverFileName({
+        styleNumber: styleData.styleNumber,
+        colour: styleData.colour,
+        poSeq: job.style.poSeq,
+        minPo: await getSupplierSendMinPo(),
+      }),
       pdf: coverPdf,
     });
   } catch (err) {
@@ -1170,12 +1181,6 @@ export class RunnerError extends Error {
     super(`[${tag}] ${message}`);
     this.name = "RunnerError";
   }
-}
-
-// Still used by the bundle-page naming below; per-variant artifact names
-// come from the registry so the pre-run files preview can't drift.
-function styleSlug(styleNumber: string): string {
-  return styleNumber.replace(/[^a-z0-9-]+/gi, "-").toLowerCase();
 }
 
 function fileNameFor(variant: TemplateVariant, styleNumber: string): string {
