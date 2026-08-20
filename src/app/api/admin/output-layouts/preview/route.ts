@@ -207,10 +207,11 @@ export async function POST(req: NextRequest) {
             : styleData.sizes.map((s) => `${s.label || "?"}=${cleanEan(s.ean13)}`))
         : settings.repeatBy === "assort"
           ? [`assort=${cleanEan(styleData.carton.assortEan)}`]
-          : settings.repeatBy === "cartonEan"
+          : settings.repeatBy === "cartonEan" || settings.repeatBy === "cartonEanSizeOnly"
             ? [
                 // Distinct per-size cartons (dedup by EAN, preserving order) + the
-                // assort master row the repeat appends.
+                // assort master row "cartonEan" appends ("cartonEanSizeOnly" stops
+                // at the per-size cartons).
                 ...[
                   ...new Map(
                     (styleData.carton.perSize ?? [])
@@ -218,7 +219,7 @@ export async function POST(req: NextRequest) {
                       .map((v) => [v.cartonEan, v] as const),
                   ).values(),
                 ].map((v) => `${v.size}=${cleanEan(v.cartonEan)}`),
-                ...(cleanEan(styleData.carton.assortEan) !== "no EAN"
+                ...(settings.repeatBy === "cartonEan" && cleanEan(styleData.carton.assortEan) !== "no EAN"
                   ? [`assort=${cleanEan(styleData.carton.assortEan)}`]
                   : []),
               ]

@@ -155,6 +155,45 @@ test("repeatBy 'cartonEan' → narrowing is IDEMPOTENT (one marking per per-cart
   }
 });
 
+test("repeatBy 'cartonEanSizeOnly' → same per-size rows as 'cartonEan', no trailing assort row", () => {
+  const base = buildSampleStyleData();
+  const perSize = base.carton.perSize!;
+  const reps = repetitionStyles(base, "cartonEanSizeOnly");
+  // Same per-size cartons as "cartonEan", but no appended assort row even
+  // though the sample style has a resolved assortEan.
+  assert.equal(reps.length, perSize.length);
+  assert.ok(base.carton.assortEan && base.carton.assortEan !== "0000000000000");
+
+  perSize.forEach((v, i) => {
+    const row = reps[i];
+    assert.equal(row.isAssortment, undefined);
+    assert.equal(resolveTextToken(row, "size"), v.size);
+    assert.equal(resolveBarcodeValue(row, "cartonEan"), v.cartonEan);
+  });
+});
+
+test("repeatBy 'cartonEanSizeOnly' → narrowing is IDEMPOTENT", () => {
+  const base = buildSampleStyleData();
+  const reps = repetitionStyles(base, "cartonEanSizeOnly");
+  assert.ok(reps.length > 1, "sample must fan out to several carton rows");
+  for (const row of reps) {
+    const again = repetitionStyles(row, "cartonEanSizeOnly");
+    assert.equal(again.length, 1);
+    assert.equal(resolveBarcodeValue(again[0], "cartonEan"), resolveBarcodeValue(row, "cartonEan"));
+  }
+});
+
+test("repeatBy 'cartonEanSizeOnly' with no per-size cartons → falls back to one whole-style row", () => {
+  const base = buildSampleStyleData();
+  const bare: StyleData = {
+    ...base,
+    carton: { ...base.carton, perSize: [] },
+  };
+  const reps = repetitionStyles(bare, "cartonEanSizeOnly");
+  assert.equal(reps.length, 1);
+  assert.equal(reps[0].isAssortment, undefined);
+});
+
 test("repeatBy 'cartonEan' with no cartons at all → falls back to one whole-style row", () => {
   const base = buildSampleStyleData();
   const bare: StyleData = {

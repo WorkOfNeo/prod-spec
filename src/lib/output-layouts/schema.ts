@@ -406,7 +406,10 @@ export const LayoutSettingsSchema = z.object({
   //         ({{isAssortment}}). Each row binds its carton onto {{cartonEan}} /
   //         {{barcode:cartonEan}} and narrows {{size}} to the covered size(s).
   //         For "one carton marking per carton": XS…XXL + Assort.
-  repeatBy: z.enum(["none", "size", "ean", "assort", "cartonEan"]).default("none"),
+  // "cartonEanSizeOnly": same per-size-carton rows as "cartonEan", but WITHOUT
+  //         the trailing assortment-master row — for markings that only ever
+  //         ship in solid (per-size) cartons and have no assort case to print.
+  repeatBy: z.enum(["none", "size", "ean", "assort", "cartonEan", "cartonEanSizeOnly"]).default("none"),
   // How repetitions land in output FILES — independent of repeatBy, which
   // only controls how the content iterates. Meaningful when repeatBy ≠
   // "none" (a non-repeating layout is always one file):
@@ -465,7 +468,9 @@ export type LayoutDef = z.infer<typeof LayoutDefSchema>;
 // both read it, so the picker can't label a style "missing Carton EAN" that
 // readiness considers ready and the renderer prints fine.
 export function hasPerRowCartonEan(settings: LayoutSettings): boolean {
-  return settings.repeatBy === "ean" || settings.repeatBy === "cartonEan";
+  return (
+    settings.repeatBy === "ean" || settings.repeatBy === "cartonEan" || settings.repeatBy === "cartonEanSizeOnly"
+  );
 }
 
 export function layoutSettings(def: LayoutDef): LayoutSettings {

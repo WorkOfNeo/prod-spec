@@ -68,7 +68,7 @@ function splitFilePlan(
   return reps.map((repStyle, i) => {
     const sizePart = (repStyle.sizes[0]?.label ?? "").replace(/[^\w.-]+/g, "");
     const colourPart =
-      settings.repeatBy === "ean" || settings.repeatBy === "cartonEan"
+      settings.repeatBy === "ean" || settings.repeatBy === "cartonEan" || settings.repeatBy === "cartonEanSizeOnly"
         ? (repStyle.colour?.name ?? "").replace(/[^\w.-]+/g, "").slice(0, 16)
         : "";
     // The assortment row isn't a single size — name its file "assort" (deduped
