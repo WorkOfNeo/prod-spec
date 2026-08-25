@@ -47,6 +47,16 @@ const PROCESS = z.object({
   // supplier's copy for a finished order. Defaults ON: the sweep exists to
   // propagate cover CHANGES, and an all-approved cover has none to show.
   onlyPending: z.boolean().default(true),
+  // Skip covers whose printed manifest already matches what they'd render.
+  // Defaults ON: without it a repeat sweep re-uploads every cover in the book
+  // to change nothing. This is also what makes the sweep resumable — a stopped
+  // run picks up where it left off instead of redoing the finished chunks.
+  onlyChanged: z.boolean().default(true),
+  // Default FALSE — the opposite of `deliver`. A sweep is a bulk, operator-
+  // initiated act across orders whose suppliers have nothing new to do; the
+  // file belongs in their folder, an email about it does not. Callers must ask
+  // for the email explicitly.
+  notifySupplier: z.boolean().default(false),
 });
 const BODY = z.discriminatedUnion("mode", [PREPARE, PROCESS]);
 
@@ -68,15 +78,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ styleIds, total: styleIds.length, delivered });
   }
 
-  const { styleIds, deliver, onlyPending } = parsed.data;
+  const { styleIds, deliver, onlyPending, onlyChanged, notifySupplier } = parsed.data;
   const { outcomes, pushed, pushErrors } = await processCoverRefreshChunk(styleIds, {
     deliver,
     onlyPending,
+    onlyChanged,
+    notifySupplier,
   });
 
   const refreshed = outcomes.filter((o) => o.status === "refreshed").length;
   const noCover = outcomes.filter((o) => o.status === "no-cover").length;
   const skippedApproved = outcomes.filter((o) => o.status === "skipped-all-approved").length;
+  const skippedUnchanged = outcomes.filter((o) => o.status === "skipped-unchanged").length;
   const errored = outcomes.filter((o) => o.status === "error");
   const requeued = outcomes.filter((o) => o.requeue === "queued").length;
 
@@ -101,6 +114,7 @@ export async function POST(req: NextRequest) {
     refreshed,
     noCover,
     skippedApproved,
+    skippedUnchanged,
     errors: errored.length,
     requeued,
     pushed,

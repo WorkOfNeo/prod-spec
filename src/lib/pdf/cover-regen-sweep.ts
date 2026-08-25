@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { refreshStyleCoverAsset, type CoverRefreshResult } from "@/lib/pdf/refresh-cover";
+import { loadTrimSettings } from "@/lib/outputs/required-packaging";
 import { enqueueCoverForSupplier, type CoverRequeueResult } from "@/lib/publish/requeue-cover";
 import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
 
@@ -88,16 +89,34 @@ export async function countDeliveredAmong(styleIds: string[]): Promise<number> {
 // still carries the re-armed row).
 export async function processCoverRefreshChunk(
   styleIds: string[],
-  opts: { deliver: boolean; onlyPending?: boolean },
+  opts: {
+    deliver: boolean;
+    onlyPending?: boolean;
+    // Rebuild only covers whose printed manifest actually differs from the one
+    // they carry. The filter that bounds a sweep now that Monday's trims are on
+    // the manifest — see refreshStyleCoverAsset.
+    onlyChanged?: boolean;
+    // false ⇒ push the refreshed covers to SharePoint but keep them out of the
+    // nightly digest. Only meaningful alongside deliver.
+    notifySupplier?: boolean;
+  },
 ): Promise<CoverSweepChunkResult> {
   const outcomes: CoverSweepStyleOutcome[] = [];
   const requeuedStyleIds: string[] = [];
+  // Three AppSetting reads that are the same for every style in the chunk.
+  const trimSettings = await loadTrimSettings();
 
   for (const styleId of styleIds) {
-    const result = await refreshStyleCoverAsset(styleId, { onlyWhenPending: opts.onlyPending });
+    const result = await refreshStyleCoverAsset(styleId, {
+      onlyWhenPending: opts.onlyPending,
+      onlyWhenChanged: opts.onlyChanged,
+      trimSettings,
+    });
     if (opts.deliver && result.status === "refreshed") {
       try {
-        const requeue = await enqueueCoverForSupplier(styleId, result.coverAssetId);
+        const requeue = await enqueueCoverForSupplier(styleId, result.coverAssetId, {
+          notifySupplier: opts.notifySupplier,
+        });
         if (requeue === "queued") requeuedStyleIds.push(styleId);
         outcomes.push({ ...result, requeue });
       } catch (err) {

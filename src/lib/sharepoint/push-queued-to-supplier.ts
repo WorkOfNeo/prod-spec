@@ -137,7 +137,7 @@ export async function pushQueuedSupplierUploads(opts?: {
         ? {}
         : { NOT: { sharePointStatus: "FAILED", pushAttempts: { gte: MAX_PUSH_ATTEMPTS } } }),
     },
-    select: { id: true, styleId: true, variantKey: true, jobAssetId: true },
+    select: { id: true, styleId: true, variantKey: true, jobAssetId: true, notifySupplier: true },
     orderBy: { queuedAt: "asc" },
   });
   if (items.length === 0) return EMPTY_SWEEP;
@@ -293,6 +293,13 @@ export async function pushQueuedSupplierUploads(opts?: {
                 // — by which time the midnight digest had already claimed them.
                 sharePointVerifiedAt: null,
                 lastPushAt: now(),
+                // A row the supplier is NOT being emailed about has no later
+                // event to settle it — the digest is what normally stamps
+                // sentAt, and it skips these. Landing the file IS the whole
+                // job for such a row, so it settles here. Without this a silent
+                // cover would sit "pending" on /settings/approved forever and
+                // keep re-entering the sweep.
+                ...(item.notifySupplier ? {} : { sentAt: now() }),
               },
             })
             .catch(() => ({ count: 0 }));

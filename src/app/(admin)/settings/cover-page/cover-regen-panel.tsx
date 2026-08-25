@@ -34,6 +34,7 @@ type Totals = {
   refreshed: number;
   noCover: number;
   skippedApproved: number;
+  skippedUnchanged: number;
   errors: number;
   requeued: number;
   pushed: number;
@@ -45,6 +46,7 @@ const ZERO: Totals = {
   refreshed: 0,
   noCover: 0,
   skippedApproved: 0,
+  skippedUnchanged: 0,
   errors: 0,
   requeued: 0,
   pushed: 0,
@@ -59,6 +61,13 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
   // rebuilding it is a visual no-op that still overwrites the supplier's copy
   // for a finished order.
   const [onlyPending, setOnlyPending] = useState(true);
+  // Default ON: rebuilding a cover whose manifest is already current overwrites
+  // a supplier's file to change nothing. Also what makes a stopped run resumable.
+  const [onlyChanged, setOnlyChanged] = useState(true);
+  // Default OFF, and deliberately the opposite of `deliver`. A sweep spans
+  // hundreds of orders whose suppliers have nothing new to act on; the file
+  // belongs in their folder, an email about it does not.
+  const [notifySupplier, setNotifySupplier] = useState(false);
   const [totals, setTotals] = useState<Totals>(ZERO);
   const [error, setError] = useState<string | null>(null);
   // Set by "Stop" — the run loop checks it between chunks and bails cleanly.
@@ -99,13 +108,21 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
         const res = await fetch("/api/admin/settings/cover-page/regenerate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: "process", styleIds: chunk, deliver, onlyPending }),
+          body: JSON.stringify({
+            mode: "process",
+            styleIds: chunk,
+            deliver,
+            onlyPending,
+            onlyChanged,
+            notifySupplier,
+          }),
         });
         if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `Failed (${res.status})`);
         const data = (await res.json()) as Omit<Totals, "processed"> & { errors: number };
         acc.refreshed += data.refreshed;
         acc.noCover += data.noCover;
         acc.skippedApproved += data.skippedApproved;
+        acc.skippedUnchanged += data.skippedUnchanged ?? 0;
         acc.errors += data.errors;
         acc.requeued += data.requeued;
         acc.pushed += data.pushed;
@@ -120,7 +137,7 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
       setTotals({ ...acc });
     }
     setPhase("done");
-  }, [prepared, deliver, onlyPending]);
+  }, [prepared, deliver, onlyPending, onlyChanged, notifySupplier]);
 
   const stop = useCallback(() => {
     stopRef.current = true;
@@ -150,18 +167,18 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
                 <em> before</em> it, so they pick up the new text. Styles whose outputs are all
                 approved are skipped by default — you can include them at the confirm step. Outputs
                 are not re-rendered and approvals are untouched. Delivered styles get the updated
-                cover pushed to their supplier&apos;s SharePoint folder and included in the next
-                nightly supplier email.
+                cover pushed to their supplier&apos;s SharePoint folder; whether the suppliers are
+                also emailed about it is a choice at the confirm step, and it is off by default.
               </>
             ) : (
               <>
                 Rebuilds the cover PDF of every style that already has one, so the current cover
                 format and the block above take effect on existing styles. Styles whose outputs are
-                all approved are skipped by default — their cover shows no status column, so a
-                rebuild would change nothing visible while still overwriting a finished order&apos;s
-                file. Outputs are not re-rendered and approvals are untouched. Delivered styles get
-                the updated cover pushed to their supplier&apos;s SharePoint folder and included in
-                the next nightly supplier email.
+                all approved are skipped by default. Outputs are not re-rendered and approvals are
+                untouched. Delivered styles get the updated cover pushed to their supplier&apos;s
+                SharePoint folder; whether the suppliers are also emailed about it is a choice at
+                the confirm step, and it is off by default. To see what would change before running
+                anything, use the preview above.
               </>
             )}
           </p>
@@ -223,6 +240,34 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
               the covers in-app.
             </span>
           </label>
+          <label className="mt-3 flex items-start gap-2 text-[13px] text-amber-900">
+            <input
+              type="checkbox"
+              checked={onlyChanged}
+              onChange={(e) => setOnlyChanged(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              Skip covers that already say the right thing. Each rebuild records what it printed, so
+              a second run costs nothing and a stopped run resumes where it left off. Unchecking
+              this re-uploads every cover in the list whether or not it reads differently.
+            </span>
+          </label>
+          <label className="mt-3 flex items-start gap-2 text-[13px] text-amber-900">
+            <input
+              type="checkbox"
+              checked={notifySupplier}
+              onChange={(e) => setNotifySupplier(e.target.checked)}
+              className="mt-0.5"
+              disabled={!deliver}
+            />
+            <span>
+              <strong>Also email the suppliers</strong> about it in tonight&rsquo;s digest. Off by
+              default: the updated file still reaches their folder either way, and a bulk refresh
+              across old orders is not something a supplier needs an email about. Tick this only if
+              the change is one they must actually read.
+            </span>
+          </label>
           <div className="mt-4 flex gap-2">
             <button
               type="button"
@@ -267,12 +312,19 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
             {deliver && (
               <span>
                 Queued for suppliers <strong className="text-zinc-900">{totals.requeued}</strong>
+                {notifySupplier ? "" : " · no email"}
               </span>
             )}
             {deliver && (totals.pushed > 0 || totals.pushErrors > 0) && (
               <span>
                 Pushed to SharePoint <strong className="text-zinc-900">{totals.pushed}</strong>
                 {totals.pushErrors > 0 ? ` · ${totals.pushErrors} failed` : ""}
+              </span>
+            )}
+            {totals.skippedUnchanged > 0 && (
+              <span>
+                Skipped (already current){" "}
+                <strong className="text-zinc-900">{totals.skippedUnchanged}</strong>
               </span>
             )}
             {totals.skippedApproved > 0 && (
