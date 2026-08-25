@@ -1,7 +1,9 @@
 import { db } from "@/lib/db";
 import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
-import { buildRequiredPackagingForStyle } from "@/lib/outputs/required-packaging";
+import { buildRequiredPackagingForStyle, loadTrimSettings } from "@/lib/outputs/required-packaging";
+import { manifestFingerprint } from "@/lib/trims/manifest";
+import type { TrimContext } from "@/lib/trims/style-trims";
 import { hasPendingRows } from "@/lib/pdf/bundle-pages";
 import { buildStyleCoverPdf } from "@/lib/pdf/style-cover";
 import { toPlainBytes } from "@/lib/pdf/bytes";
@@ -34,6 +36,10 @@ export type CoverRefreshResult =
   // overwriting the supplier's copy for a finished order. Only returned when
   // the caller asks for it (onlyWhenPending).
   | { styleId: string; status: "skipped-all-approved" }
+  // The manifest this cover would print is byte-identical to the one it already
+  // carries, so rebuilding it would overwrite a supplier's file to change
+  // nothing. Only returned when the caller asks for it (onlyWhenChanged).
+  | { styleId: string; status: "skipped-unchanged" }
   | { styleId: string; status: "error"; error: string };
 
 // The asset the review surfaces + supplier push treat as the style's current
@@ -42,16 +48,18 @@ export type CoverRefreshResult =
 // makes the refreshed cover current everywhere.
 export async function getCurrentCoverAsset(
   styleId: string,
-): Promise<{ id: string; jobId: string } | null> {
+): Promise<{ id: string; jobId: string; coverManifestKey: string | null } | null> {
   const asset = await db.jobAsset.findFirst({
     where: {
       variantKey: COVER_VARIANT_KEY,
       job: { styleId, status: { not: "FAILED" } },
     },
     orderBy: { job: { createdAt: "desc" } },
-    select: { id: true, jobId: true },
+    select: { id: true, jobId: true, coverManifestKey: true },
   });
-  return asset ? { id: asset.id, jobId: asset.jobId } : null;
+  return asset
+    ? { id: asset.id, jobId: asset.jobId, coverManifestKey: asset.coverManifestKey }
+    : null;
 }
 
 // Rebuild + overwrite a style's current cover PDF from live state. The approval
@@ -67,7 +75,20 @@ export async function refreshStyleCoverAsset(
     // prints no status wording, so a rebuild is visually a no-op — but it still
     // overwrites the cover in the supplier's folder for an order that's already
     // finished. Off by default so the plain refresh path is unchanged.
+    //
+    // NOTE this filter lost most of its power when Monday's Trims entries
+    // joined the manifest: a style that is waiting on a manually supplied
+    // hangtag has a pending row even though every output we generate is
+    // approved, which is true of nearly the whole estate. onlyWhenChanged is
+    // the filter that actually bounds a sweep now.
     onlyWhenPending?: boolean;
+    // Skip styles whose manifest already matches what it would print. This is
+    // the one that makes a repeat sweep free: the first pass stamps the
+    // fingerprint, and every pass after it does nothing until the manifest
+    // genuinely moves.
+    onlyWhenChanged?: boolean;
+    // Pre-loaded trim configuration, for callers refreshing many styles.
+    trimSettings?: Omit<TrimContext, "trimLabels" | "manualDelivered">;
   },
 ): Promise<CoverRefreshResult> {
   const cover = await getCurrentCoverAsset(styleId);
@@ -81,18 +102,38 @@ export async function refreshStyleCoverAsset(
     // Costs a second buildRequiredPackagingForStyle for styles we DO render —
     // negligible next to the puppeteer pass it guards, and it saves that pass
     // outright for every style it skips.
-    if (opts?.onlyWhenPending) {
+    // One manifest build serves both gates AND the fingerprint we persist, so
+    // the expensive part (buildRequiredPackagingForStyle) runs at most once per
+    // style even when both filters are on. Negligible next to the puppeteer
+    // pass it guards, and it saves that pass outright for every style it skips.
+    let manifestKey: string | null = null;
+    if (opts?.onlyWhenPending || opts?.onlyWhenChanged) {
+      const trimSettings = opts.trimSettings ?? (await loadTrimSettings());
       const docs = await buildRequiredPackagingForStyle(styleId, {
         approvedBaseKeysOverride: approvedBases,
+        trimSettings,
       });
-      if (!hasPendingRows(docs)) return { styleId, status: "skipped-all-approved" };
+      if (opts.onlyWhenPending && !hasPendingRows(docs)) {
+        return { styleId, status: "skipped-all-approved" };
+      }
+      manifestKey = manifestFingerprint(docs);
+      if (opts.onlyWhenChanged && cover.coverManifestKey === manifestKey) {
+        return { styleId, status: "skipped-unchanged" };
+      }
     }
 
     const pdf = await buildStyleCoverPdf(cover.jobId, approvedBases);
     if (!pdf) {
       return { styleId, status: "error", error: "cover render returned null (job/style unloadable)" };
     }
-    await db.jobAsset.update({ where: { id: cover.id }, data: { pdf: toPlainBytes(pdf) } });
+    await db.jobAsset.update({
+      where: { id: cover.id },
+      // Stamp the fingerprint alongside the bytes so the next sweep can tell
+      // this cover is current. Null when neither gate ran and we therefore
+      // never computed one — an honest "unknown", which reads as "rebuild once"
+      // rather than as a false match.
+      data: { pdf: toPlainBytes(pdf), coverManifestKey: manifestKey },
+    });
     return { styleId, status: "refreshed", coverAssetId: cover.id, jobId: cover.jobId };
   } catch (err) {
     return { styleId, status: "error", error: (err as Error).message };

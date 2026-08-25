@@ -243,6 +243,20 @@ model SupplierSendQueueItem {
   poSeq            Int? // numeric PO for the per-customer C-PO cutoff (WS7)
   // Eager SharePoint push result (WS2b). PENDING until pushed; UPLOADED with a
   // webUrl; FAILED (retryable) or SKIPPED (e.g. below PO cutoff / no config).
+  // Whether this row should be MENTIONED in the supplier's nightly digest.
+  //
+  // One queue row does two jobs: it is both "push these bytes to SharePoint"
+  // and "tell the supplier about it tonight". They are the same row because for
+  // new artwork they are the same event. A COVER refreshed purely because the
+  // manifest wording changed is not that event — the supplier needs the current
+  // file in their folder, but emailing 30 suppliers about orders where nothing
+  // they care about moved is exactly the 2026-08-13 failure in miniature.
+  //
+  // false ⇒ the push still runs and stamps sentAt itself (so the row settles
+  // instead of sitting pending forever), and runSupplierSendBatch skips it.
+  // Defaults true, so every existing row and every ordinary approval is
+  // unaffected; a normal re-arm sets it back to true.
+  notifySupplier   Boolean   @default(true)
   sharePointStatus String    @default("PENDING")
   sharePointUrl    String?
   // The "APPROVED LAYOUTS" subfolder the PDF(s) landed in (targetFolderUrl from
@@ -1166,6 +1180,13 @@ model JobAsset {
   // "changed" too. Null for coded variants and legacy rows — a null on either
   // side is skipped (no false "changed"), so this needs no backfill.
   outputContentVersion Int?
+  // COVER assets only: a fingerprint of the required-packaging manifest as it
+  // was PRINTED on this cover (manifestFingerprint). The regen sweep recomputes
+  // it from live config and rebuilds only when the page would actually read
+  // differently — which is what stops a second sweep re-uploading, and
+  // re-emailing, several hundred unchanged covers. Null on every asset built
+  // before this shipped, which correctly reads as "unknown, rebuild once".
+  coverManifestKey String?
   // Per-asset review state — separate from the parent Job's status so
   // we can approve some outputs and reject others with reasons.
   reviewStatus     AssetReviewStatus @default(PENDING_REVIEW)

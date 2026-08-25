@@ -62,8 +62,14 @@ export async function runSupplierSendBatch(opts?: { source?: "midnight" | "manua
   const enabled = await getSupplierBatchSendEnabled();
   const baseUrl = (process.env.PROD_SPEC_BASE_URL ?? "").replace(/\/$/, "");
 
+  // notifySupplier:false rows are delivered but deliberately unannounced — a
+  // cover refreshed because its manifest wording changed, not because the
+  // supplier has anything new to act on. They are excluded HERE rather than
+  // filtered later so they can never reach a digest, a follow-up, or the
+  // "dropped below cutoff" deletions below, which would throw away a row the
+  // upload sweep still owes a push.
   let pending = (await db.supplierSendQueueItem.findMany({
-    where: { sentAt: null },
+    where: { sentAt: null, notifySupplier: true },
     orderBy: { queuedAt: "asc" },
     select: {
       id: true,

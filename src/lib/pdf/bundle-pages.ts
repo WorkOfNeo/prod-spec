@@ -43,21 +43,12 @@ import { DEFAULT_PAGE_SETTINGS, type PageSettings } from "@/lib/prod-spec/config
 // existing callers keep importing them from this module.
 export { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "./bundle-page-keys";
 
-export type BundleDocSummary = {
-  // Variant display name, listed once per output ("Care Label 02 · Long
-  // folded label (4 sheets)" → we print the variant `name` as-is).
-  displayName: string;
-  widthMm: number;
-  heightMm: number;
-  // PDFs this output produced (renderMany variants emit one per size/EAN).
-  // null ⇒ unknown at render time (editor preview) — shown as "—".
-  fileCount: number | null;
-  // Approval state for the required-packaging manifest. true ⇒ the layout is
-  // approved (its size is confirmed); false ⇒ still in review, flagged
-  // "Waiting for Customer Information" so the supplier expects it later;
-  // undefined ⇒ caller doesn't track approval (no status shown).
-  approved?: boolean;
-};
+// The manifest row type now lives in the import-free leaf alongside the
+// variant keys, because the pure trims assembler and the settings screens need
+// it without the render pipeline. Re-exported so existing importers are
+// unaffected.
+import type { BundleDocSummary } from "./bundle-page-keys";
+export type { BundleDocSummary } from "./bundle-page-keys";
 
 export type CoverPageInput = {
   customerName: string;
@@ -104,7 +95,7 @@ export type GeneralInfoInput = {
 //
 // Shared rather than duplicated: if these two ever disagreed, the sweep would
 // either skip covers that DO show pending wording or churn ones that don't.
-export function hasPendingRows(docs: ReadonlyArray<Pick<BundleDocSummary, "approved">>): boolean {
+export function hasPendingRows(docs: ReadonlyArray<{ approved?: boolean }>): boolean {
   return docs.some((d) => d.approved === false);
 }
 
@@ -117,21 +108,45 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
   ];
 
   const hasPending = hasPendingRows(input.docs);
-  const statusCell = (approved: boolean | undefined): string => {
-    if (approved === true) return `<span class="ok">Approved</span>`;
-    if (approved === false) return `<span class="await">Waiting for Customer Information</span>`;
+  // Drives the second half of the note below: without a packing-instruction row
+  // on the page, explaining that marking would describe something the supplier
+  // cannot find — the same trap the pending wording has.
+  const hasInfoRows = input.docs.some((d) => d.kind === "info");
+  // A packing instruction (hanger, polybag, carton) has no delivery state and
+  // never will — parking it at "Waiting for Customer Information" alongside the
+  // artwork rows would bury the rows that genuinely are waiting. It says what it
+  // is instead, and points at the instructions already printed below.
+  const statusCell = (d: BundleDocSummary): string => {
+    if (d.kind === "info") return `<span class="note-cell">See packing instructions</span>`;
+    if (d.approved === true) return `<span class="ok">Approved</span>`;
+    if (d.approved === false) return `<span class="await">Waiting for Customer Information</span>`;
     return "—";
   };
   const rows = input.docs
-    .map(
-      (d, i) => `
+    .map((d, i) => {
+      // Only an app-generated row has one document (and therefore one finished
+      // size) behind it. A manually supplied item, a packing instruction, or a
+      // Monday entry answered by several documents prints no size rather than a
+      // misleading one.
+      const size =
+        d.widthMm !== null && d.heightMm !== null
+          ? `${fmtMm(d.widthMm)} × ${fmtMm(d.heightMm)} mm`
+          : "—";
+      // Monday's wording is the row's identity so the supplier can tick the
+      // cover off against the order; the document name goes underneath, because
+      // "Wash Care Label with Oeko-tex Logo" and the file called
+      // "…Care Label.pdf" are otherwise impossible to connect.
+      const suppliedAs = d.suppliedAs?.length
+        ? `<div class="via">Supplied as ${esc(d.suppliedAs.join(" + "))}</div>`
+        : "";
+      return `
         <tr class="${d.approved === false ? "pending" : ""}">
           <td class="num">${i + 1}</td>
-          <td class="doc">${esc(d.displayName)}</td>
-          <td class="size">${fmtMm(d.widthMm)} × ${fmtMm(d.heightMm)} mm</td>
-          ${hasPending ? `<td class="status">${statusCell(d.approved)}</td>` : ""}
-        </tr>`,
-    )
+          <td class="doc">${esc(d.displayName)}${suppliedAs}</td>
+          <td class="size">${size}</td>
+          ${hasPending ? `<td class="status">${statusCell(d)}</td>` : ""}
+        </tr>`;
+    })
     .join("");
 
   const body = `
@@ -161,6 +176,11 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
       All required packaging for this order is listed above. All dimensions are finished print
       sizes; artwork files are supplied at 1:1 scale with no bleed unless stated on the document
       itself.${
+        hasInfoRows
+          ? ` Items marked <strong>See packing instructions</strong> are packaging materials rather than
+      artwork — no file is supplied for them; follow the packing requirements in this document.`
+          : ""
+      }${
         hasPending
           ? ` Items marked <strong>Waiting for Customer Information</strong> are still under review — their
       artwork will follow once approved, so please expect them.`
@@ -398,6 +418,15 @@ const COVER_CSS = `
   }
   .cov table.docs td.num { width: 8mm; color: #a1a1aa; }
   .cov table.docs td.doc { font-weight: bold; }
+  /* The document a Monday entry is actually delivered as — secondary to the
+     entry itself, which is what the supplier reads against their order. */
+  .cov table.docs td.doc .via {
+    margin-top: 0.6mm;
+    font-weight: normal;
+    font-size: 0.82em;
+    color: #71717a;
+  }
+  .cov table.docs .note-cell { color: #71717a; font-size: 0.85em; }
   .cov table.docs td.size { width: 38mm; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .cov table.docs td.status { width: 52mm; }
   /* Pending rows: the size is the PLANNED dimension, not yet confirmed by

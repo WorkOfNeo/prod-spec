@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renderCoverPageHtml, hasPendingRows, type CoverPageInput } from "./bundle-pages";
+import {
+  renderCoverPageHtml,
+  hasPendingRows,
+  type BundleDocSummary,
+  type CoverPageInput,
+} from "./bundle-pages";
 
 // The cover document is general info's ONLY home in the bundle — the runner no
 // longer ships a standalone general-information PDF. These tests lock the two
@@ -144,4 +149,92 @@ test("hasPendingRows agrees with what the cover actually renders", () => {
     assert.ok(html.includes(PENDING_LABEL), "so the page shows the pending label");
     assert.ok(html.includes("<th>Status</th>"), "and the Status column");
   }
+});
+
+// ---- Trims on the manifest -------------------------------------------------
+
+const coverInput = (docs: BundleDocSummary[]) => ({
+  customerName: "COOP Danmark",
+  businessArea: "Private Label",
+  styleName: "IL00000",
+  styleNumber: "IL00000",
+  poNumber: "C-PO00000",
+  supplierName: "Rhythm Knit India",
+  generatedAt: new Date("2026-08-13T00:00:00Z"),
+  docs,
+});
+
+test("a Monday entry prints its own wording, with the document beneath it", () => {
+  const html = renderCoverPageHtml(
+    coverInput([
+      {
+        displayName: "Wash Care Label with Oeko-tex Logo",
+        sourceLabel: "Wash Care Label with Oeko-tex Logo",
+        suppliedAs: ["Coop DK - Private Label - Care Label"],
+        widthMm: 25,
+        heightMm: 120,
+        fileCount: 1,
+        approved: false,
+        kind: "app",
+      },
+    ]),
+  );
+  assert.ok(html.includes("Wash Care Label with Oeko-tex Logo"));
+  assert.ok(html.includes("Supplied as Coop DK - Private Label - Care Label"));
+  assert.ok(html.includes("25 × 120 mm"));
+});
+
+test("a row with no single document behind it prints no size", () => {
+  const html = renderCoverPageHtml(
+    coverInput([
+      {
+        displayName: "Main label with size",
+        sourceLabel: "Main label with size",
+        widthMm: null,
+        heightMm: null,
+        fileCount: null,
+        approved: false,
+        kind: "manual",
+      },
+    ]),
+  );
+  // The em dash stands in for the size; no stray "NaN" or "null mm".
+  assert.ok(html.includes('<td class="size">—</td>'));
+  assert.ok(!html.includes("null"));
+  assert.ok(!html.includes("NaN"));
+});
+
+test("a packing instruction says what it is instead of waiting forever", () => {
+  const html = renderCoverPageHtml(
+    coverInput([
+      { displayName: "Hangtag", widthMm: null, heightMm: null, fileCount: null, approved: false, kind: "manual" },
+      { displayName: "Black Hanger", widthMm: null, heightMm: null, fileCount: null, kind: "info" },
+    ]),
+  );
+  assert.ok(html.includes("See packing instructions"));
+  // …and the note explains that marking, alongside the pending one.
+  assert.ok(html.includes("packaging materials rather than"));
+  assert.ok(html.includes("Waiting for Customer Information"));
+});
+
+test("the packing-instruction wording is absent when no such row is on the page", () => {
+  // Same trap as the pending label: explaining a marking the supplier cannot
+  // find on the page is worse than saying nothing.
+  const html = renderCoverPageHtml(
+    coverInput([
+      { displayName: "Hangtag", widthMm: null, heightMm: null, fileCount: null, approved: false, kind: "manual" },
+    ]),
+  );
+  assert.ok(!html.includes("See packing instructions"));
+  assert.ok(!html.includes("packaging materials rather than"));
+});
+
+test("an info row is not a pending row", () => {
+  // It has no delivery state at all, so it must not switch the Status column on
+  // by itself — otherwise every style with a polybag grows a column of
+  // "See packing instructions" and nothing else.
+  assert.equal(
+    hasPendingRows([{ approved: true }, { approved: undefined }]),
+    false,
+  );
 });

@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { normalizeVisibleColumns, type StyleColumnKey } from "@/lib/styles/table-columns";
+import { DEFAULT_TRIM_RULES, type TrimRule } from "@/lib/trims/classify";
 
 // =====================================================
 // Global, app-wide settings — a tiny key-value store backed by the
@@ -509,4 +510,119 @@ export async function setFileNamePresets(presets: ReadonlyArray<FileNamePreset>)
     update: { value },
   });
   return value.presets;
+}
+
+// =====================================================
+// Trims → concept configuration (see src/lib/trims/).
+//
+// Three blobs, all optional, all fail-soft: with nothing stored the seeded
+// DEFAULT_TRIM_RULES apply and every label classifies by keyword alone. Stored
+// as AppSetting JSON rather than tables because the whole configuration is one
+// small, wholly-rewritten document a human edits on one screen — the same shape
+// as fileNamePresets above, and it needs no migration to ship.
+// =====================================================
+
+const TRIM_RULES_KEY = "trimRules";
+const TRIM_LABEL_OVERRIDES_KEY = "trimLabelOverrides";
+const TRIM_LAYOUT_CONCEPTS_KEY = "trimLayoutConcepts";
+
+function normalizeTrimRules(raw: unknown): TrimRule[] {
+  if (!Array.isArray(raw)) return [];
+  const out: TrimRule[] = [];
+  for (const item of raw) {
+    const concept = typeof (item as TrimRule)?.concept === "string" ? (item as TrimRule).concept.trim() : "";
+    const keywords = Array.isArray((item as TrimRule)?.keywords)
+      ? (item as TrimRule).keywords.filter((k): k is string => typeof k === "string" && k.trim() !== "")
+      : [];
+    // A rule with no concept or no keyword can never do anything but confuse
+    // the editor — drop it rather than persist a no-op.
+    if (concept && keywords.length > 0) out.push({ concept, keywords });
+  }
+  return out;
+}
+
+// The ordered rule set. ORDER IS SEMANTIC — first match wins — so the stored
+// array is preserved exactly as the editor arranged it. Falls back to the seed
+// when nothing has been saved, so a fresh install classifies immediately.
+export async function getTrimRules(): Promise<TrimRule[]> {
+  try {
+    const row = await db.appSetting.findUnique({ where: { key: TRIM_RULES_KEY } });
+    const stored = normalizeTrimRules((row?.value as { rules?: unknown } | null)?.rules);
+    return stored.length > 0 ? stored : DEFAULT_TRIM_RULES;
+  } catch {
+    return DEFAULT_TRIM_RULES;
+  }
+}
+
+export async function setTrimRules(rules: ReadonlyArray<TrimRule>): Promise<TrimRule[]> {
+  const value = { rules: normalizeTrimRules(rules) };
+  await db.appSetting.upsert({
+    where: { key: TRIM_RULES_KEY },
+    create: { key: TRIM_RULES_KEY, value },
+    update: { value },
+  });
+  return value.rules;
+}
+
+// Per-label decisions that beat the rules outright, keyed by NORMALISED label
+// so "carton Marking" and "Carton Marking" share one decision. The value is the
+// concept list; an EMPTY array is meaningful and must survive a round trip — it
+// means "this is not a trim, don't print it" (live examples: "as PO00000",
+// "PO00001", "see customer order").
+export type TrimLabelOverrides = Record<string, string[]>;
+
+export async function getTrimLabelOverrides(): Promise<TrimLabelOverrides> {
+  try {
+    const row = await db.appSetting.findUnique({ where: { key: TRIM_LABEL_OVERRIDES_KEY } });
+    const raw = (row?.value as { overrides?: unknown } | null)?.overrides;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const out: TrimLabelOverrides = {};
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (!Array.isArray(value)) continue;
+      out[key] = value.filter((v): v is string => typeof v === "string" && v.trim() !== "");
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export async function setTrimLabelOverrides(overrides: TrimLabelOverrides): Promise<void> {
+  const value = { overrides };
+  await db.appSetting.upsert({
+    where: { key: TRIM_LABEL_OVERRIDES_KEY },
+    create: { key: TRIM_LABEL_OVERRIDES_KEY, value },
+    update: { value },
+  });
+}
+
+// Per-layout concept overrides, keyed by BASE variantKey ("layout:<id>", or a
+// coded variant key). Only needed for the handful whose name the rules can't
+// read — live that's the "Inner Pack Sticker" / "Tag Sticker" family. An empty
+// string means "this layout satisfies no trim", which is a real answer for a
+// framing or internal document.
+export type TrimLayoutConcepts = Record<string, string>;
+
+export async function getTrimLayoutConcepts(): Promise<TrimLayoutConcepts> {
+  try {
+    const row = await db.appSetting.findUnique({ where: { key: TRIM_LAYOUT_CONCEPTS_KEY } });
+    const raw = (row?.value as { concepts?: unknown } | null)?.concepts;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const out: TrimLayoutConcepts = {};
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof value === "string") out[key] = value.trim();
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export async function setTrimLayoutConcepts(concepts: TrimLayoutConcepts): Promise<void> {
+  const value = { concepts };
+  await db.appSetting.upsert({
+    where: { key: TRIM_LAYOUT_CONCEPTS_KEY },
+    create: { key: TRIM_LAYOUT_CONCEPTS_KEY, value },
+    update: { value },
+  });
 }

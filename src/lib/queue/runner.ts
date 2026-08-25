@@ -33,7 +33,9 @@ import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
 import { enqueueCoverForSupplier } from "@/lib/publish/requeue-cover";
 import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
 import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
-import { assembleRequiredPackagingDocs } from "@/lib/outputs/required-packaging";
+import { assembleRequiredPackagingDocs, loadTrimSettings } from "@/lib/outputs/required-packaging";
+import { manifestFingerprint } from "@/lib/trims/manifest";
+import { resolveStyleTrimLabels } from "@/lib/trims/style-trims";
 import { renderStyleCoverPdf } from "@/lib/pdf/cover";
 import { coverFileName } from "@/lib/pdf/cover-file-name";
 import { getSupplierSendMinPo } from "@/lib/settings/app-settings";
@@ -875,7 +877,14 @@ export async function processJob(jobId: string): Promise<void> {
       },
     ];
   });
-  const coverDocs = assembleRequiredPackagingDocs(coverRows, approvedBases);
+  // Monday's Trims entries join the declared outputs on the manifest, so the
+  // supplier's list matches the buyer's. Fail-soft: a settings read that throws
+  // must not fail a generation — falling back to no context yields exactly the
+  // pre-Trims manifest.
+  const trimContext = await loadTrimSettings()
+    .then((settings) => ({ ...settings, trimLabels: resolveStyleTrimLabels(job.style) }))
+    .catch(() => undefined);
+  const coverDocs = assembleRequiredPackagingDocs(coverRows, approvedBases, trimContext);
   // Global cover content block (admin-authored, app-wide) — printed on the
   // cover sheet under the manifest. Fail-soft empty so a settings read never
   // breaks generation.
@@ -1063,7 +1072,18 @@ export async function processJob(jobId: string): Promise<void> {
       where: { jobId: job.id, variantKey: COVER_VARIANT_KEY },
       select: { id: true },
     });
-    if (coverAsset) await enqueueCoverForSupplier(job.styleId, coverAsset.id);
+    if (coverAsset) {
+      // Fingerprint of the manifest this run actually printed. Without it a
+      // freshly generated cover looks "unknown" to the regen sweep and gets
+      // rebuilt once for nothing.
+      await db.jobAsset
+        .update({
+          where: { id: coverAsset.id },
+          data: { coverManifestKey: manifestFingerprint(coverDocs) },
+        })
+        .catch(() => {});
+      await enqueueCoverForSupplier(job.styleId, coverAsset.id);
+    }
   } catch (err) {
     console.warn(`[supplier-send-queue] runner cover enqueue failed for ${job.id}:`, err);
   }

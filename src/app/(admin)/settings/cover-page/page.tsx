@@ -5,6 +5,7 @@ import { getSessionWithRole } from "@/lib/auth-server";
 import { canReview } from "@/lib/roles";
 import { getCoverPageInfoMd } from "@/lib/settings/app-settings";
 import { CoverPageEditor } from "./cover-page-editor";
+import { CoverChangesPanel } from "./cover-changes-panel";
 import { CoverRegenPanel } from "./cover-regen-panel";
 import { GeneralInfoEditor, type ProdSpecOption } from "./general-info-editor";
 
@@ -105,6 +106,7 @@ export default async function CoverPageSettingsPage({
           <div className="mt-6">
             <CoverPageEditor initialMarkdown={markdown} />
           </div>
+          <CoverChangesPanel />
           <CoverRegenPanel />
         </>
       ) : (
