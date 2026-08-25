@@ -5,7 +5,7 @@ import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin, canReview } from "@/lib/roles";
 import { AssetActions } from "./asset-actions";
 import { OutputFieldEditor } from "./output-field-editor";
-import { OutputLineEditor } from "./output-line-editor";
+import { OutputEditDialog } from "./output-edit-dialog";
 import { OutputBulkActions } from "./output-bulk-actions";
 import { SupplierPushActions } from "./supplier-push-actions";
 import { ReviewClaim } from "./claim-review";
@@ -17,8 +17,8 @@ import { LogStyleView } from "@/components/log-style-view";
 import { groupByDocType, DocTypeAccordion } from "../doc-type-groups";
 import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { getVariant } from "@/lib/pdf/template-registry";
-import { applyFieldOverrides, readPinnableField } from "@/lib/pdf/pins";
-import { PINNABLE_FIELDS, isPinnableField } from "@/lib/pdf/pins-meta";
+import { applyFieldOverrides } from "@/lib/pdf/pins";
+import { isPinnableField } from "@/lib/pdf/pins-meta";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import type { StyleData } from "@/lib/pdf/types";
 import type { DocumentLine } from "@/lib/output-layouts/lines";
@@ -550,30 +550,6 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   );
 }
 
-// The editable-field editor props for one output (or one PDF of a multi-doc
-// output). `fields` = the pinnable fields this output prints; `resolved` = each
-// pinnable field's CURRENT value on THIS document (per-row for a multi-doc PDF,
-// with the shared base override folded in so the baseline matches what printed).
-// The editor pre-fills from `overrides[f] ?? resolved[f]` and only persists what
-// the reviewer changes away from `resolved`.
-function outputFieldEditorProps(
-  variantKey: string,
-  styleData: StyleData | null,
-  fieldValuesByKey: ReadonlyMap<string, Record<string, string>>,
-): { fields: string[]; resolved: Record<string, string> } {
-  const baseKey = variantKey.split("#")[0];
-  const variant = getVariant(baseKey);
-  const editable = (variant?.editableFields ?? (variant?.requiredFields ?? []).filter(isPinnableField)).filter(
-    isPinnableField,
-  );
-  const resolved: Record<string, string> = {};
-  const src = documentStyle(variantKey, styleData, fieldValuesByKey);
-  if (src) {
-    for (const f of PINNABLE_FIELDS) resolved[f] = readPinnableField(src, f);
-  }
-  return { fields: [...new Set(editable)], resolved };
-}
-
 // The StyleData ONE document renders from: the per-row style for a multi-doc
 // PDF (colour / carton EAN differ per PDF) with the shared whole-output field
 // override folded in, so it matches what actually printed. Shared by the field
@@ -822,69 +798,32 @@ function OutputReviewCard({
           label="Re-run this output"
         />
       </div>
-      {/* Inline field editor — each field pre-filled with its current value on
-          THIS document; edit and re-render (e.g. fix a colour name). Keyed by
-          o.variantKey, so a single PDF of a repeat-per-EAN output is overridden
-          on its own (per-PDF); single-doc outputs key by the base. Framing pages
-          (cover / general info) carry no editable fields. */}
+      {/* Document editor — opens the side-by-side dialog: every line this
+          document prints on the left, a live render on the right. Keyed by
+          o.variantKey, so a single PDF of a repeat-per-EAN output is edited on
+          its own by default (the dialog offers "apply to every PDF"). Framing
+          pages (cover / general info) carry no editable lines. */}
       {canEditFields && canIgnore
         ? (() => {
-            const overrides = fieldValuesByKey?.get(o.variantKey) ?? {};
-            const { fields, resolved } = outputFieldEditorProps(
-              o.variantKey,
-              styleData,
-              fieldValuesByKey ?? new Map(),
-            );
-            const setCount = Object.keys(overrides).length;
             const { lines, isMultiDoc } = outputLineEditorProps(
               o.variantKey,
               styleData,
               fieldValuesByKey ?? new Map(),
               lineValuesByKey ?? new Map(),
             );
-            const editedLines = lines.filter((l) => l.overridden).length;
             return (
-              <>
-                <details className="border-t border-zinc-100 px-3 py-2">
-                  <summary className="cursor-pointer text-[11px] font-medium text-zinc-500 hover:text-zinc-700">
-                    Edit fields{setCount > 0 ? ` (${setCount} edited)` : ""}
-                  </summary>
-                  <div className="mt-2">
-                    <OutputFieldEditor
-                      styleId={styleId}
-                      variantKey={o.variantKey}
-                      outputName={o.name}
-                      submitLabel="Save & re-render"
-                      fields={fields}
-                      resolved={resolved}
-                      overrides={overrides}
-                      allowAdd
-                    />
-                  </div>
-                </details>
-                {/* The catch-all: every line the document prints, editable
-                    whether or not a field backs it — the only way to reach text
-                    hardcoded in the layout. Below the field editor on purpose:
-                    a field edit fixes the DATA (and every output using it) and
-                    keeps tracking Monday, so it's the better fix when it
-                    applies; a line edit freezes this one line of this
-                    document. */}
-                <details className="border-t border-zinc-100 px-3 py-2">
-                  <summary className="cursor-pointer text-[11px] font-medium text-zinc-500 hover:text-zinc-700">
-                    Edit any line{editedLines > 0 ? ` (${editedLines} edited)` : ""}
-                  </summary>
-                  <div className="mt-2">
-                    <OutputLineEditor
-                      styleId={styleId}
-                      variantKey={o.variantKey}
-                      baseKey={baseKey}
-                      outputName={o.name}
-                      lines={lines}
-                      isMultiDoc={isMultiDoc}
-                    />
-                  </div>
-                </details>
-              </>
+              <div className="border-t border-zinc-100 px-3 py-2">
+                <OutputEditDialog
+                  styleId={styleId}
+                  variantKey={o.variantKey}
+                  baseKey={baseKey}
+                  outputName={o.name}
+                  lines={lines}
+                  isMultiDoc={isMultiDoc}
+                  widthMm={infoArea?.widthMm ?? variant?.defaultWidthMm ?? 100}
+                  heightMm={infoArea?.heightMm ?? variant?.defaultHeightMm ?? 100}
+                />
+              </div>
             );
           })()
         : null}

@@ -28,6 +28,13 @@ export const maxDuration = 300;
 //
 //   POST /api/admin/styles/<id>/output-lines
 //     { variantKey: "layout:abc", values: { "<pageId>|<blockId>|0": "Inner box: 5 pair" } }
+//
+// `clearVariantKey` (optional) deletes the SAME line keys from a second key in
+// the same save — how "apply this to every PDF" works from the review dialog,
+// which writes per-document by default: the change is stored on the base key
+// and this document's own (more specific, and therefore shadowing) rewrite of
+// those lines is dropped, so the edit actually lands on the PDF the reviewer is
+// looking at. One save, one re-render.
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -38,15 +45,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const { id } = await ctx.params;
 
   let variantKey = "";
+  let clearVariantKey = "";
   let outputName: string | null = null;
   let values: Record<string, unknown> = {};
   try {
     const body = (await req.json()) as {
       variantKey?: unknown;
+      clearVariantKey?: unknown;
       outputName?: unknown;
       values?: unknown;
     };
     if (typeof body?.variantKey === "string") variantKey = body.variantKey;
+    if (typeof body?.clearVariantKey === "string") clearVariantKey = body.clearVariantKey.trim();
     if (typeof body?.outputName === "string") outputName = body.outputName;
     if (body?.values && typeof body.values === "object" && !Array.isArray(body.values)) {
       values = body.values as Record<string, unknown>;
@@ -104,6 +114,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       outputName,
       updatedById: session.user.id,
     });
+    // "Apply to every PDF": drop this document's own rewrites of the same
+    // lines, which would otherwise keep shadowing the base value here. Only
+    // ever the key the reviewer is looking at — another PDF's deliberate
+    // per-document edit is more specific and stays.
+    if (clearVariantKey && clearVariantKey !== storageKey) {
+      const cleared: Record<string, string> = {};
+      for (const key of Object.keys(values)) cleared[key] = "";
+      await saveStyleOutputLineValues(id, clearVariantKey, cleared, {
+        outputName,
+        updatedById: session.user.id,
+      });
+    }
   } catch {
     // The additive table isn't deployed yet (db:deploy pending).
     return NextResponse.json(
