@@ -8,9 +8,9 @@ import { sanitizeCareInstructions } from "@/lib/care-labels/format";
 import { getWashcareSymbol, loadWashcareSymbols } from "@/lib/pdf/washcare-symbols";
 import { ruleRequiredColumns } from "@/lib/pdf/spec-fields";
 import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-marking";
-import { tokenMeta, parseSiblingTokenKey, TABLE_TOTAL_ARG, type BarcodeSource } from "./token-meta";
+import { tokenMeta, parseSiblingTokenKey, SIZE_JOIN_ARG, TABLE_TOTAL_ARG, type BarcodeSource } from "./token-meta";
 import { formatCompositionLines } from "./composition";
-import { pickCartonQtyPair, pickCartonQtyVariant } from "./carton-qty";
+import { pickCartonQtyPair, pickCartonQtyVariant, pickSolidAssortVariant } from "./carton-qty";
 import { pickSizeItems } from "./size-scoped-text";
 import { formatSizeFormRun, parseSizeForm, sizeFormRun } from "./size-form";
 import {
@@ -55,6 +55,15 @@ import { isPinnableField, type PinnableField } from "@/lib/pdf/pins-meta";
 const EAN_SENTINEL = "0000000000000";
 
 type TextResolver = (style: StyleData, arg?: string) => string;
+
+// How a size-list token joins its labels. Bare = the historic ", "; ":dash"
+// = "-", the "S-M-L-XL-2XL-3XL" form the stickers ask for. An unknown arg
+// falls back to the bare join rather than blanking the list — validateTokenRef
+// is what rejects a bad one at publish time, and a printed field must never
+// come out empty because of a typo that got past it.
+function joinSizeLabels(labels: string[], arg?: string): string {
+  return labels.join(arg === SIZE_JOIN_ARG ? "-" : ", ");
+}
 
 const RESOLVERS: Record<string, TextResolver> = {
   styleName: (s) => s.styleName,
@@ -126,7 +135,12 @@ const RESOLVERS: Record<string, TextResolver> = {
   colourCode: (s) => s.colour?.code ?? "",
   productGroup: (s) => s.productGroup ?? "",
   campaignWeek: (s) => s.campaignWeek ?? "",
-  sizes: (s) => s.sizes.map((x) => x.label).filter(Boolean).join(", "),
+  // ":dash" joins with "-" instead of ", " — "S-M-L-XL-2XL-3XL", the form
+  // Tokmanni's stickers ask for. Bare keeps the comma join every existing
+  // layout prints. (The one other dash-joined token, {{sizeRangeCoop}}, also
+  // enlarges the current repetition's size 1.6x — not wanted on a plain list,
+  // which is why this arg exists rather than reusing that token.)
+  sizes: (s, arg) => joinSizeLabels(s.sizes.map((x) => x.label).filter(Boolean), arg),
   // First size label — inside a repeat-per-EAN repetition the renderer
   // narrows style.sizes to the current row, so this IS the current size.
   // EXCEPTION: the assortment row (repeatBy="cartonEan"/"assort") is not a
@@ -164,11 +178,12 @@ const RESOLVERS: Record<string, TextResolver> = {
   // EXCEPTION: a carton row (repeatBy="cartonEan") deliberately covers a
   // GROUP of sizes — the ones sharing that carton — so it lists the row,
   // staying consistent with {{sizes}} on the same row.
-  sizeRange: (s) =>
-    (s.isCartonRow ? s.sizes : s.allSizes ?? s.sizes)
-      .map((x) => x.label)
-      .filter(Boolean)
-      .join(", "),
+  // ":dash" joins with "-" — see {{sizes}} above.
+  sizeRange: (s, arg) =>
+    joinSizeLabels(
+      (s.isCartonRow ? s.sizes : s.allSizes ?? s.sizes).map((x) => x.label).filter(Boolean),
+      arg,
+    ),
   // Every size in the run joined by " - " (the full pre-repetition list,
   // preserved on allSizes). The renderer draws this specially so the
   // CURRENT repetition's size is enlarged; this plain value backs
@@ -223,7 +238,17 @@ const RESOLVERS: Record<string, TextResolver> = {
       : "",
 
   poNumber: (s) => s.poNumber ?? "",
-  customerOrderNo: (s) => s.customerOrderNo ?? "",
+  // A PO that ships BOTH packings carries both order numbers in one cell —
+  // "Assort - 4530763 / Solid - 4530769" (Tokmanni 63368/63369). :solid /
+  // :assort narrow it to one number, the same split {{qtyPerCarton}} reads
+  // (carton-qty.ts). Bare is unchanged, and a value with no marker is handed
+  // back untouched, so every existing layout prints exactly what it did.
+  // A split that carries the OTHER packing but not this one resolves empty —
+  // a real gap, shown as an amber chip rather than the wrong order number.
+  customerOrderNo: (s, arg) => {
+    const raw = s.customerOrderNo ?? "";
+    return arg === "solid" || arg === "assort" ? pickSolidAssortVariant(raw, arg) : raw;
+  },
   // Raw delivery term off the style ("FOB", "DDP", …) — also the usual
   // field for {{if deliveryTerm == FOB}} conditionals.
   deliveryTerm: (s) => s.deliveryTerm ?? "",

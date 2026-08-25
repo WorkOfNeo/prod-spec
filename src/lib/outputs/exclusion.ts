@@ -68,6 +68,16 @@ export type DocTypeRulesMap = Record<string, OutputRule[]>;
 // ColumnMapping keys (the ones worth gating on), labelled from the shared
 // STYLE_FIELD_LABELS so the names match the Details tab. productGroup is the
 // primary one (carries Socks / Shoes / Boots / …).
+//
+// The ORDER-NUMBER fields gate on how a PO is packed rather than on what the
+// product is. A PO shipping BOTH packings carries both numbers in one cell —
+// "Assort - 4530763 / Solid - 4530769" — so a pair of care labels can split
+// on it: one "only when customer order no contains solid", one "…assort",
+// each printing its own {{customerOrderNo:solid|:assort}} and file name.
+// Give the ORIGINAL label an "exclude when … contains assort" rule at the
+// same time: a single-packing PO carries a bare number that matches NEITHER
+// include rule, so without that the split PO prints three labels per size
+// and a normal PO still prints one.
 export const EXCLUSION_FIELDS: ReadonlyArray<{ field: string; label: string }> = [
   "productGroup",
   "targetGroup",
@@ -78,6 +88,8 @@ export const EXCLUSION_FIELDS: ReadonlyArray<{ field: string; label: string }> =
   "customerItemNo",
   "description",
   "trims",
+  "customerOrderNo",
+  "poNumber",
 ].map((field) => ({
   field,
   label: (STYLE_FIELD_LABELS as Record<string, string>)[field] ?? field,
