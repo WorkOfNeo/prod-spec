@@ -13,6 +13,7 @@ import { ReviewLeaveGuard } from "./leave-guard";
 import { ReviewCartonCustomize } from "./review-carton-customize";
 import { UndoIgnoreButton } from "./undo-ignore-button";
 import { RunOutputButton } from "../run-output-button";
+import { RerunButton } from "../rerun-button";
 import { LogStyleView } from "@/components/log-style-view";
 import { groupByDocType, DocTypeAccordion } from "../doc-type-groups";
 import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
@@ -99,6 +100,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     renderContext,
     infoAreaSizes,
     infoAreaSizeMap,
+    inflightJobs,
   ] =
     await Promise.all([
       getCurrentOutputsForStyle(id),
@@ -114,6 +116,9 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
       // the full map resolves the current pick (even a deactivated one).
       listActiveInfoAreaSizes(),
       loadInfoAreaSizeMap(),
+      // Is a generation already running? The same condition /rerun enforces —
+      // asking here just disables the button instead of answering 409.
+      db.job.count({ where: { styleId: id, status: { in: ["QUEUED", "RUNNING"] } } }),
     ]);
   const styleData = renderContext?.styleData ?? null;
   const rollup = rollupOutputSlots(outputs);
@@ -346,6 +351,15 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           ) : null}
         </div>
         <div className="flex items-end gap-3">
+          {/* Whole-style re-run, the same button and endpoint as the style
+              page header — so a reviewer who fixed the data upstream doesn't
+              have to bounce back there to regenerate. Leftmost of the cluster:
+              the decision buttons are the primary action and keep their place.
+              Safe next to them because a FULL re-run skips already-approved
+              outputs (durable approval) — only the undecided ones re-render. */}
+          {canEditFields ? (
+            <RerunButton styleId={style.id} disabled={inflightJobs > 0} />
+          ) : null}
           {canPush ? (
             <SupplierPushActions styleId={style.id} pushableCount={pushableCount} />
           ) : null}
