@@ -67,3 +67,20 @@ export function pickCartonQtyPair(
   if (!m) return null;
   return kind === "inner" ? m[1] : m[2];
 }
+
+// ---------------------------------------------------------------------
+// The SAME "Solid - X / Assort - Y" split appears on columns that have
+// nothing to do with carton quantities. Tokmanni's customer order number
+// arrives as one cell holding both packings' order numbers:
+//
+//   "Assort - 4530763 / Solid - 4530769"
+//
+// Identical shape, identical parse — so {{customerOrderNo:solid}} reuses
+// this primitive under a name that isn't carton-specific rather than
+// growing a second regex that could drift from this one.
+// ---------------------------------------------------------------------
+
+export const SOLID_ASSORT_KINDS = ["solid", "assort"] as const;
+export type SolidAssortKind = (typeof SOLID_ASSORT_KINDS)[number];
+
+export const pickSolidAssortVariant = pickCartonQtyVariant;

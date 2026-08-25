@@ -90,6 +90,77 @@ Rules (`src/lib/output-layouts/size-form.ts`):
 - **A half carrying two units** (`1½-2 år / 18-24 mdr`) is left exactly as authored — better odd than mangled.
 - Bare (no argument) is a byte-for-byte passthrough joined `" - "`, so layouts using the plain token are untouched.
 
+## One PO, two packings — solid and assort
+
+A PO that ships the same styles in BOTH solid (one size per carton) and
+assortment (mixed) packing needs **two of some documents**: Tokmanni's 63368 /
+63369 want two care labels per size, one naming the solid customer order
+number and one the assort.
+
+The order number arrives as ONE cell holding both:
+
+```
+Assort - 4530763 / Solid - 4530769
+```
+
+### `{{customerOrderNo:solid}}` / `:assort`
+
+Narrows that cell to one number — the same split `{{qtyPerCarton:solid}}`
+reads (`src/lib/output-layouts/carton-qty.ts`, one parser for both).
+
+| Value in the column | `{{customerOrderNo}}` | `:solid` | `:assort` |
+|---|---|---|---|
+| `Assort - 4530763 / Solid - 4530769` | the whole cell | `4530769` | `4530763` |
+| `4530769` (single packing) | `4530769` | `4530769` | `4530769` |
+| `Assort - 4530763` | as authored | *(empty — amber chip)* | `4530763` |
+
+A value with **no marker is handed back untouched**, so a layout carrying the
+argument still prints correctly on a single-packing PO. A split that carries
+the *other* packing but not this one resolves **empty** rather than silently
+printing the wrong order number — a real gap, and it shows as an amber chip.
+
+`:inner` / `:outer` are deliberately **not** accepted here: an order number has
+no box level, so `{{customerOrderNo:outer}}` is a publish blocker rather than a
+field that prints blank in production.
+
+### Splitting the documents — three rules, not two
+
+The layouts split on the same column, through **generation rules** (Settings →
+the layout's rules). "Customer order no." and "PO number" are now offered as
+rule fields alongside Product group.
+
+| Layout | Rule | `fileName` |
+|---|---|---|
+| the ORIGINAL care label | **Never when** Customer order no. contains `assort` | unchanged |
+| new — solid | **Only when** Customer order no. contains `solid` | `…-SOLID-{{size}}` |
+| new — assort | **Only when** Customer order no. contains `assort` | `…-ASSORT-{{size}}` |
+
+- **dual-packing PO** → original excluded, two new ones generate = **2 labels per size** ✓
+- **normal PO** → bare number matches neither include rule, original generates = **1 label per size** ✓
+
+**The exclude rule on the original is not optional.** Without it a dual PO
+prints three labels per size. And the two new layouts must be *include* rules,
+not excludes — a bare single-packing number matches neither, which is exactly
+what keeps them off normal orders.
+
+## Size lists — comma or dash
+
+`{{sizes}}` and `{{sizeRange}}` join `S, M, L, XL, 2XL, 3XL`. Some stickers
+specify the dash form instead:
+
+| Token | Prints |
+|---|---|
+| `{{sizeRange}}` | `S, M, L, XL, 2XL, 3XL` |
+| `{{sizeRange:dash}}` | `S-M-L-XL-2XL-3XL` |
+| `{{sizes:dash}}` | the row's list, dash-joined |
+
+Bare is unchanged, so no existing layout moves. A size whose own label carries
+a slash (`86/92`) is never touched — only the join between sizes changes.
+
+Don't reach for `{{sizeRangeCoop:numeric}}` to get dashes: that token also
+prints the current repetition's size at **1.6× and bold** (it exists for Coop's
+price tag), which is wrong on a plain "sizes available" line.
+
 ## Rounded corners
 
 `page.cornerRadiusMm` is the corner radius of the die, in mm. Absent or `0` = square corners (every page authored before this).
@@ -116,7 +187,7 @@ It's a **print guide**, like the sewing and fold lines: a dashed circle on the c
 - **Barcodes**: `{{barcode:ean13}}` (size EAN), `{{barcode:cartonEan}}` (carton EAN).
 - **Symbols / logos / certs**: `{{washSymbols}}`, `{{logo:contrastAddress}}` / `{{logo:custom}}`, `{{cert:oekotex}}` / `{{cert:fsc}}`.
 - **Pictures**: `{{image:<name>}}` — any number per output, from the shared library (see below).
-- **Order / size**: `{{size}}` (the current row inside a repeat; `:numeric` / `:year` pick one half of a two-form label, see below), `{{sizes}}`, `{{poNumber}}`, `{{orderNo}}` (FOB → customer order, else PO), `{{qtyPerCarton}}`, `{{lot}}`, `{{customerItemNo}}`, `{{customerOrderNo}}`, `{{description}}`, `{{campaignWeek}}`.
+- **Order / size**: `{{size}}` (the current row inside a repeat; `:numeric` / `:year` pick one half of a two-form label, see below), `{{sizes}}` / `{{sizeRange}}` (`:dash` joins `S-M-L-XL`, see below), `{{poNumber}}`, `{{orderNo}}` (FOB → customer order, else PO), `{{qtyPerCarton}}`, `{{lot}}`, `{{customerItemNo}}`, `{{customerOrderNo}}` (`:solid` / `:assort` — see below), `{{description}}`, `{{campaignWeek}}`.
 - **Size range (Coop)**: `{{sizeRangeCoop}}` — the whole run joined " - " with the current row's size enlarged; `:numeric` / `:year` pick one half of a two-form label (see below).
 - **Conditionals**: `{{if deliveryTerm == FOB}}…{{else}}…{{endif}}` (one line, text tokens only) — see "Conditional text" below for the three operators.
 - **Calculated**: `{{= sum(qtyPerCarton) }}` — arithmetic over field values; see "Calculated fields" below.
@@ -236,6 +307,27 @@ for a style without OEKO-TEX, and 3 for one with it.
 
 - `repeatBy: "ean"` + `splitBy: "ean"` → one PDF per size/EAN; `{{size}}` / `{{barcode:ean13}}` bind to that row. Use for care-label sets — the universal pages repeat into each size's file.
 - `repeatBy: "none"` → one document. Use for carton markings.
+- `repeatBy: "cartonEan"` → one PDF per per-size carton, **plus** a final assortment-master row. `"cartonEanSizeOnly"` is the same without that last row — for markings that only ever ship in solid cartons.
+- `repeatBy: "assort"` → one PDF for the mixed master carton.
+
+**Two carton markings for a dual-packing PO** is exactly this pair: a *solid*
+marking on `cartonEanSizeOnly` (one PDF per size) and an *assort* marking on
+`assort` (one PDF for the mixed case). Two layouts, not one — the repeat mode
+is what differs, and a layout has one.
+
+### "ean" is one repetition per size × colour
+
+A PO that ships the same size in both packings carries that size **twice** in
+its EAN rows, with the same product barcode. Those are one repetition, not two:
+rows agreeing on size, product EAN and colour collapse, and the row carrying a
+carton EAN wins so nothing loses a carton barcode.
+
+Before this, every per-EAN output shipped two byte-identical files per size,
+told apart only by the `-2` suffix `splitFilePlan` appends to a name collision
+(Tokmanni's "two price stickers per size, both the same barcode"). Rows that
+genuinely differ — a second colourway, a different EAN — still repeat
+separately. A layout that wants one file per **carton** wants `repeatBy:
+"cartonEan"`, which dedupes on the carton EAN instead.
 
 ## Generation rules (which styles get this output)
 
@@ -247,17 +339,25 @@ Set in the layout's **Settings** tab; stored on the def as
   rules are alternatives (any one is enough).
 - `mode: "exclude"` (the default) → **never generate when** it matches. An
   exclude match always wins over a satisfied include.
-- `field` is a synced `ColumnMapping` key (`productGroup`, `targetGroup`, …),
-  `op` is `contains` (substring) or `equals` (whole field), keywords are
-  case-insensitive.
+- `field` is a synced `ColumnMapping` key (`productGroup`, `targetGroup`,
+  `customerOrderNo`, `poNumber`, …), `op` is `contains` (substring) or `equals`
+  (whole field), keywords are case-insensitive.
 - A field that resolves to nothing matches nothing — so an include-only output
   stays un-generated until that field is synced.
 
 Example — a barcode sticker only for shoes:
 
 ```json
-{ "mode": "include", "field": "productGroup", "op": "contains", "keywords": ["shoes"] }
+{ "mode": "include", "field": "productGroup", "op": "contains", "keywords": ["shoes", "boot", "sandal", "slipper", "sneaker", "clog"] }
 ```
+
+**Keyword lists, not one word.** `contains` is a plain substring test, so
+`"slippers"` does not contain `"shoes"` — a slipper style silently drops out of
+a `["shoes"]`-only include rule and its barcode sticker never generates. Real
+taxonomies are messy; list the words the column actually holds.
+
+Gating on the **order number** rather than the product splits a dual-packing PO
+into a solid document and an assort one — see "One PO, two packings" above.
 
 The same rules can be set for a whole document type in *Output Builder →
 Document types* (`DocTypeDef.exclusionRules`); both gates must pass. Either way

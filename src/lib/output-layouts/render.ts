@@ -82,6 +82,42 @@ export type LayoutRenderMode = "production" | "preview";
 //   "ean"  — one per PO EAN row (SIZE × COLOUR; {{colourName}} binds the
 //            row's colour parsed from the PO variant label). Falls back
 //            to size rows when no EAN rows were scraped.
+// One repetition per SIZE x COLOUR combo — which is what repeatBy "ean" has
+// always MEANT, but not what it did. eanVariants is built one row per
+// style_eans row (render-context.ts), and a PO that ships the same size in
+// BOTH a solid and an assortment packing carries that size TWICE, with the
+// same product EAN. Every per-EAN output then shipped two byte-identical
+// files (Tokmanni 63368/63369: two price stickers per size, same barcode),
+// distinguishable only by the "-2" collision suffix splitFilePlan appends.
+//
+// Rows are the same repetition when they agree on what a per-EAN row PRINTS:
+// size, product EAN and colour. The carton EAN is deliberately NOT part of
+// the key — it is the axis the duplicate rows differ on, and it is not what
+// this repeat iterates: a layout that wants one file per CARTON has
+// repeatBy "cartonEan", which dedupes by carton EAN instead.
+//
+// When collapsing, the row that CARRIES a carton EAN wins, so a merged
+// repetition can never lose a carton barcode the un-merged one would have
+// printed. Order is otherwise preserved (first occurrence keeps its place).
+function dedupeEanVariants<T extends { size: string; ean13: string; colour?: string | null; cartonEan?: string | null }>(
+  rows: readonly T[],
+): T[] {
+  const byKey = new Map<string, number>();
+  const out: T[] = [];
+  for (const row of rows) {
+    const key = `${row.size}|${row.ean13}|${row.colour ?? ""}`;
+    const at = byKey.get(key);
+    if (at === undefined) {
+      byKey.set(key, out.length);
+      out.push(row);
+      continue;
+    }
+    // Same repetition, seen already — keep the one with a carton EAN.
+    if (!(out[at].cartonEan ?? "").trim() && (row.cartonEan ?? "").trim()) out[at] = row;
+  }
+  return out;
+}
+
 export function repetitionStyles(
   style: StyleData,
   repeatBy: "none" | "size" | "ean" | "assort" | "cartonEan" | "cartonEanSizeOnly",
@@ -126,7 +162,7 @@ export function repetitionStyles(
     }));
   }
   if (repeatBy === "ean") {
-    const rows = style.eanVariants ?? [];
+    const rows = dedupeEanVariants(style.eanVariants ?? []);
     if (rows.length > 0) {
       // eanVariants is narrowed along with sizes so the narrowing is
       // idempotent — renderLayoutHtml re-applies repetitionStyles to the

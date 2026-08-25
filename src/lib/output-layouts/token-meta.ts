@@ -5,7 +5,7 @@
 // code). The matching server-side resolvers live in tokens.ts, keyed by
 // the same token keys — keep the two files in sync.
 // =====================================================
-import { CARTON_QTY_KINDS } from "./carton-qty";
+import { CARTON_QTY_KINDS, SOLID_ASSORT_KINDS } from "./carton-qty";
 import { SIZE_FORMS } from "./size-form";
 import { IMAGE_SLUG_RE } from "./image-slug";
 
@@ -14,6 +14,10 @@ export const SIZE_SCOPE_ARG = "size";
 
 // The single accepted "tableTotal" argument — {{assortmentTable:total}}.
 export const TABLE_TOTAL_ARG = "total";
+
+// The single accepted "sizeJoin" argument — {{sizeRange:dash}}, which joins
+// the labels "S-M-L-XL" instead of the default "S, M, L, XL".
+export const SIZE_JOIN_ARG = "dash";
 
 // Re-exported so the builder surfaces (palette, autocomplete) can offer the
 // size-form chips without reaching past this client-safe module.
@@ -52,6 +56,12 @@ export type LayoutTokenMeta = {
   //   `missing` chip, which blocks approval.
   // "tableTotal" → optional ":total" on a table token, adding the summed
   //   row ({{assortmentTable:total}}); bare draws the table alone.
+  // "orderKind" → optional solid/assort selector on an order number that
+  //   carries BOTH packings' numbers in one cell ("Assort - 4530763 /
+  //   Solid - 4530769"). The same split {{qtyPerCarton}} reads, minus the
+  //   inner/outer pair options, which are meaningless on an order number.
+  // "sizeJoin" → optional ":dash" on a size LIST, joining "S-M-L-XL"
+  //   instead of "S, M, L, XL"; bare keeps the comma join.
   arg?:
     | "lang"
     | "source"
@@ -60,7 +70,9 @@ export type LayoutTokenMeta = {
     | "sizeScope"
     | "sizeForm"
     | "imageSlug"
-    | "tableTotal";
+    | "tableTotal"
+    | "orderKind"
+    | "sizeJoin";
   // Optional SECOND argument (TOKEN_RE group 3, numeric-only).
   // "heightMm" → bar height in mm, e.g. {{barcode:ean13:8}} (8 mm bars).
   // "widthPct" → print width as a % of the block, e.g. {{image:x:40}}.
@@ -111,10 +123,11 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   { key: "campaignWeek", label: "Campaign week", group: "Style", kind: "text", example: "C182813" },
   {
     key: "sizes",
-    label: "Sizes (all — or the repetition row's)",
+    label: "Sizes (all — or the repetition row's) — :dash joins S-M-L instead of S, M, L",
     group: "Style",
     kind: "text",
-    example: "86/92, 98/104, 110/116",
+    arg: "sizeJoin",
+    example: "86/92, 98/104, 110/116 · {{sizes:dash}} → 86/92-98/104-110/116",
   },
   {
     key: "size",
@@ -126,10 +139,11 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   },
   {
     key: "sizeRange",
-    label: "Size range — every size listed, on every repetition",
+    label: "Size range — every size listed, on every repetition — :dash joins S-M-L",
     group: "Style",
     kind: "text",
-    example: "86/92, 98/104, 110/116",
+    arg: "sizeJoin",
+    example: "S, M, L, XL, 2XL · {{sizeRange:dash}} → S-M-L-XL-2XL",
   },
   {
     key: "sizeRatio",
@@ -169,7 +183,14 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
 
   // ---- Order & carton ----
   { key: "poNumber", label: "PO number (Contrast)", group: "Order & carton", kind: "text", example: "C-PO62831" },
-  { key: "customerOrderNo", label: "Customer order no", group: "Order & carton", kind: "text", example: "4501122334" },
+  {
+    key: "customerOrderNo",
+    label: "Customer order no (:solid / :assort picks one packing's number)",
+    group: "Order & carton",
+    kind: "text",
+    arg: "orderKind",
+    example: "4501122334 · {{customerOrderNo:assort}} → 4530763",
+  },
   {
     key: "orderNo",
     label: "Order no (FOB→customer, DDP→PO)",
@@ -486,6 +507,20 @@ export function validateTokenRef(key: string, arg?: string, arg2?: string): stri
   // accepted selector is ":total".
   if (meta.arg === "tableTotal" && arg !== undefined && arg !== TABLE_TOTAL_ARG) {
     errs.push(`{{${key}:${arg}}} — the only table option is {{${key}:${TABLE_TOTAL_ARG}}}`);
+  }
+  // "orderKind" arg is optional (bare resolves the whole cell); when present
+  // it must be solid or assort. Deliberately NOT the carton-qty list: an
+  // order number has no inner/outer box level, so {{customerOrderNo:outer}}
+  // is a mistake worth catching at publish time rather than printing blank.
+  if (meta.arg === "orderKind" && arg !== undefined && !SOLID_ASSORT_KINDS.includes(arg as never)) {
+    errs.push(
+      `{{${key}:${arg}}} — order number selector must be ${SOLID_ASSORT_KINDS.map((k) => `{{${key}:${k}}}`).join(" or ")}`,
+    );
+  }
+  // "sizeJoin" arg is optional (bare joins ", "); the only accepted option
+  // is ":dash".
+  if (meta.arg === "sizeJoin" && arg !== undefined && arg !== SIZE_JOIN_ARG) {
+    errs.push(`{{${key}:${arg}}} — the only size-list option is {{${key}:${SIZE_JOIN_ARG}}}`);
   }
   // "imageSlug" is REQUIRED and checked by shape only — the library is
   // DB-managed, so validating against today's rows would either reject a
