@@ -144,6 +144,11 @@ export async function buildRequiredPackagingForStyle(
     // in — the two halves of the diff have to come from one code path or the
     // comparison is meaningless.
     withoutTrims?: boolean;
+    // Fold trims in even though the master switch is off. ONLY the before/after
+    // preview passes this: its entire job is to show what turning the switch on
+    // would do, so it must not be gated by the switch it is there to inform.
+    // Nothing that writes a PDF may pass it.
+    forceTrims?: boolean;
   },
 ): Promise<BundleDocSummary[]> {
   const { db } = await import("@/lib/db");
@@ -157,6 +162,7 @@ export async function buildRequiredPackagingForStyle(
   const { effectiveOutputDims, loadInfoAreaSizeMap } = await import("@/lib/prod-spec/info-area");
   const { parseProdSpecOutputs } = await import("@/lib/prod-spec/config");
   const { resolveStyleTrimLabels } = await import("@/lib/trims/style-trims");
+  const { getTrimsOnCoverEnabled } = await import("@/lib/settings/app-settings");
 
   // ProdSpec.outputs may reference Output Builder layouts (`layout:<id>`) — load
   // them before the readiness walk resolves variants (names, isInfoArea).
@@ -217,10 +223,15 @@ export async function buildRequiredPackagingForStyle(
       };
     });
 
+  // The master switch. Off (the default) means every cover renders exactly as
+  // it did before trims existed — same rows, same fingerprint — so shipping
+  // this code changes nothing a supplier sees until somebody decides it should.
+  const trimsEnabled = opts?.forceTrims === true || (await getTrimsOnCoverEnabled());
+
   // The pre-Trims manifest: no declared outputs meant no manifest at all.
   // Trims changes that — a style with no outputs can still owe the supplier a
   // list of what to expect — so the early return only applies without them.
-  if (opts?.withoutTrims) {
+  if (opts?.withoutTrims || !trimsEnabled) {
     if (rows.length === 0) return [];
     const approvedBaseKeys =
       opts?.approvedBaseKeysOverride ?? (await approvedOutputBaseKeysForStyle(styleId));

@@ -260,3 +260,64 @@ test("strongestKind ranks app over manual over info", () => {
   assert.equal(strongestKind(["manual", "app"]), "app");
   assert.equal(strongestKind(["info"]), "info");
 });
+
+// ---- The master switch -----------------------------------------------------
+//
+// The switch itself is an AppSetting read, so the DB-backed half is exercised
+// against the live app. What is pinned here is the property the switch relies
+// on: with NO trim context, the assembler must reproduce the pre-Trims manifest
+// exactly. If that ever drifted, "off" would silently start changing covers.
+
+test("with no trim context the manifest is exactly the declared outputs", () => {
+  const docs = assembleTrimManifest({
+    trimLabels: [],
+    outputs: TICKET_OUTPUTS,
+    rules: RULES,
+    overrides: {},
+  });
+  assert.deepEqual(
+    docs.map((d) => ({
+      displayName: d.displayName,
+      widthMm: d.widthMm,
+      heightMm: d.heightMm,
+      approved: d.approved,
+    })),
+    TICKET_OUTPUTS.map((o) => ({
+      displayName: o.displayName,
+      widthMm: o.widthMm,
+      heightMm: o.heightMm,
+      approved: o.approved,
+    })),
+  );
+  // No trim-only decoration leaks in: no Monday wording, no "supplied as", and
+  // every row is still an ordinary generated document.
+  assert.equal(docs.every((d) => d.sourceLabel === undefined), true);
+  assert.equal(docs.every((d) => d.suppliedAs === undefined), true);
+  assert.equal(docs.every((d) => d.kind === "app"), true);
+});
+
+test("switching on and off is a round trip, not a one-way door", () => {
+  // The fingerprint of the off-state manifest must equal the fingerprint the
+  // pre-Trims code produced, or flipping the switch off after a rebuild would
+  // leave every cover looking permanently "changed".
+  const off = assembleTrimManifest({
+    trimLabels: [],
+    outputs: TICKET_OUTPUTS,
+    rules: RULES,
+    overrides: {},
+  });
+  const on = assembleTrimManifest({
+    trimLabels: TICKET_TRIMS,
+    outputs: TICKET_OUTPUTS,
+    rules: RULES,
+    overrides: {},
+  });
+  assert.notEqual(manifestFingerprint(on), manifestFingerprint(off));
+  const backOff = assembleTrimManifest({
+    trimLabels: [],
+    outputs: TICKET_OUTPUTS,
+    rules: RULES,
+    overrides: {},
+  });
+  assert.equal(manifestFingerprint(backOff), manifestFingerprint(off));
+});
