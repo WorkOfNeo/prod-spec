@@ -626,3 +626,41 @@ export async function setTrimLayoutConcepts(concepts: TrimLayoutConcepts): Promi
     update: { value },
   });
 }
+
+const TRIMS_ON_COVER_KEY = "trimsOnCoverEnabled";
+
+// Master switch for printing Monday's Trims entries on the cover manifest.
+//
+// DEFAULTS TO FALSE, and that is the whole point of it existing: turning this on
+// changes what every cover in the book says to a supplier, so it ships dark and
+// waits for a human decision. With it off, buildRequiredPackagingForStyle
+// returns exactly the pre-Trims manifest — the declared output set — so covers
+// generated today read identically to covers generated last week.
+//
+// Everything AROUND the switch stays live while it is off, on purpose:
+//   * /settings/trims still classifies, so the vocabulary can be agreed before
+//     anyone sees the result,
+//   * the before/after preview still renders the with-trims manifest (it asks
+//     for it explicitly), because showing colleagues what it WOULD look like is
+//     the reason the switch exists at all.
+//
+// Only the actual cover render is gated. See buildRequiredPackagingForStyle's
+// `forceTrims` for the preview's deliberate bypass.
+export async function getTrimsOnCoverEnabled(): Promise<boolean> {
+  try {
+    const row = await db.appSetting.findUnique({ where: { key: TRIMS_ON_COVER_KEY } });
+    return row?.value === true;
+  } catch {
+    // A settings read that fails must not silently start printing trims on
+    // supplier-facing paper. Off is the safe direction.
+    return false;
+  }
+}
+
+export async function setTrimsOnCoverEnabled(enabled: boolean): Promise<void> {
+  await db.appSetting.upsert({
+    where: { key: TRIMS_ON_COVER_KEY },
+    create: { key: TRIMS_ON_COVER_KEY, value: enabled },
+    update: { value: enabled },
+  });
+}

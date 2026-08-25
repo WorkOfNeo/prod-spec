@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireRole } from "@/lib/auth-server";
 import { diffCoverManifests, listCoverStyleIds } from "@/lib/pdf/cover-manifest-diff";
 import { loadTrimSettings } from "@/lib/outputs/required-packaging";
+import { getTrimsOnCoverEnabled } from "@/lib/settings/app-settings";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -49,15 +50,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // The switch rides on the response because the preview shows what trims WOULD
+  // do while the switch is off — so the client has to know that rebuilding now
+  // would produce the old manifest, not the one on screen.
+  const trimsEnabled = await getTrimsOnCoverEnabled();
+
   if (parsed.data.mode === "prepare") {
     const styleIds = await listCoverStyleIds({ prodSpecId: parsed.data.prodSpecId });
-    return NextResponse.json({ styleIds, total: styleIds.length });
+    return NextResponse.json({ styleIds, total: styleIds.length, trimsEnabled });
   }
 
   const trimSettings = await loadTrimSettings();
   const { diffs, changedCount } = await diffCoverManifests(parsed.data.styleIds, { trimSettings });
 
   return NextResponse.json({
+    trimsEnabled,
     changedCount,
     diffs: parsed.data.countsOnly
       ? diffs.map((d) => ({

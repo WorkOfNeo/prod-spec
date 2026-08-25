@@ -3,10 +3,11 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { canReview } from "@/lib/roles";
-import { getCoverPageInfoMd } from "@/lib/settings/app-settings";
+import { getCoverPageInfoMd, getTrimsOnCoverEnabled } from "@/lib/settings/app-settings";
 import { CoverPageEditor } from "./cover-page-editor";
 import { CoverChangesPanel } from "./cover-changes-panel";
 import { CoverRegenPanel } from "./cover-regen-panel";
+import { TrimsSwitch } from "./trims-switch";
 import { GeneralInfoEditor, type ProdSpecOption } from "./general-info-editor";
 
 export const dynamic = "force-dynamic";
@@ -39,8 +40,9 @@ export default async function CoverPageSettingsPage({
 
   const tab: Tab = (await searchParams).tab === "general-info" ? "general-info" : "cover";
 
-  const [markdown, specRows] = await Promise.all([
+  const [markdown, trimsEnabled, specRows] = await Promise.all([
     getCoverPageInfoMd(),
+    getTrimsOnCoverEnabled(),
     db.prodSpec.findMany({
       orderBy: [{ active: "desc" }, { name: "asc" }],
       select: {
@@ -107,6 +109,7 @@ export default async function CoverPageSettingsPage({
             <CoverPageEditor initialMarkdown={markdown} />
           </div>
           <CoverChangesPanel />
+          <TrimsSwitch initialEnabled={trimsEnabled} />
           <CoverRegenPanel />
         </>
       ) : (

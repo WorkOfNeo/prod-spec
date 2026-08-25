@@ -122,7 +122,10 @@ export async function diffCoverManifests(
     try {
       const [before, after] = await Promise.all([
         buildRequiredPackagingForStyle(styleId, { withoutTrims: true }),
-        buildRequiredPackagingForStyle(styleId, { trimSettings }),
+        // forceTrims: the preview exists to show what turning the master
+        // switch ON would do, so it must not be gated by that switch. This is
+        // the ONE caller allowed to bypass it — nothing here writes a PDF.
+        buildRequiredPackagingForStyle(styleId, { trimSettings, forceTrims: true }),
       ]);
       const storedKey = storedKeyByStyle.get(styleId) ?? null;
       const afterKey = manifestFingerprint(after);

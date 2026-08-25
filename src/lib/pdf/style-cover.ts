@@ -20,6 +20,14 @@ import { getCoverPageInfoMd } from "@/lib/settings/app-settings";
 export async function buildStyleCoverPdf(
   jobId: string,
   approvedBaseKeys: ReadonlySet<string>,
+  opts?: {
+    // Fold Monday's trims in even though the master switch is off. ONLY the
+    // "try a style number" sample on /settings/cover-page passes this — it
+    // returns the PDF straight to the browser and persists nothing, which is
+    // exactly how you show colleagues a real page before deciding. Every path
+    // that STORES or SHIPS a cover leaves this alone and obeys the switch.
+    forceTrims?: boolean;
+  },
 ): Promise<Buffer | null> {
   const job = await db.job.findUnique({
     where: { id: jobId },
@@ -85,6 +93,7 @@ export async function buildStyleCoverPdf(
   // in the DB yet at the moment we render).
   const docs = await buildRequiredPackagingForStyle(style.id, {
     approvedBaseKeysOverride: approvedBaseKeys,
+    forceTrims: opts?.forceTrims,
   });
 
   const pageSettings = parseBundlePageSettings(prodSpec?.bundlePageSettings);

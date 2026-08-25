@@ -63,7 +63,15 @@ function DocList({ docs, emptyNote }: { docs: DocRow[]; emptyNote: string }) {
   return (
     <ol className="divide-y divide-zinc-100">
       {docs.map((d, i) => (
-        <li key={`${d.displayName}-${i}`} className="px-3 py-2">
+        // GREEN = this line is answered by a layout we already generate, so the
+        // trim was matched to a real document. That match is the thing most
+        // worth eyeballing — a wrong one promises the supplier artwork that
+        // will never arrive — so it is the whole row that turns, not a badge
+        // you have to hunt for.
+        <li
+          key={`${d.displayName}-${i}`}
+          className={`px-3 py-2 ${d.kind === "app" ? "bg-emerald-50" : ""}`}
+        >
           <div className="flex items-baseline justify-between gap-3">
             <span className="text-[12px] font-medium text-zinc-800">{d.displayName}</span>
             <span className="shrink-0 text-[11px] tabular-nums text-zinc-400">
@@ -71,9 +79,11 @@ function DocList({ docs, emptyNote }: { docs: DocRow[]; emptyNote: string }) {
             </span>
           </div>
           {d.suppliedAs?.length ? (
-            <div className="mt-0.5 text-[11px] text-zinc-500">
-              Supplied as {d.suppliedAs.join(" + ")}
+            <div className="mt-0.5 text-[11px] text-emerald-800">
+              Matched to {d.suppliedAs.join(" + ")}
             </div>
+          ) : d.kind === "app" ? (
+            <div className="mt-0.5 text-[11px] text-emerald-800">We generate this</div>
           ) : null}
           <div
             className={`mt-0.5 text-[11px] ${
@@ -100,6 +110,16 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
   const [scanned, setScanned] = useState(0);
   const [changedIds, setChangedIds] = useState<string[]>([]);
   const [regen, setRegen] = useState({ processed: 0, refreshed: 0, pushed: 0, errors: 0 });
+  // Whether the master switch is on. Null until the first request answers.
+  // While it is off, everything here still WORKS — that is the point, it is how
+  // you decide — but rebuilding would write the old manifest, so it is barred.
+  const [trimsEnabled, setTrimsEnabled] = useState<boolean | null>(null);
+  // "Try one style number" — the direct check. Kept independent of the
+  // sample/scan flow so it works at any moment, including before anything has
+  // been scanned and while the master switch is off.
+  const [styleQuery, setStyleQuery] = useState("");
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const stopRef = useRef(false);
 
   const post = useCallback(async (url: string, body: unknown) => {
@@ -118,8 +138,9 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
     const data = (await post("/api/admin/settings/cover-page/preview-changes", {
       mode: "prepare",
       ...(prodSpecId ? { prodSpecId } : {}),
-    })) as { styleIds: string[] };
+    })) as { styleIds: string[]; trimsEnabled: boolean };
     setAllIds(data.styleIds);
+    setTrimsEnabled(data.trimsEnabled);
     return data.styleIds;
   }, [post, prodSpecId]);
 
@@ -181,6 +202,10 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
   // leave the finished orders — the ones a supplier is working from right now —
   // showing the old short list.
   const runRegen = useCallback(async () => {
+    // The button is hidden while the switch is off, but a stale tab could still
+    // hold one. Refuse here too rather than quietly writing old manifests over
+    // every supplier's current file.
+    if (trimsEnabled === false) return;
     stopRef.current = false;
     setPhase("running");
     setError(null);
@@ -208,7 +233,36 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
       setRegen({ ...acc });
     }
     setPhase("done");
-  }, [changedIds, post]);
+  }, [changedIds, post, trimsEnabled]);
+
+  // Fetch rather than a plain link: a miss returns JSON, and sending someone to
+  // a blank tab holding {"error":"No style matches..."} is a worse answer than
+  // the message printed under the box. On success the bytes become a blob URL
+  // and open in a new tab.
+  const openSamplePdf = useCallback(async () => {
+    const q = styleQuery.trim();
+    if (!q) return;
+    setPdfLoading(true);
+    setPdfError(null);
+    try {
+      const res = await fetch(
+        `/api/admin/settings/cover-page/sample-pdf?style=${encodeURIComponent(q)}`,
+      );
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? `Could not render a sample (${res.status})`);
+      }
+      const url = URL.createObjectURL(await res.blob());
+      window.open(url, "_blank", "noopener");
+      // The tab holds its own reference once opened; releasing ours keeps the
+      // blob from pinning memory for the rest of the session.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      setPdfError(e instanceof Error ? e.message : "Could not render a sample");
+    } finally {
+      setPdfLoading(false);
+    }
+  }, [styleQuery]);
 
   const busy = phase === "sampling" || phase === "scanning" || phase === "running";
 
@@ -239,6 +293,41 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
         )}
       </div>
 
+      <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="cover-sample-style" className="text-[13px] font-medium text-zinc-700">
+            Check one style:
+          </label>
+          <input
+            id="cover-sample-style"
+            value={styleQuery}
+            onChange={(e) => setStyleQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void openSamplePdf();
+              }
+            }}
+            placeholder="Style number"
+            className="w-52 rounded border border-zinc-300 px-2 py-1.5 text-[13px]"
+          />
+          <button
+            type="button"
+            onClick={openSamplePdf}
+            disabled={!styleQuery.trim() || pdfLoading}
+            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-400"
+          >
+            {pdfLoading ? "Rendering…" : "Open the real cover PDF"}
+          </button>
+        </div>
+        <p className="mt-2 text-[12px] leading-relaxed text-zinc-500">
+          Renders that style&rsquo;s actual cover, with the trims folded in, through the same
+          builder that produces the real thing — so it is the page itself, not a preview of one.
+          Nothing is saved, pushed or emailed, and it works while the switch below is still off.
+        </p>
+        {pdfError && <p className="mt-2 text-[12px] text-red-600">{pdfError}</p>}
+      </div>
+
       {phase === "error" && (
         <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
@@ -252,6 +341,16 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
         <p className="mt-4 text-sm text-zinc-500">
           No styles have a generated cover yet — nothing to preview.
         </p>
+      )}
+
+      {trimsEnabled === false && samples.length > 0 && phase !== "running" && phase !== "done" && (
+        <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-[13px] text-sky-900">
+          <strong>Trims on cover pages is off.</strong> The &ldquo;after&rdquo; column below is what
+          covers <em>would</em> say once it is switched on — nothing is printing it yet, and every
+          cover in the folders still reads exactly as before. Rebuilding is disabled while it is
+          off, because it would write the old manifest rather than the one shown here. Turn it on
+          in the panel below when you are ready.
+        </div>
       )}
 
       {samples.length > 0 && phase !== "running" && phase !== "done" && (
@@ -321,15 +420,20 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
                 <span className="text-[13px] text-zinc-700">
                   <strong>{changedIds.length}</strong> of {scanned} covers would change.
                 </span>
-                {changedIds.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={runRegen}
-                    className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700"
-                  >
-                    Regenerate these {changedIds.length} — no supplier email
-                  </button>
-                )}
+                {changedIds.length > 0 &&
+                  (trimsEnabled === false ? (
+                    <span className="text-[12px] text-zinc-500">
+                      Switch trims on below to rebuild these.
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={runRegen}
+                      className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+                    >
+                      Regenerate these {changedIds.length} — no supplier email
+                    </button>
+                  ))}
               </>
             )}
           </div>

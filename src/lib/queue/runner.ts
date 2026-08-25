@@ -38,7 +38,7 @@ import { manifestFingerprint } from "@/lib/trims/manifest";
 import { resolveStyleTrimLabels } from "@/lib/trims/style-trims";
 import { renderStyleCoverPdf } from "@/lib/pdf/cover";
 import { coverFileName } from "@/lib/pdf/cover-file-name";
-import { getSupplierSendMinPo } from "@/lib/settings/app-settings";
+import { getSupplierSendMinPo, getTrimsOnCoverEnabled } from "@/lib/settings/app-settings";
 import { buildStyleCoverPdf } from "@/lib/pdf/style-cover";
 import { toPlainBytes } from "@/lib/pdf/bytes";
 import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
@@ -881,9 +881,16 @@ export async function processJob(jobId: string): Promise<void> {
   // supplier's list matches the buyer's. Fail-soft: a settings read that throws
   // must not fail a generation — falling back to no context yields exactly the
   // pre-Trims manifest.
-  const trimContext = await loadTrimSettings()
-    .then((settings) => ({ ...settings, trimLabels: resolveStyleTrimLabels(job.style) }))
-    .catch(() => undefined);
+  // Gated on the master switch (off by default): with it off there is no trim
+  // context at all, and assembleRequiredPackagingDocs falls back to the
+  // pre-Trims manifest byte for byte. Fail-soft on both reads — a settings
+  // hiccup must not fail a generation, and "no context" is the safe fallback
+  // because it is what covers already print.
+  const trimContext = (await getTrimsOnCoverEnabled().catch(() => false))
+    ? await loadTrimSettings()
+        .then((settings) => ({ ...settings, trimLabels: resolveStyleTrimLabels(job.style) }))
+        .catch(() => undefined)
+    : undefined;
   const coverDocs = assembleRequiredPackagingDocs(coverRows, approvedBases, trimContext);
   // Global cover content block (admin-authored, app-wide) — printed on the
   // cover sheet under the manifest. Fail-soft empty so a settings read never
