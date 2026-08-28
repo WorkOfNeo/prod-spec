@@ -5,6 +5,7 @@ import {
   selectStyleItems,
   cartonEanFor,
   variantsWithSectionCarton,
+  barcodeSectionPages,
   type PoItem,
 } from "./parse-barcodes";
 
@@ -490,4 +491,80 @@ test("variantsWithSectionCarton — each colourway keeps its own section's carto
   const pink = tagged.filter((v) => v.label.includes("Pink"));
   assert.ok(blue.length === 2 && blue.every((v) => v.cartonEan === "1111111111116"));
   assert.ok(pink.length === 2 && pink.every((v) => v.cartonEan === "3333333333334"));
+});
+
+// A long PO spills its Barcodes section over several PDF pages. Only the FIRST
+// page repeats the "Barcode EAN" column header; every page carries the
+// "… - Barcodes" footer. Page numbers/EANs here are fictional (public repo).
+const PAGE_ONE = [
+  "No. Variant Description Barcode EAN Polybag EAN Carton SU per",
+  "Polybag/Cart",
+  "on",
+  "C-40001 PTQ11111 - Sweatshirt",
+  "PI-86/92 Pink, 86/92 1111111111116",
+  "C-40001 PTQ11111 - Sweatshirt",
+  "Page 1\tPurchase Order C-PO90001 - Barcodes",
+].join("\n");
+const PAGE_TWO = [
+  "ASS1 PTQ11111 - Sweatshirt 2222222222223 2222222222223 12/12",
+  "PI-86/92 Pink, 86/92 1111111111116",
+  "C-40002 PTQ22222 - T-Shirt",
+  "BL-86/92 Black, 86/92 3333333333334",
+  "BL-98/104 Black, 98/104 4444444444445",
+  "C-40002 PTQ22222 - T-Shirt",
+  "ASS1 PTQ22222 - T-Shirt 5555555555556 5555555555556 12/12",
+  "Page 2\tPurchase Order C-PO90001 - Barcodes",
+].join("\n");
+
+test("barcodeSectionPages — takes the whole section, not just its first page", () => {
+  // The regression: only the first page was read, so every style listed past
+  // the page break parsed as absent and resolved to STYLE_NOT_IN_PO.
+  const pages = [
+    { text: "Purchase Order C-PO90001\nOrder lines…" },
+    { text: PAGE_ONE },
+    { text: PAGE_TWO },
+    { text: "Terms and conditions…" },
+  ];
+  assert.deepEqual(barcodeSectionPages(pages), [PAGE_ONE, PAGE_TWO]);
+});
+
+test("barcodeSectionPages — a lone header page still works; no section → none", () => {
+  assert.deepEqual(barcodeSectionPages([{ text: "x" }, { text: PAGE_ONE }]), [PAGE_ONE]);
+  assert.deepEqual(barcodeSectionPages([{ text: "no barcodes here" }, {}]), []);
+});
+
+test("barcodeSectionPages — a stray later page is never spliced into the run", () => {
+  // The run is contiguous, so an appendix mentioning "- Barcodes" pages away
+  // can't graft itself on and inject rows from somewhere else in the document.
+  const stray = { text: "Appendix - Barcodes (see above)" };
+  const pages = [{ text: PAGE_ONE }, { text: "Signatures…" }, stray];
+  assert.deepEqual(barcodeSectionPages(pages), [PAGE_ONE]);
+});
+
+test("parseBarcodeItems — a style past the page break resolves", () => {
+  // Joining the section's pages must keep the item stream continuous: the
+  // section opened at the foot of page 1 carries on at the top of page 2, and
+  // PTQ22222 (page 2 only) must be selectable with its own carton.
+  const raw = barcodeSectionPages([{ text: PAGE_ONE }, { text: PAGE_TWO }]).join("\n");
+  const items = parseBarcodeItems(raw);
+
+  const sel = selectStyleItems(items, { styleNumber: "PTQ22222" });
+  assert.equal(sel.kind, "styleNumber");
+  assert.deepEqual(
+    variantsWithSectionCarton(sel.items).map((v) => v.ean13),
+    ["3333333333334", "4444444444445"],
+  );
+  assert.equal(cartonEanFor(sel.items, items), "5555555555556");
+
+  // The section straddling the break keeps its continuation's ASS carton.
+  const first = selectStyleItems(items, { styleNumber: "PTQ11111" });
+  assert.equal(cartonEanFor(first.items, items), "2222222222223");
+
+  // The page footer is noise — it must not open an item of its own. Two
+  // sections per style is the PO's own shape (it repeats the "No." header line
+  // above the ASS row), not an artefact of joining the pages.
+  assert.deepEqual(
+    items.map((i) => i.styleNumber),
+    ["PTQ11111", "PTQ11111", "PTQ22222", "PTQ22222"],
+  );
 });
