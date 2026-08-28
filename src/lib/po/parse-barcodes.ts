@@ -123,6 +123,29 @@ function leadingStyleNumber(desc: string): string | null {
   return token;
 }
 
+const RE_BARCODE_HEADER = /barcode\s*ean/i; // the "Barcode EAN" column header
+const RE_BARCODE_FOOTER = /-\s*Barcodes/i; // "Purchase Order C-PO63418 - Barcodes"
+
+// The Barcodes section can span SEVERAL PDF pages — a PO lists one section per
+// style, so a long one spills over the page break. Only the section's FIRST
+// page repeats the column header; every page of it carries the "… - Barcodes"
+// footer. So start at the same page the old single-page pick chose (header
+// page, else footer page) and extend forward while pages still look like the
+// section, then join. Reading only that first page silently truncated the PO:
+// every style listed past the break parsed as absent and resolved to
+// STYLE_NOT_IN_PO. The run is kept CONTIGUOUS so a stray later page whose text
+// happens to match can never be spliced in.
+export function barcodeSectionPages(pages: Array<{ text?: string }>): string[] {
+  const texts = pages.map((p) => p.text ?? "");
+  const isSection = (t: string) => RE_BARCODE_HEADER.test(t) || RE_BARCODE_FOOTER.test(t);
+  let start = texts.findIndex((t) => RE_BARCODE_HEADER.test(t));
+  if (start < 0) start = texts.findIndex((t) => RE_BARCODE_FOOTER.test(t));
+  if (start < 0) return [];
+  let end = start;
+  while (end + 1 < texts.length && isSection(texts[end + 1])) end += 1;
+  return texts.slice(start, end + 1);
+}
+
 export async function parsePoBarcodes(pdf: Buffer): Promise<ParsedPo> {
   const parser = new PDFParse({ data: new Uint8Array(pdf) });
   try {
@@ -130,10 +153,8 @@ export async function parsePoBarcodes(pdf: Buffer): Promise<ParsedPo> {
     const fullText = result.text ?? "";
     const pages: Array<{ text?: string }> =
       (result as { pages?: Array<{ text?: string }> }).pages ?? [];
-    const page =
-      pages.find((p) => /barcode\s*ean/i.test(p.text ?? "")) ??
-      pages.find((p) => /-\s*Barcodes/i.test(p.text ?? ""));
-    const raw = page?.text ?? "";
+    const sectionPages = barcodeSectionPages(pages);
+    const raw = sectionPages.join("\n");
 
     const poNumber =
       raw.match(/Purchase Order\s+(C-\S+?)\s*-\s*Barcodes/i)?.[1] ??
@@ -150,7 +171,7 @@ export async function parsePoBarcodes(pdf: Buffer): Promise<ParsedPo> {
       diagnostics: {
         pageCount: pages.length,
         fullTextLength: fullText.length,
-        barcodePageFound: Boolean(page),
+        barcodePageFound: sectionPages.length > 0,
         ean13TokensInFullText: ean13Distinct.size,
         textSnippet: (raw || fullText).slice(0, 600),
       },
