@@ -45,6 +45,7 @@ import {
 } from "@/lib/output-layouts/token-meta";
 import { validateCalcExpression } from "@/lib/output-layouts/calc";
 import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
+import { canvasScale, CANVAS_BUDGET_PX } from "@/lib/output-layouts/canvas-scale";
 import { PreviewFrame } from "@/components/output-preview";
 import { OutputRulesEditor, type RuleFieldOption } from "@/components/output-rules-editor";
 import { TokenAutocomplete, buildTokenSuggestions } from "@/components/token-autocomplete";
@@ -69,6 +70,20 @@ import { TokenAutocomplete, buildTokenSuggestions } from "@/components/token-aut
 const AUTOSAVE_MS = 1200;
 const PREVIEW_DEBOUNCE_MS = 600;
 const PT_TO_MM = 25.4 / 72;
+
+// ---- three-pane shell --------------------------------------------------
+// Drag limits, and the widths the panes open at.
+const PANE_LIMITS = {
+  left: { min: 56, max: 420, initial: 208 },
+  right: { min: 260, max: 720, initial: 336 },
+} as const;
+const PANES_KEY = "output-builder:panes:v1";
+
+// Keep a dragged pane inside its limits.
+function clampPane(side: "left" | "right", px: number): number {
+  const { min, max } = PANE_LIMITS[side];
+  return Math.round(Math.min(max, Math.max(min, px)));
+}
 
 // mm input accepts a comma OR dot decimal ("7,5" → 7.5).
 function parseMm(raw: string): number {
@@ -311,6 +326,21 @@ export function LayoutEditor({
   const expandedTaRef = useRef<HTMLTextAreaElement>(null);
   const [expandedFor, setExpandedFor] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+
+  // ---- the three-pane shell ---------------------------------------------
+  // Pane widths live on the shell element as CSS variables rather than in
+  // state: a drag then costs one style write instead of re-rendering the
+  // whole editor, and the value survives a reload per browser.
+  const shellRef = useRef<HTMLDivElement>(null);
+  const canvasHostRef = useRef<HTMLDivElement>(null);
+  // Width to restore the pages rail to after it has been folded away.
+  const railRestoreRef = useRef<number>(PANE_LIMITS.left.initial);
+  const [viewMode, setViewMode] = useState<"design" | "split" | "proof">("split");
+  const [inspectorTab, setInspectorTab] = useState<"block" | "variables" | "page" | "layout">("block");
+  // Room the canvas column actually has, so the drawn page shrinks to fit a
+  // narrowed pane instead of overflowing it. Starts at the historic 560 px
+  // budget, so nothing moves until the observer reports.
+  const [canvasAvailW, setCanvasAvailW] = useState(CANVAS_BUDGET_PX);
   const firstRender = useRef(true);
   // Keeps the operator's picked test style selected across the background
   // re-ranks the test-styles effect fires while you edit. A ref (not a dep)
@@ -952,6 +982,39 @@ export function LayoutEditor({
     setHoverBlock(null);
   }, [pageIdx]);
 
+  // Restore the remembered pane widths once, straight onto the element —
+  // reading storage during render would disagree with the server HTML.
+  useEffect(() => {
+    const el = shellRef.current;
+    if (!el) return;
+    try {
+      const raw = window.localStorage.getItem(PANES_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { left?: number; right?: number };
+      for (const side of ["left", "right"] as const) {
+        const w = saved[side];
+        if (typeof w === "number" && Number.isFinite(w)) {
+          el.style.setProperty(`--ob-${side}`, `${clampPane(side, w)}px`);
+        }
+      }
+    } catch {
+      // unreadable or corrupt — the CSS defaults stand
+    }
+  }, []);
+
+  // Keep the drawn page inside whatever width the canvas column has.
+  useEffect(() => {
+    const el = canvasHostRef.current;
+    if (!el) return;
+    // contentRect, not clientWidth — the column carries padding and the page
+    // has to fit inside it, not inside the padding box.
+    const ro = new ResizeObserver(([entry]) => {
+      setCanvasAvailW(entry?.contentRect.width || CANVAS_BUDGET_PX);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Esc closes the guide drawer.
   useEffect(() => {
     if (!guideOpen) return;
@@ -1089,10 +1152,85 @@ export function LayoutEditor({
     }, 0);
   }
 
+  // ---- pane resizing -----------------------------------------------------
+
+  // Write a pane width to the shell and remember it. Both sides are stored
+  // together so one read restores the pair.
+  function setPaneWidth(side: "left" | "right", px: number, persist: boolean) {
+    const el = shellRef.current;
+    if (!el) return;
+    const w = clampPane(side, px);
+    el.style.setProperty(`--ob-${side}`, `${w}px`);
+    if (!persist) return;
+    try {
+      const read = (s: "left" | "right") =>
+        parseFloat(getComputedStyle(el).getPropertyValue(`--ob-${s}`)) || PANE_LIMITS[s].initial;
+      window.localStorage.setItem(PANES_KEY, JSON.stringify({ left: read("left"), right: read("right") }));
+    } catch {
+      // private mode / quota — the drag still worked, it just won't persist
+    }
+  }
+
+  // Pointer drag on a handle. The right pane measures from the shell's right
+  // edge inward, so widening it drags left.
+  function startResize(e: React.PointerEvent<HTMLDivElement>, side: "left" | "right") {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    handle.dataset.dragging = "true";
+    // Suppress text selection through CSS on the shell rather than by
+    // reaching for document.body — same effect, component-scoped.
+    shell.dataset.resizing = "true";
+    const move = (ev: PointerEvent) => {
+      const r = shell.getBoundingClientRect();
+      setPaneWidth(side, side === "left" ? ev.clientX - r.left : r.right - ev.clientX, false);
+    };
+    const end = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+      delete handle.dataset.dragging;
+      delete shell.dataset.resizing;
+      setPaneWidth(side, currentPane(side), true);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+  }
+
+  function currentPane(side: "left" | "right") {
+    const el = shellRef.current;
+    if (!el) return PANE_LIMITS[side].initial;
+    return parseFloat(getComputedStyle(el).getPropertyValue(`--ob-${side}`)) || PANE_LIMITS[side].initial;
+  }
+
+  // Double-clicking the left handle folds the pages rail down to its minimum
+  // and back to wherever it last sat.
+  function toggleRail() {
+    const { min, initial } = PANE_LIMITS.left;
+    const now = currentPane("left");
+    if (now <= min + 8) {
+      setPaneWidth("left", railRestoreRef.current || initial, true);
+      return;
+    }
+    railRestoreRef.current = now;
+    setPaneWidth("left", min, true);
+  }
+
+  // Arrow keys move a focused handle, so the panes are reachable without a
+  // pointer; shift takes bigger steps.
+  function nudgeResize(e: React.KeyboardEvent<HTMLDivElement>, side: "left" | "right") {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const step = (e.shiftKey ? 48 : 12) * (e.key === "ArrowRight" ? 1 : -1);
+    setPaneWidth(side, currentPane(side) + (side === "left" ? step : -step), true);
+  }
+
   // ---- canvas geometry ---------------------------------------------------
 
   // Cheap derived math — no memo (keeps the React Compiler happy).
-  const scale = page ? Math.min(Math.max(Math.min(560 / page.widthMm, 380 / page.heightMm), 1), 6) : 3;
+  const scale = page ? canvasScale(page.widthMm, page.heightMm, canvasAvailW) : 3;
 
   const orientation = page && page.heightMm > page.widthMm ? "portrait" : "landscape";
 
@@ -1648,10 +1786,19 @@ export function LayoutEditor({
         )}
       </div>
 
-      {/* ---------- main ---------- */}
-      <div className="grid grid-cols-1 gap-8 px-8 py-6 lg:grid-cols-[12.5rem_minmax(0,1fr)_19rem]">
-        {/* ----- left: pages ----- */}
-        <div>
+      {/* ---------- main ----------
+          Three panes with a drag handle between each: pages + blocks on the
+          left, canvas and true-render in the middle, one tabbed inspector on
+          the right. The handles write --ob-left / --ob-right straight onto
+          the shell (no re-render per pointer move) and remember the widths
+          per browser. Below lg the panes stack and the handles disappear —
+          same markup, no splitters. */}
+      <div
+        ref={shellRef}
+        className="ob-shell grid grid-cols-1 gap-8 px-8 py-6 lg:gap-0 lg:px-0 lg:py-0"
+      >
+        {/* ----- left: pages, then the blocks on the selected page ----- */}
+        <div className="ob-pane ob-rail min-w-0 lg:overflow-y-auto lg:overflow-x-hidden lg:border-r lg:border-zinc-200 lg:px-4 lg:py-4">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Pages</div>
           <div className="mt-2 flex flex-col gap-1.5">
             {def.pages.map((p, i) => (
@@ -1711,723 +1858,143 @@ export function LayoutEditor({
               + Add page
             </button>
           </div>
-
-          <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Page settings</div>
-          <div className="mt-2 space-y-3">
-            <div>
-              <label className="text-xs text-zinc-500">Title</label>
-              <input
-                type="text"
-                value={page.title}
-                onChange={(e) => updatePage({ title: e.target.value })}
-                className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm"
-              />
+          <div className="mt-6">
+          {/* Blocks on this page — a navigable list. Click a row to select
+              (far easier than hunting a tiny block on the canvas); hover to
+              flash that block's position with a blue locator ring; the row
+              ✕ deletes it. Stays in sync with the canvas selection. */}
+          <div className="rounded-lg border border-zinc-200 p-4">
+            <div className="flex items-baseline justify-between">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Blocks</div>
+              <span className="text-[11px] tabular-nums text-zinc-400">{page.blocks.length}</span>
             </div>
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <label className="text-xs text-zinc-500">Width mm</label>
-                <input
-                  type="number"
-                  min={5}
-                  max={1000}
-                  value={page.widthMm}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    if (Number.isFinite(v) && v >= 5 && v <= 1000) updatePage({ widthMm: v });
-                  }}
-                  className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm tabular-nums"
-                />
-              </div>
-              <div className="flex-1">
-                <label className="text-xs text-zinc-500">Height mm</label>
-                <input
-                  type="number"
-                  min={5}
-                  max={1000}
-                  value={page.heightMm}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    if (Number.isFinite(v) && v >= 5 && v <= 1000) updatePage({ heightMm: v });
-                  }}
-                  className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm tabular-nums"
-                />
-              </div>
-            </div>
-            <div>
-              <div className="flex items-center justify-between">
-                <label className="text-xs text-zinc-500">Margins mm</label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (marginsLinked) {
-                      setMarginsLinked(false);
-                    } else {
-                      const v = page.margins?.topMm ?? 0;
-                      updatePage({ margins: { topMm: v, rightMm: v, bottomMm: v, leftMm: v } });
-                      setMarginsLinked(true);
-                    }
-                  }}
-                  className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${
-                    marginsLinked
-                      ? "border-zinc-900 bg-zinc-900 text-white"
-                      : "border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300"
-                  }`}
-                  title={marginsLinked ? "Linked — one value for all sides. Click to edit each side." : "Per side. Click to link all sides."}
-                >
-                  {marginsLinked ? "🔗 linked" : "per side"}
-                </button>
-              </div>
-              {marginsLinked ? (
-                <input
-                  type="number"
-                  min={0}
-                  max={50}
-                  step={0.5}
-                  value={page.margins?.topMm ?? 0}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    if (Number.isFinite(v) && v >= 0 && v <= 50)
-                      updatePage({ margins: { topMm: v, rightMm: v, bottomMm: v, leftMm: v } });
-                  }}
-                  className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm tabular-nums"
-                />
-              ) : (
-                <div className="mt-1 grid grid-cols-2 gap-1.5">
-                  {(
-                    [
-                      ["topMm", "Top"],
-                      ["rightMm", "Right"],
-                      ["bottomMm", "Bottom"],
-                      ["leftMm", "Left"],
-                    ] as const
-                  ).map(([k, label]) => (
-                    <div key={k}>
-                      <label className="text-[10px] text-zinc-400">{label}</label>
-                      <input
-                        type="number"
-                        min={0}
-                        max={50}
-                        step={0.5}
-                        value={page.margins?.[k] ?? 0}
-                        onChange={(e) => {
-                          const v = Number(e.target.value);
-                          if (Number.isFinite(v) && v >= 0 && v <= 50)
-                            updatePage({
-                              margins: {
-                                ...(page.margins ?? { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 }),
-                                [k]: v,
-                              },
-                            });
+            {page.blocks.length === 0 ? (
+              <p className="mt-2 text-xs text-zinc-400">No blocks yet — drag on the grid to draw one.</p>
+            ) : (
+              <ul className="mt-2 max-h-64 space-y-0.5 overflow-y-auto pr-0.5">
+                {orderedBlocks.map((b) => {
+                  const id = blockId(b);
+                  const isSel = sel === id;
+                  const { kind, text, extra } = blockSummary(b);
+                  return (
+                    <li key={id}>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSel(id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setSel(id);
+                          }
                         }}
-                        className="w-full rounded-md border border-zinc-200 px-2 py-1 text-sm tabular-nums"
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-              <p className="mt-0.5 text-[10px] text-zinc-400">The grid (and all blocks) inset from the page edges.</p>
-            </div>
-            <div>
-              <label className="text-xs text-zinc-500">Orientation</label>
-              <div className="mt-1 flex overflow-hidden rounded-md border border-zinc-200">
-                {(["portrait", "landscape"] as const).map((o) => (
-                  <button
-                    key={o}
-                    type="button"
-                    onClick={() => setOrientation(o)}
-                    className={`flex-1 px-2 py-1 text-xs font-medium capitalize ${
-                      orientation === o ? "bg-zinc-900 text-white" : "bg-white text-zinc-500 hover:bg-zinc-50"
-                    }`}
-                  >
-                    {o}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {/* Conditional page — the certificate-page case: a page whose only
-                content is a gated mark prints blank on every style that
-                doesn't declare it. With this on, the page is left out of the
-                PDF instead. Opt-in per page: a deliberately blank page (a
-                plain back side) must keep printing as authored. */}
-            <div>
-              <label className="flex items-center gap-2 text-sm text-zinc-700">
-                <input
-                  type="checkbox"
-                  checked={!!page?.omitWhenEmpty}
-                  onChange={(e) => updatePage({ omitWhenEmpty: e.target.checked })}
-                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
-                />
-                Skip page when empty
-              </label>
-              <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-400">
-                Leaves this page out of the printed PDF when nothing on it resolves for the style — a
-                page whose only content is <span className="font-mono">{"{{cert:oekotex}}"}</span>{" "}
-                disappears on styles without OEKO-TEX instead of printing blank. Borders and guides
-                don&apos;t count as content, and the preview always shows the page.
-              </p>
-            </div>
-            {def.pages.length > 1 ? (
-              <button
-                type="button"
-                onClick={() => removePage(pageIdx)}
-                className="text-xs text-zinc-400 hover:text-red-600"
-              >
-                Remove this page
-              </button>
-            ) : null}
-          </div>
-
-          <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Grid</div>
-          <div className="mt-2 space-y-2">
-            <div className="flex items-end gap-2">
-              <div className="flex-1">
-                <label className="text-xs text-zinc-500">Cell size (mm)</label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={gridCellMm}
-                  onChange={(e) => setGridCellMm(e.target.value)}
-                  className="mt-1 w-full rounded-md border border-zinc-200 px-2 py-1.5 text-sm tabular-nums"
-                  placeholder={String(DEFAULT_GRID_CELL_MM)}
-                />
-              </div>
-              <button
-                type="button"
-                onClick={regenerateGrid}
-                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-                title="Recompute cols × rows from this cell size and remap existing blocks"
-              >
-                Regenerate
-              </button>
-            </div>
-            <p className="text-[10px] leading-relaxed text-zinc-400">
-              Current grid <span className="font-mono text-zinc-500">{grid.cols} × {grid.rows}</span>
-              {page ? (
-                <>
-                  {" "}
-                  · ≈ {(page.widthMm / grid.cols).toFixed(1)} × {(page.heightMm / grid.rows).toFixed(1)} mm per cell
-                </>
-              ) : null}
-              . Regenerate keeps existing blocks, adjusting any that no longer fit.
-            </p>
-          </div>
-
-          <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Print guides</div>
-          <div className="mt-2 space-y-3">
-            <div>
-              <div className="flex items-center justify-between">
-                <label className="text-xs text-zinc-500">Sewing lines</label>
-                <button
-                  type="button"
-                  onClick={addSewingLine}
-                  className="text-xs font-medium text-zinc-700 hover:text-zinc-900"
-                >
-                  + Add
-                </button>
-              </div>
-              {sewingLines.length === 0 ? (
-                <p className="mt-1 text-[10px] text-zinc-400">
-                  A solid rule a fixed distance from the top or bottom edge (the seam allowance).
-                </p>
-              ) : (
-                <div className="mt-1.5 space-y-1.5">
-                  {sewingLines.map((s, i) => (
-                    // Inputs remount when the list length changes (key carries it),
-                    // so an uncontrolled offset field re-reads the right value after
-                    // add/remove while still letting you type a "7,5" decimal freely.
-                    <div key={`sew-${sewingLines.length}-${i}`} className="flex items-center gap-1.5">
-                      <select
-                        value={s.edge}
-                        onChange={(e) => updateSewingLine(i, { edge: e.target.value as SewingLine["edge"] })}
-                        className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700"
+                        onMouseEnter={() => setHoverBlock(id)}
+                        onMouseLeave={() => setHoverBlock((h) => (h === id ? null : h))}
+                        onFocus={() => setHoverBlock(id)}
+                        onBlur={() => setHoverBlock((h) => (h === id ? null : h))}
+                        className={`group flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 ${
+                          isSel
+                            ? "border-zinc-900 bg-zinc-50"
+                            : "border-transparent hover:border-zinc-200 hover:bg-zinc-50"
+                        }`}
                       >
-                        <option value="top">From top</option>
-                        <option value="bottom">From bottom</option>
-                      </select>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        defaultValue={String(s.offsetMm).replace(".", ",")}
-                        onChange={(e) => {
-                          const v = parseMm(e.target.value);
-                          if (Number.isFinite(v) && v >= 0 && v <= 1000) updateSewingLine(i, { offsetMm: v });
-                        }}
-                        className="w-16 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
-                        aria-label="Offset from edge (mm)"
-                      />
-                      <span className="text-[10px] text-zinc-400">mm</span>
-                      <button
-                        type="button"
-                        onClick={() => removeSewingLine(i)}
-                        className="ml-auto text-zinc-300 hover:text-red-600"
-                        aria-label="Remove sewing line"
-                        title="Remove"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div>
-              <label className="text-xs text-zinc-500">Folding line</label>
-              <select
-                value={page?.foldLine ?? "none"}
-                onChange={(e) => setFoldLine(e.target.value as FoldLine)}
-                className="mt-1 w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-sm text-zinc-700"
-              >
-                <option value="none">Off</option>
-                <option value="horizontal">Horizontal — across centre</option>
-                <option value="vertical">Vertical — down centre</option>
-              </select>
-              <p className="mt-0.5 text-[10px] text-zinc-400">A dashed rule through the page centre.</p>
-            </div>
-
-            {/* Page border — a frame around the WHOLE page, so a design
-                doesn't need an empty full-page block just to get an
-                outline. Decorative only: no tokens, no grid cells. */}
-            <div>
-              <label className="flex items-center gap-2 text-sm text-zinc-700">
-                <input
-                  type="checkbox"
-                  checked={!!pageBorder}
-                  onChange={(e) => togglePageBorder(e.target.checked)}
-                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
-                />
-                Page border
-              </label>
-              {pageBorder ? (
-                <div className="mt-1.5 flex items-center gap-1.5">
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    defaultValue={String(pageBorder.widthMm).replace(".", ",")}
-                    onChange={(e) => {
-                      const v = parseMm(e.target.value);
-                      if (Number.isFinite(v) && v >= 0.1 && v <= 5) updatePageBorder({ widthMm: v });
-                    }}
-                    className="w-14 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
-                    aria-label="Border thickness (mm)"
-                  />
-                  <span className="text-[10px] text-zinc-400">thick</span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    defaultValue={String(pageBorder.insetMm).replace(".", ",")}
-                    onChange={(e) => {
-                      const v = parseMm(e.target.value);
-                      if (Number.isFinite(v) && v >= 0 && v <= 50) updatePageBorder({ insetMm: v });
-                    }}
-                    className="w-14 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
-                    aria-label="Inset from page edge (mm)"
-                  />
-                  <span className="text-[10px] text-zinc-400">inset</span>
-                  <input
-                    type="color"
-                    value={pageBorder.color}
-                    onChange={(e) => updatePageBorder({ color: e.target.value })}
-                    className="ml-auto h-6 w-8 cursor-pointer rounded border border-zinc-200 bg-white p-0.5"
-                    aria-label="Border colour"
-                  />
-                </div>
-              ) : (
-                <p className="mt-0.5 text-[10px] text-zinc-400">
-                  Frames the whole page — thickness, inset from the edge and colour, in mm.
-                </p>
-              )}
-              {pageBorder ? (
-                <div className="mt-1.5">
-                  <BorderSidePicker
-                    sides={effectiveBorderSides(pageBorder)}
-                    onChange={(sides) => updatePageBorder({ sides })}
-                  />
-                </div>
-              ) : null}
-            </div>
-
-            {/* Rounded corners — the die's corner radius. The page itself
-                rounds (content is clipped to the shape), and the page
-                border curves with it. 0 = square, as every page was. */}
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <label className="text-xs text-zinc-500">Rounded corners</label>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    key={`corner-${page.id}`}
-                    type="text"
-                    inputMode="decimal"
-                    defaultValue={mmText(page.cornerRadiusMm ?? 0)}
-                    onChange={(e) => {
-                      const v = parseMm(e.target.value);
-                      if (Number.isFinite(v) && v >= 0 && v <= 50)
-                        updatePage({ cornerRadiusMm: v > 0 ? v : undefined });
-                    }}
-                    className="w-16 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
-                    aria-label="Corner radius (mm)"
-                  />
-                  <span className="text-[10px] text-zinc-400">mm radius</span>
-                </div>
-              </div>
-              <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-400">
-                The corner radius of the cut. 0 = square. Content is clipped to the rounded shape, so a
-                block that runs into a corner prints the same curve the cutter makes — and the page border
-                curves with it.
-              </p>
-              {/* The die is invisible on a printed rectangle unless something
-                  draws it, so a rounded page gets a red cut line by default.
-                  Only offered where there IS a radius. */}
-              {(page.cornerRadiusMm ?? 0) > 0 ? (
-                <>
-                  <label className="mt-1.5 flex items-center gap-2 text-sm text-zinc-700">
-                    <input
-                      type="checkbox"
-                      checked={page.cutLine !== false}
-                      onChange={(e) => updatePage({ cutLine: e.target.checked })}
-                      className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
-                    />
-                    Show cut line
-                  </label>
-                  <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-400">
-                    Traces the die in red dashes so the curve is visible in print — the printed sheet is a
-                    rectangle, so without it a rounded page comes out square. Turn it off when the artwork
-                    already shows the curve (full-bleed colour, or a page border flush to the edge).
-                  </p>
-                </>
-              ) : null}
-            </div>
-
-            {/* Centre hole — the die-cut hang hole. Always centred across
-                the page; the offset places its CENTRE from the chosen
-                edge. Drawn as a dashed circle on the canvas and in the
-                true render so content can be kept clear of the punch. */}
-            <div>
-              <label className="flex items-center gap-2 text-sm text-zinc-700">
-                <input
-                  type="checkbox"
-                  checked={!!centerHole}
-                  onChange={(e) => toggleCenterHole(e.target.checked)}
-                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
-                />
-                Centre hole
-              </label>
-              {centerHole ? (
-                <>
-                  <div className="mt-1.5 flex items-center gap-1.5">
-                    {/* Uncontrolled so a "7,5" decimal can be typed freely;
-                        keyed by page so switching pages re-seeds them. */}
-                    <input
-                      key={`hole-d-${page.id}`}
-                      type="text"
-                      inputMode="decimal"
-                      defaultValue={mmText(centerHole.diameterMm)}
-                      onChange={(e) => {
-                        const v = parseMm(e.target.value);
-                        if (Number.isFinite(v) && v >= 0.5 && v <= 100) updateCenterHole({ diameterMm: v });
-                      }}
-                      className="w-14 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
-                      aria-label="Hole diameter (mm)"
-                    />
-                    <span className="text-[10px] text-zinc-400">Ø mm</span>
-                    <select
-                      value={centerHole.edge}
-                      onChange={(e) => updateCenterHole({ edge: e.target.value as CenterHole["edge"] })}
-                      className="ml-auto rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700"
-                    >
-                      <option value="top">From top</option>
-                      <option value="bottom">From bottom</option>
-                    </select>
-                    <input
-                      key={`hole-o-${page.id}`}
-                      type="text"
-                      inputMode="decimal"
-                      defaultValue={mmText(centerHole.offsetMm)}
-                      onChange={(e) => {
-                        const v = parseMm(e.target.value);
-                        if (Number.isFinite(v) && v >= 0 && v <= 1000) updateCenterHole({ offsetMm: v });
-                      }}
-                      className="w-14 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
-                      aria-label="Distance from the edge to the hole centre (mm)"
-                    />
-                    <span className="text-[10px] text-zinc-400">mm</span>
-                  </div>
-                  <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
-                    Measured to the hole&rsquo;s <b className="font-medium text-zinc-500">centre</b> —{" "}
-                    {mmText(Math.max(0, centerHole.offsetMm - centerHole.diameterMm / 2))} mm of clear
-                    stock between the {centerHole.edge} edge and the punch.
-                  </p>
-                </>
-              ) : (
-                <p className="mt-0.5 text-[10px] text-zinc-400">
-                  A punched hang hole, centred across the page — diameter in mm and the distance from the
-                  top or bottom edge. Printed as a dashed guide, like the sewing and fold lines.
-                </p>
-              )}
-            </div>
+                        {kind ? (
+                          <span className="shrink-0 rounded bg-zinc-100 px-1 py-px text-[9px] font-medium uppercase tracking-wide text-zinc-500">
+                            {kind}
+                          </span>
+                        ) : null}
+                        <span className={`min-w-0 flex-1 truncate text-xs ${isSel ? "text-zinc-900" : "text-zinc-600"}`}>
+                          {text}
+                        </span>
+                        {extra > 0 ? (
+                          <span className="shrink-0 text-[10px] text-zinc-300" title={`${extra + 1} lines`}>
+                            +{extra}
+                          </span>
+                        ) : null}
+                        {b.rect ? (
+                          <span className="shrink-0 font-mono text-[10px] text-zinc-300 group-hover:hidden">
+                            R{b.rect.row + 1}·C{b.rect.col + 1}
+                          </span>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeBlock(id);
+                          }}
+                          className="hidden h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] leading-none text-zinc-300 hover:bg-red-50 hover:text-red-600 group-hover:flex"
+                          title="Delete this block"
+                          aria-label="Delete block"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
-
-          <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Settings</div>
-          <div className="mt-2 space-y-3">
-            <div>
-              <label className="text-xs text-zinc-500">Repeat output</label>
-              <select
-                value={settings.repeatBy}
-                onChange={(e) => updateSettings({ repeatBy: e.target.value as LayoutSettings["repeatBy"] })}
-                className="mt-1 w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-sm text-zinc-700"
-              >
-                <option value="none">Don&apos;t repeat</option>
-                <option value="size">Per size</option>
-                <option value="ean">Per EAN (size × colour)</option>
-                <option value="assort">Per assortment EAN</option>
-                <option value="cartonEan">Per carton EAN (per size + assort)</option>
-                <option value="cartonEanSizeOnly">Per carton EAN (size only)</option>
-              </select>
-              {settings.repeatBy !== "none" ? (
-                <p className="mt-1.5 break-words font-mono text-[10px] leading-relaxed text-zinc-400">
-                  {repeatValues.length > 0 ? (
-                    <>
-                      <span className="font-sans font-medium text-zinc-500">
-                        {repeatValues.length} repetition{repeatValues.length === 1 ? "" : "s"}:{" "}
-                      </span>
-                      {repeatValues.join(", ")}
-                    </>
-                  ) : (
-                    "No sizes on the selected test style — output renders once."
-                  )}
-                </p>
-              ) : null}
-            </div>
-            {settings.repeatBy !== "none" ? (
-              <div>
-                <label className="text-xs text-zinc-500">Output files</label>
-                <select
-                  value={settings.splitBy}
-                  onChange={(e) => updateSettings({ splitBy: e.target.value as LayoutSettings["splitBy"] })}
-                  className="mt-1 w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-sm text-zinc-700"
-                >
-                  <option value="ean">One PDF per EAN</option>
-                  <option value="none">One single PDF (all repetitions inside)</option>
-                </select>
-                {repeatValues.length > 0 ? (
-                  <p className="mt-1 text-[10px] text-zinc-400">
-                    {settings.splitBy === "ean"
-                      ? `→ ${repeatValues.length} file${repeatValues.length === 1 ? "" : "s"}, each containing only its own EAN`
-                      : `→ 1 file containing all ${repeatValues.length} repetition${repeatValues.length === 1 ? "" : "s"}`}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-            <div>
-              <label className="text-xs text-zinc-500">Output file name</label>
-              <input
-                type="text"
-                value={settings.fileName}
-                onChange={(e) => updateSettings({ fileName: e.target.value })}
-                placeholder="{{styleNumber}}-{{size}}-sticker"
-                className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 font-mono text-xs"
-                spellCheck={false}
-              />
-              <p className="mt-1 text-[10px] text-zinc-400">
-                {settings.fileName ? (
-                  resolvedFileName ? (
-                    <>
-                      → <span className="font-mono text-emerald-700">{resolvedFileName}</span>
-                    </>
-                  ) : (
-                    "Resolving…"
-                  )
-                ) : settings.repeatBy !== "none" && settings.splitBy === "ean" ? (
-                  "Variables allowed — {{size}}/{{ean13}}/{{colourName}} name EACH file (one per EAN)"
-                ) : (
-                  "Text variables allowed · empty = default name"
-                )}
-              </p>
-
-              {/* Preset library — shared across layouts (AppSetting), grown
-                  by whoever needs a new convention. Clicking one pastes its
-                  pattern into the field above; nothing is applied silently. */}
-              <div className="mt-2 rounded-md border border-zinc-100 bg-zinc-50/70 p-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">Presets</span>
-                  <button
-                    type="button"
-                    onClick={saveFileNamePreset}
-                    disabled={presetBusy || !settings.fileName.trim()}
-                    className="text-[11px] font-medium text-zinc-700 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300"
-                    title={
-                      settings.fileName.trim()
-                        ? "Save the current file name as a reusable preset"
-                        : "Type a file name first"
-                    }
-                  >
-                    + Save current
-                  </button>
-                </div>
-                {fileNamePresets.length === 0 ? (
-                  <p className="mt-1 text-[10px] text-zinc-400">
-                    No presets yet — type a file name and save it to reuse it on other layouts.
-                  </p>
-                ) : (
-                  <div className="mt-1.5 space-y-1">
-                    {fileNamePresets.map((p) => {
-                      const active = settings.fileName === p.pattern;
-                      return (
-                        <div key={p.id} className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => updateSettings({ fileName: p.pattern })}
-                            className={`min-w-0 flex-1 rounded border px-1.5 py-1 text-left ${
-                              active
-                                ? "border-zinc-300 bg-white"
-                                : "border-transparent hover:border-zinc-200 hover:bg-white"
-                            }`}
-                            title={p.pattern}
-                          >
-                            <span className="block truncate text-[11px] text-zinc-700">{p.label}</span>
-                            <span className="block truncate font-mono text-[10px] text-zinc-400">{p.pattern}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteFileNamePreset(p)}
-                            disabled={presetBusy}
-                            className="text-zinc-300 hover:text-red-600 disabled:hover:text-zinc-300"
-                            aria-label={`Remove preset ${p.label}`}
-                            title="Remove preset"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Carton numbering (X/Y) — eligibility only; standard
-                generation is untouched. Surfaces the {{cartonNo}} /
-                {{cartonTotal}} tokens and the Style-page "Carton numbers…"
-                action. */}
-            <div className="border-t border-zinc-100 pt-3">
-              <label className="flex items-center gap-2 text-sm text-zinc-700">
-                <input
-                  type="checkbox"
-                  checked={settings.cartonNumbering}
-                  onChange={(e) => updateSettings({ cartonNumbering: e.target.checked })}
-                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
-                />
-                Carton numbering (X/Y)
-              </label>
-              <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
-                Lets operators print a numbered set (1/N … N/N) from the Style page. Place{" "}
-                <code className="rounded bg-zinc-100 px-1">{"{{cartonNo}}"}</code> /{" "}
-                <code className="rounded bg-zinc-100 px-1">{"{{cartonTotal}}"}</code> on the label.
-              </p>
-              {settings.cartonNumbering && !usesCartonTokens ? (
-                <p className="mt-1.5 rounded-md bg-amber-50 px-2 py-1 text-[10px] leading-relaxed text-amber-700">
-                  ⚠ This layout doesn’t use {"{{cartonNo}}"}/{"{{cartonTotal}}"} yet — numbered prints
-                  would show no number.
-                </p>
-              ) : null}
-            </div>
-
-            {/* Multiple styles (Custom Carton Marking) — INDEPENDENT of
-                carton numbering. Eligibility only; standard generation stays
-                single-style. Surfaces the {{style2}}… slots + {{multipleStyles}}
-                and lets the Style-page carton dialog pick same-PO siblings. */}
-            <div className="border-t border-zinc-100 pt-3">
-              <label className="flex items-center gap-2 text-sm text-zinc-700">
-                <input
-                  type="checkbox"
-                  checked={settings.multipleStyles}
-                  onChange={(e) => updateSettings({ multipleStyles: e.target.checked })}
-                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
-                />
-                Multiple styles on the box
-              </label>
-              <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
-                Lets operators place OTHER styles from the same PO on the box (a manual one-off).
-                Branch with{" "}
-                <code className="rounded bg-zinc-100 px-1">{"{{if multipleStyles == true}}"}</code>{" "}
-                and place{" "}
-                <code className="rounded bg-zinc-100 px-1">{"{{style2}}"}</code> /{" "}
-                <code className="rounded bg-zinc-100 px-1">{"{{style2Number}}"}</code> slots.
-              </p>
-            </div>
-
-            {/* Custom logo — appears only when the design uses
-                {{logo:custom}}. Uploaded per layout (not global); printed at
-                a % of its block width, height auto. */}
-            {usesCustomLogo ? (
-              <div className="border-t border-zinc-100 pt-3">
-                <div className="text-sm text-zinc-700">
-                  Custom logo <span className="font-mono text-[11px] text-zinc-400">{"{{logo:custom}}"}</span>
-                </div>
-                <div className="mt-2 flex items-center gap-2">
-                  {customLogo ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={customLogo}
-                      alt="Custom logo"
-                      className="h-8 w-auto max-w-[7rem] rounded border border-zinc-200 bg-white object-contain p-0.5"
-                    />
-                  ) : (
-                    <span className="text-[11px] text-zinc-400">none uploaded</span>
-                  )}
-                  <label
-                    className={`cursor-pointer rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 ${
-                      logoBusy ? "opacity-50" : ""
-                    }`}
-                  >
-                    {customLogo ? "Replace" : "Upload (SVG/PNG/JPG)"}
-                    <input
-                      type="file"
-                      accept="image/svg+xml,image/png,image/jpeg"
-                      className="hidden"
-                      disabled={logoBusy}
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) void uploadCustomLogo(f);
-                        e.target.value = "";
-                      }}
-                    />
-                  </label>
-                  {customLogo ? (
-                    <button
-                      type="button"
-                      onClick={() => void removeCustomLogo()}
-                      disabled={logoBusy}
-                      className="text-xs text-zinc-400 hover:text-red-600 disabled:opacity-50"
-                    >
-                      Remove
-                    </button>
-                  ) : null}
-                </div>
-                {logoError ? <p className="mt-1 text-[10px] text-red-600">{logoError}</p> : null}
-
-                <div className="mt-3">
-                  <div className="flex items-baseline justify-between">
-                    <label className="text-xs text-zinc-500">Logo width</label>
-                    <span className="font-mono text-[11px] text-zinc-400">{settings.customLogoWidthPct}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={100}
-                    step={1}
-                    value={settings.customLogoWidthPct}
-                    onChange={(e) => updateSettings({ customLogoWidthPct: Number(e.target.value) })}
-                    className="mt-1 w-full accent-zinc-900"
-                  />
-                  <p className="mt-0.5 text-[10px] text-zinc-400">% of the block&rsquo;s width — height scales to keep the aspect ratio.</p>
-                </div>
-              </div>
-            ) : null}
           </div>
         </div>
 
-        {/* ----- center: canvas + preview ----- */}
-        <div className="min-w-0">
+        <div
+          className="ob-grip"
+          role="separator"
+          aria-label="Resize the pages panel — double-click to fold it away"
+          aria-orientation="vertical"
+          title="Drag to resize · double-click to fold the panel away"
+          tabIndex={0}
+          onPointerDown={(e) => startResize(e, "left")}
+          onDoubleClick={() => toggleRail()}
+          onKeyDown={(e) => nudgeResize(e, "left")}
+        />
+
+        {/* ----- centre: canvas and the true render, side by side ----- */}
+        <div className="ob-pane min-w-0 lg:flex lg:flex-col lg:overflow-hidden">
+          <div className="hidden items-center gap-3 border-b border-zinc-200 px-4 py-2 lg:flex">
+            <div className="inline-flex overflow-hidden rounded-md border border-zinc-200">
+              {([
+                ["design", "Design"],
+                ["split", "Split"],
+                ["proof", "Proof"],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setViewMode(key)}
+                  title={
+                    key === "design"
+                      ? "Only the placement grid"
+                      : key === "proof"
+                        ? "Only the true render"
+                        : "The grid and the true render, side by side"
+                  }
+                  className={`px-2.5 py-1 text-xs font-medium ${
+                    viewMode === key ? "bg-zinc-900 text-white" : "text-zinc-500 hover:bg-zinc-50"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <span className="font-mono text-[11px] text-zinc-400">
+              {page.widthMm} × {page.heightMm} mm · {orientation} · grid {grid.cols} × {grid.rows}
+            </span>
+          </div>
+
+          <div
+            className={`ob-views gap-8 lg:min-h-0 lg:flex-1 lg:gap-0 lg:overflow-y-auto ${
+              viewMode === "split" ? "is-split" : ""
+            }`}
+          >
+            <div
+              ref={canvasHostRef}
+              // overflow-x-auto is the belt to the fit-scale's braces: if the
+              // page still cannot fit (a very wide label in a very narrow
+              // pane) the canvas scrolls rather than bleeding over the pane.
+              className={`min-w-0 lg:overflow-x-auto lg:px-4 lg:py-4 ${viewMode === "proof" ? "lg:hidden" : ""}`}
+            >
           <div className="flex items-baseline justify-between">
             <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Canvas</div>
             <div className="font-mono text-[11px] text-zinc-400">
@@ -2593,7 +2160,8 @@ export function LayoutEditor({
             <b className="font-medium text-zinc-500">Drag on the grid</b> to draw a block exactly where you want it ·
             click a block to edit · Del removes the selected block
           </p>
-
+            </div>
+            <div className={`min-w-0 lg:px-4 lg:py-4 ${viewMode === "design" ? "lg:hidden" : ""}`}>
           {/* true render preview */}
           <div className="mt-8">
             <div className="flex items-baseline justify-between">
@@ -2655,87 +2223,51 @@ export function LayoutEditor({
               and never print.
             </p>
           </div>
+            </div>
+          </div>
         </div>
 
-        {/* ----- right: blocks + inspector + variables ----- */}
-        <div className="space-y-5">
-          {/* Blocks on this page — a navigable list. Click a row to select
-              (far easier than hunting a tiny block on the canvas); hover to
-              flash that block's position with a blue locator ring; the row
-              ✕ deletes it. Stays in sync with the canvas selection. */}
-          <div className="rounded-lg border border-zinc-200 p-4">
-            <div className="flex items-baseline justify-between">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Blocks</div>
-              <span className="text-[11px] tabular-nums text-zinc-400">{page.blocks.length}</span>
-            </div>
-            {page.blocks.length === 0 ? (
-              <p className="mt-2 text-xs text-zinc-400">No blocks yet — drag on the grid to draw one.</p>
-            ) : (
-              <ul className="mt-2 max-h-64 space-y-0.5 overflow-y-auto pr-0.5">
-                {orderedBlocks.map((b) => {
-                  const id = blockId(b);
-                  const isSel = sel === id;
-                  const { kind, text, extra } = blockSummary(b);
-                  return (
-                    <li key={id}>
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => setSel(id)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            setSel(id);
-                          }
-                        }}
-                        onMouseEnter={() => setHoverBlock(id)}
-                        onMouseLeave={() => setHoverBlock((h) => (h === id ? null : h))}
-                        onFocus={() => setHoverBlock(id)}
-                        onBlur={() => setHoverBlock((h) => (h === id ? null : h))}
-                        className={`group flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 ${
-                          isSel
-                            ? "border-zinc-900 bg-zinc-50"
-                            : "border-transparent hover:border-zinc-200 hover:bg-zinc-50"
-                        }`}
-                      >
-                        {kind ? (
-                          <span className="shrink-0 rounded bg-zinc-100 px-1 py-px text-[9px] font-medium uppercase tracking-wide text-zinc-500">
-                            {kind}
-                          </span>
-                        ) : null}
-                        <span className={`min-w-0 flex-1 truncate text-xs ${isSel ? "text-zinc-900" : "text-zinc-600"}`}>
-                          {text}
-                        </span>
-                        {extra > 0 ? (
-                          <span className="shrink-0 text-[10px] text-zinc-300" title={`${extra + 1} lines`}>
-                            +{extra}
-                          </span>
-                        ) : null}
-                        {b.rect ? (
-                          <span className="shrink-0 font-mono text-[10px] text-zinc-300 group-hover:hidden">
-                            R{b.rect.row + 1}·C{b.rect.col + 1}
-                          </span>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeBlock(id);
-                          }}
-                          className="hidden h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] leading-none text-zinc-300 hover:bg-red-50 hover:text-red-600 group-hover:flex"
-                          title="Delete this block"
-                          aria-label="Delete block"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+        <div
+          className="ob-grip"
+          role="separator"
+          aria-label="Resize the inspector"
+          aria-orientation="vertical"
+          tabIndex={0}
+          onPointerDown={(e) => startResize(e, "right")}
+          onKeyDown={(e) => nudgeResize(e, "right")}
+        />
+
+        {/* ----- right: one inspector, four tabs -----
+            Same cards as before, only grouped: Block and Variables were the
+            rail's lower two, Page holds what used to be the permanent left
+            column, and Layout holds the layout-wide settings and the JSON
+            escape hatch. Nothing was dropped on the way. */}
+        <div className="ob-pane min-w-0 lg:flex lg:flex-col lg:overflow-hidden lg:border-l lg:border-zinc-200">
+          <div className="flex items-center gap-1 border-b border-zinc-200 px-2">
+            {([
+              ["block", "Block", selBlock ? null : "none selected"],
+              ["variables", "Variables", null],
+              ["page", "Page", null],
+              ["layout", "Layout", null],
+            ] as const).map(([key, label, note]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setInspectorTab(key)}
+                className={`-mb-px border-b-2 px-2.5 py-2 text-xs font-semibold ${
+                  inspectorTab === key
+                    ? "border-zinc-900 text-zinc-900"
+                    : "border-transparent text-zinc-400 hover:text-zinc-600"
+                }`}
+              >
+                {label}
+                {note ? <span className="ml-1 font-normal text-zinc-300">{note}</span> : null}
+              </button>
+            ))}
           </div>
 
+          <div className="space-y-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:p-4">
+            <div hidden={inspectorTab !== "block"}>
           <div className="rounded-lg border border-zinc-200 p-4">
             <div className="flex items-baseline justify-between">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
@@ -3149,7 +2681,8 @@ export function LayoutEditor({
               </div>
             )}
           </div>
-
+            </div>
+            <div hidden={inspectorTab !== "variables"}>
           <div className="rounded-lg border border-zinc-200 p-4">
             <div className="flex items-baseline justify-between">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Variables</div>
@@ -3462,7 +2995,722 @@ export function LayoutEditor({
               </p>
             </div>
           </div>
+            </div>
+            {/* Page — the whole of the old left column below the page list. */}
+            <div className="[&>div:first-child]:mt-0" hidden={inspectorTab !== "page"}>
+          <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Page settings</div>
+          <div className="mt-2 space-y-3">
+            <div>
+              <label className="text-xs text-zinc-500">Title</label>
+              <input
+                type="text"
+                value={page.title}
+                onChange={(e) => updatePage({ title: e.target.value })}
+                className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm"
+              />
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="text-xs text-zinc-500">Width mm</label>
+                <input
+                  type="number"
+                  min={5}
+                  max={1000}
+                  value={page.widthMm}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (Number.isFinite(v) && v >= 5 && v <= 1000) updatePage({ widthMm: v });
+                  }}
+                  className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm tabular-nums"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-zinc-500">Height mm</label>
+                <input
+                  type="number"
+                  min={5}
+                  max={1000}
+                  value={page.heightMm}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (Number.isFinite(v) && v >= 5 && v <= 1000) updatePage({ heightMm: v });
+                  }}
+                  className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm tabular-nums"
+                />
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-zinc-500">Margins mm</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (marginsLinked) {
+                      setMarginsLinked(false);
+                    } else {
+                      const v = page.margins?.topMm ?? 0;
+                      updatePage({ margins: { topMm: v, rightMm: v, bottomMm: v, leftMm: v } });
+                      setMarginsLinked(true);
+                    }
+                  }}
+                  className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${
+                    marginsLinked
+                      ? "border-zinc-900 bg-zinc-900 text-white"
+                      : "border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300"
+                  }`}
+                  title={marginsLinked ? "Linked — one value for all sides. Click to edit each side." : "Per side. Click to link all sides."}
+                >
+                  {marginsLinked ? "🔗 linked" : "per side"}
+                </button>
+              </div>
+              {marginsLinked ? (
+                <input
+                  type="number"
+                  min={0}
+                  max={50}
+                  step={0.5}
+                  value={page.margins?.topMm ?? 0}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (Number.isFinite(v) && v >= 0 && v <= 50)
+                      updatePage({ margins: { topMm: v, rightMm: v, bottomMm: v, leftMm: v } });
+                  }}
+                  className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm tabular-nums"
+                />
+              ) : (
+                <div className="mt-1 grid grid-cols-2 gap-1.5">
+                  {(
+                    [
+                      ["topMm", "Top"],
+                      ["rightMm", "Right"],
+                      ["bottomMm", "Bottom"],
+                      ["leftMm", "Left"],
+                    ] as const
+                  ).map(([k, label]) => (
+                    <div key={k}>
+                      <label className="text-[10px] text-zinc-400">{label}</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={50}
+                        step={0.5}
+                        value={page.margins?.[k] ?? 0}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          if (Number.isFinite(v) && v >= 0 && v <= 50)
+                            updatePage({
+                              margins: {
+                                ...(page.margins ?? { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 }),
+                                [k]: v,
+                              },
+                            });
+                        }}
+                        className="w-full rounded-md border border-zinc-200 px-2 py-1 text-sm tabular-nums"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="mt-0.5 text-[10px] text-zinc-400">The grid (and all blocks) inset from the page edges.</p>
+            </div>
+            <div>
+              <label className="text-xs text-zinc-500">Orientation</label>
+              <div className="mt-1 flex overflow-hidden rounded-md border border-zinc-200">
+                {(["portrait", "landscape"] as const).map((o) => (
+                  <button
+                    key={o}
+                    type="button"
+                    onClick={() => setOrientation(o)}
+                    className={`flex-1 px-2 py-1 text-xs font-medium capitalize ${
+                      orientation === o ? "bg-zinc-900 text-white" : "bg-white text-zinc-500 hover:bg-zinc-50"
+                    }`}
+                  >
+                    {o}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Conditional page — the certificate-page case: a page whose only
+                content is a gated mark prints blank on every style that
+                doesn't declare it. With this on, the page is left out of the
+                PDF instead. Opt-in per page: a deliberately blank page (a
+                plain back side) must keep printing as authored. */}
+            <div>
+              <label className="flex items-center gap-2 text-sm text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={!!page?.omitWhenEmpty}
+                  onChange={(e) => updatePage({ omitWhenEmpty: e.target.checked })}
+                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                />
+                Skip page when empty
+              </label>
+              <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-400">
+                Leaves this page out of the printed PDF when nothing on it resolves for the style — a
+                page whose only content is <span className="font-mono">{"{{cert:oekotex}}"}</span>{" "}
+                disappears on styles without OEKO-TEX instead of printing blank. Borders and guides
+                don&apos;t count as content, and the preview always shows the page.
+              </p>
+            </div>
+            {def.pages.length > 1 ? (
+              <button
+                type="button"
+                onClick={() => removePage(pageIdx)}
+                className="text-xs text-zinc-400 hover:text-red-600"
+              >
+                Remove this page
+              </button>
+            ) : null}
+          </div>
+          <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Grid</div>
+          <div className="mt-2 space-y-2">
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <label className="text-xs text-zinc-500">Cell size (mm)</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={gridCellMm}
+                  onChange={(e) => setGridCellMm(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-zinc-200 px-2 py-1.5 text-sm tabular-nums"
+                  placeholder={String(DEFAULT_GRID_CELL_MM)}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={regenerateGrid}
+                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                title="Recompute cols × rows from this cell size and remap existing blocks"
+              >
+                Regenerate
+              </button>
+            </div>
+            <p className="text-[10px] leading-relaxed text-zinc-400">
+              Current grid <span className="font-mono text-zinc-500">{grid.cols} × {grid.rows}</span>
+              {page ? (
+                <>
+                  {" "}
+                  · ≈ {(page.widthMm / grid.cols).toFixed(1)} × {(page.heightMm / grid.rows).toFixed(1)} mm per cell
+                </>
+              ) : null}
+              . Regenerate keeps existing blocks, adjusting any that no longer fit.
+            </p>
+          </div>
+          <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Print guides</div>
+          <div className="mt-2 space-y-3">
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-zinc-500">Sewing lines</label>
+                <button
+                  type="button"
+                  onClick={addSewingLine}
+                  className="text-xs font-medium text-zinc-700 hover:text-zinc-900"
+                >
+                  + Add
+                </button>
+              </div>
+              {sewingLines.length === 0 ? (
+                <p className="mt-1 text-[10px] text-zinc-400">
+                  A solid rule a fixed distance from the top or bottom edge (the seam allowance).
+                </p>
+              ) : (
+                <div className="mt-1.5 space-y-1.5">
+                  {sewingLines.map((s, i) => (
+                    // Inputs remount when the list length changes (key carries it),
+                    // so an uncontrolled offset field re-reads the right value after
+                    // add/remove while still letting you type a "7,5" decimal freely.
+                    <div key={`sew-${sewingLines.length}-${i}`} className="flex items-center gap-1.5">
+                      <select
+                        value={s.edge}
+                        onChange={(e) => updateSewingLine(i, { edge: e.target.value as SewingLine["edge"] })}
+                        className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700"
+                      >
+                        <option value="top">From top</option>
+                        <option value="bottom">From bottom</option>
+                      </select>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        defaultValue={String(s.offsetMm).replace(".", ",")}
+                        onChange={(e) => {
+                          const v = parseMm(e.target.value);
+                          if (Number.isFinite(v) && v >= 0 && v <= 1000) updateSewingLine(i, { offsetMm: v });
+                        }}
+                        className="w-16 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                        aria-label="Offset from edge (mm)"
+                      />
+                      <span className="text-[10px] text-zinc-400">mm</span>
+                      <button
+                        type="button"
+                        onClick={() => removeSewingLine(i)}
+                        className="ml-auto text-zinc-300 hover:text-red-600"
+                        aria-label="Remove sewing line"
+                        title="Remove"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="text-xs text-zinc-500">Folding line</label>
+              <select
+                value={page?.foldLine ?? "none"}
+                onChange={(e) => setFoldLine(e.target.value as FoldLine)}
+                className="mt-1 w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-sm text-zinc-700"
+              >
+                <option value="none">Off</option>
+                <option value="horizontal">Horizontal — across centre</option>
+                <option value="vertical">Vertical — down centre</option>
+              </select>
+              <p className="mt-0.5 text-[10px] text-zinc-400">A dashed rule through the page centre.</p>
+            </div>
 
+            {/* Page border — a frame around the WHOLE page, so a design
+                doesn't need an empty full-page block just to get an
+                outline. Decorative only: no tokens, no grid cells. */}
+            <div>
+              <label className="flex items-center gap-2 text-sm text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={!!pageBorder}
+                  onChange={(e) => togglePageBorder(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                />
+                Page border
+              </label>
+              {pageBorder ? (
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    defaultValue={String(pageBorder.widthMm).replace(".", ",")}
+                    onChange={(e) => {
+                      const v = parseMm(e.target.value);
+                      if (Number.isFinite(v) && v >= 0.1 && v <= 5) updatePageBorder({ widthMm: v });
+                    }}
+                    className="w-14 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                    aria-label="Border thickness (mm)"
+                  />
+                  <span className="text-[10px] text-zinc-400">thick</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    defaultValue={String(pageBorder.insetMm).replace(".", ",")}
+                    onChange={(e) => {
+                      const v = parseMm(e.target.value);
+                      if (Number.isFinite(v) && v >= 0 && v <= 50) updatePageBorder({ insetMm: v });
+                    }}
+                    className="w-14 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                    aria-label="Inset from page edge (mm)"
+                  />
+                  <span className="text-[10px] text-zinc-400">inset</span>
+                  <input
+                    type="color"
+                    value={pageBorder.color}
+                    onChange={(e) => updatePageBorder({ color: e.target.value })}
+                    className="ml-auto h-6 w-8 cursor-pointer rounded border border-zinc-200 bg-white p-0.5"
+                    aria-label="Border colour"
+                  />
+                </div>
+              ) : (
+                <p className="mt-0.5 text-[10px] text-zinc-400">
+                  Frames the whole page — thickness, inset from the edge and colour, in mm.
+                </p>
+              )}
+              {pageBorder ? (
+                <div className="mt-1.5">
+                  <BorderSidePicker
+                    sides={effectiveBorderSides(pageBorder)}
+                    onChange={(sides) => updatePageBorder({ sides })}
+                  />
+                </div>
+              ) : null}
+            </div>
+
+            {/* Rounded corners — the die's corner radius. The page itself
+                rounds (content is clipped to the shape), and the page
+                border curves with it. 0 = square, as every page was. */}
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs text-zinc-500">Rounded corners</label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    key={`corner-${page.id}`}
+                    type="text"
+                    inputMode="decimal"
+                    defaultValue={mmText(page.cornerRadiusMm ?? 0)}
+                    onChange={(e) => {
+                      const v = parseMm(e.target.value);
+                      if (Number.isFinite(v) && v >= 0 && v <= 50)
+                        updatePage({ cornerRadiusMm: v > 0 ? v : undefined });
+                    }}
+                    className="w-16 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                    aria-label="Corner radius (mm)"
+                  />
+                  <span className="text-[10px] text-zinc-400">mm radius</span>
+                </div>
+              </div>
+              <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-400">
+                The corner radius of the cut. 0 = square. Content is clipped to the rounded shape, so a
+                block that runs into a corner prints the same curve the cutter makes — and the page border
+                curves with it.
+              </p>
+              {/* The die is invisible on a printed rectangle unless something
+                  draws it, so a rounded page gets a red cut line by default.
+                  Only offered where there IS a radius. */}
+              {(page.cornerRadiusMm ?? 0) > 0 ? (
+                <>
+                  <label className="mt-1.5 flex items-center gap-2 text-sm text-zinc-700">
+                    <input
+                      type="checkbox"
+                      checked={page.cutLine !== false}
+                      onChange={(e) => updatePage({ cutLine: e.target.checked })}
+                      className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                    />
+                    Show cut line
+                  </label>
+                  <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-400">
+                    Traces the die in red dashes so the curve is visible in print — the printed sheet is a
+                    rectangle, so without it a rounded page comes out square. Turn it off when the artwork
+                    already shows the curve (full-bleed colour, or a page border flush to the edge).
+                  </p>
+                </>
+              ) : null}
+            </div>
+
+            {/* Centre hole — the die-cut hang hole. Always centred across
+                the page; the offset places its CENTRE from the chosen
+                edge. Drawn as a dashed circle on the canvas and in the
+                true render so content can be kept clear of the punch. */}
+            <div>
+              <label className="flex items-center gap-2 text-sm text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={!!centerHole}
+                  onChange={(e) => toggleCenterHole(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                />
+                Centre hole
+              </label>
+              {centerHole ? (
+                <>
+                  <div className="mt-1.5 flex items-center gap-1.5">
+                    {/* Uncontrolled so a "7,5" decimal can be typed freely;
+                        keyed by page so switching pages re-seeds them. */}
+                    <input
+                      key={`hole-d-${page.id}`}
+                      type="text"
+                      inputMode="decimal"
+                      defaultValue={mmText(centerHole.diameterMm)}
+                      onChange={(e) => {
+                        const v = parseMm(e.target.value);
+                        if (Number.isFinite(v) && v >= 0.5 && v <= 100) updateCenterHole({ diameterMm: v });
+                      }}
+                      className="w-14 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                      aria-label="Hole diameter (mm)"
+                    />
+                    <span className="text-[10px] text-zinc-400">Ø mm</span>
+                    <select
+                      value={centerHole.edge}
+                      onChange={(e) => updateCenterHole({ edge: e.target.value as CenterHole["edge"] })}
+                      className="ml-auto rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700"
+                    >
+                      <option value="top">From top</option>
+                      <option value="bottom">From bottom</option>
+                    </select>
+                    <input
+                      key={`hole-o-${page.id}`}
+                      type="text"
+                      inputMode="decimal"
+                      defaultValue={mmText(centerHole.offsetMm)}
+                      onChange={(e) => {
+                        const v = parseMm(e.target.value);
+                        if (Number.isFinite(v) && v >= 0 && v <= 1000) updateCenterHole({ offsetMm: v });
+                      }}
+                      className="w-14 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                      aria-label="Distance from the edge to the hole centre (mm)"
+                    />
+                    <span className="text-[10px] text-zinc-400">mm</span>
+                  </div>
+                  <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
+                    Measured to the hole&rsquo;s <b className="font-medium text-zinc-500">centre</b> —{" "}
+                    {mmText(Math.max(0, centerHole.offsetMm - centerHole.diameterMm / 2))} mm of clear
+                    stock between the {centerHole.edge} edge and the punch.
+                  </p>
+                </>
+              ) : (
+                <p className="mt-0.5 text-[10px] text-zinc-400">
+                  A punched hang hole, centred across the page — diameter in mm and the distance from the
+                  top or bottom edge. Printed as a dashed guide, like the sewing and fold lines.
+                </p>
+              )}
+            </div>
+          </div>
+            </div>
+            {/* Layout — settings that belong to the output, not to one page. */}
+            <div className="[&>div:first-child]:mt-0" hidden={inspectorTab !== "layout"}>
+          <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Settings</div>
+          <div className="mt-2 space-y-3">
+            <div>
+              <label className="text-xs text-zinc-500">Repeat output</label>
+              <select
+                value={settings.repeatBy}
+                onChange={(e) => updateSettings({ repeatBy: e.target.value as LayoutSettings["repeatBy"] })}
+                className="mt-1 w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-sm text-zinc-700"
+              >
+                <option value="none">Don&apos;t repeat</option>
+                <option value="size">Per size</option>
+                <option value="ean">Per EAN (size × colour)</option>
+                <option value="assort">Per assortment EAN</option>
+                <option value="cartonEan">Per carton EAN (per size + assort)</option>
+                <option value="cartonEanSizeOnly">Per carton EAN (size only)</option>
+              </select>
+              {settings.repeatBy !== "none" ? (
+                <p className="mt-1.5 break-words font-mono text-[10px] leading-relaxed text-zinc-400">
+                  {repeatValues.length > 0 ? (
+                    <>
+                      <span className="font-sans font-medium text-zinc-500">
+                        {repeatValues.length} repetition{repeatValues.length === 1 ? "" : "s"}:{" "}
+                      </span>
+                      {repeatValues.join(", ")}
+                    </>
+                  ) : (
+                    "No sizes on the selected test style — output renders once."
+                  )}
+                </p>
+              ) : null}
+            </div>
+            {settings.repeatBy !== "none" ? (
+              <div>
+                <label className="text-xs text-zinc-500">Output files</label>
+                <select
+                  value={settings.splitBy}
+                  onChange={(e) => updateSettings({ splitBy: e.target.value as LayoutSettings["splitBy"] })}
+                  className="mt-1 w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-sm text-zinc-700"
+                >
+                  <option value="ean">One PDF per EAN</option>
+                  <option value="none">One single PDF (all repetitions inside)</option>
+                </select>
+                {repeatValues.length > 0 ? (
+                  <p className="mt-1 text-[10px] text-zinc-400">
+                    {settings.splitBy === "ean"
+                      ? `→ ${repeatValues.length} file${repeatValues.length === 1 ? "" : "s"}, each containing only its own EAN`
+                      : `→ 1 file containing all ${repeatValues.length} repetition${repeatValues.length === 1 ? "" : "s"}`}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            <div>
+              <label className="text-xs text-zinc-500">Output file name</label>
+              <input
+                type="text"
+                value={settings.fileName}
+                onChange={(e) => updateSettings({ fileName: e.target.value })}
+                placeholder="{{styleNumber}}-{{size}}-sticker"
+                className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 font-mono text-xs"
+                spellCheck={false}
+              />
+              <p className="mt-1 text-[10px] text-zinc-400">
+                {settings.fileName ? (
+                  resolvedFileName ? (
+                    <>
+                      → <span className="font-mono text-emerald-700">{resolvedFileName}</span>
+                    </>
+                  ) : (
+                    "Resolving…"
+                  )
+                ) : settings.repeatBy !== "none" && settings.splitBy === "ean" ? (
+                  "Variables allowed — {{size}}/{{ean13}}/{{colourName}} name EACH file (one per EAN)"
+                ) : (
+                  "Text variables allowed · empty = default name"
+                )}
+              </p>
+
+              {/* Preset library — shared across layouts (AppSetting), grown
+                  by whoever needs a new convention. Clicking one pastes its
+                  pattern into the field above; nothing is applied silently. */}
+              <div className="mt-2 rounded-md border border-zinc-100 bg-zinc-50/70 p-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">Presets</span>
+                  <button
+                    type="button"
+                    onClick={saveFileNamePreset}
+                    disabled={presetBusy || !settings.fileName.trim()}
+                    className="text-[11px] font-medium text-zinc-700 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300"
+                    title={
+                      settings.fileName.trim()
+                        ? "Save the current file name as a reusable preset"
+                        : "Type a file name first"
+                    }
+                  >
+                    + Save current
+                  </button>
+                </div>
+                {fileNamePresets.length === 0 ? (
+                  <p className="mt-1 text-[10px] text-zinc-400">
+                    No presets yet — type a file name and save it to reuse it on other layouts.
+                  </p>
+                ) : (
+                  <div className="mt-1.5 space-y-1">
+                    {fileNamePresets.map((p) => {
+                      const active = settings.fileName === p.pattern;
+                      return (
+                        <div key={p.id} className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => updateSettings({ fileName: p.pattern })}
+                            className={`min-w-0 flex-1 rounded border px-1.5 py-1 text-left ${
+                              active
+                                ? "border-zinc-300 bg-white"
+                                : "border-transparent hover:border-zinc-200 hover:bg-white"
+                            }`}
+                            title={p.pattern}
+                          >
+                            <span className="block truncate text-[11px] text-zinc-700">{p.label}</span>
+                            <span className="block truncate font-mono text-[10px] text-zinc-400">{p.pattern}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteFileNamePreset(p)}
+                            disabled={presetBusy}
+                            className="text-zinc-300 hover:text-red-600 disabled:hover:text-zinc-300"
+                            aria-label={`Remove preset ${p.label}`}
+                            title="Remove preset"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Carton numbering (X/Y) — eligibility only; standard
+                generation is untouched. Surfaces the {{cartonNo}} /
+                {{cartonTotal}} tokens and the Style-page "Carton numbers…"
+                action. */}
+            <div className="border-t border-zinc-100 pt-3">
+              <label className="flex items-center gap-2 text-sm text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={settings.cartonNumbering}
+                  onChange={(e) => updateSettings({ cartonNumbering: e.target.checked })}
+                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                />
+                Carton numbering (X/Y)
+              </label>
+              <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
+                Lets operators print a numbered set (1/N … N/N) from the Style page. Place{" "}
+                <code className="rounded bg-zinc-100 px-1">{"{{cartonNo}}"}</code> /{" "}
+                <code className="rounded bg-zinc-100 px-1">{"{{cartonTotal}}"}</code> on the label.
+              </p>
+              {settings.cartonNumbering && !usesCartonTokens ? (
+                <p className="mt-1.5 rounded-md bg-amber-50 px-2 py-1 text-[10px] leading-relaxed text-amber-700">
+                  ⚠ This layout doesn’t use {"{{cartonNo}}"}/{"{{cartonTotal}}"} yet — numbered prints
+                  would show no number.
+                </p>
+              ) : null}
+            </div>
+
+            {/* Multiple styles (Custom Carton Marking) — INDEPENDENT of
+                carton numbering. Eligibility only; standard generation stays
+                single-style. Surfaces the {{style2}}… slots + {{multipleStyles}}
+                and lets the Style-page carton dialog pick same-PO siblings. */}
+            <div className="border-t border-zinc-100 pt-3">
+              <label className="flex items-center gap-2 text-sm text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={settings.multipleStyles}
+                  onChange={(e) => updateSettings({ multipleStyles: e.target.checked })}
+                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                />
+                Multiple styles on the box
+              </label>
+              <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
+                Lets operators place OTHER styles from the same PO on the box (a manual one-off).
+                Branch with{" "}
+                <code className="rounded bg-zinc-100 px-1">{"{{if multipleStyles == true}}"}</code>{" "}
+                and place{" "}
+                <code className="rounded bg-zinc-100 px-1">{"{{style2}}"}</code> /{" "}
+                <code className="rounded bg-zinc-100 px-1">{"{{style2Number}}"}</code> slots.
+              </p>
+            </div>
+
+            {/* Custom logo — appears only when the design uses
+                {{logo:custom}}. Uploaded per layout (not global); printed at
+                a % of its block width, height auto. */}
+            {usesCustomLogo ? (
+              <div className="border-t border-zinc-100 pt-3">
+                <div className="text-sm text-zinc-700">
+                  Custom logo <span className="font-mono text-[11px] text-zinc-400">{"{{logo:custom}}"}</span>
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  {customLogo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={customLogo}
+                      alt="Custom logo"
+                      className="h-8 w-auto max-w-[7rem] rounded border border-zinc-200 bg-white object-contain p-0.5"
+                    />
+                  ) : (
+                    <span className="text-[11px] text-zinc-400">none uploaded</span>
+                  )}
+                  <label
+                    className={`cursor-pointer rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 ${
+                      logoBusy ? "opacity-50" : ""
+                    }`}
+                  >
+                    {customLogo ? "Replace" : "Upload (SVG/PNG/JPG)"}
+                    <input
+                      type="file"
+                      accept="image/svg+xml,image/png,image/jpeg"
+                      className="hidden"
+                      disabled={logoBusy}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void uploadCustomLogo(f);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {customLogo ? (
+                    <button
+                      type="button"
+                      onClick={() => void removeCustomLogo()}
+                      disabled={logoBusy}
+                      className="text-xs text-zinc-400 hover:text-red-600 disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+                {logoError ? <p className="mt-1 text-[10px] text-red-600">{logoError}</p> : null}
+
+                <div className="mt-3">
+                  <div className="flex items-baseline justify-between">
+                    <label className="text-xs text-zinc-500">Logo width</label>
+                    <span className="font-mono text-[11px] text-zinc-400">{settings.customLogoWidthPct}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={100}
+                    step={1}
+                    value={settings.customLogoWidthPct}
+                    onChange={(e) => updateSettings({ customLogoWidthPct: Number(e.target.value) })}
+                    className="mt-1 w-full accent-zinc-900"
+                  />
+                  <p className="mt-0.5 text-[10px] text-zinc-400">% of the block&rsquo;s width — height scales to keep the aspect ratio.</p>
+                </div>
+              </div>
+            ) : null}
+          </div>
+              <div className="mt-6">
           <div className="rounded-lg border border-zinc-200 p-4">
             <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Edit as JSON</div>
             <p className="mt-1 text-[11px] text-zinc-400">
@@ -3501,6 +3749,9 @@ export function LayoutEditor({
                   </div>
                 </>
               )}
+            </div>
+          </div>
+              </div>
             </div>
           </div>
         </div>
