@@ -24,3 +24,60 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ---------------------------------------------------------------------------
+   Output Builder — the resizable three-pane editor shell.
+
+   Column widths come from --ob-left / --ob-right, which the drag handles
+   write straight onto the element (and restore from localStorage on mount),
+   so a drag never re-renders the editor. Below lg the whole thing degrades
+   to the stacked single column it has always been on a narrow screen, and
+   the handles are display:none — there is nothing to drag when the panes
+   are already full width.
+--------------------------------------------------------------------------- */
+.ob-grip {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .ob-shell {
+    /* header + tab bar + test-data strip ≈ 9.5rem; the panes scroll
+       themselves so the page as a whole stops being one long scroll. */
+    height: calc(100vh - 9.5rem);
+    min-height: 32rem;
+    grid-template-columns:
+      var(--ob-left, 13rem) 0.3125rem minmax(0, 1fr)
+      0.3125rem var(--ob-right, 21rem);
+  }
+
+  .ob-shell[data-resizing="true"] {
+    user-select: none;
+  }
+
+  .ob-grip {
+    display: block;
+    cursor: col-resize;
+    background: var(--color-zinc-200, #e4e4e7);
+    touch-action: none;
+  }
+
+  .ob-grip:hover,
+  .ob-grip:focus-visible,
+  .ob-grip[data-dragging="true"] {
+    background: var(--color-zinc-400, #a1a1aa);
+    outline: none;
+  }
+
+  /* Canvas and true render side by side when the middle pane is wide
+     enough to hold both; a narrow middle pane stacks them regardless. */
+  .ob-views.is-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 1280px) {
+  .ob-views.is-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
