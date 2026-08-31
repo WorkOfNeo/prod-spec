@@ -146,12 +146,11 @@ test("info-area shrink keeps the barcode at fixed physical size (bars exempt fro
   assert.equal(shrunk!.w, full!.w, "magnification unchanged while the block still fits 100%");
 });
 
-test("narrow block squeezes magnification down to — but not past — the 80% floor", async () => {
+test("narrow block squeezes magnification to fit", async () => {
   const style = buildSampleStyleData();
   const def = defWith("{{barcode:ean13:8}}");
-  // Topcard-license-ish 32 mm: between the ~30 mm floor (80%) and nominal
-  // (~37.5 mm) → width fits the block exactly (≈85% magnification), bar
-  // height untouched.
+  // Topcard-license-ish 32 mm, nominal ~37.5 mm → width fits the block
+  // exactly (≈85% magnification), bar height untouched.
   const fitted = imgSize(
     await renderLayoutHtml(def, style, { sizeOverrideMm: { widthMm: 32, heightMm: 24 } }),
   );
@@ -160,14 +159,15 @@ test("narrow block squeezes magnification down to — but not past — the 80% f
   assert.ok(fitted!.h > 8 && fitted!.h < 14, "bar height stays fixed while width fits");
 });
 
-test("block too narrow for 80% magnification → barcode-missing chip (blocks approval)", async () => {
+test("block narrower than the 80% GS1 floor still renders (no magnification floor enforced)", async () => {
   const style = buildSampleStyleData();
   const def = defWith("{{barcode:ean13:8}}");
-  // Hangtag/Socktag License (27.5×20 mm): 27.5 mm < the ~30 mm floor — an
-  // EAN-13 physically cannot print in-spec here, so the chip surfaces it at
-  // selection time instead of shipping an unscannable code.
+  // Hangtag/Socktag License (27.5×20 mm): 27.5 mm < the ~30 mm GS1 floor.
+  // By deliberate choice (Niels, 2026-08-31) this squeezes and prints
+  // instead of chipping — no scannability guardrail on this path.
   const html = await renderLayoutHtml(def, style, { sizeOverrideMm: { widthMm: 27.5, heightMm: 20 } });
-  assert.ok(html.includes('class="barcode-missing"'), "must render the placeholder-counted chip");
-  assert.ok(/won't scan at this size/.test(html), "chip explains the problem");
-  assert.ok(!/<img[^>]*src="data:image\/png/.test(html), "no unscannable barcode image ships");
+  assert.ok(!html.includes('class="barcode-missing"'), "renders the symbol instead of a placeholder chip");
+  const size = imgSize(html);
+  assert.ok(size, "barcode image renders");
+  assert.ok(Math.abs(size!.w - 27.5) < 0.05, `width was ${size!.w}mm, expected 27.5mm (block-fitted)`);
 });
