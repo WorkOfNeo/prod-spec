@@ -305,6 +305,11 @@ export function LayoutEditor({
   const [jsonError, setJsonError] = useState<string | null>(null);
 
   const contentTaRef = useRef<HTMLTextAreaElement>(null);
+  // The same block content, opened wide over the page (see "Expand"). Held
+  // as the block's id rather than a flag, so deleting that block or picking
+  // another one closes it without a synchronising effect.
+  const expandedTaRef = useRef<HTMLTextAreaElement>(null);
+  const [expandedFor, setExpandedFor] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const firstRender = useRef(true);
   // Keeps the operator's picked test style selected across the background
@@ -322,6 +327,12 @@ export function LayoutEditor({
 
   const page: LayoutPage | undefined = def.pages[pageIdx];
   const selBlock = page?.blocks.find((b) => blockId(b) === sel) ?? null;
+  // The wide editor is open only for the block it was opened on — so it
+  // follows the selection out rather than re-opening on the next block.
+  const contentExpanded = selBlock !== null && expandedFor === sel;
+  // While it's up it owns the cursor, so the B/I buttons and the palette
+  // chips must aim at it instead of the rail's textarea.
+  const activeContentTa = () => (contentExpanded ? expandedTaRef.current : contentTaRef.current);
   const testStyle = styles[styleIdx] ?? null;
   // The current page's placement grid (cols×rows) — stored, or the legacy
   // 12×12 default. Drives the canvas overlay, drawing and block geometry.
@@ -866,7 +877,11 @@ export function LayoutEditor({
             layoutId: layout.id,
             styleId: testStyle?.id,
             pageIndex: pageIdx,
-            includeTokenValues: showValues,
+            // Always resolved: the palette's "Show values" toggle gates the
+            // display, and the autocomplete's detail pane wants them whether
+            // or not that box is ticked. Pure in-memory work on the style
+            // the preview already loaded — no extra queries.
+            includeTokenValues: true,
             valuesLang: langSel,
             // Only when eligible — otherwise the carton tokens stay
             // unresolved in the preview, which is the honest default.
@@ -905,7 +920,6 @@ export function LayoutEditor({
     stylesSettled,
     testStyle?.id,
     pageIdx,
-    showValues,
     langSel,
     settings.cartonNumbering,
     cartonPreviewNo,
@@ -947,6 +961,27 @@ export function LayoutEditor({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [guideOpen]);
+
+  // Esc closes the expanded content editor — but the autocomplete claims Esc
+  // first to dismiss its own menu, so a consumed key is left alone and the
+  // second press closes the editor.
+  useEffect(() => {
+    if (!contentExpanded) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.defaultPrevented) setExpandedFor(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [contentExpanded]);
+
+  // Hand the cursor to the wide editor when it opens, at the end of the text.
+  useEffect(() => {
+    if (!contentExpanded) return;
+    const el = expandedTaRef.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [contentExpanded]);
 
   // ---- actions -----------------------------------------------------------
 
@@ -1011,7 +1046,7 @@ export function LayoutEditor({
   // Wrap the textarea selection with inline markers (**bold** / _italic_).
   function wrapSelection(marker: string) {
     if (!selBlock) return;
-    const ta = contentTaRef.current;
+    const ta = activeContentTa();
     if (!ta) return;
     const text = selBlock.lines.join("\n");
     const start = ta.selectionStart ?? 0;
@@ -1021,7 +1056,7 @@ export function LayoutEditor({
     updateBlock(blockId(selBlock), { lines: next.split("\n").slice(0, 100) });
     const caret = start + marker.length + selected.length + marker.length;
     window.setTimeout(() => {
-      const el = contentTaRef.current;
+      const el = activeContentTa();
       if (el) {
         el.focus();
         el.setSelectionRange(caret, caret);
@@ -1031,7 +1066,7 @@ export function LayoutEditor({
 
   function insertToken(token: string) {
     if (!selBlock || !page) return;
-    const ta = contentTaRef.current;
+    const ta = activeContentTa();
     const text = selBlock.lines.join("\n");
     let next: string;
     let caret: number;
@@ -1046,7 +1081,7 @@ export function LayoutEditor({
     }
     updateBlock(blockId(selBlock), { lines: next.split("\n").slice(0, 100) });
     window.setTimeout(() => {
-      const el = contentTaRef.current;
+      const el = activeContentTa();
       if (el) {
         el.focus();
         el.setSelectionRange(caret, caret);
@@ -1323,6 +1358,109 @@ export function LayoutEditor({
               title="Output Builder guide"
               className="min-h-0 flex-1 border-0"
             />
+          </div>
+        </div>
+      ) : null}
+
+      {/* ---------- expanded content editor ----------
+          The same block content the rail edits, given the width of the page
+          with the true render beside it. Everything here writes straight
+          through updateBlock, so closing it discards nothing. */}
+      {contentExpanded && selBlock ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Content editor"
+          onClick={() => setExpandedFor(null)}
+        >
+          <div
+            className="flex h-full max-h-[88vh] w-full max-w-[64rem] flex-col rounded-lg border border-zinc-200 bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-wrap items-center gap-3 border-b border-zinc-200 px-5 py-3">
+              <div className="text-sm font-semibold tracking-tight text-zinc-900">
+                Content — one line per printed row
+              </div>
+              <span className="truncate font-mono text-[11px] text-zinc-400">
+                {blockSummary(selBlock).text || "empty block"}
+              </span>
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => wrapSelection("**")}
+                  className="rounded border border-zinc-200 px-2 py-1 text-xs font-bold text-zinc-600 hover:bg-zinc-50"
+                  title="Bold — wraps the selection in ** **"
+                >
+                  B
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => wrapSelection("_")}
+                  className="rounded border border-zinc-200 px-2 py-1 text-xs italic text-zinc-600 hover:bg-zinc-50"
+                  title="Italic — wraps the selection in _ _"
+                >
+                  I
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExpandedFor(null)}
+                  aria-label="Close the expanded editor"
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-px overflow-auto bg-zinc-200 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+              <div className="flex min-h-0 flex-col gap-1 bg-white p-4">
+                <TokenAutocomplete
+                  ref={expandedTaRef}
+                  value={selBlock.lines.join("\n")}
+                  onValueChange={(v) => updateBlock(blockId(selBlock), { lines: v.split("\n").slice(0, 100) })}
+                  suggestions={tokenSuggestions}
+                  values={tokenValues}
+                  valuesFrom={testStyle?.name}
+                  rows={18}
+                  spellCheck={false}
+                  className="h-[52vh] min-h-64 w-full resize-y rounded-md border border-zinc-200 px-3 py-2 font-mono text-sm leading-relaxed"
+                />
+                <p className="text-[11px] text-zinc-400">
+                  Type <code className="rounded bg-zinc-100 px-1">{"{{"}</code> for variable autofill · **bold** and
+                  _italic_ render in the print · <kbd className="rounded border border-zinc-200 px-1">esc</kbd> closes.
+                  Edits save exactly as they do in the panel.
+                </p>
+              </div>
+
+              <div className="flex min-h-0 flex-col gap-2 overflow-auto bg-white p-4">
+                <div className="flex items-baseline justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                    Print preview{previewSample ? " · sample data" : testStyle ? ` · ${testStyle.name}` : ""}
+                  </div>
+                  {unresolved.length > 0 ? (
+                    <span className="text-[11px] text-amber-700">{unresolved.length} unresolved</span>
+                  ) : previewHtml ? (
+                    <span className="text-[11px] text-emerald-700">all resolved</span>
+                  ) : null}
+                </div>
+                {previewHtml ? (
+                  <PreviewFrame
+                    html={previewHtml}
+                    widthMm={page.widthMm}
+                    heightMm={page.heightMm}
+                    cornerRadiusMm={page.cornerRadiusMm}
+                  />
+                ) : (
+                  <p className="py-10 text-center text-xs text-zinc-400">Rendering…</p>
+                )}
+                {unresolved.length > 0 ? (
+                  <p className="font-mono text-[11px] leading-relaxed text-amber-700">{unresolved.join(" ")}</p>
+                ) : null}
+              </div>
+            </div>
           </div>
         </div>
       ) : null}
@@ -2980,6 +3118,15 @@ export function LayoutEditor({
                       >
                         I
                       </button>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => setExpandedFor(sel)}
+                        className="rounded border border-zinc-200 px-1.5 py-0.5 text-[11px] text-zinc-600 hover:bg-zinc-50"
+                        title="Expand — edit this content full width with the print preview beside it"
+                      >
+                        ⤢
+                      </button>
                     </div>
                   </div>
                   <TokenAutocomplete
@@ -2987,13 +3134,16 @@ export function LayoutEditor({
                     value={selBlock.lines.join("\n")}
                     onValueChange={(v) => updateBlock(blockId(selBlock), { lines: v.split("\n").slice(0, 100) })}
                     suggestions={tokenSuggestions}
+                    values={tokenValues}
+                    valuesFrom={testStyle?.name}
                     rows={6}
                     spellCheck={false}
                     className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-2 font-mono text-xs leading-relaxed"
                   />
                   <p className="mt-0.5 text-[10px] text-zinc-400">
                     Type <code className="rounded bg-zinc-100 px-1">{"{{"}</code> for variable autofill · **bold** and
-                    _italic_ render in the print; the preview below shows the result.
+                    _italic_ render in the print; the preview below shows the result. <b>⤢</b> opens the same content
+                    full width.
                   </p>
                 </div>
               </div>

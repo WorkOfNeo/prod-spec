@@ -11,12 +11,19 @@
 //   esc     dismiss (keeps typing)
 //   mouse   hover to highlight, click to insert
 //
+// The card is two columns: ranked results on the left under sticky group
+// headings, and the highlighted token explained in full on the right — its
+// label, what it resolves to for the previewed style, and the same field's
+// other arguments as one-click swaps. Nothing in it truncates; that pane
+// exists so ":inner" and ":outer" are told apart without a second search.
+//
 // It renders the <textarea> itself (forwarding the ref so the surrounding
 // editor's cursor helpers keep working) plus a floating results card
 // positioned at the caret. Self-contained: no external autocomplete lib.
 // =====================================================
 
 import {
+  Fragment,
   forwardRef,
   useCallback,
   useEffect,
@@ -336,10 +343,39 @@ function caretCoordinates(
   return { top, left, height };
 }
 
+// ---- detail pane helpers ----------------------------------------------
+
+// The strict "plain token" shape — {{key}} or {{key:arg}} / {{key:arg:2}}.
+// Logic and calculation snippets ({{if …}}, {{= sum(x) }}) carry spaces and
+// operators, so they fall out here and get no value / variant lookup.
+const PLAIN_TOKEN_RE = /^\{\{([A-Za-z][A-Za-z0-9]*)((?::[A-Za-z0-9]+)*)\}\}$/;
+
+// "{{qtyPerCarton:outer}}" → "qtyPerCarton:outer" — the key the preview
+// endpoint reports resolved values under. Null for anything non-plain.
+function valueKey(insert: string): string | null {
+  const m = PLAIN_TOKEN_RE.exec(insert);
+  return m ? `${m[1]}${m[2]}` : null;
+}
+
+// "{{qtyPerCarton:outer}}" → "qtyPerCarton" — the family a token belongs to,
+// so the detail pane can offer its sibling arguments as one-click swaps.
+function tokenBase(insert: string): string | null {
+  const m = PLAIN_TOKEN_RE.exec(insert);
+  return m ? m[1] : null;
+}
+
 // ---- component --------------------------------------------------------
 
-const DROPDOWN_W = 340;
-const DROPDOWN_MAX_H = 288;
+// The card is a two-column reader: results on the left, the highlighted
+// token explained in full on the right. Below this width the detail pane
+// stacks under the list instead of sitting beside it.
+const DROPDOWN_W = 560;
+const NARROW_BELOW = 480;
+const LIST_MAX_H = 288;
+// Worst case (list + footer, or stacked list + detail) — flip math only.
+const DROPDOWN_MAX_H = 340;
+// Ranked results are capped; the footer says so when the cap bites.
+const MAX_ITEMS = 50;
 
 type Props = {
   value: string;
@@ -349,11 +385,27 @@ type Props = {
   spellCheck?: boolean;
   className?: string;
   placeholder?: string;
+  // Resolved values for the previewed test style, keyed exactly as the
+  // variables palette keys them ("qtyPerCarton:outer", "barcode:ean13").
+  // Optional: without it the detail pane simply omits the "resolves to" row.
+  values?: Record<string, string>;
+  // Name of the style those values came from, for the caption.
+  valuesFrom?: string;
 };
 
 export const TokenAutocomplete = forwardRef<HTMLTextAreaElement, Props>(
   function TokenAutocomplete(
-    { value, onValueChange, suggestions, rows, spellCheck, className, placeholder },
+    {
+      value,
+      onValueChange,
+      suggestions,
+      rows,
+      spellCheck,
+      className,
+      placeholder,
+      values,
+      valuesFrom,
+    },
     forwardedRef,
   ) {
     const innerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -370,7 +422,13 @@ export const TokenAutocomplete = forwardRef<HTMLTextAreaElement, Props>(
     const [query, setQuery] = useState("");
     const [start, setStart] = useState(0);
     const [active, setActive] = useState(0);
-    const [pos, setPos] = useState<{ left: number; top: number; flip: boolean } | null>(null);
+    const [pos, setPos] = useState<{
+      left: number;
+      top: number;
+      flip: boolean;
+      width: number;
+      narrow: boolean;
+    } | null>(null);
 
     // Caret to restore after a controlled-value update lands (React re-renders
     // the textarea from `value`, blowing away the native caret).
@@ -380,8 +438,12 @@ export const TokenAutocomplete = forwardRef<HTMLTextAreaElement, Props>(
     const dismissedRef = useRef<{ start: number; query: string } | null>(null);
     const prevQueryRef = useRef<string>("");
 
-    const items = useMemo(() => {
-      if (!open) return [] as Array<TokenSuggestion & { positions: number[] }>;
+    // Ranked matches, then clustered under their group so the list carries one
+    // sticky heading per group instead of a chip on every row. Groups are
+    // ordered by their best-scoring member, so the top match stays first
+    // overall — clustering re-orders the tail, never the winner.
+    const { items, total } = useMemo(() => {
+      if (!open) return { items: [] as Array<TokenSuggestion & { positions: number[] }>, total: 0 };
       const scored: Array<{ s: TokenSuggestion; score: number; positions: number[] }> = [];
       for (const s of suggestions) {
         const m = scoreSuggestion(query, s);
@@ -394,10 +456,42 @@ export const TokenAutocomplete = forwardRef<HTMLTextAreaElement, Props>(
           a.s.insert.length - b.s.insert.length ||
           a.s.insert.localeCompare(b.s.insert),
       );
-      return scored.slice(0, 50).map((x) => ({ ...x.s, positions: x.positions }));
+      const top = scored.slice(0, MAX_ITEMS);
+      const order: string[] = [];
+      const byGroup = new Map<string, typeof top>();
+      for (const x of top) {
+        let bucket = byGroup.get(x.s.group);
+        if (!bucket) {
+          bucket = [];
+          byGroup.set(x.s.group, bucket);
+          order.push(x.s.group);
+        }
+        bucket.push(x);
+      }
+      return {
+        items: order.flatMap((g) =>
+          (byGroup.get(g) ?? []).map((x) => ({ ...x.s, positions: x.positions })),
+        ),
+        total: scored.length,
+      };
     }, [open, query, suggestions]);
 
     const activeIdx = items.length ? Math.max(0, Math.min(active, items.length - 1)) : 0;
+    const activeItem = items[activeIdx];
+
+    // Sibling arguments of the highlighted token — {{qtyPerCarton}} offers
+    // :solid / :assort / :inner / :outer, so the pane shows what else the
+    // same field can print without a second search.
+    const variants = useMemo(() => {
+      if (!activeItem) return [] as TokenSuggestion[];
+      const base = tokenBase(activeItem.insert);
+      if (!base) return [];
+      return suggestions
+        .filter((s) => tokenBase(s.insert) === base && s.insert !== activeItem.insert)
+        .slice(0, 8);
+    }, [activeItem, suggestions]);
+
+    const activeValue = activeItem ? values?.[valueKey(activeItem.insert) ?? ""] : undefined;
 
     // Re-detect the open token from the live DOM and reposition the card.
     const sync = useCallback(() => {
@@ -419,13 +513,11 @@ export const TokenAutocomplete = forwardRef<HTMLTextAreaElement, Props>(
 
       const coords = caretCoordinates(el, det.start);
       const rect = el.getBoundingClientRect();
-      const left = Math.max(
-        8,
-        Math.min(
-          rect.left + coords.left - el.scrollLeft,
-          window.innerWidth - DROPDOWN_W - 8,
-        ),
-      );
+      // Fit the two-column card in the viewport; fall back to the single
+      // column when even the narrow card would overflow.
+      const width = Math.min(DROPDOWN_W, window.innerWidth - 16);
+      const narrow = width < NARROW_BELOW;
+      const left = Math.max(8, Math.min(rect.left + coords.left - el.scrollLeft, window.innerWidth - width - 8));
       const caretY = rect.top + coords.top - el.scrollTop;
       const belowY = caretY + coords.height + 6;
       const flip = belowY + DROPDOWN_MAX_H > window.innerHeight && caretY - 6 > DROPDOWN_MAX_H;
@@ -435,7 +527,7 @@ export const TokenAutocomplete = forwardRef<HTMLTextAreaElement, Props>(
       prevQueryRef.current = det.query;
       setStart(det.start);
       setQuery(det.query);
-      setPos({ left, top, flip });
+      setPos({ left, top, flip, width, narrow });
       setOpen(true);
     }, []);
 
@@ -538,62 +630,137 @@ export const TokenAutocomplete = forwardRef<HTMLTextAreaElement, Props>(
 
         {open && pos ? (
           <div
-            role="listbox"
-            className="fixed z-50 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-xl"
+            className="fixed z-50 grid overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-xl"
             style={{
               left: pos.left,
               top: pos.top,
-              width: DROPDOWN_W,
+              width: pos.width,
+              gridTemplateColumns: pos.narrow ? "minmax(0,1fr)" : "minmax(0,1.05fr) minmax(0,1fr)",
               transform: pos.flip ? "translateY(-100%)" : undefined,
             }}
             // Keep focus in the textarea when interacting with the card.
             onMouseDown={(e) => e.preventDefault()}
           >
             {items.length === 0 ? (
-              <div className="px-3 py-2.5 text-xs text-zinc-400">
+              <div className="px-3 py-2.5 text-xs text-zinc-400" style={{ gridColumn: "1 / -1" }}>
                 No variables match <span className="font-mono text-zinc-500">{query}</span>
               </div>
             ) : (
-              <div ref={listRef} className="max-h-64 overflow-y-auto py-1">
-                {items.map((it, i) => (
-                  <button
-                    key={`${it.insert}-${i}`}
-                    type="button"
-                    data-idx={i}
-                    role="option"
-                    aria-selected={i === activeIdx}
-                    onMouseEnter={() => setActive(i)}
-                    onClick={() => apply(it)}
-                    className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left ${
-                      i === activeIdx ? "bg-zinc-100" : "hover:bg-zinc-50"
-                    }`}
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-mono text-[12px] text-zinc-800">
-                        <Highlighted text={it.insert} positions={it.positions} />
-                      </span>
-                      <span className="block truncate text-[11px] text-zinc-400">{it.label}</span>
-                    </span>
-                    {it.hint ? (
-                      <span className="hidden max-w-24 shrink-0 truncate font-sans text-[10px] text-emerald-600 sm:block">
-                        {it.hint}
-                      </span>
-                    ) : null}
-                    <span className="shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-zinc-400">
-                      {it.group}
-                    </span>
-                  </button>
-                ))}
-              </div>
+              <>
+                <div
+                  ref={listRef}
+                  role="listbox"
+                  aria-label="Variables"
+                  className={`overflow-y-auto pb-1 ${pos.narrow ? "" : "border-r border-zinc-100"}`}
+                  style={{ maxHeight: LIST_MAX_H }}
+                >
+                  {items.map((it, i) => (
+                    <Fragment key={`${it.insert}-${i}`}>
+                      {i === 0 || items[i - 1].group !== it.group ? (
+                        <div className="sticky top-0 z-10 border-b border-zinc-100 bg-zinc-50 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider text-zinc-400">
+                          {it.group}
+                        </div>
+                      ) : null}
+                      <button
+                        type="button"
+                        data-idx={i}
+                        role="option"
+                        aria-selected={i === activeIdx}
+                        onMouseEnter={() => setActive(i)}
+                        onClick={() => apply(it)}
+                        className={`flex w-full flex-col gap-px px-2.5 py-1.5 text-left ${
+                          i === activeIdx ? "bg-zinc-100" : "hover:bg-zinc-50"
+                        }`}
+                      >
+                        {/* The token wraps rather than truncating — the whole
+                            point is being able to read which argument this is. */}
+                        <span className="block break-all font-mono text-[12px] leading-snug text-zinc-800">
+                          <Highlighted text={it.insert} positions={it.positions} />
+                        </span>
+                        <span className="line-clamp-2 block text-[11px] leading-snug text-zinc-400">
+                          {it.label}
+                        </span>
+                      </button>
+                    </Fragment>
+                  ))}
+                </div>
+
+                {/* Detail pane — the highlighted token, in full. */}
+                <div
+                  className={`flex flex-col overflow-y-auto ${pos.narrow ? "border-t border-zinc-100" : ""}`}
+                  style={{ maxHeight: LIST_MAX_H }}
+                >
+                  {activeItem ? (
+                    <div className="flex flex-col gap-2.5 px-3 py-2.5">
+                      <div className="break-all font-mono text-[12.5px] leading-snug text-zinc-900">
+                        {activeItem.insert}
+                      </div>
+                      <div>
+                        <div className="text-[9px] font-semibold uppercase tracking-wider text-zinc-400">
+                          {activeItem.group}
+                        </div>
+                        <p className="mt-0.5 text-[11.5px] leading-snug text-zinc-600">{activeItem.label}</p>
+                      </div>
+                      {activeValue !== undefined && activeValue !== "" ? (
+                        <div className="rounded bg-emerald-50 px-2 py-1.5">
+                          <div className="text-[9px] font-semibold uppercase tracking-wider text-emerald-700">
+                            Resolves to{valuesFrom ? ` · ${valuesFrom}` : ""}
+                          </div>
+                          <div className="mt-0.5 break-words font-mono text-[11.5px] leading-snug text-zinc-800">
+                            {activeValue}
+                          </div>
+                        </div>
+                      ) : activeItem.hint ? (
+                        <div className="rounded bg-zinc-50 px-2 py-1.5">
+                          <div className="text-[9px] font-semibold uppercase tracking-wider text-zinc-400">
+                            Example
+                          </div>
+                          <div className="mt-0.5 break-words font-mono text-[11.5px] leading-snug text-zinc-600">
+                            {activeItem.hint}
+                          </div>
+                        </div>
+                      ) : null}
+                      {variants.length > 0 ? (
+                        <div>
+                          <div className="text-[9px] font-semibold uppercase tracking-wider text-zinc-400">
+                            Same field, other arguments
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {variants.map((v) => (
+                              <button
+                                key={v.insert}
+                                type="button"
+                                title={v.label}
+                                onClick={() => apply(v)}
+                                className="rounded border border-zinc-200 px-1.5 py-0.5 font-mono text-[10px] text-zinc-600 hover:border-zinc-400 hover:text-zinc-900"
+                              >
+                                {v.insert.replace(/^\{\{|\}\}$/g, "")}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </>
             )}
-            <div className="flex items-center justify-between border-t border-zinc-100 bg-zinc-50/70 px-2.5 py-1 text-[10px] text-zinc-400">
+
+            <div
+              className="flex items-center justify-between gap-2 border-t border-zinc-100 bg-zinc-50/70 px-2.5 py-1 text-[10px] text-zinc-400"
+              style={{ gridColumn: "1 / -1" }}
+            >
               <span>
                 <Kbd>↑</Kbd>
-                <Kbd>↓</Kbd> navigate
+                <Kbd>↓</Kbd> navigate · <Kbd>↵</Kbd> insert · <Kbd>esc</Kbd> close
               </span>
-              <span>
-                <Kbd>↵</Kbd> insert · <Kbd>esc</Kbd> close
-              </span>
+              {items.length > 0 ? (
+                <span className="tabular-nums">
+                  {total > items.length
+                    ? `${items.length} of ${total} — keep typing`
+                    : `${total} match${total === 1 ? "" : "es"}`}
+                </span>
+              ) : null}
             </div>
           </div>
         ) : null}
