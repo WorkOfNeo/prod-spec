@@ -429,19 +429,6 @@ function pngHeightPx(png: Buffer): number {
   return png.readUInt32BE(20);
 }
 
-// GS1 lower bound for EAN magnification — a symbol printed narrower than
-// 80% of nominal is out of spec and starts failing at POS scanners. Fixed-
-// size barcodes fit their block down to this floor, then turn into a
-// visible warning chip instead of silently printing an unscannable code.
-const MIN_MAGNIFICATION = 0.8;
-
-// bwip-js rounds each module up to whole pixels, rendering the symbol a
-// shade wider than GS1-nominal geometry (37.51 mm vs 37.29 mm for EAN-13).
-// Judged against the rendered width alone, a 30 mm block — fine by nominal
-// math (floor 29.83 mm) — would chip on a rounding hair. This factor backs
-// the floor off to the nominal-geometry equivalent.
-const FLOOR_TOLERANCE = 0.995;
-
 async function buildBarcodeCache(styles: StyleData[], pages: LayoutPage[]): Promise<BarcodeCache> {
   const wanted = new Map<string, { symbology: BarcodeSymbology; heightMm: number | null; value: string }>();
   for (const page of pages) {
@@ -520,30 +507,21 @@ function renderBarcodeHtml(
   //      barcode is the one element with a legal minimum, so the design
   //      shrinks around it). Width auto-fits the block by adjusting the
   //      magnification — scanners read relative bar widths, so a uniform
-  //      horizontal squeeze IS a magnification change — but never below the
-  //      80% GS1 floor: a block too narrow for 80% renders the standard
-  //      `barcode-missing` chip instead (visible on preview + proof, counted
-  //      by the placeholder gate, so it can never ship silently).
+  //      horizontal squeeze IS a magnification change. No GS1 minimum-
+  //      magnification floor is enforced here: a too-narrow block still
+  //      prints the symbol squeezed, even past the point a POS scanner
+  //      would read it. That's a deliberate call (Niels, 2026-08-31) — use
+  //      {{barcode:…:H}} with a block width you've checked by eye.
   //   2. Per-spec carton bar height (ProdSpec output row) — carton sources
   //      only (either symbology). Legacy: uniformly scales the default PNG.
   //   3. Block default — CSS var --ol-bc-h (fontPt × 16/9 mm).
   if (tokenHeightMm != null) {
     const natural = entry.widthMm; // 100% magnification
-    const floor = natural * MIN_MAGNIFICATION * FLOOR_TOLERANCE;
     const avail = blockWidthMm ?? natural;
-    if (avail < floor) {
-      // The block genuinely cannot hold a scannable symbol (the whole PNG —
-      // bwip draws the HRI digits flush to its edges, so nothing about it is
-      // croppable, and the info-area PDF page IS the physical print, so
-      // there's no surrounding stock to overhang onto). Chip in BOTH modes:
-      // visible while designing, printed on the proof, counted by the
-      // placeholder gate so the output can't be approved.
-      return `<div class="barcode-missing">Barcode won't scan at this size — needs ${floor.toFixed(1)} mm, block is ${avail.toFixed(1)} mm wide</div>`;
-    }
     const printWidth = Math.min(avail, natural);
     // width + height set independently: height pins the bars at H mm, width
-    // sets the magnification (80–100%). max-width:none guards against the
-    // stylesheet's max-width:100% re-squashing an already-clamped symbol.
+    // sets the magnification. max-width:none guards against the stylesheet's
+    // max-width:100% re-squashing an already-clamped symbol.
     const imgStyle = ` style="height: ${entry.totalMm.toFixed(3)}mm; width: ${printWidth.toFixed(3)}mm; max-width: none"`;
     return `<span class="ol-barcode${ctx.mode === "preview" ? " ol-barcode-preview" : ""}"><img src="${entry.dataUrl}"${imgStyle} alt="${escapeHtml(value)}" />${numberRow}</span>`;
   }
