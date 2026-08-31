@@ -7,6 +7,7 @@ import {
   getReviewerDashboard,
   getReviewerDashboardOptions,
   BUCKET_LABELS,
+  NO_PERSON,
   STYLE_BUCKETS,
   type DurationStat,
   type ReviewerDashboard,
@@ -120,18 +121,50 @@ function PercentBar({ segments }: { segments: { label: string; count: number }[]
   );
 }
 
+// Which decisions a card actually counts once a person is selected. The person
+// filter narrows the ORDER set but most cards still measure the whole order, so
+// every section says which it is — an unlabelled mix is what made the numbers
+// look wrong.
+type Scope = "person" | "order" | "mixed";
+
+const SCOPE_STYLE: Record<Scope, string> = {
+  person: "border-blue-200 bg-blue-50 text-blue-700",
+  order: "border-gray-200 bg-gray-100 text-gray-600",
+  mixed: "border-amber-200 bg-amber-50 text-amber-700",
+};
+
+function scopeText(scope: Scope, who: string): string {
+  if (scope === "person") return `${who} only`;
+  if (scope === "mixed") return `Mixed — see note`;
+  return `Whole order · every reviewer`;
+}
+
 function Section({
   title,
   note,
+  scope,
+  who,
   children,
 }: {
   title: string;
   note?: string;
+  // Both set together: only rendered while a person is selected.
+  scope?: Scope;
+  who?: string | null;
   children: React.ReactNode;
 }) {
   return (
     <section className="mt-8">
-      <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+        {scope && who ? (
+          <span
+            className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${SCOPE_STYLE[scope]}`}
+          >
+            {scopeText(scope, who)}
+          </span>
+        ) : null}
+      </div>
       {note ? <p className="mt-0.5 max-w-3xl text-xs text-gray-500">{note}</p> : null}
       <div className="mt-3">{children}</div>
     </section>
@@ -168,6 +201,19 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
   const filtered = Boolean(
     filters.customerId || filters.supplierId || filters.reviewerId || filters.from || filters.to,
   );
+
+  // The selected person's display name — drives every scope pill below. Null
+  // when nobody is selected, which hides the pills entirely.
+  const noPerson = filters.reviewerId === NO_PERSON;
+  const who = filters.reviewerId
+    ? noPerson
+      ? "Unattributed"
+      : (options.reviewers.find((r) => r.id === filters.reviewerId)?.name ?? "Selected person")
+    : null;
+  // Sentence fragments, so the "(no person)" selection reads as English rather
+  // than "Orders Unattributed decided at least one output on".
+  const decidedByWho = noPerson ? "decided with no user attached" : `decided by ${who}`;
+  const whoseDecisions = noPerson ? "decisions with no user attached" : `${who}'s decisions`;
 
   return (
     <div className="px-8 py-8">
@@ -222,7 +268,11 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-gray-600">Person reviewing</span>
+            {/* "Decided by", not "Reviewer": the /styles table's Reviewer facet
+                is who CLAIMED the review (Job.reviewClaimedBy), a different
+                person and a different count. One word for two things is how
+                the two screens ended up looking like they disagreed. */}
+            <span className="text-xs font-medium text-gray-600">Decided by</span>
             <select
               name="reviewer"
               defaultValue={sp.reviewer ?? ""}
@@ -234,6 +284,10 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
                   {r.name}
                 </option>
               ))}
+              {/* Outputs that settled without a user (a layout that skips the
+                  manual queue). Unreachable before, which left the per-person
+                  figures short of the Everyone total with no way to see why. */}
+              {options.hasUnattributed ? <option value={NO_PERSON}>(no person)</option> : null}
             </select>
           </label>
           <label className="flex flex-col gap-1">
@@ -274,9 +328,17 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
       {/* Item 1 — where every order stands. */}
       <Section
         title={`Orders in scope · ${data.totalStyles.toLocaleString("en-GB")}`}
+        scope="order"
+        who={who}
         note={
-          "Active styles only (has a PO number, not archived, not in a hidden Monday group) — the same set the /styles list shows. " +
-          "“Waiting for customer info” means no generation has ever been enqueued for the order, which is what the Needs-input tab lists."
+          who
+            ? `Orders with at least one output ${decidedByWho}. The buckets below describe the WHOLE order, ` +
+              `including decisions other people made` +
+              (data.shared
+                ? ` — ${data.shared.toLocaleString("en-GB")} of these ${data.shared === 1 ? "order is" : "orders are"} shared with another reviewer, so they also appear under that person. That is why the per-person figures add up to more than the unfiltered total.`
+                : ".")
+            : "Active styles only (has a PO number, not archived, not in a hidden Monday group) — the same set the /styles list shows. " +
+              "“Waiting for customer info” means no generation has ever been enqueued for the order, which is what the Needs-input tab lists."
         }
       >
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -294,7 +356,12 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
       {/* Item 3 — step timings. */}
       <Section
         title="Average time per step"
-        note="Median is the headline (a handful of very old orders drags the average up); the average and the sample size sit underneath."
+        scope="order"
+        who={who}
+        note={
+          "Median is the headline (a handful of very old orders drags the average up); the average and the sample size sit underneath." +
+          (who ? ` Timed across the whole order — the clock does not stop at ${whoseDecisions}.` : "")
+        }
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <DurationCard
@@ -318,7 +385,12 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
       {/* Item 4 — first-pass rate. */}
       <Section
         title="Approved first time"
-        note="Share of orders whose FIRST generation was approved with no rejection, by when that first round was decided."
+        scope="order"
+        who={who}
+        note={
+          "Share of orders whose FIRST generation was approved with no rejection, by when that first round was decided." +
+          (who ? " The first round counts every reviewer's decisions, not only the selected person's." : "")
+        }
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {data.firstPass.map((w) => (
@@ -347,7 +419,12 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
       {/* Item 5 — turnaround. */}
       <Section
         title="Time to full approval"
-        note="Orders that reached fully approved, measured from their first generation to the last approval."
+        scope="order"
+        who={who}
+        note={
+          "Orders that reached fully approved, measured from their first generation to the last approval." +
+          (who ? " Full approval is a property of the order, so other reviewers' approvals count toward it." : "")
+        }
       >
         <div className="rounded-lg border border-gray-200 bg-white px-4 py-4">
           <PercentBar
@@ -368,11 +445,13 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
       {/* Item 6 — activity in the chosen range. */}
       <Section
         title="Reviewed in this date range"
+        scope="person"
+        who={who}
         note={
-          filters.from || filters.to
-            ? "Output decisions stamped inside the chosen range" +
-              (filters.reviewerId ? ", by the chosen reviewer." : ".")
-            : "No range chosen — this counts every decision on record in scope. Pick dates above to narrow it."
+          (filters.from || filters.to
+            ? "Output decisions stamped inside the chosen range"
+            : "No range chosen — this counts every decision on record in scope. Pick dates above to narrow it") +
+          (who ? `. Only ${whoseDecisions} — the one block on this page that is genuinely per person.` : ".")
         }
       >
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -394,7 +473,14 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
       {/* Item 7 — per-client. */}
       <Section
         title="Efficiency per client"
-        note="“Efficiency” is spelled out rather than rolled into one score: how often a client's orders are right first time, how long they take end to end, and how much of the review work on them ends in approval."
+        scope="mixed"
+        who={who}
+        note={
+          "“Efficiency” is spelled out rather than rolled into one score: how often a client's orders are right first time, how long they take end to end, and how much of the review work on them ends in approval." +
+          (who
+            ? ` Orders, Fully reviewed, First time right and Median turnaround describe the whole order; Approval rate and its decided count are ${whoseDecisions} only.`
+            : "")
+        }
       >
         <ClientTable data={data} />
       </Section>

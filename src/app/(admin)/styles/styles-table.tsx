@@ -55,6 +55,8 @@ const HEADER_HINTS: Partial<Record<StyleColumnKey, string>> = {
   status:
     "Review flow once PDFs exist (queued → ready for review → approved / rejected); before that, field readiness (awaiting data → partially ready → ready to generate).",
   ean: "PO → EAN resolution: auto-queued when a PO is filled, then the PO PDF is scraped for the per-size barcodes. Click Resolve to run it now.",
+  reviewer:
+    "Who CLAIMED this review — took it, from Job.reviewClaimedBy. Not who decided its outputs: that is “Decided by” on the review dashboard, and it is a different count.",
 };
 
 // Attribute *presence* filters shown as chips below the facet bar. Each is
@@ -79,10 +81,13 @@ const ATTR_FILTERS: ReadonlyArray<{ key: string; label: string; has: (r: StyleRo
   { key: "supplier", label: "Supplier", has: (r) => r.hasSupplier },
   // Manually pulled in for layout testing (Settings ▸ Pull style by PO).
   { key: "pulled", label: "Pulled", has: (r) => r.pulledForTest },
-  // Somebody has taken this style's review (Job.reviewClaimedBy). "No
-  // Reviewer" is the unclaimed pile — the one-click "what is nobody on?"
-  // question. WHICH reviewer is the Reviewer facet dropdown.
-  { key: "reviewer", label: "Reviewer", has: (r) => r.reviewerName != null },
+  // Somebody has taken this style's review (Job.reviewClaimedBy). "No Claimer"
+  // is the unclaimed pile — the one-click "what is nobody on?" question. WHICH
+  // person is the "Claimed by" facet dropdown. Claiming is not deciding: who
+  // decided a style's outputs is "Decided by" on /reviews/dashboard, a
+  // separate count, and calling both of them "Reviewer" made the two screens
+  // look like they disagreed.
+  { key: "reviewer", label: "Claimer", has: (r) => r.reviewerName != null },
 ];
 
 // The value-picking facet dropdowns (Customer / Business Area / Group / Status
@@ -99,7 +104,7 @@ const FACET_LABELS: Record<FacetKey, string> = {
   ba: "Business Area",
   group: "Group",
   status: "Status",
-  reviewer: "Reviewer",
+  reviewer: "Claimed by",
   ean: "EAN",
 };
 
@@ -490,7 +495,7 @@ export function StylesTable({
       parts.push(`Status: ${appliedFacets.status.map((k) => statusLabels[k] ?? k).join(", ")}`);
     if (appliedFacets.reviewer.length)
       parts.push(
-        `Reviewer: ${appliedFacets.reviewer
+        `Claimed by: ${appliedFacets.reviewer
           .map((v) => (v === BLANK_VALUE ? "(nobody yet)" : v))
           .join(", ")}`,
       );

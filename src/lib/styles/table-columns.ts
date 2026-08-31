@@ -203,7 +203,10 @@ export const STYLE_TABLE_COLUMNS: ReadonlyArray<StyleColumnDef> = [
   { key: "awaitingReview", label: "Awaiting review", group: "review" },
   // Who claimed the review. Always hydrated (the Reviewer facet needs it for
   // every row), so unlike the rollup columns it costs nothing extra to show.
-  { key: "reviewer", label: "Reviewer", group: "review" },
+  // "Claimed by", not "Reviewer": this is Job.reviewClaimedBy — whoever TOOK
+  // the review. Who actually decided the outputs is a different person and a
+  // different number, and lives on /reviews/dashboard as "Decided by".
+  { key: "reviewer", label: "Claimed by", group: "review" },
 ];
 
 // The standard view: the original core columns (everything except Completion).

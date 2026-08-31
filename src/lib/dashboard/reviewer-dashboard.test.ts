@@ -9,6 +9,7 @@ import {
   firstReviewToRegenerationMs,
   firstReviewToFinalApprovalMs,
   median,
+  NO_PERSON,
   totalTurnaroundMs,
   type DashAsset,
   type DashStyle,
@@ -426,4 +427,103 @@ test("client efficiency — rolls up per customer and sorts by order count", () 
   assert.equal(d.clients[1].customerName, "JYSK");
   assert.equal(d.clients[1].firstPassRate, 0);
   assert.equal(d.clients[1].medianTurnaroundMs, null);
+});
+
+// ---- The person filter has to reconcile -------------------------------------
+// "If I filter by person, the numbers don't add up." Three causes, one test
+// each: orders two people touched are counted in full under both, decisions
+// with no user were unreachable, and the client table ignored the date range.
+
+test("shared — an order two people decided is counted under each, and says so", () => {
+  const shared = style({
+    styleId: "shared",
+    assets: [
+      asset("j1", "APPROVED", { reviewedAt: HOUR, by: "u-a" }),
+      asset("j1", "APPROVED", { reviewedAt: 2 * HOUR, by: "u-b" }),
+    ],
+  });
+  const solo = style({
+    styleId: "solo",
+    assets: [asset("j1", "APPROVED", { reviewedAt: HOUR, by: "u-a" })],
+  });
+
+  const everyone = computeReviewerDashboard([shared, solo], {}, at(3 * HOUR));
+  const a = computeReviewerDashboard([shared, solo], { reviewerId: "u-a" }, at(3 * HOUR));
+  const b = computeReviewerDashboard([shared, solo], { reviewerId: "u-b" }, at(3 * HOUR));
+
+  // The overshoot is real and deliberate — 2 + 1 orders against 2 in total…
+  assert.equal(everyone.totalStyles, 2);
+  assert.equal(a.totalStyles + b.totalStyles, 3);
+  // …and `shared` is exactly the amount by which it overshoots, so the page can
+  // account for it instead of leaving the reader to spot the discrepancy.
+  assert.equal(a.shared, 1);
+  assert.equal(b.shared, 1);
+  assert.equal(a.totalStyles + b.totalStyles - a.shared!, everyone.totalStyles);
+  // Unfiltered, there is no person to share WITH.
+  assert.equal(everyone.shared, null);
+});
+
+test("NO_PERSON — decisions that settled without a user are selectable", () => {
+  const auto = style({
+    styleId: "auto",
+    assets: [asset("j1", "APPROVED", { reviewedAt: HOUR, by: null })],
+  });
+  const mine = style({
+    styleId: "mine",
+    assets: [asset("j1", "APPROVED", { reviewedAt: HOUR, by: "u-a" })],
+  });
+
+  const everyone = computeReviewerDashboard([auto, mine], {}, at(3 * HOUR));
+  const a = computeReviewerDashboard([auto, mine], { reviewerId: "u-a" }, at(3 * HOUR));
+  const none = computeReviewerDashboard([auto, mine], { reviewerId: NO_PERSON }, at(3 * HOUR));
+
+  assert.equal(none.totalStyles, 1);
+  assert.equal(none.range.reviewed, 1);
+  assert.equal(none.shared, 0);
+  // The whole point: every decision is now reachable through some selection,
+  // so the per-person figures account for the Everyone total.
+  assert.equal(a.range.reviewed + none.range.reviewed, everyone.range.reviewed);
+  // A user's own filter must not swallow the ownerless ones.
+  assert.equal(a.totalStyles, 1);
+  assert.equal(a.range.reviewed, 1);
+});
+
+test("client table counts the SAME decisions as the date-range card", () => {
+  const s = style({
+    assets: [
+      asset("j1", "APPROVED", { reviewedAt: 1 * DAY, by: "u-a" }),
+      asset("j1", "REJECTED", { reviewedAt: 5 * DAY, by: "u-b" }),
+      asset("j1", "APPROVED", { reviewedAt: 20 * DAY, by: "u-a" }),
+    ],
+  });
+
+  // Narrowed by date…
+  const ranged = computeReviewerDashboard([s], { from: at(0), to: at(10 * DAY) }, at(30 * DAY));
+  assert.equal(ranged.range.reviewed, 2);
+  assert.equal(ranged.clients[0].decided, ranged.range.reviewed);
+  assert.equal(ranged.clients[0].approved, ranged.range.approved);
+  assert.equal(ranged.clients[0].rejected, ranged.range.rejected);
+
+  // …and by date AND person together.
+  const both = computeReviewerDashboard(
+    [s],
+    { from: at(0), to: at(10 * DAY), reviewerId: "u-a" },
+    at(30 * DAY),
+  );
+  assert.equal(both.range.reviewed, 1);
+  assert.equal(both.clients[0].decided, 1);
+  assert.equal(both.clients[0].approvalRate, 1);
+});
+
+test("scope membership reads decided assets only — a reset decision cannot smuggle an order in", () => {
+  // reviewedById survives a re-run that puts the output back to PENDING_REVIEW.
+  // Counting that as "in scope" would show an order with zero decisions under
+  // a person, which is precisely a number that does not add up.
+  const reset = style({
+    styleId: "reset",
+    assets: [asset("j1", "PENDING_REVIEW", { reviewedAt: null, by: "u-a" })],
+  });
+  const d = computeReviewerDashboard([reset], { reviewerId: "u-a" }, at(3 * HOUR));
+  assert.equal(d.totalStyles, 0);
+  assert.equal(d.range.reviewed, 0);
 });

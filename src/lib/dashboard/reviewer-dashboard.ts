@@ -71,13 +71,28 @@ export type DashStyle = {
 
 // ---- Filters ----------------------------------------------------------------
 
+// A handful of decisions carry no user at all (outputs whose layout skips the
+// manual queue settle with reviewedById null). Without a way to select them the
+// per-person figures silently fall short of the "Everyone" total, which reads
+// as broken arithmetic. Plain ASCII sentinel — see BLANK_VALUE in
+// styles/table-filter.ts for why.
+export const NO_PERSON = "__none__";
+
+// The owner of one decision, as the "Decided by" filter sees it.
+function ownerOf(a: DashAsset): string {
+  return a.reviewedById ?? NO_PERSON;
+}
+
 export type ReviewerDashboardFilters = {
   customerId?: string | null;
   supplierId?: string | null;
-  // "Person reviewing". A style is IN scope when this user decided at least one
-  // of its outputs; decision counts are then narrowed to that user's decisions
-  // only. Status buckets stay whole-style (a half-reviewed order is half
-  // reviewed no matter who else touched it).
+  // "Decided by". A style is IN scope when this user decided at least one of
+  // its outputs (NO_PERSON = decided with no user attached); decision counts
+  // are then narrowed to that user's decisions only. Status buckets, step
+  // timings, first-pass and turnaround stay WHOLE-ORDER — a half-reviewed
+  // order is half reviewed no matter who else touched it — which is why an
+  // order two people worked on is counted in full under each of them. The page
+  // says so per card, and `shared` below is how many such orders there are.
   reviewerId?: string | null;
   // Item 6 — custom date range over DECISIONS (JobAsset.reviewedAt).
   from?: Date | null;
@@ -155,6 +170,11 @@ export type ClientEfficiency = {
 
 export type ReviewerDashboard = {
   totalStyles: number;
+  // Only set when a person is selected: how many of the orders in scope were
+  // ALSO decided by somebody else. Those orders are counted in full under every
+  // person who touched them, so this is the amount by which the per-person
+  // figures overshoot the unfiltered total. Null with no person filter.
+  shared: number | null;
   buckets: Record<StyleBucket, number>;
   timings: StepTimings;
   firstPass: FirstPassWindow[];
@@ -355,10 +375,14 @@ export function computeReviewerDashboard(
 ): ReviewerDashboard {
   const reviewerId = filters.reviewerId ?? null;
 
-  // "Person reviewing" narrows the ORDER set to what that reviewer has touched.
-  const scoped = reviewerId
-    ? styles.filter((s) => s.assets.some((a) => a.reviewedById === reviewerId))
-    : styles;
+  // "Decided by" narrows the ORDER set to what that person has decided.
+  // Membership is read off DECIDED assets only, and through ownerOf, so the
+  // scope and the decision counts below can never disagree about what a
+  // decision by NO_PERSON is.
+  const owners = (style: DashStyle) => new Set(decided(style.assets).map(ownerOf));
+  const scoped = reviewerId ? styles.filter((s) => owners(s).has(reviewerId)) : styles;
+  // How many of those orders somebody ELSE also decided — the double-count.
+  const shared = reviewerId ? scoped.filter((s) => owners(s).size > 1).length : null;
 
   const buckets = Object.fromEntries(STYLE_BUCKETS.map((b) => [b, 0])) as Record<StyleBucket, number>;
 
@@ -418,7 +442,7 @@ export function computeReviewerDashboard(
 
     // Item 6 — decisions inside the range, narrowed to the chosen reviewer.
     const inRange = decided(style.assets).filter((a) => {
-      if (reviewerId && a.reviewedById !== reviewerId) return false;
+      if (reviewerId && ownerOf(a) !== reviewerId) return false;
       const t = a.reviewedAt!.getTime();
       if (from && t < from.getTime()) return false;
       if (to && t > to.getTime()) return false;
@@ -458,10 +482,12 @@ export function computeReviewerDashboard(
       if (fp.clean) entry.firstPassClean += 1;
     }
     if (total !== null) entry.turnarounds.push(total);
-    const dec = decided(style.assets).filter((a) => !reviewerId || a.reviewedById === reviewerId);
-    entry.decided += dec.length;
-    entry.approved += dec.filter((a) => a.reviewStatus === "APPROVED").length;
-    entry.rejected += dec.filter((a) => a.reviewStatus === "REJECTED").length;
+    // The SAME decision set the range card counts — person and date range both
+    // applied. Reusing inRange is the point: two cards on one page disagreeing
+    // about how many outputs were decided is the complaint this fixes.
+    entry.decided += inRange.length;
+    entry.approved += inRange.filter((a) => a.reviewStatus === "APPROVED").length;
+    entry.rejected += inRange.filter((a) => a.reviewStatus === "REJECTED").length;
   }
 
   const clients: ClientEfficiency[] = [...byClient.values()]
@@ -475,6 +501,7 @@ export function computeReviewerDashboard(
 
   return {
     totalStyles: scoped.length,
+    shared,
     buckets,
     timings: {
       creationToFirstReview: stat(creation),
@@ -495,15 +522,22 @@ export type ReviewerDashboardOptions = {
   customers: FilterOption[];
   suppliers: FilterOption[];
   reviewers: FilterOption[];
+  // Are there decided outputs with no user attached? Only then is the
+  // "(no person)" entry worth offering — an empty picker entry helps nobody.
+  hasUnattributed: boolean;
 };
 
 /**
  * The dropdown contents. Reviewers only ever appear here if they have actually
- * decided something — an empty picker entry helps nobody.
+ * decided something.
  */
 export async function getReviewerDashboardOptions(): Promise<ReviewerDashboardOptions> {
   const { db } = await import("@/lib/db");
-  const [customers, suppliers, reviewerIds] = await Promise.all([
+  const DECIDED: Prisma.JobAssetWhereInput = {
+    reviewStatus: { in: ["APPROVED", "REJECTED"] },
+    reviewedAt: { not: null },
+  };
+  const [customers, suppliers, reviewerIds, unattributed] = await Promise.all([
     db.customer.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.supplier.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.jobAsset.findMany({
@@ -511,6 +545,7 @@ export async function getReviewerDashboardOptions(): Promise<ReviewerDashboardOp
       select: { reviewedById: true },
       distinct: ["reviewedById"],
     }),
+    db.jobAsset.count({ where: { ...DECIDED, reviewedById: null } }),
   ]);
   const ids = reviewerIds.map((r) => r.reviewedById!).filter(Boolean);
   const users = ids.length
@@ -524,6 +559,7 @@ export async function getReviewerDashboardOptions(): Promise<ReviewerDashboardOp
     customers: customers.map((c) => ({ id: c.id, name: c.name })),
     suppliers: suppliers.map((s) => ({ id: s.id, name: s.name })),
     reviewers: users.map((u) => ({ id: u.id, name: u.name || u.email })),
+    hasUnattributed: unattributed > 0,
   };
 }
 
