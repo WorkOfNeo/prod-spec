@@ -225,3 +225,25 @@ test("{{sizeRatio:size}} narrows to the repetition row's own size", async () => 
     assert.ok(html.includes(`${label}=(${expected})`), `${label} should print ${expected}`);
   }
 });
+
+test("cells never wrap — the table shrinks to fit instead", async () => {
+  const html = await renderLayoutHtml(defWith(["{{assortmentTable}}"]), buildSampleStyleData());
+  assert.ok(
+    /\.ol-assort th, \.ol-assort td \{[\s\S]*?white-space: nowrap;/.test(html),
+    "size labels like 86/92 stay on one line",
+  );
+  assert.ok(
+    !/\.ol-assort th, \.ol-assort td \{[\s\S]*?word-break: break-word/.test(html),
+    "no mid-token breaking in the cells",
+  );
+  assert.ok(
+    html.includes("window.__olFitWidth"),
+    "the fit script ships even though no block opted in — the table pass needs it",
+  );
+  assert.ok(html.includes(".ol-assort"), "the fit pass targets the table");
+});
+
+test("no table on the page ⇒ the fit script is still gated off", async () => {
+  const html = await renderLayoutHtml(defWith(["{{styleNumber}}"]), buildSampleStyleData());
+  assert.ok(!html.includes("window.__olFitWidth"), "plain layouts stay script-free");
+});
