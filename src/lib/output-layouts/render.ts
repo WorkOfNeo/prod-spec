@@ -1151,6 +1151,15 @@ async function prepareLayoutRender(
 //     Iterated (padding is constant, so the shrink is slightly non-linear)
 //     with a floor of 1 px. Stops a long {{careInstructions}} block from
 //     overflowing onto the wash-symbols block below it.
+//   • Table  (.ol-assort) — the assortment table's cells are nowrap, so a
+//     size run too wide for the block widens the table past its 100% instead
+//     of stacking "86/92" into three lines. Same measure-and-scale mechanic
+//     as the width fit, applied to the table as a whole (one font-size for
+//     every cell, so the grid stays even): shrink until the table fits the
+//     line, never grow. Runs for EVERY table, opt-in or not — a table that
+//     wraps is always wrong. Font-size is cleared first so re-running (on
+//     fonts.ready, or from the PDF renderer) re-measures from the authored
+//     size rather than compounding the previous shrink.
 const FIT_SCRIPT = `<script>
 (function () {
   function fitLine(el) {
@@ -1192,11 +1201,36 @@ const FIT_SCRIPT = `<script>
       if (next <= 1) break;
     }
   }
+  function fitTable(tbl) {
+    tbl.style.fontSize = "";
+    var host = tbl.parentElement;
+    while (host && !host.classList.contains("ol-line") && !host.classList.contains("ol-block")) {
+      host = host.parentElement;
+    }
+    if (!host) return;
+    var hs = getComputedStyle(host);
+    var avail = host.clientWidth - (parseFloat(hs.paddingLeft) || 0) - (parseFloat(hs.paddingRight) || 0);
+    if (!avail || avail <= 0) return;
+    for (var pass = 0; pass < 8; pass++) {
+      var w = tbl.getBoundingClientRect().width;
+      if (!w || w <= avail + 0.5) break;
+      var cur = parseFloat(getComputedStyle(tbl).fontSize) || 12;
+      var next = cur * (avail / w);
+      if (next < 1) next = 1;
+      tbl.style.fontSize = next + "px";
+      if (next <= 1) break;
+    }
+  }
   function fitAll() {
     var lines = document.querySelectorAll(".ol-fit .ol-line");
     for (var i = 0; i < lines.length; i++) fitLine(lines[i]);
     var blocks = document.querySelectorAll(".ol-fith");
     for (var j = 0; j < blocks.length; j++) fitBlockHeight(blocks[j]);
+    // After the block fits: the table inherits the block's (possibly
+    // shrunk) font, and shrinking the table only ever reduces its height,
+    // so a height fit settled above stays settled.
+    var tables = document.querySelectorAll(".ol-assort");
+    for (var k = 0; k < tables.length; k++) fitTable(tables[k]);
   }
   window.__olFitWidth = fitAll;
   fitAll();
@@ -1332,8 +1366,12 @@ function emitLayoutDocument(
         `<div class="ol-page ol-page-${i}">${renderPageBorder(page)}${html}${renderGuides(page)}</div>`,
     )
     .join("\n");
-  // Append the fit-to-width script only when a block opts in.
-  const usesFit = keptUnits.some(({ page }) => page.blocks.some((b) => b.fitWidth || b.fitHeight));
+  // Append the fit-to-width script when a block opts in — or when an
+  // assortment table rendered, which needs the table pass to keep its
+  // nowrap cells inside the block whether or not the block opted in.
+  const usesFit =
+    keptUnits.some(({ page }) => page.blocks.some((b) => b.fitWidth || b.fitHeight)) ||
+    pagesHtml.includes('class="ol-assort"');
   const body = usesFit ? `${pagesHtml}\n${FIT_SCRIPT}` : pagesHtml;
 
   return htmlDocument({
@@ -1403,9 +1441,12 @@ function emitLayoutDocument(
      the label column's width and lets a long size label ("3-9 Months")
      collide with it. */
   .ol-assort { border-collapse: collapse; width: 100%; table-layout: auto; margin: 0.2em 0; }
+  /* Cells never wrap: a size label is a unit ("86/92", "3-9 Months") and
+     breaking it mid-token is illegible. The table-fit script scales the
+     whole table down instead when the row is wider than the block. */
   .ol-assort th, .ol-assort td {
     border: ${(0.2 * ctx.fontScale).toFixed(3)}mm solid currentColor;
-    padding: 0.15em 0.4em; text-align: center; word-break: break-word;
+    padding: 0.15em 0.4em; text-align: center; white-space: nowrap; word-break: normal;
   }
   /* The size header row and the leading label column read as headings. */
   .ol-assort tr:first-child th { font-weight: 700; }
