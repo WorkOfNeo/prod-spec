@@ -26,10 +26,24 @@
 export const CARTON_QTY_KINDS = ["solid", "assort", "inner", "outer"] as const;
 export type CartonQtyKind = (typeof CARTON_QTY_KINDS)[number];
 
+// Buyers do not spell the two variants one way each. The same column carries
+// "Assortment", the "ASS"/"AST" abbreviations and the "Soild" typo, all naming
+// the same packing — matching only the exact words "solid" and "assort" left
+// one side BLANK on 195 of the 395 live split cells. So each variant owns a
+// list of spellings; every alias stays whole-word anchored, so a label has to
+// stand on its own to count.
+const VARIANT_LABELS: Record<CartonQtyKind, string> = {
+  solid: "solids?|soild",
+  assort: "assortments?|assorted|assort|asst|asso|ass|ast",
+  // The pack-pair axis; PACK_PAIR_RE handles it, these never reach the picker.
+  inner: "inner",
+  outer: "outer",
+};
+
 // Does a raw carton-qty value carry a Solid/Assort split at all? A plain
 // number ("48") or a per-size "SIZE=qty" list has none — that single value
 // serves both variants, so the picker hands it back untouched.
-const SPLIT_RE = /\b(?:solid|assort)\b/i;
+const SPLIT_RE = new RegExp(`\\b(?:${VARIANT_LABELS.solid}|${VARIANT_LABELS.assort})\\b`, "i");
 
 // The number a Solid/Assort split assigns to one variant. Returns:
 //   • the variant's number         → "Solid - 5 / Assort - 8" + "assort" → "8"
@@ -40,9 +54,11 @@ export function pickCartonQtyVariant(raw: string | undefined, kind: string): str
   const source = (raw ?? "").trim();
   if (!source) return "";
   if (!SPLIT_RE.test(source)) return source;
-  // Match the variant label, skip the "- " / ": " / "= " separator (but never
-  // a digit or the "/" that starts the next variant), then take its number.
-  const m = new RegExp(`\\b${kind.toLowerCase()}\\b[^\\d/]*(\\d+(?:[.,]\\d+)?)`, "i").exec(source);
+  // Match any of the variant's labels, skip the "- " / ": " / "= " separator
+  // (but never a digit or the "/" that starts the next variant), then take its
+  // number.
+  const labels = VARIANT_LABELS[kind.toLowerCase() as CartonQtyKind] ?? kind.toLowerCase();
+  const m = new RegExp(`\\b(?:${labels})\\b[^\\d/]*(\\d+(?:[.,]\\d+)?)`, "i").exec(source);
   return m ? m[1] : "";
 }
 

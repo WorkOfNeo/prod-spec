@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pickCartonQtyVariant } from "./carton-qty";
+import { pickCartonQtyVariant, pickSolidAssortVariant } from "./carton-qty";
 
 test("Solid/Assort split → each variant picks its own number", () => {
   const raw = "Solid - 5 / Assort - 8";
@@ -33,4 +33,38 @@ test("a split missing the requested variant resolves empty (→ amber gap)", () 
 test("empty / undefined input", () => {
   assert.equal(pickCartonQtyVariant("", "solid"), "");
   assert.equal(pickCartonQtyVariant(undefined, "assort"), "");
+});
+
+test("buyers' spelling variants of the two labels", () => {
+  // "Assortment" (the long form) — the shape that sent {{qtyPerCarton:assort}}
+  // blank on 12 live styles even though the solid side resolved fine.
+  assert.equal(pickCartonQtyVariant("Assortment=12/ Solid=10", "assort"), "12");
+  assert.equal(pickCartonQtyVariant("Assortment=12/ Solid=10", "solid"), "10");
+  assert.equal(pickCartonQtyVariant("Solid-20/ Assortment-24", "assort"), "24");
+  assert.equal(pickCartonQtyVariant("Assortment= 12, Solid = 20", "assort"), "12");
+  // "ASS" / "AST" abbreviations.
+  assert.equal(pickCartonQtyVariant("ASS : 23 , SOLID : 20", "assort"), "23");
+  assert.equal(pickCartonQtyVariant("ASS: 25, SOLID: 25", "solid"), "25");
+  assert.equal(
+    pickCartonQtyVariant("For AST - 12 PCS PER CARTON/ SOLID - polybag", "assort"),
+    "12",
+  );
+  // "Soild" — the typo on 35 live styles, which blanked the SOLID side.
+  assert.equal(pickCartonQtyVariant("Soild - 20 / Assort - 24", "solid"), "20");
+  assert.equal(pickCartonQtyVariant("Soild - 20 / Assort - 24", "assort"), "24");
+});
+
+test("an alias only counts as a whole word", () => {
+  // "assort" inside "assortment" must not steal the match and leave the
+  // trailing "ment=" unconsumed; the long form wins.
+  assert.equal(pickCartonQtyVariant("Assortment= 14 / Solid= 20", "assort"), "14");
+  // A plain number is still not a split, whatever the kind asked for.
+  assert.equal(pickCartonQtyVariant("24", "assort"), "24");
+});
+
+test("the aliases carry to the shared solid/assort primitive", () => {
+  // {{customerOrderNo:solid|assort}} reuses the same picker, so a Tokmanni
+  // order-number cell spelled the long way narrows too.
+  assert.equal(pickSolidAssortVariant("Assortment - 4530763 / Soild - 4530769", "assort"), "4530763");
+  assert.equal(pickSolidAssortVariant("Assortment - 4530763 / Soild - 4530769", "solid"), "4530769");
 });
