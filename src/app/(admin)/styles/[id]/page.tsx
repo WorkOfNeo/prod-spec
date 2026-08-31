@@ -822,11 +822,11 @@ export default async function StyleDetail({
         />
       </div>
 
-      {/* Full width, not in the grid above: it lists filenames, which don't fit
-          a half-width cell. Answers "did the files actually land, and is what's
-          in the folder still what we think it is?" — the half the recurring
-          verify sweep can't cover, since that only re-checks rows it already
-          believes it uploaded. */}
+      {/* Answers "did the files actually land, and is what's in the folder
+          still what we think it is?" — the half the recurring verify sweep
+          can't cover, since that only re-checks rows it already believes it
+          uploaded. Full width but ONE line: the counts float here and the
+          filenames live in its dialog. */}
       <FolderReconcilePanel
         styleId={style.id}
         poNumber={style.poNumber}
