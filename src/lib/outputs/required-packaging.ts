@@ -112,15 +112,21 @@ export function assembleRequiredPackagingDocs(
 // regen sweep, the coverage report) loads this once and threads it, rather than
 // hitting AppSetting three times per style.
 export async function loadTrimSettings(): Promise<Omit<TrimContext, "trimLabels" | "manualDelivered">> {
-  const { getTrimRules, getTrimLabelOverrides, getTrimLayoutConcepts, getTrimConceptCopy } =
+  const { getTrimRules, getTrimLabelOverrides, getTrimLayoutConcepts } =
     await import("@/lib/settings/app-settings");
-  const [rules, overrides, layoutConcepts, conceptCopy] = await Promise.all([
+  const { loadTrimConceptRows } = await import("@/lib/trims/catalogue");
+  const { conceptCopyFromRows } = await import("@/lib/trims/concept-copy");
+  const [rules, overrides, layoutConcepts, rows] = await Promise.all([
     getTrimRules(),
     getTrimLabelOverrides(),
     getTrimLayoutConcepts(),
-    getTrimConceptCopy(),
+    // ALSO installs the catalogue into the synchronous registry that
+    // conceptHasArtwork reads (see src/lib/trims/catalogue.ts). This is the one
+    // place every render, sweep and census path has in common, which is why the
+    // load is anchored here rather than at each of them.
+    loadTrimConceptRows(),
   ]);
-  return { rules, overrides, layoutConcepts, conceptCopy };
+  return { rules, overrides, layoutConcepts, conceptCopy: conceptCopyFromRows(rows) };
 }
 
 // DB read. The style's required-packaging rows with live approval state.

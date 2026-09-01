@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_TRIM_RULES, splitTrimsCell } from "./classify";
-import { effectiveConceptCopy } from "./concept-copy";
+import { conceptCopyFromRows } from "./concept-copy";
 import {
   assembleTrimManifest,
   manifestFingerprint,
@@ -430,7 +430,9 @@ test("the wording is stored data, so a different setting produces different word
     outputs: [],
     rules: RULES,
     overrides: {},
-    conceptCopy: effectiveConceptCopy({ BANDEROLE: { pending: "Awaiting supplier samples" } }),
+    conceptCopy: conceptCopyFromRows([
+      { value: "BANDEROLE", label: "Banderole", artwork: true, pending: "Awaiting supplier samples" },
+    ]),
   });
   assert.equal(docs[0].copy?.pending, "Awaiting supplier samples");
 });
