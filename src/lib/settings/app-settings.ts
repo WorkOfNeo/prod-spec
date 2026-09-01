@@ -596,6 +596,22 @@ export async function setTrimLabelOverrides(overrides: TrimLabelOverrides): Prom
   });
 }
 
+// Drop every stored per-label decision — the "wash", used when the vocabulary
+// they were made against turns out to have been the wrong set (mapped over the
+// whole historical book rather than the orders generation will reach). Returns
+// how many decisions were dropped so the caller can log and report it.
+//
+// The ROW is deleted rather than overwritten with {}: "nothing stored" is the
+// state a fresh install is in, and keeping the two identical means the seed
+// path stays the one that is exercised. Rules and layout pins are deliberately
+// untouched — rules are keyword code whose seed lives in classify.ts, and the
+// layout pins are keyed by layout id, not by the polluted vocabulary.
+export async function clearTrimLabelOverrides(): Promise<number> {
+  const existing = await getTrimLabelOverrides();
+  await db.appSetting.deleteMany({ where: { key: TRIM_LABEL_OVERRIDES_KEY } });
+  return Object.keys(existing).length;
+}
+
 // Per-layout concept overrides, keyed by BASE variantKey ("layout:<id>", or a
 // coded variant key). Only needed for the handful whose name the rules can't
 // read — live that's the "Inner Pack Sticker" / "Tag Sticker" family. An empty
