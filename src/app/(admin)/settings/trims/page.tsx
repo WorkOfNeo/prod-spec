@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { canReview, isAdmin } from "@/lib/roles";
@@ -54,6 +55,15 @@ export default async function TrimsSettingsPage() {
         The vocabulary below is scoped to the <strong>generation PO cutoff</strong> — only orders
         that will actually be printed. Words that survive only on pre-cutoff orders are not put in
         front of anyone to map.
+        What a cover <em>says</em> about each concept — the standing note, and the wording used
+        while a document is still to come — is edited on{" "}
+        <Link
+          href="/settings/cover-page?tab=packaging"
+          className="font-medium text-zinc-700 underline underline-offset-2"
+        >
+          Cover page › Packaging wording
+        </Link>
+        , with the rest of the cover prose.
       </p>
 
       <TrimsEditor

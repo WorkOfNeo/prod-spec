@@ -29,6 +29,9 @@ type DocRow = {
   approved?: boolean;
   kind?: "app" | "manual" | "info";
   suppliedAs?: string[];
+  // Per-concept wording resolved by the manifest builder. Read here rather than
+  // re-derived, so this preview says what the PDF will say.
+  copy?: { note?: string; pending?: string; delivered?: string };
 };
 
 type Diff = {
@@ -51,8 +54,8 @@ const REGEN_CHUNK = 5;
 
 function statusLabel(d: DocRow): string {
   if (d.kind === "info") return "See packing instructions";
-  if (d.approved === true) return "Approved";
-  if (d.approved === false) return "Waiting for Customer Information";
+  if (d.approved === true) return d.copy?.delivered?.trim() || "Approved";
+  if (d.approved === false) return d.copy?.pending?.trim() || "Waiting for Customer Information";
   return "—";
 }
 
@@ -96,6 +99,9 @@ function DocList({ docs, emptyNote }: { docs: DocRow[]; emptyNote: string }) {
           >
             {statusLabel(d)}
           </div>
+          {d.copy?.note?.trim() ? (
+            <div className="mt-0.5 text-[11px] italic text-zinc-500">{d.copy.note.trim()}</div>
+          ) : null}
         </li>
       ))}
     </ol>
