@@ -140,6 +140,11 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
         the same <span className="font-mono">APPROVED LAYOUTS</span> folder the generated outputs do,
         and the cover stops saying &ldquo;Waiting for Customer Information&rdquo; for that line.
       </p>
+      <p className="text-[11px] text-zinc-400">
+        An already-generated cover PDF is rewritten by the &ldquo;Regenerate cover pages&rdquo; sweep
+        (Settings ▸ Cover page), which now sees this style&apos;s manifest as changed. A cover
+        generated after the upload carries it straight away.
+      </p>
 
       {error && (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
