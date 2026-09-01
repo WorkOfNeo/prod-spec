@@ -3,6 +3,7 @@ import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { refreshStyleCoverAsset, type CoverRefreshResult } from "@/lib/pdf/refresh-cover";
 import { loadTrimSettings } from "@/lib/outputs/required-packaging";
 import { enqueueCoverForSupplier, type CoverRequeueResult } from "@/lib/publish/requeue-cover";
+import { notifiesSupplier, type CoverRebuildTrigger } from "@/lib/pdf/cover-rebuild-trigger";
 import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
 
 // =====================================================
@@ -59,7 +60,8 @@ export async function listCoverRefreshableStyleIds(
 }
 
 // Preview counts for the confirm dialog: (an upper bound on) how many of the
-// given styles are delivered to a supplier and would be re-pushed + re-notified.
+// given styles are delivered to a supplier and would be re-pushed. Re-pushed
+// only — this sweep is the WORDING door, so none of them are emailed.
 // Counts APPROVED styles with a linked supplier that clear the supplier-send PO
 // cutoff; the per-style requeue re-checks skipSupplierDelivery, so the real
 // count can be a touch lower — surfaced as "up to N". Takes the already-listed
@@ -85,8 +87,10 @@ export async function countDeliveredAmong(styleIds: string[]): Promise<number> {
 // Process one chunk. Refreshes each style's cover; when `deliver` is set, a
 // refreshed cover of a delivered style is re-armed in the supplier queue and
 // the chunk is pushed to SharePoint at the end (best-effort — a push hiccup
-// never fails the refresh; the recurring sweep retries, and the nightly digest
-// still carries the re-armed row).
+// never fails the refresh; the recurring sweep retries). Whether the re-armed
+// row is also EMAILED is decided by `trigger`, never by the caller's mood: a
+// content rebuild rides the nightly digest as it always has, a wording rebuild
+// is delivered in silence.
 export async function processCoverRefreshChunk(
   styleIds: string[],
   opts: {
@@ -96,9 +100,12 @@ export async function processCoverRefreshChunk(
     // they carry. The filter that bounds a sweep now that Monday's trims are on
     // the manifest — see refreshStyleCoverAsset.
     onlyChanged?: boolean;
-    // false ⇒ push the refreshed covers to SharePoint but keep them out of the
-    // nightly digest. Only meaningful alongside deliver.
-    notifySupplier?: boolean;
+    // WHY this rebuild is happening — the only thing that decides whether the
+    // re-armed rows are announced in tonight's digest (see
+    // cover-rebuild-trigger.ts). Required rather than defaulted: every caller
+    // knows its own trigger, and a default here would be a place for the
+    // question to quietly go unanswered. Only meaningful alongside deliver.
+    trigger: CoverRebuildTrigger;
   },
 ): Promise<CoverSweepChunkResult> {
   const outcomes: CoverSweepStyleOutcome[] = [];
@@ -115,7 +122,7 @@ export async function processCoverRefreshChunk(
     if (opts.deliver && result.status === "refreshed") {
       try {
         const requeue = await enqueueCoverForSupplier(styleId, result.coverAssetId, {
-          notifySupplier: opts.notifySupplier,
+          notifySupplier: notifiesSupplier(opts.trigger),
         });
         if (requeue === "queued") requeuedStyleIds.push(styleId);
         outcomes.push({ ...result, requeue });

@@ -103,7 +103,14 @@ export async function runDueCoverRegens(): Promise<CoverRegenDrainResult> {
     // approved is exactly the one whose cover must be re-rendered — to drop the
     // Status column and show a clean all-Approved manifest. Skip it here and
     // the supplier's copy would be frozen showing pending rows forever.
-    const { outcomes, pushed } = await processCoverRefreshChunk(due, { deliver: true });
+    // trigger "content": this drain fires BECAUSE an output of this style was
+    // just approved or rejected. That is the style's own facts moving, so the
+    // supplier hears about it in tonight's digest exactly as they always have —
+    // and it is also what re-arms a style the wording sweep had silenced.
+    const { outcomes, pushed } = await processCoverRefreshChunk(due, {
+      deliver: true,
+      trigger: "content",
+    });
     return {
       processed: due.length,
       refreshed: outcomes.filter((o) => o.status === "refreshed").length,
