@@ -1,13 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { TrimConcept } from "@/lib/trims/concepts";
+import type { TrimConceptRow } from "@/lib/trims/concepts";
 import type { TrimRule } from "@/lib/trims/classify";
 import type { TrimCensus, TrimOverridePurgePreview } from "@/lib/trims/census";
 
 // Four views on one decision — what a trim means.
 //
 //   Trim values — the vocabulary Monday actually uses, worst-first. The queue.
+//                 Each value is matched onto the cover page's PACKAGING ROWS,
+//                 by hand, and a value may name several (a compound entry like
+//                 "Hanger & Hangtag" is one line naming two things).
 //   Rules       — the ordered keyword rules that classify BOTH sides. Order is
 //                 semantic, and the editor has to make that visible or someone
 //                 will "tidy" the list alphabetically and quietly re-label
@@ -27,7 +30,7 @@ import type { TrimCensus, TrimOverridePurgePreview } from "@/lib/trims/census";
 type Tab = "labels" | "rules" | "layouts" | "coverage";
 
 type Props = {
-  concepts: TrimConcept[];
+  concepts: TrimConceptRow[];
   initialRules: TrimRule[];
   initialOverrides: Record<string, string[]>;
   initialLayoutConcepts: Record<string, string>;
@@ -130,10 +133,16 @@ export function TrimsEditor({
     };
   }, []);
 
+  // Every row resolves for DISPLAY, including one that was removed — a value
+  // mapped to it before the removal still names it, and showing a title-cased id
+  // there would look like corruption rather than a row someone retired.
   const conceptLabel = useMemo(
     () => new Map(concepts.map((c) => [c.value, c.label])),
     [concepts],
   );
+  // Only active rows are OFFERED. Removing a row is how the list is kept short
+  // without breaking what already points at it.
+  const offerableConcepts = useMemo(() => concepts.filter((c) => c.active), [concepts]);
 
   const dirty =
     JSON.stringify(rules) !== JSON.stringify(initialRules) ||
@@ -169,20 +178,46 @@ export function TrimsEditor({
   const needsWork = labels.filter((l) => l.source === "none" || l.ambiguous);
   const shownLabels = onlyNeedsWork ? needsWork : labels;
 
-  const setLabelOverride = (normalized: string, value: string) => {
+  // ---- Mapping a value onto rows.
+  //
+  // A stored decision is the full LIST of rows the value names, because a
+  // compound Monday entry ("Polybag + Inlaycard + Hangtag") is one line naming
+  // several. Deleting the key is "follow the suggestion"; an EMPTY list is the
+  // separate, real decision "not packaging, keep it off the cover".
+  const setLabelRows = (normalized: string, rows: string[]) => {
+    setOverrides((prev) => ({ ...prev, [normalized]: rows }));
+  };
+
+  const clearLabelDecision = (normalized: string) => {
     setOverrides((prev) => {
       const next = { ...prev };
-      if (value === "__auto__") delete next[normalized];
-      else if (value === "__none__") next[normalized] = [];
-      else next[normalized] = [value];
+      delete next[normalized];
       return next;
     });
   };
 
-  const labelSelectValue = (normalized: string, concepts: string[], source: string): string => {
-    if (source !== "override") return "__auto__";
-    if (concepts.length === 0) return "__none__";
-    return concepts[0];
+  // What is currently in force for a value: the stored decision if there is
+  // one, otherwise whatever the rules suggest.
+  const decidedRows = (l: { normalized: string; concepts: string[] }): string[] =>
+    Object.prototype.hasOwnProperty.call(overrides, l.normalized)
+      ? overrides[l.normalized]
+      : l.concepts;
+
+  const isDecided = (normalized: string): boolean =>
+    Object.prototype.hasOwnProperty.call(overrides, normalized);
+
+  // Accept every outstanding suggestion in one go: the whole point of the
+  // keyword rules is that the common vocabulary should not have to be typed.
+  // Only values that HAVE a suggestion are touched — a value no rule matched
+  // still needs a person, and pretending otherwise would map it to nothing and
+  // call the job done.
+  const acceptable = labels.filter((l) => !isDecided(l.normalized) && l.suggested.length > 0);
+  const acceptAllSuggestions = () => {
+    setOverrides((prev) => {
+      const next = { ...prev };
+      for (const l of acceptable) next[l.normalized] = l.suggested;
+      return next;
+    });
   };
 
   // ---- Layouts -----------------------------------------------------------
@@ -289,11 +324,45 @@ export function TrimsEditor({
 
           <p className="mt-4 max-w-3xl text-[13px] text-zinc-500">
             {census.totals.distinctLabels} distinct values across{" "}
-            {census.totals.stylesWithTrims.toLocaleString()} styles. Anything left on{" "}
-            <em>auto</em> follows the rules; setting a value here overrides them permanently. Choose{" "}
-            <em>Not packaging</em> to keep a value off the cover entirely — for one-offs like a PO
-            number typed into the column.
+            {census.totals.stylesWithTrims.toLocaleString()} styles, each matched onto one or more{" "}
+            <strong>packaging rows</strong>. A value marked <em>suggested</em> is following the
+            keyword rules and needs no action; picking rows yourself makes it a <em>decision</em>{" "}
+            the rules can no longer change. Choose <em>Not packaging</em> to keep a value off the
+            cover entirely — for one-offs like a PO number typed into the column. A value with{" "}
+            <em>no row yet</em> is still printed, as something supplied separately, so a supplier
+            never loses a line while it waits to be mapped.
           </p>
+          <p className="mt-2 max-w-3xl text-[13px] text-zinc-500">
+            Nothing here matches the right row?{" "}
+            <a
+              href="/settings/cover-page?tab=packaging"
+              className="font-medium text-zinc-700 underline underline-offset-2"
+            >
+              Add a row on Cover page › Packaging rows
+            </a>
+            , then come back and pick it.
+          </p>
+
+          {acceptable.length > 0 && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white px-4 py-3">
+              <p className="max-w-2xl text-[13px] text-zinc-600">
+                <strong className="text-zinc-800">
+                  {acceptable.length} value{acceptable.length === 1 ? "" : "s"} still follow the
+                  keyword suggestion.
+                </strong>{" "}
+                They print correctly today; accepting turns each one into a decision of your own,
+                which no later rule edit can change. Values no rule matched are left alone — those
+                still need a person.
+              </p>
+              <button
+                type="button"
+                onClick={acceptAllSuggestions}
+                className="shrink-0 rounded-md border border-zinc-300 px-3 py-1.5 text-[13px] font-medium text-zinc-700 hover:bg-zinc-50"
+              >
+                Accept all {acceptable.length}
+              </button>
+            </div>
+          )}
 
           {canPurge && (
             <div className="mt-4 rounded-md border border-zinc-200 bg-white px-4 py-3">
@@ -412,32 +481,102 @@ export function TrimsEditor({
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums text-zinc-500">{l.styles}</td>
                     <td className="py-2 pr-3">
-                      {l.concepts.length === 0 ? (
-                        <Badge tone={l.source === "override" ? "override" : "none"}>
-                          {l.source === "override" ? "not packaging" : "unmapped"}
-                        </Badge>
-                      ) : (
-                        <span className="text-zinc-700">
-                          {l.concepts.map((c) => conceptLabel.get(c) ?? c).join(" + ")}{" "}
-                          <Badge tone={l.source}>{l.source}</Badge>
-                        </span>
-                      )}
+                      {(() => {
+                        const rows = decidedRows(l);
+                        const decided = isDecided(l.normalized);
+                        if (rows.length === 0) {
+                          return (
+                            <Badge tone={decided ? "override" : "none"}>
+                              {decided ? "not packaging" : "no row yet"}
+                            </Badge>
+                          );
+                        }
+                        return (
+                          <span className="text-zinc-700">
+                            {rows.map((c) => conceptLabel.get(c) ?? c).join(" + ")}{" "}
+                            <Badge tone={decided ? "override" : "rule"}>
+                              {decided ? "decided" : "suggested"}
+                            </Badge>
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="py-2">
-                      <select
-                        value={labelSelectValue(l.normalized, l.concepts, l.source)}
-                        onChange={(e) => setLabelOverride(l.normalized, e.target.value)}
-                        className="w-full rounded border border-zinc-300 px-2 py-1 text-[13px]"
-                      >
-                        <option value="__auto__">Auto (follow the rules)</option>
-                        <option value="__none__">Not packaging — hide it</option>
-                        {concepts.map((c) => (
-                          <option key={c.value} value={c.value}>
-                            {c.label}
-                            {c.artwork ? "" : " (no artwork)"}
-                          </option>
+                      {/* The rows this value names, each removable, plus a picker
+                          that appends one — a compound Monday entry names
+                          several and a single select would silently drop the
+                          rest. */}
+                      <div className="flex flex-wrap items-center gap-1">
+                        {decidedRows(l).map((c) => (
+                          <span
+                            key={c}
+                            className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[12px] text-zinc-700"
+                          >
+                            {conceptLabel.get(c) ?? c}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setLabelRows(
+                                  l.normalized,
+                                  decidedRows(l).filter((x) => x !== c),
+                                )
+                              }
+                              className="text-zinc-400 hover:text-red-600"
+                              aria-label={`Remove ${conceptLabel.get(c) ?? c}`}
+                            >
+                              ×
+                            </button>
+                          </span>
                         ))}
-                      </select>
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            if (!e.target.value) return;
+                            const current = decidedRows(l);
+                            if (!current.includes(e.target.value)) {
+                              setLabelRows(l.normalized, [...current, e.target.value]);
+                            }
+                          }}
+                          className="rounded border border-zinc-300 px-2 py-1 text-[12px]"
+                        >
+                          <option value="">Add a row…</option>
+                          {offerableConcepts
+                            .filter((c) => !decidedRows(l).includes(c.value))
+                            .map((c) => (
+                              <option key={c.value} value={c.value}>
+                                {c.label}
+                                {c.artwork ? "" : " (no artwork)"}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+                        {!isDecided(l.normalized) && l.suggested.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setLabelRows(l.normalized, l.suggested)}
+                            className="text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
+                          >
+                            Accept suggestion
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setLabelRows(l.normalized, [])}
+                          className="text-zinc-500 underline underline-offset-2 hover:text-zinc-800"
+                        >
+                          Not packaging
+                        </button>
+                        {isDecided(l.normalized) && (
+                          <button
+                            type="button"
+                            onClick={() => clearLabelDecision(l.normalized)}
+                            className="text-zinc-400 underline underline-offset-2 hover:text-zinc-700"
+                          >
+                            Undecide
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

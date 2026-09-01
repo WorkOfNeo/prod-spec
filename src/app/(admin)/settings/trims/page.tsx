@@ -7,7 +7,7 @@ import {
   getTrimLayoutConcepts,
   getTrimRules,
 } from "@/lib/settings/app-settings";
-import { DEFAULT_TRIM_CONCEPTS } from "@/lib/trims/concepts";
+import { loadTrimConceptRows } from "@/lib/trims/catalogue";
 import { TrimsEditor } from "./trims-editor";
 
 export const dynamic = "force-dynamic";
@@ -30,10 +30,11 @@ export default async function TrimsSettingsPage() {
   // values is a full-fleet scan — seconds against a remote database — and
   // blocking first paint on it would make the screen feel broken while a person
   // waits to edit one keyword. The editor fetches it after paint instead.
-  const [rules, overrides, layoutConcepts] = await Promise.all([
+  const [rules, overrides, layoutConcepts, concepts] = await Promise.all([
     getTrimRules(),
     getTrimLabelOverrides(),
     getTrimLayoutConcepts(),
+    loadTrimConceptRows(),
   ]);
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
@@ -46,28 +47,34 @@ export default async function TrimsSettingsPage() {
       </p>
       <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-zinc-500">
         A trim is never matched to one layout — &ldquo;Care label&rdquo; exists once per customer and
-        that mapping would never be finished. Both sides are matched onto a shared{" "}
-        <strong>concept</strong> instead, by the keyword rules below, so a new customer&rsquo;s
-        layout is recognised the moment it is created. Only genuinely new vocabulary needs a person.
+        that mapping would never be finished. Every trim value is matched instead onto one of the
+        cover page&rsquo;s <strong>packaging rows</strong>, the shared list that layouts are matched
+        onto too, so a new customer&rsquo;s layout is recognised the moment it is created.
+      </p>
+
+      <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-zinc-500">
+        The keyword rules below are a <strong>suggestion</strong>: they pre-fill a value&rsquo;s row
+        so the common vocabulary needs no typing, and a value keeps following its suggestion until
+        someone decides otherwise. Accepting a suggestion turns it into a decision that no later
+        rule edit can change.
       </p>
 
       <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-zinc-500">
         The vocabulary below is scoped to the <strong>generation PO cutoff</strong> — only orders
         that will actually be printed. Words that survive only on pre-cutoff orders are not put in
-        front of anyone to map.
-        What a cover <em>says</em> about each concept — the standing note, and the wording used
-        while a document is still to come — is edited on{" "}
+        front of anyone to map. The rows themselves — adding one, renaming one, and the wording each
+        prints on a cover — live on{" "}
         <Link
           href="/settings/cover-page?tab=packaging"
           className="font-medium text-zinc-700 underline underline-offset-2"
         >
-          Cover page › Packaging wording
+          Cover page › Packaging rows
         </Link>
-        , with the rest of the cover prose.
+        .
       </p>
 
       <TrimsEditor
-        concepts={DEFAULT_TRIM_CONCEPTS}
+        concepts={concepts}
         initialRules={rules}
         initialOverrides={overrides}
         initialLayoutConcepts={layoutConcepts}
