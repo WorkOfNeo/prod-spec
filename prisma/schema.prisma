@@ -982,6 +982,7 @@ model Style {
   eans             StyleEan[]
   rejectionTickets RejectionTicket[]
   supplierShare    SupplierShare?
+  manualTrimUploads StyleManualTrimUpload[]
   views            StyleView[]
 
   @@index([customerId])
@@ -1560,6 +1561,71 @@ model SupplierShare {
   style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
 
   @@map("supplier_shares")
+}
+
+// =====================================================
+// Manually-supplied trim documents — the file behind a "manual" row of the
+// cover's required-packaging manifest.
+//
+// A manual row is a trim the buyer's Monday "Trims" column names but this app
+// generates no artwork for (a main label, a hangtag, a printed hanger). The
+// cover already promises the supplier that document; until now there was
+// nowhere in the app to actually PUT it, so it reached the supplier by email or
+// not at all, and the row sat at "Waiting for Customer Information" forever.
+//
+// One row per (style, normalised trim label) — @@unique — because that is what
+// the manifest asks about: "has THIS line been supplied?". Re-uploading replaces
+// the row (and overwrites the same SharePoint file), which is what "replace"
+// means to the person doing it.
+//
+// The bytes live in Postgres (same pattern as job_assets.pdf and
+// prod_spec_images.data) so the app is never in the position of believing a
+// file exists that only SharePoint has. sharepointItemId is what makes the row
+// count as DELIVERED: it is set only after Graph accepted the PUT, so a stored
+// file that never reached the supplier's folder does not flip the cover to
+// "Approved" (see src/lib/trims/manual-uploads.ts).
+// =====================================================
+model StyleManualTrimUpload {
+  id      String @id @default(cuid())
+  styleId String
+  // Monday's wording, VERBATIM as the cover manifest prints it. Kept beside
+  // the normalised key so the UI can label the drop zone with exactly the
+  // string on the page rather than a re-derived one.
+  trimLabel       String
+  // normalizeTrimLabel(trimLabel) — the join key the manifest's
+  // `manualDelivered` set is tested against. Stored rather than computed on
+  // read so the unique constraint is the one the lookup uses.
+  normalizedLabel String
+
+  // What the operator dropped in, and what we uploaded it AS. The two differ:
+  // the stored name is built by manualTrimFileName() so it cannot collide with
+  // another style on the same (PO-scoped) folder.
+  originalName String
+  fileName     String
+  mimeType     String
+  byteSize     Int
+  file         Bytes
+
+  // Where it landed. NULL until Graph accepted the upload — a row with no
+  // sharepointItemId is stored-but-not-delivered, and the panel says so and
+  // offers a retry rather than silently claiming the supplier has it.
+  sharepointDriveId String?
+  sharepointItemId  String?
+  sharepointWebUrl  String?
+  deliveredAt       DateTime?
+  // Last failure reason, for the panel's retry hint (no folder yet, ambiguous
+  // PO folder, write not granted). Cleared on a successful push.
+  uploadError       String?
+
+  uploadedById String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  style Style @relation(fields: [styleId], references: [id], onDelete: Cascade)
+
+  @@unique([styleId, normalizedLabel])
+  @@index([styleId])
+  @@map("style_manual_trim_uploads")
 }
 
 // =====================================================
