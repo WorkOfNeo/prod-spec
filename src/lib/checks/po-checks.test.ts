@@ -6,6 +6,7 @@ import {
   type FolderFile,
   type ExpectedCover,
   type ExpectedDoc,
+  type CheckSection,
 } from "./po-checks";
 
 // Every name here is invented. The repo is public; no live PO, style or
@@ -18,15 +19,14 @@ function file(fileName: string, location: FolderFile["location"] = "approved-lay
 }
 
 function cover(styleName: string, currentName: string, previousName: string | null = null): ExpectedCover {
-  return { styleId: `style-${styleName}`, styleName, styleSlug: styleName.toLowerCase(), currentName, previousName };
+  return { styleId: `style-${styleName}`, styleName, styleSlugs: [styleName.toLowerCase()], currentName, previousName };
 }
 
 function doc(name: string, fileName: string, previousFileName: string | null = null): ExpectedDoc {
   return { fileName, previousFileName, styleId: "style-ab10001", styleName: "AB10001", name, nameNote: null };
 }
 
-const row = (s: { flagged: Array<{ fileName: string }> }, fileName: string) =>
-  s.flagged.find((r) => r.fileName === fileName)!;
+const row = (s: CheckSection, fileName: string) => s.flagged.find((r) => r.fileName === fileName)!;
 
 // --- Check 1: cover pages -------------------------------------------------
 

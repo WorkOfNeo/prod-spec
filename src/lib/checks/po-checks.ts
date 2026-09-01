@@ -64,7 +64,13 @@ export type FolderFile = {
 export type ExpectedCover = {
   styleId: string;
   styleName: string;
-  styleSlug: string; // coverSlug(styleNumber) — how the name spells the style
+  // Every spelling of this style that could plausibly open a cover name, used
+  // ONLY to attribute a cover we do not otherwise recognise. A list rather than
+  // one slug because the style number a cover is named after is a render field,
+  // not necessarily Style.name — so run-po-checks.ts contributes both, and the
+  // failure mode of an extra entry is under-flagging (safe) rather than
+  // proposing a deletion against the wrong style (not).
+  styleSlugs: string[];
   currentName: string;
   previousName: string | null;
 };
@@ -229,7 +235,9 @@ export function buildCoverCheck(input: {
     // Not a name any style on this PO asks for, now or before. Attribute it if
     // we can: the convention spells the style number into the name.
     const body = coverNameBody(f.fileName);
-    const owner = body ? input.expected.find((e) => coverBodyMentionsStyle(body, e.styleSlug)) : undefined;
+    const owner = body
+      ? input.expected.find((e) => e.styleSlugs.some((slug) => coverBodyMentionsStyle(body, slug)))
+      : undefined;
 
     if (owner) {
       // It names a style that IS on this PO, but under a name nothing in the
