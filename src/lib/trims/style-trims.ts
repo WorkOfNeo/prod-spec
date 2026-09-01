@@ -14,6 +14,7 @@
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { resolveMappedField } from "@/lib/styles/resolved-fields";
 import { splitTrimsCell, type TrimRule } from "./classify";
+import type { TrimConceptCopyMap } from "./concept-copy";
 
 export type StyleTrimsSource = {
   rawData: unknown;
@@ -39,6 +40,9 @@ export type TrimContext = {
   // Base variantKey -> concept, for the handful of layouts whose NAME cannot be
   // classified. An empty string means "satisfies no trim".
   layoutConcepts: Record<string, string>;
+  // Concept -> the wording the cover prints for it (standing note, and the
+  // not-delivered / delivered status). Defaults already merged in.
+  conceptCopy: TrimConceptCopyMap;
   // Normalised labels whose manually-supplied file has been located in the
   // order folder. Reserved for the delivery-detection pass; absent today, which
   // makes every manual row read as still-to-come.

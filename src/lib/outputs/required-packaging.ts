@@ -103,6 +103,7 @@ export function assembleRequiredPackagingDocs(
     rules: trimContext.rules,
     overrides: trimContext.overrides,
     manualDelivered: trimContext.manualDelivered,
+    conceptCopy: trimContext.conceptCopy,
   });
 }
 
@@ -111,15 +112,15 @@ export function assembleRequiredPackagingDocs(
 // regen sweep, the coverage report) loads this once and threads it, rather than
 // hitting AppSetting three times per style.
 export async function loadTrimSettings(): Promise<Omit<TrimContext, "trimLabels" | "manualDelivered">> {
-  const { getTrimRules, getTrimLabelOverrides, getTrimLayoutConcepts } = await import(
-    "@/lib/settings/app-settings"
-  );
-  const [rules, overrides, layoutConcepts] = await Promise.all([
+  const { getTrimRules, getTrimLabelOverrides, getTrimLayoutConcepts, getTrimConceptCopy } =
+    await import("@/lib/settings/app-settings");
+  const [rules, overrides, layoutConcepts, conceptCopy] = await Promise.all([
     getTrimRules(),
     getTrimLabelOverrides(),
     getTrimLayoutConcepts(),
+    getTrimConceptCopy(),
   ]);
-  return { rules, overrides, layoutConcepts };
+  return { rules, overrides, layoutConcepts, conceptCopy };
 }
 
 // DB read. The style's required-packaging rows with live approval state.

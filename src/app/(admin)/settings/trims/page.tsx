@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { canReview } from "@/lib/roles";
@@ -48,6 +49,18 @@ export default async function TrimsSettingsPage() {
         that mapping would never be finished. Both sides are matched onto a shared{" "}
         <strong>concept</strong> instead, by the keyword rules below, so a new customer&rsquo;s
         layout is recognised the moment it is created. Only genuinely new vocabulary needs a person.
+      </p>
+
+      <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-zinc-500">
+        What a cover <em>says</em> about each concept — the standing note, and the wording used
+        while a document is still to come — is edited on{" "}
+        <Link
+          href="/settings/cover-page?tab=packaging"
+          className="font-medium text-zinc-700 underline underline-offset-2"
+        >
+          Cover page › Packaging wording
+        </Link>
+        , with the rest of the cover prose.
       </p>
 
       <TrimsEditor

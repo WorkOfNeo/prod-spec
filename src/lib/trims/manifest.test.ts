@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_TRIM_RULES } from "./classify";
+import { DEFAULT_TRIM_RULES, splitTrimsCell } from "./classify";
+import { effectiveConceptCopy } from "./concept-copy";
 import {
   assembleTrimManifest,
   manifestFingerprint,
@@ -399,4 +400,63 @@ test("a note changes the fingerprint, because it changes the page", () => {
     conceptCopy: {},
   });
   assert.notEqual(manifestFingerprint(withNote), manifestFingerprint(withoutNote));
+});
+
+// ---- Per-concept status wording --------------------------------------------
+
+test("a banderole says what it is actually waiting for", () => {
+  // "BANDEROLE, Fotoguide" is ONE item in a Monday cell, split on the comma
+  // into two labels. Both halves classify to BANDEROLE, so both print the
+  // banderole's own not-delivered wording — the alternative is two rows about
+  // the same item saying different things.
+  const docs = assembleTrimManifest({
+    trimLabels: splitTrimsCell("BANDEROLE, Fotoguide"),
+    outputs: [],
+    rules: RULES,
+    overrides: {},
+  });
+  assert.equal(docs.length, 2);
+  for (const d of docs) {
+    assert.equal(d.approved, false, "still to come");
+    assert.equal(d.copy?.pending, "Awaiting Photo Samples from the supplier.");
+  }
+});
+
+test("the wording is stored data, so a different setting produces different words", () => {
+  // The proof that this is configuration rather than a branch: the SAME
+  // assembler over the same style says something else when the copy says so.
+  const docs = assembleTrimManifest({
+    trimLabels: ["Banderole"],
+    outputs: [],
+    rules: RULES,
+    overrides: {},
+    conceptCopy: effectiveConceptCopy({ BANDEROLE: { pending: "Awaiting supplier samples" } }),
+  });
+  assert.equal(docs[0].copy?.pending, "Awaiting supplier samples");
+});
+
+test("a packing instruction is given no status wording, whatever is configured", () => {
+  // The hard rule, end to end: Master Polybag is on 1,733 styles and must stay
+  // a note. A status would park all of them at "waiting" forever and bury the
+  // rows that genuinely are waiting.
+  const docs = assembleTrimManifest({
+    trimLabels: ["Master Polybag", "Black Hanger"],
+    outputs: [],
+    rules: RULES,
+    overrides: {},
+    // Configured as aggressively as the store allows — the normaliser strips
+    // the statuses, and the row-level guard would drop them even if it hadn't.
+    conceptCopy: {
+      POLYBAG: { note: "Clear, 40 micron.", pending: "Waiting", delivered: "Received" },
+      HANGER: { pending: "Waiting", delivered: "Received" },
+    },
+  });
+  for (const d of docs) {
+    assert.equal(d.kind, "info", "still a packing instruction");
+    assert.equal(d.approved, undefined, "and still has no delivery state");
+    assert.equal(d.copy?.pending, undefined);
+    assert.equal(d.copy?.delivered, undefined);
+  }
+  // The note is the one thing it may carry.
+  assert.equal(docs[0].copy?.note, "Clear, 40 micron.");
 });

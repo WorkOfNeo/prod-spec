@@ -1,5 +1,6 @@
 import { marked } from "marked";
 import { DEFAULT_PAGE_SETTINGS, type PageSettings } from "@/lib/prod-spec/config";
+import { DEFAULT_DELIVERED_STATUS, DEFAULT_PENDING_STATUS } from "@/lib/trims/concept-copy";
 
 // =====================================================
 // Bundle framing pages — the two A4 documents the runner prepends to
@@ -116,12 +117,26 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
   // never will — parking it at "Waiting for Customer Information" alongside the
   // artwork rows would bury the rows that genuinely are waiting. It says what it
   // is instead, and points at the instructions already printed below.
+  //
+  // The wording itself comes from the row's trim concept when it has one of its
+  // own (a banderole waits on the supplier's photos, not on the customer) and
+  // otherwise from the house defaults — see src/lib/trims/concept-copy.ts. The
+  // renderer only prints what the manifest resolved; it holds no special cases.
+  const pendingWording = (d: BundleDocSummary): string => d.copy?.pending?.trim() || DEFAULT_PENDING_STATUS;
   const statusCell = (d: BundleDocSummary): string => {
     if (d.kind === "info") return `<span class="note-cell">See packing instructions</span>`;
-    if (d.approved === true) return `<span class="ok">Approved</span>`;
-    if (d.approved === false) return `<span class="await">Waiting for Customer Information</span>`;
+    if (d.approved === true) {
+      return `<span class="ok">${esc(d.copy?.delivered?.trim() || DEFAULT_DELIVERED_STATUS)}</span>`;
+    }
+    if (d.approved === false) return `<span class="await">${esc(pendingWording(d))}</span>`;
     return "—";
   };
+  // Every distinct not-delivered wording actually on this page, in row order.
+  // The note below explains the markings a reader can see; naming one they
+  // cannot find is the same trap the whole conditional note exists to avoid.
+  const pendingWordings = [
+    ...new Set(input.docs.filter((d) => d.approved === false).map(pendingWording)),
+  ];
   const rows = input.docs
     .map((d, i) => {
       // Only an app-generated row has one document (and therefore one finished
@@ -189,7 +204,9 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
           : ""
       }${
         hasPending
-          ? ` Items marked <strong>Waiting for Customer Information</strong> are still under review — their
+          ? ` Items marked ${pendingWordings
+              .map((w) => `<strong>${esc(w)}</strong>`)
+              .join(" or ")} are still under review — their
       artwork will follow once approved, so please expect them.`
           : ""
       }

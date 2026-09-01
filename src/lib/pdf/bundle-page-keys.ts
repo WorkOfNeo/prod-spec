@@ -49,9 +49,12 @@ export type BundleDocSummary = {
   // Oeko-tex Logo" and the file named "…Care Label.pdf" can be reconciled.
   suppliedAs?: string[];
   // Wording resolved from the row's trim CONCEPT (src/lib/trims/concept-copy.ts)
-  // — a standing note about what this kind of document is. Shape inlined rather
-  // than imported to keep this leaf import-free. ABSENT when the concept has
-  // nothing to say, which is what keeps the fingerprint of an unaffected
-  // manifest byte-identical to what it was before this field existed.
-  copy?: { note?: string };
+  // — a standing note about what this kind of document is, and the status
+  // wording to use in place of the defaults. Shape inlined rather than imported
+  // to keep this leaf import-free. ABSENT when the concept has nothing to say,
+  // which is what keeps the fingerprint of an unaffected manifest
+  // byte-identical to what it was before this field existed. `pending` and
+  // `delivered` never appear on a packing-instruction row: it has no delivery
+  // state and must not grow one.
+  copy?: { note?: string; pending?: string; delivered?: string };
 };

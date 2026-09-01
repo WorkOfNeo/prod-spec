@@ -300,3 +300,99 @@ test("a note is escaped, not injected", () => {
   assert.ok(!html.includes("<script>x</script>"));
   assert.ok(html.includes("&lt;script&gt;x&lt;/script&gt; &amp; &quot;quoted&quot;"));
 });
+
+const BANDEROLE_PENDING = "Awaiting Photo Samples from the supplier.";
+
+test("a concept's own not-delivered wording prints, verbatim, in place of the default", () => {
+  const html = renderCoverPageHtml(
+    coverInput([
+      {
+        displayName: "BANDEROLE",
+        sourceLabel: "BANDEROLE",
+        widthMm: null,
+        heightMm: null,
+        fileCount: null,
+        approved: false,
+        kind: "manual",
+        copy: { pending: BANDEROLE_PENDING },
+      },
+    ]),
+  );
+  assert.ok(html.includes(`<span class="await">${BANDEROLE_PENDING}</span>`), "the status cell");
+  assert.ok(html.includes(`<strong>${BANDEROLE_PENDING}</strong>`), "and the note explaining it");
+  // A banderole waits on the supplier, not on the customer — so the generic
+  // wording must not appear anywhere on a page that has only banderole rows.
+  assert.ok(!html.includes(PENDING_LABEL), "the generic wording is gone from this page");
+});
+
+test("two different pending wordings are both explained, so neither is unfindable", () => {
+  // The note explains the markings a reader can SEE. With two wordings in the
+  // table it has to name both, or one of them is a flag with no explanation.
+  const html = renderCoverPageHtml(
+    coverInput([
+      {
+        displayName: "Hangtag",
+        widthMm: null,
+        heightMm: null,
+        fileCount: null,
+        approved: false,
+        kind: "manual",
+      },
+      {
+        displayName: "BANDEROLE",
+        widthMm: null,
+        heightMm: null,
+        fileCount: null,
+        approved: false,
+        kind: "manual",
+        copy: { pending: BANDEROLE_PENDING },
+      },
+    ]),
+  );
+  assert.ok(html.includes(`<strong>${PENDING_LABEL}</strong>`));
+  assert.ok(html.includes(`<strong>${BANDEROLE_PENDING}</strong>`));
+});
+
+test("a concept's own delivered wording prints in place of Approved", () => {
+  const html = renderCoverPageHtml(
+    coverInput([
+      {
+        displayName: "Care label",
+        widthMm: 25,
+        heightMm: 120,
+        fileCount: 1,
+        approved: true,
+        kind: "app",
+        copy: { delivered: "Artwork supplied" },
+      },
+      { displayName: "Hangtag", widthMm: null, heightMm: null, fileCount: null, approved: false, kind: "manual" },
+    ]),
+  );
+  assert.ok(html.includes(`<span class="ok">Artwork supplied</span>`));
+  assert.ok(!html.includes(`<span class="ok">Approved</span>`));
+});
+
+test("a packing instruction still says what it is, never a status", () => {
+  // The hard rule at the render: even handed status wording, an info row prints
+  // the packing-instruction cell and nothing else. Giving a polybag a delivery
+  // state would park 1,733 styles at "waiting" and bury the real ones.
+  const html = renderCoverPageHtml(
+    coverInput([
+      {
+        displayName: "Master Polybag",
+        widthMm: null,
+        heightMm: null,
+        fileCount: null,
+        kind: "info",
+        copy: { note: "Clear, 40 micron.", pending: BANDEROLE_PENDING, delivered: "Received" },
+      },
+      { displayName: "Hangtag", widthMm: null, heightMm: null, fileCount: null, approved: false, kind: "manual" },
+    ]),
+  );
+  assert.ok(html.includes("See packing instructions"));
+  assert.ok(html.includes("Clear, 40 micron."), "its note still prints");
+  assert.ok(!html.includes(BANDEROLE_PENDING), "but no not-delivered wording");
+  assert.ok(!html.includes("Received"), "and no delivered wording");
+  // The hangtag beside it is the only reason the column is on at all.
+  assert.ok(html.includes(`<span class="await">${PENDING_LABEL}</span>`));
+});

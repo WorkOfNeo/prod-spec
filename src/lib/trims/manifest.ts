@@ -106,7 +106,9 @@ export function isSuppressedLabel(
 // it to undefined — `copy: undefined` and no `copy` at all serialise the same
 // in the fingerprint today, but only the latter survives a future JSON round
 // trip unchanged.
-function copyField(copy: ReturnType<typeof resolveTrimCopy>): { copy?: { note?: string } } {
+function copyField(
+  copy: ReturnType<typeof resolveTrimCopy>,
+): { copy?: BundleDocSummary["copy"] } {
   return copy ? { copy } : {};
 }
 
@@ -189,7 +191,10 @@ export function assembleTrimManifest(input: TrimManifestInput): BundleDocSummary
       // is what keeps it out of the pending count and out of the status column.
       ...(kind === "manual" ? { approved: manualDelivered.has(normalizeTrimLabel(label)) } : {}),
       kind,
-      ...copyField(resolveTrimCopy(concepts, conceptCopy)),
+      // allowStatus follows the row's delivery state, not the wording: an info
+      // row has none, so it must not pick up "waiting"/"delivered" phrasing
+      // from any concept it happens to name.
+      ...copyField(resolveTrimCopy(concepts, conceptCopy, { allowStatus: kind !== "info" })),
     });
   }
 
