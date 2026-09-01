@@ -142,7 +142,7 @@ test("POST: REVIEWER may apply, and the acting user is passed through for the au
   );
   assert.equal(res.status, 200);
   assert.equal(applyCheckActions.mock.callCount(), 1);
-  const arg = applyCheckActions.mock.calls[0].arguments[0] as { userId: string; userEmail: string };
+  const arg = (applyCheckActions.mock.calls[0].arguments as unknown[])[0] as { userId: string; userEmail: string };
   assert.equal(arg.userId, "REVIEWER-1");
   assert.equal(arg.userEmail, "REVIEWER@example.com");
 });
@@ -167,7 +167,7 @@ test("POST: junk in the actions array is dropped, not passed on", async () => {
       ],
     }),
   );
-  const arg = applyCheckActions.mock.calls[0].arguments[0] as { actions: Array<{ itemId: string }> };
+  const arg = (applyCheckActions.mock.calls[0].arguments as unknown[])[0] as { actions: Array<{ itemId: string }> };
   assert.deepEqual(
     arg.actions.map((a) => a.itemId),
     ["keep"],
