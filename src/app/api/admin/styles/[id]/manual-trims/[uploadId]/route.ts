@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
-import { isAdmin } from "@/lib/roles";
+import { canReview } from "@/lib/roles";
 import { removeFromApprovedLayouts } from "@/lib/sharepoint/upload";
 
 export const runtime = "nodejs";
@@ -15,6 +15,9 @@ export const maxDuration = 60;
 // Both are scoped to the style in the path, so an id belonging to another
 // style can't be read or deleted through this route.
 //
+// Both gate on canReview (ADMIN *and* REVIEWER), matching the POST next door:
+// whoever may supply the document may take it back again.
+//
 // DELETE removes the file from the supplier's folder as well as the row. That
 // is the point: the cover promised the supplier this document, and leaving an
 // orphan file behind after the promise is withdrawn is how the folder and the
@@ -22,6 +25,15 @@ export const maxDuration = 60;
 // this app put there itself — never a sweep, never a cleanup. If SharePoint
 // refuses the delete, the row STAYS (with the reason) rather than being dropped
 // on the floor, so nothing claims the supplier's folder is clean when it isn't.
+//
+// ITS REACH IS THE ROW, AND ONLY THE ROW. The drive id and item id handed to
+// Graph are the ones THIS feature recorded when it uploaded the file, read off
+// a StyleManualTrimUpload scoped to the style in the path — never a name, a
+// path, a folder, or anything found by listing the folder. So a widened gate
+// widens who may delete their own uploaded trim document, and nothing else: an
+// approved output PDF, another style's file, and the APPROVED LAYOUTS folder
+// itself are all unreachable from here. manual-trims-delete-scope.test.ts pins
+// that.
 
 export async function GET(
   _req: NextRequest,
@@ -29,7 +41,8 @@ export async function GET(
 ) {
   const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  if (!isAdmin(role)) return NextResponse.json({ error: "Requires role: ADMIN" }, { status: 403 });
+  if (!canReview(role))
+    return NextResponse.json({ error: "Requires role: ADMIN or REVIEWER" }, { status: 403 });
 
   const { id, uploadId } = await ctx.params;
   const row = await db.styleManualTrimUpload.findFirst({
@@ -55,7 +68,8 @@ export async function DELETE(
 ) {
   const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  if (!isAdmin(role)) return NextResponse.json({ error: "Requires role: ADMIN" }, { status: 403 });
+  if (!canReview(role))
+    return NextResponse.json({ error: "Requires role: ADMIN or REVIEWER" }, { status: 403 });
 
   const { id, uploadId } = await ctx.params;
   const row = await db.styleManualTrimUpload.findFirst({

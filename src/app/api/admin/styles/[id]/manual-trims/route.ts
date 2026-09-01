@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
-import { isAdmin } from "@/lib/roles";
+import { canReview } from "@/lib/roles";
 import { toPlainBytes } from "@/lib/pdf/bytes";
 import { buildRequiredPackagingForStyle } from "@/lib/outputs/required-packaging";
 import { getTrimsOnCoverEnabled } from "@/lib/settings/app-settings";
@@ -30,6 +30,12 @@ export const maxDuration = 120;
 // any label that isn't one of them. A typo'd or stale label therefore can't
 // create an upload nothing on the cover will ever point at.
 //
+// WHO MAY DO THIS: canReview — ADMIN *and* REVIEWER. Supplying the document a
+// cover line is waiting on is part of getting a style reviewable, not an admin
+// chore, so this gates the same way approval and /delivery already do rather
+// than on isAdmin. Enforced here, at the API; note AUTH_DISABLED forces ADMIN
+// in dev, so the role-gate test is the only proof of this.
+//
 // The file goes into the style's APPROVED LAYOUTS folder — where approved
 // outputs land and where the supplier looks. That folder is PO-SCOPED and
 // shared by every style on the PO, so the name is built by manualTrimFileName()
@@ -43,7 +49,8 @@ const MAX_BYTES = 4_000_000;
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  if (!isAdmin(role)) return NextResponse.json({ error: "Requires role: ADMIN" }, { status: 403 });
+  if (!canReview(role))
+    return NextResponse.json({ error: "Requires role: ADMIN or REVIEWER" }, { status: 403 });
 
   const { id } = await ctx.params;
   const style = await db.style.findUnique({ where: { id }, select: { id: true } });
@@ -84,7 +91,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  if (!isAdmin(role)) return NextResponse.json({ error: "Requires role: ADMIN" }, { status: 403 });
+  if (!canReview(role))
+    return NextResponse.json({ error: "Requires role: ADMIN or REVIEWER" }, { status: 403 });
 
   const { id } = await ctx.params;
 
