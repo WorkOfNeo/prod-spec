@@ -211,7 +211,7 @@ test("every attempt is recorded — the refusals too, with the verdict shown", a
   ]);
   await apply([del("i1", "a.pdf"), del("gone", "vanished.pdf")]);
   assert.equal(createMany.mock.callCount(), 1);
-  const { data } = createMany.mock.calls[0].arguments[0] as {
+  const { data } = (createMany.mock.calls[0].arguments as unknown[])[0] as {
     data: Array<{ outcome: string; verdict: string | null; userEmail: string | null; driveItemId: string }>;
   };
   assert.equal(data.length, 2, "the refusal is audited exactly like the deletion");
