@@ -125,12 +125,13 @@ export async function saveTrimConceptRows(
   for (const row of incoming) {
     const label = typeof row.label === "string" ? row.label.trim() : "";
     if (!label) continue;
-    let value = typeof row.value === "string" ? row.value.trim() : "";
-    if (!value || !taken.has(value)) {
-      // Either brand new, or naming a value that does not exist yet — both are
-      // "create", and both need a value nothing else is using.
-      value = value && !taken.has(value) ? value : uniqueTrimConceptValue(label, taken);
-    }
+    const claimed = typeof row.value === "string" ? row.value.trim() : "";
+    // A value the table already holds identifies the row being edited. Anything
+    // else — absent, or naming nothing — is a NEW row, and its value is derived
+    // from its label here rather than taken on trust. A client that could mint
+    // its own could collide two rows onto one id and silently remap every trim
+    // on the loser.
+    const value = taken.has(claimed) ? claimed : uniqueTrimConceptValue(label, taken);
     if (!value) continue;
     taken.add(value);
     withValues.push({ ...row, value, label });
