@@ -143,7 +143,9 @@ type Candidate = {
   supplierName: string | null;
   poNumber: string | null;
   status: string;
-  // false ⇒ belongs to a different prod spec; `run` refuses it.
+  // false ⇒ belongs to a different prod spec. NOT a refusal: run rebuilds it
+  // against ITS OWN spec's General information. The flag exists so the plan
+  // card can say whose prose the cover will carry before you commit.
   inThisSpec: boolean;
   prodSpecName: string | null;
   // false ⇒ never generated a bundle, so there is no cover to rebuild.
