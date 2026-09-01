@@ -1,11 +1,6 @@
 import { db } from "@/lib/db";
 import { normalizeVisibleColumns, type StyleColumnKey } from "@/lib/styles/table-columns";
 import { DEFAULT_TRIM_RULES, type TrimRule } from "@/lib/trims/classify";
-import {
-  effectiveConceptCopy,
-  normalizeConceptCopy,
-  type TrimConceptCopyMap,
-} from "@/lib/trims/concept-copy";
 
 // =====================================================
 // Global, app-wide settings — a tiny key-value store backed by the
@@ -648,56 +643,11 @@ export async function setTrimLayoutConcepts(concepts: TrimLayoutConcepts): Promi
   });
 }
 
-const TRIM_CONCEPT_COPY_KEY = "trimConceptCopy";
-
-// What a cover SAYS about each trim concept — the standing note, and the
-// not-delivered / delivered status wording. Edited at /settings/cover-page,
-// which is where a person goes to write cover prose, even though the data is
-// keyed by concept rather than by customer.
-//
-// Stored as ONE AppSetting blob, like the three trim blobs above: it is a small
-// document a human rewrites wholesale on one screen, and it ships without a
-// migration. What is stored is the OVERRIDE layer only — the seeded defaults
-// live in code (src/lib/trims/concept-copy.ts) and are laid under it field by
-// field on read, so a default improved in a later release reaches every install
-// that hasn't deliberately overridden that one field.
-//
-// A stored EMPTY STRING is meaningful and survives the round trip: it means
-// "cleared — use the house default", which is the only way to remove a seeded
-// default such as the banderole's pending wording.
-export async function getTrimConceptCopy(): Promise<TrimConceptCopyMap> {
-  try {
-    const row = await db.appSetting.findUnique({ where: { key: TRIM_CONCEPT_COPY_KEY } });
-    return effectiveConceptCopy((row?.value as { copy?: unknown } | null)?.copy);
-  } catch {
-    // A settings read that fails must still print sane covers — the seeded
-    // defaults are exactly what the estate reads today.
-    return effectiveConceptCopy(null);
-  }
-}
-
-// Returns the EFFECTIVE map (defaults + the saved overrides) so the editor can
-// repaint from one response without re-deriving the merge client-side.
-export async function setTrimConceptCopy(copy: unknown): Promise<TrimConceptCopyMap> {
-  const value = { copy: normalizeConceptCopy(copy) };
-  await db.appSetting.upsert({
-    where: { key: TRIM_CONCEPT_COPY_KEY },
-    create: { key: TRIM_CONCEPT_COPY_KEY, value },
-    update: { value },
-  });
-  return effectiveConceptCopy(value.copy);
-}
-
-// The stored override layer on its own — what the editor must show in its
-// inputs so a person can tell an inherited default from something they typed.
-export async function getStoredTrimConceptCopy(): Promise<TrimConceptCopyMap> {
-  try {
-    const row = await db.appSetting.findUnique({ where: { key: TRIM_CONCEPT_COPY_KEY } });
-    return normalizeConceptCopy((row?.value as { copy?: unknown } | null)?.copy);
-  } catch {
-    return {};
-  }
-}
+// The packaging ROWS — what a cover says about each kind of packaging — used to
+// live here as an AppSetting blob keyed by concept. They are columns on
+// trim_concept_rows now (see src/lib/trims/catalogue.ts): a row and the words it
+// prints are one thing, added and edited in one place. The creating migration
+// folds any stored blob into the table and deletes the key.
 
 const TRIMS_ON_COVER_KEY = "trimsOnCoverEnabled";
 

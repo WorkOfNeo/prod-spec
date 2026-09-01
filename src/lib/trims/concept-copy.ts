@@ -1,8 +1,8 @@
 // =====================================================
 // What the cover SAYS about a trim, keyed by CONCEPT.
 //
-// Three supplier-facing strings per concept, all editable at
-// /settings/cover-page:
+// Three supplier-facing strings per concept, all columns on the packaging ROW
+// (trim_concept_rows), edited at /settings/cover-page?tab=packaging:
 //
 //   note      — a standing fact about what this kind of document IS. "Wash Care
 //               Label, these are created to be printed on one paper, front and
@@ -24,22 +24,34 @@
 // drift out of step the first time one of them was edited. Said once against
 // CARE_LABEL, it prints wherever a care label prints, forever.
 //
-// WHY IT IS DATA AND NOT AN `if`. The banderole rule is a stored default, not a
-// branch in the renderer. The next special case — and there is always a next
-// one — is then a settings edit rather than a deploy.
+// WHY IT IS DATA AND NOT AN `if`. The banderole rule is a seeded row column,
+// not a branch in the renderer. The next special case — and there is always a
+// next one — is then a settings edit rather than a deploy.
+//
+// WHY IT IS A COLUMN AND NOT A SECOND STORE. It used to live in its own
+// AppSetting blob keyed by concept, which meant a row and the words it prints
+// were added in two different places and could disagree about which concepts
+// exist. The wording moves with the row: one table, one editor, one truth.
 //
 // artwork:false CONCEPTS NEVER GET A STATUS. A polybag, a hanger, a carton, a
 // hook is a physical packing instruction with no file behind it (Master Polybag
 // alone is on 1,733 styles). Giving one a delivered/not-delivered state would
-// park it at "waiting" forever and bury the rows that genuinely are waiting, so
-// the status strings are stripped for those concepts HERE, where copy is
-// normalised — not merely hidden by the editor that writes it. They keep
-// printing as a note with no status. See conceptHasArtwork.
+// park it at "waiting" forever and bury the rows that genuinely are waiting.
+// The guarantee is enforced three times over, because it only has to fail once
+// to bury a queue:
+//   1. on WRITE  — normalizeTrimConceptRows drops the status columns of any
+//                  artwork:false row before it reaches the table,
+//   2. on READ   — conceptCopyFromRows below strips them again, from the row's
+//                  OWN flag, so a row edited by hand in SQL still cannot print
+//                  a status,
+//   3. at RENDER — resolveTrimCopy refuses to take a status from a concept
+//                  without artwork, and the caller passes allowStatus:false for
+//                  a manifest row that has no delivery state at all.
 //
 // CLIENT-SAFE: pure, no db, no server imports.
 // =====================================================
 
-import { conceptHasArtwork } from "./concepts";
+import { conceptHasArtwork, DEFAULT_TRIM_CONCEPTS, type TrimConcept } from "./concepts";
 
 // The wording used when a concept says nothing of its own. These are the
 // sentences covers have always printed, so an unconfigured estate reads exactly
@@ -51,67 +63,50 @@ export type TrimConceptCopy = {
   // Plain text (escaped at render), not markdown — one line under the row.
   note?: string;
   // Status wording. Meaningless, and therefore removed, on an artwork:false
-  // concept. An empty string is a real, storable decision: "no wording of your
-  // own", i.e. fall back to the default above. That is how a seeded default
-  // like the banderole's is cleared again.
+  // concept.
   pending?: string;
   delivered?: string;
 };
 
 export type TrimConceptCopyMap = Readonly<Record<string, TrimConceptCopy>>;
 
-// The seed copy. Keyed by TrimConcept.value. Everything absent here falls to
-// the defaults above (statuses) or prints nothing (note).
-export const DEFAULT_TRIM_CONCEPT_COPY: TrimConceptCopyMap = {
-  CARE_LABEL: {
-    note: "Wash Care Label, these are created to be printed on one paper, front and back",
-  },
-  BANDEROLE: {
-    // A banderole cannot be drawn until the supplier photographs the samples,
-    // so "Waiting for Customer Information" points at the wrong party.
-    pending: "Awaiting Photo Samples from the supplier.",
-  },
-};
-
 const FIELDS = ["note", "pending", "delivered"] as const;
 
-// Shape-validate a stored blob. Unknown keys and non-strings are dropped;
-// EMPTY STRINGS SURVIVE, because "" is the stored form of "cleared, use the
-// default" and losing it would resurrect a seeded default the user removed.
-export function normalizeConceptCopy(raw: unknown): TrimConceptCopyMap {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+// Rows -> the map the render chain uses.
+//
+// A field is carried only when the row has something to say, and a concept
+// appears only when at least one field survived. That sparseness is load-bearing
+// rather than tidy: resolveTrimCopy returns undefined for a concept with nothing
+// to say, which leaves the `copy` key off the manifest row entirely, which is
+// what keeps that row's fingerprint byte-identical to what it was before any of
+// this existed. A map full of empty husks would sweep the whole estate into a
+// rebuild for a cover that reads the same.
+//
+// The artwork flag is read from the ROW rather than from the loaded catalogue.
+// The two agree in every normal path, but a caller building a map from rows it
+// holds in hand — the settings preview, a test — must get the guarantee from
+// the data it passed, not from whatever the process happens to have loaded.
+export function conceptCopyFromRows(rows: ReadonlyArray<TrimConcept>): TrimConceptCopyMap {
   const out: Record<string, TrimConceptCopy> = {};
-  for (const [concept, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (!concept.trim() || !value || typeof value !== "object" || Array.isArray(value)) continue;
+  for (const row of rows) {
+    const value = typeof row?.value === "string" ? row.value.trim() : "";
+    if (!value) continue;
     const entry: TrimConceptCopy = {};
-    const allowStatus = conceptHasArtwork(concept);
     for (const field of FIELDS) {
-      const v = (value as Record<string, unknown>)[field];
-      if (typeof v !== "string") continue;
-      // A packing instruction has no delivery state to describe. Dropped at the
-      // point of storage so no later reader has to remember the rule.
-      if (!allowStatus && field !== "note") continue;
-      entry[field] = v.trim();
+      // A packing instruction has no delivery state to describe.
+      if (field !== "note" && !row.artwork) continue;
+      const v = typeof row[field] === "string" ? (row[field] as string).trim() : "";
+      if (v) entry[field] = v;
     }
-    if (Object.keys(entry).length > 0) out[concept.trim()] = entry;
+    if (Object.keys(entry).length > 0) out[value] = entry;
   }
   return out;
 }
 
-// The map the render chain actually uses: the seed, with anything stored laid
-// over it field by field. Per-field rather than per-concept, so setting a
-// banderole note does not silently drop its seeded pending wording.
-export function effectiveConceptCopy(stored: unknown): TrimConceptCopyMap {
-  const overrides = normalizeConceptCopy(stored);
-  const out: Record<string, TrimConceptCopy> = {};
-  for (const concept of new Set([
-    ...Object.keys(DEFAULT_TRIM_CONCEPT_COPY),
-    ...Object.keys(overrides),
-  ])) {
-    out[concept] = { ...DEFAULT_TRIM_CONCEPT_COPY[concept], ...overrides[concept] };
-  }
-  return out;
-}
+// The seed copy, derived from the seed rows rather than restated. Everything
+// absent here falls to the defaults above (statuses) or prints nothing (note).
+export const DEFAULT_TRIM_CONCEPT_COPY: TrimConceptCopyMap =
+  conceptCopyFromRows(DEFAULT_TRIM_CONCEPTS);
 
 // The copy that applies to ONE manifest row, given the concepts that row
 // resolves to (a compound Monday entry names several).
@@ -131,9 +126,9 @@ export function resolveTrimCopy(
   map: TrimConceptCopyMap = DEFAULT_TRIM_CONCEPT_COPY,
   opts?: {
     // false for a row with no delivery state — a packing instruction. The
-    // second guard on the artwork:false rule, at the row rather than the
-    // concept, so a compound entry that names a real document alongside a
-    // polybag still cannot borrow a status from the polybag.
+    // guard at the ROW rather than at the concept, so a compound entry that
+    // names a real document alongside a polybag still cannot borrow a status
+    // from the polybag.
     allowStatus?: boolean;
   },
 ): ResolvedTrimCopy | undefined {

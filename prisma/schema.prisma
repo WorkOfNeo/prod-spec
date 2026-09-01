@@ -2275,3 +2275,69 @@ model FolderCheckAction {
   @@index([createdAt])
   @@map("folder_check_actions")
 }
+
+// =====================================================
+// The cover page's PACKAGING ROWS — the shared vocabulary both sides of the
+// trim problem classify onto, promoted from a code constant to a table Niels
+// maintains (see src/lib/trims/concepts.ts for why the row is not a layout and
+// must never become per-customer).
+//
+// The row IS the concept. `value` is the primary key rather than a surrogate id
+// because it is already a stable identifier stored elsewhere — in the per-label
+// mapping blob (AppSetting trimLabelOverrides) and the per-layout pins
+// (trimLayoutConcepts). A surrogate would add a join and a way for those two to
+// dangle differently.
+//
+// artwork = false is a PHYSICAL PACKING INSTRUCTION with no file behind it
+// (Master Polybag alone is on 1,733 styles). Such a row prints as a note and
+// must never carry a delivery status, or it parks at "Waiting for Customer
+// Information" forever and buries the rows genuinely waiting. The flag travels
+// WITH the row so every reader has the answer in hand; the status columns are
+// stripped on write and again on read for any row carrying it.
+//
+// The three wording columns are what the cover SAYS about this kind of
+// packaging — said once here rather than once per customer. They replace the
+// AppSetting "trimConceptCopy" blob, which the creating migration folds in and
+// deletes so there is only ever one place to edit them.
+//
+// Rows are DEACTIVATED, never deleted: a mapping or a layout pin may still
+// point at one, and a row that vanished would leave those resolving to a
+// title-cased id with no wording. Inactive rows keep resolving; they just stop
+// being offered.
+// =====================================================
+model TrimConceptRow {
+  // Stable id, SCREAMING_SNAKE. Derived from the label when a row is added and
+  // never rewritten afterwards — renaming the label must not orphan mappings.
+  value String @id
+
+  // What the settings screens and the cover print.
+  label String
+
+  // false ⇒ a packing instruction: prints as a note, never gets a status.
+  artwork Boolean @default(true)
+
+  // Supplier-facing wording. note prints in every state; the two statuses are
+  // the Status column's words before and after the artwork is confirmed. NULL
+  // or empty ⇒ the house default (see src/lib/trims/concept-copy.ts).
+  note            String?
+  pendingStatus   String?
+  deliveredStatus String?
+
+  // Display order on the settings screens only. The cover's own order comes
+  // from Monday's Trims column, never from here.
+  sortOrder Int @default(0)
+
+  // Seeded from the code catalogue rather than added by a person. Purely
+  // advisory — the editor warns before deactivating one; nothing branches on it.
+  builtIn Boolean @default(false)
+
+  // Deactivated rows are hidden from the pickers but still resolve, so an
+  // existing mapping keeps its label, its artwork flag and its wording.
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, sortOrder])
+  @@map("trim_concept_rows")
+}
