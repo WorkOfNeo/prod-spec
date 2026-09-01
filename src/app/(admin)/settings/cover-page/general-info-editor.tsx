@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MarkdownEditor } from "@/components/markdown-editor";
 import { LazyOutputPreview } from "@/components/output-preview";
 import { CoverRegenPanel } from "./cover-regen-panel";
-import { SingleStyleRegenPanel } from "./single-style-regen";
+import { StyleRegenPanel } from "./style-regen";
 
 // Editor for ONE Prod Spec's "General information" — the pages that ship inside
 // the cover PDF, after the cover sheet. A Prod Spec is a Customer × Business
@@ -203,16 +203,17 @@ function SpecGeneralInfo({ prodSpec }: { prodSpec: ProdSpecOption }) {
               built with. Nothing in the UI said so, and people reasonably read
               "Saved" as "published", then assumed suppliers were looking at the
               new wording. The behaviour is unchanged; only the silence is. The
-              two panels below are the sentence's second half — one style, or
-              the whole client. */}
+              two panels below are the sentence's second half — one style
+              (every order carrying its number), or the whole client. */}
           <p className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-[12px] leading-relaxed text-zinc-600">
             <strong className="font-medium text-zinc-800">
               Saving applies to bundles generated from now on.
             </strong>{" "}
             Bundles that already exist — including any already delivered to a supplier — keep the
             text they were generated with until you regenerate them. Use{" "}
-            <em>Regenerate one style</em> below to correct a single order, or{" "}
-            <em>Apply to existing bundles</em> for every style under this client and business area.
+            <em>Regenerate a style</em> below to correct one style across every order that carries
+            its number, or <em>Apply to existing bundles</em> for every style under this client and
+            business area.
           </p>
           <p className="text-[11px] text-zinc-400">
             These pages print inside the cover PDF, after the cover sheet — one set per client and
@@ -235,7 +236,7 @@ function SpecGeneralInfo({ prodSpec }: { prodSpec: ProdSpecOption }) {
         </div>
       </div>
 
-      <SingleStyleRegenPanel prodSpecId={prodSpec.id} scopeLabel={scopeLabel} />
+      <StyleRegenPanel prodSpecId={prodSpec.id} scopeLabel={scopeLabel} />
       <CoverRegenPanel prodSpecId={prodSpec.id} scopeLabel={scopeLabel} />
     </>
   );

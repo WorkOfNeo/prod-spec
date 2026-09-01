@@ -7,15 +7,16 @@ import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { pickStyleNumberMatch } from "@/lib/pdf/style-number-match";
 
 export const runtime = "nodejs";
-// One cover render (Chromium) plus a SharePoint round trip for one style.
+// A Chromium cover render plus a SharePoint round trip PER STYLE, run one after
+// another. MAX_STYLES_PER_RUN is what keeps a whole list inside this window.
 export const maxDuration = 300;
 
 // =====================================================
-// "Regenerate one style" — the escape hatch beside the General information
-// editor. A person types a style NUMBER; this rebuilds that one style's cover
-// PDF (which is where the General information pages print) and pushes it back
-// into the supplier's folder, so the file the supplier opens today matches the
-// text that was just saved.
+// "Regenerate a style" — the escape hatch beside the General information
+// editor. A person types a style NUMBER; this rebuilds the cover PDF of every
+// style carrying that number (which is where the General information pages
+// print) and pushes each back into its supplier's folder, so the files the
+// suppliers open today match the text that was just saved.
 //
 // WHY IT EXISTS. Saving General information only affects bundles generated
 // FROM NOW ON — the runner re-renders a cover only when a run produces ≥1
@@ -25,6 +26,11 @@ export const maxDuration = 300;
 // after a wording change everybody should see and the wrong one when a single
 // order needs correcting: it walks every style under the spec and re-pushes
 // each delivered cover. This is the narrow instrument for "just fix that one".
+//
+// ALL OF THEM, NOT ONE OF THEM. That style number matches several rows is the
+// rule here, not the exception, so "found 4, fixed 1" would leave three
+// suppliers on the old PDF while the app read as done. `resolve` names every
+// match so the choice is informed; `run` then works through the whole list.
 //
 // BOTH HALVES OR NEITHER. Regenerating without re-uploading would leave the
 // supplier looking at the old PDF while the app insists it is fixed — the
@@ -36,8 +42,9 @@ export const maxDuration = 300;
 //   POST { mode: "resolve", styleNumber }
 //     → { matches: [{ styleId, styleName, … , inThisSpec, hasCover, … }],
 //         matchedExactly, ambiguous }
-//   POST { mode: "run", styleId, notifySupplier? }
-//     → { styleName, refreshed, requeue, pushed, pushFailed, folderUrl, … }
+//   POST { mode: "run", styleIds: [...], notifySupplier? }
+//     → { results: [{ styleName, refreshed, requeue, pushed, folderUrl, … }],
+//         summary: { total, refreshed, pushed, failed, … } }
 //
 // ============ WHY NOT THE FULL ProdSpec PATCH (the constraint) ============
 // This sits under .../general-info/ deliberately. The full
@@ -52,14 +59,37 @@ export const maxDuration = 300;
 // This route therefore never PATCHes the ProdSpec at all. It reads
 // generalInfoMd's blast radius (which styles belong to the spec) and writes
 // only JobAsset.pdf + the supplier queue row. It touches no ProdSpec column,
-// so `active` cannot move. tests/general-info-single-regen.test.ts pins that:
+// so `active` cannot move. tests/general-info-regen.test.ts pins that:
 // it asserts db.prodSpec.update is never called.
 //
-// SCOPE. Strictly one style, and only a style belonging to THIS prod spec. A
-// cover renders its style's present-day spec's General information, so
-// regenerating a style from another spec would print another spec's text —
-// correct, but never what someone on this tab meant. Refused with a message
-// naming the spec it does belong to, rather than quietly doing the wrong thing.
+// ============ SCOPE: EVERY MATCH, EACH AGAINST ITS OWN SPEC ============
+// A style number resolves to several rows as a matter of course (one Pre-Order
+// row per PO, two colourways per number), and someone correcting an order means
+// all of them — the same garment, the same wrong text. So `run` takes the whole
+// candidate list and works through it, rather than making someone type the same
+// number once per row and hope they got them all.
+//
+// It is a LOOP, not a batch: each style is rebuilt, armed and pushed on its own,
+// inside its own try, and reported on its own. One style's render blowing up or
+// its supplier folder being unreachable must not cost the other four their fix,
+// and — the sharper half — five styles where one failed must never come back
+// reading as one success. Hence a per-style row for every id plus a counted
+// summary; the client has no reason to infer either.
+//
+// EACH AGAINST ITS OWN SPEC. This deliberately does NOT require the styles to
+// belong to the prod spec whose editor is open. It used to: a foreign style was
+// refused with a 409, on the reasoning that its cover prints ANOTHER spec's
+// General information. That reasoning is right and the refusal was the wrong
+// remedy — the number a person types is the number they want fixed, and which
+// client's tab they happen to have open is an accident of navigation.
+//
+// The correctness it was protecting is structural, not a matter of asking
+// nicely: refreshStyleCoverAsset(styleId) → buildStyleCoverPdf(jobId) loads
+// `style.prodSpec.generalInfoMd` from the STYLE's own row. Nothing about the
+// open spec is passed down — this route never even selects generalInfoMd — so a
+// style belonging elsewhere renders its own spec's text and cannot render this
+// one's. The route resolves each style's spec only to NAME it in the result, so
+// a cross-spec regenerate is visible rather than silent.
 // =====================================================
 
 // Same gate as the sibling general-info route: ADMIN + REVIEWER via
@@ -80,17 +110,22 @@ async function gate(): Promise<Gate> {
   return { ok: true, userId: session.user.id };
 }
 
+// Same ceiling `resolve` returns, so the act can cover everything the person was
+// shown and can never exceed it. A one-character entry that dredges up 25 rows
+// is bounded here as well as there.
+const MAX_STYLES_PER_RUN = 25;
+
 const RESOLVE = z.object({
   mode: z.literal("resolve"),
   styleNumber: z.string().min(1).max(64),
 });
 const RUN = z.object({
   mode: z.literal("run"),
-  // An id, not a number: `resolve` already turned the typed text into a
-  // specific row (and made the person choose when several matched). Re-running
-  // the text match here would let an ambiguous entry resolve differently
-  // between the confirm and the act.
-  styleId: z.string().min(1),
+  // Ids, not the number: `resolve` already turned the typed text into specific
+  // rows and put them on screen. Re-running the text match here would let the
+  // set shift between the confirm and the act — the person approved a named
+  // list of orders, and that list is what gets acted on.
+  styleIds: z.array(z.string().min(1)).min(1).max(MAX_STYLES_PER_RUN),
   // Default FALSE, matching the bulk sweep's reasoning: the corrected file
   // belongs in the supplier's folder either way, but an email is a separate
   // decision the operator makes deliberately.
@@ -108,7 +143,9 @@ type Candidate = {
   supplierName: string | null;
   poNumber: string | null;
   status: string;
-  // false ⇒ belongs to a different prod spec; `run` refuses it.
+  // false ⇒ belongs to a different prod spec. NOT a refusal: run rebuilds it
+  // against ITS OWN spec's General information. The flag exists so the plan
+  // card can say whose prose the cover will carry before you commit.
   inThisSpec: boolean;
   prodSpecName: string | null;
   // false ⇒ never generated a bundle, so there is no cover to rebuild.
@@ -129,6 +166,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     );
   }
 
+  // Id and name ONLY. Not generalInfoMd: the covers render each style's own
+  // spec's prose (see the scope note above), so the open spec's text has no
+  // business being in scope here — the narrow select is what makes that
+  // impossible rather than merely intended. The name is for labelling results.
   const prodSpec = await db.prodSpec.findUnique({
     where: { id: prodSpecId },
     select: { id: true, name: true },
@@ -137,18 +178,19 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   return parsed.data.mode === "resolve"
     ? resolve(parsed.data.styleNumber, prodSpec)
-    : run(parsed.data.styleId, parsed.data.notifySupplier, prodSpec, auth.userId);
+    : run(parsed.data.styleIds, parsed.data.notifySupplier, prodSpec, auth.userId);
 }
 
 // ── resolve: say what WILL happen, before anything happens ──────────────────
 async function resolve(styleNumber: string, prodSpec: { id: string; name: string }) {
   const query = styleNumber.trim();
 
-  // Deliberately NOT scoped to this prod spec. A style number that belongs to
-  // another spec must come back as a named refusal ("that one is under <spec>")
-  // rather than as "no style matches" — the second sends someone hunting for a
-  // typo that isn't there. Bounded so a one-character entry can't drag the
-  // estate back through the contains tier.
+  // Deliberately NOT scoped to this prod spec — and since `run` no longer
+  // refuses a foreign style, this is the search that finds it rather than a
+  // search that only exists to explain a refusal. Someone on any client's tab
+  // types a number and gets the orders carrying it, each labelled with the spec
+  // whose General information its cover prints. Bounded so a one-character
+  // entry can't drag the estate back through the contains tier.
   const rows = await db.style.findMany({
     where: { name: { contains: query, mode: "insensitive" }, deletedAt: null },
     select: {
@@ -210,46 +252,195 @@ async function resolve(styleNumber: string, prodSpec: { id: string; name: string
   });
 }
 
-// ── run: rebuild the cover, then put it back in the supplier's folder ───────
+// ── run: rebuild each cover, then put each back in its supplier's folder ────
+
+// One style's outcome. Deliberately flat and per-style: the caller renders one
+// row per style and counts them, and nothing about style N's fate can be
+// inferred from style N-1's.
+type StyleRunResult = {
+  styleId: string;
+  styleName: string | null;
+  // The spec whose General information this cover printed — the style's OWN,
+  // which is not necessarily the one whose editor is open. Named so a
+  // cross-spec regenerate is visible in the report rather than silent.
+  prodSpecName: string | null;
+  inThisSpec: boolean;
+  refreshed: boolean;
+  // A single word for what became of this style, so the client never has to
+  // reconstruct it from three numbers:
+  //   pushed        rebuilt and delivered
+  //   not-pushed    rebuilt, but a gate (no supplier, below cutoff, batch-send
+  //                 off) meant nothing was delivered — `requeue` says which
+  //   push-failed   rebuilt, delivery ATTEMPTED and failed. Not a success.
+  //   no-cover      never generated a bundle; there is nothing to rebuild
+  //   not-found     the id no longer resolves to a style
+  //   error         the rebuild itself failed
+  outcome: "pushed" | "not-pushed" | "push-failed" | "no-cover" | "not-found" | "error";
+  reason: string | null;
+  message: string | null;
+  requeue: string | null;
+  pushed: number;
+  pushFailed: number;
+  pushError: string | null;
+  sharePointStatus: string | null;
+  folderUrl: string | null;
+  sharePointError: string | null;
+};
+
+type RunStyle = {
+  id: string;
+  name: string;
+  prodSpecId: string | null;
+  supplierFolderUrl: string | null;
+  prodSpec: { name: string } | null;
+};
+
 async function run(
-  styleId: string,
+  styleIds: string[],
   notifySupplier: boolean,
   prodSpec: { id: string; name: string },
   userId: string,
 ) {
-  const style = await db.style.findUnique({
-    where: { id: styleId },
+  // The same id twice would rebuild and re-push the same cover twice; the set
+  // is what was meant either way.
+  const wanted = [...new Set(styleIds)];
+
+  const rows = (await db.style.findMany({
+    // deletedAt: null to match `resolve`. An id that went soft-deleted between
+    // the search and the button falls through to "no longer exists" rather than
+    // quietly re-publishing a withdrawn order's cover.
+    where: { id: { in: wanted }, deletedAt: null },
     select: {
       id: true,
       name: true,
       prodSpecId: true,
       supplierFolderUrl: true,
+      // Read to NAME the spec in the report. The cover's General information
+      // comes from the style's own row inside buildStyleCoverPdf — nothing
+      // here is passed into the render.
       prodSpec: { select: { name: true } },
     },
-  });
-  if (!style) return NextResponse.json({ error: "Style not found" }, { status: 404 });
+  })) as RunStyle[];
+  const byId = new Map(rows.map((r) => [r.id, r]));
 
-  // The scope guard. Re-checked here and not merely at resolve: `run` takes an
-  // id straight from the client, and the whole point of this control is that it
-  // touches one style and no other.
-  if (style.prodSpecId !== prodSpec.id) {
-    return NextResponse.json(
-      {
-        error:
-          `${style.name} belongs to ${style.prodSpec?.name ?? "another client / business area"}, ` +
-          `not ${prodSpec.name}. Its cover prints that spec's General information — ` +
-          `switch to it above to regenerate this style.`,
-      },
-      { status: 409 },
-    );
+  // Every requested id resolved to nothing: the client is out of step with the
+  // database, which is a request-level error rather than N per-style ones.
+  if (rows.length === 0) {
+    return NextResponse.json({ error: "Style not found" }, { status: 404 });
   }
+
+  // SEQUENTIAL, and on purpose. Each pass is a Chromium render plus a Graph
+  // round trip; firing five at once would contend for the same browser pool
+  // and interleave the SharePoint writes for no gain a person waiting on this
+  // would notice. Bounded by MAX_STYLES_PER_RUN, which is what keeps the total
+  // inside maxDuration.
+  const results: StyleRunResult[] = [];
+  for (const styleId of wanted) {
+    const style = byId.get(styleId);
+    if (!style) {
+      results.push({
+        ...blank(styleId),
+        outcome: "not-found",
+        message: "This style no longer exists — it may have been deleted since the search.",
+      });
+      continue;
+    }
+    // One style's failure is its own. Anything the per-style path throws is
+    // recorded against that style and the loop carries on to the rest; the
+    // whole point of acting on the list is that it does not abandon four
+    // orders because the fifth misbehaved.
+    try {
+      results.push(await runOne(style, notifySupplier, prodSpec));
+    } catch (err) {
+      console.warn(`[gi-regen] ${styleId} failed:`, err);
+      results.push({
+        ...blank(styleId),
+        styleName: style.name,
+        prodSpecName: style.prodSpec?.name?.trim() ?? null,
+        inThisSpec: style.prodSpecId === prodSpec.id,
+        outcome: "error",
+        message: `Could not rebuild ${style.name}'s cover: ${(err as Error).message}`,
+      });
+    }
+  }
+
+  // Counted here rather than left to the client: "5 styles, 4 delivered, 1
+  // failed" is the answer, and a caller that has to add it up itself is a
+  // caller that can render five rows and a green tick.
+  const summary = {
+    total: results.length,
+    refreshed: results.filter((r) => r.refreshed).length,
+    pushed: results.filter((r) => r.outcome === "pushed").length,
+    notPushed: results.filter((r) => r.outcome === "not-pushed").length,
+    pushFailed: results.filter((r) => r.outcome === "push-failed").length,
+    noCover: results.filter((r) => r.outcome === "no-cover").length,
+    failed: results.filter((r) => r.outcome === "error" || r.outcome === "not-found").length,
+    // The one flag worth naming: nothing at all went wrong, so the client may
+    // say so in a single line. Anything else and it must show the rows.
+    allSucceeded: results.every((r) => r.outcome === "pushed" || r.outcome === "not-pushed"),
+  };
+
+  await db.log
+    .create({
+      data: {
+        level: summary.pushFailed + summary.failed > 0 ? "WARN" : "INFO",
+        message:
+          `general information: cover regenerate for ${results.length} style(s) ` +
+          `from prod spec ${prodSpec.name} by user ${userId} — ` +
+          `notify=${notifySupplier ? "yes" : "no"} — ` +
+          results.map((r) => `${r.styleName ?? r.styleId}=${r.outcome}`).join(" "),
+      },
+    })
+    .catch(() => {});
+
+  return NextResponse.json({ results, summary });
+}
+
+function blank(styleId: string): StyleRunResult {
+  return {
+    styleId,
+    styleName: null,
+    prodSpecName: null,
+    inThisSpec: false,
+    refreshed: false,
+    outcome: "error",
+    reason: null,
+    message: null,
+    requeue: null,
+    pushed: 0,
+    pushFailed: 0,
+    pushError: null,
+    sharePointStatus: null,
+    folderUrl: null,
+    sharePointError: null,
+  };
+}
+
+// One style: rebuild its cover, arm its supplier queue row, push it now.
+async function runOne(
+  style: RunStyle,
+  notifySupplier: boolean,
+  prodSpec: { id: string; name: string },
+): Promise<StyleRunResult> {
+  const base = {
+    ...blank(style.id),
+    styleName: style.name,
+    prodSpecName: style.prodSpec?.name?.trim() ?? null,
+    inThisSpec: style.prodSpecId === prodSpec.id,
+  };
 
   // Lazy, exactly as the cover-sample route does it: the render chain pulls in
   // puppeteer, and none of the validation above needs it. A refused request
-  // stays a cheap 404/409 instead of a cold start behind the whole PDF stack.
+  // stays a cheap 404 instead of a cold start behind the whole PDF stack.
   const { refreshStyleCoverAsset } = await import("@/lib/pdf/refresh-cover");
   const { enqueueCoverForSupplier } = await import("@/lib/publish/requeue-cover");
 
+  // The style id and nothing else — this is where "each style against its own
+  // spec" is actually enforced. refreshStyleCoverAsset resolves the style's
+  // current cover job and buildStyleCoverPdf reads that job's style's
+  // prodSpec.generalInfoMd, so the open spec is structurally incapable of
+  // leaking into a foreign style's cover.
+  //
   // No onlyWhenPending / onlyWhenChanged. Both exist to bound a sweep over
   // hundreds of styles; here a person typed this style number on purpose, and
   // "skipped — nothing changed" is the exact useless answer this control was
@@ -262,9 +453,9 @@ async function run(
     // "no-cover" is the common one and is not an error: the style has never
     // generated a bundle, so there is nothing to rebuild — and it will carry
     // the current text the first time it does.
-    return NextResponse.json({
-      styleName: style.name,
-      refreshed: false,
+    return {
+      ...base,
+      outcome: refresh.status === "no-cover" ? "no-cover" : "error",
       reason: refresh.status,
       message:
         refresh.status === "no-cover"
@@ -273,11 +464,7 @@ async function run(
           : refresh.status === "error"
             ? `Could not rebuild ${style.name}'s cover: ${refresh.error}`
             : `Nothing to do for ${style.name}.`,
-      requeue: null,
-      pushed: 0,
-      pushFailed: 0,
-      folderUrl: null,
-    });
+    };
   }
 
   // Arm the supplier queue row for this ONE style. Gated inside on a real
@@ -289,15 +476,19 @@ async function run(
     requeue = await enqueueCoverForSupplier(style.id, refresh.coverAssetId, { notifySupplier });
   } catch (err) {
     requeue = "error";
-    console.warn(`[gi-single-regen] requeue failed for ${style.id}:`, err);
+    console.warn(`[gi-regen] requeue failed for ${style.id}:`, err);
   }
 
   // Push now rather than waiting for the recurring sweep — the person is
   // standing here asking for the supplier's copy to be corrected. Scoped to
-  // this one style id, so nothing else in the queue rides along. Same path
-  // publish uses, so the supplier-send master switch and the PO cutoff still
-  // apply (it returns 0 uploaded when batch-send is off, and the armed row
-  // waits for the switch).
+  // this one style id, so nothing else in the queue rides along, and so a
+  // failure belongs to a named style rather than to the batch: one sweep of
+  // five would hand back one `uploaded` count and one folder, which is exactly
+  // the "four fine, one silently missing" reading this control exists to
+  // prevent. It costs one /automation row per style, which is the honest
+  // record — each really is its own delivery. Same path publish uses, so the
+  // supplier-send master switch and the PO cutoff still apply (it returns 0
+  // uploaded when batch-send is off, and the armed row waits for the switch).
   let pushed = 0;
   let pushFailed = 0;
   let pushError: string | null = null;
@@ -306,7 +497,7 @@ async function run(
       const { pushQueuedSupplierUploads } = await import("@/lib/sharepoint/push-queued-to-supplier");
       const sweep = await pushQueuedSupplierUploads({
         styleIds: [style.id],
-        recordRunAs: "gi-single-regen",
+        recordRunAs: "gi-regen",
       });
       pushed = sweep.uploaded;
       pushFailed = sweep.failed;
@@ -314,7 +505,7 @@ async function run(
     } catch (err) {
       pushFailed = 1;
       pushError = (err as Error).message;
-      console.warn(`[gi-single-regen] SharePoint push failed for ${style.id}:`, err);
+      console.warn(`[gi-regen] SharePoint push failed for ${style.id}:`, err);
     }
   }
 
@@ -328,30 +519,18 @@ async function run(
     })
     .catch(() => null);
 
-  await db.log
-    .create({
-      data: {
-        level: "INFO",
-        message:
-          `general information: single-style cover regenerate for ${style.name} ` +
-          `(${style.id}) under prod spec ${prodSpec.name} by user ${userId} — ` +
-          `requeue=${requeue} pushed=${pushed} failed=${pushFailed} ` +
-          `notify=${notifySupplier ? "yes" : "no"}`,
-      },
-    })
-    .catch(() => {});
-
-  return NextResponse.json({
-    styleName: style.name,
+  return {
+    ...base,
     refreshed: true,
+    outcome: pushFailed > 0 ? "push-failed" : pushed > 0 ? "pushed" : "not-pushed",
     reason: refresh.status,
+    message: null,
     requeue,
     pushed,
     pushFailed,
     pushError,
-    notifySupplier,
     sharePointStatus: queueRow?.sharePointStatus ?? null,
     folderUrl: queueRow?.sharePointFolderUrl ?? style.supplierFolderUrl ?? null,
     sharePointError: queueRow?.sharePointError ?? null,
-  });
+  };
 }
