@@ -12,10 +12,11 @@ import { useCallback, useRef, useState } from "react";
 // Two decisions are wired in rather than offered, because getting them wrong is
 // expensive and getting them right is never situational:
 //
-//   * Suppliers are NOT emailed. The files land in their folders, but a bulk
-//     manifest refresh across hundreds of orders is not news any supplier acts
-//     on, and mailing them about it is how 714 emails went out on 2026-08-13.
-//     A genuine new document still emails, through the ordinary approval path.
+//   * Suppliers are NOT emailed — and that is no longer a flag this panel sets,
+//     it is what the regenerate route DOES. A bulk manifest refresh across
+//     hundreds of orders is not news any supplier acts on, and mailing them
+//     about it is how 714 emails went out on 2026-08-13. A genuine new document
+//     still emails, through the ordinary approval path.
 //   * Only changed covers are rebuilt, and each rebuild stamps its fingerprint.
 //     So a second run does nothing, a stopped run resumes for free, and no
 //     supplier's file is overwritten to change nothing.
@@ -225,7 +226,6 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
           mode: "process",
           styleIds: chunk,
           deliver: true,
-          notifySupplier: false,
           onlyChanged: true,
           onlyPending: false,
         })) as { refreshed: number; pushed: number; errors: number };
