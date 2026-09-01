@@ -26,7 +26,13 @@
 // Slug shared with the runner's old style-number slug: anything that isn't a
 // letter, digit or dash collapses to a dash, lowercased. Applied to the colour
 // too so "Navy Blue" can't put a space in a SharePoint file name.
-function slug(value: string): string {
+//
+// Exported because the folder checks (/checks) have to attribute a cover file
+// they do NOT recognise back to a style — "00-<slug>-cover-page.pdf" is only
+// readable if the reader slugs the style number by exactly this rule. A second
+// copy of it would drift, and a drifted slug would attribute a cover to the
+// wrong style, which is the one mistake a delete proposal must never make.
+export function coverSlug(value: string): string {
   return value.replace(/[^a-z0-9-]+/gi, "-").toLowerCase();
 }
 
@@ -77,10 +83,10 @@ export type CoverNameInput = {
 // it is part of the name rather than metadata.
 export function coverFileName(input: CoverNameInput): string {
   const colourSlug = coverColourApplies(input.poSeq, input.minPo)
-    ? slug(coverColourLabel(input.colour))
+    ? coverSlug(coverColourLabel(input.colour))
     : "";
   // A colour of only punctuation ("-", "*") slugs to dashes and would add a
   // segment carrying no information — treat it as no colour.
   const suffix = colourSlug.replace(/-/g, "") ? `-${colourSlug}` : "";
-  return `00-${slug(input.styleNumber)}${suffix}-cover-page.pdf`;
+  return `00-${coverSlug(input.styleNumber)}${suffix}-cover-page.pdf`;
 }
