@@ -133,6 +133,9 @@ export async function loadTrimSettings(): Promise<Omit<TrimContext, "trimLabels"
 //     aren't persisted yet, so a DB read here would miss them), otherwise the
 //     live cross-job set from approvedOutputBaseKeysForStyle.
 //   * Monday's Trims entries for the style, folded in through the concept map.
+//   * Which MANUAL rows have had their document uploaded into the order's
+//     APPROVED LAYOUTS folder (loadManualDeliveredLabels) — the half of the
+//     manifest `manualDelivered` was always shaped for and nothing filled.
 export async function buildRequiredPackagingForStyle(
   styleId: string,
   opts?: {
@@ -162,6 +165,7 @@ export async function buildRequiredPackagingForStyle(
   const { effectiveOutputDims, loadInfoAreaSizeMap } = await import("@/lib/prod-spec/info-area");
   const { parseProdSpecOutputs } = await import("@/lib/prod-spec/config");
   const { resolveStyleTrimLabels } = await import("@/lib/trims/style-trims");
+  const { loadManualDeliveredLabels } = await import("@/lib/trims/manual-uploads");
   const { getTrimsOnCoverEnabled } = await import("@/lib/settings/app-settings");
 
   // ProdSpec.outputs may reference Output Builder layouts (`layout:<id>`) — load
@@ -245,5 +249,15 @@ export async function buildRequiredPackagingForStyle(
   const approvedBaseKeys =
     opts?.approvedBaseKeysOverride ?? (await approvedOutputBaseKeysForStyle(styleId));
 
-  return assembleRequiredPackagingDocs(rows, approvedBaseKeys, { ...settings, trimLabels });
+  // Which manual rows have had their document put in the supplier's APPROVED
+  // LAYOUTS folder. Read per style (not threadable like the settings blobs)
+  // because it is per-style state by definition. Nothing delivered ⇒ an empty
+  // set ⇒ exactly the manifest this printed before uploads existed.
+  const manualDelivered = await loadManualDeliveredLabels(styleId);
+
+  return assembleRequiredPackagingDocs(rows, approvedBaseKeys, {
+    ...settings,
+    trimLabels,
+    manualDelivered,
+  });
 }
