@@ -139,10 +139,17 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
       const suppliedAs = d.suppliedAs?.length
         ? `<div class="via">Supplied as ${esc(d.suppliedAs.join(" + "))}</div>`
         : "";
+      // A standing note about what this KIND of document is, carried on the row
+      // by its trim concept (src/lib/trims/concept-copy.ts) — e.g. that a care
+      // label is printed on one paper, front and back. It is a fact, not a
+      // status, so it prints whatever state the row is in. Plain text, escaped.
+      const conceptNote = d.copy?.note?.trim()
+        ? `<div class="cnote">${esc(d.copy.note.trim())}</div>`
+        : "";
       return `
         <tr class="${d.approved === false ? "pending" : ""}">
           <td class="num">${i + 1}</td>
-          <td class="doc">${esc(d.displayName)}${suppliedAs}</td>
+          <td class="doc">${esc(d.displayName)}${suppliedAs}${conceptNote}</td>
           <td class="size">${size}</td>
           ${hasPending ? `<td class="status">${statusCell(d)}</td>` : ""}
         </tr>`;
@@ -425,6 +432,15 @@ const COVER_CSS = `
     font-weight: normal;
     font-size: 0.82em;
     color: #71717a;
+  }
+  /* A standing note about the document itself — normal weight so it reads as
+     prose under the bold row title, and distinct from the muted "Supplied as"
+     line above it, which names files rather than describing them. */
+  .cov table.docs td.doc .cnote {
+    margin-top: 0.6mm;
+    font-weight: normal;
+    font-size: 0.85em;
+    color: #52525b;
   }
   .cov table.docs .note-cell { color: #71717a; font-size: 0.85em; }
   .cov table.docs td.size { width: 38mm; white-space: nowrap; font-variant-numeric: tabular-nums; }

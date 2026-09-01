@@ -238,3 +238,65 @@ test("an info row is not a pending row", () => {
     false,
   );
 });
+
+// ---- Per-concept copy on the cover ----------------------------------------
+
+test("a concept's standing note prints under its row, whatever the row's state", () => {
+  const note = "Wash Care Label, these are created to be printed on one paper, front and back";
+  for (const approved of [true, false, undefined]) {
+    const html = renderCoverPageHtml(
+      coverInput([
+        {
+          displayName: "Wash Care Label with Oeko-tex Logo",
+          sourceLabel: "Wash Care Label with Oeko-tex Logo",
+          widthMm: 25,
+          heightMm: 120,
+          fileCount: 1,
+          ...(approved === undefined ? {} : { approved }),
+          kind: "app",
+          copy: { note },
+        },
+      ]),
+    );
+    // It is a fact about the document, not a status — so it prints delivered,
+    // pending and untracked alike, inside the row it describes.
+    assert.ok(html.includes(`<div class="cnote">${note}</div>`), `note prints (approved=${approved})`);
+  }
+});
+
+test("a note is not a status: it neither adds a Status column nor a pending row", () => {
+  const html = renderCoverPageHtml(
+    coverInput([
+      {
+        displayName: "Black Hanger",
+        sourceLabel: "Black Hanger",
+        widthMm: null,
+        heightMm: null,
+        fileCount: null,
+        kind: "info",
+        copy: { note: "Supplied by the supplier from their own stock." },
+      },
+    ]),
+  );
+  assert.ok(html.includes("Supplied by the supplier from their own stock."));
+  assert.ok(!html.includes("<th>Status</th>"), "a note must not switch the Status column on");
+  assert.ok(!html.includes(PENDING_LABEL), "and must not park a packing instruction at waiting");
+});
+
+test("a note is escaped, not injected", () => {
+  const html = renderCoverPageHtml(
+    coverInput([
+      {
+        displayName: "Hangtag",
+        widthMm: null,
+        heightMm: null,
+        fileCount: null,
+        kind: "manual",
+        approved: false,
+        copy: { note: "<script>x</script> & \"quoted\"" },
+      },
+    ]),
+  );
+  assert.ok(!html.includes("<script>x</script>"));
+  assert.ok(html.includes("&lt;script&gt;x&lt;/script&gt; &amp; &quot;quoted&quot;"));
+});

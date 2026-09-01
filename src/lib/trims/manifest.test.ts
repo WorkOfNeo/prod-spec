@@ -321,3 +321,82 @@ test("switching on and off is a round trip, not a one-way door", () => {
   });
   assert.equal(manifestFingerprint(backOff), manifestFingerprint(off));
 });
+
+// ---- Per-concept copy ------------------------------------------------------
+//
+// A standing note about what a KIND of document is (see concept-copy.ts). It
+// belongs to the concept, not to a customer's cover block, so it has to reach
+// the row whichever side of the union that row came from — Monday's list or the
+// declared outputs Monday never mentioned.
+
+const CARE_NOTE = "Wash Care Label, these are created to be printed on one paper, front and back";
+
+test("a concept's standing note rides the row, from either side of the union", () => {
+  // From Monday's list: the entry classifies to CARE_LABEL and is answered by a
+  // layout, so it is an "app" row.
+  const fromMonday = assembleTrimManifest({
+    trimLabels: ["Wash Care Label with Oeko-tex Logo"],
+    outputs: TICKET_OUTPUTS,
+    rules: RULES,
+    overrides: {},
+  });
+  assert.equal(fromMonday[0].copy?.note, CARE_NOTE);
+
+  // From the declared outputs alone — the care label nobody put on Monday.
+  const fromOutputs = assembleTrimManifest({
+    trimLabels: [],
+    outputs: TICKET_OUTPUTS,
+    rules: RULES,
+    overrides: {},
+  });
+  const care = fromOutputs.find((d) => d.displayName.endsWith("Care Label"));
+  assert.equal(care?.copy?.note, CARE_NOTE);
+});
+
+test("a concept with nothing to say leaves the row without a copy field", () => {
+  // Not `copy: {}` and not `copy: undefined` — the KEY must be absent, because
+  // that is what keeps such a row's fingerprint identical to what it was before
+  // concept copy existed.
+  const docs = assembleTrimManifest({
+    trimLabels: ["Carton Marking"],
+    outputs: TICKET_OUTPUTS,
+    rules: RULES,
+    overrides: {},
+  });
+  assert.equal(Object.prototype.hasOwnProperty.call(docs[0], "copy"), false);
+});
+
+test("a row that gained no note fingerprints exactly as it always did", () => {
+  // The historical tuple, spelled out: whatever else changes, a row printing no
+  // note must serialise to this — otherwise the day this shipped every cover in
+  // the estate would read as changed and be rebuilt for nothing.
+  const row = {
+    displayName: "Carton Marking",
+    widthMm: 100,
+    heightMm: 75,
+    fileCount: 1,
+    approved: false,
+    kind: "app" as const,
+  };
+  assert.equal(
+    manifestFingerprint([row]),
+    JSON.stringify([["Carton Marking", null, null, 100, 75, "app", false]]),
+  );
+});
+
+test("a note changes the fingerprint, because it changes the page", () => {
+  const withNote = assembleTrimManifest({
+    trimLabels: ["Wash Care Label with Oeko-tex Logo"],
+    outputs: TICKET_OUTPUTS,
+    rules: RULES,
+    overrides: {},
+  });
+  const withoutNote = assembleTrimManifest({
+    trimLabels: ["Wash Care Label with Oeko-tex Logo"],
+    outputs: TICKET_OUTPUTS,
+    rules: RULES,
+    overrides: {},
+    conceptCopy: {},
+  });
+  assert.notEqual(manifestFingerprint(withNote), manifestFingerprint(withoutNote));
+});

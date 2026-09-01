@@ -31,6 +31,7 @@
 
 import type { BundleDocSummary } from "@/lib/pdf/bundle-page-keys";
 import { conceptHasArtwork } from "./concepts";
+import { DEFAULT_TRIM_CONCEPT_COPY, resolveTrimCopy, type TrimConceptCopyMap } from "./concept-copy";
 import { classifyTrimLabel, normalizeTrimLabel, type TrimRule } from "./classify";
 
 export type ManifestKind = NonNullable<BundleDocSummary["kind"]>;
@@ -61,6 +62,10 @@ export type TrimManifestInput = {
   // the order's SharePoint folder. The hook for the delivery-detection half;
   // absent ⇒ nothing is known to be delivered and manual rows read as pending.
   manualDelivered?: ReadonlySet<string>;
+  // Per-concept supplier-facing wording (see concept-copy.ts). Absent ⇒ the
+  // built-in defaults, so a caller that knows nothing about copy still prints
+  // the standing notes.
+  conceptCopy?: TrimConceptCopyMap;
 };
 
 // Strongest-first. A row advertising "we produce this" must not be downgraded
@@ -97,9 +102,18 @@ export function isSuppressedLabel(
   return Object.prototype.hasOwnProperty.call(overrides, key) && overrides[key].length === 0;
 }
 
+// Spread helper: an absent resolution must leave the KEY off the row, not set
+// it to undefined — `copy: undefined` and no `copy` at all serialise the same
+// in the fingerprint today, but only the latter survives a future JSON round
+// trip unchanged.
+function copyField(copy: ReturnType<typeof resolveTrimCopy>): { copy?: { note?: string } } {
+  return copy ? { copy } : {};
+}
+
 export function assembleTrimManifest(input: TrimManifestInput): BundleDocSummary[] {
   const { trimLabels, outputs, rules, overrides } = input;
   const manualDelivered = input.manualDelivered ?? new Set<string>();
+  const conceptCopy = input.conceptCopy ?? DEFAULT_TRIM_CONCEPT_COPY;
 
   // concept -> the outputs that satisfy it. Several layouts can share one
   // concept (a front and a side carton marking); all of them answer the entry.
@@ -160,6 +174,7 @@ export function assembleTrimManifest(input: TrimManifestInput): BundleDocSummary
         fileCount: single ? single.fileCount : null,
         approved: matched.every((o) => o.approved),
         kind: "app",
+        ...copyField(resolveTrimCopy(concepts, conceptCopy)),
       });
       continue;
     }
@@ -174,6 +189,7 @@ export function assembleTrimManifest(input: TrimManifestInput): BundleDocSummary
       // is what keeps it out of the pending count and out of the status column.
       ...(kind === "manual" ? { approved: manualDelivered.has(normalizeTrimLabel(label)) } : {}),
       kind,
+      ...copyField(resolveTrimCopy(concepts, conceptCopy)),
     });
   }
 
@@ -189,6 +205,7 @@ export function assembleTrimManifest(input: TrimManifestInput): BundleDocSummary
       fileCount: o.fileCount,
       approved: o.approved,
       kind: "app",
+      ...copyField(resolveTrimCopy(o.concept ? [o.concept] : [], conceptCopy)),
     });
   }
 
@@ -217,6 +234,11 @@ export function manifestFingerprint(docs: ReadonlyArray<BundleDocSummary>): stri
       d.heightMm,
       d.kind ?? "app",
       d.approved ?? null,
+      // Appended ONLY when the row carries concept copy. An unconditional
+      // element would shift every existing fingerprint and flag the whole
+      // estate as changed on the day this shipped; a row that prints no note
+      // reads exactly as it always did, so it must fingerprint that way too.
+      ...(d.copy ? [d.copy] : []),
     ]),
   );
 }
