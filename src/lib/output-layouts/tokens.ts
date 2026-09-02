@@ -133,11 +133,15 @@ const RESOLVERS: Record<string, TextResolver> = {
   certificates: (s) => (s.certificates ?? []).join(", "),
   colourName: (s) => s.colour?.name ?? "",
   colourCode: (s) => s.colour?.code ?? "",
-  // The colour whose fibres THIS document prints — set only on a row produced
-  // by the per-composition split (splitByComposition, see repetitionStyles).
-  // Empty everywhere else, including on a style whose composition is a plain
-  // single one, so a layout that prints it is opting into the split.
-  compositionColour: (s) => s.compositionColour ?? "",
+  // The colour THIS document is for: the composition's colour on a row produced
+  // by the per-composition split (splitByComposition, see repetitionStyles),
+  // and otherwise the row's ordinary colour name.
+  //
+  // The fallback is what lets ONE file-name expression serve a layout whose
+  // styles don't all split — without it an unsplit style resolves the token
+  // empty, which strands a "--" in the file name and, printed on the label
+  // itself, renders a `missing` chip that BLOCKS approval.
+  compositionColour: (s) => s.compositionColour ?? s.colour?.name ?? "",
   productGroup: (s) => s.productGroup ?? "",
   campaignWeek: (s) => s.campaignWeek ?? "",
   // ":dash" joins with "-" instead of ", " — "S-M-L-XL-2XL-3XL", the form

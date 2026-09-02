@@ -157,7 +157,7 @@ function compositionRows(style: StyleData): StyleData[] {
     style.composition.find((c) => c.language.toLowerCase() === "en")?.text ??
     style.composition[0]?.text ??
     "";
-  const parts = splitCompositionByColour(source, declaredColours(style));
+  const parts = splitCompositionByColour(source, declaredColours(style), style.colourAliases ?? []);
   if (!parts) return [style];
   return parts.map((part, i) => ({
     ...style,

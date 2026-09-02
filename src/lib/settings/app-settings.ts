@@ -513,6 +513,101 @@ export async function setFileNamePresets(presets: ReadonlyArray<FileNamePreset>)
 }
 
 // =====================================================
+// Colour aliases — the vocabulary behind the per-composition split.
+//
+// A layout with `splitByComposition` only splits when every part label of a
+// composition names a colour the style DECLARES ("Pink: … , Grey melange: …"
+// against a style named "…(Grey melange)+…(Pink)"). Matching is exact by
+// design — it must never guess that one colour word means another — but the
+// same colour is routinely written two ways on the two sides: the abbreviation
+// in the style name ("LGM") and the spelt-out colour in the composition
+// ("Grey melange").
+//
+// This is the declared bridge. Each group lists spellings that mean ONE
+// colour; a composition label matches a declared colour when both sit in the
+// same group. Nothing is inferred — an alias exists because a person wrote it.
+//
+// Stored as AppSetting JSON for the same reason as the presets above: one
+// small document a human edits on one screen, and it needs no migration.
+// =====================================================
+
+const COLOUR_ALIASES_KEY = "outputColourAliases";
+
+// One colour, several spellings. Order is presentation only.
+export type ColourAliasGroup = string[];
+
+const MAX_ALIAS_GROUPS = 200;
+const MAX_ALIASES_PER_GROUP = 12;
+
+// Tolerant of a stale/hand-edited row: non-string entries are dropped, blanks
+// and case-duplicates removed, and a group left with fewer than two spellings
+// is discarded — it bridges nothing.
+export function normalizeColourAliases(raw: unknown): ColourAliasGroup[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ColourAliasGroup[] = [];
+  for (const entry of raw) {
+    if (!Array.isArray(entry)) continue;
+    const seen = new Set<string>();
+    const group: string[] = [];
+    for (const name of entry) {
+      if (typeof name !== "string") continue;
+      const clean = name.trim().slice(0, 60);
+      const key = clean.toLowerCase();
+      if (!clean || seen.has(key)) continue;
+      seen.add(key);
+      group.push(clean);
+      if (group.length >= MAX_ALIASES_PER_GROUP) break;
+    }
+    if (group.length < 2) continue;
+    out.push(group);
+    if (out.length >= MAX_ALIAS_GROUPS) break;
+  }
+  return out;
+}
+
+export async function getColourAliases(): Promise<ColourAliasGroup[]> {
+  const row = await db.appSetting.findUnique({ where: { key: COLOUR_ALIASES_KEY } });
+  if (!row) return [];
+  return normalizeColourAliases((row.value as { groups?: unknown } | null)?.groups);
+}
+
+export async function setColourAliases(
+  groups: ReadonlyArray<ColourAliasGroup>,
+): Promise<ColourAliasGroup[]> {
+  const value = { groups: normalizeColourAliases(groups) };
+  await db.appSetting.upsert({
+    where: { key: COLOUR_ALIASES_KEY },
+    create: { key: COLOUR_ALIASES_KEY, value },
+    update: { value },
+  });
+  colourAliasCache = { at: Date.now(), groups: value.groups };
+  return value.groups;
+}
+
+// Render-path read. buildStyleData calls this once per style, so it is cached
+// for a few seconds rather than re-queried across a bulk run — the list is one
+// small row that changes when a person edits a settings page, never mid-run.
+// Fail-soft: a read that throws yields no aliases, which only means a style
+// that needed a bridge doesn't split (its label prints exactly as it does
+// today) — never a failed render.
+let colourAliasCache: { at: number; groups: ColourAliasGroup[] } | null = null;
+const COLOUR_ALIAS_TTL_MS = 10_000;
+
+export async function loadColourAliases(): Promise<ColourAliasGroup[]> {
+  if (colourAliasCache && Date.now() - colourAliasCache.at < COLOUR_ALIAS_TTL_MS) {
+    return colourAliasCache.groups;
+  }
+  try {
+    const groups = await getColourAliases();
+    colourAliasCache = { at: Date.now(), groups };
+    return groups;
+  } catch (err) {
+    console.warn("[colour-aliases] read failed, continuing without aliases:", err);
+    return [];
+  }
+}
+
+// =====================================================
 // Trims → concept configuration (see src/lib/trims/).
 //
 // Three blobs, all optional, all fail-soft: with nothing stored the seeded

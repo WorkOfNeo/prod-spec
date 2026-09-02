@@ -354,6 +354,21 @@ the 13 genuine two-quality packs and left the other 94 alone. One unmatched
 label disqualifies the whole string, so a style whose composition names colours
 it doesn't carry keeps its single document until the data is fixed.
 
+**Colour aliases.** The same colour is routinely written two ways — the
+abbreviation in the style name (`LGM`) and the spelt-out colour in the
+composition (`Grey melange`) — and exact matching rejects that pair. Declare
+such spellings as one colour under **Settings › Colour aliases**
+(`AppSetting: outputColourAliases`, loaded onto `StyleData.colourAliases` in
+`buildStyleData`). An alias only ever WIDENS a style's own colours; it can't
+make a garment-part composition split, and with no groups configured matching
+stays exact.
+
+**`{{compositionColour}}` falls back** to the row's colour name when nothing
+split, so one file-name expression serves a layout whose styles don't all
+split. Without the fallback an unsplit style resolves it empty — a stranded
+`--` in the file name, and on the label itself a `missing` chip that blocks
+approval.
+
 Note this is independent of the *line* split: an un-split label already prints
 one part per line (see `composition.ts`), and that stays true for garment-part
 compositions.
