@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth-server";
 import { db } from "@/lib/db";
-import { LayoutDefSchema, layoutSettings, tokensInDef } from "@/lib/output-layouts/schema";
+import { LayoutDefSchema, layoutSettings, splitsPerFile, tokensInDef } from "@/lib/output-layouts/schema";
 import { renderLayoutHtml, repetitionStyles } from "@/lib/output-layouts/render";
 import {
   augmentTranslatedFields,
@@ -229,10 +229,11 @@ export async function POST(req: NextRequest) {
   // real values when files are split per EAN. A single-file output names
   // ONE file, so it resolves against the full style — exactly what the
   // runner's fileNameFor does on that path.
-  const fileNameStyle =
-    settings.repeatBy !== "none" && settings.splitBy === "ean"
-      ? (repetitionStyles(styleData, settings.repeatBy)[0] ?? styleData)
-      : styleData;
+  const fileNameStyle = splitsPerFile(settings)
+    ? (repetitionStyles(styleData, settings.repeatBy, {
+        splitByComposition: settings.splitByComposition,
+      })[0] ?? styleData)
+    : styleData;
   const resolvedFileName = settings.fileName
     ? resolveLayoutFileName(settings.fileName, fileNameStyle)
     : null;

@@ -113,6 +113,7 @@ main()
   .then(() => batch10())
   .then(() => batch11())
   .then(() => batch12())
+  .then(() => batch13())
   .catch((err) => {
     console.error(err);
     process.exit(1);
@@ -711,4 +712,74 @@ async function batch12() {
 
   await closeBrowser();
   console.log(process.exitCode ? "BATCH 12 FAILED" : "BATCH 12 PASSED");
+}
+
+// ---------------------------------------------------------------------
+// Batch 13 coverage: the per-composition split (settings.splitByComposition)
+// end to end — a two-quality pack ships one document per colour PER SIZE,
+// each printing only its own fibres, each named by {{compositionColour}}.
+// ---------------------------------------------------------------------
+async function batch13() {
+  const { layoutRowToVariant } = await import("@/lib/output-layouts/variants");
+  const style = buildSampleStyleData();
+
+  const variant = layoutRowToVariant({
+    id: "smoke-comp-split",
+    name: "Smoke Composition Split",
+    docType: "CARE_LABEL",
+    version: 1,
+    isInfoArea: false,
+    customLogo: null,
+    definition: {
+      pages: [{ id: "p1", title: "", widthMm: 30, heightMm: 120,
+        blocks: [{ id: "b1", rect: { col: 0, row: 0, colSpan: 12, rowSpan: 12 },
+          lines: ["{{size}}", "{{composition:en}}"] }] }],
+      settings: {
+        repeatBy: "ean",
+        splitByComposition: true,
+        fileName: "{{styleNumber}}-{{size}}-{{compositionColour}}",
+      },
+    },
+  });
+  assert(!!variant?.renderMany, "composition-split layout exposes renderMany");
+
+  // The live shape: colours named in the style NAME, MIX EAN rows carrying
+  // none, both qualities in one composition string.
+  const pack = {
+    ...style,
+    styleName: "ST40011 (Grey melange)+ ST40012 (Pink)",
+    colour: undefined,
+    composition: [{ language: "en",
+      text: "Pink: 95% Cotton 5% Elastane, Grey melange: 57% Cotton 38% Polyester 5% Elastane" }],
+    eanVariants: [
+      { size: "86/92", ean13: "5701234567104", colour: null, cartonEan: null },
+      { size: "98/104", ean13: "5701234567111", colour: null, cartonEan: null },
+    ],
+  };
+  const docs = await variant!.renderMany!(pack, { widthMm: 30, heightMm: 120 });
+  assert(docs.length === 4, `2 sizes x 2 compositions = 4 documents (got ${docs.length})`);
+  assert(
+    docs.map((d) => d.fileName).join("|") ===
+      [`${style.styleNumber}-8692-Pink.pdf`, `${style.styleNumber}-8692-Grey-melange.pdf`,
+       `${style.styleNumber}-98104-Pink.pdf`, `${style.styleNumber}-98104-Grey-melange.pdf`].join("|"),
+    `each file is named by its colour (${docs.map((d) => d.fileName).join(", ")})`,
+  );
+  assert(new Set(docs.map((d) => d.suffix)).size === 4, "suffixes are distinct (no '-2' collision fallback)");
+  assert(
+    docs[0].html.includes("95% Cotton 5% Elastane") && !docs[0].html.includes("38% Polyester"),
+    "the Pink document prints ONLY the Pink fibres",
+  );
+  assert(
+    docs[1].html.includes("57% Cotton 38% Polyester 5% Elastane") && !docs[1].html.includes("95% Cotton 5%"),
+    "the Grey melange document prints ONLY its own fibres",
+  );
+  assert(!docs[0].html.includes("Pink:"), "the colour label is dropped from the printed composition");
+
+  // A single-composition style is untouched: back to one document per size.
+  const plain = { ...pack, composition: [{ language: "en", text: "95% Cotton 5% Elastane" }] };
+  const plainDocs = await variant!.renderMany!(plain, { widthMm: 30, heightMm: 120 });
+  assert(plainDocs.length === 2, `single composition still ships one doc per size (got ${plainDocs.length})`);
+
+  await closeBrowser();
+  console.log(process.exitCode ? "BATCH 13 FAILED" : "BATCH 13 PASSED");
 }

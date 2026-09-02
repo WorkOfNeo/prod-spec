@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { repetitionStyles } from "./render";
-import { layoutSettings, parseLayoutDef, type LayoutSettings } from "./schema";
+import { layoutSettings, parseLayoutDef, splitsPerFile, type LayoutSettings } from "./schema";
 import { resolveLayoutFileName } from "./tokens";
 import { LAYOUT_VARIANT_PREFIX } from "./variant-keys";
 
@@ -69,7 +69,7 @@ export async function analyseStyleFilenames(
   } catch {
     return null;
   }
-  if (settings.repeatBy === "none" || settings.splitBy !== "ean") return null;
+  if (!splitsPerFile(settings)) return null;
   if (!settings.fileName.trim()) return null;
 
   const { loadStyleRenderContext } = await import("@/lib/styles/render-context");
@@ -77,10 +77,13 @@ export async function analyseStyleFilenames(
   if (!ctx) return null;
 
   const seen = new Map<string, number>();
-  const rows: RepetitionRow[] = repetitionStyles(ctx.styleData, settings.repeatBy).map((repStyle, i) => ({
+  const rows: RepetitionRow[] = repetitionStyles(ctx.styleData, settings.repeatBy, {
+    splitByComposition: settings.splitByComposition,
+  }).map((repStyle, i) => ({
     suffix: suffixFor(repStyle, settings.repeatBy, i, seen),
     size: repStyle.sizes[0]?.label ?? "",
     colourName: repStyle.colour?.name ?? "",
+    compositionColour: repStyle.compositionColour ?? "",
     ean13: repStyle.eanVariants?.[0]?.ean13 ?? repStyle.sizes[0]?.ean13 ?? "",
     cartonEan: repStyle.carton?.ean13 ?? "",
     fileName: resolveLayoutFileName(settings.fileName, repStyle),

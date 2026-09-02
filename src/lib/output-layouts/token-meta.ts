@@ -118,6 +118,13 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     example: "FSC, OEKOTEX",
   },
   { key: "colourName", label: "Colour name", group: "Style", kind: "text", example: "Navy" },
+  {
+    key: "compositionColour",
+    label: "Composition colour (per-colour split only)",
+    group: "Style",
+    kind: "text",
+    example: "Grey melange",
+  },
   { key: "colourCode", label: "Colour code", group: "Style", kind: "text", example: "19-3920" },
   { key: "productGroup", label: "Product group", group: "Style", kind: "text", example: "3-Pack Socks" },
   { key: "campaignWeek", label: "Campaign week", group: "Style", kind: "text", example: "C182813" },
