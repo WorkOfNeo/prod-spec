@@ -100,6 +100,12 @@ export type StyleData = {
   // rows' file names. Absent on every unsplit row.
   compositionColour?: string;
 
+  // Declared colour-spelling groups ("LGM" = "Grey melange"), loaded once per
+  // style in buildStyleData so the per-composition split stays SYNC. Only ever
+  // WIDENS what counts as one of this style's colours; absent/empty = exact
+  // matching, which is the default everywhere until someone configures a group.
+  colourAliases?: string[][];
+
   // Raw carton-qty column text. `carton.outerVE` is its numeric parse and
   // 0 whenever the buyer filled a per-size list instead ("4-5ÅR=1040,
   // 6-7ÅR=1050" — the "=" flavour of the size-scoped convention, see

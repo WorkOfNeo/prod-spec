@@ -2238,7 +2238,12 @@ export function LayoutEditor({
                 is approved separately. Only fires when every part is labelled with a colour the style
                 declares; a garment-part composition (&ldquo;Top: &hellip;, Bottom: &hellip;&rdquo;) and a
                 single composition are untouched. Add {"{{compositionColour}}"} to the file name to tell
-                the documents apart.
+                the documents apart. When the two sides spell the same colour differently
+                (&ldquo;LGM&rdquo; vs &ldquo;Grey melange&rdquo;), declare it under{" "}
+                <a href="/settings/colour-aliases" target="_blank" rel="noreferrer" className="underline">
+                  Settings &rsaquo; Colour aliases
+                </a>
+                .
               </p>
             </div>
             <div>

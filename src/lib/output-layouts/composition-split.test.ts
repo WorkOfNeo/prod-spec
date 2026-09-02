@@ -186,6 +186,97 @@ test("a language whose text doesn't parse into the same parts keeps its full val
   for (const rep of reps) assert.equal(resolveTextToken(rep, "composition", "da"), "95% Bomuld 5% Elastan");
 });
 
+// ---------------------------------------------------------------------------
+// Colour aliases — the declared bridge between the two spellings of one colour.
+// ---------------------------------------------------------------------------
+
+const LGM_PACK = "LGM: 57% Cotton 38% Polyester 5% Elastane / Grey melange: 95% Cotton 5% Elastan";
+
+test("without an alias, a different spelling does NOT match", () => {
+  // "Black" matches, "Grey melange" doesn't match the declared "LGM" — half a
+  // match disqualifies, so the label keeps its single document.
+  const text = "Black: 95% Cotton 5% Elastane, Grey melange: 57% Cotton 38% Polyester 5% Elastane";
+  assert.equal(splitCompositionByColour(text, ["LGM", "Black"]), null);
+});
+
+test("a declared alias group bridges the two spellings", () => {
+  const text = "Black: 95% Cotton 5% Elastane, Grey melange: 57% Cotton 38% Polyester 5% Elastane";
+  const parts = splitCompositionByColour(text, ["LGM", "Black"], [["LGM", "Grey melange"]]);
+  assert.deepEqual(parts?.map((p) => p.label), ["Black", "Grey melange"]);
+});
+
+test("an alias group only fires when the style declares one of its members", () => {
+  // The group exists, but this style carries neither spelling — nothing to
+  // bridge, so no split. An alias widens a style's OWN colours, never invents.
+  assert.equal(
+    splitCompositionByColour(LGM_PACK, ["Navy", "White"], [["LGM", "Grey melange"]]),
+    null,
+  );
+});
+
+test("aliases never loosen a garment-part composition", () => {
+  assert.equal(
+    splitCompositionByColour("Top: 100% Cotton, Bottom: 60% Cotton 40% Polyester", ["LGM", "Black"],
+      [["LGM", "Grey melange"], ["Black", "Sort"]]),
+    null,
+  );
+});
+
+test("aliases reach the render path through StyleData.colourAliases", () => {
+  const style: StyleData = {
+    ...twoQualityPack(),
+    styleName: "ST40002(LGM)+ST40003(Black)",
+    composition: [{ language: "en",
+      text: "Black: 95% Cotton 5% Elastane, Grey melange: 57% Cotton 38% Polyester 5% Elastane" }],
+  };
+  assert.equal(repetitionStyles(style, "none").length, 1);
+  assert.equal(repetitionStyles(style, "none", { splitByComposition: true }).length, 1);
+  const withAlias = { ...style, colourAliases: [["LGM", "Grey melange"]] };
+  const reps = repetitionStyles(withAlias, "none", { splitByComposition: true });
+  assert.deepEqual(reps.map((r) => r.compositionColour), ["Black", "Grey melange"]);
+});
+
+// ---------------------------------------------------------------------------
+// {{compositionColour}} falls back to the row's colour.
+// ---------------------------------------------------------------------------
+
+test("{{compositionColour}} is the composition's colour on a split row", () => {
+  const reps = repetitionStyles(twoQualityPack(), "none", { splitByComposition: true });
+  assert.deepEqual(
+    reps.map((r) => resolveTextToken(r, "compositionColour")),
+    ["Pink", "Grey melange"],
+  );
+});
+
+test("{{compositionColour}} falls back to the row's colour name when nothing split", () => {
+  // Without this an unsplit style resolves it empty, which strands a "--" in
+  // the file name and renders a `missing` chip that blocks approval.
+  const style: StyleData = {
+    ...twoQualityPack(),
+    composition: [{ language: "en", text: "95% Cotton 5% Elastane" }],
+    colour: { name: "Navy", code: "19-3920" },
+  };
+  const [row] = repetitionStyles(style, "none", { splitByComposition: true });
+  assert.equal(resolveTextToken(row, "compositionColour"), "Navy");
+  // …and on a layout that never opted in at all.
+  assert.equal(resolveTextToken(style, "compositionColour"), "Navy");
+});
+
+test("{{compositionColour}} follows the per-EAN row's own colour", () => {
+  const style: StyleData = {
+    ...twoQualityPack(),
+    composition: [{ language: "en", text: "95% Cotton 5% Elastane" }],
+    eanVariants: [
+      { size: "M", ean13: "5700123456780", colour: "Pink", cartonEan: null },
+      { size: "M", ean13: "5700123456797", colour: "Blue", cartonEan: null },
+    ],
+  };
+  assert.deepEqual(
+    repetitionStyles(style, "ean").map((r) => resolveTextToken(r, "compositionColour")),
+    ["Pink", "Blue"],
+  );
+});
+
 test("a single-composition style is untouched by the flag", () => {
   const style: StyleData = {
     ...twoQualityPack(),

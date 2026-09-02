@@ -161,18 +161,36 @@ export function normaliseColourKey(text: string): string {
   return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
+// Expand a set of colour keys with every DECLARED alias of the colours in it.
+// The style name says "LGM" and the composition says "Grey melange"; they are
+// one colour only because a person put both in the same alias group (see
+// getColourAliases in settings/app-settings.ts). Nothing is inferred here —
+// with no groups configured this is the identity, and matching stays exact.
+function withAliases(known: Set<string>, aliases: ReadonlyArray<readonly string[]>): Set<string> {
+  const out = new Set(known);
+  for (const group of aliases) {
+    const keys = group.map(normaliseColourKey).filter(Boolean);
+    if (!keys.some((k) => known.has(k))) continue;
+    for (const k of keys) out.add(k);
+  }
+  return out;
+}
+
 // The parts of a COLOUR-KEYED composition, or null when this string isn't one.
 // Colour-keyed means: two or more labelled parts, and EVERY label is a colour
-// the style itself declares. One unmatched label disqualifies the whole string
-// — a half-match is far more likely to be a garment-part composition that
-// happens to share a word with a colour than a genuine per-colour pack.
+// the style itself declares (or a declared alias of one). One unmatched label
+// disqualifies the whole string — a half-match is far more likely to be a
+// garment-part composition that happens to share a word with a colour than a
+// genuine per-colour pack.
 export function splitCompositionByColour(
   text: string,
   knownColours: readonly string[],
+  aliases: ReadonlyArray<readonly string[]> = [],
 ): CompositionPart[] | null {
   const parts = parseCompositionParts(text);
   if (parts.length < 2) return null;
-  const known = new Set(knownColours.map(normaliseColourKey).filter(Boolean));
-  if (known.size === 0) return null;
+  const declared = new Set(knownColours.map(normaliseColourKey).filter(Boolean));
+  if (declared.size === 0) return null;
+  const known = aliases.length > 0 ? withAliases(declared, aliases) : declared;
   return parts.every((p) => known.has(normaliseColourKey(p.label))) ? parts : null;
 }

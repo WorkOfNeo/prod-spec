@@ -21,6 +21,7 @@ import type { StyleData } from "@/lib/pdf/types";
 import { effectiveStyleItem } from "./resolved-fields";
 import { outputReadinessForStyle, type OutputReadiness } from "./output-readiness";
 import { readUseStyleBoardColour } from "@/lib/po/ean-override-actions";
+import { loadColourAliases } from "@/lib/settings/app-settings";
 
 // =====================================================
 // Shared render context — the ONE place StyleData is assembled from a
@@ -182,6 +183,11 @@ export async function buildStyleData(
   // historical behaviour) when the column isn't present yet on a pre-db:deploy
   // boot, exactly like the eanResolveKey staleness read.
   styleData.useStyleBoardColour = await readUseStyleBoardColour(style.id);
+
+  // Declared colour-spelling groups for the per-composition split ("LGM" =
+  // "Grey melange"). Loaded here — once, cached, fail-soft — so repetitionStyles
+  // stays sync, the same reason siblings and wash symbols are resolved here.
+  styleData.colourAliases = await loadColourAliases();
 
   // Wash-care token repair: Monday dropdown labels can contain ", " and the
   // mapper's comma split shears them into unresolvable fragments. Re-join
