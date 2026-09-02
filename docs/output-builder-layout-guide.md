@@ -12,7 +12,7 @@ every new layout against — keep it current.
 - [ ] **Bordered boxes have padding** (≥ 0.5 mm) — never flush. Nudge a single edge with per-side padding.
 - [ ] **Every token resolves** on a real style (0 unresolved). Image tokens (`{{logo:…}}`, `{{cert:…}}`) need artwork in the library or they print a placeholder chip that blocks approval.
 - [ ] **Languages**: all required langs present for `{{composition:xx}}`, `{{careInstructions:xx}}`, `{{madeIn:xx}}`.
-- [ ] **Repeat/split**: per-size docs use `repeatBy: ean` + `splitBy: ean`; one-per-carton docs use `repeatBy: none`.
+- [ ] **Repeat/split**: per-size docs use `repeatBy: ean` + `splitBy: ean`; one-per-carton docs use `repeatBy: none`. A care label for a two-quality pack adds `splitByComposition` + `{{compositionColour}}` in the file name.
 - [ ] **Guides**: sewing/fold lines where the label seams/folds (care labels: top sewing line ~5 mm); a **centre hole** where a hang tag is punched.
 - [ ] **Scoped** to customer + business area, **proof rendered** and eyeballed vs the approved artwork, then **published**.
 
@@ -22,7 +22,7 @@ A layout's `definition` JSON is `{ pages: [...], settings: {...} }`:
 
 - **Page** — own mm size, a placement **grid** (`gridCols × gridRows`), print guides (`sewingLines`, `foldLine`, `centerHole`, `margins`), an optional `omitWhenEmpty` (see "Conditional pages"), and **blocks**.
 - **Block** — placed by a grid **rect** (`col/row/colSpan/rowSpan`); carries styling (`fontPt`, `bold`, `align`, `valign`, `invert` + `invertBg`/`invertText`, `border` + `pad`, `fitWidth`) and its text as **`lines: []`** containing `{{tokens}}`.
-- **Settings** — `repeatBy`, `splitBy`, `fileName`, `cartonNumbering`, `multipleStyles`, `customLogoWidthPct`.
+- **Settings** — `repeatBy`, `splitBy`, `splitByComposition`, `fileName`, `cartonNumbering`, `multipleStyles`, `customLogoWidthPct`.
 
 The `layout:<id>` key is what a ProdSpec's `outputs[]` points at; one stable string ties the spec (what to print) → the registry (how to render) → the JobAsset (what was produced).
 
@@ -328,6 +328,50 @@ told apart only by the `-2` suffix `splitFilePlan` appends to a name collision
 genuinely differ — a second colourway, a different EAN — still repeat
 separately. A layout that wants one file per **carton** wants `repeatBy:
 "cartonEan"`, which dedupes on the carton EAN instead.
+
+### "splitByComposition" is a SECOND axis — one document per colour
+
+Some packs ship two garments of different quality under one order, and the
+buyer states both compositions in one field:
+
+    Pink: 95% Cotton 5% Elastane, Grey melange: 57% Cotton 38% Polyester 5% Elastane
+
+Each quality needs its own care label to approve. `splitByComposition: true`
+adds a repetition axis on top of whatever `repeatBy` produced, so a per-EAN
+care label ships **size × colour** files — a 4-size pack becomes 8 PDFs. Each
+document prints only its own fibres; the colour lands on
+`{{compositionColour}}`, which is what tells the two file names apart (add it
+to `fileName`, or the split rows collide and fall back to the `-2` suffix).
+
+**It cannot fire by accident.** The same `<label>: <fibres>` syntax far more
+often means two parts of ONE garment (`Top: …, Bottom: …`, `Upper: …, Sole: …`,
+`Outer: …, Lining: …`) — those must stay one label. Neither the colon nor the
+separator distinguishes the two; what does is the label itself. The split runs
+only when **every** part is labelled with a colour that style actually declares
+— in its name's parentheses, its board colour, or its PO variant labels. A
+survey of all live styles found 107 multi-label compositions: this rule split
+the 13 genuine two-quality packs and left the other 94 alone. One unmatched
+label disqualifies the whole string, so a style whose composition names colours
+it doesn't carry keeps its single document until the data is fixed.
+
+**Colour aliases.** The same colour is routinely written two ways — the
+abbreviation in the style name (`LGM`) and the spelt-out colour in the
+composition (`Grey melange`) — and exact matching rejects that pair. Declare
+such spellings as one colour under **Settings › Colour aliases**
+(`AppSetting: outputColourAliases`, loaded onto `StyleData.colourAliases` in
+`buildStyleData`). An alias only ever WIDENS a style's own colours; it can't
+make a garment-part composition split, and with no groups configured matching
+stays exact.
+
+**`{{compositionColour}}` falls back** to the row's colour name when nothing
+split, so one file-name expression serves a layout whose styles don't all
+split. Without the fallback an unsplit style resolves it empty — a stranded
+`--` in the file name, and on the label itself a `missing` chip that blocks
+approval.
+
+Note this is independent of the *line* split: an un-split label already prints
+one part per line (see `composition.ts`), and that stays true for garment-part
+compositions.
 
 ## Generation rules (which styles get this output)
 

@@ -2197,7 +2197,7 @@ export function LayoutEditor({
                 </p>
               ) : null}
             </div>
-            {settings.repeatBy !== "none" ? (
+            {settings.repeatBy !== "none" || settings.splitByComposition ? (
               <div>
                 <label className="text-xs text-zinc-500">Output files</label>
                 <select
@@ -2217,6 +2217,35 @@ export function LayoutEditor({
                 ) : null}
               </div>
             ) : null}
+            {/* Second repetition axis — one document per COLOUR of a pack that
+                ships two different qualities under one order. Multiplies the
+                repeat above (per-EAN × per-composition), and fires only on a
+                style whose composition is colour-keyed, so turning it on can
+                never change a single-composition style's output. */}
+            <div>
+              <label className="flex items-center gap-2 text-sm text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={settings.splitByComposition}
+                  onChange={(e) => updateSettings({ splitByComposition: e.target.checked })}
+                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                />
+                Split per composition
+              </label>
+              <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-400">
+                For packs that carry two qualities — &ldquo;Pink: 95% Cotton 5% Elastane, Grey melange: 57%
+                Cotton&hellip;&rdquo;. Each colour gets its own document printing only its own fibres, so each
+                is approved separately. Only fires when every part is labelled with a colour the style
+                declares; a garment-part composition (&ldquo;Top: &hellip;, Bottom: &hellip;&rdquo;) and a
+                single composition are untouched. Add {"{{compositionColour}}"} to the file name to tell
+                the documents apart. When the two sides spell the same colour differently
+                (&ldquo;LGM&rdquo; vs &ldquo;Grey melange&rdquo;), declare it under{" "}
+                <a href="/settings/colour-aliases" target="_blank" rel="noreferrer" className="underline">
+                  Settings &rsaquo; Colour aliases
+                </a>
+                .
+              </p>
+            </div>
             <div>
               <label className="text-xs text-zinc-500">Output file name</label>
               <input
@@ -2236,7 +2265,7 @@ export function LayoutEditor({
                   ) : (
                     "Resolving…"
                   )
-                ) : settings.repeatBy !== "none" && settings.splitBy === "ean" ? (
+                ) : (settings.repeatBy !== "none" || settings.splitByComposition) && settings.splitBy === "ean" ? (
                   "Variables allowed — {{size}}/{{ean13}}/{{colourName}} name EACH file (one per EAN)"
                 ) : (
                   "Text variables allowed · empty = default name"

@@ -8,7 +8,7 @@ import {
   resolveLayoutFileName,
   staticRequiredColumns,
 } from "./tokens";
-import { hasPerRowCartonEan, layoutSettings, type LayoutSettings } from "./schema";
+import { hasPerRowCartonEan, layoutSettings, splitsPerFile, type LayoutSettings } from "./schema";
 import { renderLayoutHtml, repetitionStyles } from "./render";
 import { pinnableFieldsInDef } from "./tokens";
 import { applyFieldOverrides } from "@/lib/pdf/pins";
@@ -63,7 +63,9 @@ function splitFilePlan(
   settings: LayoutSettings,
   style: StyleData,
 ): Array<{ suffix: string; fileName: string | null; repStyle: StyleData }> {
-  const reps = repetitionStyles(style, settings.repeatBy);
+  const reps = repetitionStyles(style, settings.repeatBy, {
+    splitByComposition: settings.splitByComposition,
+  });
   const seen = new Map<string, number>();
   return reps.map((repStyle, i) => {
     const sizePart = (repStyle.sizes[0]?.label ?? "").replace(/[^\w.-]+/g, "");
@@ -71,13 +73,17 @@ function splitFilePlan(
       settings.repeatBy === "ean" || settings.repeatBy === "cartonEan" || settings.repeatBy === "cartonEanSizeOnly"
         ? (repStyle.colour?.name ?? "").replace(/[^\w.-]+/g, "").slice(0, 16)
         : "";
+    // The composition split's own axis: without it the two colours of a pack
+    // share a suffix (same size, same EAN) and would only be told apart by the
+    // "-2" duplicate counter below.
+    const compositionPart = (repStyle.compositionColour ?? "").replace(/[^\w.-]+/g, "").slice(0, 16);
     // The assortment row isn't a single size — name its file "assort" (deduped
     // below if a style ever resolves several assortment cartons). repeatBy
     // "cartonEan" appends such a row too, flagged isAssortment.
     let suffix =
       settings.repeatBy === "assort" || repStyle.isAssortment
-        ? "assort"
-        : [sizePart, colourPart].filter(Boolean).join("-").slice(0, 40) || String(i + 1);
+        ? ["assort", compositionPart].filter(Boolean).join("-")
+        : [sizePart, colourPart, compositionPart].filter(Boolean).join("-").slice(0, 40) || String(i + 1);
     const n = (seen.get(suffix) ?? 0) + 1;
     seen.set(suffix, n);
     if (n > 1) suffix = `${suffix}-${n}`;
@@ -158,7 +164,7 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     // size row; repeat "ean": per PO EAN row (size × colour,
     // {{colourName}} bound). Either way each file carries one EAN.
     renderMany:
-      settings.repeatBy !== "none" && settings.splitBy === "ean"
+      splitsPerFile(settings)
         ? (style, dims, perDocOverrides, lineOverrides) =>
             Promise.all(
               splitFilePlan(settings, style).map(async ({ suffix, fileName, repStyle }) => ({
@@ -187,7 +193,7 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     // Per-document styles (one per PDF) for the review-time editor's per-PDF
     // pre-fill — same suffix + per-row narrowing as renderMany/filesPreview.
     docStyles:
-      settings.repeatBy !== "none" && settings.splitBy === "ean"
+      splitsPerFile(settings)
         ? (style) => splitFilePlan(settings, style).map(({ suffix, repStyle }) => ({ suffix, style: repStyle }))
         : undefined,
     // Every text line this layout prints, resolved against the given style —
@@ -197,7 +203,7 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     // Pre-run preview: the same plan WITHOUT rendering — what the style
     // page shows as "files the next run will generate".
     filesPreview: (style) =>
-      settings.repeatBy !== "none" && settings.splitBy === "ean"
+      splitsPerFile(settings)
         ? splitFilePlan(settings, style).map(({ suffix, fileName }) => ({ suffix, fileName }))
         : [
             {
