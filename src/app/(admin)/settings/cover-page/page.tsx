@@ -3,12 +3,19 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { canReview } from "@/lib/roles";
-import { getCoverPageInfoMd, getTrimsOnCoverEnabled } from "@/lib/settings/app-settings";
+import {
+  getCoverPageInfoMd,
+  getStoredTrimConceptCopy,
+  getTrimsOnCoverEnabled,
+} from "@/lib/settings/app-settings";
+import { DEFAULT_TRIM_CONCEPT_COPY } from "@/lib/trims/concept-copy";
+import { DEFAULT_TRIM_CONCEPTS } from "@/lib/trims/concepts";
 import { CoverPageEditor } from "./cover-page-editor";
 import { CoverChangesPanel } from "./cover-changes-panel";
 import { CoverRegenPanel } from "./cover-regen-panel";
 import { TrimsSwitch } from "./trims-switch";
 import { GeneralInfoEditor, type ProdSpecOption } from "./general-info-editor";
+import { TrimCopyEditor } from "./trim-copy-editor";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Cover page · Settings" };
@@ -19,6 +26,12 @@ export const metadata = { title: "Cover page · Settings" };
 //                         printed on the cover sheet below the packaging list.
 //   General information — ProdSpec.generalInfoMd, one per Customer × Business
 //                         Area, printed inside the cover PDF after that sheet.
+//   Packaging wording   — AppSetting trimConceptCopy, the words each KIND of
+//                         packaging uses inside the list itself. Keyed by trim
+//                         concept rather than by customer (see
+//                         src/lib/trims/concept-copy.ts for why), but edited
+//                         here, because this is the screen a person opens to
+//                         change what a cover says.
 //
 // REVIEWER-reachable (canReview), not admin-only. Both are supplier-facing
 // prose that reviewers own in practice — a standing note like "the pictogram is
@@ -27,7 +40,7 @@ export const metadata = { title: "Cover page · Settings" };
 // configuration: the General information tab writes through the narrow
 // per-column endpoint, never the full ProdSpec PATCH (which carries outputs,
 // languages and approval toggles, and auto-activates draft specs on save).
-type Tab = "cover" | "general-info";
+type Tab = "cover" | "general-info" | "packaging";
 
 export default async function CoverPageSettingsPage({
   searchParams,
@@ -38,11 +51,14 @@ export default async function CoverPageSettingsPage({
   if (!session) redirect("/login");
   if (!canReview(role)) redirect("/dashboard");
 
-  const tab: Tab = (await searchParams).tab === "general-info" ? "general-info" : "cover";
+  const requestedTab = (await searchParams).tab;
+  const tab: Tab =
+    requestedTab === "general-info" || requestedTab === "packaging" ? requestedTab : "cover";
 
-  const [markdown, trimsEnabled, specRows] = await Promise.all([
+  const [markdown, trimsEnabled, trimCopy, specRows] = await Promise.all([
     getCoverPageInfoMd(),
     getTrimsOnCoverEnabled(),
+    getStoredTrimConceptCopy(),
     db.prodSpec.findMany({
       orderBy: [{ active: "desc" }, { name: "asc" }],
       select: {
@@ -70,6 +86,7 @@ export default async function CoverPageSettingsPage({
   const TABS: Array<{ key: Tab; label: string }> = [
     { key: "cover", label: "Cover page (all clients)" },
     { key: "general-info", label: "General information" },
+    { key: "packaging", label: "Packaging wording" },
   ];
 
   return (
@@ -86,7 +103,7 @@ export default async function CoverPageSettingsPage({
         {TABS.map((t) => (
           <Link
             key={t.key}
-            href={t.key === "cover" ? "/settings/cover-page" : "/settings/cover-page?tab=general-info"}
+            href={t.key === "cover" ? "/settings/cover-page" : `/settings/cover-page?tab=${t.key}`}
             className={`-mb-px border-b-2 px-3 py-2 text-sm ${
               tab === t.key
                 ? "border-zinc-900 font-medium text-zinc-900"
@@ -112,8 +129,14 @@ export default async function CoverPageSettingsPage({
           <TrimsSwitch initialEnabled={trimsEnabled} />
           <CoverRegenPanel />
         </>
-      ) : (
+      ) : tab === "general-info" ? (
         <GeneralInfoEditor prodSpecs={prodSpecs} />
+      ) : (
+        <TrimCopyEditor
+          concepts={DEFAULT_TRIM_CONCEPTS}
+          defaults={DEFAULT_TRIM_CONCEPT_COPY}
+          initialCopy={trimCopy}
+        />
       )}
     </div>
   );

@@ -50,7 +50,11 @@ export const DEFAULT_TRIM_RULES: TrimRule[] = [
   { concept: "CARTON_MARKING", keywords: ["carton marking", "carton mark", "shipping mark", "carton label", "printed on carton"] },
   { concept: "CARE_LABEL", keywords: ["wash care", "washcare", "care label", "oeko", "oekotex"] },
   { concept: "NECK_PRINT", keywords: ["neck print", "neckprint"] },
-  { concept: "BANDEROLE", keywords: ["banderole", "bellyband", "belly band"] },
+  // "fotoguide": a Trims cell reads "BANDEROLE, Fotoguide" — one item, split on
+  // the comma into two labels. Without the keyword the tail becomes an orphan
+  // row with generic pending wording sitting under the banderole it belongs to,
+  // saying something different about the same thing.
+  { concept: "BANDEROLE", keywords: ["banderole", "bellyband", "belly band", "fotoguide", "foto guide"] },
   { concept: "HANGTAG", keywords: ["hangtag", "hang tag", "socktag", "sock tag", "bci tag", "glove tag", "part of set tag", "tab label"] },
   { concept: "HANGER", keywords: ["hanger", "hangs"] },
   { concept: "POLYBAG_STICKER", keywords: ["polybag sticker", "polybag w. sticker", "polybag w.sticker", "bag sticker"] },

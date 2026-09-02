@@ -878,19 +878,26 @@ export async function processJob(jobId: string): Promise<void> {
     ];
   });
   // Monday's Trims entries join the declared outputs on the manifest, so the
-  // supplier's list matches the buyer's. Fail-soft: a settings read that throws
-  // must not fail a generation — falling back to no context yields exactly the
-  // pre-Trims manifest.
-  // Gated on the master switch (off by default): with it off there is no trim
-  // context at all, and assembleRequiredPackagingDocs falls back to the
-  // pre-Trims manifest byte for byte. Fail-soft on both reads — a settings
-  // hiccup must not fail a generation, and "no context" is the safe fallback
-  // because it is what covers already print.
-  const trimContext = (await getTrimsOnCoverEnabled().catch(() => false))
-    ? await loadTrimSettings()
-        .then((settings) => ({ ...settings, trimLabels: resolveStyleTrimLabels(job.style) }))
-        .catch(() => undefined)
-    : undefined;
+  // supplier's list matches the buyer's.
+  //
+  // The master switch (off by default) gates MONDAY'S LIST only: with it off the
+  // label list is empty and the manifest is the declared output set, row for
+  // row, exactly as covers already print. The per-concept WORDING is not gated
+  // — it describes documents this app produces either way — so the context is
+  // loaded regardless. That also keeps this in step with
+  // buildRequiredPackagingForStyle: if the two assembled different manifests,
+  // the fingerprint stamped here would never match the one the refresh sweep
+  // computes and every cover would rebuild forever.
+  //
+  // Fail-soft on both reads — a settings hiccup must not fail a generation, and
+  // "no context" is the safe fallback because it is what covers already print.
+  const trimsEnabled = await getTrimsOnCoverEnabled().catch(() => false);
+  const trimContext = await loadTrimSettings()
+    .then((settings) => ({
+      ...settings,
+      trimLabels: trimsEnabled ? resolveStyleTrimLabels(job.style) : [],
+    }))
+    .catch(() => undefined);
   const coverDocs = assembleRequiredPackagingDocs(coverRows, approvedBases, trimContext);
   // Global cover content block (admin-authored, app-wide) — printed on the
   // cover sheet under the manifest. Fail-soft empty so a settings read never

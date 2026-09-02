@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_TRIM_RULES } from "./classify";
+import { DEFAULT_TRIM_RULES, splitTrimsCell } from "./classify";
+import { effectiveConceptCopy } from "./concept-copy";
 import {
   assembleTrimManifest,
   manifestFingerprint,
@@ -320,4 +321,142 @@ test("switching on and off is a round trip, not a one-way door", () => {
     overrides: {},
   });
   assert.equal(manifestFingerprint(backOff), manifestFingerprint(off));
+});
+
+// ---- Per-concept copy ------------------------------------------------------
+//
+// A standing note about what a KIND of document is (see concept-copy.ts). It
+// belongs to the concept, not to a customer's cover block, so it has to reach
+// the row whichever side of the union that row came from — Monday's list or the
+// declared outputs Monday never mentioned.
+
+const CARE_NOTE = "Wash Care Label, these are created to be printed on one paper, front and back";
+
+test("a concept's standing note rides the row, from either side of the union", () => {
+  // From Monday's list: the entry classifies to CARE_LABEL and is answered by a
+  // layout, so it is an "app" row.
+  const fromMonday = assembleTrimManifest({
+    trimLabels: ["Wash Care Label with Oeko-tex Logo"],
+    outputs: TICKET_OUTPUTS,
+    rules: RULES,
+    overrides: {},
+  });
+  assert.equal(fromMonday[0].copy?.note, CARE_NOTE);
+
+  // From the declared outputs alone — the care label nobody put on Monday.
+  const fromOutputs = assembleTrimManifest({
+    trimLabels: [],
+    outputs: TICKET_OUTPUTS,
+    rules: RULES,
+    overrides: {},
+  });
+  const care = fromOutputs.find((d) => d.displayName.endsWith("Care Label"));
+  assert.equal(care?.copy?.note, CARE_NOTE);
+});
+
+test("a concept with nothing to say leaves the row without a copy field", () => {
+  // Not `copy: {}` and not `copy: undefined` — the KEY must be absent, because
+  // that is what keeps such a row's fingerprint identical to what it was before
+  // concept copy existed.
+  const docs = assembleTrimManifest({
+    trimLabels: ["Carton Marking"],
+    outputs: TICKET_OUTPUTS,
+    rules: RULES,
+    overrides: {},
+  });
+  assert.equal(Object.prototype.hasOwnProperty.call(docs[0], "copy"), false);
+});
+
+test("a row that gained no note fingerprints exactly as it always did", () => {
+  // The historical tuple, spelled out: whatever else changes, a row printing no
+  // note must serialise to this — otherwise the day this shipped every cover in
+  // the estate would read as changed and be rebuilt for nothing.
+  const row = {
+    displayName: "Carton Marking",
+    widthMm: 100,
+    heightMm: 75,
+    fileCount: 1,
+    approved: false,
+    kind: "app" as const,
+  };
+  assert.equal(
+    manifestFingerprint([row]),
+    JSON.stringify([["Carton Marking", null, null, 100, 75, "app", false]]),
+  );
+});
+
+test("a note changes the fingerprint, because it changes the page", () => {
+  const withNote = assembleTrimManifest({
+    trimLabels: ["Wash Care Label with Oeko-tex Logo"],
+    outputs: TICKET_OUTPUTS,
+    rules: RULES,
+    overrides: {},
+  });
+  const withoutNote = assembleTrimManifest({
+    trimLabels: ["Wash Care Label with Oeko-tex Logo"],
+    outputs: TICKET_OUTPUTS,
+    rules: RULES,
+    overrides: {},
+    conceptCopy: {},
+  });
+  assert.notEqual(manifestFingerprint(withNote), manifestFingerprint(withoutNote));
+});
+
+// ---- Per-concept status wording --------------------------------------------
+
+test("a banderole says what it is actually waiting for", () => {
+  // "BANDEROLE, Fotoguide" is ONE item in a Monday cell, split on the comma
+  // into two labels. Both halves classify to BANDEROLE, so both print the
+  // banderole's own not-delivered wording — the alternative is two rows about
+  // the same item saying different things.
+  const docs = assembleTrimManifest({
+    trimLabels: splitTrimsCell("BANDEROLE, Fotoguide"),
+    outputs: [],
+    rules: RULES,
+    overrides: {},
+  });
+  assert.equal(docs.length, 2);
+  for (const d of docs) {
+    assert.equal(d.approved, false, "still to come");
+    assert.equal(d.copy?.pending, "Awaiting Photo Samples from the supplier.");
+  }
+});
+
+test("the wording is stored data, so a different setting produces different words", () => {
+  // The proof that this is configuration rather than a branch: the SAME
+  // assembler over the same style says something else when the copy says so.
+  const docs = assembleTrimManifest({
+    trimLabels: ["Banderole"],
+    outputs: [],
+    rules: RULES,
+    overrides: {},
+    conceptCopy: effectiveConceptCopy({ BANDEROLE: { pending: "Awaiting supplier samples" } }),
+  });
+  assert.equal(docs[0].copy?.pending, "Awaiting supplier samples");
+});
+
+test("a packing instruction is given no status wording, whatever is configured", () => {
+  // The hard rule, end to end: Master Polybag is on 1,733 styles and must stay
+  // a note. A status would park all of them at "waiting" forever and bury the
+  // rows that genuinely are waiting.
+  const docs = assembleTrimManifest({
+    trimLabels: ["Master Polybag", "Black Hanger"],
+    outputs: [],
+    rules: RULES,
+    overrides: {},
+    // Configured as aggressively as the store allows — the normaliser strips
+    // the statuses, and the row-level guard would drop them even if it hadn't.
+    conceptCopy: {
+      POLYBAG: { note: "Clear, 40 micron.", pending: "Waiting", delivered: "Received" },
+      HANGER: { pending: "Waiting", delivered: "Received" },
+    },
+  });
+  for (const d of docs) {
+    assert.equal(d.kind, "info", "still a packing instruction");
+    assert.equal(d.approved, undefined, "and still has no delivery state");
+    assert.equal(d.copy?.pending, undefined);
+    assert.equal(d.copy?.delivered, undefined);
+  }
+  // The note is the one thing it may carry.
+  assert.equal(docs[0].copy?.note, "Clear, 40 micron.");
 });
