@@ -12,12 +12,13 @@ import type { LayoutSettings } from "./schema";
 // every row, so a layout that only needs {{size}} is never told to add the
 // EAN. {{ean13}} is last because a filename carrying a 13-digit barcode is
 // the least pleasant to read, and it is the only one guaranteed to be unique.
-const CANDIDATE_TOKENS = ["size", "colourName", "ean13"] as const;
+const CANDIDATE_TOKENS = ["size", "colourName", "compositionColour", "ean13"] as const;
 export type CandidateToken = (typeof CANDIDATE_TOKENS)[number];
 
 const TOKEN_LABEL: Record<CandidateToken, string> = {
   size: "{{size}}",
   colourName: "{{colourName}}",
+  compositionColour: "{{compositionColour}}",
   ean13: "{{ean13}}",
 };
 
@@ -30,6 +31,9 @@ export type RepetitionRow = {
   suffix: string;
   size: string;
   colourName: string;
+  // The colour of this row's composition, on a per-composition split — the
+  // only token that separates two rows of the same size and EAN.
+  compositionColour: string;
   ean13: string;
   cartonEan: string;
   // What the layout's CURRENT fileName expression resolves to for this row.
@@ -61,7 +65,13 @@ export type StyleAnalysis = {
 };
 
 function tokenValue(row: RepetitionRow, token: CandidateToken): string {
-  return token === "size" ? row.size : token === "colourName" ? row.colourName : row.ean13;
+  return token === "size"
+    ? row.size
+    : token === "colourName"
+      ? row.colourName
+      : token === "compositionColour"
+        ? row.compositionColour
+        : row.ean13;
 }
 
 // The minimal prefix of CANDIDATE_TOKENS that makes every row distinct.
@@ -70,8 +80,13 @@ function tokenValue(row: RepetitionRow, token: CandidateToken): string {
 // to a supplier reading it off a carton, so we only ever ADD specificity in
 // the natural size → colour → EAN order.
 export function suggestFix(rows: RepetitionRow[]): CandidateToken[] | null {
-  for (let n = 1; n <= CANDIDATE_TOKENS.length; n += 1) {
-    const prefix = CANDIDATE_TOKENS.slice(0, n);
+  // A token that is EMPTY on every row can only add an empty segment to the
+  // name, so it never earns its place in the suggestion — this is what keeps
+  // {{compositionColour}} out of the advice for the layouts (the vast
+  // majority) that don't split per composition.
+  const candidates = CANDIDATE_TOKENS.filter((t) => rows.some((r) => tokenValue(r, t).trim()));
+  for (let n = 1; n <= candidates.length; n += 1) {
+    const prefix = candidates.slice(0, n);
     // JSON-encoded rather than string-joined: a plain separator would let
     // ["A B","C"] and ["A","B C"] alias into one key and under-report a collision.
     const keys = rows.map((r) => JSON.stringify(prefix.map((t) => tokenValue(r, t))));
@@ -115,10 +130,11 @@ export function suffixFor(repStyle: StyleData, repeatBy: LayoutSettings["repeatB
     repeatBy === "ean" || repeatBy === "cartonEan" || repeatBy === "cartonEanSizeOnly"
       ? (repStyle.colour?.name ?? "").replace(/[^\w.-]+/g, "").slice(0, 16)
       : "";
+  const compositionPart = (repStyle.compositionColour ?? "").replace(/[^\w.-]+/g, "").slice(0, 16);
   let suffix =
     repeatBy === "assort" || repStyle.isAssortment
-      ? "assort"
-      : [sizePart, colourPart].filter(Boolean).join("-").slice(0, 40) || String(i + 1);
+      ? ["assort", compositionPart].filter(Boolean).join("-")
+      : [sizePart, colourPart, compositionPart].filter(Boolean).join("-").slice(0, 40) || String(i + 1);
   const n = (seen.get(suffix) ?? 0) + 1;
   seen.set(suffix, n);
   if (n > 1) suffix = `${suffix}-${n}`;

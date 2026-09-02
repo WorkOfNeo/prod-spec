@@ -29,6 +29,7 @@ export const maxDuration = 300;
 const TOKEN_TEXT: Record<CandidateToken, string> = {
   size: "{{size}}",
   colourName: "{{colourName}}",
+  compositionColour: "{{compositionColour}}",
   ean13: "{{ean13}}",
 };
 

@@ -27,6 +27,7 @@ import {
 import { tokenMeta, TABLE_TOTAL_ARG, type BarcodeSource, type LogoSource } from "./token-meta";
 import { lineOverrideKey } from "./line-keys";
 import { narrowSizeScopedText } from "./size-scoped-text";
+import { parseCompositionParts, splitCompositionByColour } from "./composition";
 import { parseSizeForm, sizeFormRun } from "./size-form";
 import { formatSizeRatioTotal } from "./size-ratio";
 import { CALC_RE, fieldsInCalcExpression } from "./calc";
@@ -118,9 +119,70 @@ function dedupeEanVariants<T extends { size: string; ean13: string; colour?: str
   return out;
 }
 
+export type RepeatBy = "none" | "size" | "ean" | "assort" | "cartonEan" | "cartonEanSizeOnly";
+
+// Every colour this style declares, from all three places one can be stated:
+// the parenthesised tokens in the style NAME (a multi-pack names its colours
+// there — "ST40002(LGM)+ST40003(Green)"), the Style board colour, and the
+// colours parsed off the PO variant labels. The vocabulary a composition's
+// part labels are matched against — see splitCompositionByColour.
+function declaredColours(style: StyleData): string[] {
+  return [
+    ...[...style.styleName.matchAll(/\(([^)]{1,40})\)/g)].map((m) => m[1]),
+    style.colour?.name ?? "",
+    ...(style.eanVariants ?? []).map((v) => v.colour ?? ""),
+  ].filter((c) => c.trim());
+}
+
+// One row per COLOUR of a two-composition pack — the `splitByComposition`
+// expansion, applied on top of whatever rows repeatBy produced (so a per-EAN
+// care label yields size × colour files, not one or the other).
+//
+// Each row keeps only its own colour's fibres: the part LABEL is dropped from
+// the printed text, because on the finished label the colour is the garment
+// you are holding, not a section heading — it stays available as
+// {{compositionColour}} and is what makes the two file names differ.
+//
+// Every language entry is narrowed by INDEX. The translation bank rebuilds the
+// same part order (translateComposition maps segment-by-segment), so part i of
+// the Danish text is part i of the English one; a language whose text parses
+// to a different part count keeps its full value rather than printing the
+// wrong colour's fibres.
+//
+// Idempotent: a narrowed row's composition carries no "<label>:" any more, so
+// re-applying this (renderLayoutHtml re-runs repetitionStyles on the rows
+// renderMany already narrowed) parses to zero parts and returns the row as-is.
+function compositionRows(style: StyleData): StyleData[] {
+  const source =
+    style.composition.find((c) => c.language.toLowerCase() === "en")?.text ??
+    style.composition[0]?.text ??
+    "";
+  const parts = splitCompositionByColour(source, declaredColours(style));
+  if (!parts) return [style];
+  return parts.map((part, i) => ({
+    ...style,
+    composition: style.composition.map((entry) => {
+      const langParts = parseCompositionParts(entry.text);
+      return langParts.length === parts.length ? { ...entry, text: langParts[i].text } : entry;
+    }),
+    compositionColour: part.label,
+  }));
+}
+
+// The repetition rows for a layout: the repeatBy expansion, then — when the
+// layout opts in — one row per colour-keyed composition part.
 export function repetitionStyles(
   style: StyleData,
-  repeatBy: "none" | "size" | "ean" | "assort" | "cartonEan" | "cartonEanSizeOnly",
+  repeatBy: RepeatBy,
+  opts?: { splitByComposition?: boolean },
+): StyleData[] {
+  const rows = repeatByRows(style, repeatBy);
+  return opts?.splitByComposition ? rows.flatMap(compositionRows) : rows;
+}
+
+function repeatByRows(
+  style: StyleData,
+  repeatBy: RepeatBy,
 ): StyleData[] {
   // The full size run, preserved as we narrow `sizes` to one row per
   // repetition so {{sizeRangeCoop}} can still list every size and enlarge

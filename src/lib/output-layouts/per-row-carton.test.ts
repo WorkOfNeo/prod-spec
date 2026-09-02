@@ -17,6 +17,7 @@ function settings(repeatBy: LayoutSettings["repeatBy"]): LayoutSettings {
   return {
     repeatBy,
     splitBy: "ean",
+    splitByComposition: false,
     fileName: "",
     cartonNumbering: false,
     multipleStyles: false,

@@ -133,6 +133,11 @@ const RESOLVERS: Record<string, TextResolver> = {
   certificates: (s) => (s.certificates ?? []).join(", "),
   colourName: (s) => s.colour?.name ?? "",
   colourCode: (s) => s.colour?.code ?? "",
+  // The colour whose fibres THIS document prints — set only on a row produced
+  // by the per-composition split (splitByComposition, see repetitionStyles).
+  // Empty everywhere else, including on a style whose composition is a plain
+  // single one, so a layout that prints it is opting into the split.
+  compositionColour: (s) => s.compositionColour ?? "",
   productGroup: (s) => s.productGroup ?? "",
   campaignWeek: (s) => s.campaignWeek ?? "",
   // ":dash" joins with "-" instead of ", " — "S-M-L-XL-2XL-3XL", the form
@@ -558,6 +563,7 @@ const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   klNumber: ["klNumber"],
   supplierNumber: ["supplierNumber"],
   composition: ["composition"],
+  compositionColour: ["composition"],
   madeIn: ["countryOfOrigin"],
   // The bare translated country name needs the same column as madeIn; the
   // "Made in" / "Manufacturer" labels are constants (no column gate).

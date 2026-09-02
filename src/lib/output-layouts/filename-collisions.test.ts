@@ -13,6 +13,7 @@ function row(partial: Partial<RepetitionRow> & { suffix: string }): RepetitionRo
   return {
     size: "",
     colourName: "",
+    compositionColour: "",
     ean13: "",
     cartonEan: "",
     fileName: null,

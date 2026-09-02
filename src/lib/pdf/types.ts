@@ -92,6 +92,14 @@ export type StyleData = {
   // assort row, which would otherwise re-append on every pass. Internal — no token.
   isCartonRow?: boolean;
 
+  // The colour whose fibres this row prints, on a row produced by the
+  // `splitByComposition` expansion (repetitionStyles in output-layouts/
+  // render.ts): a two-composition pack — "Pink: 95% Cotton 5% Elastane, Grey
+  // melange: 57% …" — becomes one row per colour, each carrying only its own
+  // fibres. Surfaces as {{compositionColour}}, which is what separates the two
+  // rows' file names. Absent on every unsplit row.
+  compositionColour?: string;
+
   // Raw carton-qty column text. `carton.outerVE` is its numeric parse and
   // 0 whenever the buyer filled a per-size list instead ("4-5ÅR=1040,
   // 6-7ÅR=1050" — the "=" flavour of the size-scoped convention, see

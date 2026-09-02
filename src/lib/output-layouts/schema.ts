@@ -419,6 +419,19 @@ export const LayoutSettingsSchema = z.object({
   //           matches how repeat layouts have always shipped.
   //   "none": don't split — ONE PDF with every repetition back-to-back.
   splitBy: z.enum(["none", "ean"]).default("ean"),
+  // A SECOND repetition axis, independent of repeatBy: one row per colour of a
+  // two-composition pack. Some packs ship two garments of different quality in
+  // one order — "Pink: 95% Cotton 5% Elastane, Grey melange: 57% Cotton 38%
+  // Polyester 5% Elastane" — and each needs its own care label to approve.
+  // Multiplies whatever repeatBy produced (a per-EAN care label yields
+  // size × colour files), so with splitBy "ean" a 4-size pack ships 8 PDFs.
+  //
+  // Opt-in per layout AND self-limiting per style: it only fires on a style
+  // whose composition is COLOUR-keyed — every part label naming a colour that
+  // style declares (see splitCompositionByColour in ./composition). The far
+  // more common garment-part composition ("Top: … , Bottom: …") is untouched,
+  // and a style with one composition renders exactly as it did before.
+  splitByComposition: z.boolean().default(false),
   // Output file name expression (text tokens allowed), without ".pdf".
   // Empty → the runner's default "<styleNumber>-<variantKey>.pdf".
   fileName: z.string().max(160).default(""),
@@ -473,11 +486,21 @@ export function hasPerRowCartonEan(settings: LayoutSettings): boolean {
   );
 }
 
+// Does this layout ship one file PER REPETITION ROW? True once anything makes
+// it repeat — repeatBy, or the per-colour composition split, which repeats a
+// layout that is otherwise repeatBy "none" — and the rows are set to split.
+// The single predicate behind renderMany / docStyles / filesPreview, so the
+// pre-run file preview can never disagree with what a run emits.
+export function splitsPerFile(settings: LayoutSettings): boolean {
+  return (settings.repeatBy !== "none" || settings.splitByComposition) && settings.splitBy === "ean";
+}
+
 export function layoutSettings(def: LayoutDef): LayoutSettings {
   return (
     def.settings ?? {
       repeatBy: "none",
       splitBy: "ean",
+      splitByComposition: false,
       fileName: "",
       cartonNumbering: false,
       multipleStyles: false,
