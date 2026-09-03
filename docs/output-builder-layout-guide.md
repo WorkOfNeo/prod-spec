@@ -369,6 +369,32 @@ split. Without the fallback an unsplit style resolves it empty — a stranded
 `--` in the file name, and on the label itself a `missing` chip that blocks
 approval.
 
+### `{{compositionLines}}` — one fibre per line
+
+`{{compositionLines:<lang>}}` resolves the same value as
+`{{composition:<lang>}}` with every fibre on its own line, for narrow labels
+where a run can't fit across:
+
+    {{composition:en}}        57% Cotton 38% Polyester 5% Elastane
+    {{compositionLines:en}}   57% Cotton
+                              38% Polyester
+                              5% Elastane
+
+The delimiter is the **percentage, not a comma** — buyers write fibre lists
+both ways (`95% Cotton 5% Elastane` and `82% Acrylic, 17% Polyester, …`) and
+the space-separated form is the more common, so a comma split would leave most
+values untouched. A line carrying fewer than two percentages never breaks, so
+`100% Cotton` and a fibre-free value (`Upper: Textile`) are left alone.
+
+It composes with everything above: the part split runs first (so a label keeps
+its own first fibre — `Outer: 91% Polyester` / `9% Elastane`), and on a
+per-composition split row it breaks that row's own fibres.
+
+A separate token rather than an argument because `{{composition}}`'s one
+argument is the LANGUAGE and `TOKEN_RE`'s second argument is numeric-only (it
+exists for `{{barcode:…:heightMm}}`). Same limitation as every multi-line
+value: a `fitWidth` block collapses the breaks to spaces.
+
 Note this is independent of the *line* split: an un-split label already prints
 one part per line (see `composition.ts`), and that stays true for garment-part
 compositions.

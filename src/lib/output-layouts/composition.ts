@@ -194,3 +194,58 @@ export function splitCompositionByColour(
   const known = aliases.length > 0 ? withAliases(declared, aliases) : declared;
   return parts.every((p) => known.has(normaliseColourKey(p.label))) ? parts : null;
 }
+
+// =====================================================
+// One fibre per line — {{compositionLines:<lang>}}.
+//
+// The part split above gives each labelled PART its own line. This goes one
+// level finer and gives each FIBRE its own line, for narrow labels where
+// "57% Cotton 38% Polyester 5% Elastane" can't fit across:
+//
+//   95% Cotton          Outer: 91% Polyester
+//   5% Elastane         9% Elastane
+//
+// The delimiter is the PERCENTAGE, not a comma. Buyers write fibre lists both
+// ways — "95% Cotton 5% Elastane" (space) and "82% Acrylic, 17% Polyester, 1%
+// Elastane" (comma) — and the space-separated form is by far the more common,
+// so splitting on commas would leave most values untouched. Breaking before
+// each "NN%" clause handles both, and drops a comma stranded at the break.
+//
+// Applied ON TOP of the part split, per line, so a part label stays with its
+// own first fibre. A line carrying fewer than two percentages is left exactly
+// as it is — a fibre-free value ("Upper: Textile"), a single fibre, or a
+// descriptive phrase never gains a break.
+// =====================================================
+
+// A percentage clause: "95%", "1.5 %", "1,5%". Buyers write decimals both ways.
+const PERCENT_AT = /\d+(?:[.,]\d+)?\s*%/g;
+
+// Split ONE line before each percentage after the first.
+function splitFibreLine(line: string): string {
+  const marks = [...line.matchAll(PERCENT_AT)];
+  if (marks.length < 2) return line;
+  const out: string[] = [];
+  let start = 0;
+  for (const m of marks.slice(1)) {
+    // Trim back over the separator between the previous fibre and this one, so
+    // "82% Acrylic, 17% …" doesn't leave the comma dangling at line end.
+    const piece = line.slice(start, m.index).replace(/[\s,;/]+$/, "");
+    if (piece.trim()) out.push(piece.trim());
+    start = m.index;
+  }
+  const tail = line.slice(start).trim();
+  if (tail) out.push(tail);
+  return out.join("\n");
+}
+
+// Composition with every fibre on its own line. Runs the part split first, so
+// a multi-part composition still separates its parts and each part's fibres
+// then break within it. Idempotent: an already-split value has one percentage
+// per line, so a second pass changes nothing.
+export function formatCompositionFibreLines(text: string): string {
+  if (!text) return text;
+  return formatCompositionLines(text)
+    .split("\n")
+    .map(splitFibreLine)
+    .join("\n");
+}

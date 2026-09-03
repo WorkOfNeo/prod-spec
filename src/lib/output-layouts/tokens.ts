@@ -9,7 +9,7 @@ import { getWashcareSymbol, loadWashcareSymbols } from "@/lib/pdf/washcare-symbo
 import { ruleRequiredColumns } from "@/lib/pdf/spec-fields";
 import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-marking";
 import { tokenMeta, parseSiblingTokenKey, SIZE_JOIN_ARG, TABLE_TOTAL_ARG, type BarcodeSource } from "./token-meta";
-import { formatCompositionLines } from "./composition";
+import { formatCompositionFibreLines, formatCompositionLines } from "./composition";
 import { pickCartonQtyPair, pickCartonQtyVariant, pickSolidAssortVariant } from "./carton-qty";
 import { pickSizeItems } from "./size-scoped-text";
 import { formatSizeFormRun, parseSizeForm, sizeFormRun } from "./size-form";
@@ -328,6 +328,13 @@ const RESOLVERS: Record<string, TextResolver> = {
   // compositions pass through untouched. The renderer draws the "\n" via
   // .ol-line's pre-wrap. See ./composition.
   composition: (s, arg) => formatCompositionLines(tFor(s.composition, (arg ?? "en").toLowerCase())),
+  // Same value as {{composition:<lang>}}, one FIBRE per line — for narrow
+  // labels where "57% Cotton 38% Polyester 5% Elastane" can't fit across.
+  // A separate token rather than an argument because {{composition}}'s one
+  // argument is the LANGUAGE, and TOKEN_RE's second argument is numeric-only
+  // (it exists for {{barcode:…:heightMm}}). See ./composition.
+  compositionLines: (s, arg) =>
+    formatCompositionFibreLines(tFor(s.composition, (arg ?? "en").toLowerCase())),
   // "Made in <country>" per language — values are precomputed by
   // augmentTranslatedFields (translation bank), carried on a side-channel
   // field; unaugmented styles resolve "" (→ unresolved chip in preview).
@@ -567,6 +574,7 @@ const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   klNumber: ["klNumber"],
   supplierNumber: ["supplierNumber"],
   composition: ["composition"],
+  compositionLines: ["composition"],
   compositionColour: ["composition"],
   madeIn: ["countryOfOrigin"],
   // The bare translated country name needs the same column as madeIn; the
@@ -817,7 +825,9 @@ export function compositionLangsInDef(def: LayoutDef): string[] {
     for (const block of page.blocks) {
       for (const line of block.lines) {
         for (const ref of tokensInLine(line)) {
-          if (ref.key === "composition" && ref.arg) langs.add(ref.arg.toLowerCase());
+          if ((ref.key === "composition" || ref.key === "compositionLines") && ref.arg) {
+            langs.add(ref.arg.toLowerCase());
+          }
         }
       }
     }
