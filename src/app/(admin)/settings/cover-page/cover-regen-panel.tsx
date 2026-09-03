@@ -234,9 +234,11 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
               className="mt-0.5"
             />
             <span>
-              Push updated covers to suppliers — up to <strong>{prepared.delivered}</strong> delivered
-              style{prepared.delivered === 1 ? "" : "s"} will have the new cover re-pushed to
-              SharePoint and re-notified on the next nightly supplier digest. Uncheck to only refresh
+              Push updated covers to the suppliers&rsquo; SharePoint folders, overwriting the copy
+              they hold. Up to <strong>{prepared.delivered}</strong> delivered style
+              {prepared.delivered === 1 ? "" : "s"} are in scope before the filters above narrow it.{" "}
+              <strong>No email goes out</strong> — the file simply becomes current in the folder.
+              Tick the box below if the suppliers also need to be told. Uncheck this to only refresh
               the covers in-app.
             </span>
           </label>
@@ -262,7 +264,8 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
               disabled={!deliver}
             />
             <span>
-              <strong>Also email the suppliers</strong> about it in tonight&rsquo;s digest. Off by
+              <strong>Also email the suppliers</strong>{" "}
+              about it in tonight&rsquo;s digest. Off by
               default: the updated file still reaches their folder either way, and a bulk refresh
               across old orders is not something a supplier needs an email about. Tick this only if
               the change is one they must actually read.
