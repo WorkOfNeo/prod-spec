@@ -257,6 +257,14 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
 
   // ---- Per language (need :lang) ----
   { key: "composition", label: "Composition", group: "Per language", kind: "text", arg: "lang", example: "{{composition:da}}" },
+  {
+    key: "compositionLines",
+    label: "Composition — one fibre per line",
+    group: "Per language",
+    kind: "text",
+    arg: "lang",
+    example: "{{compositionLines:da}}",
+  },
   { key: "productName", label: "Product name", group: "Per language", kind: "text", arg: "lang", example: "{{productName:de}}" },
   {
     key: "careInstructions",
