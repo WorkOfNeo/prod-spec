@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth-server";
-import { diffCoverManifests, listCoverStyleIds } from "@/lib/pdf/cover-manifest-diff";
+import { diffCoverManifests } from "@/lib/pdf/cover-manifest-diff";
+import { listCoverStyleIdSet } from "@/lib/pdf/cover-style-ids";
 import { loadTrimSettings } from "@/lib/outputs/required-packaging";
 import { getTrimsOnCoverEnabled } from "@/lib/settings/app-settings";
 
@@ -17,7 +18,7 @@ export const maxDuration = 300;
 // READ-ONLY. Nothing here renders a PDF, arms a queue row or touches
 // SharePoint; it is the look-before-you-leap half of the regen flow.
 //
-//   POST { mode: "prepare" }                  -> { styleIds, total }
+//   POST { mode: "prepare" }                  -> { styleIds, total, skippedBelowCutoff, cutoff }
 //   POST { mode: "scan", styleIds: [...] }    -> { diffs, changedCount }
 
 const PREPARE = z.object({
@@ -56,8 +57,18 @@ export async function POST(req: NextRequest) {
   const trimsEnabled = await getTrimsOnCoverEnabled();
 
   if (parsed.data.mode === "prepare") {
-    const styleIds = await listCoverStyleIds({ prodSpecId: parsed.data.prodSpecId });
-    return NextResponse.json({ styleIds, total: styleIds.length, trimsEnabled });
+    // Same target set as the sweep, PO cutoff included — a preview that scanned
+    // a wider population than the run would then offer to rebuild it.
+    const { styleIds, skippedBelowCutoff, cutoff } = await listCoverStyleIdSet({
+      prodSpecId: parsed.data.prodSpecId,
+    });
+    return NextResponse.json({
+      styleIds,
+      total: styleIds.length,
+      trimsEnabled,
+      skippedBelowCutoff,
+      cutoff,
+    });
   }
 
   const trimSettings = await loadTrimSettings();

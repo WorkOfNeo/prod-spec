@@ -1,5 +1,4 @@
 import { db } from "@/lib/db";
-import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { refreshStyleCoverAsset, type CoverRefreshResult } from "@/lib/pdf/refresh-cover";
 import { loadTrimSettings } from "@/lib/outputs/required-packaging";
 import { enqueueCoverForSupplier, type CoverRequeueResult } from "@/lib/publish/requeue-cover";
@@ -30,33 +29,9 @@ export type CoverSweepChunkResult = {
   pushErrors: number;
 };
 
-// Every style with a current (newest non-FAILED job) cover — the full sweep
-// target set. Distinct style ids; ordering is stable (ascending id) so
-// client-driven chunking covers the set exactly once.
-//
-// `prodSpecId` narrows the sweep to one Customer × Business Area. That's the
-// natural blast radius for a General-information edit: generalInfoMd lives on
-// the ProdSpec and prints inside the covers of that spec's styles only, so
-// re-rendering the whole estate for it would be pointless churn (and would
-// re-push unrelated suppliers). Scoped through the STYLE's current prodSpecId,
-// not the Job's: the cover renderer reads style.prodSpec, so the style's
-// present-day spec is what decides whose text a refreshed cover picks up — a
-// style re-pointed since its last job follows its new spec.
-export async function listCoverRefreshableStyleIds(
-  opts: { prodSpecId?: string } = {},
-): Promise<string[]> {
-  const rows = await db.job.findMany({
-    where: {
-      status: { not: "FAILED" },
-      assets: { some: { variantKey: COVER_VARIANT_KEY } },
-      ...(opts.prodSpecId ? { style: { prodSpecId: opts.prodSpecId } } : {}),
-    },
-    select: { styleId: true },
-    distinct: ["styleId"],
-    orderBy: { styleId: "asc" },
-  });
-  return rows.map((r) => r.styleId);
-}
+// The target set now lives in cover-style-ids.ts (listCoverStyleIdSet) so the
+// sweep and its preview cannot describe different populations once the PO
+// cutoff narrows them.
 
 // Preview counts for the confirm dialog: (an upper bound on) how many of the
 // given styles are delivered to a supplier and would be re-pushed + re-notified.

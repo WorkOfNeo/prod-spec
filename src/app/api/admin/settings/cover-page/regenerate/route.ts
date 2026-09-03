@@ -2,11 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-server";
-import {
-  listCoverRefreshableStyleIds,
-  countDeliveredAmong,
-  processCoverRefreshChunk,
-} from "@/lib/pdf/cover-regen-sweep";
+import { countDeliveredAmong, processCoverRefreshChunk } from "@/lib/pdf/cover-regen-sweep";
+import { listCoverStyleIdSet } from "@/lib/pdf/cover-style-ids";
 
 export const runtime = "nodejs";
 // Each chunk renders a handful of cover PDFs (Chromium) — give it headroom.
@@ -18,8 +15,8 @@ export const maxDuration = 300;
 // Client-driven + chunked: the browser calls `prepare` for the id list, then
 // POSTs bounded `process` chunks and shows progress. Idempotent throughout.
 //
-//   POST { mode: "prepare", prodSpecId? }
-//     → { styleIds: string[], total, delivered }
+//   POST { mode: "prepare", prodSpecId?, includeBelowCutoff? }
+//     → { styleIds: string[], total, delivered, skippedBelowCutoff, cutoff }
 //   POST { mode: "process", styleIds: string[], deliver?: boolean,
 //          onlyPending?: boolean }
 //     → { outcomes, pushed, pushErrors, refreshed, noCover, skippedApproved,
@@ -36,6 +33,11 @@ export const maxDuration = 300;
 const PREPARE = z.object({
   mode: z.literal("prepare"),
   prodSpecId: z.string().min(1).optional(),
+  // Include orders parked below the generation PO cutoff. Default FALSE, like
+  // every other bulk lane: the sweep spent three quarters of its render time on
+  // covers the supplier push then refused ("below-cutoff"). Opt-in rather than a
+  // hard gate — the cutoff reports what it parked, it doesn't forbid it.
+  includeBelowCutoff: z.boolean().default(false),
 });
 const PROCESS = z.object({
   mode: z.literal("process"),
@@ -73,9 +75,18 @@ export async function POST(req: NextRequest) {
   }
 
   if (parsed.data.mode === "prepare") {
-    const styleIds = await listCoverRefreshableStyleIds({ prodSpecId: parsed.data.prodSpecId });
+    const { styleIds, skippedBelowCutoff, cutoff } = await listCoverStyleIdSet({
+      prodSpecId: parsed.data.prodSpecId,
+      includeBelowCutoff: parsed.data.includeBelowCutoff,
+    });
     const delivered = await countDeliveredAmong(styleIds);
-    return NextResponse.json({ styleIds, total: styleIds.length, delivered });
+    return NextResponse.json({
+      styleIds,
+      total: styleIds.length,
+      delivered,
+      skippedBelowCutoff,
+      cutoff,
+    });
   }
 
   const { styleIds, deliver, onlyPending, onlyChanged, notifySupplier } = parsed.data;

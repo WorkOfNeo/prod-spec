@@ -27,7 +27,15 @@ type Props = {
 // route's maxDuration; the client loops until the id list is drained.
 const CHUNK = 5;
 
-type Prepared = { styleIds: string[]; total: number; delivered: number };
+type Prepared = {
+  styleIds: string[];
+  total: number;
+  delivered: number;
+  // Cover-holding styles left out for sitting below the generation PO cutoff,
+  // and the cutoff itself so the copy can name it.
+  skippedBelowCutoff: number;
+  cutoff: number | null;
+};
 
 type Totals = {
   processed: number;
@@ -56,6 +64,8 @@ const ZERO: Totals = {
 export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [prepared, setPrepared] = useState<Prepared | null>(null);
+  // Whether the last prepare deliberately reached below the cutoff.
+  const [includedBelowCutoff, setIncludedBelowCutoff] = useState(false);
   const [deliver, setDeliver] = useState(true);
   // Default ON: an all-approved style's manifest prints no status wording, so
   // rebuilding it is a visual no-op that still overwrites the supplier's copy
@@ -73,14 +83,22 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
   // Set by "Stop" — the run loop checks it between chunks and bails cleanly.
   const stopRef = useRef(false);
 
-  const prepare = useCallback(async () => {
+  // `includeBelowCutoff` is settled HERE rather than in the confirm step with
+  // the others: it decides which styles get listed, so changing it re-prepares
+  // rather than just changing what each chunk does.
+  const prepare = useCallback(async (includeBelowCutoff = false) => {
     setPhase("preparing");
     setError(null);
+    setIncludedBelowCutoff(includeBelowCutoff);
     try {
       const res = await fetch("/api/admin/settings/cover-page/regenerate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "prepare", ...(prodSpecId ? { prodSpecId } : {}) }),
+        body: JSON.stringify({
+          mode: "prepare",
+          includeBelowCutoff,
+          ...(prodSpecId ? { prodSpecId } : {}),
+        }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `Failed (${res.status})`);
       const data = (await res.json()) as Prepared;
@@ -186,7 +204,7 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
         {phase === "idle" && (
           <button
             type="button"
-            onClick={prepare}
+            onClick={() => prepare()}
             className="shrink-0 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700"
           >
             {scoped ? "Apply to existing bundles" : "Regenerate all cover pages"}
@@ -212,6 +230,23 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
             This will rebuild <strong>{prepared.total}</strong> cover page
             {prepared.total === 1 ? "" : "s"}.
           </p>
+          {prepared.cutoff !== null && (prepared.skippedBelowCutoff > 0 || includedBelowCutoff) && (
+            <label className="mt-3 flex items-start gap-2 text-[13px] text-amber-900">
+              <input
+                type="checkbox"
+                checked={includedBelowCutoff}
+                onChange={(e) => prepare(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                Also rebuild the covers on orders <strong>below the PO cutoff</strong> (PO &ge;{" "}
+                {prepared.cutoff}). Left out by default: those orders are not delivered to suppliers,
+                so a rebuilt cover reaches nobody — it spends the render and overwrites a finished
+                order&rsquo;s file to change what only we can see. Tick only if you need them current
+                in-app.
+              </span>
+            </label>
+          )}
           <label className="mt-3 flex items-start gap-2 text-[13px] text-amber-900">
             <input
               type="checkbox"
