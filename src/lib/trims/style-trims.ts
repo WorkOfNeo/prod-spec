@@ -39,8 +39,9 @@ export type TrimContext = {
   // Base variantKey -> concept, for the handful of layouts whose NAME cannot be
   // classified. An empty string means "satisfies no trim".
   layoutConcepts: Record<string, string>;
-  // Normalised labels whose manually-supplied file has been located in the
-  // order folder. Reserved for the delivery-detection pass; absent today, which
-  // makes every manual row read as still-to-come.
+  // Normalised labels whose manually-supplied file has been uploaded into the
+  // order's APPROVED LAYOUTS folder. Populated by
+  // loadManualDeliveredLabels (src/lib/trims/manual-uploads.ts); absent ⇒
+  // nothing delivered, so every manual row reads as still-to-come.
   manualDelivered?: Set<string>;
 };

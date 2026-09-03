@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ResolvedProdSpecButton } from "./resolved-prod-spec";
 import { RelinkBusinessAreaButton } from "./relink-business-area-button";
 import { SupplierLinkCard, type SupplierShareInfo } from "./supplier-link-card";
+import { ManualTrimsPanel } from "./manual-trims-panel";
 import { UserAvatar } from "@/components/user-avatar";
 import { formatDate } from "@/lib/utils";
 
@@ -134,6 +135,15 @@ export function ProdSpecTab({
           <SupplierLinkCard share={supplierShare} />
         </section>
       ) : null}
+
+      {/* The packaging the cover promises but this app doesn't produce. Sits
+          beside the runs because it is the other half of "what the supplier
+          gets": the generated documents below, the hand-supplied ones here.
+          Loads its own data so the style page's server render is unchanged. */}
+      <section>
+        <h2 className="mb-2 text-sm font-semibold text-zinc-700">Manually supplied packaging</h2>
+        <ManualTrimsPanel styleId={styleId} />
+      </section>
 
       {/* Prod Spec runs — the list only. Every generation run for this
           style, newest first: when, what triggered it, status, how many
