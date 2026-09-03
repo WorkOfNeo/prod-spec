@@ -994,6 +994,12 @@ export type FolderTarget = {
   supplierFolderUrl: string | null;
   poFolderName: string | null;
   poFolderUrl: string | null;
+  // The PO folder's own Graph item id — the PARENT of the APPROVED LAYOUTS
+  // leaf. Nothing in this module needs it (the app only ever writes into the
+  // leaf), but the folder checks list the parent too so a file dropped one
+  // level up is visible rather than silently out of scope. Report-only: see
+  // the location gate in checks/po-checks.ts.
+  poFolderItemId: string | null;
   folderUrl: string | null;
   driveId: string | null;
   leafItemId: string | null;
@@ -1010,6 +1016,7 @@ export async function resolveApprovedLayoutsFolder(style: StyleRow): Promise<Fol
     supplierFolderUrl: null,
     poFolderName: null,
     poFolderUrl: null,
+    poFolderItemId: null,
     folderUrl: null,
     driveId: null,
     leafItemId: null,
@@ -1046,6 +1053,7 @@ export async function resolveApprovedLayoutsFolder(style: StyleRow): Promise<Fol
 
   base.poFolderName = resolution.folder.name;
   base.poFolderUrl = resolution.folder.webUrl;
+  base.poFolderItemId = resolution.folder.id;
 
   let leaf;
   try {
