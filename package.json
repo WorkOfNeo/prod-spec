@@ -23,7 +23,9 @@
     "backfill-preorder-eans": "tsx --env-file=.env scripts/backfill-preorder-eans.ts",
     "backfill-supplier-folders": "tsx --env-file=.env scripts/backfill-supplier-folders.ts",
     "backfill-output-config-key": "tsx --env-file=.env scripts/backfill-output-config-key.ts",
-    "cleanup-legacy-supplier-folders": "tsx --env-file=.env scripts/cleanup-legacy-supplier-folders.ts"
+    "cleanup-legacy-supplier-folders": "tsx --env-file=.env scripts/cleanup-legacy-supplier-folders.ts",
+    "tall-care-labels-report": "tsx --env-file=.env scripts/tall-care-labels-report.ts",
+    "pre-cutoff-deliveries-report": "tsx --env-file=.env scripts/pre-cutoff-deliveries-report.ts"
   },
   "dependencies": {
     "@azure/identity": "^4.13.1",
