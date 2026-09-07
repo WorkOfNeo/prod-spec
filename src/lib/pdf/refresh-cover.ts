@@ -87,6 +87,16 @@ export async function refreshStyleCoverAsset(
     // fingerprint, and every pass after it does nothing until the manifest
     // genuinely moves.
     onlyWhenChanged?: boolean;
+    // Compute and stamp the manifest fingerprint WITHOUT gating on it — for
+    // callers that always want the rebuild but must not leave the ledger worse
+    // than they found it. The single-style regenerate is the case: a person
+    // typed that style number, so skipping the rebuild as "unchanged" would be
+    // precisely the useless no-op they came here to avoid — but writing a null
+    // fingerprint over a valid one would make the next bulk sweep rebuild and
+    // re-push this cover for nothing. This buys the honest stamp for one extra
+    // manifest build, which is negligible beside the puppeteer pass that
+    // follows it unconditionally.
+    stampManifest?: boolean;
     // Pre-loaded trim configuration, for callers refreshing many styles.
     trimSettings?: Omit<TrimContext, "trimLabels" | "manualDelivered">;
   },
@@ -107,7 +117,7 @@ export async function refreshStyleCoverAsset(
     // style even when both filters are on. Negligible next to the puppeteer
     // pass it guards, and it saves that pass outright for every style it skips.
     let manifestKey: string | null = null;
-    if (opts?.onlyWhenPending || opts?.onlyWhenChanged) {
+    if (opts?.onlyWhenPending || opts?.onlyWhenChanged || opts?.stampManifest) {
       const trimSettings = opts.trimSettings ?? (await loadTrimSettings());
       const docs = await buildRequiredPackagingForStyle(styleId, {
         approvedBaseKeysOverride: approvedBases,
