@@ -72,6 +72,49 @@ export const GUIDES: Guide[] = [
     summary:
       "The two blocks of text in front of every bundle — writing them yourself, and pushing a change out to bundles already generated.",
   },
+  // ---- Feature guides ------------------------------------------------------
+  // A separate series from the six-part reviewer handbook above: one guide per
+  // recently shipped feature, written for reviewers. They are NOT part of the
+  // combined handbook booklet (00-reviewer-handbook-all.pdf), which still covers
+  // the handbook only.
+  {
+    slug: "checking-a-supplier-folder",
+    file: "feature-checks.html",
+    title: "Checking an order's supplier folder",
+    summary:
+      "The Checks page: audit a PO's supplier folder for stray cover pages and drifted file names — and how deleting from it is kept safe.",
+  },
+  {
+    slug: "trims-list",
+    file: "feature-trims.html",
+    title: "The trims list",
+    summary:
+      "What the buyer's own words for an order's packaging mean: the four tabs, the keyword rules, the PO cutoff that scopes them, and where the two lists disagree.",
+  },
+  // Guide 3 of the feature series — the Packaging rows editor. The screen ships
+  // with a later release, so the guide is written and committed but NOT listed:
+  // uncomment this entry when the packaging-rows release lands.
+  // {
+  //   slug: "cover-page-packaging-rows",
+  //   file: "feature-packaging-rows.html",
+  //   title: "Writing what the cover page says",
+  //   summary:
+  //     "The Packaging rows editor: one shared list of every packaging line a cover can print, its standing note, and the two wordings its status column uses.",
+  // },
+  {
+    slug: "general-information",
+    file: "feature-general-info.html",
+    title: "General information, and re-issuing one order",
+    summary:
+      "The requirements pages printed per client and business area — and the two ways to push a change out to bundles that already exist.",
+  },
+  {
+    slug: "attaching-a-document",
+    file: "feature-style-documents.html",
+    title: "Attaching a document to a style",
+    summary:
+      "Drop zones on a style's Prod Spec tab, one per manually-supplied line on its cover page, labelled exactly as the cover labels it.",
+  },
   {
     slug: "carton-barcode-format",
     file: "admin-carton-barcode.html",

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Feature guide · Writing what the cover page says</title>
+<link rel="stylesheet" href="_guide.css" />
+</head>
+<body>
+
+  <div class="doc-head">
+    <div class="kicker">Prod Spec · Feature guide · 3 of 5</div>
+    <h1>Writing what the cover page says</h1>
+    <p class="sub">Every packaging line a cover page can print is written once, here &mdash; its name, the standing note under it, and the two wordings its status column uses.</p>
+    <div class="crumb"><b>Settings &#9656; Cover page &#9656; Packaging rows</b>, the third tab beside <b>Cover page (all clients)</b> and <b>General information</b>.</div>
+  </div>
+
+  <!-- SECTION 1 -->
+  <div class="section">
+    <h2><span class="n">1</span> One list, not one per client</h2>
+    <p class="lead">A row is written once and shared by every client. That is the whole point: &ldquo;Care label&rdquo; is a different layout for each client, so a per-client list would have to be re-done for every customer we take on and would never be finished.</p>
+    <p class="lead">The rows are the shared targets. <b>Which Monday trim values land on which row</b> is a separate decision, made on <b>Settings &#9656; Trims</b> &mdash; see guide 2. This screen decides what a row is <i>called</i> and what it <i>says</i>; that one decides what reaches it.</p>
+
+    <div class="flow">
+      <div class="step"><span class="si">1</span><span class="st">The buyer writes a trims list on Monday, in their own words.</span></div>
+      <div class="step"><span class="si">2</span><span class="st"><b>Settings &#9656; Trims</b> decides which packaging row each of those words means.</span></div>
+      <div class="step"><span class="si">3</span><span class="st"><b>This screen</b> decides the wording that row prints &mdash; its name, its note, and its two status wordings.</span></div>
+      <div class="step"><span class="si">4</span><span class="st">The cover page prints the order&rsquo;s list, one line per row, with a status beside each.</span></div>
+    </div>
+  </div>
+
+  <!-- SECTION 2 -->
+  <div class="section">
+    <h2><span class="n">2</span> A row, field by field</h2>
+
+    <div class="mock">
+      <div class="chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">prod-spec.app / settings / cover-page &nbsp;&middot;&nbsp; Packaging rows</span></div>
+      <div class="appbody"><div class="canvas" style="padding:12px 14px;">
+        <div style="display:flex;gap:4px;border-bottom:1px solid #e4e4e7;padding-bottom:5px;">
+          <span class="pill zc" style="padding:3px 9px;">Cover page (all clients)</span>
+          <span class="pill zc" style="padding:3px 9px;">General information</span>
+          <span class="pill bl" style="padding:3px 9px;">Packaging rows</span>
+        </div>
+
+        <div style="margin-top:10px;border:1px solid #e4e4e7;border-radius:8px;padding:10px 11px;">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span style="flex:1;border:1px solid #e4e4e7;border-radius:5px;padding:4px 8px;font-size:10px;">Care label <span class="mk in">1</span></span>
+            <span style="font-size:9px;color:#3f3f46;">&#9744; Packing instruction &mdash; no file, so no delivery status <span class="mk in">2</span></span>
+            <span class="pill zc" style="font-size:8px;">built in <span class="mk in">3</span></span>
+            <span class="btn ghost" style="padding:2px 8px;">Remove</span>
+          </div>
+
+          <div style="margin-top:9px;font-size:8.5px;text-transform:uppercase;letter-spacing:.08em;color:#a1a1aa;">Note <span class="mk in">4</span></div>
+          <div style="margin-top:3px;border:1px solid #e4e4e7;border-radius:5px;padding:4px 8px;font-size:10px;">Printed on one paper, front and back.</div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:9px;">
+            <div>
+              <div style="font-size:8.5px;text-transform:uppercase;letter-spacing:.08em;color:#a1a1aa;">Not yet delivered <span class="mk in">5</span></div>
+              <div style="margin-top:3px;border:1px solid #e4e4e7;border-radius:5px;padding:4px 8px;font-size:10px;color:#a1a1aa;">Waiting for Customer Information</div>
+            </div>
+            <div>
+              <div style="font-size:8.5px;text-transform:uppercase;letter-spacing:.08em;color:#a1a1aa;">Delivered <span class="mk in">6</span></div>
+              <div style="margin-top:3px;border:1px solid #e4e4e7;border-radius:5px;padding:4px 8px;font-size:10px;color:#a1a1aa;">Approved</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:8px;border:1px solid #e4e4e7;border-radius:8px;padding:10px 11px;">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span style="flex:1;border:1px solid #e4e4e7;border-radius:5px;padding:4px 8px;font-size:10px;">Master polybag</span>
+            <span style="font-size:9px;color:#3f3f46;">&#9745; Packing instruction &mdash; no file, so no delivery status</span>
+            <span class="btn ghost" style="padding:2px 8px;">Remove</span>
+          </div>
+          <div style="margin-top:9px;font-size:8.5px;text-transform:uppercase;letter-spacing:.08em;color:#a1a1aa;">Note</div>
+          <div style="margin-top:3px;border:1px solid #e4e4e7;border-radius:5px;padding:4px 8px;font-size:10px;color:#a1a1aa;">No note</div>
+        </div>
+      </div></div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>The row&rsquo;s name.</b> This is the heading the cover prints for the line, so write it the way a supplier should read it.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>&ldquo;Packing instruction &mdash; no file, so no delivery status&rdquo;.</b> Tick this for anything physical with nothing to print: polybags, hangers, cartons, hooks. The line still appears on the cover, so the buyer&rsquo;s list is matched one for one &mdash; but as an instruction, with no status column. Leave it unticked and the row is a <b>document</b>, and gets a status.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>&ldquo;built in&rdquo;</b> marks a row that ships with the app rather than one somebody added here. Both kinds are edited the same way.</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>The note</b> is a standing fact about the document. It prints in <b>every</b> state &mdash; whether the artwork has arrived or not &mdash; so put permanent instructions here, never anything time-dependent.</span></li>
+      <li><span class="ln"><span class="mk">5</span></span><span class="tx"><b>Not yet delivered</b> is what the status column says while the artwork is still to come.</span></li>
+      <li><span class="ln"><span class="mk">6</span></span><span class="tx"><b>Delivered</b> is what it says once the document is confirmed in the supplier&rsquo;s folder.</span></li>
+    </ol>
+
+    <div class="note">
+      <div class="h">An empty box is not a blank line</div>
+      <p>Leave either status box empty and the row prints the wording shown greyed inside it &mdash; the default. Type in the box only when this particular row should say something different.</p>
+    </div>
+  </div>
+
+  <!-- SECTION 3 -->
+  <div class="section">
+    <h2><span class="n">3</span> The two shapes a row can take</h2>
+    <div class="variants">
+      <div class="variant">
+        <div class="vh">A document row <span class="pill em">has a status</span></div>
+        <div class="row"><span class="pill zc">Care label</span><span class="pill am">Waiting for Customer Information</span></div>
+        <div class="vd">Something with a file behind it. The cover prints the line, the note, and a status that moves from the &ldquo;not yet delivered&rdquo; wording to the &ldquo;delivered&rdquo; one once the document is in the supplier&rsquo;s folder &mdash; whether we produced it or somebody attached it by hand (guide 5).</div>
+      </div>
+      <div class="variant">
+        <div class="vh">A packing instruction <span class="pill zc">no status</span></div>
+        <div class="row"><span class="pill zc">Master polybag</span></div>
+        <div class="vd">Something physical with nothing to print. The line and its note appear so the supplier sees the whole list, but there is no status column &mdash; because a status that can never be satisfied would sit at &ldquo;waiting&rdquo; forever and bury the lines genuinely waiting.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 4 -->
+  <div class="section">
+    <h2><span class="n">4</span> When a change reaches a supplier</h2>
+    <div class="note warn">
+      <div class="h">Changes apply to newly generated bundles</div>
+      <p>Editing a row changes what is <b>generated from now on</b>. A cover PDF already sitting in a supplier&rsquo;s folder keeps the words it was built with until it is rebuilt.</p>
+      <p>To push a wording change out to bundles that already exist, use the tools on the <b>General information</b> tab next door &mdash; <i>Regenerate a style</i> for one order, or <i>Apply to existing bundles</i> for a whole client. Guide 4 covers both.</p>
+    </div>
+  </div>
+
+  <!-- SECTION 5 -->
+  <div class="section">
+    <h2><span class="n">5</span> Adding and removing rows</h2>
+    <p class="lead">Add a row when the buyer keeps asking for something the list has no line for. Then go to <b>Settings &#9656; Trims</b> and point the Monday wording at it &mdash; a new row on its own changes nothing until something resolves to it.</p>
+    <div class="note">
+      <div class="h">Before you remove one</div>
+      <p><b>Remove</b> takes the row out of the shared list for every client. Check <b>Settings &#9656; Trims</b> first for values pointing at it: a trim value whose row has gone has nothing to resolve to, and will print as supplied separately until it is mapped somewhere else.</p>
+    </div>
+  </div>
+
+  <div class="tip">
+    <b>Rule of thumb:</b> the row name is <i>what it is</i>, the note is <i>what is always true about it</i>, and the two status boxes are <i>where it has got to</i>. If you find yourself wanting to write &ldquo;still waiting&rdquo; in the note, that belongs in the <b>Not yet delivered</b> box instead.
+  </div>
+
+  <div class="foot">
+    <span>Prod Spec &middot; Feature guide 3 of 5 &mdash; Writing what the cover page says</span>
+    <span>Packaging rows &middot; notes &middot; status wording</span>
+  </div>
+
+</body>
+</html>

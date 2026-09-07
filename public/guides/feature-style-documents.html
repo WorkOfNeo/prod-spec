@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Feature guide · Attaching a document to a style</title>
+<link rel="stylesheet" href="_guide.css" />
+</head>
+<body>
+
+  <div class="doc-head">
+    <div class="kicker">Prod Spec · Feature guide · 5 of 5</div>
+    <h1>Attaching a document to a style</h1>
+    <p class="sub">Some packaging lines on a cover page are supplied by hand rather than produced here. This is where the actual file goes &mdash; one drop zone per line, labelled exactly as the cover labels it.</p>
+    <div class="crumb">Open a style, then the <b>Prod Spec</b> tab &mdash; the section called <b>Manually supplied packaging</b>, just above <b>Prod Spec runs</b>.</div>
+  </div>
+
+  <!-- SECTION 1 -->
+  <div class="section">
+    <h2><span class="n">1</span> What a manually supplied line is</h2>
+    <p class="lead">The cover page lists everything the order&rsquo;s trims column asks for. Some of those lines this app produces itself &mdash; the care label, the carton marking, whatever layouts the client has. The rest it doesn&rsquo;t, and the cover says so: <b>manually supplied</b>, with the status column reading &ldquo;Waiting for Customer Information&rdquo;.</p>
+    <p class="lead">The cover has already told the supplier to expect that document. This screen is where you put it. Dropping a file here places it in the same <b>APPROVED LAYOUTS</b> folder the generated outputs land in, and flips that line on the cover from waiting to approved.</p>
+
+    <div class="note">
+      <div class="h">Only lines the cover is actually printing get a zone</div>
+      <p>The labels come from the very same list the cover renders, so nothing here is re-typed or paraphrased. If the cover says &ldquo;Wash Care Label with Oeko-tex Logo&rdquo;, so does the zone &mdash; that identity is how you tell which file belongs in which box.</p>
+      <p>It follows that a line the cover isn&rsquo;t printing has no zone. If a style has nothing manually supplied, the section says so: <i>every packaging line is produced here</i>. And if trims on the cover page are switched off entirely, no cover lists a manual line at all, and the section tells you that instead.</p>
+    </div>
+  </div>
+
+  <!-- SECTION 2 -->
+  <div class="section">
+    <h2><span class="n">2</span> The drop zones</h2>
+
+    <div class="mock">
+      <div class="chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">prod-spec.app / styles / 4471 &nbsp;&middot;&nbsp; Prod Spec</span></div>
+      <div class="appbody"><div class="canvas" style="padding:12px 14px;">
+        <div class="rtitle" style="font-size:13px;">Manually supplied packaging</div>
+        <div class="cap" style="margin-top:2px;">Lines the cover page lists as <b>manually supplied</b> &mdash; named on the order&rsquo;s Trims column, but not produced by this app.</div>
+
+        <div class="two" style="margin-top:9px;">
+          <div style="border:1px solid #e4e4e7;border-radius:8px;padding:9px 10px;">
+            <div style="display:flex;gap:6px;align-items:flex-start;">
+              <b style="font-size:10.5px;flex:1;">Wash Care Label with Oeko-tex Logo <span class="mk in">1</span></b>
+              <span class="pill em" style="font-size:8px;">In the supplier folder <span class="mk in">3</span></span>
+            </div>
+            <div style="margin-top:6px;border:1px solid #e4e4e7;background:#fafafa;border-radius:6px;padding:5px 7px;">
+              <div style="font-size:9.5px;font-weight:600;text-decoration:underline;">oekotex-care-4471.pdf <span class="mk in">4</span></div>
+              <div style="font-family:ui-monospace,Menlo,monospace;font-size:8px;color:#71717a;margin-top:1px;">4471-navy-wash-care-label-with-oeko-tex-logo-88123456.pdf</div>
+              <div style="font-size:8px;color:#a1a1aa;margin-top:1px;">412 kB</div>
+            </div>
+            <div style="margin-top:6px;display:flex;gap:5px;">
+              <span class="btn ghost" style="padding:2px 7px;">Open in SharePoint</span>
+              <span class="btn ghost" style="padding:2px 7px;color:#b91c1c;">Remove</span>
+            </div>
+            <div style="margin-top:6px;border:1px dashed #e4e4e7;border-radius:6px;padding:6px;text-align:center;font-size:8.5px;color:#71717a;">Drop a new file to replace this <span class="mk in">5</span></div>
+          </div>
+
+          <div style="border:1px solid #e4e4e7;border-radius:8px;padding:9px 10px;">
+            <div style="display:flex;gap:6px;align-items:flex-start;">
+              <b style="font-size:10.5px;flex:1;">Hangtag with license logo</b>
+              <span class="pill am" style="font-size:8px;">Not supplied <span class="mk in">2</span></span>
+            </div>
+            <div style="margin-top:6px;border:1px dashed #d4d4d8;border-radius:7px;padding:14px 8px;text-align:center;">
+              <div style="font-size:10.5px;font-weight:700;color:#3f3f46;">Drop the document here</div>
+              <div style="font-size:8.5px;color:#71717a;margin-top:3px;">or click to browse &middot; PDF, artwork or an office document &middot; max 4.0 MB</div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>Each zone is headed with the cover&rsquo;s own wording</b>, verbatim &mdash; not shortened, not re-cased. Match it against the printed page and you cannot put a file in the wrong box.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>Not supplied</b> &mdash; nothing here yet, and the cover is telling the supplier to wait for it.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>In the supplier folder</b> &mdash; the file reached SharePoint. Only then does the cover say the line is approved. A middle state, <b>Saved, not in the folder</b>, means the app is holding your file but it hasn&rsquo;t reached the folder yet &mdash; the reason is shown on the card.</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>Two names.</b> The bold one is what you uploaded &mdash; click it to open your own copy. The small grey one is the name it was given in the supplier&rsquo;s folder, built so two styles on one order can never overwrite each other. <b>Open in SharePoint</b> goes to the delivered file.</span></li>
+      <li><span class="ln"><span class="mk">5</span></span><span class="tx"><b>To replace a file, drop a new one on the same zone.</b> It overwrites &mdash; you never end up with two files fighting over one line. <b>Remove</b> takes it back out.</span></li>
+    </ol>
+
+    <p class="cap">Accepted: PDF, AI, EPS, SVG, PNG, JPG and the other artwork and office formats a studio actually sends &mdash; up to 4&nbsp;MB. Anything else is refused rather than delivered under a name whose type we can&rsquo;t trust.</p>
+  </div>
+
+  <!-- SECTION 3 -->
+  <div class="section">
+    <h2><span class="n">3</span> When the cover catches up</h2>
+    <div class="note warn">
+      <div class="h">A cover already generated keeps its words until it is rebuilt</div>
+      <p>A bundle generated <b>after</b> the upload carries the new status straight away. One that already exists &mdash; including one already sitting in the supplier&rsquo;s folder &mdash; still says &ldquo;Waiting for Customer Information&rdquo; until it is rebuilt.</p>
+      <p>The <b>Regenerate cover pages</b> sweep on <b>Settings &#9656; Cover page</b> now sees this style as changed and will rewrite it. For a single order in a hurry, <b>Regenerate a style</b> on the same screen does it immediately &mdash; guide 4.</p>
+    </div>
+  </div>
+
+  <!-- SECTION 4 -->
+  <div class="section">
+    <h2><span class="n">4</span> When a trims list changes underneath you</h2>
+    <p class="lead">If the order&rsquo;s trims column changes after you have uploaded something, a file can be left behind: still in the supplier&rsquo;s folder, no longer on the cover. Those are collected in their own amber box.</p>
+
+    <div class="mock">
+      <div class="appbody"><div class="canvas" style="padding:11px 13px;">
+        <div style="border:1px solid #fde68a;background:#fffbeb;border-radius:7px;padding:8px 10px;">
+          <div style="font-weight:700;font-size:10px;color:#92400e;">No longer on the cover &mdash; still in the supplier&rsquo;s folder</div>
+          <div style="font-size:9px;color:#92400e;margin-top:2px;">The Trims column changed since these were uploaded. Remove them unless the supplier should still have them.</div>
+          <div style="margin-top:6px;display:flex;align-items:center;gap:8px;font-size:9px;color:#92400e;">
+            <span style="flex:1;">Gift box insert &middot; <span style="font-family:ui-monospace,Menlo,monospace;">4471-navy-gift-box-insert-88123456.pdf</span></span>
+            <span class="btn ghost" style="padding:2px 7px;">Remove</span>
+          </div>
+        </div>
+      </div></div>
+    </div>
+    <p class="cap">Nothing is removed for you &mdash; the supplier may well still need the file. It is surfaced so the decision is yours.</p>
+  </div>
+
+  <!-- SECTION 5 -->
+  <div class="section">
+    <h2><span class="n">5</span> Who can do this</h2>
+    <div class="note good">
+      <div class="h">Anyone who can review</div>
+      <p>Reviewers and admins alike. It sits on a tab reviewers already reach, and the routes behind it use the same permission &mdash; because chasing a missing hangtag artwork is reviewer work, not configuration.</p>
+    </div>
+  </div>
+
+  <div class="tip">
+    <b>A useful check:</b> a document line stuck at &ldquo;Waiting for Customer Information&rdquo; on a cover you are reviewing usually means exactly this &mdash; nobody has attached the file yet. Open the style&rsquo;s Prod Spec tab, find the zone with the same heading, and drop it in.
+  </div>
+
+  <div class="foot">
+    <span>Prod Spec &middot; Feature guide 5 of 5 &mdash; Attaching a document to a style</span>
+    <span>Manually supplied packaging &middot; drop zones &middot; delivery status</span>
+  </div>
+
+</body>
+</html>
