@@ -1,7 +1,7 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import type { StyleData } from "../pdf/types";
-import { parseCompositionParts, splitCompositionByColour } from "./composition";
+import { formatCompositionMixLines, parseCompositionParts, splitCompositionByColour } from "./composition";
 
 // render.ts transitively imports @/lib/db, whose client construction needs
 // DATABASE_URL at import time. Nothing here queries — set a dummy URL so the
@@ -285,4 +285,87 @@ test("a single-composition style is untouched by the flag", () => {
   const reps = repetitionStyles(style, "ean", { splitByComposition: true });
   assert.equal(reps.length, 2); // the two sizes, and nothing more
   assert.equal(reps[0].compositionColour, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// {{compositionMixes}} — both qualities on ONE label, colour stripped.
+// ---------------------------------------------------------------------------
+
+test("strips the colour and puts each composition on its own line", () => {
+  assert.equal(
+    formatCompositionMixLines(COOP, ["Grey melange", "Pink"]),
+    "95% Cotton 5% Elastane\n57% Cotton 38% Polyester 5% Elastane",
+  );
+  // The Kaufland slash separator behaves the same.
+  assert.equal(
+    formatCompositionMixLines(KAUFLAND, ["LGM", "Green"]),
+    "57% Cotton 38% Polyester 5% Elastane\n95% Cotton 5% Elastan",
+  );
+});
+
+test("colours that share a composition collapse to ONE line", () => {
+  // Nothing is gained by printing the same words twice once the colour that
+  // distinguished them is gone.
+  const same = "Pink: 95% Cotton 5% Elastane, Grey melange: 95% Cotton 5% Elastane";
+  assert.equal(formatCompositionMixLines(same, ["Grey melange", "Pink"]), "95% Cotton 5% Elastane");
+  // Case and spacing don't make two lines out of one composition either.
+  const spaced = "Pink: 95% Cotton 5% Elastane, Grey melange: 95%  cotton 5% elastane";
+  assert.equal(formatCompositionMixLines(spaced, ["Grey melange", "Pink"]), "95% Cotton 5% Elastane");
+});
+
+test("collapsing lines does NOT collapse the per-colour documents", () => {
+  // The split keeps a file per colour even when the fibres match — each is its
+  // own thing to approve. Only the one-label token de-dupes.
+  const style: StyleData = {
+    ...twoQualityPack(),
+    composition: [{ language: "en", text: "Pink: 95% Cotton 5% Elastane, Grey melange: 95% Cotton 5% Elastane" }],
+  };
+  const reps = repetitionStyles(style, "none", { splitByComposition: true });
+  assert.deepEqual(reps.map((r) => r.compositionColour), ["Pink", "Grey melange"]);
+});
+
+test("a GARMENT-PART composition keeps its labels — dropping them loses the declaration", () => {
+  const parts = "Outer: 91% Polyester 9% Elastane, Lining: 100% Polyester";
+  assert.equal(
+    formatCompositionMixLines(parts, ["Navy", "White"]),
+    "Outer: 91% Polyester 9% Elastane\nLining: 100% Polyester",
+  );
+});
+
+test("a single composition passes through unchanged", () => {
+  assert.equal(formatCompositionMixLines("95% Cotton 5% Elastane", ["Pink"]), "95% Cotton 5% Elastane");
+});
+
+test("colours the style doesn't declare are NOT stripped", () => {
+  // The live mismatch case: the composition names colours this style hasn't
+  // got, so the token can't tell them from garment parts and keeps the labels.
+  assert.equal(
+    formatCompositionMixLines(COOP, ["LGM", "Black"]),
+    "Pink: 95% Cotton 5% Elastane\nGrey melange: 57% Cotton 38% Polyester 5% Elastane",
+  );
+});
+
+test("an alias bridges the spelling, and the colour is then stripped", () => {
+  const text = "Black: 95% Cotton 5% Elastane, Grey melange: 57% Cotton 38% Polyester 5% Elastane";
+  assert.equal(
+    formatCompositionMixLines(text, ["LGM", "Black"], [["LGM", "Grey melange"]]),
+    "95% Cotton 5% Elastane\n57% Cotton 38% Polyester 5% Elastane",
+  );
+});
+
+test("the token resolves per language off the style", () => {
+  const style: StyleData = {
+    ...twoQualityPack(),
+    composition: [
+      { language: "en", text: COOP },
+      { language: "da", text: "Pink: 95% Bomuld 5% Elastan, Grey melange: 57% Bomuld 38% Polyester 5% Elastan" },
+    ],
+  };
+  assert.equal(resolveTextToken(style, "compositionMixes", "da"), "95% Bomuld 5% Elastan\n57% Bomuld 38% Polyester 5% Elastan");
+  assert.equal(resolveTextToken(style, "compositionMixes", "en"), "95% Cotton 5% Elastane\n57% Cotton 38% Polyester 5% Elastane");
+});
+
+test("on a SPLIT row the token is a no-op — the colour is already gone", () => {
+  const [row] = repetitionStyles(twoQualityPack(), "none", { splitByComposition: true });
+  assert.equal(resolveTextToken(row, "compositionMixes"), "95% Cotton 5% Elastane");
 });

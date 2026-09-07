@@ -265,6 +265,14 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     arg: "lang",
     example: "{{compositionLines:da}}",
   },
+  {
+    key: "compositionMixes",
+    label: "Composition — two-colour pack, one composition per line (colour stripped)",
+    group: "Per language",
+    kind: "text",
+    arg: "lang",
+    example: "{{compositionMixes:da}}",
+  },
   { key: "productName", label: "Product name", group: "Per language", kind: "text", arg: "lang", example: "{{productName:de}}" },
   {
     key: "careInstructions",
