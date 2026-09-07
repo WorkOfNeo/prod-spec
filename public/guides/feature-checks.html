@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Feature guide · Checking an order's supplier folder</title>
+<link rel="stylesheet" href="_guide.css" />
+</head>
+<body>
+
+  <div class="doc-head">
+    <div class="kicker">Prod Spec · Feature guide · 1 of 5</div>
+    <h1>Checking an order&rsquo;s supplier folder</h1>
+    <p class="sub">Type a PO number and the app reads the supplier&rsquo;s folder for that order, tells you what looks wrong, and shows you everything it looked at. Two checks: cover pages that don&rsquo;t belong, and files whose name has drifted.</p>
+    <div class="crumb"><b>Checks</b> in the sidebar, just under <b>Delivery</b>. Open to reviewers and admins alike.</div>
+  </div>
+
+  <!-- SECTION 1 -->
+  <div class="section">
+    <h2><span class="n">1</span> What this page asks that Delivery doesn&rsquo;t</h2>
+    <p class="lead">The two pages read the same folder from opposite ends, and that is why they are two pages.</p>
+    <div class="compare">
+      <div class="col">
+        <h3>Delivery</h3>
+        <div class="body">
+          <ul>
+            <li>Starts from what we <b>owe</b> the supplier.</li>
+            <li>Asks: <i>did everything arrive?</i></li>
+            <li>A stray file is, at most, one anonymous number.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="col">
+        <h3>Checks</h3>
+        <div class="body">
+          <ul>
+            <li>Starts from what is <b>actually in the folder</b>.</li>
+            <li>Asks: <i>is anything in here that shouldn&rsquo;t be, or under the wrong name?</i></li>
+            <li>Names the file, says which style it answers to, and offers a remedy.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="note">
+      <div class="h">The folder belongs to the order, not to one style</div>
+      <p>A purchase order gets <b>one</b> folder, shared by every style on it &mdash; and most POs carry several styles. So both checks resolve the <b>whole order</b> before they judge a single file. Judging a file against one style&rsquo;s expectations would propose removing its neighbour&rsquo;s artwork.</p>
+    </div>
+  </div>
+
+  <!-- SECTION 2 -->
+  <div class="section">
+    <h2><span class="n">2</span> Running a check</h2>
+    <p class="lead">One field. Type the PO number, press <b>Run checks</b>, and wait a moment while the folder is read &mdash; it is several round-trips to SharePoint, so it isn&rsquo;t instant.</p>
+
+    <div class="mock">
+      <div class="chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">prod-spec.app / checks?po=100423</span></div>
+      <div class="appbody">
+        <div class="side">
+          <div class="brand">Prod Spec</div>
+          <a href="#">My tasks</a>
+          <a href="#">Reviews</a>
+          <a href="#" class="muted">Styles</a>
+          <a href="#" class="muted">Delivery</a>
+          <a href="#" class="on">Checks</a>
+          <a href="#" class="muted">Cover page</a>
+          <a href="#" class="adm">Guides</a>
+        </div>
+        <div class="canvas">
+          <div class="ptitle">Checks</div>
+          <div class="pdesc">Audit a purchase order&rsquo;s supplier folder against what the app believes should be in it.</div>
+
+          <div style="margin-top:11px;display:flex;align-items:flex-end;gap:8px;">
+            <div>
+              <div style="font-size:8.5px;text-transform:uppercase;letter-spacing:.08em;color:#a1a1aa;">Purchase order</div>
+              <div style="margin-top:3px;border:1px solid #2563eb;border-radius:6px;padding:5px 10px;font-size:10px;width:140px;">100423</div>
+            </div>
+            <span class="btn dark">Run checks <span class="mk in">1</span></span>
+            <span class="btn ghost">Re-scan everything <span class="mk in">2</span></span>
+          </div>
+
+          <div style="margin-top:11px;border:1px solid #e4e4e7;border-radius:8px;padding:9px 11px;">
+            <div style="display:flex;align-items:baseline;gap:6px;">
+              <b style="font-size:10.5px;">100423</b>
+              <span style="color:#71717a;font-size:10px;">&middot; Northwind Knitwear &middot; 3 styles on this PO</span>
+              <a class="openlink" href="#" style="margin-left:auto;">Open the folder <span class="mk in">3</span></a>
+            </div>
+            <div style="font-family:ui-monospace,Menlo,monospace;font-size:8.5px;color:#a1a1aa;margin-top:3px;">100423 - Acme Apparel - Northwind Knitwear / APPROVED LAYOUTS</div>
+            <div style="font-size:9.5px;color:#71717a;margin-top:3px;">4471, 4472, 5108</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>Run checks</b> reads the folder now. The address bar keeps the PO number, so a finding can be pasted to a colleague and they land on the same order.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>Re-scan everything</b> throws the picture away and reads the folder again. Do this if you have been sitting on the page a while &mdash; a scan is a snapshot, and colleagues rename things.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>The header names what was checked</b> &mdash; the supplier, how many styles are on the order, the exact folder path, and every style number. <b>Open the folder</b> takes you to it in SharePoint.</span></li>
+    </ol>
+
+    <div class="note warn">
+      <div class="h">If the PO appears under two suppliers</div>
+      <p>Two orders can share a reference, and each supplier has their own folder. The page will not guess: it lists the suppliers and asks you to pick one.</p>
+    </div>
+  </div>
+
+  <!-- SECTION 3 -->
+  <div class="section">
+    <h2><span class="n">3</span> Two groups: what looks wrong, and what was looked at</h2>
+    <p class="lead">Each check reports the same two things. The flagged rows come first, with the app&rsquo;s suggested remedy already ticked. Underneath, a line you can open that lists <b>every file that was scanned and is fine</b> &mdash; because &ldquo;0 problems&rdquo; and &ldquo;nothing was looked at&rdquo; are otherwise indistinguishable.</p>
+
+    <div class="mock">
+      <div class="appbody"><div class="canvas" style="padding:12px 14px;">
+        <div style="font-weight:800;font-size:11.5px;">Cover pages in the PO folder</div>
+        <div class="cap" style="margin-top:2px;">Every style on this purchase order shares one folder, so the covers that belong in it are the covers of all of them.</div>
+        <div style="font-size:9px;color:#a1a1aa;margin-top:5px;">5 files scanned &middot; 2 flagged <span class="mk in">1</span></div>
+
+        <div style="margin-top:9px;border-top:1px solid #f4f4f5;padding-top:9px;display:flex;gap:8px;align-items:flex-start;">
+          <span style="font-size:11px;">&#9745;</span>
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;">
+              <code style="font-family:ui-monospace,Menlo,monospace;font-size:9.5px;font-weight:700;">00-4471-navy-cover-page.pdf</code>
+              <span style="font-size:9px;color:#71717a;">4471</span>
+            </div>
+            <div style="font-size:10px;color:#3f3f46;margin-top:2px;">An old copy of 4471&rsquo;s cover &mdash; the current one is already in the folder.</div>
+            <div style="font-size:9px;color:#71717a;margin-top:1px;">4471 now delivers its cover as &ldquo;00-4471-dark-navy-cover-page.pdf&rdquo;, which is present. Nothing reads this file any more.</div>
+            <div style="display:flex;gap:9px;margin-top:5px;font-size:9px;align-items:center;">
+              <span style="color:#b91c1c;">&#9673; Delete this file <span class="mk in">2</span></span>
+              <span class="btn ghost" style="padding:2px 7px;">Apply to this file</span>
+              <span class="btn ghost" style="padding:2px 7px;">Re-check <span class="mk in">3</span></span>
+              <a class="openlink" href="#">Open</a>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:8px;border-top:1px solid #f4f4f5;padding-top:9px;display:flex;gap:8px;align-items:flex-start;">
+          <span style="font-size:11px;color:#a1a1aa;">&#9744;</span>
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;">
+              <code style="font-family:ui-monospace,Menlo,monospace;font-size:9.5px;font-weight:700;">Cover Page (2).pdf</code>
+              <span style="background:#f4f4f5;border-radius:3px;padding:1px 5px;font-size:8px;color:#71717a;">PO folder <span class="mk in">4</span></span>
+            </div>
+            <div style="font-size:10px;color:#3f3f46;margin-top:2px;">Cover-page-shaped, but not named by this app.</div>
+            <div style="font-size:9px;color:#71717a;margin-top:1px;">It does not follow the naming convention, so it was not generated here &mdash; it may well be the supplier&rsquo;s or the customer&rsquo;s own file. This file is in the PO folder itself, not in APPROVED LAYOUTS.</div>
+            <div style="display:flex;gap:9px;margin-top:5px;font-size:9px;align-items:center;">
+              <span style="color:#a1a1aa;">Report only &mdash; no action offered. <span class="mk in">5</span></span>
+              <span class="btn ghost" style="padding:2px 7px;">Re-check</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:9px;border-top:1px solid #f4f4f5;padding-top:7px;">
+          <span style="font-size:9px;color:#71717a;text-decoration:underline;">Show the 3 files that look right <span class="mk in">6</span></span>
+        </div>
+      </div></div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>&ldquo;5 files scanned &middot; 2 flagged&rdquo;</b> is the coverage line. The first number is how many files this check actually judged; the second is how many it has something to say about.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>A ticked action is a suggestion, not a decision.</b> Where the app can explain a finding in one sentence it pre-selects the remedy. Where it can&rsquo;t, the row arrives with <b>nothing ticked</b> &mdash; that reads as &ldquo;go and look at this&rdquo;, not &ldquo;we are about to remove it&rdquo;.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>Re-check</b> re-reads the folder for that one row and tells you whether it is still a finding, without reloading the page or losing your other ticks. <b>Apply to this file</b> does just that row.</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>The &ldquo;PO folder&rdquo; tag</b> means the file sits in the order&rsquo;s own folder rather than in <b>APPROVED LAYOUTS</b>. Those files are reported so you can see them, and never offered a button &mdash; see section 5.</span></li>
+      <li><span class="ln"><span class="mk">5</span></span><span class="tx"><b>&ldquo;Report only&rdquo;</b> means the check has nothing safe to offer. Deal with it in SharePoint yourself if it needs dealing with.</span></li>
+      <li><span class="ln"><span class="mk">6</span></span><span class="tx"><b>Open the second group</b> to see every file that passed and the one-line reason it passed. This is what makes a clean result believable.</span></li>
+    </ol>
+  </div>
+
+  <!-- SECTION 4 -->
+  <div class="section">
+    <h2><span class="n">4</span> The two checks, and what their verdicts mean</h2>
+
+    <p class="lead"><b>Cover pages in the PO folder.</b> Anything cover-page-shaped, matched against the covers the whole order expects &mdash; both the name each style delivers under <i>today</i> and the name it was generated with.</p>
+    <table class="tbl">
+      <tr class="head-strong"><th style="width:44%">The verdict says</th><th>What it means, and what is offered</th></tr>
+      <tr><td><b>The cover this PO expects for 4471.</b></td><td>Fine. It sits in the second group.</td></tr>
+      <tr><td><b>An old copy of 4471&rsquo;s cover</b> &mdash; the current one is already in the folder.</td><td>The naming rule moved on and the correct file is already there. <b>Delete</b> is suggested; renaming would collide.</td></tr>
+      <tr><td><b>4471&rsquo;s cover, under the name it was generated with.</b></td><td>The only copy, under an out-of-date name. <b>Rename in place</b> is suggested &mdash; the file is correct, only its name is behind.</td></tr>
+      <tr><td><b>A cover for &ldquo;5099&rdquo;</b> &mdash; no style on this PO has that number.</td><td>It follows this app&rsquo;s convention, so it was generated here and landed in the wrong folder. <b>Delete</b> is suggested. This is the finding the check exists for.</td></tr>
+      <tr><td><b>A cover for 4472, under a name this app never generated.</b></td><td>Probably a hand-made copy. Listed, deletion permitted, <b>nothing pre-selected</b>.</td></tr>
+      <tr><td><b>Cover-page-shaped, but not named by this app.</b></td><td>Very often somebody else&rsquo;s upload. Nothing pre-selected.</td></tr>
+    </table>
+    <p class="cap">The check also reports the mirror problem as a note: <b>a style on the PO with no cover in the folder at all</b>. That is a delivery shortfall rather than a stray file, so it is not a row and has no button &mdash; repair it from the order&rsquo;s Delivery page.</p>
+
+    <p class="lead" style="margin-top:14px;"><b>Output files under the wrong name.</b> An output is named once, at generation, and that name is then frozen. This check compares every other file against the name its layout resolves to <b>today</b>, so a layout edited after approval shows up as a rename rather than as a missing file.</p>
+    <table class="tbl">
+      <tr class="head-strong"><th style="width:44%">The verdict says</th><th>What it means, and what is offered</th></tr>
+      <tr><td><b>&ldquo;Care label&rdquo; for 4471</b> &mdash; the name the layout asks for today.</td><td>Fine. Second group.</td></tr>
+      <tr><td><b>&ldquo;Care label&rdquo; is under the name it was generated with</b>, not the one its layout asks for now.</td><td><b>Rename in place</b> is suggested. The artwork is approved and correct.</td></tr>
+      <tr><td><b>A stale copy of &ldquo;Care label&rdquo;</b> &mdash; the correctly-named file is already here.</td><td><b>Delete</b> is suggested. Nothing reads it any more.</td></tr>
+      <tr><td><b>&ldquo;Hangtag&rdquo; is delivering under its layout id</b> &mdash; the layout has no file name.</td><td>The layout&rsquo;s file name is empty, so there is <b>no correct name to rename to yet</b>. Nothing is offered. Set a file name on the layout in the Output Builder first.</td></tr>
+      <tr><td><b>&ldquo;Hangtag&rdquo; leaked its layout id into the file name.</b></td><td>The layout has a proper name now. <b>Rename in place</b> is suggested.</td></tr>
+      <tr><td><b>Not one of ours</b> &mdash; no document on this PO claims this name.</td><td>Left alone and counted as scanned. This check is about names <i>we</i> got wrong.</td></tr>
+    </table>
+    <p class="cap">Cover pages are check one&rsquo;s subject and are deliberately skipped here, so no file is ever shown twice with two different remedies.</p>
+  </div>
+
+  <!-- SECTION 5 -->
+  <div class="section">
+    <h2><span class="n">5</span> Deleting safely</h2>
+    <p class="lead">This is the only screen in the app that removes a file from a supplier&rsquo;s folder, and a deletion there has no undo we control. So the safeguards are built into how it works, not into how carefully you click.</p>
+
+    <div class="dlg">
+      <div class="dt">Confirm the changes to the supplier&rsquo;s folder</div>
+      <div style="font-family:ui-monospace,Menlo,monospace;font-size:8.5px;color:#a1a1aa;margin-top:3px;">100423 - Acme Apparel - Northwind Knitwear / APPROVED LAYOUTS</div>
+
+      <div style="margin-top:10px;font-weight:700;font-size:10.5px;color:#b91c1c;">Permanently delete 1 file</div>
+      <div class="cap" style="margin-top:2px;">These leave the supplier&rsquo;s folder. The app cannot undo it &mdash; recovery means the SharePoint recycle bin.</div>
+      <div style="margin-top:5px;font-size:9px;"><code style="font-family:ui-monospace,Menlo,monospace;font-weight:700;">00-4471-navy-cover-page.pdf</code><div style="color:#71717a;">An old copy of 4471&rsquo;s cover &mdash; the current one is already in the folder.</div></div>
+
+      <div style="margin-top:11px;font-weight:700;font-size:10.5px;">Rename 1 file in place</div>
+      <div class="cap" style="margin-top:2px;">Same file, same bytes, same version history &mdash; only the name changes.</div>
+      <div style="margin-top:5px;font-size:9px;font-family:ui-monospace,Menlo,monospace;"><span style="color:#71717a;">4471-care-label.pdf</span> <span style="color:#a1a1aa;">&rarr;</span> <b>4471-navy-care-label.pdf</b></div>
+
+      <div class="dacts">
+        <span class="btn ghost">Cancel</span>
+        <span class="btn" style="background:#b91c1c;color:#fff;">Delete 1 and rename 1</span>
+      </div>
+    </div>
+    <p class="cap">Deletes are listed first and separately from renames, and never folded together: one of the two is reversible and the other is not.</p>
+
+    <div class="note good">
+      <div class="h">What the app guarantees when you press confirm</div>
+      <p><b>It re-reads the folder first.</b> Nothing is acted on from the report you were shown. The check runs again against the live folder, and every file you ticked is validated against <i>that</i>.</p>
+      <p><b>Anything that changed is refused.</b> A file renamed since the scan, or one the fresh check no longer flags, is left alone and reported back to you as refused &mdash; never acted on.</p>
+      <p><b>Only flagged rows, only the offered action.</b> A file in the &ldquo;looks right&rdquo; group cannot be acted on at any price. A rename can only ever go to the one name the check resolved from the layout &mdash; you don&rsquo;t get to type a name.</p>
+      <p><b>Files only, and only inside APPROVED LAYOUTS.</b> The app has never written anywhere else. The PO folder above it holds the order&rsquo;s own paperwork, which belongs to the customer and the supplier &mdash; those files are reported and never offered a button. Folders are never touched.</p>
+      <p><b>Nothing happens on its own.</b> There is no sweep, no schedule and no &ldquo;repair all&rdquo;. A person picks the rows and confirms them by name, every time, and at most 100 files in one go.</p>
+      <p><b>Every attempt is recorded</b> &mdash; including the refusals and the failures, with the verdict you were shown, and who did it.</p>
+    </div>
+
+    <p class="lead" style="margin-top:12px;">Afterwards, <b>What happened</b> lists the outcome file by file, and the report you are looking at is re-read so it can never show a picture that predates its own changes. Further down, <b>What this page has already changed on this PO</b> is the history for that order &mdash; there so that the person about to delete something can see what has already been removed, and by whom.</p>
+
+    <div class="mock" style="margin-top:9px;">
+      <div class="appbody"><div class="canvas" style="padding:11px 13px;">
+        <div style="font-weight:800;font-size:10.5px;">What this page has already changed on this PO</div>
+        <div style="margin-top:5px;font-size:9px;font-family:ui-monospace,Menlo,monospace;color:#52525b;line-height:1.7;">
+          <div><span style="color:#a1a1aa;">2026-09-02 09:14</span> <span style="color:#b91c1c;">delete</span> 00-5099-cover-page.pdf <span style="color:#a1a1aa;">&middot; done &middot; you@example.com</span></div>
+          <div><span style="color:#a1a1aa;">2026-09-02 09:14</span> rename 4471-care-label.pdf &rarr; 4471-navy-care-label.pdf <span style="color:#a1a1aa;">&middot; done &middot; you@example.com</span></div>
+        </div>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- SECTION 6 -->
+  <div class="section">
+    <h2><span class="n">6</span> When the folder can&rsquo;t be read</h2>
+    <div class="note warn">
+      <div class="h">No folder, no findings</div>
+      <p>If SharePoint refuses, throttles, or the order&rsquo;s folder can&rsquo;t be identified, the page tells you so and shows <b>no checks at all</b>. That is deliberate: a page saying &ldquo;everything in this folder is unrecognised &mdash; delete?&rdquo; during a brief outage would be actively dangerous. A failed lookup is never treated as evidence that a file is missing or wrong.</p>
+    </div>
+  </div>
+
+  <div class="tip">
+    <b>A good habit:</b> run Checks on an order once its documents are approved and delivered. The flagged group tells you what to fix; the &ldquo;files that look right&rdquo; group tells you the check actually saw the folder. If a rename is offered, take it &mdash; it is the same file with the right name, and it never re-arms a supplier email.
+  </div>
+
+  <div class="foot">
+    <span>Prod Spec &middot; Feature guide 1 of 5 &mdash; Checking an order&rsquo;s supplier folder</span>
+    <span>Checks &middot; cover pages &middot; file names &middot; safe deletion</span>
+  </div>
+
+</body>
+</html>

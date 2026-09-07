@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Feature guide · The trims list</title>
+<link rel="stylesheet" href="_guide.css" />
+</head>
+<body>
+
+  <div class="doc-head">
+    <div class="kicker">Prod Spec · Feature guide · 2 of 5</div>
+    <h1>The trims list</h1>
+    <p class="sub">Every order carries a <b>Trims</b> list on Monday &mdash; the buyer&rsquo;s own words for what the order needs. This screen is where those words are given a meaning, so the cover page can print the list and say which lines we produce.</p>
+    <div class="crumb"><b>Settings &#9656; Trims</b>. Nothing here renders a PDF, sends anything, or arms a queue &mdash; it only decides what words mean.</div>
+  </div>
+
+  <!-- SECTION 1 -->
+  <div class="section">
+    <h2><span class="n">1</span> Why words need a meaning at all</h2>
+    <p class="lead">The cover page prints the buyer&rsquo;s trims list in Monday&rsquo;s own words, so the supplier can tick it off, and marks each line as something we produce, something supplied separately, or a packing instruction with no artwork. To do that it has to recognise what each line <i>is</i>.</p>
+
+    <p class="lead">A trim is never matched to one layout. &ldquo;Care label&rdquo; exists once per client, so that mapping would never be finished &mdash; it would have to be redone for every new customer. Both sides are matched onto a shared <b>concept</b> instead:</p>
+
+    <div class="mock">
+      <div class="appbody"><div class="canvas" style="padding:14px 16px;">
+        <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;font-size:10px;">
+          <div style="display:grid;gap:6px;">
+            <div style="border:1px solid #e4e4e7;border-radius:7px;padding:6px 9px;"><span class="cap" style="margin:0;display:block;">Monday says</span><b>Wash Care Label with Oeko-tex Logo</b></div>
+            <div style="border:1px solid #e4e4e7;border-radius:7px;padding:6px 9px;"><span class="cap" style="margin:0;display:block;">A layout is called</span><b>Acme Apparel - Kids - Care Label</b></div>
+          </div>
+          <div style="text-align:center;color:#a1a1aa;font-size:14px;">&rarr;</div>
+          <div style="border:1px solid #bfdbfe;background:#eff6ff;border-radius:7px;padding:9px 11px;text-align:center;">
+            <span class="cap" style="margin:0;display:block;color:#1d4ed8;">the concept</span>
+            <b style="font-size:12px;color:#1d4ed8;">Care label</b>
+          </div>
+        </div>
+        <div class="cap" style="margin-top:9px;">A style satisfies a trim when any document it already declares carries the same concept. So &ldquo;Hangtag&rdquo; is produced by us for a client who has a hangtag layout, and supplied separately for one who doesn&rsquo;t &mdash; with no per-client setup.</div>
+      </div></div>
+    </div>
+
+    <div class="note">
+      <div class="h">Some concepts have no artwork &mdash; on purpose</div>
+      <p>A large share of live trims are physical packing instructions with nothing to print: master polybags, hangers, cartons, hooks. Those are listed on the cover so it matches the buyer&rsquo;s list one for one, but as a <b>note</b> &mdash; never as a document with a delivery status, which would otherwise sit at &ldquo;waiting&rdquo; forever and bury the lines genuinely waiting.</p>
+    </div>
+  </div>
+
+  <!-- SECTION 2 -->
+  <div class="section">
+    <h2><span class="n">2</span> The four tabs</h2>
+    <div class="mock">
+      <div class="chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">prod-spec.app / settings / trims</span></div>
+      <div class="appbody"><div class="canvas" style="padding:12px 14px;">
+        <div class="ptitle" style="font-size:14px;">Trims</div>
+        <div style="display:flex;gap:4px;margin-top:9px;border-bottom:1px solid #e4e4e7;padding-bottom:5px;align-items:center;">
+          <span class="pill bl" style="padding:3px 9px;">Trim values &middot; 6 to check</span>
+          <span class="pill zc" style="padding:3px 9px;">Rules &middot; 21</span>
+          <span class="pill zc" style="padding:3px 9px;">Layouts &middot; 2 to check</span>
+          <span class="pill zc" style="padding:3px 9px;">Coverage</span>
+          <span class="btn dark" style="margin-left:auto;">Save changes <span class="mk in">5</span></span>
+        </div>
+        <div style="margin-top:8px;font-size:10px;color:#3f3f46;">&#9745; Only show what needs a decision <span class="mk in">4</span></div>
+      </div></div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>Trim values</b> &mdash; the vocabulary Monday actually uses, and the queue of words waiting for a person. The count in the tab is how many still need one.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>Rules</b> &mdash; the ordered keyword rules that classify both sides. <b>Order is meaning here</b>: the first rule that matches wins, so sorting the list alphabetically would silently re-label thousands of styles. The screen says so in an amber banner, and the arrows move a rule up or down.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>Layouts</b> &mdash; a layout is classified from the last part of its name (&ldquo;Acme Apparel - Kids - <b>Care Label</b>&rdquo;). You only set one by hand when that name can&rsquo;t be read, or when the document answers no trim at all.</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>Only show what needs a decision</b> is on by default, on both the Trim values and Layouts tabs. It hides everything already resolving cleanly. Untick it to see the whole vocabulary.</span></li>
+      <li><span class="ln"><span class="mk">5</span></span><span class="tx"><b>Everything saves in one press.</b> Edits are collected locally and sent together, because a half-applied rule set classifies like neither the old one nor the new one. The page reloads afterwards so every count on screen is recomputed rather than half-patched.</span></li>
+    </ol>
+    <p class="cap"><b>Coverage</b> is the fourth tab &mdash; see section 5.</p>
+  </div>
+
+  <!-- SECTION 3 -->
+  <div class="section">
+    <h2><span class="n">3</span> Only the words that still matter</h2>
+    <p class="lead">The list used to cover every style ever scraped, which meant vocabulary from long-dead orders sat in the queue and shaped the rules for orders nobody will ever print. It is now scoped to the <b>generation PO cutoff</b> &mdash; only orders that will actually be printed.</p>
+
+    <div class="mock">
+      <div class="appbody"><div class="canvas" style="padding:12px 14px;">
+        <div style="border:1px solid #e4e4e7;background:#fafafa;border-radius:8px;padding:9px 11px;font-size:10px;color:#3f3f46;">
+          <b>164</b> distinct values across the whole book &rarr; <b>88</b> once scoped to the generation cutoff (PO 100000 and above). <b>76</b> values live only on orders we will never print, and are no longer asked about.
+          <div class="cap" style="margin-top:5px;">812 styles in scope &middot; 4,930 parked below the cutoff &middot; 260 with no PO number at all. 3 carry a PO number that doesn&rsquo;t parse onto the timeline &mdash; those are kept, because generation keeps them too.</div>
+        </div>
+      </div></div>
+    </div>
+
+    <ul class="legend" style="margin-top:10px;">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>Below the cutoff</b> &mdash; the order predates what we print. Its words are parked, not deleted.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>No PO number at all</b> &mdash; a placeholder that will never be delivered. Its words are not put in front of anyone.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>A PO number that doesn&rsquo;t parse</b> &mdash; kept, because generation keeps those styles too. The numbers are shown separately so the split is visible rather than assumed.</span></li>
+    </ul>
+    <p class="cap">This is the <b>generation</b> cutoff specifically &mdash; not the scrape cutoff (how far back we re-pull data) and not the supplier-send cutoff (what leaves the building).</p>
+  </div>
+
+  <!-- SECTION 4 -->
+  <div class="section">
+    <h2><span class="n">4</span> A suggestion versus a decision</h2>
+    <p class="lead">Most values need nothing from you. The keyword rules already resolve them, and they keep following the rules &mdash; so if a rule is later improved, they improve with it. Setting a value yourself is a different thing: it becomes a stored decision that no later rule change can move.</p>
+
+    <div class="mock">
+      <div class="appbody"><div class="canvas" style="padding:12px 14px;">
+        <table class="tbl" style="margin-top:0;">
+          <tr class="head-strong"><th>Monday value</th><th style="width:14%;text-align:right;">Styles</th><th style="width:26%;">Resolves to</th><th style="width:28%;">Decision</th></tr>
+          <tr>
+            <td><b>Wash Care Label w. Oeko-tex</b></td>
+            <td style="text-align:right;">184</td>
+            <td>Care label <span class="pill zc" style="font-size:8px;">rule</span> <span class="mk in">1</span></td>
+            <td><span style="border:1px solid #e4e4e7;border-radius:5px;padding:2px 7px;font-size:9px;display:inline-block;">Auto (follow the rules) &#9662;</span></td>
+          </tr>
+          <tr>
+            <td><b>Carton marking- Color sticker</b> <span class="pill am" style="font-size:8px;">check</span> <span class="mk in">2</span></td>
+            <td style="text-align:right;">96</td>
+            <td>Colour sticker <span class="pill zc" style="font-size:8px;">rule</span></td>
+            <td><span style="border:1px solid #e4e4e7;border-radius:5px;padding:2px 7px;font-size:9px;display:inline-block;">Auto (follow the rules) &#9662;</span></td>
+          </tr>
+          <tr>
+            <td><b>Gift box, see attached sketch</b></td>
+            <td style="text-align:right;">12</td>
+            <td><span class="pill am" style="font-size:8px;">unmapped</span> <span class="mk in">3</span></td>
+            <td><span style="border:1px solid #e4e4e7;border-radius:5px;padding:2px 7px;font-size:9px;display:inline-block;">Carton / box / display &#9662;</span></td>
+          </tr>
+          <tr>
+            <td><b>PO 100423</b></td>
+            <td style="text-align:right;">1</td>
+            <td><span class="pill bl" style="font-size:8px;">not packaging</span> <span class="mk in">4</span></td>
+            <td><span style="border:1px solid #e4e4e7;border-radius:5px;padding:2px 7px;font-size:9px;display:inline-block;">Not packaging &mdash; hide it &#9662;</span></td>
+          </tr>
+        </table>
+      </div></div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>&ldquo;rule&rdquo;</b> &mdash; a keyword rule matched, and this value is following it. Nothing needs doing. Leave it on <b>Auto</b> and it keeps following the rules as they improve. The badge reads <b>&ldquo;override&rdquo;</b> instead once somebody has decided it by hand.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>&ldquo;check&rdquo;</b> &mdash; several rules matched and the first one won. It is probably right, but a person should confirm it. These count toward the tab&rsquo;s &ldquo;to check&rdquo; number.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>&ldquo;unmapped&rdquo;</b> &mdash; genuinely new vocabulary. Nothing recognises it, so the cover prints the line as <b>supplied separately</b> until somebody maps it. That is the safe direction: a supplier never loses a line while it waits.</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>&ldquo;Not packaging &mdash; hide it&rdquo;</b> keeps a value off the cover entirely. Use it for one-offs that were typed into the column but aren&rsquo;t trims &mdash; a PO number, a note to the buyer.</span></li>
+    </ol>
+
+    <div class="note">
+      <div class="h">Choosing a concept</div>
+      <p>The dropdown lists the whole catalogue: care label, carton marking, colour sticker, hangtag, banderole, neck print, main label, size label, price sticker, barcode sticker, polybag sticker, info area, top card, pictogram, heat transfer, RFID &mdash; and the ones with <b>(no artwork)</b> beside them: polybag, hanger, carton/box/display, hook, packing instruction. Picking a &ldquo;no artwork&rdquo; concept means the line prints as a note, with no delivery status.</p>
+    </div>
+
+    <div class="note warn">
+      <div class="h">Start the vocabulary over &mdash; admins only</div>
+      <p>Decisions made before the list was scoped may have settled words no live order uses any more. <b>Review stored decisions&hellip;</b> shows exactly what is stored, how many in-scope styles still use each, and how many are parked &mdash; then lets you drop the lot. That re-opens every value for mapping; the keyword rules and the layout pins are left alone. It cannot be undone from here: each decision has to be made again.</p>
+    </div>
+  </div>
+
+  <!-- SECTION 5 -->
+  <div class="section">
+    <h2><span class="n">5</span> Coverage &mdash; where the two lists disagree</h2>
+    <p class="lead">The last tab compares the buyer&rsquo;s trims list against what we actually declare, in both directions.</p>
+    <div class="two">
+      <div class="mock">
+        <div class="appbody"><div class="canvas" style="padding:11px 12px;">
+          <div style="font-weight:800;font-size:10.5px;">Monday asks, nothing declared answers</div>
+          <div class="cap" style="margin-top:2px;">An <b>artwork</b> row here is a candidate for a layout we don&rsquo;t have, or a document missing from that Prod Spec.</div>
+          <div style="margin-top:7px;font-size:10px;display:grid;gap:4px;">
+            <div style="display:flex;border-bottom:1px solid #f4f4f5;padding-bottom:3px;"><span style="flex:1;">Hangtag</span><span>146</span></div>
+            <div style="display:flex;border-bottom:1px solid #f4f4f5;padding-bottom:3px;"><span style="flex:1;">Polybag <span class="cap" style="margin:0;">no artwork</span></span><span>1,204</span></div>
+            <div style="display:flex;"><span style="flex:1;">Info area / insert card</span><span>38</span></div>
+          </div>
+        </div></div>
+      </div>
+      <div class="mock">
+        <div class="appbody"><div class="canvas" style="padding:11px 12px;">
+          <div style="font-weight:800;font-size:10.5px;">We deliver it, Monday never mentions it</div>
+          <div class="cap" style="margin-top:2px;">The reverse gap &mdash; where the Trims column itself is incomplete. These still print; the cover is the union of both lists.</div>
+          <div style="margin-top:7px;font-size:10px;display:grid;gap:4px;">
+            <div style="display:flex;border-bottom:1px solid #f4f4f5;padding-bottom:3px;"><span style="flex:1;">Carton marking</span><span>402</span></div>
+            <div style="display:flex;"><span style="flex:1;">Size label</span><span>77</span></div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <p class="cap">These counts ignore per-style output switches and doc-type rules, so read them as the <b>shape</b> of the problem rather than an exact figure. The per-style truth is the before/after preview on <b>Settings &#9656; Cover page</b>.</p>
+  </div>
+
+  <div class="tip">
+    <b>In practice:</b> open the Trim values tab, leave the filter on, and work down the short list. Confirm the &ldquo;check&rdquo; rows, map the &ldquo;unmapped&rdquo; ones, hide anything that isn&rsquo;t a trim at all &mdash; then Save. If the same word keeps reappearing in slightly different spellings, the better fix is a keyword on the Rules tab, not a decision per spelling.
+  </div>
+
+  <div class="foot">
+    <span>Prod Spec &middot; Feature guide 2 of 5 &mdash; The trims list</span>
+    <span>Concepts &middot; rules &middot; the PO cutoff &middot; coverage</span>
+  </div>
+
+</body>
+</html>
