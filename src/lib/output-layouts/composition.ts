@@ -1,3 +1,5 @@
+import type { StyleData } from "@/lib/pdf/types";
+
 // =====================================================
 // Composition line-splitting — a CLIENT-SAFE (no server imports) text
 // transform applied to every {{composition:<lang>}} value by the resolver
@@ -248,4 +250,72 @@ export function formatCompositionFibreLines(text: string): string {
     .split("\n")
     .map(splitFibreLine)
     .join("\n");
+}
+
+// =====================================================
+// Colours a style DECLARES — the vocabulary every colour match in this module
+// is made against. Three places one can be stated: the parenthesised tokens in
+// the style NAME (a multi-pack names its colours there —
+// "ST40002(LGM)+ST40003(Green)"), the Style board colour, and the colours
+// parsed off the PO variant labels.
+//
+// Lives here rather than in render.ts so the token resolvers can reach it
+// without importing the renderer (which would close an import cycle).
+// =====================================================
+export function declaredColours(style: StyleData): string[] {
+  return [
+    ...[...style.styleName.matchAll(/\(([^)]{1,40})\)/g)].map((m) => m[1]),
+    style.colour?.name ?? "",
+    ...(style.eanVariants ?? []).map((v) => v.colour ?? ""),
+  ].filter((c) => c.trim());
+}
+
+// =====================================================
+// {{compositionMixes:<lang>}} — the two compositions of a pack, one per line,
+// WITHOUT the colour in front:
+//
+//   Pink: 95% Cotton 5% Elastane, Grey melange: 57% Cotton 38% Polyester …
+//     ->
+//   95% Cotton 5% Elastane
+//   57% Cotton 38% Polyester 5% Elastane
+//
+// For the label that carries BOTH qualities on one piece of artwork — the
+// alternative to splitting into a document per colour (splitByComposition).
+//
+// The label is dropped ONLY when it is a colour: the split's own rule applies
+// unchanged, so every part must name a colour this style declares. A
+// garment-part composition ("Outer: … , Lining: …") keeps its labels and
+// formats exactly like {{composition}}, because there the label is part of the
+// declaration and dropping it would lose what the fibres belong to.
+//
+// The two compositions become indistinguishable once the colours are gone —
+// that is the point of the token, and the reason it refuses to do the same to
+// a garment-part value.
+//
+// Colours that share a composition COLLAPSE to one line: with the colour
+// stripped, a second identical line says nothing and just costs label space.
+// (Deliberately the opposite of splitByComposition, which keeps a document per
+// colour even when the fibres match — there each file is a separate thing to
+// approve; here the two lines would be the same words twice.)
+// =====================================================
+export function formatCompositionMixLines(
+  text: string,
+  knownColours: readonly string[],
+  aliases: ReadonlyArray<readonly string[]> = [],
+): string {
+  const parts = splitCompositionByColour(text, knownColours, aliases);
+  // Not colour-keyed (a single composition, or garment parts) — behave exactly
+  // like {{composition}} so this token is never the one that quietly drops a
+  // meaningful label.
+  if (!parts) return formatCompositionLines(text);
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const part of parts) {
+    // Compare on a normalised key (case and spacing), print the first spelling.
+    const key = part.text.toLowerCase().replace(/\s+/g, " ").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    lines.push(part.text);
+  }
+  return lines.join("\n");
 }

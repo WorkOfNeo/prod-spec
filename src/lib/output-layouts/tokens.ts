@@ -9,7 +9,12 @@ import { getWashcareSymbol, loadWashcareSymbols } from "@/lib/pdf/washcare-symbo
 import { ruleRequiredColumns } from "@/lib/pdf/spec-fields";
 import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-marking";
 import { tokenMeta, parseSiblingTokenKey, SIZE_JOIN_ARG, TABLE_TOTAL_ARG, type BarcodeSource } from "./token-meta";
-import { formatCompositionFibreLines, formatCompositionLines } from "./composition";
+import {
+  declaredColours,
+  formatCompositionFibreLines,
+  formatCompositionLines,
+  formatCompositionMixLines,
+} from "./composition";
 import { pickCartonQtyPair, pickCartonQtyVariant, pickSolidAssortVariant } from "./carton-qty";
 import { pickSizeItems } from "./size-scoped-text";
 import { formatSizeFormRun, parseSizeForm, sizeFormRun } from "./size-form";
@@ -335,6 +340,17 @@ const RESOLVERS: Record<string, TextResolver> = {
   // (it exists for {{barcode:…:heightMm}}). See ./composition.
   compositionLines: (s, arg) =>
     formatCompositionFibreLines(tFor(s.composition, (arg ?? "en").toLowerCase())),
+  // The two compositions of a pack, one per line, with the COLOUR stripped —
+  // for the label that carries both qualities on one piece of artwork instead
+  // of splitting into a document per colour. Strips only when every part names
+  // a colour the style declares (the split's own rule); a garment-part
+  // composition keeps its labels and formats like {{composition}}.
+  compositionMixes: (s, arg) =>
+    formatCompositionMixLines(
+      tFor(s.composition, (arg ?? "en").toLowerCase()),
+      declaredColours(s),
+      s.colourAliases ?? [],
+    ),
   // "Made in <country>" per language — values are precomputed by
   // augmentTranslatedFields (translation bank), carried on a side-channel
   // field; unaugmented styles resolve "" (→ unresolved chip in preview).
@@ -575,6 +591,7 @@ const REQUIRED_COLUMNS: Record<string, Array<keyof ColumnMapping>> = {
   supplierNumber: ["supplierNumber"],
   composition: ["composition"],
   compositionLines: ["composition"],
+  compositionMixes: ["composition"],
   compositionColour: ["composition"],
   madeIn: ["countryOfOrigin"],
   // The bare translated country name needs the same column as madeIn; the
@@ -825,7 +842,12 @@ export function compositionLangsInDef(def: LayoutDef): string[] {
     for (const block of page.blocks) {
       for (const line of block.lines) {
         for (const ref of tokensInLine(line)) {
-          if ((ref.key === "composition" || ref.key === "compositionLines") && ref.arg) {
+          if (
+            (ref.key === "composition" ||
+              ref.key === "compositionLines" ||
+              ref.key === "compositionMixes") &&
+            ref.arg
+          ) {
             langs.add(ref.arg.toLowerCase());
           }
         }

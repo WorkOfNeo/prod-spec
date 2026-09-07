@@ -354,6 +354,22 @@ the 13 genuine two-quality packs and left the other 94 alone. One unmatched
 label disqualifies the whole string, so a style whose composition names colours
 it doesn't carry keeps its single document until the data is fixed.
 
+**Two compositions on ONE label.** `{{compositionMixes:<lang>}}` is the
+alternative to splitting: it prints each composition on its own line with the
+colour stripped, for artwork that carries both qualities.
+
+    Pink: 95% Cotton 5% Elastane, Grey melange: 57% Cotton 38% Polyester …
+      ->  95% Cotton 5% Elastane
+          57% Cotton 38% Polyester 5% Elastane
+
+Colours that share a composition collapse to one line — with the colour gone,
+a second identical line is the same words twice. That is deliberately the
+opposite of `splitByComposition`, which keeps a document per colour even when
+the fibres match: there each file is its own thing to approve. The label is
+stripped only when every part names a colour the style declares (the same rule
+as the split), so a garment-part composition keeps its `Outer:` / `Lining:` and
+formats exactly like `{{composition}}`.
+
 **Colour aliases.** The same colour is routinely written two ways — the
 abbreviation in the style name (`LGM`) and the spelt-out colour in the
 composition (`Grey melange`) — and exact matching rejects that pair. Declare
