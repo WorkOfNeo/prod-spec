@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { TrimConcept } from "@/lib/trims/concepts";
 import type { TrimRule } from "@/lib/trims/classify";
-import type { TrimCensus } from "@/lib/trims/census";
+import type { TrimCensus, TrimOverridePurgePreview } from "@/lib/trims/census";
 
 // Four views on one decision — what a trim means.
 //
@@ -18,6 +18,11 @@ import type { TrimCensus } from "@/lib/trims/census";
 //
 // Everything is edited locally and saved in one PUT, because a half-applied
 // rule set classifies differently from either the old or the new one.
+//
+// The one exception is the WASH — dropping every stored per-label decision.
+// That is not an edit, it is a reset, so it does not ride the local dirty state
+// and the Save button: it is previewed against the live stored set, confirmed
+// explicitly, and applied by its own endpoint. Nothing about it happens on load.
 
 type Tab = "labels" | "rules" | "layouts" | "coverage";
 
@@ -26,6 +31,7 @@ type Props = {
   initialRules: TrimRule[];
   initialOverrides: Record<string, string[]>;
   initialLayoutConcepts: Record<string, string>;
+  canPurge: boolean;
 };
 
 const SOURCE_STYLES: Record<string, string> = {
@@ -51,6 +57,7 @@ export function TrimsEditor({
   initialRules,
   initialOverrides,
   initialLayoutConcepts,
+  canPurge,
 }: Props) {
   const [tab, setTab] = useState<Tab>("labels");
   // Loaded after paint — see the page component for why it isn't server-rendered.
@@ -64,6 +71,47 @@ export function TrimsEditor({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [onlyNeedsWork, setOnlyNeedsWork] = useState(true);
+  // The wash. `purge === null` means the dialog is closed — it is only ever
+  // opened by a click, and the preview is fetched at that moment so it reflects
+  // what is stored right now rather than what was stored at page load.
+  const [purge, setPurge] = useState<TrimOverridePurgePreview | null>(null);
+  const [purgeState, setPurgeState] = useState<"idle" | "loading" | "running">("idle");
+  const [purgeError, setPurgeError] = useState<string | null>(null);
+
+  const openPurge = useCallback(async () => {
+    setPurgeError(null);
+    setPurgeState("loading");
+    try {
+      const res = await fetch("/api/admin/settings/trims/purge");
+      if (!res.ok) throw new Error(`Preview failed (${res.status})`);
+      setPurge((await res.json()) as TrimOverridePurgePreview);
+    } catch (e) {
+      setPurgeError(e instanceof Error ? e.message : "Preview failed");
+    } finally {
+      setPurgeState("idle");
+    }
+  }, []);
+
+  const runPurge = useCallback(async () => {
+    setPurgeError(null);
+    setPurgeState("running");
+    try {
+      const res = await fetch("/api/admin/settings/trims/purge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: true }),
+      });
+      if (!res.ok) {
+        throw new Error((await res.json().catch(() => null))?.error ?? `Failed (${res.status})`);
+      }
+      // Every count and badge on screen was computed with those decisions
+      // applied. Reload rather than patch — same reasoning as after a save.
+      window.location.reload();
+    } catch (e) {
+      setPurgeError(e instanceof Error ? e.message : "Purge failed");
+      setPurgeState("idle");
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -206,13 +254,137 @@ export function TrimsEditor({
       {/* ---- Trim values ---- */}
       {tab === "labels" && census && (
         <div className="mt-4">
-          <p className="max-w-3xl text-[13px] text-zinc-500">
+          {/* Before/after, stated plainly. A shorter list with no explanation
+              reads as data loss; the numbers are what make it read as a wash. */}
+          <div className="rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3">
+            <p className="text-[13px] text-zinc-700">
+              <strong className="text-zinc-900">
+                {census.scope.distinctLabelsBefore.toLocaleString()}
+              </strong>{" "}
+              distinct values across the whole book →{" "}
+              <strong className="text-zinc-900">
+                {census.scope.distinctLabelsAfter.toLocaleString()}
+              </strong>{" "}
+              once scoped to the generation cutoff
+              {census.scope.cutoff !== null && <> (PO {census.scope.cutoff} and above)</>}.{" "}
+              <strong className="text-zinc-900">
+                {census.scope.distinctLabelsDropped.toLocaleString()}
+              </strong>{" "}
+              values live only on orders we will never print, and are no longer asked about.
+            </p>
+            <p className="mt-2 text-[12px] text-zinc-500">
+              {census.scope.stylesInScope.toLocaleString()} styles in scope ·{" "}
+              {census.scope.stylesBelowCutoff.toLocaleString()} parked below the cutoff ·{" "}
+              {census.scope.stylesWithoutPo.toLocaleString()} with no PO number at all.
+              {census.scope.stylesWithUnparseablePo > 0 && (
+                <>
+                  {" "}
+                  {census.scope.stylesWithUnparseablePo.toLocaleString()} carry a PO number that
+                  doesn&rsquo;t parse onto the timeline — those are kept, because generation keeps
+                  them too.
+                </>
+              )}
+            </p>
+          </div>
+
+          <p className="mt-4 max-w-3xl text-[13px] text-zinc-500">
             {census.totals.distinctLabels} distinct values across{" "}
             {census.totals.stylesWithTrims.toLocaleString()} styles. Anything left on{" "}
             <em>auto</em> follows the rules; setting a value here overrides them permanently. Choose{" "}
             <em>Not packaging</em> to keep a value off the cover entirely — for one-offs like a PO
             number typed into the column.
           </p>
+
+          {canPurge && (
+            <div className="mt-4 rounded-md border border-zinc-200 bg-white px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="max-w-2xl text-[13px] text-zinc-600">
+                  <strong className="text-zinc-800">Start the vocabulary over.</strong> Decisions
+                  made before the list was scoped may settle words that no live order uses. Dropping
+                  them re-opens every value for mapping; the keyword rules and layout pins are left
+                  alone.
+                </p>
+                <button
+                  type="button"
+                  onClick={openPurge}
+                  disabled={purgeState !== "idle"}
+                  className="shrink-0 rounded-md border border-red-300 px-3 py-1.5 text-[13px] font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                >
+                  {purgeState === "loading" ? "Checking…" : "Review stored decisions…"}
+                </button>
+              </div>
+              {purgeError && <p className="mt-2 text-[12px] text-red-600">{purgeError}</p>}
+
+              {purge && (
+                <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-3">
+                  {purge.total === 0 ? (
+                    <p className="text-[13px] text-zinc-700">
+                      Nothing is stored — every value already follows the rules. There is nothing to
+                      drop.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-[13px] text-red-900">
+                        <strong>{purge.total}</strong> stored decision
+                        {purge.total === 1 ? "" : "s"} would be dropped,{" "}
+                        <strong>{purge.outOfScopeOnly}</strong> of which no in-scope style uses any
+                        more. This cannot be undone from here — each one has to be made again.
+                      </p>
+                      <table className="mt-3 w-full border-collapse text-[13px]">
+                        <thead>
+                          <tr className="border-b border-red-200 text-left text-[11px] uppercase tracking-wide text-red-800">
+                            <th className="py-1.5 pr-3 font-medium">Value</th>
+                            <th className="w-44 py-1.5 pr-3 font-medium">Decided as</th>
+                            <th className="w-24 py-1.5 pr-3 text-right font-medium">In scope</th>
+                            <th className="w-24 py-1.5 text-right font-medium">Parked</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {purge.entries.map((e) => (
+                            <tr key={e.normalized} className="border-b border-red-100">
+                              <td className="py-1.5 pr-3 text-zinc-800">{e.normalized}</td>
+                              <td className="py-1.5 pr-3 text-zinc-600">
+                                {e.concepts.length === 0
+                                  ? "not packaging"
+                                  : e.concepts.map((c) => conceptLabel.get(c) ?? c).join(" + ")}
+                              </td>
+                              <td className="py-1.5 pr-3 text-right tabular-nums text-zinc-700">
+                                {e.stylesInScope.toLocaleString()}
+                              </td>
+                              <td className="py-1.5 text-right tabular-nums text-zinc-400">
+                                {e.stylesOutOfScope.toLocaleString()}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </>
+                  )}
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPurge(null)}
+                      className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-700 hover:bg-zinc-50"
+                    >
+                      Cancel
+                    </button>
+                    {purge.total > 0 && (
+                      <button
+                        type="button"
+                        onClick={runPurge}
+                        disabled={purgeState === "running"}
+                        className="rounded-md bg-red-600 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                      >
+                        {purgeState === "running"
+                          ? "Dropping…"
+                          : `Drop ${purge.total} decision${purge.total === 1 ? "" : "s"}`}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {shownLabels.length === 0 ? (
             <p className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] text-emerald-800">
               Nothing needs a decision — every trim value in the book resolves cleanly.

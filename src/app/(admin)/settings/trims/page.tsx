@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
-import { canReview } from "@/lib/roles";
+import { canReview, isAdmin } from "@/lib/roles";
 import {
   getTrimLabelOverrides,
   getTrimLayoutConcepts,
@@ -50,11 +50,20 @@ export default async function TrimsSettingsPage() {
         layout is recognised the moment it is created. Only genuinely new vocabulary needs a person.
       </p>
 
+      <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-zinc-500">
+        The vocabulary below is scoped to the <strong>generation PO cutoff</strong> — only orders
+        that will actually be printed. Words that survive only on pre-cutoff orders are not put in
+        front of anyone to map.
+      </p>
+
       <TrimsEditor
         concepts={DEFAULT_TRIM_CONCEPTS}
         initialRules={rules}
         initialOverrides={overrides}
         initialLayoutConcepts={layoutConcepts}
+        // Reviewers decide what a trim means and can clear any single decision
+        // here; dropping the whole stored set is ADMIN, matching the API.
+        canPurge={isAdmin(role)}
       />
     </div>
   );
