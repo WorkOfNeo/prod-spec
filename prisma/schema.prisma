@@ -2218,3 +2218,60 @@ model PoDeliveryCheck {
   @@index([checkedAt])
   @@map("po_delivery_checks")
 }
+
+// =====================================================
+// The audit trail for the /checks page — one row per FILE the app was asked to
+// remove from or rename inside a supplier's SharePoint folder, written whether
+// the write succeeded, was refused, or failed.
+//
+// This is the first surface in the app that DELETES from SharePoint, and a
+// deletion there has no undo we control: the file leaves a folder a supplier is
+// printing from, and the only record that it ever existed is the one we keep.
+// So the row is written for every attempt, carries the exact sentence the
+// person was shown before they clicked, and is queryable by PO — "who removed
+// what from this order's folder, and why did the app say it should go?" has to
+// be answerable months later without reading application logs.
+//
+// userId is a plain column, NOT a relation. An audit record must outlive the
+// account that produced it; a foreign key would either block the user's removal
+// or take the evidence with it. userEmail is denormalised for the same reason.
+// =====================================================
+model FolderCheckAction {
+  id String @id @default(cuid())
+
+  poNumber   String
+  supplierId String
+  // Which check produced the row — "cover-pages" or "output-file-names".
+  checkId    String
+  // "delete" or "rename".
+  action     String
+
+  // The file as it was named and addressed at the moment of the action. The
+  // Graph item id is what was actually operated on: a name is ambiguous the
+  // moment somebody renames something between the scan and the click.
+  fileName    String
+  newFileName String?
+  driveId     String
+  driveItemId String
+  folderUrl   String?
+  // "approved-layouts" — the only place the app acts. Recorded rather than
+  // assumed so a future widening is visible in the history.
+  location    String
+
+  // The verdict the reviewer was shown. Kept verbatim: the justification is
+  // half of what makes this auditable.
+  verdict String?
+
+  // "done" | "already-gone" | "conflict" | "refused" | "failed".
+  outcome String
+  error   String?
+
+  userId    String?
+  userEmail String?
+
+  createdAt DateTime @default(now())
+
+  @@index([poNumber, createdAt])
+  @@index([createdAt])
+  @@map("folder_check_actions")
+}

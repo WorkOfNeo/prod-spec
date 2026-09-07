@@ -23,6 +23,11 @@ const NAV: Array<{ href?: string; label?: string; divider?: true }> = [
   // which a style with nothing uploaded is visible. It gates on canReview, so
   // it also appears in the reviewer list below.
   { href: "/delivery", label: "Delivery" },
+  // Checks is the mirror of Delivery: Delivery asks "did everything we owe the
+  // supplier arrive?", Checks asks "is anything in that folder wrong or
+  // shouldn't be there?". Same gate (canReview), so it appears in the reviewer
+  // list below too.
+  { href: "/checks", label: "Checks" },
   { href: "/combos", label: "New combos" },
   { href: "/jobs", label: "Jobs" },
   { href: "/automation", label: "Automation" },
@@ -117,6 +122,18 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                   className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
                 >
                   Delivery
+                </Link>
+                {/* Self-service folder audits — "is anything in the supplier's
+                    folder wrong?". A top-level reviewer destination rather than
+                    a Settings page on purpose: it is a question about an order
+                    being worked on, not configuration, and a check buried two
+                    clicks into an admin menu stops being run. Gates on
+                    canReview, and the page enforces it server-side. */}
+                <Link
+                  href="/checks"
+                  className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+                >
+                  Checks
                 </Link>
                 {/* The bundle's front matter — the all-clients cover block and
                     each client × business area's General information. Reviewers
