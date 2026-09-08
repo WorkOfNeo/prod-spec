@@ -86,6 +86,106 @@ export type ExpectedDoc = {
   nameNote: string | null;
 };
 
+// WHAT KIND OF FINDING THIS IS — the machine-readable half of `verdict`.
+//
+// A verdict is a sentence written for the person looking at ONE folder, and it
+// names the style in it. That is right for the per-PO page and useless across
+// 300 orders: "every stale-named file in the book" has to group by the FAULT,
+// and a fault cannot be recovered from prose. So each branch of the two checks
+// below states its own kind, and the cross-order review reads that.
+//
+// Kinds are stable identifiers, not labels. Renaming one silently regroups an
+// operator's saved view of the world, so they are only ever added to.
+export type CheckRowKind =
+  // Cover pages.
+  | "cover-expected" // the cover this PO expects — coverage, not a finding
+  | "cover-superseded" // an old copy; the current one is already in the folder
+  | "cover-renamed" // the only copy, under a name the config has moved on from
+  | "cover-unrecognised" // names a style on this PO, but not a name we generated
+  | "cover-foreign" // our convention, for a style that is not on this PO
+  | "cover-not-ours" // cover-shaped, not our convention at all
+  // Output documents.
+  | "file-expected" // the name the layout asks for today
+  | "file-superseded" // a stale copy; the correctly-named file is already here
+  | "file-renamed" // under the name it was generated with, not today's
+  | "file-not-ours" // nothing on this PO claims the name; very often not ours
+  | "layout-id-no-file-name" // delivering under its layout id, and still would
+  | "layout-id-renameable" // leaked a layout id; the layout has a name now
+  | "layout-id-orphan"; // carries a layout id nothing on this PO answers to
+
+// How a cross-order review groups and orders the kinds. `severity` is the sort:
+// 0 = a defect with a known repair, 1 = worth a person's eyes, 2 = coverage.
+export const CHECK_ROW_KINDS: Record<
+  CheckRowKind,
+  { title: string; blurb: string; severity: 0 | 1 | 2 }
+> = {
+  "cover-superseded": {
+    title: "Old cover, current one already there",
+    blurb: "A cover from before the naming rule changed, sitting next to the correct one. Removing it is the whole repair.",
+    severity: 0,
+  },
+  "cover-renamed": {
+    title: "Cover under its generated name",
+    blurb: "The only copy of the style's cover, under a name the config has moved on from. Rename in place — deleting it leaves the supplier with no cover.",
+    severity: 0,
+  },
+  "layout-id-renameable": {
+    title: "Leaked layout id, and the layout has a name now",
+    blurb: "The file name fell back to the variant key. The layout has since been given a proper file name, so this is a straight rename.",
+    severity: 0,
+  },
+  "file-superseded": {
+    title: "Stale copy, correct name already there",
+    blurb: "The correctly-named file is in the folder. Nothing reads this one any more.",
+    severity: 0,
+  },
+  "file-renamed": {
+    title: "Under the name it was generated with",
+    blurb: "The artwork is approved and correct; only the name is behind the layout's current template.",
+    severity: 0,
+  },
+  "cover-foreign": {
+    title: "Cover for a style that is not on this PO",
+    blurb: "It follows this app's cover naming convention, so it was generated here and landed in the wrong folder — or its style has moved off the order.",
+    severity: 0,
+  },
+  "layout-id-no-file-name": {
+    title: "Delivering under a layout id, with no name to move to",
+    blurb: "The layout's file name is empty, so this is what the template resolves to TODAY. Fix the layout in the Output Builder first; there is nothing to rename to yet.",
+    severity: 1,
+  },
+  "layout-id-orphan": {
+    title: "Layout id nothing on this PO answers to",
+    blurb: "Most likely left over from an output that has since been re-run or removed. No rename target, so a person decides.",
+    severity: 1,
+  },
+  "cover-unrecognised": {
+    title: "Cover under a name this app never generated",
+    blurb: "It names a style that IS on the PO, but not under any name we have a record of — most likely a hand-made copy.",
+    severity: 1,
+  },
+  "cover-not-ours": {
+    title: "Cover-page-shaped, but not named by this app",
+    blurb: "It does not follow the app's cover convention, so it may well be the supplier's or the customer's own file.",
+    severity: 1,
+  },
+  "file-expected": {
+    title: "Correctly named",
+    blurb: "The name the layout asks for today.",
+    severity: 2,
+  },
+  "cover-expected": {
+    title: "Expected cover",
+    blurb: "The cover this PO expects for the style.",
+    severity: 2,
+  },
+  "file-not-ours": {
+    title: "Not one of ours",
+    blurb: "No document on the PO claims this name and it carries no tell — very often the supplier's or the customer's own upload.",
+    severity: 2,
+  },
+};
+
 export type CheckRow = {
   // The Graph item id. Actions address a file by id, never by name: a name is
   // ambiguous the moment somebody renames something between the scan and the
@@ -96,6 +196,9 @@ export type CheckRow = {
   size: number | null;
   lastModifiedAt: string | null;
   location: FileLocation;
+  // What kind of finding this is, independent of the sentence below. See
+  // CheckRowKind — the cross-order sweep groups on it.
+  kind: CheckRowKind;
   // One sentence a reviewer can act on without opening anything else.
   verdict: string;
   detail: string | null;
@@ -185,6 +288,7 @@ export function buildCoverCheck(input: {
     if (current) {
       ok.push({
         ...base,
+        kind: "cover-expected",
         verdict: `The cover this PO expects for ${current.styleName}.`,
         detail: null,
         owner: { styleId: current.styleId, styleName: current.styleName },
@@ -204,6 +308,7 @@ export function buildCoverCheck(input: {
         flagged.push(
           withLocationGate({
             ...base,
+            kind: "cover-superseded",
             verdict: `An old copy of ${previous.styleName}'s cover — the current one is already in the folder.`,
             detail: `${previous.styleName} now delivers its cover as “${previous.currentName}”, which is present. Nothing reads this file any more.`,
             owner: { styleId: previous.styleId, styleName: previous.styleName },
@@ -221,6 +326,7 @@ export function buildCoverCheck(input: {
       flagged.push(
         withLocationGate({
           ...base,
+          kind: "cover-renamed",
           verdict: `${previous.styleName}'s cover, under the name it was generated with.`,
           detail: `The cover naming rule has moved on. Rename in place to “${previous.currentName}” — the bytes are correct, only the name is behind.`,
           owner: { styleId: previous.styleId, styleName: previous.styleName },
@@ -247,6 +353,7 @@ export function buildCoverCheck(input: {
       flagged.push(
         withLocationGate({
           ...base,
+          kind: "cover-unrecognised",
           verdict: `A cover for ${owner.styleName}, under a name this app never generated.`,
           detail: `${owner.styleName}'s cover is delivered as “${owner.currentName}”. This file is not that, and not a name we have a record of — most likely a hand-made copy. Check it before removing it.`,
           owner: { styleId: owner.styleId, styleName: owner.styleName },
@@ -265,6 +372,7 @@ export function buildCoverCheck(input: {
       flagged.push(
         withLocationGate({
           ...base,
+          kind: "cover-foreign",
           verdict: `A cover for “${body}” — no style on this PO has that number.`,
           detail:
             "It follows this app's cover naming convention, so it was generated here and landed in the wrong folder, or its style has since moved off this PO.",
@@ -282,6 +390,7 @@ export function buildCoverCheck(input: {
     flagged.push(
       withLocationGate({
         ...base,
+        kind: "cover-not-ours",
         verdict: "Cover-page-shaped, but not named by this app.",
         detail:
           "It does not follow the “00-<style>-cover-page.pdf” convention, so it was not generated here. It may well be the supplier's or the customer's own file — check before removing it.",
@@ -375,6 +484,7 @@ export function buildFileNameCheck(input: {
         flagged.push(
           withLocationGate({
             ...base,
+            kind: "layout-id-no-file-name",
             verdict: `“${current.name}” is delivering under its layout id — the layout has no file name.`,
             detail:
               "The layout's file name is empty, so the runner fell back to the variant key. This is what the template resolves to TODAY, so there is no correct name to rename to yet: set a file name on the layout in the Output Builder, then use “Fix output filenames” to rename this file in place.",
@@ -392,6 +502,7 @@ export function buildFileNameCheck(input: {
         flagged.push(
           withLocationGate({
             ...base,
+            kind: "layout-id-renameable",
             verdict: `“${previous.name}” leaked its layout id into the file name.`,
             detail: `The layout has a proper file name now. Rename in place to “${previous.fileName}”.`,
             owner: { styleId: previous.styleId, styleName: previous.styleName },
@@ -405,6 +516,7 @@ export function buildFileNameCheck(input: {
       flagged.push(
         withLocationGate({
           ...base,
+          kind: "layout-id-orphan",
           verdict: "Carries a layout id, and no document on this PO answers to it.",
           detail:
             "Nothing currently expected on this PO wants this name under either its current or its generated spelling, so there is nothing to rename it to. It is most likely left over from an output that has since been re-run or removed.",
@@ -420,6 +532,7 @@ export function buildFileNameCheck(input: {
     if (current) {
       ok.push({
         ...base,
+        kind: "file-expected",
         verdict: `“${current.name}” for ${current.styleName} — the name the layout asks for today.`,
         detail: null,
         owner: { styleId: current.styleId, styleName: current.styleName },
@@ -437,6 +550,7 @@ export function buildFileNameCheck(input: {
         flagged.push(
           withLocationGate({
             ...base,
+            kind: "file-superseded",
             verdict: `A stale copy of “${previous.name}” — the correctly-named file is already here.`,
             detail: `${previous.styleName} delivers this document as “${previous.fileName}”, which is present. Nothing reads this file any more.`,
             owner: { styleId: previous.styleId, styleName: previous.styleName },
@@ -450,6 +564,7 @@ export function buildFileNameCheck(input: {
       flagged.push(
         withLocationGate({
           ...base,
+          kind: "file-renamed",
           verdict: `“${previous.name}” is under the name it was generated with, not the one its layout asks for now.`,
           detail:
             `Rename in place to “${previous.fileName}” — the artwork is approved and correct, only the name is behind.` +
@@ -468,6 +583,7 @@ export function buildFileNameCheck(input: {
     // left-alone rather than flagged — this check is about names WE got wrong.
     ok.push({
       ...base,
+      kind: "file-not-ours",
       verdict: "Not one of ours — no document on this PO claims this name.",
       detail: null,
       owner: null,

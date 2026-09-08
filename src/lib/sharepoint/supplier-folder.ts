@@ -1,4 +1,5 @@
 import { getGraphClient } from "./auth";
+import { noteGraphFailure } from "./graph-throttle";
 import { getSharedItem, type SharedDriveItem } from "./shares";
 
 // =====================================================
@@ -27,6 +28,10 @@ export class SharePointWriteForbiddenError extends Error {
   }
 }
 
+// Every Graph failure that escapes a listing walk is offered to the throttle
+// observer on its way out. Observation only — nothing here retries, swallows or
+// reshapes an error; see graph-throttle.ts for who reads it and why the per-PO
+// surfaces deliberately do not.
 function statusCodeOf(err: unknown): number | null {
   if (typeof err === "object" && err !== null) {
     const s = (err as { statusCode?: number }).statusCode;
@@ -192,6 +197,7 @@ export async function listChildFileNames(driveId: string, folderItemId: string):
       next = page["@odata.nextLink"] ?? null;
     }
   } catch (err) {
+    noteGraphFailure(err);
     if (statusCodeOf(err) === 403) {
       throw new SharePointWriteForbiddenError(`SharePoint denied access (403) — ${WRITE_FORBIDDEN_HINT}`);
     }
@@ -262,6 +268,7 @@ export async function listChildFiles(driveId: string, folderItemId: string): Pro
       next = page["@odata.nextLink"] ?? null;
     }
   } catch (err) {
+    noteGraphFailure(err);
     if (statusCodeOf(err) === 403) {
       throw new SharePointWriteForbiddenError(`SharePoint denied access (403) — ${WRITE_FORBIDDEN_HINT}`);
     }
@@ -299,6 +306,7 @@ export async function listChildFolders(driveId: string, folderItemId: string): P
       next = page["@odata.nextLink"] ?? null;
     }
   } catch (err) {
+    noteGraphFailure(err);
     if (statusCodeOf(err) === 403) {
       throw new SharePointWriteForbiddenError(`SharePoint denied access (403) — ${WRITE_FORBIDDEN_HINT}`);
     }
