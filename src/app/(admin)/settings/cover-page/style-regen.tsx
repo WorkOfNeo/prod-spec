@@ -196,7 +196,15 @@ export function StyleRegenPanel({
   }, [post, selected, notifySupplier]);
 
   return (
-    <div className="mt-10 rounded-lg border border-zinc-200 bg-white p-5">
+    // Deep-link target. The Packaging rows tab points here, because the cover
+    // is ONE PDF: this panel rebuilds the whole of it — the packaging list and
+    // the manifest included — not only the General information pages it sits
+    // under. Sending someone to a tab and letting them hunt is how they end up
+    // reaching for the bulk sweep instead.
+    <div
+      id="regenerate-a-style"
+      className="mt-10 scroll-mt-8 rounded-lg border border-zinc-200 bg-white p-5"
+    >
       <h2 className="text-sm font-semibold text-zinc-800">Regenerate a style</h2>
       <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-zinc-500">
         Fixing one style rather than the whole client? Enter its style number. The same number
@@ -205,6 +213,16 @@ export function StyleRegenPanel({
         General information of the client it belongs to, and pushed back to its supplier&rsquo;s
         SharePoint folder, replacing the copy they have now. Nothing else is touched: no other
         style, no outputs, no approvals.
+      </p>
+      {/* The heading says "General information" because that is the tab this
+          panel lives on, and it is the reason people come here — but the cover
+          is ONE PDF, so a rebuild is never partial. Anyone arriving from the
+          Packaging rows tab needs that said out loud, or they will assume their
+          row edits were left behind and reach for the bulk sweep as well. */}
+      <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-zinc-500">
+        The cover is a single PDF, so this rebuilds <strong>all</strong> of it — the
+        required-packaging list as much as the General information pages. It is the one-style
+        rebuild for any cover change, wherever on this screen it was made.
       </p>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">

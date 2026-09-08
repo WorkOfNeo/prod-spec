@@ -128,7 +128,7 @@ export default async function CoverPageSettingsPage({
       ) : tab === "general-info" ? (
         <GeneralInfoEditor prodSpecs={prodSpecs} />
       ) : (
-        <PackagingRowsEditor initialRows={packagingRows} />
+        <PackagingRowsEditor initialRows={packagingRows} trimsEnabled={trimsEnabled} />
       )}
     </div>
   );

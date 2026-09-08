@@ -70,6 +70,65 @@ export type TrimConcept = {
   // false ⇒ a physical packing instruction, not a document. Never gets a
   // delivery status; never counts as a missing artwork.
   artwork: boolean;
+  // -------------------------------------------------------------------------
+  // THE TWO FLAGS THAT ARE EASY TO CONFUSE WITH THE OTHER THREE. Four booleans
+  // now hang off a row and only one of them is about the same thing as any
+  // other, so each says here what it is NOT:
+  //
+  //   artwork      — is there a FILE behind this at all? false ⇒ a physical
+  //                  packing instruction: no delivery status, no upload zone,
+  //                  prints as a note.
+  //   alwaysManual — WHO supplies the file. Not whether one exists.
+  //   printOnCover — does this appear on the COVER at all.
+  //   active       — is this row offered in the EDITOR'S list. Nothing to do
+  //                  with the cover: a retired row still resolves and still
+  //                  prints for values already mapped to it (see below).
+  // -------------------------------------------------------------------------
+
+  // "Always supplied by hand": the buyer sends us this artwork, so the manifest
+  // row is kind:"manual" — and therefore gets an upload zone on the style's
+  // Review tab — EVEN IF a declared output carries the concept.
+  //
+  // Without it "manual" is only a FALLBACK ("nothing we declare answers this
+  // entry, so somebody else must be supplying it"), which means the day anyone
+  // adds a layout carrying the concept, the row silently stops being an upload
+  // line. That the buyer supplies a thing is a property of the thing, not an
+  // accident of which layouts happen to exist.
+  //
+  // NOT artwork:false. This row IS a document — it has a file, a delivery
+  // status and a drop zone; the only question it answers is who draws it.
+  // artwork:false is the opposite claim (there is no file), so the two together
+  // are a contradiction rather than a combination: the editor disables the
+  // control on a packing instruction and normalizeTrimConceptRows strips it,
+  // exactly as it strips the status wording.
+  //
+  // Absent ⇒ false. Read it through conceptIsAlwaysManual, never directly.
+  alwaysManual?: boolean;
+
+  // Does this kind of packaging print on the cover AT ALL. false ⇒ the row is
+  // gone from the manifest: no line, no status, and (because the Review tab's
+  // drop zones are built from the manifest's manual lines) no upload zone
+  // either. That falls out of the model rather than being special-cased twice.
+  //
+  // NOT `active`. Read them side by side:
+  //   active:false      — RETIRED FROM THE EDITOR'S LIST. Stops being offered
+  //                       for new mappings; anything already mapped to it keeps
+  //                       printing, with this row's label and wording. Covers
+  //                       do not change. That is deliberate.
+  //   printOnCover:false — STOPS PRINTING. The row is still offered, still
+  //                       mappable, still the answer for its Monday values —
+  //                       it simply never reaches paper.
+  // One is about administering the list, the other is about the page. A row can
+  // be either, both or neither.
+  //
+  // ALSO NOT the label-level suppression in ./manifest (isSuppressedLabel): a
+  // Monday value mapped to an empty row list hides ONE WORD of the buyer's
+  // vocabulary wherever it appears; this hides ONE KIND OF PACKAGING however it
+  // is worded, including documents this app generates itself.
+  //
+  // Absent ⇒ true (visible), so nothing that predates this flag changes. Read
+  // it through conceptPrintsOnCover, never directly.
+  printOnCover?: boolean;
   // What the cover SAYS about this kind of packaging. `note` is a standing fact
   // and prints in every state; the two statuses are the Status column's wording
   // before and after the artwork is confirmed, and are meaningless — therefore
@@ -90,7 +149,17 @@ export type TrimConceptRow = TrimConcept & {
   // Deactivated rows are hidden from the pickers but STILL RESOLVE, so a
   // mapping or a layout pin that still names one keeps its label, its artwork
   // flag and its wording instead of degrading to a title-cased id.
+  //
+  // NOT a visibility switch — see printOnCover above. Removing a row here
+  // changes no cover; hiding it there changes every cover it printed on.
   active: boolean;
+  // Optional on a bare concept (absent = the default), REQUIRED on a stored
+  // row: everything that has been through normalizeTrimConceptRows carries an
+  // explicit value, so a reader holding a ROW never has to remember which way
+  // `undefined` falls. The registry readers still apply the defaults, because
+  // the seed and a hand-built concept can arrive without them.
+  alwaysManual: boolean;
+  printOnCover: boolean;
 };
 
 // The seed catalogue. Values are stable ids (stored in the per-label mapping and
@@ -134,8 +203,20 @@ export const DEFAULT_TRIM_CONCEPTS: TrimConcept[] = [
 // The seed as ROWS, in the order and with the sort keys the creating migration
 // inserts. Kept next to the list it derives from so the two cannot drift: the
 // migration's INSERT is this array, and the loader's fallback is this array.
+//
+// The two newer flags are seeded at their neutral values — nothing is supplied
+// by hand by decree, and everything prints — because the seed IS the day-one
+// no-op: an install that has not run the migration must print what the table
+// prints, and the table's own column defaults are the same two values.
 export const DEFAULT_TRIM_CONCEPT_ROWS: TrimConceptRow[] = DEFAULT_TRIM_CONCEPTS.map(
-  (c, i) => ({ ...c, sortOrder: (i + 1) * 10, builtIn: true, active: true }),
+  (c, i) => ({
+    ...c,
+    sortOrder: (i + 1) * 10,
+    builtIn: true,
+    active: true,
+    alwaysManual: false,
+    printOnCover: true,
+  }),
 );
 
 // ---------------------------------------------------------------------------
@@ -195,6 +276,24 @@ export function trimConceptLabel(value: string): string {
 // as a document merely shows one extra pending row until it's mapped.
 export function conceptHasArtwork(value: string): boolean {
   return byValue.get(value)?.artwork ?? true;
+}
+
+// "The buyer supplies this artwork." An unknown concept is NOT always-manual:
+// the flag is a deliberate decision about a row somebody configured, and
+// guessing it for a value the catalogue cannot resolve would invent an upload
+// zone for a line nobody asked to own. Absent ⇒ the pre-flag behaviour, where
+// manual was decided by whether a declared output answered the entry.
+export function conceptIsAlwaysManual(value: string): boolean {
+  return byValue.get(value)?.alwaysManual === true;
+}
+
+// Does this concept reach paper. An unknown concept PRINTS — the same safe
+// direction conceptHasArtwork takes, and for the same reason: a catalogue that
+// failed to load, or a mapping that outlived its row, must never silently
+// delete lines from a supplier's cover. Hiding is only ever something a person
+// chose.
+export function conceptPrintsOnCover(value: string): boolean {
+  return byValue.get(value)?.printOnCover !== false;
 }
 
 // ---------------------------------------------------------------------------
@@ -275,6 +374,16 @@ export function normalizeTrimConceptRows(
       sortOrder: Number.isFinite(row.sortOrder) ? Number(row.sortOrder) : (i + 1) * 10,
       builtIn: row.builtIn === true,
       active: row.active !== false,
+      // Stripped on an artwork:false row, exactly as the status wording above
+      // is and for the same reason: "the buyer supplies this artwork" is a
+      // claim about a FILE, and a polybag has none. Storing the contradiction
+      // would leave a row that asks for an upload zone for a line that can
+      // never be delivered. The editor disables the control too — this is the
+      // guard that does not depend on the editor.
+      alwaysManual: artwork && row.alwaysManual === true,
+      // Default TRUE: an absent flag means a row written before this existed,
+      // and it printed.
+      printOnCover: row.printOnCover !== false,
     });
   });
   return out;

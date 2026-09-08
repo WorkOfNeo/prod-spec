@@ -12,6 +12,8 @@ import {
   trimConceptCatalogue,
   trimConceptLabel,
   conceptHasArtwork,
+  conceptIsAlwaysManual,
+  conceptPrintsOnCover,
   trimConceptValueFromLabel,
   uniqueTrimConceptValue,
   type TrimConceptRow,
@@ -277,4 +279,74 @@ test("two rows that derive the same id are kept apart", () => {
   assert.equal(uniqueTrimConceptValue("Silica-sachet", taken), "SILICA_SACHET_2");
   // And it never collides with a built-in either.
   assert.equal(uniqueTrimConceptValue("Care label", taken), "CARE_LABEL_2");
+});
+
+// ---- Always-by-hand, and hidden --------------------------------------------
+//
+// Two flags added after the table shipped. Both default to "changes nothing",
+// and the tests below are about the two ways that could quietly stop being
+// true: a default that falls the wrong way, and a combination the row is not
+// allowed to hold.
+
+test("both new flags default to the behaviour that predates them", () => {
+  // A row stored before the columns existed arrives with neither field set. It
+  // printed, and nobody had declared who supplied it, so that is what it must
+  // still mean.
+  const [row] = normalizeTrimConceptRows([{ value: "INLAY_CARD", label: "Inlay card" }]);
+  assert.equal(row.alwaysManual, false);
+  assert.equal(row.printOnCover, true);
+
+  // And an explicit decision survives the round trip in both directions.
+  const [decided] = normalizeTrimConceptRows([
+    { value: "INLAY_CARD", label: "Inlay card", alwaysManual: true, printOnCover: false },
+  ]);
+  assert.equal(decided.alwaysManual, true);
+  assert.equal(decided.printOnCover, false);
+});
+
+test("a packing instruction cannot also be supplied by hand", () => {
+  // Guard #1, same shape as the status-wording strip beside it: "the buyer
+  // sends us this artwork" is a claim about a FILE, and a polybag has none.
+  // Stored, it would ask for an upload zone on a line that can never be
+  // delivered. The editor disables the control; this is the guard that does
+  // not depend on the editor.
+  const [row] = normalizeTrimConceptRows([
+    { value: "POLYBAG", label: "Polybag", artwork: false, alwaysManual: true },
+  ]);
+  assert.equal(row.alwaysManual, false);
+  // Hiding one, though, is perfectly coherent — a packing instruction is still
+  // a kind of packaging somebody may not want on the page.
+  const [hidden] = normalizeTrimConceptRows([
+    { value: "POLYBAG", label: "Polybag", artwork: false, printOnCover: false },
+  ]);
+  assert.equal(hidden.printOnCover, false);
+});
+
+test("an unresolvable concept is never hidden and never by-hand", () => {
+  // A mapping that outlived its row, or a catalogue that failed to load. It
+  // PRINTS — the same safe direction conceptHasArtwork takes, because silently
+  // deleting a line from a supplier's cover is the failure that matters — and
+  // it is not always-manual, because that is a decision somebody makes about a
+  // row, not a guess about a value nobody can resolve.
+  assert.equal(conceptPrintsOnCover("SOME_RETIRED_ROW"), true);
+  assert.equal(conceptIsAlwaysManual("SOME_RETIRED_ROW"), false);
+});
+
+test("the synchronous readers see a row's flags once it is installed", () => {
+  try {
+    setTrimConceptCatalogue([
+      ...DEFAULT_TRIM_CONCEPTS,
+      { value: "BUYER_HANGTAG", label: "Buyer hangtag", artwork: true, alwaysManual: true },
+      { value: "INTERNAL_ONLY", label: "Internal only", artwork: true, printOnCover: false },
+    ]);
+    assert.equal(conceptIsAlwaysManual("BUYER_HANGTAG"), true);
+    assert.equal(conceptPrintsOnCover("BUYER_HANGTAG"), true, "by hand is not hidden");
+    assert.equal(conceptPrintsOnCover("INTERNAL_ONLY"), false);
+    assert.equal(conceptIsAlwaysManual("INTERNAL_ONLY"), false, "hidden is not by hand");
+    // And a seeded row is untouched by either.
+    assert.equal(conceptIsAlwaysManual("HANGTAG"), false);
+    assert.equal(conceptPrintsOnCover("HANGTAG"), true);
+  } finally {
+    resetTrimConceptCatalogue();
+  }
 });

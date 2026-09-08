@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { CoverSamplePdf } from "./cover-sample-pdf";
 
 // "See what changes, then change only those."
 //
@@ -121,12 +122,6 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
   // While it is off, everything here still WORKS — that is the point, it is how
   // you decide — but rebuilding would write the old manifest, so it is barred.
   const [trimsEnabled, setTrimsEnabled] = useState<boolean | null>(null);
-  // "Try one style number" — the direct check. Kept independent of the
-  // sample/scan flow so it works at any moment, including before anything has
-  // been scanned and while the master switch is off.
-  const [styleQuery, setStyleQuery] = useState("");
-  const [pdfError, setPdfError] = useState<string | null>(null);
-  const [pdfLoading, setPdfLoading] = useState(false);
   const stopRef = useRef(false);
 
   const post = useCallback(async (url: string, body: unknown) => {
@@ -241,35 +236,6 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
     setPhase("done");
   }, [changedIds, post, trimsEnabled]);
 
-  // Fetch rather than a plain link: a miss returns JSON, and sending someone to
-  // a blank tab holding {"error":"No style matches..."} is a worse answer than
-  // the message printed under the box. On success the bytes become a blob URL
-  // and open in a new tab.
-  const openSamplePdf = useCallback(async () => {
-    const q = styleQuery.trim();
-    if (!q) return;
-    setPdfLoading(true);
-    setPdfError(null);
-    try {
-      const res = await fetch(
-        `/api/admin/settings/cover-page/sample-pdf?style=${encodeURIComponent(q)}`,
-      );
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error ?? `Could not render a sample (${res.status})`);
-      }
-      const url = URL.createObjectURL(await res.blob());
-      window.open(url, "_blank", "noopener");
-      // The tab holds its own reference once opened; releasing ours keeps the
-      // blob from pinning memory for the rest of the session.
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (e) {
-      setPdfError(e instanceof Error ? e.message : "Could not render a sample");
-    } finally {
-      setPdfLoading(false);
-    }
-  }, [styleQuery]);
-
   const busy = phase === "sampling" || phase === "scanning" || phase === "running";
 
   return (
@@ -299,39 +265,20 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
         )}
       </div>
 
-      <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <label htmlFor="cover-sample-style" className="text-[13px] font-medium text-zinc-700">
-            Check one style:
-          </label>
-          <input
-            id="cover-sample-style"
-            value={styleQuery}
-            onChange={(e) => setStyleQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                void openSamplePdf();
-              }
-            }}
-            placeholder="Style number"
-            className="w-52 rounded border border-zinc-300 px-2 py-1.5 text-[13px]"
-          />
-          <button
-            type="button"
-            onClick={openSamplePdf}
-            disabled={!styleQuery.trim() || pdfLoading}
-            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-400"
-          >
-            {pdfLoading ? "Rendering…" : "Open the real cover PDF"}
-          </button>
-        </div>
-        <p className="mt-2 text-[12px] leading-relaxed text-zinc-500">
-          Renders that style&rsquo;s actual cover, with the trims folded in, through the same
-          builder that produces the real thing — so it is the page itself, not a preview of one.
-          Nothing is saved, pushed or emailed, and it works while the switch below is still off.
-        </p>
-        {pdfError && <p className="mt-2 text-[12px] text-red-600">{pdfError}</p>}
+      {/* The direct check, kept independent of the sample/scan flow above so it
+          works at any moment — before anything has been scanned, and while the
+          master switch is still off. Shared with the Packaging rows tab, which
+          asks the same question about the same page. */}
+      <div className="mt-4">
+        <CoverSamplePdf
+          inputId="cover-sample-style"
+          lead={
+            <>
+              Renders that style&rsquo;s actual cover, as it stands with the saved cover-page text
+              and the current trim rules folded in.
+            </>
+          }
+        />
       </div>
 
       {phase === "error" && (

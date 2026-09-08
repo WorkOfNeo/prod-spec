@@ -25,12 +25,33 @@
 // app-generated beats manually-supplied beats packing-note — because the row
 // has to advertise the strongest promise it makes.
 //
+// TWO PER-ROW DECISIONS OVERRIDE WHAT THE UNION WOULD OTHERWISE CONCLUDE, both
+// configured at /settings/cover-page?tab=packaging and both read here through
+// the synchronous concept registry (see ./concepts for what each one is NOT):
+//
+//   * printOnCover:false — this KIND OF PACKAGING never prints. The concept is
+//     dropped before assembly: its outputs are removed from the union, and a
+//     Monday entry that names nothing else is skipped. Nothing downstream has
+//     to know — because the row never exists, the Review tab builds no upload
+//     zone for it, and the manifest fingerprint moves, so the covers that used
+//     to carry the line rebuild. Both consequences are the point.
+//
+//   * alwaysManual:true — the buyer supplies this artwork, so the row is
+//     manual EVEN IF a declared output carries the concept. It therefore beats
+//     the strongest-kind ranking below, which is the whole reason it exists:
+//     manual was otherwise only the fallback for "nothing we declare answers
+//     this", so adding a layout would silently take the upload zone away.
+//     A forced-manual row does NOT claim the outputs it matched — they are
+//     still delivered, so they still get listed, further down, under their own
+//     names. The flag says who supplies the row; it is not a way to conceal a
+//     document the supplier is going to receive. (printOnCover is that.)
+//
 // Pure and unit-tested: no db, no Graph, no clock. The DB read that feeds it
 // lives in src/lib/outputs/required-packaging.ts.
 // =====================================================
 
 import type { BundleDocSummary } from "@/lib/pdf/bundle-page-keys";
-import { conceptHasArtwork } from "./concepts";
+import { conceptHasArtwork, conceptIsAlwaysManual, conceptPrintsOnCover } from "./concepts";
 import { DEFAULT_TRIM_CONCEPT_COPY, resolveTrimCopy, type TrimConceptCopyMap } from "./concept-copy";
 import { classifyTrimLabel, normalizeTrimLabel, type TrimRule } from "./classify";
 
@@ -113,9 +134,17 @@ function copyField(
 }
 
 export function assembleTrimManifest(input: TrimManifestInput): BundleDocSummary[] {
-  const { trimLabels, outputs, rules, overrides } = input;
+  const { trimLabels, rules, overrides } = input;
   const manualDelivered = input.manualDelivered ?? new Set<string>();
   const conceptCopy = input.conceptCopy ?? DEFAULT_TRIM_CONCEPT_COPY;
+
+  // A hidden row leaves the picture HERE, before anything else runs, so every
+  // rule below is written against a world in which it does not exist — no
+  // second place to remember it, and no way for it to reappear as an unmatched
+  // output in the trailing loop. An output whose concept could not be
+  // classified at all (concept null) is not hidden by anything: nobody has said
+  // what kind of packaging it is, so nobody has said not to print it.
+  const outputs = input.outputs.filter((o) => !o.concept || conceptPrintsOnCover(o.concept));
 
   // concept -> the outputs that satisfy it. Several layouts can share one
   // concept (a front and a side carton marking); all of them answer the entry.
@@ -133,7 +162,19 @@ export function assembleTrimManifest(input: TrimManifestInput): BundleDocSummary
   // ---- Monday's list leads, in board order.
   for (const label of trimLabels) {
     if (isSuppressedLabel(label, overrides)) continue;
-    const concepts = conceptsForLabel(label, rules, overrides);
+
+    // TWO LEVERS, AND THEY COMPOSE THIS WAY ROUND. The line above hides a WORD
+    // — a Monday value somebody decided is not packaging at all ("as PO00000"),
+    // wherever it appears. This hides a KIND OF PACKAGING however it is worded.
+    // A compound entry ("Hanger & Hangtag") that names one hidden concept and
+    // one visible one still prints: the entry is on the buyer's list because of
+    // the part that is still printing, and the hidden concept simply stops
+    // contributing — no match of its outputs, and no wording of its own.
+    // Unanimity is required to drop the row, the same way the strongest of its
+    // concepts (not the weakest) decides its kind.
+    const declared = conceptsForLabel(label, rules, overrides);
+    const concepts = declared.filter((c) => conceptPrintsOnCover(c));
+    if (declared.length > 0 && concepts.length === 0) continue;
 
     const matched: ManifestOutput[] = [];
     for (const c of concepts) {
@@ -147,7 +188,19 @@ export function assembleTrimManifest(input: TrimManifestInput): BundleDocSummary
     // answer yet is who supplies it, and "expect this, source unconfirmed" is
     // the honest under-claim. Suppressing it would recreate the original bug.
     let kind: ManifestKind = "manual";
-    if (matched.length > 0) {
+    if (concepts.some((c) => conceptIsAlwaysManual(c))) {
+      // Declared "always supplied by hand", so it stays manual whatever the
+      // declared outputs say — including against a match, which is the case the
+      // flag was added for. ANY concept on a compound entry is enough: a row
+      // one of whose parts the buyer sends still needs somewhere to receive it.
+      //
+      // Note what is NOT done here: `matched` is left unclaimed, so anything we
+      // really do produce for this concept is listed on its own further down
+      // rather than vanishing. And alwaysManual is stripped from artwork:false
+      // rows on write, so this can never win over the info branch below and
+      // hand a polybag a delivery status.
+      kind = "manual";
+    } else if (matched.length > 0) {
       kind = "app";
     } else if (concepts.length > 0 && concepts.every((c) => !conceptHasArtwork(c))) {
       // Every concept it names is a physical item — a hanger, a polybag, a

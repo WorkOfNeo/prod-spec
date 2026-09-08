@@ -2316,6 +2316,20 @@ model TrimConceptRow {
   // false ⇒ a packing instruction: prints as a note, never gets a status.
   artwork Boolean @default(true)
 
+  // "Always supplied by hand": force the cover line to MANUAL — and so give it
+  // a drop zone on the Review tab — even when a declared output carries this
+  // concept. Not artwork: this IS a document, the flag only says who draws it.
+  // Meaningless on an artwork:false row and stripped there on write.
+  alwaysManual Boolean @default(false)
+
+  // Does this kind of packaging print on the cover at all. NOT `active`:
+  // `active` retires the row from the editor's list while it keeps printing for
+  // anything already mapped to it; this one stops it printing while it stays
+  // offered and mappable. Default true, so nothing that predates the column
+  // changes. Hiding one moves the manifest fingerprint of every cover that
+  // carried it, which is what makes those covers rebuild.
+  printOnCover Boolean @default(true)
+
   // Supplier-facing wording. note prints in every state; the two statuses are
   // the Status column's words before and after the artwork is confirmed. NULL
   // or empty ⇒ the house default (see src/lib/trims/concept-copy.ts).

@@ -18,10 +18,14 @@
 //
 // FAIL-SOFT IN ONE DIRECTION ONLY. A missing table (P2021 — Railway runs
 // migrate deploy before start, but a rolled-back deploy or a fresh branch
-// database can still get here first), a dropped connection, or an empty table
-// all fall back to the seed in ./concepts. That is precisely the behaviour this
-// app had before the table existed, so the failure mode is "yesterday's
-// covers", never "every concept suddenly unknown".
+// database can still get here first), a COLUMN this code selects that the
+// deployed table does not have yet (P2022 — the same race, one migration
+// later: alwaysManual and printOnCover arrived after the table did), a dropped
+// connection, or an empty table all fall back to the seed in ./concepts. That
+// is precisely the behaviour this app had before the table existed, so the
+// failure mode is "yesterday's covers", never "every concept suddenly unknown".
+// The catch is deliberately on the ERROR, not on a code list: a read that
+// cannot be trusted is a read that must not be allowed to change a cover.
 //
 // NO TTL, NO CACHE. The table is 21 rows on a screen a person edits a few times
 // a year; loadTrimSettings already issues three AppSetting reads beside it. A
@@ -49,6 +53,8 @@ type DbRow = {
   sortOrder: number;
   builtIn: boolean;
   active: boolean;
+  alwaysManual: boolean;
+  printOnCover: boolean;
 };
 
 // Column names differ from the field names on purpose: `note`/`pending`/
@@ -67,6 +73,8 @@ function fromDb(row: DbRow): TrimConceptRow {
       sortOrder: row.sortOrder,
       builtIn: row.builtIn,
       active: row.active,
+      alwaysManual: row.alwaysManual,
+      printOnCover: row.printOnCover,
     },
   ])[0];
 }
@@ -150,6 +158,10 @@ export async function saveTrimConceptRows(
       deliveredStatus: row.delivered ?? null,
       sortOrder: row.sortOrder,
       active: row.active,
+      // normalizeTrimConceptRows has already forced alwaysManual off for a
+      // packing instruction, the same way it emptied the status wording.
+      alwaysManual: row.alwaysManual,
+      printOnCover: row.printOnCover,
     };
     await db.trimConceptRow.upsert({
       where: { value: row.value },

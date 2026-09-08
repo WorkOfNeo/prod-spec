@@ -36,8 +36,17 @@ const ROW = z.object({
   delivered: z.string().max(200).optional(),
   sortOrder: z.number().int().min(0).max(100000).optional(),
   // "Removed" in the editor. Rows are deactivated, never deleted — something
-  // may still be mapped to one.
+  // may still be mapped to one. NOT a visibility switch: a removed row keeps
+  // printing for values already mapped to it. That is `printOnCover` below.
   active: z.boolean().optional(),
+  // "Always supplied by hand": force the cover line to manual, so it gets an
+  // upload zone even when a declared output carries the concept. Sent for an
+  // artwork:false row too and stripped server-side, exactly like the status
+  // wording — a packing instruction has no file for anybody to supply.
+  alwaysManual: z.boolean().optional(),
+  // Does the row print on the cover at all. Absent ⇒ true, so a client written
+  // before this existed cannot hide a row by omission.
+  printOnCover: z.boolean().optional(),
 });
 
 const BODY = z.object({ rows: z.array(ROW).max(200) });
@@ -67,7 +76,9 @@ export async function PUT(req: NextRequest) {
   }
 
   // saveTrimConceptRows normalises before storing — including STRIPPING the
-  // status wording from any packing-instruction row, so a hand-rolled PUT
-  // cannot give a polybag a delivery state the cover would then have to print.
+  // status wording AND the always-supplied-by-hand flag from any
+  // packing-instruction row, so a hand-rolled PUT cannot give a polybag a
+  // delivery state the cover would then have to print, nor an upload zone for
+  // a file that does not exist.
   return NextResponse.json({ rows: await saveTrimConceptRows(parsed.data.rows) });
 }

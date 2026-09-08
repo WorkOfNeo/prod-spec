@@ -13,6 +13,7 @@ import {
   type BindableLabel,
   type TrimLabelOverrides,
 } from "@/lib/trims/row-bindings";
+import { CoverSamplePdf } from "./cover-sample-pdf";
 
 // The cover page's PACKAGING ROWS: the list of lines a cover can print, and the
 // words each one says.
@@ -53,10 +54,52 @@ import {
 // deleting one would silently re-open every mapping that named it. A removed
 // row stops being offered and keeps resolving for anything still pointing at it.
 //
+// REMOVE IS NOT HIDE, and this screen has to make that legible because a person
+// reaching for one will reach for the other. Removing a row is about THIS LIST:
+// it stops being offered for new mappings, and every value already on it keeps
+// printing exactly as before. Hiding a row ("Print on the cover", off) is about
+// THE PAGE: the row stays in the list, stays mappable, and stops reaching
+// paper. Hiding changes what covers say, so those covers rebuild — which is why
+// it is a deliberate tick and not a side effect of tidying up.
+//
+// AND HIDING A ROW IS NOT THE SAME LEVER AS DROPPING A VALUE. Taking the last
+// row off a Monday value (below, or in Settings › Trims) hides that WORD; this
+// hides a KIND of packaging however it is worded, including documents this app
+// generates itself. Both are said in one line each next to the control.
+//
 // Empty wording box = the house default, shown greyed as the placeholder.
+//
+// AND UNDERNEATH IT ALL, THE PAGE ITSELF. A person editing these rows is
+// editing a list, but what they are answerable for is a cover, so the panel at
+// the bottom renders a real one for a real style — the existing sample-pdf
+// route, through the same builder publish uses, with the trims forced on so it
+// shows what flipping the master switch would produce. It persists nothing.
+// Beside it is the one thing that DOES change an existing cover: a link to
+// "Regenerate a style" on the General information tab. That control is not
+// duplicated here, because the cover is a single PDF and it already rebuilds
+// all of it — a second copy of a control that overwrites suppliers' files is
+// only a second place for it to drift.
+//
+// NOTHING ON THIS SCREEN IS RETROACTIVE, and it says so three times on purpose:
+// once in the preamble for the wording, once at the visible/hidden tick (the
+// control that most reads like a delete), and once beside the rebuild link.
+// Saving changes what is generated NEXT; no cover already in a folder moves.
+//
+// AND WHILE THE MASTER SWITCH IS OFF, NOTHING HERE REACHES A COVER AT ALL —
+// buildRequiredPackagingForStyle takes its pre-Trims branch, which has no
+// concept, no wording and no per-row flags in it. So this screen leads with
+// that, because the alternative is somebody hiding a row, seeing no change
+// anywhere, and reporting a bug against behaviour that is exactly right.
 
 type Props = {
   initialRows: TrimConceptRow[];
+  // The master switch, read on the server beside the rows. While it is OFF
+  // there is no trim context at all, so nothing configured on this screen —
+  // wording, always-by-hand, hidden — reaches a single cover, and a person
+  // editing here deserves to be told that before they wonder why hiding a row
+  // did nothing. It is a fact stated, not a control: flipping it lives on the
+  // Cover page tab, next to the preview that justifies flipping it.
+  trimsEnabled: boolean;
 };
 
 type Draft = TrimConceptRow & {
@@ -67,7 +110,7 @@ type Draft = TrimConceptRow & {
 
 const toDraft = (row: TrimConceptRow): Draft => ({ ...row, key: row.value });
 
-export function PackagingRowsEditor({ initialRows }: Props) {
+export function PackagingRowsEditor({ initialRows, trimsEnabled }: Props) {
   const [rows, setRows] = useState<Draft[]>(() => initialRows.map(toDraft));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -150,6 +193,10 @@ export function PackagingRowsEditor({ initialRows }: Props) {
         sortOrder: (prev.length + 1) * 10,
         builtIn: false,
         active: true,
+        // A new row supplies itself the way every other row does and prints —
+        // both flags start at the value that changes nothing.
+        alwaysManual: false,
+        printOnCover: true,
       },
     ]);
   }, []);
@@ -197,6 +244,10 @@ export function PackagingRowsEditor({ initialRows }: Props) {
               delivered: r.delivered ?? "",
               sortOrder: (i + 1) * 10,
               active: r.active,
+              // Sent even for a packing instruction, where the control is
+              // disabled: the server strips it rather than trusting the form.
+              alwaysManual: r.alwaysManual,
+              printOnCover: r.printOnCover,
             })),
         }),
       });
@@ -221,6 +272,30 @@ export function PackagingRowsEditor({ initialRows }: Props) {
 
   return (
     <div className="mt-6">
+      {/* SAID FIRST, BECAUSE IT CHANGES WHAT EVERY OTHER SENTENCE ON THE SCREEN
+          MEANS. With the master switch off there is no trim context, so
+          buildRequiredPackagingForStyle takes its pre-Trims branch and NOTHING
+          configured here reaches a cover — not the wording, not the two ticks.
+          Hiding a row today does nothing, and that is correct, not broken. A
+          screen that let someone hide a row and then say nothing would be
+          inviting them to conclude the feature is faulty. */}
+      {!trimsEnabled && (
+        <div className="mb-6 max-w-3xl rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-[13px] leading-relaxed text-sky-900">
+          <strong>Trims on cover pages is off, so none of this is printing yet.</strong> Rows,
+          wording and both ticks are all stored and all inert: covers currently list the layouts we
+          generate, exactly as they always have. Hiding a row today changes nothing — and it will
+          still change nothing already delivered once the switch is on. Use{" "}
+          <em>See it on a real cover</em> below to look at what turning it on would produce; the
+          switch itself is on the{" "}
+          <Link
+            href="/settings/cover-page"
+            className="font-medium text-sky-900 underline underline-offset-2"
+          >
+            Cover page
+          </Link>{" "}
+          tab.
+        </div>
+      )}
       <p className="max-w-2xl text-sm text-zinc-500">
         Every line a cover page can print. A row is written once here — never once per client —
         because &ldquo;Care label&rdquo; is a different layout for each client and a per-client list
@@ -240,6 +315,14 @@ export function PackagingRowsEditor({ initialRows }: Props) {
         once it is confirmed. Leave a box empty to use the wording shown greyed inside it. Changes
         apply to <strong>newly generated</strong> bundles — covers already in a supplier&rsquo;s
         folder keep their words until they are rebuilt.
+      </p>
+      <p className="mt-2 max-w-2xl text-sm text-zinc-500">
+        Each row also decides two things about the packaging itself:{" "}
+        <strong>always supplied by hand</strong> keeps the line an upload even once a layout
+        produces it, and <strong>print on the cover</strong> decides whether the row appears at all.
+        Neither is <em>Remove</em>: a removed row is only retired from this list and keeps printing
+        for everything already mapped to it. Both are future-only, like the wording above — no
+        cover that already exists changes until it is rebuilt.
       </p>
 
       <div className="mt-6 space-y-3">
@@ -262,13 +345,31 @@ export function PackagingRowsEditor({ initialRows }: Props) {
                 <input
                   type="checkbox"
                   checked={!r.artwork}
-                  onChange={(e) => patch(r.key, { artwork: !e.target.checked })}
+                  // Becoming a packing instruction clears the by-hand flag with
+                  // it: there is no file for anybody to supply, so leaving it
+                  // set would show a tick the server is about to throw away.
+                  onChange={(e) =>
+                    patch(
+                      r.key,
+                      e.target.checked
+                        ? { artwork: false, alwaysManual: false }
+                        : { artwork: true },
+                    )
+                  }
                 />
                 Packing instruction — no file, so no delivery status
               </label>
               {r.builtIn && (
                 <span className="rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[11px] text-zinc-500">
                   built in
+                </span>
+              )}
+              {/* Deliberately NOT the dashed/faded styling a removed row gets:
+                  the two states are different things, and looking alike is how
+                  a person conflates them. */}
+              {!r.printOnCover && (
+                <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">
+                  hidden from covers
                 </span>
               )}
               <button
@@ -284,9 +385,76 @@ export function PackagingRowsEditor({ initialRows }: Props) {
               <p className="mt-2 text-[12px] text-zinc-500">
                 Removed — it stops being offered for new mappings. Trim values already pointing at
                 it keep printing this row and its wording, so nothing on a cover changes until they
-                are re-mapped.
+                are re-mapped. To stop it printing, untick <strong>Print on the cover</strong>{" "}
+                below instead.
               </p>
             )}
+
+            {/* WHO SUPPLIES IT, and WHETHER IT PRINTS. Two decisions about the
+                kind of packaging itself, kept together and away from the
+                wording boxes, which are about what the cover says once it does
+                print. */}
+            <div className="mt-3 flex flex-wrap items-start gap-x-6 gap-y-3 border-t border-zinc-100 pt-3">
+              <div className="min-w-[17rem] flex-1">
+                <label
+                  className={`flex items-center gap-2 text-[13px] ${
+                    r.artwork ? "text-zinc-600" : "text-zinc-300"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={r.artwork && r.alwaysManual}
+                    disabled={!r.artwork}
+                    onChange={(e) => patch(r.key, { alwaysManual: e.target.checked })}
+                  />
+                  Always supplied by hand
+                </label>
+                <p className="mt-0.5 text-[11px] text-zinc-400">
+                  {r.artwork ? (
+                    <>
+                      The buyer sends us this artwork. The line stays a manual upload — and keeps
+                      its drop zone on the style&rsquo;s Review tab — even if a layout starts
+                      producing it. Without this, manual is only what a line falls back to when no
+                      layout answers it, so adding one would quietly take the drop zone away.
+                      Anything we do produce is still listed, under its own name.
+                    </>
+                  ) : (
+                    <>
+                      Not available on a packing instruction: there is no file for anyone to supply.
+                      Untick <strong>Packing instruction</strong> above first.
+                    </>
+                  )}
+                </p>
+              </div>
+              <div className="min-w-[17rem] flex-1">
+                <label className="flex items-center gap-2 text-[13px] text-zinc-600">
+                  <input
+                    type="checkbox"
+                    checked={r.printOnCover}
+                    onChange={(e) => patch(r.key, { printOnCover: e.target.checked })}
+                  />
+                  Print on the cover
+                </label>
+                <p className="mt-0.5 text-[11px] text-zinc-400">
+                  Off hides this <em>kind of packaging</em> wherever it comes from — no line, no
+                  status, no drop zone — however Monday words it, and including documents we
+                  generate ourselves. Taking a value off the row below hides <em>one Monday word</em>{" "}
+                  instead.
+                </p>
+                {/* The retroactive question, asked at the control rather than
+                    in the preamble, because THIS is the tick that reads like a
+                    delete — untick it and it is natural to assume the line has
+                    just come off the covers in the suppliers' folders. It has
+                    not, and it never will until those covers are rebuilt. */}
+                <p className="mt-1 text-[11px] text-zinc-500">
+                  <strong className="font-medium text-zinc-700">
+                    Nothing already delivered changes.
+                  </strong>{" "}
+                  Hiding a row takes effect on bundles generated from here on; covers already in a
+                  supplier&rsquo;s folder keep this line until they are rebuilt.
+                </p>
+              </div>
+            </div>
 
             <div className="mt-3 space-y-2">
               <Field label="Note">
@@ -372,6 +540,69 @@ export function PackagingRowsEditor({ initialRows }: Props) {
             {saving ? "Saving…" : "Save rows"}
           </button>
         </div>
+      </div>
+
+      {/* WHAT THIS SCREEN ACTUALLY PRODUCES, and the two things a person needs
+          once they have edited it: see it, and — if it matters today — apply
+          it. Both already existed elsewhere; neither was reachable from here,
+          which is how a wording change gets made and then quietly doubted.
+          Deliberately BELOW the rows: the order of the screen is edit, save,
+          look, and only then rebuild. */}
+      <div className="mt-10 rounded-lg border border-zinc-200 bg-white p-5">
+        <h2 className="text-sm font-semibold text-zinc-800">See it on a real cover</h2>
+        <p className="mt-1 max-w-3xl text-[13px] leading-relaxed text-zinc-500">
+          The rows above are a list; the cover is a page. This renders one, for a real style, so the
+          lines, the wording and the statuses can be read where they will actually be read.
+        </p>
+
+        <div className="mt-4">
+          <CoverSamplePdf
+            inputId="packaging-sample-style"
+            lead={
+              <>
+                Renders that style&rsquo;s actual cover with these packaging rows &mdash; their
+                wording, and whichever of them this style&rsquo;s Monday trims land on &mdash;
+                folded in.
+              </>
+            }
+            unsavedNote={
+              // The render happens server-side from the stored rows, so an
+              // unsaved edit is simply not in it. Said plainly, and only while
+              // it is true, rather than invented as a draft-rendering path: a
+              // preview that took a different route to the page would stop
+              // being evidence about the real one.
+              dirty ? (
+                <>
+                  <strong className="font-medium">You have unsaved changes.</strong> The sample is
+                  rendered from the saved rows, so press <em>Save rows</em> first if you want to see
+                  the edits above in it.
+                </>
+              ) : null
+            }
+          />
+        </div>
+
+        {/* The manual rebuild. It lives on the General information tab because
+            that is where people came looking for it, but the cover is ONE PDF —
+            it rebuilds the packaging list too. Linking rather than duplicating:
+            a second copy of a control that overwrites suppliers' files is a
+            second place for it to drift. */}
+        <p className="mt-4 max-w-3xl text-[13px] leading-relaxed text-zinc-500">
+          <strong className="font-medium text-zinc-800">
+            Editing these rows changes nothing that already exists.
+          </strong>{" "}
+          Saving applies to bundles generated from now on; every cover already sitting in a
+          supplier&rsquo;s folder keeps the lines and words it was built with. To correct one now,
+          use{" "}
+          <Link
+            href="/settings/cover-page?tab=general-info#regenerate-a-style"
+            className="font-medium text-zinc-700 underline underline-offset-2"
+          >
+            Regenerate a style
+          </Link>{" "}
+          on the <strong>General information</strong> tab — the cover is a single PDF, so it rebuilds
+          the packaging list along with everything else on it.
+        </p>
       </div>
     </div>
   );
