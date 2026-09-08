@@ -53,6 +53,19 @@ import {
 // deleting one would silently re-open every mapping that named it. A removed
 // row stops being offered and keeps resolving for anything still pointing at it.
 //
+// REMOVE IS NOT HIDE, and this screen has to make that legible because a person
+// reaching for one will reach for the other. Removing a row is about THIS LIST:
+// it stops being offered for new mappings, and every value already on it keeps
+// printing exactly as before. Hiding a row ("Print on the cover", off) is about
+// THE PAGE: the row stays in the list, stays mappable, and stops reaching
+// paper. Hiding changes what covers say, so those covers rebuild — which is why
+// it is a deliberate tick and not a side effect of tidying up.
+//
+// AND HIDING A ROW IS NOT THE SAME LEVER AS DROPPING A VALUE. Taking the last
+// row off a Monday value (below, or in Settings › Trims) hides that WORD; this
+// hides a KIND of packaging however it is worded, including documents this app
+// generates itself. Both are said in one line each next to the control.
+//
 // Empty wording box = the house default, shown greyed as the placeholder.
 
 type Props = {
@@ -150,6 +163,10 @@ export function PackagingRowsEditor({ initialRows }: Props) {
         sortOrder: (prev.length + 1) * 10,
         builtIn: false,
         active: true,
+        // A new row supplies itself the way every other row does and prints —
+        // both flags start at the value that changes nothing.
+        alwaysManual: false,
+        printOnCover: true,
       },
     ]);
   }, []);
@@ -197,6 +214,10 @@ export function PackagingRowsEditor({ initialRows }: Props) {
               delivered: r.delivered ?? "",
               sortOrder: (i + 1) * 10,
               active: r.active,
+              // Sent even for a packing instruction, where the control is
+              // disabled: the server strips it rather than trusting the form.
+              alwaysManual: r.alwaysManual,
+              printOnCover: r.printOnCover,
             })),
         }),
       });
@@ -241,6 +262,13 @@ export function PackagingRowsEditor({ initialRows }: Props) {
         apply to <strong>newly generated</strong> bundles — covers already in a supplier&rsquo;s
         folder keep their words until they are rebuilt.
       </p>
+      <p className="mt-2 max-w-2xl text-sm text-zinc-500">
+        Each row also decides two things about the packaging itself:{" "}
+        <strong>always supplied by hand</strong> keeps the line an upload even once a layout
+        produces it, and <strong>print on the cover</strong> decides whether the row appears at all.
+        Neither is <em>Remove</em>: a removed row is only retired from this list and keeps printing
+        for everything already mapped to it.
+      </p>
 
       <div className="mt-6 space-y-3">
         {shown.map((r) => (
@@ -262,13 +290,31 @@ export function PackagingRowsEditor({ initialRows }: Props) {
                 <input
                   type="checkbox"
                   checked={!r.artwork}
-                  onChange={(e) => patch(r.key, { artwork: !e.target.checked })}
+                  // Becoming a packing instruction clears the by-hand flag with
+                  // it: there is no file for anybody to supply, so leaving it
+                  // set would show a tick the server is about to throw away.
+                  onChange={(e) =>
+                    patch(
+                      r.key,
+                      e.target.checked
+                        ? { artwork: false, alwaysManual: false }
+                        : { artwork: true },
+                    )
+                  }
                 />
                 Packing instruction — no file, so no delivery status
               </label>
               {r.builtIn && (
                 <span className="rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[11px] text-zinc-500">
                   built in
+                </span>
+              )}
+              {/* Deliberately NOT the dashed/faded styling a removed row gets:
+                  the two states are different things, and looking alike is how
+                  a person conflates them. */}
+              {!r.printOnCover && (
+                <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700">
+                  hidden from covers
                 </span>
               )}
               <button
@@ -284,9 +330,65 @@ export function PackagingRowsEditor({ initialRows }: Props) {
               <p className="mt-2 text-[12px] text-zinc-500">
                 Removed — it stops being offered for new mappings. Trim values already pointing at
                 it keep printing this row and its wording, so nothing on a cover changes until they
-                are re-mapped.
+                are re-mapped. To stop it printing, untick <strong>Print on the cover</strong>{" "}
+                below instead.
               </p>
             )}
+
+            {/* WHO SUPPLIES IT, and WHETHER IT PRINTS. Two decisions about the
+                kind of packaging itself, kept together and away from the
+                wording boxes, which are about what the cover says once it does
+                print. */}
+            <div className="mt-3 flex flex-wrap items-start gap-x-6 gap-y-3 border-t border-zinc-100 pt-3">
+              <div className="min-w-[17rem] flex-1">
+                <label
+                  className={`flex items-center gap-2 text-[13px] ${
+                    r.artwork ? "text-zinc-600" : "text-zinc-300"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={r.artwork && r.alwaysManual}
+                    disabled={!r.artwork}
+                    onChange={(e) => patch(r.key, { alwaysManual: e.target.checked })}
+                  />
+                  Always supplied by hand
+                </label>
+                <p className="mt-0.5 text-[11px] text-zinc-400">
+                  {r.artwork ? (
+                    <>
+                      The buyer sends us this artwork. The line stays a manual upload — and keeps
+                      its drop zone on the style&rsquo;s Review tab — even if a layout starts
+                      producing it. Without this, manual is only what a line falls back to when no
+                      layout answers it, so adding one would quietly take the drop zone away.
+                      Anything we do produce is still listed, under its own name.
+                    </>
+                  ) : (
+                    <>
+                      Not available on a packing instruction: there is no file for anyone to supply.
+                      Untick <strong>Packing instruction</strong> above first.
+                    </>
+                  )}
+                </p>
+              </div>
+              <div className="min-w-[17rem] flex-1">
+                <label className="flex items-center gap-2 text-[13px] text-zinc-600">
+                  <input
+                    type="checkbox"
+                    checked={r.printOnCover}
+                    onChange={(e) => patch(r.key, { printOnCover: e.target.checked })}
+                  />
+                  Print on the cover
+                </label>
+                <p className="mt-0.5 text-[11px] text-zinc-400">
+                  Off hides this <em>kind of packaging</em> wherever it comes from — no line, no
+                  status, no drop zone — however Monday words it, and including documents we
+                  generate ourselves. Taking a value off the row below hides <em>one Monday word</em>{" "}
+                  instead. Hiding a row changes what covers say, so covers that carried this line
+                  rebuild the next time they are swept.
+                </p>
+              </div>
+            </div>
 
             <div className="mt-3 space-y-2">
               <Field label="Note">

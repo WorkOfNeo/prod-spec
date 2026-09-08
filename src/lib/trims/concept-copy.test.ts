@@ -235,12 +235,19 @@ test("the seed rows and the seed concept list are the same list", () => {
   // was written against, or the fallback would be a second, subtly different
   // catalogue.
   assert.deepEqual(
-    DEFAULT_TRIM_CONCEPT_ROWS.map(({ sortOrder, builtIn, active, ...c }) => {
-      assert.equal(builtIn, true);
-      assert.equal(active, true);
-      assert.equal(typeof sortOrder, "number");
-      return c;
-    }),
+    // alwaysManual/printOnCover come off with the row-only fields: they are
+    // stored per row and default to "changes nothing", so the seed rows must
+    // carry them at exactly those values or the day-one no-op would not hold.
+    DEFAULT_TRIM_CONCEPT_ROWS.map(
+      ({ sortOrder, builtIn, active, alwaysManual, printOnCover, ...c }) => {
+        assert.equal(builtIn, true);
+        assert.equal(active, true);
+        assert.equal(alwaysManual, false, "nothing is supplied by hand by decree");
+        assert.equal(printOnCover, true, "every seeded row prints");
+        assert.equal(typeof sortOrder, "number");
+        return c;
+      },
+    ),
     DEFAULT_TRIM_CONCEPTS,
   );
 });
