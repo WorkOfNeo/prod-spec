@@ -3,6 +3,13 @@ import assert from "node:assert/strict";
 import { DEFAULT_TRIM_RULES, splitTrimsCell } from "./classify";
 import { conceptCopyFromRows } from "./concept-copy";
 import {
+  DEFAULT_TRIM_CONCEPTS,
+  normalizeTrimConceptRows,
+  resetTrimConceptCatalogue,
+  setTrimConceptCatalogue,
+  type TrimConcept,
+} from "./concepts";
+import {
   assembleTrimManifest,
   manifestFingerprint,
   strongestKind,
@@ -461,4 +468,200 @@ test("a packing instruction is given no status wording, whatever is configured",
   }
   // The note is the one thing it may carry.
   assert.equal(docs[0].copy?.note, "Clear, 40 micron.");
+});
+
+// ---- The two per-row decisions ---------------------------------------------
+//
+// Both are read out of the synchronous concept registry, so each test installs
+// a catalogue and puts the seed back afterwards — a leaked flag would change
+// every later test in the file rather than fail this one.
+//
+// What is being pinned is the pair of meanings, because four booleans now hang
+// off a row and the risk is that two of them quietly become the same thing:
+//   alwaysManual — WHO supplies the file (not whether one exists: artwork)
+//   printOnCover — whether it reaches PAPER (not whether the editor offers it:
+//                  active, which is not visible from here at all — an inactive
+//                  row still resolves and still prints, by design)
+
+function withCatalogue<T>(overrides: Record<string, Partial<TrimConcept>>, fn: () => T): T {
+  try {
+    setTrimConceptCatalogue(
+      DEFAULT_TRIM_CONCEPTS.map((c) => (overrides[c.value] ? { ...c, ...overrides[c.value] } : c)),
+    );
+    return fn();
+  } finally {
+    resetTrimConceptCatalogue();
+  }
+}
+
+const HANGTAG_OUTPUT = output({
+  variantKey: "layout:h",
+  displayName: "Coop DK - Private Label - Hangtag",
+  concept: "HANGTAG",
+});
+
+const hangtagDocs = () =>
+  assembleTrimManifest({
+    trimLabels: ["Hangtag", "Wash Care Label with Oeko-tex Logo"],
+    outputs: [HANGTAG_OUTPUT],
+    rules: RULES,
+    overrides: {},
+  });
+
+test("without the flag, a matching output makes the line app-generated", () => {
+  // The control for the two tests below: this is the behaviour "always
+  // supplied by hand" exists to override, and it has to be the default.
+  const byName = new Map(hangtagDocs().map((d) => [d.displayName, d]));
+  assert.equal(byName.get("Hangtag")?.kind, "app");
+  assert.equal(byName.size, 2, "the output was claimed by the Monday entry");
+});
+
+test("always-supplied-by-hand keeps the line manual against a matching output", () => {
+  // The whole point: manual used to be only a FALLBACK, so the day somebody
+  // added a hangtag layout this line stopped being an upload line and the
+  // Review tab's drop zone for it disappeared. That the buyer draws it is a
+  // property of the thing, not of which layouts happen to exist.
+  withCatalogue({ HANGTAG: { alwaysManual: true } }, () => {
+    const docs = hangtagDocs();
+    const byName = new Map(docs.map((d) => [d.displayName, d]));
+    assert.equal(byName.get("Hangtag")?.kind, "manual");
+    assert.equal(byName.get("Hangtag")?.approved, false, "an upload is still owed");
+
+    // And the document we DO produce is not swallowed: it is listed further
+    // down under its own name, because the supplier receives it either way.
+    // Concealing it would be the original bug wearing a new hat.
+    assert.equal(byName.get("Coop DK - Private Label - Hangtag")?.kind, "app");
+    assert.equal(
+      docs.filter((d) => d.kind === "manual").map((d) => d.displayName).includes("Hangtag"),
+      true,
+      "so the Review tab builds a drop zone for it",
+    );
+  });
+});
+
+test("one always-by-hand concept is enough for a compound entry", () => {
+  // "Hanger & Hangtag" is one row naming two things. If the buyer sends the
+  // hangtag, the row still needs somewhere to receive it — a row cannot be half
+  // an upload zone, so ANY always-manual concept decides it. Kind is otherwise
+  // the STRONGEST of a row's concepts; this flag beats that ranking, which is
+  // exactly what it is for.
+  withCatalogue({ HANGTAG: { alwaysManual: true } }, () => {
+    const docs = assembleTrimManifest({
+      trimLabels: ["Hanger & Hangtag"],
+      outputs: [HANGTAG_OUTPUT],
+      rules: RULES,
+      overrides: {},
+    });
+    assert.equal(docs[0].displayName, "Hanger & Hangtag");
+    assert.equal(docs[0].kind, "manual");
+  });
+});
+
+test("a hidden row prints nothing — not the Monday entry, not the document we generate", () => {
+  // "Hidden" has to mean hidden, or it is not a lever anybody can trust. The
+  // concept leaves the picture before assembly, so there is no line, no status,
+  // and (because the Review tab builds its zones from the manifest's manual
+  // lines) no drop zone.
+  withCatalogue({ HANGTAG: { printOnCover: false } }, () => {
+    const docs = assembleTrimManifest({
+      trimLabels: ["Hangtag", "Wash Care Label with Oeko-tex Logo"],
+      outputs: [HANGTAG_OUTPUT],
+      rules: RULES,
+      overrides: {},
+    });
+    assert.deepEqual(
+      docs.map((d) => d.displayName),
+      ["Wash Care Label with Oeko-tex Logo"],
+    );
+  });
+});
+
+test("hiding one concept of a compound entry leaves the entry printing", () => {
+  // Unanimity to drop the row, the same way the STRONGEST concept decides its
+  // kind. The entry is on the buyer's list because of the half still printing,
+  // and the hidden half simply stops contributing — no match, no wording.
+  withCatalogue({ HANGER: { printOnCover: false } }, () => {
+    const docs = assembleTrimManifest({
+      trimLabels: ["Hanger & Hangtag"],
+      outputs: [],
+      rules: RULES,
+      overrides: {},
+    });
+    assert.equal(docs.length, 1);
+    // Not "info": with HANGER gone the row names only the hangtag, which is a
+    // document somebody still owes us.
+    assert.equal(docs[0].kind, "manual");
+  });
+});
+
+test("hiding a row cannot silence a Monday value nobody has mapped", () => {
+  // The two levers are different sizes and must not be confused. Hiding a row
+  // hides a KIND of packaging; a value that resolves to no row at all is not
+  // that kind of anything, so it keeps printing — which is the failure this
+  // whole feature exists to fix. To hide a WORD, map it to no rows at all
+  // (isSuppressedLabel), which is what Settings › Trims offers.
+  withCatalogue({ HANGTAG: { printOnCover: false } }, () => {
+    const docs = assembleTrimManifest({
+      trimLabels: ["Something nobody has mapped"],
+      outputs: [],
+      rules: RULES,
+      overrides: {},
+    });
+    assert.equal(docs.length, 1);
+    assert.equal(docs[0].kind, "manual");
+  });
+
+  // And the other lever still reaches it, hidden row or not.
+  const suppressed = assembleTrimManifest({
+    trimLabels: ["Something nobody has mapped"],
+    outputs: [],
+    rules: RULES,
+    overrides: { "something nobody has mapped": [] },
+  });
+  assert.deepEqual(suppressed, []);
+});
+
+test("neither flag set is byte-identical to the manifest before they existed", () => {
+  // The day-one no-op. The columns default to "changes nothing", and the proof
+  // is the fingerprint the refresh sweep compares: if it moved for one style,
+  // the whole book would re-render and re-push to suppliers.
+  const trims = [...TICKET_TRIMS, "Hanger & Hangtag", "Something nobody has mapped"];
+  const build = () =>
+    manifestFingerprint(
+      assembleTrimManifest({ trimLabels: trims, outputs: TICKET_OUTPUTS, rules: RULES, overrides: {} }),
+    );
+
+  const before = build();
+
+  // Through the normaliser, i.e. exactly what the table hands back once the
+  // migration has added the two columns at their defaults.
+  let after: string;
+  try {
+    setTrimConceptCatalogue(
+      normalizeTrimConceptRows(DEFAULT_TRIM_CONCEPTS.map((c, i) => ({ ...c, sortOrder: i * 10 }))),
+    );
+    after = build();
+  } finally {
+    resetTrimConceptCatalogue();
+  }
+  assert.equal(after, before);
+
+  // Not vacuous: ticking either flag DOES move it, which is why hiding a row
+  // rebuilds the covers that carried the line.
+  const hidden = withCatalogue({ HANGTAG: { printOnCover: false } }, build);
+  assert.notEqual(hidden, before);
+
+  // Always-by-hand only shows up where it has something to override, i.e.
+  // against a style that DOES declare a hangtag layout — which is the whole
+  // situation the flag was added for.
+  const withLayout = () =>
+    manifestFingerprint(
+      assembleTrimManifest({
+        trimLabels: trims,
+        outputs: [...TICKET_OUTPUTS, HANGTAG_OUTPUT],
+        rules: RULES,
+        overrides: {},
+      }),
+    );
+  assert.notEqual(withCatalogue({ HANGTAG: { alwaysManual: true } }, withLayout), withLayout());
 });
