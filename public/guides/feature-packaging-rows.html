@@ -10,7 +10,7 @@
   <div class="doc-head">
     <div class="kicker">Prod Spec · Feature guide · 3 of 5</div>
     <h1>Writing what the cover page says</h1>
-    <p class="sub">Every packaging line a cover page can print is written once, here &mdash; its name, the standing note under it, and the two wordings its status column uses.</p>
+    <p class="sub">Every packaging line a cover page can print is written once, here &mdash; its name, the standing note under it, the two wordings its status column uses, and which of the buyer&rsquo;s own trim words land on it.</p>
     <div class="crumb"><b>Settings &#9656; Cover page &#9656; Packaging rows</b>, the third tab beside <b>Cover page (all clients)</b> and <b>General information</b>.</div>
   </div>
 
@@ -18,13 +18,19 @@
   <div class="section">
     <h2><span class="n">1</span> One list, not one per client</h2>
     <p class="lead">A row is written once and shared by every client. That is the whole point: &ldquo;Care label&rdquo; is a different layout for each client, so a per-client list would have to be re-done for every customer we take on and would never be finished.</p>
-    <p class="lead">The rows are the shared targets. <b>Which Monday trim values land on which row</b> is a separate decision, made on <b>Settings &#9656; Trims</b> &mdash; see guide 2. This screen decides what a row is <i>called</i> and what it <i>says</i>; that one decides what reaches it.</p>
+    <p class="lead">The rows are the shared targets. This screen decides what a row is <i>called</i> and what it <i>says</i> &mdash; and, at the bottom of each row, <b>which Monday trim values land on it</b> (section 3).</p>
 
     <div class="flow">
       <div class="step"><span class="si">1</span><span class="st">The buyer writes a trims list on Monday, in their own words.</span></div>
-      <div class="step"><span class="si">2</span><span class="st"><b>Settings &#9656; Trims</b> decides which packaging row each of those words means.</span></div>
+      <div class="step"><span class="si">2</span><span class="st">Each of those words is matched onto a packaging row &mdash; from this screen, row by row, or from <b>Settings &#9656; Trims</b>, value by value. One mapping, two views of it.</span></div>
       <div class="step"><span class="si">3</span><span class="st"><b>This screen</b> decides the wording that row prints &mdash; its name, its note, and its two status wordings.</span></div>
       <div class="step"><span class="si">4</span><span class="st">The cover page prints the order&rsquo;s list, one line per row, with a status beside each.</span></div>
+    </div>
+
+    <div class="note">
+      <div class="h">The same mapping, from the other end</div>
+      <p><b>Settings &#9656; Trims</b> (guide 2) asks: <i>here is a Monday word &mdash; which rows does it mean?</i> It is the queue, worst-first, and it is where you work through vocabulary nobody has mapped yet. This screen asks the other question: <i>here is a line the cover prints &mdash; which Monday words land on it?</i></p>
+      <p>Neither is a subset of the other, and they are <b>not two mappings</b>. Both read and write the same one, so a change made here shows up there and the other way about.</p>
     </div>
   </div>
 
@@ -62,6 +68,15 @@
               <div style="margin-top:3px;border:1px solid #e4e4e7;border-radius:5px;padding:4px 8px;font-size:10px;color:#a1a1aa;">Approved</div>
             </div>
           </div>
+
+          <div style="margin-top:9px;border-top:1px solid #f4f4f5;padding-top:7px;">
+            <div style="font-size:8.5px;text-transform:uppercase;letter-spacing:.08em;color:#a1a1aa;">Monday trim values on this row <span class="mk in">7</span></div>
+            <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+              <span class="pill zc" style="font-size:9px;">Wash Care Label with Oeko-tex Logo<span style="color:#a1a1aa;padding-left:4px;">184</span><span style="color:#a1a1aa;padding-left:5px;">&times;</span></span>
+              <span class="pill zc" style="font-size:9px;">Care label + hangtag<span style="color:#a1a1aa;padding-left:4px;">57</span><span style="color:#a1a1aa;padding-left:4px;">&middot; also on Hangtag</span><span style="color:#a1a1aa;padding-left:5px;">&times;</span></span>
+              <span style="border:1px solid #e4e4e7;border-radius:5px;padding:2px 6px;font-size:9px;">Add a Monday value&hellip; &#9662;</span>
+            </div>
+          </div>
         </div>
 
         <div style="margin-top:8px;border:1px solid #e4e4e7;border-radius:8px;padding:10px 11px;">
@@ -83,17 +98,43 @@
       <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>The note</b> is a standing fact about the document. It prints in <b>every</b> state &mdash; whether the artwork has arrived or not &mdash; so put permanent instructions here, never anything time-dependent.</span></li>
       <li><span class="ln"><span class="mk">5</span></span><span class="tx"><b>Not yet delivered</b> is what the status column says while the artwork is still to come.</span></li>
       <li><span class="ln"><span class="mk">6</span></span><span class="tx"><b>Delivered</b> is what it says once the document is confirmed in the supplier&rsquo;s folder.</span></li>
+      <li><span class="ln"><span class="mk">7</span></span><span class="tx"><b>Monday trim values on this row</b> &mdash; the mapping, edited from the row&rsquo;s own side. Section 3.</span></li>
     </ol>
 
     <div class="note">
       <div class="h">An empty box is not a blank line</div>
-      <p>Leave either status box empty and the row prints the wording shown greyed inside it &mdash; the default. Type in the box only when this particular row should say something different.</p>
+      <p>Leave either status box empty and the row prints the wording shown greyed inside it &mdash; the default. Type in the box only when this particular row should say something different. Today those defaults are &ldquo;Waiting for Customer Information&rdquo; and &ldquo;Approved&rdquo;.</p>
+    </div>
+
+    <div class="note">
+      <div class="h">One Save, and nothing is saved until you press it</div>
+      <p>Everything on this screen &mdash; names, ticks, wording, and the Monday values on every row &mdash; is held locally until <b>Save rows</b>. The button is greyed while nothing has changed.</p>
+      <p>The rows and the value mapping are two different stores, written one after the other by that one button. If the second write fails, the first stands and the screen stays unsaved for the part that did not land, rather than pretending both went through.</p>
     </div>
   </div>
 
   <!-- SECTION 3 -->
   <div class="section">
-    <h2><span class="n">3</span> The two shapes a row can take</h2>
+    <h2><span class="n">3</span> Which Monday values land on this row</h2>
+    <p class="lead">At the foot of each row is the list of Monday <b>Trims</b> values that currently print on it, most-used first, with the number of styles carrying each. Remove one with its <b>&times;</b>; add one from <b>Add a Monday value&hellip;</b>, which offers everything not already here, again most-used first.</p>
+    <p class="lead">The vocabulary offered is the live one &mdash; already narrowed to orders the app will actually print, so words that survive only on long-dead orders are not put in front of you. It is read after the page opens, so for a moment the list says <i>Reading the Monday trim values&hellip;</i> while the wording boxes above are already usable.</p>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>&ldquo;also on Hangtag&rdquo;</b> beside a value means it lands on another row as well. That is legitimate &mdash; a compound entry like &ldquo;Hanger &amp; Hangtag&rdquo; is one Monday line naming two things &mdash; but it is shown here so that adding a value to this row never <i>looks</i> like moving it here.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>Removing the last row a value has is a real decision, not an undo.</b> The value stops printing on covers altogether &mdash; the same &ldquo;not packaging&rdquo; decision Settings &#9656; Trims offers. The row says so before you click, and again underneath.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>A row you have just added cannot be mapped yet.</b> It says <i>Save the row first</i> &mdash; a Monday value can only point at a row that exists. Save, and the picker appears.</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>Adding a value here settles it.</b> A value that was following the keyword rules becomes a decision of yours, keeping every row it already named plus this one. Nothing is dropped, and a later rule edit can no longer move it.</span></li>
+    </ol>
+
+    <div class="note warn">
+      <div class="h">If the vocabulary can&rsquo;t be read</div>
+      <p>Reading every order&rsquo;s Trims column is the one part of this screen that can fail on its own. When it does, the pickers stand down and say so rather than showing an empty list that would read as &ldquo;no values on this row&rdquo;. The row names and wording still save normally, and <b>Settings &#9656; Trims</b> still works.</p>
+    </div>
+  </div>
+
+  <!-- SECTION 4 -->
+  <div class="section">
+    <h2><span class="n">4</span> The two shapes a row can take</h2>
     <div class="variants">
       <div class="variant">
         <div class="vh">A document row <span class="pill em">has a status</span></div>
@@ -108,24 +149,35 @@
     </div>
   </div>
 
-  <!-- SECTION 4 -->
+  <!-- SECTION 5 -->
   <div class="section">
-    <h2><span class="n">4</span> When a change reaches a supplier</h2>
+    <h2><span class="n">5</span> When a change reaches a supplier</h2>
     <div class="note warn">
       <div class="h">Changes apply to newly generated bundles</div>
       <p>Editing a row changes what is <b>generated from now on</b>. A cover PDF already sitting in a supplier&rsquo;s folder keeps the words it was built with until it is rebuilt.</p>
       <p>To push a wording change out to bundles that already exist, use the tools on the <b>General information</b> tab next door &mdash; <i>Regenerate a style</i> for one order, or <i>Apply to existing bundles</i> for a whole client. Guide 4 covers both.</p>
     </div>
+
+    <div class="note warn">
+      <div class="h">And right now, none of it prints yet</div>
+      <p>Everything this screen writes &mdash; the buyer&rsquo;s own trims wording, the standing notes, the two status wordings &mdash; reaches a cover page only when <b>Print the Monday Trims list on cover pages</b> is on, under <b>Settings &#9656; Cover page</b>. That switch is <b>off</b> in production today, so covers print exactly as they always have: the documents this app produces, and nothing new underneath them.</p>
+      <p>The switch is all-or-nothing on purpose. An earlier version let the notes through while the list stayed hidden, which would have changed what a supplier reads before anyone had decided it should. So edit and prepare the rows freely &mdash; nothing you write here reaches a supplier until somebody turns the switch on and a bundle is generated afterwards.</p>
+    </div>
   </div>
 
-  <!-- SECTION 5 -->
+  <!-- SECTION 6 -->
   <div class="section">
-    <h2><span class="n">5</span> Adding and removing rows</h2>
-    <p class="lead">Add a row when the buyer keeps asking for something the list has no line for. Then go to <b>Settings &#9656; Trims</b> and point the Monday wording at it &mdash; a new row on its own changes nothing until something resolves to it.</p>
-    <div class="note">
-      <div class="h">Before you remove one</div>
-      <p><b>Remove</b> takes the row out of the shared list for every client. Check <b>Settings &#9656; Trims</b> first for values pointing at it: a trim value whose row has gone has nothing to resolve to, and will print as supplied separately until it is mapped somewhere else.</p>
+    <h2><span class="n">6</span> Adding and removing rows</h2>
+    <p class="lead"><b>Add a row</b> when the buyer keeps asking for something the list has no line for. A new row changes nothing on its own &mdash; nothing resolves to it until a Monday value does. Give it a name, press <b>Save rows</b>, and its value picker appears; then map the wording onto it, from this screen or from <b>Settings &#9656; Trims</b>.</p>
+
+    <div class="note good">
+      <div class="h">Remove doesn&rsquo;t delete &mdash; and no cover changes because of it</div>
+      <p><b>Remove</b> retires a row. It stops being offered when anybody maps a new value, and it disappears from this list. What it does <b>not</b> do is break anything already pointing at it: a trim value mapped to a retired row keeps printing that row, under that row&rsquo;s name, with that row&rsquo;s note and status wording, until somebody re-maps it deliberately.</p>
+      <p>That is on purpose. Rows are referred to by an id that outlives their name, so genuinely deleting one would silently re-open every mapping that named it &mdash; and a cover would quietly change for orders nobody was looking at.</p>
+      <p>Retired rows are hidden rather than gone. <b>Show N removed rows</b> at the foot of the list brings them back into view, each marked as removed, with <b>Restore</b> to put it back in circulation.</p>
     </div>
+
+    <p class="lead">So the sequence for genuinely retiring a line is: re-map the values that point at it (section 3, or Settings &#9656; Trims), <i>then</i> remove the row.</p>
   </div>
 
   <div class="tip">
@@ -134,7 +186,7 @@
 
   <div class="foot">
     <span>Prod Spec &middot; Feature guide 3 of 5 &mdash; Writing what the cover page says</span>
-    <span>Packaging rows &middot; notes &middot; status wording</span>
+    <span>Packaging rows &middot; notes &middot; status wording &middot; Monday values</span>
   </div>
 
 </body>
