@@ -12,6 +12,7 @@ import {
 } from "./supplier-folder";
 import { APPROVED_LAYOUTS_SUBFOLDER } from "./supplier-folder-names";
 import type { PoFolderMatch } from "./po-folder-matches";
+import type { CurrentOutput } from "@/lib/outputs/current-outputs";
 
 // =====================================================
 // Per-style, on-demand, BIDIRECTIONAL folder reconcile — "what is actually in
@@ -866,17 +867,24 @@ async function loadSiblingStyles(
 // JobAsset stamp — see (A) in the header. The stamp is kept as
 // `previousFileName` whenever the two disagree, which is what lets the diff say
 // "it's there, under the old name" instead of "it's gone".
+// `outputs` lets a caller that has ALREADY walked this style's current outputs
+// hand that walk in rather than pay for a second one. The walk is ~6 round
+// trips and the PO folder checks need the same list for their cover
+// expectation, so they resolve it once and thread it through. Omitted (every
+// other caller), it is loaded here exactly as before — the parameter changes
+// who pays for the read, never what the read returns.
 export async function loadExpectedFiles(
   style: { id: string; name: string },
   isSelf: boolean,
   variantsAlreadyFresh: boolean,
+  opts?: { outputs?: CurrentOutput[] },
 ): Promise<ExpectedFile[]> {
   const { db } = await import("@/lib/db");
   const { getCurrentOutputsForStyle } = await import("@/lib/outputs/current-outputs");
   const { resolveCurrentFileNames } = await import("./current-file-names");
 
   const [outputs, queueRows] = await Promise.all([
-    getCurrentOutputsForStyle(style.id),
+    opts?.outputs ?? getCurrentOutputsForStyle(style.id),
     db.supplierSendQueueItem.findMany({
       where: { styleId: style.id },
       select: { id: true, variantKey: true, sharePointStatus: true },

@@ -22,6 +22,7 @@ function row(over: Partial<CheckRow> & { id: string; fileName: string }): CheckR
     size: 1,
     lastModifiedAt: null,
     location: "approved-layouts",
+    kind: "file-superseded",
     verdict: "flagged for a reason",
     detail: null,
     owner: null,
