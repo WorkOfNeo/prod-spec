@@ -10,8 +10,8 @@
   <div class="doc-head">
     <div class="kicker">Prod Spec · Feature guide · 1 of 5</div>
     <h1>Checking an order&rsquo;s supplier folder</h1>
-    <p class="sub">Type a PO number and the app reads the supplier&rsquo;s folder for that order, tells you what looks wrong, and shows you everything it looked at. Two checks: cover pages that don&rsquo;t belong, and files whose name has drifted.</p>
-    <div class="crumb"><b>Checks</b> in the sidebar, just under <b>Delivery</b>. Open to reviewers and admins alike.</div>
+    <p class="sub">Type a PO number and the app reads the supplier&rsquo;s folder for that order, tells you what looks wrong, and shows you everything it looked at. Two checks: cover pages that don&rsquo;t belong, and files whose name has drifted. The same check can also be run across every order at once &mdash; section 6.</p>
+    <div class="crumb"><b>Checks</b> in the sidebar, just under <b>Delivery</b>. Open to reviewers and admins alike. <b>Check every PO</b>, top right, is the fleet-wide version.</div>
   </div>
 
   <!-- SECTION 1 -->
@@ -222,7 +222,7 @@
       <p><b>Anything that changed is refused.</b> A file renamed since the scan, or one the fresh check no longer flags, is left alone and reported back to you as refused &mdash; never acted on.</p>
       <p><b>Only flagged rows, only the offered action.</b> A file in the &ldquo;looks right&rdquo; group cannot be acted on at any price. A rename can only ever go to the one name the check resolved from the layout &mdash; you don&rsquo;t get to type a name.</p>
       <p><b>Files only, and only inside APPROVED LAYOUTS.</b> The app has never written anywhere else. The PO folder above it holds the order&rsquo;s own paperwork, which belongs to the customer and the supplier &mdash; those files are reported and never offered a button. Folders are never touched.</p>
-      <p><b>Nothing happens on its own.</b> There is no sweep, no schedule and no &ldquo;repair all&rdquo;. A person picks the rows and confirms them by name, every time, and at most 100 files in one go.</p>
+      <p><b>Nothing happens on its own.</b> Nothing is on a schedule, and there is no &ldquo;repair all&rdquo;. A person picks the rows and confirms them by name, every time, and at most 100 files in one go. The fleet-wide sweep in section 6 finds work across every order but cannot do any of it &mdash; repairs only ever happen here, one folder at a time.</p>
       <p><b>Every attempt is recorded</b> &mdash; including the refusals and the failures, with the verdict you were shown, and who did it.</p>
     </div>
 
@@ -241,7 +241,75 @@
 
   <!-- SECTION 6 -->
   <div class="section">
-    <h2><span class="n">6</span> When the folder can&rsquo;t be read</h2>
+    <h2><span class="n">6</span> The same check, across every order</h2>
+    <p class="lead">One folder at a time answers &ldquo;is this order tidy?&rdquo;. It never answers &ldquo;how much of this is there, across the book?&rdquo; &mdash; and that is the question worth planning around. <b>Check every PO</b>, the button at the top right of this page, runs the very same check on every purchase order in scope and collects what it finds in one place.</p>
+
+    <div class="mock">
+      <div class="chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">prod-spec.app / checks / sweep</span></div>
+      <div class="appbody"><div class="canvas" style="padding:12px 14px;">
+        <div class="ptitle" style="font-size:14px;">Checks &mdash; every purchase order</div>
+        <div class="pdesc">Runs the folder check on every PO in scope and collects what it finds in one place, grouped by what is actually wrong.</div>
+
+        <div style="margin-top:10px;border:1px solid #e4e4e7;border-radius:8px;padding:9px 11px;">
+          <div style="display:flex;align-items:baseline;gap:8px;">
+            <b style="font-size:10.5px;">Running</b>
+            <span style="font-size:9px;color:#71717a;">214 of 372 purchase orders at or above PO 100000 <span class="mk in">1</span></span>
+            <span class="btn ghost" style="margin-left:auto;padding:2px 8px;">Stop</span>
+          </div>
+          <div style="margin-top:6px;height:5px;border-radius:99px;background:#f4f4f5;overflow:hidden;"><div style="height:100%;width:57%;background:#18181b;"></div></div>
+          <div style="margin-top:8px;display:grid;grid-template-columns:repeat(4,1fr);gap:7px;font-size:9px;">
+            <div style="border:1px solid #e4e4e7;border-radius:6px;padding:5px 7px;"><div style="color:#a1a1aa;">Files flagged</div><b style="font-size:12px;">168</b></div>
+            <div style="border:1px solid #e4e4e7;border-radius:6px;padding:5px 7px;"><div style="color:#a1a1aa;">POs with findings</div><b style="font-size:12px;">61</b></div>
+            <div style="border:1px solid #e4e4e7;border-radius:6px;padding:5px 7px;"><div style="color:#a1a1aa;">Folders unreadable</div><b style="font-size:12px;">3</b> <span class="mk in">2</span></div>
+            <div style="border:1px solid #e4e4e7;border-radius:6px;padding:5px 7px;"><div style="color:#a1a1aa;">Checks that failed</div><b style="font-size:12px;">0</b></div>
+          </div>
+        </div>
+
+        <div style="margin-top:10px;font-weight:800;font-size:11px;">What is wrong, across every folder <span class="mk in">3</span></div>
+        <div style="margin-top:6px;border:1px solid #e4e4e7;border-radius:8px;">
+          <div style="padding:7px 10px;border-bottom:1px solid #f4f4f5;display:flex;gap:8px;align-items:flex-start;">
+            <div style="flex:1;">
+              <div style="font-size:10px;font-weight:700;">Under the name it was generated with</div>
+              <div class="cap" style="margin-top:1px;">The artwork is approved and correct; only the name is behind the layout&rsquo;s current template.</div>
+            </div>
+            <span style="font-size:9.5px;color:#52525b;white-space:nowrap;">142 files &middot; 48 POs</span>
+          </div>
+          <div style="padding:7px 10px;display:flex;gap:8px;align-items:flex-start;">
+            <div style="flex:1;">
+              <div style="font-size:10px;font-weight:700;">Cover for a style that is not on this PO</div>
+              <div class="cap" style="margin-top:1px;">It follows this app&rsquo;s cover naming convention, so it was generated here and landed in the wrong folder.</div>
+            </div>
+            <span style="font-size:9.5px;color:#52525b;white-space:nowrap;">4 files &middot; 4 POs</span>
+          </div>
+        </div>
+        <div class="cap" style="margin-top:5px;">Open a group and every file is listed with its purchase order, the same verdict that PO&rsquo;s own check would show, and a link to open it there. <span class="mk in">4</span></div>
+      </div></div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>It takes about an hour, and it runs in the background.</b> One folder at a time, deliberately &mdash; going faster would only get the app throttled by SharePoint and slow every other page that reads a folder. Start it, close the tab, come back later.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>&ldquo;Folders unreadable&rdquo; is not the same as clean.</b> A folder that could not be listed is an absence of evidence, counted separately and listed further down with the reason. If a whole run of folders is unreadable the sweep stops rather than recording hundreds of rows that would read as &ldquo;we looked and found nothing&rdquo;.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>Grouped by the fault, not by the folder.</b> That is the point of the page. Per order, &ldquo;one cover is under its old name&rdquo; is a footnote; across the book, &ldquo;142 files under an old name, all of them renameable&rdquo; is a piece of work someone can plan &mdash; and the handful of judgement calls hiding among them become findable.</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>Every row links back to that order&rsquo;s own check.</b> That is where you act on it.</span></li>
+    </ol>
+
+    <div class="note good">
+      <div class="h">The sweep never touches a file</div>
+      <p>It renames nothing and deletes nothing. There is no button on it that could &mdash; not per file, not per group, not &ldquo;fix all 142&rdquo;. Its entire job is to tell you <b>which folders are worth opening</b>.</p>
+      <p>That is not caution for its own sake. A sweep&rsquo;s findings are hours old by the time you read them, and colleagues rename things. Acting on a finding means opening that PO&rsquo;s own check, where the folder is read <i>live</i> and every file is confirmed by name before anything happens &mdash; all the safeguards in section 5, unchanged. A bulk repair straight off a scan would be acting on a picture of the past.</p>
+    </div>
+
+    <div class="note">
+      <div class="h">It survives being interrupted</div>
+      <p>The list of orders is written before the work starts and each one is ticked off as its folder is checked, so nothing lives only in memory. If the app is deployed mid-run the sweep stops and the page says <i>Interrupted &mdash; resumable</i>: <b>Resume</b> picks up the orders it never reached and keeps everything it had already found. <b>Stop</b> ends a run early and keeps its findings too.</p>
+    </div>
+
+    <p class="cap">Scope: every purchase order at or above the supplier-send cutoff &mdash; the same orders whose documents actually leave the building. The number in force is shown on the page while a sweep runs.</p>
+  </div>
+
+  <!-- SECTION 7 -->
+  <div class="section">
+    <h2><span class="n">7</span> When the folder can&rsquo;t be read</h2>
     <div class="note warn">
       <div class="h">No folder, no findings</div>
       <p>If SharePoint refuses, throttles, or the order&rsquo;s folder can&rsquo;t be identified, the page tells you so and shows <b>no checks at all</b>. That is deliberate: a page saying &ldquo;everything in this folder is unrecognised &mdash; delete?&rdquo; during a brief outage would be actively dangerous. A failed lookup is never treated as evidence that a file is missing or wrong.</p>
@@ -249,12 +317,12 @@
   </div>
 
   <div class="tip">
-    <b>A good habit:</b> run Checks on an order once its documents are approved and delivered. The flagged group tells you what to fix; the &ldquo;files that look right&rdquo; group tells you the check actually saw the folder. If a rename is offered, take it &mdash; it is the same file with the right name, and it never re-arms a supplier email.
+    <b>A good habit:</b> run Checks on an order once its documents are approved and delivered. The flagged group tells you what to fix; the &ldquo;files that look right&rdquo; group tells you the check actually saw the folder. If a rename is offered, take it &mdash; it is the same file with the right name, and it never re-arms a supplier email. Once in a while, run <b>Check every PO</b> instead: it will not fix anything, but it tells you where the work actually is.
   </div>
 
   <div class="foot">
     <span>Prod Spec &middot; Feature guide 1 of 5 &mdash; Checking an order&rsquo;s supplier folder</span>
-    <span>Checks &middot; cover pages &middot; file names &middot; safe deletion</span>
+    <span>Checks &middot; cover pages &middot; file names &middot; safe deletion &middot; the fleet-wide sweep</span>
   </div>
 
 </body>
