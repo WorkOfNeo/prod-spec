@@ -114,6 +114,7 @@ main()
   .then(() => batch11())
   .then(() => batch12())
   .then(() => batch13())
+  .then(() => batch14())
   .catch((err) => {
     console.error(err);
     process.exit(1);
@@ -782,4 +783,33 @@ async function batch13() {
 
   await closeBrowser();
   console.log(process.exitCode ? "BATCH 13 FAILED" : "BATCH 13 PASSED");
+}
+
+// ---------------------------------------------------------------------
+// Batch 14 coverage: {{compositionLines}} — one fibre per line. Proves the
+// renderer DRAWS the breaks (the .ol-line pre-wrap trick), not just that the
+// resolver returns them.
+// ---------------------------------------------------------------------
+async function batch14() {
+  const style = {
+    ...buildSampleStyleData(),
+    composition: [{ language: "en", text: "57% Cotton 38% Polyester 5% Elastane" }],
+  };
+  const DEF = LayoutDefSchema.parse({
+    pages: [{ id: "p1", title: "", widthMm: 30, heightMm: 60,
+      blocks: [
+        { id: "b1", rect: { col: 0, row: 0, colSpan: 12, rowSpan: 6 }, lines: ["{{compositionLines:en}}"] },
+        { id: "b2", rect: { col: 0, row: 6, colSpan: 12, rowSpan: 6 }, lines: ["{{composition:en}}"] },
+      ] }],
+  });
+  const html = await renderLayoutHtml(DEF, style, { mode: "production" });
+  assert(html.includes("57% Cotton\n38% Polyester\n5% Elastane"),
+    "compositionLines renders one fibre per line");
+  assert(html.includes(">57% Cotton 38% Polyester 5% Elastane<"),
+    "plain {{composition}} is untouched — the split is opt-in per token");
+  const pdf = await renderPdf({ html });
+  assert(pdf.length > 1000, `fibre-line layout renders a PDF (got ${pdf.length})`);
+
+  await closeBrowser();
+  console.log(process.exitCode ? "BATCH 14 FAILED" : "BATCH 14 PASSED");
 }

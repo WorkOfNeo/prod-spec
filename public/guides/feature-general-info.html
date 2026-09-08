@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Feature guide · General information, and re-issuing one order</title>
+<link rel="stylesheet" href="_guide.css" />
+</head>
+<body>
+
+  <div class="doc-head">
+    <div class="kicker">Prod Spec · Feature guide · 4 of 5</div>
+    <h1>General information, and re-issuing one order</h1>
+    <p class="sub">The requirements pages that print inside every bundle, written per client and business area &mdash; and the two ways to push a change out to bundles that already exist.</p>
+    <div class="crumb"><b>Settings &#9656; Cover page &#9656; General information</b>. Reviewers own this prose, so this is the one Settings screen in a reviewer&rsquo;s sidebar.</div>
+  </div>
+
+  <!-- SECTION 1 -->
+  <div class="section">
+    <h2><span class="n">1</span> Where this text ends up</h2>
+    <p class="lead">A bundle opens with the <b>cover page</b> block, which is the same for every client. General information comes straight after it, inside the same cover PDF &mdash; and unlike the cover block, there is <b>one set per client and business area</b>. Quality standards, AQL tables, packing requirements: whatever this client needs to say on every order.</p>
+
+    <div class="mock">
+      <div class="chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">prod-spec.app / settings / cover-page?tab=general-info</span></div>
+      <div class="appbody"><div class="canvas" style="padding:12px 14px;">
+        <div class="ptitle" style="font-size:14px;">Cover page</div>
+        <div class="pdesc">The text every bundle carries in front of the layouts.</div>
+        <div style="display:flex;gap:4px;margin-top:9px;border-bottom:1px solid #e4e4e7;padding-bottom:5px;">
+          <span class="pill zc" style="padding:3px 9px;">Cover page (all clients)</span>
+          <span class="pill bl" style="padding:3px 9px;">General information</span>
+        </div>
+
+        <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
+          <span style="font-size:10px;color:#3f3f46;">Client &amp; business area</span>
+          <span style="flex:1;border:1px solid #e4e4e7;border-radius:5px;padding:4px 8px;font-size:10px;">Acme Apparel &middot; Kids &nbsp;&#9662; <span class="mk in">1</span></span>
+        </div>
+
+        <div class="two" style="margin-top:9px;">
+          <div>
+            <div style="display:flex;align-items:baseline;"><span style="font-size:10px;font-weight:700;">Content</span><span class="cap" style="margin:0 0 0 auto;">Auto-saves as you type <span class="mk in">2</span></span></div>
+            <div style="border:1px solid #e4e4e7;border-radius:7px;margin-top:4px;overflow:hidden;">
+              <div style="background:#fafafa;border-bottom:1px solid #e4e4e7;padding:5px 7px;display:flex;gap:5px;flex-wrap:wrap;font-size:8.5px;color:#52525b;">
+                <span>H1</span><span>H2</span><span>H3</span><span><b>B</b></span><span><i>I</i></span><span>&bull; List</span><span>1. List</span><span>Quote</span><span>&#8212;</span><span>Table</span><span>Image</span>
+                <span style="margin-left:auto;background:#18181b;color:#fff;border-radius:4px;padding:1px 6px;">Visual</span><span style="padding:1px 6px;">Markdown <span class="mk in">3</span></span>
+              </div>
+              <div style="padding:8px 9px;">
+                <div style="font-weight:800;font-size:11px;">General requirements</div>
+                <div style="font-size:9px;color:#3f3f46;margin-top:4px;line-height:1.6;">&bull; Garments must comply with the client&rsquo;s restricted substance list.<br/>&bull; Max shrinkage: -2 / +5 %.<br/>&bull; Prints and heat transfers must be 100 % PVC free.</div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;">General information preview <span class="mk in">4</span></div>
+            <div class="pdf" style="margin-top:4px;height:118px;">
+              <span class="tag">PDF</span>
+              <div style="font-weight:800;font-size:9px;">General requirements</div>
+              <div class="ln" style="margin-top:6px;width:92%;"></div>
+              <div class="ln" style="width:86%;"></div>
+              <div class="ln" style="width:78%;"></div>
+              <div class="ln" style="width:88%;"></div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>Pick the client and business area first.</b> Everything you type belongs to that pairing and to no other &mdash; the same client&rsquo;s other business areas have their own text.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>It auto-saves as you type.</b> There is no Save button and no draft: what you leave on screen is what the next bundle prints.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>Visual or Markdown.</b> Write with the toolbar, or switch to Markdown and type it &mdash; <code>#</code> and a space for a heading, <code>-</code> and a space for a list. Tables and images insert from the toolbar.</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>The preview is the printed page</b>, refreshed after each auto-save. Check tables here: they are the thing most likely to look different on paper than in the editor.</span></li>
+    </ol>
+  </div>
+
+  <!-- SECTION 2 -->
+  <div class="section">
+    <h2><span class="n">2</span> Saving affects bundles generated from now on</h2>
+    <div class="note warn">
+      <div class="h">Existing bundles keep the text they were built with</div>
+      <p>A cover PDF is rendered when a bundle is generated and then frozen. Editing this text does not reach back into bundles that already exist &mdash; including any already delivered to a supplier. They keep their old wording until something rebuilds them.</p>
+      <p>That is usually what you want. When it isn&rsquo;t, there are two tools directly below the editor, and the difference between them is scope.</p>
+    </div>
+
+    <div class="compare">
+      <div class="col">
+        <h3>Regenerate a style</h3>
+        <div class="body">
+          <ul>
+            <li>One style number, across every order carrying it.</li>
+            <li>For &ldquo;this order went out with the wrong text&rdquo;.</li>
+            <li>Section 3.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="col">
+        <h3>Apply to existing bundles</h3>
+        <div class="body">
+          <ul>
+            <li>Every style under the client and business area you have open.</li>
+            <li>For a wording change everybody should see.</li>
+            <li>Section 4.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 3 -->
+  <div class="section">
+    <h2><span class="n">3</span> Regenerate a style</h2>
+    <p class="lead">Type a style number, see exactly which orders carry it, then rebuild those covers and push them straight back into the suppliers&rsquo; folders &mdash; replacing the copy each supplier holds now.</p>
+
+    <div class="note">
+      <div class="h">A style number is not one order</div>
+      <p>The same number normally appears several times &mdash; once per purchase order, and once per colourway. Correcting &ldquo;that style&rdquo; means all of them, so the search names every match and the run works through the whole list. &ldquo;Found 4, fixed 1&rdquo; would leave three suppliers on the old PDF while the app read as done.</p>
+    </div>
+
+    <div class="mock">
+      <div class="appbody"><div class="canvas" style="padding:12px 14px;">
+        <div style="font-weight:800;font-size:11px;">Regenerate a style</div>
+        <div class="cap" style="margin-top:2px;">Each style&rsquo;s cover PDF is rebuilt with the General information of the client it belongs to, and pushed back to its supplier&rsquo;s folder. Nothing else is touched: no other style, no outputs, no approvals.</div>
+        <div style="margin-top:8px;display:flex;gap:7px;align-items:center;">
+          <span style="font-size:10px;">Style number:</span>
+          <span style="border:1px solid #e4e4e7;border-radius:5px;padding:4px 9px;font-size:10px;width:110px;">4471</span>
+          <span class="btn ghost">Find style</span>
+        </div>
+
+        <div style="margin-top:10px;border:1px solid #fde68a;background:#fffbeb;border-radius:8px;padding:10px 11px;">
+          <div style="font-size:10px;font-weight:700;color:#92400e;">3 styles carry that number &mdash; the same style number appears once per order and once per colourway. All of them are corrected together. <span class="mk in">1</span></div>
+          <div style="margin-top:7px;background:#fff;border:1px solid #fde68a;border-radius:6px;font-size:9px;">
+            <div style="padding:5px 8px;border-bottom:1px solid #fef3c7;display:flex;gap:8px;align-items:baseline;"><span>&#9745;</span><b style="font-family:ui-monospace,Menlo,monospace;">4471</b><span style="color:#71717a;">Acme Apparel</span><span style="color:#a1a1aa;">100423</span><span style="color:#a1a1aa;">Northwind Knitwear</span><span style="margin-left:auto;color:#a1a1aa;">APPROVED</span></div>
+            <div style="padding:5px 8px;border-bottom:1px solid #fef3c7;display:flex;gap:8px;align-items:baseline;"><span>&#9745;</span><b style="font-family:ui-monospace,Menlo,monospace;">4471</b><span style="color:#71717a;">Acme Apparel</span><span style="color:#a1a1aa;">100511</span><span style="color:#a1a1aa;">Delta Garments</span><span style="margin-left:auto;color:#a1a1aa;">IN_REVIEW</span></div>
+            <div style="padding:5px 8px;">
+              <div style="display:flex;gap:8px;align-items:baseline;opacity:.6;"><span>&#9744;</span><b style="font-family:ui-monospace,Menlo,monospace;">4471</b><span style="color:#71717a;">Nordvest Retail</span><span style="color:#a1a1aa;">no PO number</span><span style="margin-left:auto;color:#a1a1aa;">DRAFT</span></div>
+              <div style="padding-left:14px;color:#92400e;font-size:8.5px;margin-top:2px;">Never generated a bundle, so there is no cover to rebuild. It will include the current General information the first time it generates. <span class="mk in">2</span></div>
+            </div>
+          </div>
+          <div style="margin-top:7px;font-size:9.5px;color:#92400e;"><b>2 styles</b> will have their cover PDF rebuilt and re-uploaded, replacing the copies the suppliers have now. Outputs are not re-rendered and approvals are untouched.</div>
+          <div style="margin-top:6px;font-size:9px;color:#92400e;">&#9744; <b>Also email the suppliers</b> about it in tonight&rsquo;s digest. Off by default &mdash; the corrected files reach their folders either way. <span class="mk in">3</span></div>
+          <div style="margin-top:8px;display:flex;gap:6px;"><span class="btn dark">Regenerate and re-upload 2 styles</span><span class="btn ghost">Cancel</span></div>
+        </div>
+      </div></div>
+    </div>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>Nothing runs until you have seen the list.</b> Every match is named with its client, PO number, supplier and status while the button is still unpressed &mdash; this overwrites files in suppliers&rsquo; folders, and that should never be a surprise. All of them are ticked by default; untick any you don&rsquo;t want.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>A style that never generated a bundle can&rsquo;t be picked</b> &mdash; there is no cover to rebuild. It will carry the current text the first time it generates, so nothing is lost.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>No email unless you ask for one.</b> The corrected file reaches the supplier&rsquo;s folder either way; the digest email is a separate, deliberate choice.</span></li>
+    </ol>
+
+    <div class="note good">
+      <div class="h">The search covers every client &mdash; and that is safe</div>
+      <p>The number you type is the number you want fixed, whichever client&rsquo;s tab you happen to have open. A match belonging to a different client is allowed and is <b>labelled as such</b>, because its cover prints <i>that</i> client&rsquo;s General information &mdash; each style is always rebuilt against its own client&rsquo;s text, never against the one on screen.</p>
+    </div>
+
+    <p class="lead">Each style is rebuilt and pushed in turn, so it takes a moment per style, and the result reports <b>every one of them separately</b>. &ldquo;Rebuilt&rdquo; and &ldquo;delivered&rdquo; are separate facts and either can fail on its own, so a run where one of four failed never renders as a single green tick.</p>
+    <table class="tbl">
+      <tr class="head-strong"><th style="width:26%">Result</th><th>What it means</th></tr>
+      <tr><td><b>Rebuilt and delivered</b></td><td>Done. The report names the folder it landed in.</td></tr>
+      <tr><td><b>Rebuilt, not delivered</b></td><td>Rebuilt fine, but a gate stopped delivery &mdash; no supplier to deliver to, no generated layouts yet, below the supplier-send PO cutoff, or supplier batch-send is switched off. The reason is spelled out, and an armed order waits for the switch.</td></tr>
+      <tr><td><b>Rebuilt, delivery failed</b></td><td>Delivery was attempted and failed. Not a success &mdash; look at the error and try again.</td></tr>
+      <tr><td><b>No cover</b></td><td>Never generated a bundle. Nothing to rebuild.</td></tr>
+    </table>
+  </div>
+
+  <!-- SECTION 4 -->
+  <div class="section">
+    <h2><span class="n">4</span> Apply to existing bundles</h2>
+    <p class="lead">The broad instrument: rebuild the cover PDF of every style under the client and business area you have open that was generated <i>before</i> your edit. Right after a wording change everyone should see; much too broad when one order needs correcting.</p>
+    <p class="lead">It counts the styles first, then asks you to confirm with four choices:</p>
+
+    <ol class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>Skip styles where every output is approved</b> &mdash; on by default. Their cover shows no status column at all, so rebuilding changes nothing a supplier can see, while still overwriting the file for an order that is already finished. Untick it only if you changed something that shows on <i>every</i> cover.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>Push updated covers to the suppliers&rsquo; folders</b> &mdash; on by default, overwriting the copy they hold. <b>No email goes out</b>; the file simply becomes the current one. Untick to refresh the covers in-app only.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>Skip covers that already say the right thing</b> &mdash; on by default. Each rebuild records what it printed, so a second run costs nothing and a stopped run resumes where it left off.</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>Also email the suppliers</b> in tonight&rsquo;s digest &mdash; off by default. A bulk refresh across old orders is not something a supplier needs an email about. Tick it only if the change is one they must actually read.</span></li>
+    </ol>
+
+    <div class="note">
+      <div class="h">Either way, outputs and approvals are untouched</div>
+      <p>Both tools rebuild the <b>cover PDF</b> only. No layout is re-rendered, no approval is reset, and nothing is sent back for review.</p>
+    </div>
+  </div>
+
+  <div class="tip">
+    <b>Which one?</b> If a supplier is holding a PDF with the wrong text for one order, use <b>Regenerate a style</b> &mdash; type the number, check the list, run it. If you have just rewritten the requirements everybody works to, use <b>Apply to existing bundles</b> and leave the defaults alone.
+  </div>
+
+  <div class="foot">
+    <span>Prod Spec &middot; Feature guide 4 of 5 &mdash; General information &amp; re-issuing one order</span>
+    <span>Per client &times; business area &middot; regenerate a style &middot; apply to existing</span>
+  </div>
+
+</body>
+</html>

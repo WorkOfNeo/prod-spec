@@ -1,3 +1,5 @@
+import type { StyleData } from "@/lib/pdf/types";
+
 // =====================================================
 // Composition line-splitting — a CLIENT-SAFE (no server imports) text
 // transform applied to every {{composition:<lang>}} value by the resolver
@@ -193,4 +195,127 @@ export function splitCompositionByColour(
   if (declared.size === 0) return null;
   const known = aliases.length > 0 ? withAliases(declared, aliases) : declared;
   return parts.every((p) => known.has(normaliseColourKey(p.label))) ? parts : null;
+}
+
+// =====================================================
+// One fibre per line — {{compositionLines:<lang>}}.
+//
+// The part split above gives each labelled PART its own line. This goes one
+// level finer and gives each FIBRE its own line, for narrow labels where
+// "57% Cotton 38% Polyester 5% Elastane" can't fit across:
+//
+//   95% Cotton          Outer: 91% Polyester
+//   5% Elastane         9% Elastane
+//
+// The delimiter is the PERCENTAGE, not a comma. Buyers write fibre lists both
+// ways — "95% Cotton 5% Elastane" (space) and "82% Acrylic, 17% Polyester, 1%
+// Elastane" (comma) — and the space-separated form is by far the more common,
+// so splitting on commas would leave most values untouched. Breaking before
+// each "NN%" clause handles both, and drops a comma stranded at the break.
+//
+// Applied ON TOP of the part split, per line, so a part label stays with its
+// own first fibre. A line carrying fewer than two percentages is left exactly
+// as it is — a fibre-free value ("Upper: Textile"), a single fibre, or a
+// descriptive phrase never gains a break.
+// =====================================================
+
+// A percentage clause: "95%", "1.5 %", "1,5%". Buyers write decimals both ways.
+const PERCENT_AT = /\d+(?:[.,]\d+)?\s*%/g;
+
+// Split ONE line before each percentage after the first.
+function splitFibreLine(line: string): string {
+  const marks = [...line.matchAll(PERCENT_AT)];
+  if (marks.length < 2) return line;
+  const out: string[] = [];
+  let start = 0;
+  for (const m of marks.slice(1)) {
+    // Trim back over the separator between the previous fibre and this one, so
+    // "82% Acrylic, 17% …" doesn't leave the comma dangling at line end.
+    const piece = line.slice(start, m.index).replace(/[\s,;/]+$/, "");
+    if (piece.trim()) out.push(piece.trim());
+    start = m.index;
+  }
+  const tail = line.slice(start).trim();
+  if (tail) out.push(tail);
+  return out.join("\n");
+}
+
+// Composition with every fibre on its own line. Runs the part split first, so
+// a multi-part composition still separates its parts and each part's fibres
+// then break within it. Idempotent: an already-split value has one percentage
+// per line, so a second pass changes nothing.
+export function formatCompositionFibreLines(text: string): string {
+  if (!text) return text;
+  return formatCompositionLines(text)
+    .split("\n")
+    .map(splitFibreLine)
+    .join("\n");
+}
+
+// =====================================================
+// Colours a style DECLARES — the vocabulary every colour match in this module
+// is made against. Three places one can be stated: the parenthesised tokens in
+// the style NAME (a multi-pack names its colours there —
+// "ST40002(LGM)+ST40003(Green)"), the Style board colour, and the colours
+// parsed off the PO variant labels.
+//
+// Lives here rather than in render.ts so the token resolvers can reach it
+// without importing the renderer (which would close an import cycle).
+// =====================================================
+export function declaredColours(style: StyleData): string[] {
+  return [
+    ...[...style.styleName.matchAll(/\(([^)]{1,40})\)/g)].map((m) => m[1]),
+    style.colour?.name ?? "",
+    ...(style.eanVariants ?? []).map((v) => v.colour ?? ""),
+  ].filter((c) => c.trim());
+}
+
+// =====================================================
+// {{compositionMixes:<lang>}} — the two compositions of a pack, one per line,
+// WITHOUT the colour in front:
+//
+//   Pink: 95% Cotton 5% Elastane, Grey melange: 57% Cotton 38% Polyester …
+//     ->
+//   95% Cotton 5% Elastane
+//   57% Cotton 38% Polyester 5% Elastane
+//
+// For the label that carries BOTH qualities on one piece of artwork — the
+// alternative to splitting into a document per colour (splitByComposition).
+//
+// The label is dropped ONLY when it is a colour: the split's own rule applies
+// unchanged, so every part must name a colour this style declares. A
+// garment-part composition ("Outer: … , Lining: …") keeps its labels and
+// formats exactly like {{composition}}, because there the label is part of the
+// declaration and dropping it would lose what the fibres belong to.
+//
+// The two compositions become indistinguishable once the colours are gone —
+// that is the point of the token, and the reason it refuses to do the same to
+// a garment-part value.
+//
+// Colours that share a composition COLLAPSE to one line: with the colour
+// stripped, a second identical line says nothing and just costs label space.
+// (Deliberately the opposite of splitByComposition, which keeps a document per
+// colour even when the fibres match — there each file is a separate thing to
+// approve; here the two lines would be the same words twice.)
+// =====================================================
+export function formatCompositionMixLines(
+  text: string,
+  knownColours: readonly string[],
+  aliases: ReadonlyArray<readonly string[]> = [],
+): string {
+  const parts = splitCompositionByColour(text, knownColours, aliases);
+  // Not colour-keyed (a single composition, or garment parts) — behave exactly
+  // like {{composition}} so this token is never the one that quietly drops a
+  // meaningful label.
+  if (!parts) return formatCompositionLines(text);
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const part of parts) {
+    // Compare on a normalised key (case and spacing), print the first spelling.
+    const key = part.text.toLowerCase().replace(/\s+/g, " ").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    lines.push(part.text);
+  }
+  return lines.join("\n");
 }

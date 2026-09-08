@@ -22,6 +22,7 @@ import {
   type FolderFile,
 } from "./po-checks";
 import { coverNameBody } from "./file-name-shape";
+import { mapWithConcurrency, STYLE_CONCURRENCY } from "./style-pool";
 
 // =====================================================
 // Composition + I/O for the /checks page: resolve the PO folder ONCE, work out
@@ -96,6 +97,14 @@ function representativeStyle(styles: PoStyleRow[]): PoStyleRow | null {
   return styles.find((s) => s.supplierPoFolderName?.trim()) ?? styles[0];
 }
 
+// Both per-style passes below run through the bounded pool. Why bounded rather
+// than `Promise.all`, and why the results are put back in style order
+// afterwards, is documented in style-pool.ts — the short version is that the
+// work is round-trip-bound over a connection-limited proxy, and a report a
+// person acts on has to be reproducible.
+const mapStyles = <T,>(styles: readonly PoStyleRow[], fn: (style: PoStyleRow) => Promise<T>) =>
+  mapWithConcurrency(styles, STYLE_CONCURRENCY, fn);
+
 // The cover each style on the PO expects TODAY, resolved through the same
 // resolver the rename machinery uses. A style with no generated cover simply
 // has no expectation: "this style never produced a cover" is a generation
@@ -104,8 +113,8 @@ async function loadExpectedCovers(styles: PoStyleRow[]): Promise<ExpectedCover[]
   const { getCurrentOutputsForStyle } = await import("@/lib/outputs/current-outputs");
   const { resolveCurrentFileNames } = await import("@/lib/sharepoint/current-file-names");
 
-  const out: ExpectedCover[] = [];
-  for (const s of styles) {
+  const perStyle = await mapStyles(styles, async (s) => {
+    const rows: ExpectedCover[] = [];
     let covers: Array<{ jobAssetId: string; variantKey: string; stored: string }>;
     try {
       const outputs = await getCurrentOutputsForStyle(s.id);
@@ -119,10 +128,13 @@ async function loadExpectedCovers(styles: PoStyleRow[]): Promise<ExpectedCover[]
       // One unreadable style must not sink the PO's report — but it WOULD
       // understate the expectation, and an understated expectation is how a
       // legitimate cover gets proposed for deletion. Logged, never swallowed.
+      // Running the styles concurrently does not soften this: the catch stays
+      // INSIDE the per-style unit, so a failure still costs exactly its own
+      // style's expectation and nothing else's.
       console.warn(`[checks] cover expectation failed for style ${s.id} on ${s.poNumber}:`, err);
-      continue;
+      return rows;
     }
-    if (covers.length === 0) continue;
+    if (covers.length === 0) return rows;
 
     let resolved: Awaited<ReturnType<typeof resolveCurrentFileNames>> = new Map();
     try {
@@ -141,7 +153,7 @@ async function loadExpectedCovers(styles: PoStyleRow[]): Promise<ExpectedCover[]
       // one — that is current-file-names.ts' rule and it holds here too.
       const currentName = sanitizeFileName(r?.kind === "resolved" ? r.fileName : c.stored);
       const storedSanitised = sanitizeFileName(c.stored);
-      out.push({
+      rows.push({
         styleId: s.id,
         styleName: s.name,
         styleSlugs: coverSlugsFor(s.name, currentName, storedSanitised),
@@ -149,8 +161,10 @@ async function loadExpectedCovers(styles: PoStyleRow[]): Promise<ExpectedCover[]
         previousName: storedSanitised.toLowerCase() === currentName.toLowerCase() ? null : storedSanitised,
       });
     }
-  }
-  return out;
+    return rows;
+  });
+
+  return perStyle.flat();
 }
 
 // Every spelling of a style that could open a cover name. Style.name is the
@@ -281,14 +295,20 @@ export async function runPoChecksResolved(input: {
   const { ensureLayoutVariantsLoaded } = await import("@/lib/output-layouts/variants");
   await ensureLayoutVariantsLoaded(true);
 
-  const expectedDocs: ExpectedDoc[] = [];
-  for (const s of styles) {
-    try {
-      expectedDocs.push(...(await loadExpectedFiles({ id: s.id, name: s.name }, true, true)));
-    } catch (err) {
-      console.warn(`[checks] expected-set failed for style ${s.id} on ${input.poNumber}:`, err);
-    }
-  }
+  // Bounded-concurrent, and flattened in style order afterwards — see mapStyles
+  // for why both halves of that matter.
+  const expectedDocs: ExpectedDoc[] = (
+    await mapStyles(styles, async (s) => {
+      try {
+        return await loadExpectedFiles({ id: s.id, name: s.name }, true, true);
+      } catch (err) {
+        // Per-style isolation, unchanged: one style whose expected set cannot be
+        // read costs its own rows and no one else's.
+        console.warn(`[checks] expected-set failed for style ${s.id} on ${input.poNumber}:`, err);
+        return [] as ExpectedDoc[];
+      }
+    })
+  ).flat();
   const expectedCovers = await loadExpectedCovers(styles);
 
   const present = await listFolderFiles(target);

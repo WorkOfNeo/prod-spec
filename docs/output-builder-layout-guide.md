@@ -354,6 +354,22 @@ the 13 genuine two-quality packs and left the other 94 alone. One unmatched
 label disqualifies the whole string, so a style whose composition names colours
 it doesn't carry keeps its single document until the data is fixed.
 
+**Two compositions on ONE label.** `{{compositionMixes:<lang>}}` is the
+alternative to splitting: it prints each composition on its own line with the
+colour stripped, for artwork that carries both qualities.
+
+    Pink: 95% Cotton 5% Elastane, Grey melange: 57% Cotton 38% Polyester …
+      ->  95% Cotton 5% Elastane
+          57% Cotton 38% Polyester 5% Elastane
+
+Colours that share a composition collapse to one line — with the colour gone,
+a second identical line is the same words twice. That is deliberately the
+opposite of `splitByComposition`, which keeps a document per colour even when
+the fibres match: there each file is its own thing to approve. The label is
+stripped only when every part names a colour the style declares (the same rule
+as the split), so a garment-part composition keeps its `Outer:` / `Lining:` and
+formats exactly like `{{composition}}`.
+
 **Colour aliases.** The same colour is routinely written two ways — the
 abbreviation in the style name (`LGM`) and the spelt-out colour in the
 composition (`Grey melange`) — and exact matching rejects that pair. Declare
@@ -368,6 +384,32 @@ split, so one file-name expression serves a layout whose styles don't all
 split. Without the fallback an unsplit style resolves it empty — a stranded
 `--` in the file name, and on the label itself a `missing` chip that blocks
 approval.
+
+### `{{compositionLines}}` — one fibre per line
+
+`{{compositionLines:<lang>}}` resolves the same value as
+`{{composition:<lang>}}` with every fibre on its own line, for narrow labels
+where a run can't fit across:
+
+    {{composition:en}}        57% Cotton 38% Polyester 5% Elastane
+    {{compositionLines:en}}   57% Cotton
+                              38% Polyester
+                              5% Elastane
+
+The delimiter is the **percentage, not a comma** — buyers write fibre lists
+both ways (`95% Cotton 5% Elastane` and `82% Acrylic, 17% Polyester, …`) and
+the space-separated form is the more common, so a comma split would leave most
+values untouched. A line carrying fewer than two percentages never breaks, so
+`100% Cotton` and a fibre-free value (`Upper: Textile`) are left alone.
+
+It composes with everything above: the part split runs first (so a label keeps
+its own first fibre — `Outer: 91% Polyester` / `9% Elastane`), and on a
+per-composition split row it breaks that row's own fibres.
+
+A separate token rather than an argument because `{{composition}}`'s one
+argument is the LANGUAGE and `TOKEN_RE`'s second argument is numeric-only (it
+exists for `{{barcode:…:heightMm}}`). Same limitation as every multi-line
+value: a `fitWidth` block collapses the breaks to spaces.
 
 Note this is independent of the *line* split: an un-split label already prints
 one part per line (see `composition.ts`), and that stays true for garment-part

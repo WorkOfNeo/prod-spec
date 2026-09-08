@@ -27,7 +27,7 @@ import {
 import { tokenMeta, TABLE_TOTAL_ARG, type BarcodeSource, type LogoSource } from "./token-meta";
 import { lineOverrideKey } from "./line-keys";
 import { narrowSizeScopedText } from "./size-scoped-text";
-import { parseCompositionParts, splitCompositionByColour } from "./composition";
+import { declaredColours, parseCompositionParts, splitCompositionByColour } from "./composition";
 import { parseSizeForm, sizeFormRun } from "./size-form";
 import { formatSizeRatioTotal } from "./size-ratio";
 import { CALC_RE, fieldsInCalcExpression } from "./calc";
@@ -120,19 +120,6 @@ function dedupeEanVariants<T extends { size: string; ean13: string; colour?: str
 }
 
 export type RepeatBy = "none" | "size" | "ean" | "assort" | "cartonEan" | "cartonEanSizeOnly";
-
-// Every colour this style declares, from all three places one can be stated:
-// the parenthesised tokens in the style NAME (a multi-pack names its colours
-// there — "ST40002(LGM)+ST40003(Green)"), the Style board colour, and the
-// colours parsed off the PO variant labels. The vocabulary a composition's
-// part labels are matched against — see splitCompositionByColour.
-function declaredColours(style: StyleData): string[] {
-  return [
-    ...[...style.styleName.matchAll(/\(([^)]{1,40})\)/g)].map((m) => m[1]),
-    style.colour?.name ?? "",
-    ...(style.eanVariants ?? []).map((v) => v.colour ?? ""),
-  ].filter((c) => c.trim());
-}
 
 // One row per COLOUR of a two-composition pack — the `splitByComposition`
 // expansion, applied on top of whatever rows repeatBy produced (so a per-EAN
