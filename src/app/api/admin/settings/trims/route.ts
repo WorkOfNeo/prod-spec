@@ -10,7 +10,7 @@ import {
   setTrimRules,
 } from "@/lib/settings/app-settings";
 import { buildTrimCensus } from "@/lib/trims/census";
-import { DEFAULT_TRIM_CONCEPTS } from "@/lib/trims/concepts";
+import { loadTrimConceptRows } from "@/lib/trims/catalogue";
 
 export const runtime = "nodejs";
 // The census plucks the Trims cell out of ~6,000 Monday blobs in Postgres —
@@ -26,15 +26,23 @@ export const maxDuration = 120;
 //
 //   GET /api/admin/settings/trims          -> { concepts, rules, overrides, layoutConcepts, census }
 //   PUT /api/admin/settings/trims { ... }  -> saves whichever parts are present
+//
+// `concepts` is the cover page's packaging ROWS, loaded from the table rather
+// than from a code constant — the list a person adds to at
+// /settings/cover-page?tab=packaging, and the list a trim value is matched onto
+// here. One catalogue, two screens.
 
 export async function GET() {
   const auth = await requireRole(["ADMIN", "REVIEWER"]);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const [rules, overrides, layoutConcepts] = await Promise.all([
+  const [rules, overrides, layoutConcepts, concepts] = await Promise.all([
     getTrimRules(),
     getTrimLabelOverrides(),
     getTrimLayoutConcepts(),
+    // The cover page's packaging rows — the list a trim can be mapped ONTO.
+    // Read before the census, which classifies against the same catalogue.
+    loadTrimConceptRows(),
   ]);
 
   // Fail-soft: a census that throws (a Monday blob shaped unexpectedly, a slow
@@ -46,7 +54,7 @@ export async function GET() {
   });
 
   return NextResponse.json({
-    concepts: DEFAULT_TRIM_CONCEPTS,
+    concepts,
     rules,
     overrides,
     layoutConcepts,

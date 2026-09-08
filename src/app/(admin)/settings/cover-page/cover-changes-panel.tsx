@@ -12,10 +12,11 @@ import { useCallback, useRef, useState } from "react";
 // Two decisions are wired in rather than offered, because getting them wrong is
 // expensive and getting them right is never situational:
 //
-//   * Suppliers are NOT emailed. The files land in their folders, but a bulk
-//     manifest refresh across hundreds of orders is not news any supplier acts
-//     on, and mailing them about it is how 714 emails went out on 2026-08-13.
-//     A genuine new document still emails, through the ordinary approval path.
+//   * Suppliers are NOT emailed — and that is no longer a flag this panel sets,
+//     it is what the regenerate route DOES. A bulk manifest refresh across
+//     hundreds of orders is not news any supplier acts on, and mailing them
+//     about it is how 714 emails went out on 2026-08-13. A genuine new document
+//     still emails, through the ordinary approval path.
 //   * Only changed covers are rebuilt, and each rebuild stamps its fingerprint.
 //     So a second run does nothing, a stopped run resumes for free, and no
 //     supplier's file is overwritten to change nothing.
@@ -29,6 +30,9 @@ type DocRow = {
   approved?: boolean;
   kind?: "app" | "manual" | "info";
   suppliedAs?: string[];
+  // Per-concept wording resolved by the manifest builder. Read here rather than
+  // re-derived, so this preview says what the PDF will say.
+  copy?: { note?: string; pending?: string; delivered?: string };
 };
 
 type Diff = {
@@ -51,8 +55,8 @@ const REGEN_CHUNK = 5;
 
 function statusLabel(d: DocRow): string {
   if (d.kind === "info") return "See packing instructions";
-  if (d.approved === true) return "Approved";
-  if (d.approved === false) return "Waiting for Customer Information";
+  if (d.approved === true) return d.copy?.delivered?.trim() || "Approved";
+  if (d.approved === false) return d.copy?.pending?.trim() || "Waiting for Customer Information";
   return "—";
 }
 
@@ -96,6 +100,9 @@ function DocList({ docs, emptyNote }: { docs: DocRow[]; emptyNote: string }) {
           >
             {statusLabel(d)}
           </div>
+          {d.copy?.note?.trim() ? (
+            <div className="mt-0.5 text-[11px] italic text-zinc-500">{d.copy.note.trim()}</div>
+          ) : null}
         </li>
       ))}
     </ol>
@@ -219,7 +226,6 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
           mode: "process",
           styleIds: chunk,
           deliver: true,
-          notifySupplier: false,
           onlyChanged: true,
           onlyPending: false,
         })) as { refreshed: number; pushed: number; errors: number };

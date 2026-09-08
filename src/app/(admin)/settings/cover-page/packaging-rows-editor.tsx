@@ -1,0 +1,514 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import type { TrimConceptRow } from "@/lib/trims/concepts";
+import { DEFAULT_DELIVERED_STATUS, DEFAULT_PENDING_STATUS } from "@/lib/trims/concept-copy";
+import {
+  bindLabelToRow,
+  labelsBoundToRow,
+  otherRowsForLabel,
+  unbindLabelFromRow,
+  unbindingWouldSuppress,
+  type BindableLabel,
+  type TrimLabelOverrides,
+} from "@/lib/trims/row-bindings";
+
+// The cover page's PACKAGING ROWS: the list of lines a cover can print, and the
+// words each one says.
+//
+// A row is the shared vocabulary — the thing a Monday trim label and an Output
+// Builder layout are BOTH matched onto. That is why the list is flat and global
+// with no customer anywhere on it: "Care Label" exists once here, not once per
+// customer, or the mapping would have to be redone for every customer we take
+// on and would never be finished. The built-in rows sit in this same list and
+// are edited the same way, so nothing is special-cased.
+//
+// WHICH MONDAY VALUES LAND ON A ROW is editable from here too, per row, and
+// Settings › Trims edits the same thing from the value side. Two views, ONE
+// store: both write the `trimLabelOverrides` record through PUT
+// /api/admin/settings/trims, and the inversion (value -> rows becomes row ->
+// values) is a pure function in src/lib/trims/row-bindings.ts. A row-keyed copy
+// of the mapping would be the obvious shortcut and the obvious bug — the two
+// would disagree the moment one was edited, and a cover would print whichever
+// the render chain happened to read.
+//
+// The value side stays the queue ("172 values, 41 still need a decision"); this
+// side is the answer to the other question a person actually asks, which is
+// "what ends up on THIS line". Neither is a subset of the other, which is why
+// both exist.
+//
+// The vocabulary comes from the census, which is already scoped to the
+// generation PO cutoff — dead orders' words are not offered. It is fetched
+// after paint because it reads every style's Trims cell; the wording boxes are
+// usable while it loads.
+//
+// PACKING INSTRUCTIONS GET THE NOTE AND NOTHING ELSE. A polybag, a hanger, a
+// carton has no file behind it, so it can never be "delivered"; offering the
+// status boxes would invite someone to park 1,733 styles' Master Polybag rows
+// at "waiting" forever and bury the rows that genuinely are waiting. The server
+// strips them too — this is not the only guard.
+//
+// REMOVE MEANS DEACTIVATE. Trim values and layouts point at a row by its id, so
+// deleting one would silently re-open every mapping that named it. A removed
+// row stops being offered and keeps resolving for anything still pointing at it.
+//
+// Empty wording box = the house default, shown greyed as the placeholder.
+
+type Props = {
+  initialRows: TrimConceptRow[];
+};
+
+type Draft = TrimConceptRow & {
+  // Client-only key: a brand-new row has no id until the server mints one from
+  // its label, and React still needs something stable to render it by.
+  key: string;
+};
+
+const toDraft = (row: TrimConceptRow): Draft => ({ ...row, key: row.value });
+
+export function PackagingRowsEditor({ initialRows }: Props) {
+  const [rows, setRows] = useState<Draft[]>(() => initialRows.map(toDraft));
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showRemoved, setShowRemoved] = useState(false);
+
+  // The trim mapping, held exactly as it is stored: normalised value -> row ids.
+  // `null` until the census answers, which is what tells the pickers to say
+  // "loading" rather than "no values on this row yet" — the second is a claim,
+  // and it would be a false one.
+  const [overrides, setOverrides] = useState<TrimLabelOverrides | null>(null);
+  const [labels, setLabels] = useState<BindableLabel[] | null>(null);
+  const [vocabState, setVocabState] = useState<"loading" | "ready" | "failed">("loading");
+  // What is actually stored, as last read or last written. Held separately from
+  // `overrides` (the edited copy) because the mapping is a DIFFERENT store with
+  // its own endpoint — the one Save button below writes both.
+  const [savedOverrides, setSavedOverrides] = useState<TrimLabelOverrides | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/settings/trims")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d: { overrides?: TrimLabelOverrides; census?: { labels?: BindableLabel[] } | null }) => {
+        if (cancelled) return;
+        // The census is the half that can fail on its own (see the endpoint).
+        // Without it there is no vocabulary to offer, so the pickers stand down
+        // rather than offering an empty list that looks like an answer.
+        if (!d.census?.labels) {
+          setVocabState("failed");
+          return;
+        }
+        setOverrides(d.overrides ?? {});
+        // The baseline the dirty check compares against, captured at the moment
+        // it was read and moved forward only by a successful save.
+        setSavedOverrides(d.overrides ?? {});
+        setLabels(d.census.labels);
+        setVocabState("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setVocabState("failed");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const mappingDirty =
+    overrides !== null &&
+    savedOverrides !== null &&
+    JSON.stringify(overrides) !== JSON.stringify(savedOverrides);
+
+  const initialJson = useMemo(() => JSON.stringify(initialRows.map(toDraft)), [initialRows]);
+  const rowsDirty = JSON.stringify(rows) !== initialJson;
+  const dirty = rowsDirty || mappingDirty;
+
+  // Row id -> its name, for "also on Hangtag" beside a value that lands on
+  // several. Every row resolves, removed ones included: a value can still point
+  // at a retired row, and printing a raw id there would look like corruption.
+  const rowLabel = useMemo(
+    () => new Map(rows.filter((r) => r.value).map((r) => [r.value, r.label.trim() || r.value])),
+    [rows],
+  );
+
+  const patch = useCallback((key: string, change: Partial<Draft>) => {
+    setSaved(false);
+    setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...change } : r)));
+  }, []);
+
+  const addRow = useCallback(() => {
+    setSaved(false);
+    setRows((prev) => [
+      ...prev,
+      {
+        // No value yet — the server derives one from the label on save. Sending
+        // a client-invented id would let two rows collide on it.
+        key: `new-${Date.now()}-${prev.length}`,
+        value: "",
+        label: "",
+        artwork: true,
+        sortOrder: (prev.length + 1) * 10,
+        builtIn: false,
+        active: true,
+      },
+    ]);
+  }, []);
+
+  // ONE BUTTON, TWO ENDPOINTS. The mapping goes first: it can only ever name
+  // rows that already have an id, so it is never the write that depends on the
+  // other one landing. (A row added in this session has no id until the rows
+  // PUT mints one, which is why its picker is disabled until then — see below.)
+  // Each write is atomic for its own store; if the second fails, the first
+  // stands and the screen stays dirty for the part that did not save, which is
+  // the honest outcome. Inventing a transaction across two settings blobs to
+  // protect an edit a person can simply press Save on again is not worth it.
+  const save = useCallback(async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      if (mappingDirty && overrides) {
+        const mapRes = await fetch("/api/admin/settings/trims", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          // Only `overrides` — the rules and the layout pins are not this
+          // screen's to touch, and the endpoint saves whichever parts are sent.
+          body: JSON.stringify({ overrides }),
+        });
+        if (!mapRes.ok) {
+          throw new Error(
+            (await mapRes.json().catch(() => null))?.error ?? `Failed (${mapRes.status})`,
+          );
+        }
+        setSavedOverrides(overrides);
+      }
+      const res = await fetch("/api/admin/settings/cover-page/packaging-rows", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rows: rows
+            .filter((r) => r.label.trim() !== "")
+            .map((r, i) => ({
+              // Omitted for a new row, so the server knows to mint one.
+              ...(r.value ? { value: r.value } : {}),
+              label: r.label.trim(),
+              artwork: r.artwork,
+              note: r.note ?? "",
+              pending: r.pending ?? "",
+              delivered: r.delivered ?? "",
+              sortOrder: (i + 1) * 10,
+              active: r.active,
+            })),
+        }),
+      });
+      if (!res.ok) {
+        throw new Error((await res.json().catch(() => null))?.error ?? `Failed (${res.status})`);
+      }
+      // Repaint from what the server actually stored: it mints the ids for new
+      // rows and drops the status wording from packing instructions, and a
+      // screen still showing text the server threw away would be lying.
+      const body = (await res.json()) as { rows?: TrimConceptRow[] };
+      setRows((body.rows ?? []).map(toDraft));
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save");
+    } finally {
+      setSaving(false);
+    }
+  }, [rows, overrides, mappingDirty]);
+
+  const removedCount = rows.filter((r) => !r.active).length;
+  const shown = showRemoved ? rows : rows.filter((r) => r.active);
+
+  return (
+    <div className="mt-6">
+      <p className="max-w-2xl text-sm text-zinc-500">
+        Every line a cover page can print. A row is written once here — never once per client —
+        because &ldquo;Care label&rdquo; is a different layout for each client and a per-client list
+        would never be finished. Each row also says which Monday <strong>Trims</strong> values land
+        on it; the same mapping read the other way round — value by value, worst-first — is{" "}
+        <Link
+          href="/settings/trims"
+          className="font-medium text-zinc-700 underline underline-offset-2"
+        >
+          Settings › Trims
+        </Link>
+        . It is one mapping: a change made here shows up there, and the other way about.
+      </p>
+      <p className="mt-2 max-w-2xl text-sm text-zinc-500">
+        The <strong>note</strong> is a standing fact about the document and prints in every state;
+        the two status boxes are what the Status column says while the artwork is still to come, and
+        once it is confirmed. Leave a box empty to use the wording shown greyed inside it. Changes
+        apply to <strong>newly generated</strong> bundles — covers already in a supplier&rsquo;s
+        folder keep their words until they are rebuilt.
+      </p>
+
+      <div className="mt-6 space-y-3">
+        {shown.map((r) => (
+          <div
+            key={r.key}
+            className={`rounded-lg border bg-white p-4 ${
+              r.active ? "border-zinc-200" : "border-dashed border-zinc-300 opacity-60"
+            }`}
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                type="text"
+                value={r.label}
+                placeholder="Row name, e.g. Inlay card"
+                onChange={(e) => patch(r.key, { label: e.target.value })}
+                className="min-w-[14rem] flex-1 rounded border border-zinc-200 px-2 py-1.5 text-[13px] font-medium text-zinc-800 placeholder:text-zinc-300 focus:border-zinc-400 focus:outline-none"
+              />
+              <label className="flex items-center gap-2 text-[13px] text-zinc-600">
+                <input
+                  type="checkbox"
+                  checked={!r.artwork}
+                  onChange={(e) => patch(r.key, { artwork: !e.target.checked })}
+                />
+                Packing instruction — no file, so no delivery status
+              </label>
+              {r.builtIn && (
+                <span className="rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[11px] text-zinc-500">
+                  built in
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => patch(r.key, { active: !r.active })}
+                className="ml-auto rounded border border-zinc-300 px-2 py-1 text-[12px] font-medium text-zinc-600 hover:bg-zinc-50"
+              >
+                {r.active ? "Remove" : "Restore"}
+              </button>
+            </div>
+
+            {!r.active && (
+              <p className="mt-2 text-[12px] text-zinc-500">
+                Removed — it stops being offered for new mappings. Trim values already pointing at
+                it keep printing this row and its wording, so nothing on a cover changes until they
+                are re-mapped.
+              </p>
+            )}
+
+            <div className="mt-3 space-y-2">
+              <Field label="Note">
+                <input
+                  type="text"
+                  value={r.note ?? ""}
+                  placeholder="No note"
+                  onChange={(e) => patch(r.key, { note: e.target.value })}
+                  className="w-full rounded border border-zinc-200 px-2 py-1.5 text-[13px] text-zinc-800 placeholder:text-zinc-300 focus:border-zinc-400 focus:outline-none"
+                />
+              </Field>
+              {r.artwork ? (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <Field label="Not yet delivered">
+                    <input
+                      type="text"
+                      value={r.pending ?? ""}
+                      placeholder={DEFAULT_PENDING_STATUS}
+                      onChange={(e) => patch(r.key, { pending: e.target.value })}
+                      className="w-full rounded border border-zinc-200 px-2 py-1.5 text-[13px] text-zinc-800 placeholder:text-zinc-300 focus:border-zinc-400 focus:outline-none"
+                    />
+                  </Field>
+                  <Field label="Delivered">
+                    <input
+                      type="text"
+                      value={r.delivered ?? ""}
+                      placeholder={DEFAULT_DELIVERED_STATUS}
+                      onChange={(e) => patch(r.key, { delivered: e.target.value })}
+                      className="w-full rounded border border-zinc-200 px-2 py-1.5 text-[13px] text-zinc-800 placeholder:text-zinc-300 focus:border-zinc-400 focus:outline-none"
+                    />
+                  </Field>
+                </div>
+              ) : (
+                <p className="text-[12px] text-zinc-400">
+                  No status boxes: nothing is ever delivered for a packing instruction, so a status
+                  would sit at &ldquo;waiting&rdquo; forever.
+                </p>
+              )}
+            </div>
+
+            <TrimValuesForRow
+              rowValue={r.value}
+              rowLabel={rowLabel}
+              labels={labels}
+              overrides={overrides}
+              state={vocabState}
+              onChange={(next) => {
+                setSaved(false);
+                setOverrides(next);
+              }}
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={addRow}
+          className="rounded border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+        >
+          Add a row
+        </button>
+        {removedCount > 0 && (
+          <label className="flex items-center gap-2 text-[13px] text-zinc-500">
+            <input
+              type="checkbox"
+              checked={showRemoved}
+              onChange={(e) => setShowRemoved(e.target.checked)}
+            />
+            Show {removedCount} removed row{removedCount === 1 ? "" : "s"}
+          </label>
+        )}
+        <div className="ml-auto flex items-center gap-3">
+          {saved ? <span className="text-[13px] text-emerald-700">Saved</span> : null}
+          {error ? <span className="text-[13px] text-red-600">{error}</span> : null}
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving || !dirty}
+            className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-zinc-300"
+          >
+            {saving ? "Saving…" : "Save rows"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// The Monday trim values landing on ONE row.
+//
+// Reads and writes the shared override record through the pure helpers in
+// src/lib/trims/row-bindings.ts — this component holds no mapping of its own.
+//
+// TWO THINGS IT HAS TO SAY OUT LOUD, because both are ways a person gets
+// surprised by a cover a week later:
+//   * a value that also lands on ANOTHER row. Legitimate — a compound entry
+//     like "Hanger & Hangtag" names two things — but it has to be visible from
+//     here, or mapping a value onto this row looks like moving it here.
+//   * removing the LAST row from a value. That is the stored "not packaging"
+//     decision: the value stops printing on covers altogether. Deleting the
+//     stored key instead would hand it straight back to the keyword rule that
+//     put it on this row, and the removal would appear not to have worked.
+function TrimValuesForRow({
+  rowValue,
+  rowLabel,
+  labels,
+  overrides,
+  state,
+  onChange,
+}: {
+  rowValue: string;
+  rowLabel: Map<string, string>;
+  labels: BindableLabel[] | null;
+  overrides: TrimLabelOverrides | null;
+  state: "loading" | "ready" | "failed";
+  onChange: (next: TrimLabelOverrides) => void;
+}) {
+  const [adding, setAdding] = useState("");
+
+  // A row minted in this session has no id yet, so nothing can point at it.
+  if (!rowValue) {
+    return (
+      <p className="mt-3 border-t border-zinc-100 pt-3 text-[12px] text-zinc-400">
+        Save the row first — a Monday value can only be pointed at a row that exists.
+      </p>
+    );
+  }
+  if (state === "loading" || !labels || !overrides) {
+    return (
+      <p className="mt-3 border-t border-zinc-100 pt-3 text-[12px] text-zinc-400">
+        {state === "failed"
+          ? "The survey of live Monday values could not be read, so mapping is unavailable here. Settings › Trims still works."
+          : "Reading the Monday trim values…"}
+      </p>
+    );
+  }
+
+  const bound = labelsBoundToRow(overrides, labels, rowValue);
+  const boundKeys = new Set(bound.map((l) => l.normalized));
+  // Offer everything not already here, most-used first — the values that matter
+  // are the ones a person should not have to scroll for.
+  const offerable = labels
+    .filter((l) => !boundKeys.has(l.normalized))
+    .sort((a, b) => b.styles - a.styles || a.label.localeCompare(b.label));
+
+  return (
+    <div className="mt-3 border-t border-zinc-100 pt-3">
+      <span className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-400">
+        Monday trim values on this row
+      </span>
+      <div className="flex flex-wrap items-center gap-1">
+        {bound.map((l) => {
+          const elsewhere = otherRowsForLabel(overrides, l, rowValue);
+          const wouldSuppress = unbindingWouldSuppress(overrides, l, rowValue);
+          return (
+            <span
+              key={l.normalized}
+              className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[12px] text-zinc-700"
+              title={
+                wouldSuppress
+                  ? "This row is the only one it lands on — removing it keeps the value off covers entirely."
+                  : undefined
+              }
+            >
+              {l.label}
+              <span className="tabular-nums text-zinc-400">{l.styles.toLocaleString()}</span>
+              {elsewhere.length > 0 && (
+                <span className="text-zinc-400">
+                  · also on {elsewhere.map((c) => rowLabel.get(c) ?? c).join(", ")}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => onChange(unbindLabelFromRow(overrides, l, rowValue))}
+                className="text-zinc-400 hover:text-red-600"
+                aria-label={`Remove ${l.label} from this row`}
+              >
+                ×
+              </button>
+            </span>
+          );
+        })}
+        <select
+          value={adding}
+          onChange={(e) => {
+            const picked = labels.find((l) => l.normalized === e.target.value);
+            setAdding("");
+            if (picked) onChange(bindLabelToRow(overrides, picked, rowValue));
+          }}
+          className="rounded border border-zinc-300 px-2 py-1 text-[12px]"
+        >
+          <option value="">Add a Monday value…</option>
+          {offerable.map((l) => {
+            const on = otherRowsForLabel(overrides, l, rowValue);
+            return (
+              <option key={l.normalized} value={l.normalized}>
+                {l.label} · {l.styles.toLocaleString()} styles
+                {on.length > 0 ? ` · on ${on.map((c) => rowLabel.get(c) ?? c).join(", ")}` : ""}
+              </option>
+            );
+          })}
+        </select>
+      </div>
+      {bound.some((l) => unbindingWouldSuppress(overrides, l, rowValue)) && (
+        <p className="mt-1 text-[11px] text-zinc-400">
+          A value this row is the only home for stops printing on covers entirely when it is removed
+          here — that is the same &ldquo;not packaging&rdquo; decision Settings › Trims offers.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-0.5 block text-[11px] uppercase tracking-wide text-zinc-400">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}

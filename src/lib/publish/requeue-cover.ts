@@ -44,12 +44,14 @@ export async function enqueueCoverForSupplier(
   styleId: string,
   coverAssetId: string,
   opts?: {
-    // false ⇒ push the file, but keep the row out of tonight's digest. Used by
-    // the cover-regen sweep: the supplier needs the current manifest in their
+    // false ⇒ push the file, but keep the row out of tonight's digest. Callers
+    // do not choose this freely: it is derived from WHY the cover is being
+    // rebuilt (notifiesSupplier in pdf/cover-rebuild-trigger.ts). A wording
+    // rebuild passes false — the supplier needs the current manifest in their
     // folder, but an email about an order where nothing they act on changed is
-    // noise at best — and, at the scale a sweep runs, the 2026-08-13 incident
-    // in miniature. Defaults true, so the runner and every ordinary re-arm are
-    // untouched, and a later real generation flips the row back.
+    // noise at best, and at the scale a wording sweep runs it is the 2026-08-13
+    // incident in miniature. Defaults true, so the runner and every ordinary
+    // re-arm are untouched, and a later real generation flips the row back.
     notifySupplier?: boolean;
   },
 ): Promise<CoverRequeueResult> {
@@ -98,7 +100,8 @@ export async function enqueueCoverForSupplier(
     // Part of the armed state on purpose, not a create-only default: a row
     // silenced by a previous sweep must go back to notifying the moment a real
     // generation re-arms it, or one quiet regen would mute that style's cover
-    // for good.
+    // for good. The flag therefore belongs to THIS call's trigger and never
+    // latches onto the row — pinned by tests/cover-notify-trigger.test.ts.
     notifySupplier: opts?.notifySupplier !== false,
     sentAt: null,
     sharePointStatus: "PENDING",

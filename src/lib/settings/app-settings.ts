@@ -738,6 +738,12 @@ export async function setTrimLayoutConcepts(concepts: TrimLayoutConcepts): Promi
   });
 }
 
+// The packaging ROWS — what a cover says about each kind of packaging — used to
+// live here as an AppSetting blob keyed by concept. They are columns on
+// trim_concept_rows now (see src/lib/trims/catalogue.ts): a row and the words it
+// prints are one thing, added and edited in one place. The creating migration
+// folds any stored blob into the table and deletes the key.
+
 const TRIMS_ON_COVER_KEY = "trimsOnCoverEnabled";
 
 // Master switch for printing Monday's Trims entries on the cover manifest.

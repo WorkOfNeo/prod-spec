@@ -103,6 +103,7 @@ export function assembleRequiredPackagingDocs(
     rules: trimContext.rules,
     overrides: trimContext.overrides,
     manualDelivered: trimContext.manualDelivered,
+    conceptCopy: trimContext.conceptCopy,
   });
 }
 
@@ -111,15 +112,21 @@ export function assembleRequiredPackagingDocs(
 // regen sweep, the coverage report) loads this once and threads it, rather than
 // hitting AppSetting three times per style.
 export async function loadTrimSettings(): Promise<Omit<TrimContext, "trimLabels" | "manualDelivered">> {
-  const { getTrimRules, getTrimLabelOverrides, getTrimLayoutConcepts } = await import(
-    "@/lib/settings/app-settings"
-  );
-  const [rules, overrides, layoutConcepts] = await Promise.all([
+  const { getTrimRules, getTrimLabelOverrides, getTrimLayoutConcepts } =
+    await import("@/lib/settings/app-settings");
+  const { loadTrimConceptRows } = await import("@/lib/trims/catalogue");
+  const { conceptCopyFromRows } = await import("@/lib/trims/concept-copy");
+  const [rules, overrides, layoutConcepts, rows] = await Promise.all([
     getTrimRules(),
     getTrimLabelOverrides(),
     getTrimLayoutConcepts(),
+    // ALSO installs the catalogue into the synchronous registry that
+    // conceptHasArtwork reads (see src/lib/trims/catalogue.ts). This is the one
+    // place every render, sweep and census path has in common, which is why the
+    // load is anchored here rather than at each of them.
+    loadTrimConceptRows(),
   ]);
-  return { rules, overrides, layoutConcepts };
+  return { rules, overrides, layoutConcepts, conceptCopy: conceptCopyFromRows(rows) };
 }
 
 // DB read. The style's required-packaging rows with live approval state.
@@ -232,9 +239,23 @@ export async function buildRequiredPackagingForStyle(
   // this code changes nothing a supplier sees until somebody decides it should.
   const trimsEnabled = opts?.forceTrims === true || (await getTrimsOnCoverEnabled());
 
-  // The pre-Trims manifest: no declared outputs meant no manifest at all.
-  // Trims changes that — a style with no outputs can still owe the supplier a
-  // list of what to expect — so the early return only applies without them.
+  // THE SWITCH GATES EVERYTHING THE TRIM LAYER ADDS — Monday's list AND the
+  // per-concept wording it brought with it.
+  //
+  // An earlier draft gated only the label list and let the standing notes
+  // ("printed on one paper, front and back") and the per-concept status wording
+  // ("Awaiting Photo Samples from the supplier.") print regardless, reasoning
+  // that they describe documents this app already produces and already lists.
+  // Reversed on purpose: merging this must change nothing on any supplier's
+  // cover until a human flips the switch, and a note appearing under a row is a
+  // change a supplier sees whatever it says. With the switch off there is no
+  // trim context at all, so assembleRequiredPackagingDocs takes its pre-Trims
+  // branch and the page is byte-identical to what production prints today.
+  //
+  // The pre-Trims manifest also had a second property that has to survive: no
+  // declared outputs meant no manifest at all. Trims changes that — a style
+  // with no outputs can still owe the supplier a list of what to expect — so
+  // the empty-rows early return applies on the gated-off path only.
   if (opts?.withoutTrims || !trimsEnabled) {
     if (rows.length === 0) return [];
     const approvedBaseKeys =

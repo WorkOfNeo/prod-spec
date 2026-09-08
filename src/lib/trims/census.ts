@@ -62,8 +62,14 @@ export type CensusLabel = {
   normalized: string;
   styles: number;
   concepts: string[];
-  // "override" — a stored decision; "rule" — matched a keyword rule;
-  // "none" — unknown vocabulary, printed as manually supplied until mapped.
+  // What the keyword rules PROPOSE for this label, regardless of what is stored.
+  // The rules are a suggestion engine now, not the decision: the screen offers
+  // this so a person can accept it in one click and turn it into a real stored
+  // mapping. Identical to `concepts` while a label is still following the rules.
+  suggested: string[];
+  // "override" — a person decided; "rule" — nobody has, so the rule suggestion
+  // is still what applies; "none" — nobody has and no rule matched either, so
+  // the label prints as manually supplied until someone maps it.
   source: "override" | "rule" | "none";
   // Several rules matched. The first won; a human should confirm it.
   ambiguous: boolean;
@@ -288,6 +294,7 @@ export async function buildTrimCensus(): Promise<TrimCensus> {
         normalized: key,
         styles,
         concepts,
+        suggested: classified.concepts,
         source: overridden ? ("override" as const) : concepts.length > 0 ? ("rule" as const) : ("none" as const),
         ambiguous: !overridden && classified.ambiguous,
       };

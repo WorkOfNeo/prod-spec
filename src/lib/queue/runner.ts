@@ -878,14 +878,24 @@ export async function processJob(jobId: string): Promise<void> {
     ];
   });
   // Monday's Trims entries join the declared outputs on the manifest, so the
-  // supplier's list matches the buyer's. Fail-soft: a settings read that throws
-  // must not fail a generation — falling back to no context yields exactly the
-  // pre-Trims manifest.
-  // Gated on the master switch (off by default): with it off there is no trim
-  // context at all, and assembleRequiredPackagingDocs falls back to the
-  // pre-Trims manifest byte for byte. Fail-soft on both reads — a settings
-  // hiccup must not fail a generation, and "no context" is the safe fallback
-  // because it is what covers already print.
+  // supplier's list matches the buyer's.
+  //
+  // GATED WHOLESALE on the master switch (off by default): with it off there is
+  // no trim context at all, and assembleRequiredPackagingDocs falls back to the
+  // pre-Trims manifest byte for byte — no Monday rows, no per-concept notes, no
+  // per-concept status wording. Nothing a supplier reads moves until a human
+  // turns it on.
+  //
+  // THIS MUST MATCH buildRequiredPackagingForStyle EXACTLY. That function is
+  // what the refresh sweep re-computes the fingerprint from; if the two ever
+  // assembled different manifests for the same style, the key stamped here
+  // would never match the key computed there and every cover in the book would
+  // rebuild, re-push and re-push again forever. Both gate on the same switch,
+  // in the same direction, at the same granularity — change one and change the
+  // other in the same commit.
+  //
+  // Fail-soft on both reads — a settings hiccup must not fail a generation, and
+  // "no context" is the safe fallback because it is what covers already print.
   const trimContext = (await getTrimsOnCoverEnabled().catch(() => false))
     ? await loadTrimSettings()
         .then((settings) => ({ ...settings, trimLabels: resolveStyleTrimLabels(job.style) }))

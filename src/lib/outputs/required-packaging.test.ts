@@ -5,6 +5,8 @@ import {
   type RequiredPackagingRow,
 } from "./required-packaging";
 import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
+import { DEFAULT_TRIM_RULES } from "@/lib/trims/classify";
+import { manifestFingerprint } from "@/lib/trims/manifest";
 
 const row = (variantKey: string, widthMm: number, heightMm: number): RequiredPackagingRow => ({
   variantKey,
@@ -62,4 +64,41 @@ test("assembleRequiredPackagingDocs — all-approved set produces no pending row
     docs.every((d) => d.approved === true),
     true,
   );
+});
+
+// The switch is only a real no-op if "no trim context" means NO trim layer at
+// all. An earlier draft gated Monday's label list alone and passed a context
+// with `trimLabels: []`, on the theory that an empty list reproduces the
+// declared output set. It reproduces the ROWS; it does not reproduce the PAGE.
+// These two tests pin the difference so the shortcut cannot come back by
+// accident — the second one is the failing half of it.
+test("assembleRequiredPackagingDocs — no context ⇒ no kind, no concept copy", () => {
+  const docs = assembleRequiredPackagingDocs([row("Wash Care Label", 40, 30)], new Set());
+  assert.equal(docs.length, 1);
+  assert.equal("kind" in docs[0], false);
+  assert.equal("copy" in docs[0], false);
+  assert.deepEqual(Object.keys(docs[0]).sort(), [
+    "approved",
+    "displayName",
+    "fileCount",
+    "heightMm",
+    "widthMm",
+  ]);
+});
+
+test("assembleRequiredPackagingDocs — an EMPTY label list is NOT the same as no context", () => {
+  const docs = assembleRequiredPackagingDocs([row("Wash Care Label", 40, 30)], new Set(), {
+    trimLabels: [],
+    rules: DEFAULT_TRIM_RULES,
+    overrides: {},
+    layoutConcepts: {},
+    conceptCopy: { CARE_LABEL: { note: "printed on one paper, front and back" } },
+  });
+  // Same single row — and a standing note under it that the pre-Trims cover
+  // never printed. That note is exactly what the switch has to hold back.
+  assert.equal(docs.length, 1);
+  assert.equal(docs[0].copy?.note, "printed on one paper, front and back");
+  assert.notEqual(manifestFingerprint(docs), manifestFingerprint(
+    assembleRequiredPackagingDocs([row("Wash Care Label", 40, 30)], new Set()),
+  ));
 });

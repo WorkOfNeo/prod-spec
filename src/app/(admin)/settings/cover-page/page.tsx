@@ -4,11 +4,13 @@ import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { canReview } from "@/lib/roles";
 import { getCoverPageInfoMd, getTrimsOnCoverEnabled } from "@/lib/settings/app-settings";
+import { loadTrimConceptRows } from "@/lib/trims/catalogue";
 import { CoverPageEditor } from "./cover-page-editor";
 import { CoverChangesPanel } from "./cover-changes-panel";
 import { CoverRegenPanel } from "./cover-regen-panel";
 import { TrimsSwitch } from "./trims-switch";
 import { GeneralInfoEditor, type ProdSpecOption } from "./general-info-editor";
+import { PackagingRowsEditor } from "./packaging-rows-editor";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Cover page · Settings" };
@@ -19,6 +21,13 @@ export const metadata = { title: "Cover page · Settings" };
 //                         printed on the cover sheet below the packaging list.
 //   General information — ProdSpec.generalInfoMd, one per Customer × Business
 //                         Area, printed inside the cover PDF after that sheet.
+//   Packaging rows      — table trim_concept_rows, the LINES a cover can print
+//                         and the words each one says. Keyed by trim concept
+//                         rather than by customer (see src/lib/trims/concepts.ts
+//                         for why), but edited here, because this is the screen
+//                         a person opens to change what a cover says. Which
+//                         Monday trim values land on each row is Settings ›
+//                         Trims; this screen owns the rows themselves.
 //
 // REVIEWER-reachable (canReview), not admin-only. Both are supplier-facing
 // prose that reviewers own in practice — a standing note like "the pictogram is
@@ -27,7 +36,7 @@ export const metadata = { title: "Cover page · Settings" };
 // configuration: the General information tab writes through the narrow
 // per-column endpoint, never the full ProdSpec PATCH (which carries outputs,
 // languages and approval toggles, and auto-activates draft specs on save).
-type Tab = "cover" | "general-info";
+type Tab = "cover" | "general-info" | "packaging";
 
 export default async function CoverPageSettingsPage({
   searchParams,
@@ -38,11 +47,14 @@ export default async function CoverPageSettingsPage({
   if (!session) redirect("/login");
   if (!canReview(role)) redirect("/dashboard");
 
-  const tab: Tab = (await searchParams).tab === "general-info" ? "general-info" : "cover";
+  const requestedTab = (await searchParams).tab;
+  const tab: Tab =
+    requestedTab === "general-info" || requestedTab === "packaging" ? requestedTab : "cover";
 
-  const [markdown, trimsEnabled, specRows] = await Promise.all([
+  const [markdown, trimsEnabled, packagingRows, specRows] = await Promise.all([
     getCoverPageInfoMd(),
     getTrimsOnCoverEnabled(),
+    loadTrimConceptRows(),
     db.prodSpec.findMany({
       orderBy: [{ active: "desc" }, { name: "asc" }],
       select: {
@@ -70,6 +82,7 @@ export default async function CoverPageSettingsPage({
   const TABS: Array<{ key: Tab; label: string }> = [
     { key: "cover", label: "Cover page (all clients)" },
     { key: "general-info", label: "General information" },
+    { key: "packaging", label: "Packaging rows" },
   ];
 
   return (
@@ -86,7 +99,7 @@ export default async function CoverPageSettingsPage({
         {TABS.map((t) => (
           <Link
             key={t.key}
-            href={t.key === "cover" ? "/settings/cover-page" : "/settings/cover-page?tab=general-info"}
+            href={t.key === "cover" ? "/settings/cover-page" : `/settings/cover-page?tab=${t.key}`}
             className={`-mb-px border-b-2 px-3 py-2 text-sm ${
               tab === t.key
                 ? "border-zinc-900 font-medium text-zinc-900"
@@ -112,8 +125,10 @@ export default async function CoverPageSettingsPage({
           <TrimsSwitch initialEnabled={trimsEnabled} />
           <CoverRegenPanel />
         </>
-      ) : (
+      ) : tab === "general-info" ? (
         <GeneralInfoEditor prodSpecs={prodSpecs} />
+      ) : (
+        <PackagingRowsEditor initialRows={packagingRows} />
       )}
     </div>
   );

@@ -27,9 +27,10 @@ export const maxDuration = 300;
 //
 // ADMIN + REVIEWER, because reviewers now author both texts the cover carries
 // (the global block and each spec's General information) and an edit nobody can
-// publish is only half a handover. It is NOT a quiet action: it overwrites
-// delivered covers and re-arms the supplier push + nightly digest, so `prepare`
-// returns the delivered count and the UI puts it behind an explicit confirm.
+// publish is only half a handover. It is not a free action either: it
+// overwrites delivered covers and re-pushes them to the suppliers' folders, so
+// `prepare` returns the delivered count and the UI puts it behind an explicit
+// confirm. It does NOT email anyone — see the trigger note below.
 // `prodSpecId` scopes the sweep to one Customer × Business Area — the blast
 // radius of a General-information edit.
 
@@ -52,11 +53,6 @@ const PROCESS = z.object({
   // to change nothing. This is also what makes the sweep resumable — a stopped
   // run picks up where it left off instead of redoing the finished chunks.
   onlyChanged: z.boolean().default(true),
-  // Default FALSE — the opposite of `deliver`. A sweep is a bulk, operator-
-  // initiated act across orders whose suppliers have nothing new to do; the
-  // file belongs in their folder, an email about it does not. Callers must ask
-  // for the email explicitly.
-  notifySupplier: z.boolean().default(false),
 });
 const BODY = z.discriminatedUnion("mode", [PREPARE, PROCESS]);
 
@@ -78,12 +74,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ styleIds, total: styleIds.length, delivered });
   }
 
-  const { styleIds, deliver, onlyPending, onlyChanged, notifySupplier } = parsed.data;
+  const { styleIds, deliver, onlyPending, onlyChanged } = parsed.data;
   const { outcomes, pushed, pushErrors } = await processCoverRefreshChunk(styleIds, {
     deliver,
     onlyPending,
     onlyChanged,
-    notifySupplier,
+    // Hardcoded, not a parameter. THIS ROUTE IS THE WORDING DOOR: everything it
+    // exists to propagate — a new cover format, an edited global cover block, a
+    // spec's General information, a trim concept's copy — is a change to what
+    // the house says, not to what the supplier's order is. The file is
+    // re-pushed; nobody is emailed. Content rebuilds reach the queue through
+    // their own doors (the runner, and the approval-driven drain in
+    // cover-regen-schedule), and those still notify.
+    //
+    // It used to be a `notifySupplier` boolean the panel offered as a tickbox.
+    // Once the packaging wording joined the manifest fingerprint, one run of
+    // this sweep spans the whole book — so that tickbox was a single click
+    // between "re-upload a sentence" and the 2026-08-13 mass send. The body
+    // schema is non-strict, so a stale tab still sending the old field is
+    // simply ignored, which fails in the quiet direction.
+    trigger: "wording",
   });
 
   const refreshed = outcomes.filter((o) => o.status === "refreshed").length;
