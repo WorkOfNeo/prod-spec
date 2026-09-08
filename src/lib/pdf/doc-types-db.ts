@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { runCached } from "@/lib/run-cache";
 import { DEFAULT_DOC_TYPES, type DocTypeEntry } from "./doc-types";
 import {
   parseOutputRules,
@@ -19,7 +20,16 @@ import {
 
 let warnedUnavailable = false;
 
+// Both catalogue reads are PO-independent constants for the length of one
+// pass, and every per-style walk (getCurrentOutputsForStyle, the readiness
+// gate) asks for them again. Inside a run-cache scope they resolve once; with
+// no scope open runCached is a pass-through, so the runner and every page keep
+// re-reading them exactly as often as before. See run-cache.ts.
 export async function loadDocTypes(): Promise<DocTypeEntry[]> {
+  return runCached("doc-types:catalogue", loadDocTypesUncached);
+}
+
+async function loadDocTypesUncached(): Promise<DocTypeEntry[]> {
   try {
     const rows = await db.docTypeDef.findMany({
       orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
@@ -51,6 +61,10 @@ export async function loadDocTypeLabels(): Promise<Record<string, string>> {
 // nothing is excluded until the migration lands.
 let warnedRulesUnavailable = false;
 export async function loadDocTypeExclusionRules(): Promise<DocTypeRulesMap> {
+  return runCached("doc-types:exclusion-rules", loadDocTypeExclusionRulesUncached);
+}
+
+async function loadDocTypeExclusionRulesUncached(): Promise<DocTypeRulesMap> {
   try {
     const rows = await db.docTypeDef.findMany({ select: { value: true, exclusionRules: true } });
     const out: DocTypeRulesMap = {};

@@ -22,6 +22,7 @@ import { effectiveStyleItem } from "./resolved-fields";
 import { outputReadinessForStyle, type OutputReadiness } from "./output-readiness";
 import { readUseStyleBoardColour } from "@/lib/po/ean-override-actions";
 import { loadColourAliases } from "@/lib/settings/app-settings";
+import { runCached } from "@/lib/run-cache";
 
 // =====================================================
 // Shared render context — the ONE place StyleData is assembled from a
@@ -234,10 +235,52 @@ async function loadSiblingStyles(
   mapping: ColumnMapping,
   customerName: string,
 ): Promise<StyleData["siblings"]> {
+  // The pool is a property of the PO, not of the style asking for it — every
+  // style on one order projects the SAME rows with the same mapping, and only
+  // the "which one am I" exclusion differs. Building it per style is quadratic
+  // in the width of the PO: an N-style order runs N queries that each return N
+  // rows and maps N² siblings. Inside a run-cache scope it is built once; with
+  // no scope open this is a pass-through and every caller keeps its own build.
+  //
+  // The cap is applied AFTER self is dropped, exactly as it was when the query
+  // carried both — so a PO wider than the cap yields the same first
+  // SIBLING_POOL_CAP siblings it always did. One extra row is fetched because
+  // self may be among them.
+  const pool = await siblingPool(poNumber, mapping, customerName);
+  return pool.filter((p) => p.id !== thisId).slice(0, SIBLING_POOL_CAP).map((p) => p.sibling);
+}
+
+// The projected pool for ONE purchase order, self included. Keyed on the PO
+// plus the mapping and customer name the projection was made with: same-PO
+// styles virtually always share both, but a differing mapping must never be
+// served another style's projection.
+async function siblingPool(
+  poNumber: string,
+  mapping: ColumnMapping,
+  customerName: string,
+): Promise<Array<{ id: string; sibling: NonNullable<StyleData["siblings"]>[number] }>> {
+  const mappingKey = JSON.stringify(
+    Object.fromEntries(Object.entries(mapping).sort(([a], [b]) => a.localeCompare(b))),
+  );
+  // Length-prefixed rather than delimiter-joined: a customer name or a mapping
+  // value may contain any character, and two different triples must never
+  // collide into one cache slot.
+  const part = (v: string) => `${v.length}:${v}`;
+  return runCached(
+    `sibling-pool:${part(poNumber)}${part(customerName)}${part(mappingKey)}`,
+    () => buildSiblingPool(poNumber, mapping, customerName),
+  );
+}
+
+async function buildSiblingPool(
+  poNumber: string,
+  mapping: ColumnMapping,
+  customerName: string,
+): Promise<Array<{ id: string; sibling: NonNullable<StyleData["siblings"]>[number] }>> {
   const rows = await db.style.findMany({
-    where: { poNumber, id: { not: thisId }, archivedAt: null, deletedAt: null },
+    where: { poNumber, archivedAt: null, deletedAt: null },
     orderBy: { createdAt: "asc" },
-    take: SIBLING_POOL_CAP,
+    take: SIBLING_POOL_CAP + 1,
     select: {
       id: true,
       rawData: true,
@@ -260,7 +303,7 @@ async function loadSiblingStyles(
       cartonEan: row.cartonEan,
     }) as MondayItem;
     const sd = mapMondayItemToStyleData(item, customerName, mapping);
-    return projectSiblingStyle(sd, row.id);
+    return { id: row.id, sibling: projectSiblingStyle(sd, row.id) };
   });
 }
 
@@ -282,7 +325,17 @@ export type StyleRenderContext = {
   readiness: OutputReadiness[];
 };
 
+// Inside a run-cache scope the SAME style's context resolves once. A PO folder
+// check asks for it twice per style (once for the expected document set, once
+// for the expected cover), and assembling it is the most expensive read in the
+// whole pass. Outside a scope this is a pass-through: the runner, the preview
+// endpoints and the carton dialog each keep building their own, which matters
+// because they hand the StyleData on to code that layers overrides onto it.
 export async function loadStyleRenderContext(styleId: string): Promise<StyleRenderContext | null> {
+  return runCached(`render-context:${styleId}`, () => buildStyleRenderContext(styleId));
+}
+
+async function buildStyleRenderContext(styleId: string): Promise<StyleRenderContext | null> {
   // Resolve Output Builder layout keys in the readiness walk below.
   await ensureLayoutVariantsLoaded();
 

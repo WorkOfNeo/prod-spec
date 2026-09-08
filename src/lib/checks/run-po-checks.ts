@@ -23,6 +23,8 @@ import {
 } from "./po-checks";
 import { coverNameBody } from "./file-name-shape";
 import { mapWithConcurrency, STYLE_CONCURRENCY } from "./style-pool";
+import { withRunCache } from "@/lib/run-cache";
+import type { CurrentOutput } from "@/lib/outputs/current-outputs";
 
 // =====================================================
 // Composition + I/O for the /checks page: resolve the PO folder ONCE, work out
@@ -105,66 +107,106 @@ function representativeStyle(styles: PoStyleRow[]): PoStyleRow | null {
 const mapStyles = <T,>(styles: readonly PoStyleRow[], fn: (style: PoStyleRow) => Promise<T>) =>
   mapWithConcurrency(styles, STYLE_CONCURRENCY, fn);
 
-// The cover each style on the PO expects TODAY, resolved through the same
+// The cover ONE style on the PO expects TODAY, resolved through the same
 // resolver the rename machinery uses. A style with no generated cover simply
 // has no expectation: "this style never produced a cover" is a generation
 // question, not a question about a file sitting in a folder.
-async function loadExpectedCovers(styles: PoStyleRow[]): Promise<ExpectedCover[]> {
-  const { getCurrentOutputsForStyle } = await import("@/lib/outputs/current-outputs");
+//
+// `outputs` is the style's current-outputs walk, already done by the caller —
+// see loadPoExpectations for why it is resolved once per style rather than
+// once per expectation.
+async function expectedCoversForStyle(
+  s: PoStyleRow,
+  outputs: CurrentOutput[],
+): Promise<ExpectedCover[]> {
   const { resolveCurrentFileNames } = await import("@/lib/sharepoint/current-file-names");
 
+  const rows: ExpectedCover[] = [];
+  const covers = outputs
+    .filter(
+      (o) => o.variantKey.split("#")[0] === COVER_VARIANT_KEY && o.jobAssetId != null && o.fileName != null,
+    )
+    .map((o) => ({ jobAssetId: o.jobAssetId as string, variantKey: o.variantKey, stored: o.fileName as string }));
+  if (covers.length === 0) return rows;
+
+  let resolved: Awaited<ReturnType<typeof resolveCurrentFileNames>> = new Map();
+  try {
+    resolved = await resolveCurrentFileNames(
+      s.id,
+      covers.map((c) => ({ jobAssetId: c.jobAssetId, variantKey: c.variantKey })),
+      { variantsAlreadyFresh: true },
+    );
+  } catch (err) {
+    console.warn(`[checks] cover name resolution failed for style ${s.id}:`, err);
+  }
+
+  for (const c of covers) {
+    const r = resolved.get(c.jobAssetId);
+    // No current answer ⇒ keep asking about the stamped name. Never invent
+    // one — that is current-file-names.ts' rule and it holds here too.
+    const currentName = sanitizeFileName(r?.kind === "resolved" ? r.fileName : c.stored);
+    const storedSanitised = sanitizeFileName(c.stored);
+    rows.push({
+      styleId: s.id,
+      styleName: s.name,
+      styleSlugs: coverSlugsFor(s.name, currentName, storedSanitised),
+      currentName,
+      previousName: storedSanitised.toLowerCase() === currentName.toLowerCase() ? null : storedSanitised,
+    });
+  }
+  return rows;
+}
+
+// Both expectations for the WHOLE purchase order, in style order.
+//
+// THE CURRENT-OUTPUTS WALK HAPPENS ONCE PER STYLE. Both expectations are built
+// from the same list — the documents that belong in the folder and the cover
+// that belongs in it are two readings of one walk — and that walk is roughly
+// six round trips. Asking for it twice per style doubled the cost of the most
+// expensive read on the page for no difference in the answer. The two
+// expectations still land in style order, so the report is unchanged.
+//
+// The per-style catch is unchanged in reach: a style whose walk cannot be read
+// costs its OWN two expectations and nobody else's, exactly as when each pass
+// caught for itself. Understating an expectation is how a legitimate file gets
+// proposed for deletion, so it is logged and never swallowed silently.
+async function loadPoExpectations(
+  styles: PoStyleRow[],
+  poNumber: string,
+): Promise<{ docs: ExpectedDoc[]; covers: ExpectedCover[] }> {
+  const { getCurrentOutputsForStyle } = await import("@/lib/outputs/current-outputs");
+
   const perStyle = await mapStyles(styles, async (s) => {
-    const rows: ExpectedCover[] = [];
-    let covers: Array<{ jobAssetId: string; variantKey: string; stored: string }>;
+    const empty = { docs: [] as ExpectedDoc[], covers: [] as ExpectedCover[] };
+    let outputs: CurrentOutput[];
     try {
-      const outputs = await getCurrentOutputsForStyle(s.id);
-      covers = outputs
-        .filter(
-          (o) =>
-            o.variantKey.split("#")[0] === COVER_VARIANT_KEY && o.jobAssetId != null && o.fileName != null,
-        )
-        .map((o) => ({ jobAssetId: o.jobAssetId as string, variantKey: o.variantKey, stored: o.fileName as string }));
+      outputs = await getCurrentOutputsForStyle(s.id);
     } catch (err) {
-      // One unreadable style must not sink the PO's report — but it WOULD
-      // understate the expectation, and an understated expectation is how a
-      // legitimate cover gets proposed for deletion. Logged, never swallowed.
-      // Running the styles concurrently does not soften this: the catch stays
-      // INSIDE the per-style unit, so a failure still costs exactly its own
-      // style's expectation and nothing else's.
-      console.warn(`[checks] cover expectation failed for style ${s.id} on ${s.poNumber}:`, err);
-      return rows;
-    }
-    if (covers.length === 0) return rows;
-
-    let resolved: Awaited<ReturnType<typeof resolveCurrentFileNames>> = new Map();
-    try {
-      resolved = await resolveCurrentFileNames(
-        s.id,
-        covers.map((c) => ({ jobAssetId: c.jobAssetId, variantKey: c.variantKey })),
-        { variantsAlreadyFresh: true },
-      );
-    } catch (err) {
-      console.warn(`[checks] cover name resolution failed for style ${s.id}:`, err);
+      console.warn(`[checks] current outputs failed for style ${s.id} on ${poNumber}:`, err);
+      return empty;
     }
 
-    for (const c of covers) {
-      const r = resolved.get(c.jobAssetId);
-      // No current answer ⇒ keep asking about the stamped name. Never invent
-      // one — that is current-file-names.ts' rule and it holds here too.
-      const currentName = sanitizeFileName(r?.kind === "resolved" ? r.fileName : c.stored);
-      const storedSanitised = sanitizeFileName(c.stored);
-      rows.push({
-        styleId: s.id,
-        styleName: s.name,
-        styleSlugs: coverSlugsFor(s.name, currentName, storedSanitised),
-        currentName,
-        previousName: storedSanitised.toLowerCase() === currentName.toLowerCase() ? null : storedSanitised,
-      });
+    let docs: ExpectedDoc[] = [];
+    try {
+      docs = await loadExpectedFiles({ id: s.id, name: s.name }, true, true, { outputs });
+    } catch (err) {
+      console.warn(`[checks] expected-set failed for style ${s.id} on ${poNumber}:`, err);
     }
-    return rows;
+
+    let covers: ExpectedCover[] = [];
+    try {
+      covers = await expectedCoversForStyle(s, outputs);
+    } catch (err) {
+      console.warn(`[checks] cover expectation failed for style ${s.id} on ${poNumber}:`, err);
+    }
+
+    return { docs, covers };
   });
 
-  return perStyle.flat();
+  return {
+    docs: perStyle.flatMap((p) => p.docs),
+    covers: perStyle.flatMap((p) => p.covers),
+  };
 }
 
 // Every spelling of a style that could open a cover name. Style.name is the
@@ -243,6 +285,19 @@ export async function runPoChecksResolved(input: {
   supplierId: string;
   poNumber: string;
 }): Promise<{ report: PoChecksReport; target: FolderTarget | null }> {
+  // ONE cache scope per check. Inside it the per-style loaders that a PO-wide
+  // pass asks for repeatedly — the doc-type catalogue, a style's render
+  // context, the PO's sibling pool — resolve once instead of once per style;
+  // outside it every one of them behaves exactly as it always has (run-cache.ts).
+  // The scope is per CALL, so apply-actions' fresh re-check gets a fresh scope
+  // and can never validate a write against anything this scan cached.
+  return withRunCache(() => runPoChecksInScope(input));
+}
+
+async function runPoChecksInScope(input: {
+  supplierId: string;
+  poNumber: string;
+}): Promise<{ report: PoChecksReport; target: FolderTarget | null }> {
   const styles = await loadPoStyles(input.supplierId, input.poNumber);
   const rep = representativeStyle(styles);
 
@@ -297,19 +352,10 @@ export async function runPoChecksResolved(input: {
 
   // Bounded-concurrent, and flattened in style order afterwards — see mapStyles
   // for why both halves of that matter.
-  const expectedDocs: ExpectedDoc[] = (
-    await mapStyles(styles, async (s) => {
-      try {
-        return await loadExpectedFiles({ id: s.id, name: s.name }, true, true);
-      } catch (err) {
-        // Per-style isolation, unchanged: one style whose expected set cannot be
-        // read costs its own rows and no one else's.
-        console.warn(`[checks] expected-set failed for style ${s.id} on ${input.poNumber}:`, err);
-        return [] as ExpectedDoc[];
-      }
-    })
-  ).flat();
-  const expectedCovers = await loadExpectedCovers(styles);
+  const { docs: expectedDocs, covers: expectedCovers } = await loadPoExpectations(
+    styles,
+    input.poNumber,
+  );
 
   const present = await listFolderFiles(target);
   if (present === null) return { report: shell("unavailable", located), target };
