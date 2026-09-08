@@ -91,16 +91,13 @@ export const GUIDES: Guide[] = [
     summary:
       "What the buyer's own words for an order's packaging mean: the four tabs, the keyword rules, the PO cutoff that scopes them, and where the two lists disagree.",
   },
-  // Guide 3 of the feature series — the Packaging rows editor. The screen ships
-  // with a later release, so the guide is written and committed but NOT listed:
-  // uncomment this entry when the packaging-rows release lands.
-  // {
-  //   slug: "cover-page-packaging-rows",
-  //   file: "feature-packaging-rows.html",
-  //   title: "Writing what the cover page says",
-  //   summary:
-  //     "The Packaging rows editor: one shared list of every packaging line a cover can print, its standing note, and the two wordings its status column uses.",
-  // },
+  {
+    slug: "cover-page-packaging-rows",
+    file: "feature-packaging-rows.html",
+    title: "Writing what the cover page says",
+    summary:
+      "The Packaging rows editor: one shared list of every packaging line a cover can print, its standing note, the two wordings its status column uses, and which Monday trim values land on it.",
+  },
   {
     slug: "general-information",
     file: "feature-general-info.html",
@@ -113,7 +110,7 @@ export const GUIDES: Guide[] = [
     file: "feature-style-documents.html",
     title: "Attaching a document to a style",
     summary:
-      "Drop zones on a style's Prod Spec tab, one per manually-supplied line on its cover page, labelled exactly as the cover labels it.",
+      "Drop zones on a style's Review tab, one per manually-supplied line on its cover page, labelled exactly as the cover labels it.",
   },
   {
     slug: "carton-barcode-format",

@@ -11,7 +11,7 @@
     <div class="kicker">Prod Spec · Feature guide · 5 of 5</div>
     <h1>Attaching a document to a style</h1>
     <p class="sub">Some packaging lines on a cover page are supplied by hand rather than produced here. This is where the actual file goes &mdash; one drop zone per line, labelled exactly as the cover labels it.</p>
-    <div class="crumb">Open a style, then the <b>Prod Spec</b> tab &mdash; the section called <b>Manually supplied packaging</b>, just above <b>Prod Spec runs</b>.</div>
+    <div class="crumb">Open a style, then the <b>Review</b> tab &mdash; the section called <b>Manually supplied packaging</b>, directly under <b>Files &mdash; current outputs</b> and above the run history. The tab&rsquo;s own address ends <code>?tab=review</code>.</div>
   </div>
 
   <!-- SECTION 1 -->
@@ -23,7 +23,13 @@
     <div class="note">
       <div class="h">Only lines the cover is actually printing get a zone</div>
       <p>The labels come from the very same list the cover renders, so nothing here is re-typed or paraphrased. If the cover says &ldquo;Wash Care Label with Oeko-tex Logo&rdquo;, so does the zone &mdash; that identity is how you tell which file belongs in which box.</p>
-      <p>It follows that a line the cover isn&rsquo;t printing has no zone. If a style has nothing manually supplied, the section says so: <i>every packaging line is produced here</i>. And if trims on the cover page are switched off entirely, no cover lists a manual line at all, and the section tells you that instead.</p>
+      <p>It follows that a line the cover isn&rsquo;t printing has no zone. If a style has nothing manually supplied, the section says so: <i>every packaging line is produced here</i>.</p>
+    </div>
+
+    <div class="note warn">
+      <div class="h">Right now there are no drop zones &mdash; and that is expected</div>
+      <p>A cover only lists manually-supplied lines when <b>Print the Monday Trims list on cover pages</b> is switched on, under <b>Settings &#9656; Cover page</b>. That switch is <b>off</b> in production today, so no cover lists one, so this section has nothing to offer a zone for.</p>
+      <p>What you see instead is an amber line saying exactly that: <i>Trims on the cover page are switched off, so no cover currently lists a manually-supplied line.</i> Nothing is broken and nothing is hidden from you &mdash; the zones appear on their own, per style, the moment an admin turns the switch on and a style&rsquo;s cover starts listing a line this app doesn&rsquo;t produce.</p>
     </div>
   </div>
 
@@ -32,9 +38,17 @@
     <h2><span class="n">2</span> The drop zones</h2>
 
     <div class="mock">
-      <div class="chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">prod-spec.app / styles / 4471 &nbsp;&middot;&nbsp; Prod Spec</span></div>
+      <div class="chrome"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">prod-spec.app / styles / 4471?tab=review</span></div>
       <div class="appbody"><div class="canvas" style="padding:12px 14px;">
-        <div class="rtitle" style="font-size:13px;">Manually supplied packaging</div>
+        <div style="display:flex;gap:4px;border-bottom:1px solid #e4e4e7;padding-bottom:5px;margin-bottom:9px;">
+          <span class="pill zc" style="padding:3px 9px;">Details</span>
+          <span class="pill zc" style="padding:3px 9px;">Prod Spec</span>
+          <span class="pill bl" style="padding:3px 9px;">Review</span>
+          <span class="pill zc" style="padding:3px 9px;">History</span>
+        </div>
+        <div class="rtitle" style="font-size:13px;">Files &mdash; current outputs</div>
+        <div class="cap" style="margin-top:2px;">3 outputs &middot; latest document per output across all runs</div>
+        <div class="rtitle" style="font-size:13px;margin-top:11px;">Manually supplied packaging</div>
         <div class="cap" style="margin-top:2px;">Lines the cover page lists as <b>manually supplied</b> &mdash; named on the order&rsquo;s Trims column, but not produced by this app.</div>
 
         <div class="two" style="margin-top:9px;">
@@ -115,12 +129,12 @@
     <h2><span class="n">5</span> Who can do this</h2>
     <div class="note good">
       <div class="h">Anyone who can review</div>
-      <p>Reviewers and admins alike. It sits on a tab reviewers already reach, and the routes behind it use the same permission &mdash; because chasing a missing hangtag artwork is reviewer work, not configuration.</p>
+      <p>Reviewers and admins alike. The <b>Review</b> tab is already open to reviewers and the routes behind these zones use the same permission &mdash; because chasing a missing hangtag artwork is reviewer work, not configuration.</p>
     </div>
   </div>
 
   <div class="tip">
-    <b>A useful check:</b> a document line stuck at &ldquo;Waiting for Customer Information&rdquo; on a cover you are reviewing usually means exactly this &mdash; nobody has attached the file yet. Open the style&rsquo;s Prod Spec tab, find the zone with the same heading, and drop it in.
+    <b>A useful check:</b> a document line stuck at &ldquo;Waiting for Customer Information&rdquo; on a cover you are reviewing usually means exactly this &mdash; nobody has attached the file yet. Open the style&rsquo;s <b>Review</b> tab, find the zone with the same heading, and drop it in. (This section used to live on the Prod Spec tab. It moved so that everything a supplier receives &mdash; what we generated and what somebody supplied by hand &mdash; is on one screen.)
   </div>
 
   <div class="foot">

@@ -11,7 +11,7 @@
     <div class="kicker">Prod Spec · Feature guide · 4 of 5</div>
     <h1>General information, and re-issuing one order</h1>
     <p class="sub">The requirements pages that print inside every bundle, written per client and business area &mdash; and the two ways to push a change out to bundles that already exist.</p>
-    <div class="crumb"><b>Settings &#9656; Cover page &#9656; General information</b>. Reviewers own this prose, so this is the one Settings screen in a reviewer&rsquo;s sidebar.</div>
+    <div class="crumb"><b>Settings &#9656; Cover page &#9656; General information</b> &mdash; the middle of three tabs, beside <b>Cover page (all clients)</b> and <b>Packaging rows</b> (guide 3). Reviewers own this prose, so this is the one Settings screen in a reviewer&rsquo;s sidebar.</div>
   </div>
 
   <!-- SECTION 1 -->
@@ -27,6 +27,7 @@
         <div style="display:flex;gap:4px;margin-top:9px;border-bottom:1px solid #e4e4e7;padding-bottom:5px;">
           <span class="pill zc" style="padding:3px 9px;">Cover page (all clients)</span>
           <span class="pill bl" style="padding:3px 9px;">General information</span>
+          <span class="pill zc" style="padding:3px 9px;">Packaging rows</span>
         </div>
 
         <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
@@ -166,14 +167,19 @@
   <div class="section">
     <h2><span class="n">4</span> Apply to existing bundles</h2>
     <p class="lead">The broad instrument: rebuild the cover PDF of every style under the client and business area you have open that was generated <i>before</i> your edit. Right after a wording change everyone should see; much too broad when one order needs correcting.</p>
-    <p class="lead">It counts the styles first, then asks you to confirm with four choices:</p>
+    <p class="lead">It counts the styles first, then asks you to confirm with three choices:</p>
 
     <ol class="legend">
       <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>Skip styles where every output is approved</b> &mdash; on by default. Their cover shows no status column at all, so rebuilding changes nothing a supplier can see, while still overwriting the file for an order that is already finished. Untick it only if you changed something that shows on <i>every</i> cover.</span></li>
-      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>Push updated covers to the suppliers&rsquo; folders</b> &mdash; on by default, overwriting the copy they hold. <b>No email goes out</b>; the file simply becomes the current one. Untick to refresh the covers in-app only.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>Push updated covers to the suppliers&rsquo; folders</b> &mdash; on by default, overwriting the copy they hold. Untick to refresh the covers in-app only.</span></li>
       <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>Skip covers that already say the right thing</b> &mdash; on by default. Each rebuild records what it printed, so a second run costs nothing and a stopped run resumes where it left off.</span></li>
-      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>Also email the suppliers</b> in tonight&rsquo;s digest &mdash; off by default. A bulk refresh across old orders is not something a supplier needs an email about. Tick it only if the change is one they must actually read.</span></li>
     </ol>
+
+    <div class="note">
+      <div class="h">No supplier is emailed, and there is no option to</div>
+      <p>Unlike <i>Regenerate a style</i>, this tool has no email checkbox at all. The updated file simply becomes the current one in the folder. That is deliberate: a bulk refresh across old orders means the wording changed, not that anybody&rsquo;s order did &mdash; and a few hundred emails saying so would be noise.</p>
+      <p>If a particular supplier genuinely must read the change, use <b>Regenerate a style</b> on their order and tick <i>Also email the suppliers</i> there.</p>
+    </div>
 
     <div class="note">
       <div class="h">Either way, outputs and approvals are untouched</div>
