@@ -158,6 +158,10 @@ export default async function OutputBuilderPage({
   const layouts = rows.map((l) => {
     let pageCount = 0;
     let defInvalid = false;
+    // First page's mm size — the list scales its thumbnail by this, so a 40mm
+    // care label reads small next to an A4 sheet instead of both filling the
+    // same box. null ⇒ no thumbnail (invalid definition, or a pageless draft).
+    let firstPage: { widthMm: number; heightMm: number } | null = null;
     // This layout's own generation rules ("only for shoes"), read back as
     // sentences for the list badge — the outputs that DON'T run for every
     // style are worth spotting without opening each one.
@@ -165,6 +169,8 @@ export default async function OutputBuilderPage({
     try {
       const def = parseLayoutDef(l.definition);
       pageCount = def.pages.length;
+      const p0 = def.pages[0];
+      firstPage = p0 ? { widthMm: p0.widthMm, heightMm: p0.heightMm } : null;
       ruleSummaries = layoutSettings(def).rules.map(ruleSentence);
     } catch {
       // invalid definition — editable, but show as such
@@ -185,6 +191,7 @@ export default async function OutputBuilderPage({
       autoApprove: l.autoApprove,
       pageCount,
       defInvalid,
+      firstPage,
       ruleSummaries,
       customerName: l.customer?.name ?? null,
       businessAreaName: l.businessArea?.name ?? null,
