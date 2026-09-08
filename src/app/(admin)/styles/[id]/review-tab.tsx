@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { DeliveredCard } from "./delivered-card";
 import { groupByDocType, DocTypeAccordion } from "./doc-type-groups";
+import { ManualTrimsPanel } from "./manual-trims-panel";
 import { UserAvatar } from "@/components/user-avatar";
 import { docTypeLabel } from "@/lib/pdf/doc-types";
 import { formatDate } from "@/lib/utils";
@@ -15,6 +16,12 @@ import { formatDate } from "@/lib/utils";
 // per-output reruns leave them scattered across several jobs. Deciding still
 // happens on the dedicated review screen (leave guard, claim popup) — the CTA
 // appears whenever the latest run is awaiting review.
+//
+// "Manually supplied packaging" sits here too, directly under the current
+// outputs: this tab is where a person looks at the documents a style ships
+// with, and a manual line is simply the document that arrives from outside
+// the app instead of out of a run. Same reviewer, same question ("is
+// everything here?"), so the two halves belong on one screen.
 
 export type ReviewTabAsset = {
   id: string;
@@ -141,6 +148,18 @@ export function ReviewTab({
             ))}
           </div>
         )}
+      </section>
+
+      {/* The other half of "what the supplier gets": the grid above is what
+          this app generated, this is what a person had to supply by hand.
+          Above the run history because it is current-state, not archive, and
+          it loads its own data so the page's server render is unchanged.
+          Reviewer-reachable exactly as before — its routes gate on canReview
+          and this tab, like the Prod Spec tab it moved off, is open to the
+          same roles. */}
+      <section>
+        <h2 className="mb-2 text-sm font-semibold text-zinc-700">Manually supplied packaging</h2>
+        <ManualTrimsPanel styleId={styleId} />
       </section>
 
       {/* Full run history — every generation is kept (each Re-run creates a new

@@ -2341,3 +2341,103 @@ model TrimConceptRow {
   @@index([active, sortOrder])
   @@map("trim_concept_rows")
 }
+
+// The all-PO folder sweep. /checks audits ONE purchase order's folder; this is
+// that same audit run across every order in scope, so "every stale-named file
+// in the book" is answerable in one place.
+//
+// TWO TABLES BECAUSE A SWEEP IS RESUMABLE. The run's PO list is written up
+// front, one row per (supplier, PO), and each row is filled in as its folder is
+// checked. A deploy in the middle of an hour-long sweep therefore costs the
+// folders still marked "pending" and nothing that had already landed — the same
+// row set is picked straight back up.
+//
+// NOTHING HERE IS EVER ACTED ON. These rows are a scan, and a scan is stale the
+// moment it is written. Acting on a finding goes through the per-PO page, whose
+// apply re-reads the live folder and refuses anything that has changed since —
+// see apply-actions.ts. The sweep exists to tell a person WHICH folders to
+// open, never to press the button for them.
+// =====================================================
+model FolderCheckSweep {
+  id String @id @default(cuid())
+
+  // "RUNNING" | "DONE" | "CANCELLED" | "FAILED".
+  status String @default("RUNNING")
+
+  // The supplier-send cutoff the PO list was scoped with, recorded so an old
+  // run's scope stays legible after the setting has moved on.
+  minPo Int?
+
+  totalPos      Int @default(0)
+  checkedPos    Int @default(0)
+  // Folders the check could not read (a 403, a throttle, an ambiguous PO
+  // folder). NOT evidence of anything — counted separately so a Graph outage
+  // can never read as "these folders are clean".
+  unreadablePos Int @default(0)
+  // POs whose check itself threw. Recorded per row too.
+  erroredPos    Int @default(0)
+
+  posWithFindings Int @default(0)
+  flaggedFiles    Int @default(0)
+
+  // The worker's lease. A RUNNING sweep whose heartbeat has gone cold lost its
+  // process (a deploy) and may be resumed; a warm one must not be double-run.
+  heartbeatAt DateTime  @default(now())
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+
+  startedById    String?
+  startedByEmail String?
+  // Why a run stopped short — a sustained throttle, or a run of unreadable
+  // folders that means the outage is ours to wait out, not to record.
+  error          String?
+
+  pos FolderCheckSweepPo[]
+
+  @@index([status, startedAt])
+  @@index([startedAt])
+  @@map("folder_check_sweeps")
+}
+
+model FolderCheckSweepPo {
+  id      String           @id @default(cuid())
+  sweepId String
+  sweep   FolderCheckSweep @relation(fields: [sweepId], references: [id], onDelete: Cascade)
+
+  supplierId   String
+  poNumber     String
+  poSeq        Int?
+  supplierName String?
+
+  // "pending" until the folder has been checked, then the ReconcileState the
+  // check reached ("ok", "subfolder-missing", "unavailable", …), or "error"
+  // when the check threw. The resume is exactly "the rows still pending".
+  state     String  @default("pending")
+  message   String?
+  folderUrl String?
+
+  styleCount   Int @default(0)
+  scannedFiles Int @default(0)
+  flaggedFiles Int @default(0)
+
+  // The flagged rows verbatim (each with the check that produced it), so the
+  // cross-order review groups by fault without re-reading SharePoint. Null
+  // until checked; [] for a folder with nothing wrong in it.
+  findings Json?
+  // The same findings counted by fault type — {"file-renamed":{files,renameable,
+  // deletable}, …}. Counted from ALL of them, including any beyond the stored
+  // slice. The cross-order rollup reads only this: a running sweep's progress
+  // is polled every few seconds, and shipping every flagged row in the book on
+  // each poll would cost more than the sweep does.
+  kindCounts Json?
+  // Section notes — "2 styles on this PO have no cover in the folder at all".
+  notes    Json?
+
+  checkedAt DateTime?
+  error     String?
+
+  @@unique([sweepId, supplierId, poNumber])
+  @@index([sweepId, state])
+  @@index([sweepId, flaggedFiles])
+  @@map("folder_check_sweep_pos")
+}
