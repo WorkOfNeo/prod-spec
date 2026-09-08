@@ -239,22 +239,34 @@ export async function buildRequiredPackagingForStyle(
   // this code changes nothing a supplier sees until somebody decides it should.
   const trimsEnabled = opts?.forceTrims === true || (await getTrimsOnCoverEnabled());
 
-  // THE SWITCH GATES MONDAY'S LIST, NOT THE WORDING. A concept's standing note
-  // ("printed on one paper, front and back") describes a document this app
-  // already produces and already lists, so it prints whether or not the buyer's
-  // trim list is folded in. The manifest is therefore always assembled through
-  // the concept-aware path, with an EMPTY label list when trims are off — which
-  // reproduces the declared-output manifest row for row (assembleTrimManifest
-  // with no labels lists every output exactly once, in order).
+  // THE SWITCH GATES EVERYTHING THE TRIM LAYER ADDS — Monday's list AND the
+  // per-concept wording it brought with it.
   //
-  // Costs one settings read on the trims-off path. Negligible against the
-  // puppeteer pass it precedes, and callers resolving many styles preload it.
-  const settings = opts?.trimSettings ?? (await loadTrimSettings());
-  const trimLabels = opts?.withoutTrims || !trimsEnabled ? [] : resolveStyleTrimLabels(style);
+  // An earlier draft gated only the label list and let the standing notes
+  // ("printed on one paper, front and back") and the per-concept status wording
+  // ("Awaiting Photo Samples from the supplier.") print regardless, reasoning
+  // that they describe documents this app already produces and already lists.
+  // Reversed on purpose: merging this must change nothing on any supplier's
+  // cover until a human flips the switch, and a note appearing under a row is a
+  // change a supplier sees whatever it says. With the switch off there is no
+  // trim context at all, so assembleRequiredPackagingDocs takes its pre-Trims
+  // branch and the page is byte-identical to what production prints today.
+  //
+  // The pre-Trims manifest also had a second property that has to survive: no
+  // declared outputs meant no manifest at all. Trims changes that — a style
+  // with no outputs can still owe the supplier a list of what to expect — so
+  // the empty-rows early return applies on the gated-off path only.
+  if (opts?.withoutTrims || !trimsEnabled) {
+    if (rows.length === 0) return [];
+    const approvedBaseKeys =
+      opts?.approvedBaseKeysOverride ?? (await approvedOutputBaseKeysForStyle(styleId));
+    return assembleRequiredPackagingDocs(rows, approvedBaseKeys);
+  }
 
-  // No declared outputs and nothing on Monday's list ⇒ no manifest at all.
+  const trimLabels = resolveStyleTrimLabels(style);
   if (rows.length === 0 && trimLabels.length === 0) return [];
 
+  const settings = opts?.trimSettings ?? (await loadTrimSettings());
   const approvedBaseKeys =
     opts?.approvedBaseKeysOverride ?? (await approvedOutputBaseKeysForStyle(styleId));
 
