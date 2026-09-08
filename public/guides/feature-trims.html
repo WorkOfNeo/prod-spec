@@ -19,7 +19,7 @@
     <h2><span class="n">1</span> Why words need a meaning at all</h2>
     <p class="lead">The cover page prints the buyer&rsquo;s trims list in Monday&rsquo;s own words, so the supplier can tick it off, and marks each line as something we produce, something supplied separately, or a packing instruction with no artwork. To do that it has to recognise what each line <i>is</i>.</p>
 
-    <p class="lead">A trim is never matched to one layout. &ldquo;Care label&rdquo; exists once per client, so that mapping would never be finished &mdash; it would have to be redone for every new customer. Both sides are matched onto a shared <b>concept</b> instead:</p>
+    <p class="lead">A trim is never matched to one layout. &ldquo;Care label&rdquo; exists once per client, so that mapping would never be finished &mdash; it would have to be redone for every new customer. Both sides are matched onto a shared <b>packaging row</b> instead &mdash; one of the lines a cover page can print, written once for everybody on <b>Settings &#9656; Cover page &#9656; Packaging rows</b> (guide 3):</p>
 
     <div class="mock">
       <div class="appbody"><div class="canvas" style="padding:14px 16px;">
@@ -30,17 +30,23 @@
           </div>
           <div style="text-align:center;color:#a1a1aa;font-size:14px;">&rarr;</div>
           <div style="border:1px solid #bfdbfe;background:#eff6ff;border-radius:7px;padding:9px 11px;text-align:center;">
-            <span class="cap" style="margin:0;display:block;color:#1d4ed8;">the concept</span>
+            <span class="cap" style="margin:0;display:block;color:#1d4ed8;">the packaging row</span>
             <b style="font-size:12px;color:#1d4ed8;">Care label</b>
           </div>
         </div>
-        <div class="cap" style="margin-top:9px;">A style satisfies a trim when any document it already declares carries the same concept. So &ldquo;Hangtag&rdquo; is produced by us for a client who has a hangtag layout, and supplied separately for one who doesn&rsquo;t &mdash; with no per-client setup.</div>
+        <div class="cap" style="margin-top:9px;">A style satisfies a trim when any document it already declares lands on the same row. So &ldquo;Hangtag&rdquo; is produced by us for a client who has a hangtag layout, and supplied separately for one who doesn&rsquo;t &mdash; with no per-client setup.</div>
       </div></div>
     </div>
 
     <div class="note">
-      <div class="h">Some concepts have no artwork &mdash; on purpose</div>
-      <p>A large share of live trims are physical packing instructions with nothing to print: master polybags, hangers, cartons, hooks. Those are listed on the cover so it matches the buyer&rsquo;s list one for one, but as a <b>note</b> &mdash; never as a document with a delivery status, which would otherwise sit at &ldquo;waiting&rdquo; forever and bury the lines genuinely waiting.</p>
+      <div class="h">Some rows have no artwork &mdash; on purpose</div>
+      <p>A large share of live trims are physical packing instructions with nothing to print: master polybags, hangers, cartons, hooks. Those are listed on the cover so it matches the buyer&rsquo;s list one for one, but as a <b>note</b> &mdash; never as a document with a delivery status, which would otherwise sit at &ldquo;waiting&rdquo; forever and bury the lines genuinely waiting. Whether a row is a document or a packing instruction is set on the row itself, on the Packaging rows tab.</p>
+    </div>
+
+    <div class="note">
+      <div class="h">One mapping, two screens to edit it from</div>
+      <p>This screen works <b>value first</b>: here is a Monday word, which rows does it mean? <b>Settings &#9656; Cover page &#9656; Packaging rows</b> works <b>row first</b>: here is a line the cover prints, which Monday words land on it? They are the same mapping seen from opposite ends &mdash; a change made on one shows up on the other, so neither can go stale.</p>
+      <p>Use this screen to work through the queue of words that have no row yet. Use the other when the question is &ldquo;what actually ends up on the hangtag line?&rdquo;</p>
     </div>
   </div>
 
@@ -97,50 +103,81 @@
   <!-- SECTION 4 -->
   <div class="section">
     <h2><span class="n">4</span> A suggestion versus a decision</h2>
-    <p class="lead">Most values need nothing from you. The keyword rules already resolve them, and they keep following the rules &mdash; so if a rule is later improved, they improve with it. Setting a value yourself is a different thing: it becomes a stored decision that no later rule change can move.</p>
+    <p class="lead">Most values need nothing from you. The keyword rules already resolve them, and while nobody has said otherwise the value simply <b>follows the suggestion</b> &mdash; so if a rule is later improved, the value improves with it. Picking rows yourself is a different thing: it becomes a stored <b>decision</b> that no later rule change can move.</p>
+    <p class="lead">A value can name <b>more than one row</b>, which is why the Decision column is a set of chips rather than a dropdown. A compound Monday entry like &ldquo;Polybag + Inlaycard + Hangtag&rdquo; is one line naming three things, and a single-choice control would quietly drop two of them.</p>
 
     <div class="mock">
       <div class="appbody"><div class="canvas" style="padding:12px 14px;">
         <table class="tbl" style="margin-top:0;">
-          <tr class="head-strong"><th>Monday value</th><th style="width:14%;text-align:right;">Styles</th><th style="width:26%;">Resolves to</th><th style="width:28%;">Decision</th></tr>
+          <tr class="head-strong"><th>Monday value</th><th style="width:12%;text-align:right;">Styles</th><th style="width:27%;">Resolves to</th><th style="width:30%;">Decision</th></tr>
           <tr>
             <td><b>Wash Care Label w. Oeko-tex</b></td>
             <td style="text-align:right;">184</td>
-            <td>Care label <span class="pill zc" style="font-size:8px;">rule</span> <span class="mk in">1</span></td>
-            <td><span style="border:1px solid #e4e4e7;border-radius:5px;padding:2px 7px;font-size:9px;display:inline-block;">Auto (follow the rules) &#9662;</span></td>
+            <td>Care label <span class="pill zc" style="font-size:8px;">suggested</span> <span class="mk in">1</span></td>
+            <td>
+              <span class="pill zc" style="font-size:9px;">Care label &times;</span>
+              <span style="border:1px solid #e4e4e7;border-radius:5px;padding:2px 6px;font-size:9px;display:inline-block;">Add a row&hellip; &#9662;</span>
+              <div style="font-size:8.5px;color:#52525b;margin-top:3px;"><u>Accept suggestion</u> &nbsp; <u>Not packaging</u> <span class="mk in">5</span></div>
+            </td>
           </tr>
           <tr>
             <td><b>Carton marking- Color sticker</b> <span class="pill am" style="font-size:8px;">check</span> <span class="mk in">2</span></td>
             <td style="text-align:right;">96</td>
-            <td>Colour sticker <span class="pill zc" style="font-size:8px;">rule</span></td>
-            <td><span style="border:1px solid #e4e4e7;border-radius:5px;padding:2px 7px;font-size:9px;display:inline-block;">Auto (follow the rules) &#9662;</span></td>
+            <td>Colour sticker <span class="pill zc" style="font-size:8px;">suggested</span></td>
+            <td>
+              <span class="pill zc" style="font-size:9px;">Colour sticker &times;</span>
+              <span style="border:1px solid #e4e4e7;border-radius:5px;padding:2px 6px;font-size:9px;display:inline-block;">Add a row&hellip; &#9662;</span>
+            </td>
           </tr>
           <tr>
             <td><b>Gift box, see attached sketch</b></td>
             <td style="text-align:right;">12</td>
-            <td><span class="pill am" style="font-size:8px;">unmapped</span> <span class="mk in">3</span></td>
-            <td><span style="border:1px solid #e4e4e7;border-radius:5px;padding:2px 7px;font-size:9px;display:inline-block;">Carton / box / display &#9662;</span></td>
+            <td><span class="pill am" style="font-size:8px;">no row yet</span> <span class="mk in">3</span></td>
+            <td>
+              <span style="border:1px solid #e4e4e7;border-radius:5px;padding:2px 6px;font-size:9px;display:inline-block;">Add a row&hellip; &#9662;</span>
+            </td>
+          </tr>
+          <tr>
+            <td><b>Hanger &amp; Hangtag</b></td>
+            <td style="text-align:right;">57</td>
+            <td>Hanger + Hangtag <span class="pill bl" style="font-size:8px;">decided</span> <span class="mk in">4</span></td>
+            <td>
+              <span class="pill zc" style="font-size:9px;">Hanger &times;</span> <span class="pill zc" style="font-size:9px;">Hangtag &times;</span>
+              <div style="font-size:8.5px;color:#52525b;margin-top:3px;"><u>Not packaging</u> &nbsp; <u>Undecide</u> <span class="mk in">6</span></div>
+            </td>
           </tr>
           <tr>
             <td><b>PO 100423</b></td>
             <td style="text-align:right;">1</td>
-            <td><span class="pill bl" style="font-size:8px;">not packaging</span> <span class="mk in">4</span></td>
-            <td><span style="border:1px solid #e4e4e7;border-radius:5px;padding:2px 7px;font-size:9px;display:inline-block;">Not packaging &mdash; hide it &#9662;</span></td>
+            <td><span class="pill bl" style="font-size:8px;">not packaging</span> <span class="mk in">7</span></td>
+            <td>
+              <span style="border:1px solid #e4e4e7;border-radius:5px;padding:2px 6px;font-size:9px;display:inline-block;">Add a row&hellip; &#9662;</span>
+            </td>
           </tr>
         </table>
       </div></div>
     </div>
 
     <ol class="legend">
-      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>&ldquo;rule&rdquo;</b> &mdash; a keyword rule matched, and this value is following it. Nothing needs doing. Leave it on <b>Auto</b> and it keeps following the rules as they improve. The badge reads <b>&ldquo;override&rdquo;</b> instead once somebody has decided it by hand.</span></li>
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>&ldquo;suggested&rdquo;</b> &mdash; a keyword rule matched and this value is following it. Nothing needs doing; it keeps following the rules as they improve.</span></li>
       <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>&ldquo;check&rdquo;</b> &mdash; several rules matched and the first one won. It is probably right, but a person should confirm it. These count toward the tab&rsquo;s &ldquo;to check&rdquo; number.</span></li>
-      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>&ldquo;unmapped&rdquo;</b> &mdash; genuinely new vocabulary. Nothing recognises it, so the cover prints the line as <b>supplied separately</b> until somebody maps it. That is the safe direction: a supplier never loses a line while it waits.</span></li>
-      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>&ldquo;Not packaging &mdash; hide it&rdquo;</b> keeps a value off the cover entirely. Use it for one-offs that were typed into the column but aren&rsquo;t trims &mdash; a PO number, a note to the buyer.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>&ldquo;no row yet&rdquo;</b> &mdash; genuinely new vocabulary. Nothing recognises it, so the cover prints the line as <b>supplied separately</b> until somebody maps it. That is the safe direction: a supplier never loses a line while it waits.</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>&ldquo;decided&rdquo;</b> &mdash; a person picked these rows. The rules can no longer move it. Several chips means the one Monday entry prints on several cover lines, which is exactly right for a compound entry.</span></li>
+      <li><span class="ln"><span class="mk">5</span></span><span class="tx"><b>Accept suggestion</b> turns the rule&rsquo;s proposal into your decision, unchanged. It only appears while the value is still following the rules.</span></li>
+      <li><span class="ln"><span class="mk">6</span></span><span class="tx"><b>Undecide</b> hands the value back to the rules &mdash; the opposite of Accept. It only appears on a value somebody has decided.</span></li>
+      <li><span class="ln"><span class="mk">7</span></span><span class="tx"><b>Not packaging</b> keeps a value off the cover entirely, and it is a stored decision like any other. Use it for one-offs typed into the column that aren&rsquo;t trims &mdash; a PO number, a note to the buyer. Removing the last chip from a value does the same thing.</span></li>
     </ol>
 
+    <div class="note good">
+      <div class="h">Accept all &mdash; the shortcut for the common vocabulary</div>
+      <p>When values are still following the keyword suggestion, a panel above the table says so and offers <b>Accept all</b>. It turns every one of those suggestions into a decision of your own in a single click.</p>
+      <p>Two things it deliberately does <b>not</b> do. It does not touch values that <b>no rule matched</b> &mdash; those still need a person, and mapping them to nothing would call the job done while the queue was still full. And it changes nothing about what covers print today: those values already print exactly this way. What accepting buys you is that a later rule edit can no longer move them.</p>
+    </div>
+
     <div class="note">
-      <div class="h">Choosing a concept</div>
-      <p>The dropdown lists the whole catalogue: care label, carton marking, colour sticker, hangtag, banderole, neck print, main label, size label, price sticker, barcode sticker, polybag sticker, info area, top card, pictogram, heat transfer, RFID &mdash; and the ones with <b>(no artwork)</b> beside them: polybag, hanger, carton/box/display, hook, packing instruction. Picking a &ldquo;no artwork&rdquo; concept means the line prints as a note, with no delivery status.</p>
+      <div class="h">Choosing a row</div>
+      <p>The <b>Add a row&hellip;</b> picker lists the whole shared list: care label, carton marking, colour sticker, hangtag, banderole, neck print, main label, size label, price sticker, barcode sticker, polybag sticker, info area / insert card, top card, pictogram, heat transfer, RFID &mdash; and the ones marked <b>(no artwork)</b>: polybag, hanger, carton/box/display, hook, packing instruction. Picking a &ldquo;no artwork&rdquo; row means the line prints as a note, with no delivery status.</p>
+      <p>Nothing in the list fits? Rows are added on <b>Settings &#9656; Cover page &#9656; Packaging rows</b> (guide 3). The screen links straight there; add the row, come back, and pick it. Rows somebody has removed are not offered, but a value already pointing at one keeps working.</p>
     </div>
 
     <div class="note warn">
@@ -180,12 +217,12 @@
   </div>
 
   <div class="tip">
-    <b>In practice:</b> open the Trim values tab, leave the filter on, and work down the short list. Confirm the &ldquo;check&rdquo; rows, map the &ldquo;unmapped&rdquo; ones, hide anything that isn&rsquo;t a trim at all &mdash; then Save. If the same word keeps reappearing in slightly different spellings, the better fix is a keyword on the Rules tab, not a decision per spelling.
+    <b>In practice:</b> open the Trim values tab, leave the filter on, and work down the short list. Confirm the &ldquo;check&rdquo; rows, give a row to the &ldquo;no row yet&rdquo; ones, mark anything that isn&rsquo;t a trim at all as <b>Not packaging</b> &mdash; then Save. If most of the list is still on a suggestion and you are happy with it, <b>Accept all</b> clears it in one go. If the same word keeps reappearing in slightly different spellings, the better fix is a keyword on the Rules tab, not a decision per spelling.
   </div>
 
   <div class="foot">
     <span>Prod Spec &middot; Feature guide 2 of 5 &mdash; The trims list</span>
-    <span>Concepts &middot; rules &middot; the PO cutoff &middot; coverage</span>
+    <span>Packaging rows &middot; rules &middot; the PO cutoff &middot; coverage</span>
   </div>
 
 </body>
