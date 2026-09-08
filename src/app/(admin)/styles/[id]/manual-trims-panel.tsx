@@ -14,7 +14,7 @@ import { FileDropZone } from "@/components/file-drop-zone";
 // the cover from "Waiting for Customer Information" to "Approved".
 //
 // ANYONE WHO CAN REVIEW SEES THIS, reviewers included — the routes behind it
-// gate on canReview, and the Prod Spec tab this sits on is already reviewer-
+// gate on canReview, and the Review tab this sits on is already reviewer-
 // reachable, so no role prop is threaded down here.
 //
 // EVERY ZONE IS LABELLED WITH THE COVER'S OWN WORDING. The labels come down
