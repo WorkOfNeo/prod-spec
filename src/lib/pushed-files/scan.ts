@@ -12,6 +12,8 @@ import {
   type CurrentNameResolution,
 } from "@/lib/sharepoint/current-file-names";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
+import { getVariant } from "@/lib/pdf/template-registry";
+import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import {
   buildPushedFileCheck,
   summarisePushedRows,
@@ -146,6 +148,17 @@ export type PushedScanInventory = {
   // silently: a record with no readable URL is a gap in our own bookkeeping.
   skipped: { queueItemId: string; reason: string }[];
 };
+
+// What to call a document in a verdict a person reads. The variant key is an
+// identifier, not a name: "__cover__" tells a reviewer nothing. Framing pages
+// are named here because they have no layout to ask; everything else asks the
+// variant registry and falls back to the key only when the layout is gone.
+function documentLabel(variantKey: string): string {
+  const base = variantKey.split("#")[0];
+  if (base === COVER_VARIANT_KEY) return "Cover page";
+  if (base === GENERAL_INFO_VARIANT_KEY) return "General information";
+  return getVariant(base)?.name ?? base;
+}
 
 const folderKey = (supplierId: string, poNumber: string) => `${supplierId}::${poNumber}`;
 
@@ -328,9 +341,11 @@ export async function scanPushedFolder(
 
     for (const r of styleRecords) {
       const resolution = r.jobAssetId ? names.get(r.jobAssetId) : undefined;
+      const label = documentLabel(r.docType);
       const current = resolution?.kind === "resolved" ? resolution.fileName : null;
       withCurrent.push({
         ...r,
+        displayName: label,
         currentName: current,
         currentNote: current ? null : currentNoteFor(resolution),
       });
