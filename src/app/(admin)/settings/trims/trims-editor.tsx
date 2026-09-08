@@ -10,7 +10,10 @@ import type { TrimCensus, TrimOverridePurgePreview } from "@/lib/trims/census";
 //   Trim values — the vocabulary Monday actually uses, worst-first. The queue.
 //                 Each value is matched onto the cover page's PACKAGING ROWS,
 //                 by hand, and a value may name several (a compound entry like
-//                 "Hanger & Hangtag" is one line naming two things).
+//                 "Hanger & Hangtag" is one line naming two things). The SAME
+//                 mapping is editable row-first on Cover page › Packaging rows;
+//                 both screens read and write the one `trimLabelOverrides`
+//                 record through this page's endpoint, so neither can go stale.
 //   Rules       — the ordered keyword rules that classify BOTH sides. Order is
 //                 semantic, and the editor has to make that visible or someone
 //                 will "tidy" the list alphabetically and quietly re-label
@@ -340,7 +343,8 @@ export function TrimsEditor({
             >
               Add a row on Cover page › Packaging rows
             </a>
-            , then come back and pick it.
+            , then come back and pick it. That screen edits the same mapping from the other side —
+            row by row, listing the values that land on each — so a change made there shows up here.
           </p>
 
           {acceptable.length > 0 && (
