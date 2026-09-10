@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { BLANK_BA_VALUES } from "@/lib/import/heuristics";
 import { DocTypesButton } from "./doc-types-dialog";
 import type { ManagedDocType, ExclusionFieldOption } from "./doc-types-manager";
@@ -25,6 +25,9 @@ type LayoutRow = {
   autoApprove: boolean;
   pageCount: number;
   defInvalid: boolean;
+  // First page's mm size — drives the thumbnail's scale. null ⇒ nothing to
+  // show (invalid definition, or a draft with no pages yet).
+  firstPage: { widthMm: number; heightMm: number } | null;
   // Plain-English form of this layout's own generation rules (Settings tab) —
   // empty when it generates for every style that declares it.
   ruleSummaries: string[];
@@ -56,6 +59,184 @@ function HoverPopover({ trigger, children }: { trigger: ReactNode; children: Rea
       <div className="invisible absolute left-0 top-full z-20 mt-1 max-h-72 w-72 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-3 opacity-0 shadow-lg transition group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100">
         {children}
       </div>
+    </div>
+  );
+}
+
+// CSS mm → px (1mm = 96/25.4px at the browser's reference DPI). The thumbnail
+// route returns the SAME renderer output the builder preview uses, whose body
+// has no margin and whose .ol-page is exactly widthMm × heightMm — so an
+// iframe sized to those mm shows the sheet and nothing else, and one transform
+// scales it to whatever box we want.
+const PX_PER_MM = 96 / 25.4;
+const THUMB_PX = 44; // the scannable column
+const BIG_PX = 440; // the hover blow-up
+const BIG_MAX_SCALE = 4; // don't turn a 40mm label into a pixel wall
+const THUMB_RUNWAY_PX = 400; // load this far outside the viewport
+
+// One rAF-throttled scroll/resize ticker for the whole list — 157 rows each
+// attaching their own listener would force a layout read per row per event.
+// Rows drop out as they load, so the work shrinks as you scroll.
+const thumbWatchers = new Set<() => void>();
+let thumbTimer: ReturnType<typeof setTimeout> | null = null;
+let thumbPoll: ReturnType<typeof setInterval> | null = null;
+function runThumbWatchers() {
+  for (const w of [...thumbWatchers]) w();
+}
+function tickThumbs() {
+  // Trailing timer, not requestAnimationFrame: rAF is suspended in offscreen
+  // embeddings (the same reason IntersectionObserver is no use here), which
+  // would strand every below-the-fold thumbnail blank however far you scroll.
+  if (thumbTimer) return;
+  thumbTimer = setTimeout(() => {
+    thumbTimer = null;
+    runThumbWatchers();
+  }, 100);
+}
+function watchViewport(fn: () => void): () => void {
+  thumbWatchers.add(fn);
+  if (thumbWatchers.size === 1) {
+    window.addEventListener("scroll", tickThumbs, { passive: true });
+    window.addEventListener("resize", tickThumbs);
+    // Safety net for embeddings that never dispatch scroll at all: a wall of
+    // permanently blank boxes is worse than one timer reading a few rects.
+    // Both it and the listeners go the moment the last thumbnail has loaded.
+    thumbPoll = setInterval(runThumbWatchers, 750);
+  }
+  return () => {
+    thumbWatchers.delete(fn);
+    if (thumbWatchers.size === 0) {
+      window.removeEventListener("scroll", tickThumbs);
+      window.removeEventListener("resize", tickThumbs);
+      if (thumbPoll) {
+        clearInterval(thumbPoll);
+        thumbPoll = null;
+      }
+    }
+  };
+}
+
+// Live thumbnail of a layout's first page, rendered against the sample style.
+// Scaled by the page's real mm size, so a care label reads small next to an A4
+// sheet — the proportions are half the reason to look. Hovering blows it up in
+// a viewport-clamped fixed panel (fixed, not absolute, so no table/overflow
+// ancestor can clip it near the bottom of a long list).
+function LayoutThumb({
+  id,
+  name,
+  page,
+  version,
+}: {
+  id: string;
+  name: string;
+  page: { widthMm: number; heightMm: number } | null;
+  // Cache key — the route caches for an hour, so an edit must change the URL.
+  version: number;
+}) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  // Render on approach, not on mount. `loading="lazy"` is advisory — Chrome
+  // honoured it for none of the 157 rows, and since every thumbnail is a
+  // server-side layout render the list arrived as ~6MB of iframes rendered
+  // 89s deep. A plain rect check (not IntersectionObserver, which doesn't
+  // fire at all in some embedded browser views) keeps it to what's on screen
+  // plus a screenful of runway; once mounted it stays, so scrolling back
+  // never re-fetches.
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    if (near) return;
+    const el = boxRef.current;
+    if (!el) return;
+    const check = () => {
+      const r = el.getBoundingClientRect();
+      const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+      // No measurable viewport (an offscreen/hidden embedding) → render rather
+      // than leave a wall of blank boxes; the gate is an optimisation, not a
+      // correctness guard.
+      if (vh === 0 || (r.top < vh + THUMB_RUNWAY_PX && r.bottom > -THUMB_RUNWAY_PX)) setNear(true);
+    };
+    check();
+    return watchViewport(check);
+  }, [near]);
+
+  if (!page) {
+    return (
+      <div
+        className="flex items-center justify-center rounded border border-dashed border-zinc-200 text-xs text-zinc-300"
+        style={{ width: THUMB_PX, height: THUMB_PX }}
+        title="No page to preview"
+      >
+        —
+      </div>
+    );
+  }
+
+  const wPx = page.widthMm * PX_PER_MM;
+  const hPx = page.heightMm * PX_PER_MM;
+  const src = `/api/admin/output-layouts/${id}/thumbnail?v=${version}`;
+  const small = Math.min(THUMB_PX / wPx, THUMB_PX / hPx);
+  const big = Math.min(BIG_PX / wPx, BIG_PX / hPx, BIG_MAX_SCALE);
+  const bigW = wPx * big;
+  const bigH = hPx * big;
+
+  // Anchor the panel to the right of the thumbnail, clamped into the viewport.
+  const open = () => {
+    const r = boxRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const panelW = bigW + 16;
+    const panelH = bigH + 34;
+    setPos({
+      left: Math.max(12, Math.min(r.right + 12, window.innerWidth - panelW - 12)),
+      top: Math.max(12, Math.min(r.top + r.height / 2 - panelH / 2, window.innerHeight - panelH - 12)),
+    });
+  };
+
+  return (
+    <div ref={boxRef} className="relative" onMouseEnter={open} onMouseLeave={() => setPos(null)}>
+      <Link href={`/output-builder/${id}`} aria-label={`Open ${name}`} className="block">
+        <div
+          className="overflow-hidden rounded border border-zinc-200 bg-white shadow-sm"
+          style={{ width: wPx * small, height: hPx * small }}
+        >
+          {/* pointer-events off: an iframe swallows the mouse, which would eat
+              both the row hover and this cell's enter/leave. */}
+          {near ? (
+            <iframe
+              src={src}
+              title={`${name} — page 1`}
+              loading="lazy"
+              scrolling="no"
+              tabIndex={-1}
+              aria-hidden
+              className="pointer-events-none border-0"
+              style={{ width: wPx, height: hPx, transform: `scale(${small})`, transformOrigin: "top left" }}
+            />
+          ) : (
+            <div className="h-full w-full bg-zinc-50" />
+          )}
+        </div>
+      </Link>
+      {pos && near ? (
+        <div
+          className="pointer-events-none fixed z-50 rounded-lg border border-zinc-200 bg-white p-2 shadow-xl"
+          style={{ left: pos.left, top: pos.top }}
+        >
+          <div className="overflow-hidden bg-white" style={{ width: bigW, height: bigH }}>
+            <iframe
+              src={src}
+              title={`${name} — page 1, enlarged`}
+              scrolling="no"
+              tabIndex={-1}
+              aria-hidden
+              className="pointer-events-none border-0"
+              style={{ width: wPx, height: hPx, transform: `scale(${big})`, transformOrigin: "top left" }}
+            />
+          </div>
+          <div className="mt-1.5 text-center text-[10px] text-zinc-400">
+            {page.widthMm} × {page.heightMm} mm · page 1 · sample data
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -552,6 +733,7 @@ export function LayoutsList({
                     className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
                   />
                 </th>
+                <th className="bg-zinc-50 px-3 py-3 font-medium">Preview</th>
                 <th className="bg-zinc-50 px-4 py-3 font-medium">Layout</th>
                 <th className="bg-zinc-50 px-4 py-3 font-medium">Type</th>
                 <th className="bg-zinc-50 px-4 py-3 font-medium">Pages</th>
@@ -577,6 +759,14 @@ export function LayoutsList({
                       checked={selected.has(l.id)}
                       onChange={() => toggleOne(l.id)}
                       className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                    />
+                  </td>
+                  <td className="px-3 py-3">
+                    <LayoutThumb
+                      id={l.id}
+                      name={l.name}
+                      page={l.defInvalid ? null : l.firstPage}
+                      version={Date.parse(l.updatedAt)}
                     />
                   </td>
                   <td className="px-4 py-3">
