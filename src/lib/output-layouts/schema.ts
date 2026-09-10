@@ -384,7 +384,7 @@ export function pageGrid(page: { gridCols?: number; gridRows?: number }): { cols
 // instead of turning the whole layout definition invalid.
 export const LayoutRuleSchema = z.object({
   field: z.string().min(1).max(60),
-  op: z.enum(["contains", "equals"]).default("contains"),
+  op: z.enum(["contains", "equals", "gt", "lt"]).default("contains"),
   keywords: z.array(z.string().max(120)).max(50),
   mode: z.enum(["exclude", "include"]).default("exclude"),
 });

@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { ruleSentence, type RuleMode, type RuleOp, type OutputRule } from "@/lib/outputs/exclusion";
+import {
+  isNumericOp,
+  ruleSentence,
+  type RuleMode,
+  type RuleOp,
+  type OutputRule,
+} from "@/lib/outputs/exclusion";
 
 // =====================================================
 // Generation-rule rows — "Generate when …" / "Don't generate when …" against a
@@ -139,15 +145,33 @@ export function OutputRulesEditor({
               >
                 <option value="contains">contains</option>
                 <option value="equals">equals</option>
+                <option value="gt">is greater than</option>
+                <option value="lt">is less than</option>
               </select>
-              <input
-                type="text"
-                value={r.keywordsText}
-                onChange={(e) => update(i, { keywordsText: e.target.value })}
-                placeholder="shoes, boot, sandal…"
-                className="min-w-[12rem] flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-zinc-700 placeholder:text-zinc-400"
-                aria-label="Keywords (comma-separated)"
-              />
+              {/* One threshold for a numeric op, a keyword LIST for a text one
+                  — "contains 0, 5" is a sensible thing to ask for, "greater
+                  than 0, 5" is not. Both write the same keywordsText, so
+                  switching the op back keeps whatever was typed. */}
+              {isNumericOp(r.op) ? (
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={r.keywordsText}
+                  onChange={(e) => update(i, { keywordsText: e.target.value })}
+                  placeholder="0"
+                  className="w-24 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-zinc-700 placeholder:text-zinc-400"
+                  aria-label="Threshold"
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={r.keywordsText}
+                  onChange={(e) => update(i, { keywordsText: e.target.value })}
+                  placeholder="shoes, boot, sandal…"
+                  className="min-w-[12rem] flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-zinc-700 placeholder:text-zinc-400"
+                  aria-label="Keywords (comma-separated)"
+                />
+              )}
               <button
                 type="button"
                 onClick={() => removeRule(i)}
@@ -193,8 +217,11 @@ export function OutputRulesEditor({
 
       <p className="mt-1.5 text-[10px] leading-relaxed text-zinc-400">
         Keywords are comma-separated and case-insensitive — “contains” matches substrings,
-        “equals” needs the whole field. A <span className="font-medium">Don’t generate</span>{" "}
-        match always wins.
+        “equals” needs the whole field. “Is greater/less than” compares Price as a number
+        against one threshold; a style with no price, or one we can’t read as a single amount
+        (“See customer order”), matches neither — so “only when Price is greater than 0” skips
+        it while “never when Price is greater than 0” still generates. A{" "}
+        <span className="font-medium">Don’t generate</span> match always wins.
         {hasInclude ? (
           <>
             {" "}

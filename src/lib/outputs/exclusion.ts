@@ -30,8 +30,21 @@
 // =====================================================
 
 import { STYLE_FIELD_LABELS } from "@/lib/styles/resolved-fields";
+// Client-safe by construction (no db / Monday imports) — see price-parse.ts.
+import { parsePriceAmount } from "@/lib/pdf/price-parse";
 
-export type RuleOp = "contains" | "equals";
+// "contains"/"equals" are TEXT tests over the keyword list. "gt"/"lt" are
+// NUMERIC — they compare the field's amount against a single threshold, for
+// the fields where a keyword match is meaningless (Price). A field whose
+// value isn't a parseable amount matches NEITHER, exactly as an empty field
+// doesn't — see numericMatch.
+export type RuleOp = "contains" | "equals" | "gt" | "lt";
+
+// The numeric ops, which take one threshold rather than a keyword list. The
+// editors switch their input on this, and the wording helpers read from it.
+export function isNumericOp(op: RuleOp): boolean {
+  return op === "gt" || op === "lt";
+}
 
 // "exclude" — don't generate when this matches (the original behaviour, and
 // the default for rules stored before modes existed).
@@ -47,6 +60,9 @@ export type OutputRule = {
   // Any keyword matching → the rule matches. Case-insensitive, trimmed. A list
   // (not one word) because real taxonomies are messy: "shoes" alone misses
   // boots/sandals/clogs/sneakers/slippers.
+  //
+  // For a NUMERIC op this list carries the single threshold ("0"), kept in the
+  // same shape so stored rules stay one type and the editors keep one input.
   keywords: string[];
   // Absent = "exclude" — every rule written before this field existed is a
   // don't-generate rule, and stays one.
@@ -90,6 +106,13 @@ export const EXCLUSION_FIELDS: ReadonlyArray<{ field: string; label: string }> =
   "trims",
   "customerOrderNo",
   "poNumber",
+  // Free-text retail price ("KR 69,95", "129.95 DKK"). Only worth gating on
+  // numerically — hence the gt/lt ops. A style whose price cell is blank or
+  // unparseable ("See customer order") matches no rule at all, so an
+  // "only when Price > 0" output skips it while a "never when Price > 0"
+  // output still generates: that pair is how one layout splits into a
+  // priced and an unpriced variant.
+  "price",
 ].map((field) => ({
   field,
   label: (STYLE_FIELD_LABELS as Record<string, string>)[field] ?? field,
@@ -131,13 +154,35 @@ function usableRules(rules: OutputRule[] | undefined): OutputRule[] {
 // trimmed on both sides; an empty field value matches nothing (so it can never
 // satisfy an include rule either).
 function matchingKeyword(rule: OutputRule, resolveField: (field: string) => string): string | null {
-  const value = (resolveField(rule.field) ?? "").trim().toLowerCase();
-  if (!value) return null;
-  for (const raw of rule.keywords) {
-    const kw = (raw ?? "").trim().toLowerCase();
-    if (!kw) continue;
-    const hit = rule.op === "equals" ? value === kw : value.includes(kw);
-    if (hit) return (raw ?? "").trim();
+  const raw = (resolveField(rule.field) ?? "").trim();
+  if (!raw) return null;
+  if (isNumericOp(rule.op)) return numericMatch(rule, raw);
+  const value = raw.toLowerCase();
+  for (const kw of rule.keywords) {
+    const needle = (kw ?? "").trim().toLowerCase();
+    if (!needle) continue;
+    const hit = rule.op === "equals" ? value === needle : value.includes(needle);
+    if (hit) return (kw ?? "").trim();
+  }
+  return null;
+}
+
+// Numeric comparison against the rule's threshold. Returns the threshold as
+// the "matched keyword" so the reason text reads the same way as a text hit.
+//
+// A field value that ISN'T a single unambiguous amount — blank, "See customer
+// order", or "99 SEK, 69 DKK" (two markets) — matches nothing, the same as an
+// empty field. That's deliberate and load-bearing: those are exactly the
+// styles where {{price}} prints nothing, so treating them as 0 would put an
+// output that says "priced" on a label with no price on it.
+function numericMatch(rule: OutputRule, raw: string): string | null {
+  const actual = parsePriceAmount(raw);
+  if (actual === undefined) return null;
+  for (const kw of rule.keywords) {
+    const threshold = parsePriceAmount((kw ?? "").trim());
+    if (threshold === undefined) continue;
+    const hit = rule.op === "gt" ? actual > threshold : actual < threshold;
+    if (hit) return (kw ?? "").trim();
   }
   return null;
 }
@@ -202,6 +247,24 @@ function quoteList(keywords: string[]): string {
   return `${parts.slice(0, -1).join(", ")} or ${parts[parts.length - 1]}`;
 }
 
+// How each op reads in a sentence. The numeric ops need the "than" so
+// "Price is greater than “0”" parses as English — the threshold still goes
+// through quoteList, so a rule reads the same shape whichever op it uses.
+function ruleVerb(op: RuleOp): string {
+  if (op === "gt") return "is greater than";
+  if (op === "lt") return "is less than";
+  return op === "equals" ? "is" : "contains";
+}
+
+// The same, for an unmet INCLUDE rule ("not generated because…"). A style
+// whose price doesn’t parse lands here too, which is why the numeric wording
+// says "isn’t" rather than claiming the opposite comparison holds.
+function ruleVerbNegated(op: RuleOp): string {
+  if (op === "gt") return "isn’t greater than";
+  if (op === "lt") return "isn’t less than";
+  return op === "equals" ? "isn’t" : "doesn’t contain";
+}
+
 // Human reason for the review/style surfaces, naming the rule that decided.
 // `sourceLabel` is the OUTPUT's name for an output-scope rule, the document
 // type's label for a type-scope one:
@@ -209,14 +272,7 @@ function quoteList(keywords: string[]): string {
 //   "Not generated — Product group doesn’t contain “shoes” (Barcode sticker rule)"
 export function exclusionReasonText(hit: ExclusionHit, sourceLabel: string): string {
   const field = exclusionFieldLabel(hit.field);
-  const verb =
-    hit.mode === "include"
-      ? hit.op === "equals"
-        ? "isn’t"
-        : "doesn’t contain"
-      : hit.op === "equals"
-        ? "is"
-        : "contains";
+  const verb = hit.mode === "include" ? ruleVerbNegated(hit.op) : ruleVerb(hit.op);
   return `Not generated — ${field} ${verb} ${quoteList(hit.keywords)} (${sourceLabel} rule)`;
 }
 
@@ -226,7 +282,7 @@ export function exclusionReasonText(hit: ExclusionHit, sourceLabel: string): str
 //   "Never when Product group is “Socks”"
 export function ruleSentence(rule: OutputRule): string {
   const field = exclusionFieldLabel(rule.field);
-  const verb = rule.op === "equals" ? "is" : "contains";
+  const verb = ruleVerb(rule.op);
   const keywords = rule.keywords.map((k) => (k ?? "").trim()).filter(Boolean);
   const lead = ruleMode(rule) === "include" ? "Only when" : "Never when";
   return `${lead} ${field} ${verb} ${quoteList(keywords)}`;
@@ -243,7 +299,8 @@ export function parseOutputRules(raw: unknown): OutputRule[] {
     if (!r || typeof r !== "object") continue;
     const rec = r as Record<string, unknown>;
     const field = typeof rec.field === "string" ? rec.field.trim() : "";
-    const op: RuleOp = rec.op === "equals" ? "equals" : "contains";
+    const op: RuleOp =
+      rec.op === "equals" || rec.op === "gt" || rec.op === "lt" ? rec.op : "contains";
     const mode: RuleMode = rec.mode === "include" ? "include" : "exclude";
     const keywords = Array.isArray(rec.keywords)
       ? rec.keywords
