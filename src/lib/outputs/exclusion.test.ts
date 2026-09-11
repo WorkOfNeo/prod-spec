@@ -305,13 +305,18 @@ test("empty/notEmpty — test presence, nothing else", () => {
   const isSet: OutputRule[] = [{ field: "price", op: "notEmpty", keywords: [] }];
   const notSet: OutputRule[] = [{ field: "price", op: "empty", keywords: [] }];
 
-  for (const price of ["69,95", "0", "See customer order"]) {
+  // A real amount is "set" — 0 included, it IS a price.
+  for (const price of ["69,95", "0"]) {
     assert.ok(matchOutputRules(isSet, resolver({ price })), `isSet: ${price}`);
     assert.equal(matchOutputRules(notSet, resolver({ price })), null, `notSet: ${price}`);
   }
-  // Nothing in the cell — the one case the other ops can't reach.
-  assert.equal(matchOutputRules(isSet, resolver({ price: "" })), null);
-  assert.ok(matchOutputRules(notSet, resolver({ price: "" })));
+  // "Not set" covers both kinds of nothing: a blank cell, AND a cell holding
+  // text that isn't a price. Both print nothing on the label, so both belong
+  // to the unpriced output.
+  for (const price of ["", "See customer order", "99 SEK, 69 DKK"]) {
+    assert.equal(matchOutputRules(isSet, resolver({ price })), null, `isSet: ${price}`);
+    assert.ok(matchOutputRules(notSet, resolver({ price })), `notSet: ${price}`);
+  }
 });
 
 test("empty — survives the filters that drop a keyword-less rule", () => {
@@ -373,4 +378,11 @@ test("presence ops — the exclude direction doesn't leak the marker either", ()
     exclusionReasonText(hit!, "Unpriced sticker"),
     "Not generated — Price is set (Unpriced sticker rule)",
   );
+});
+
+test("presence — a non-price field is just blank-or-not", () => {
+  const isSet: OutputRule[] = [{ field: "trims", op: "notEmpty", keywords: [] }];
+  // Text that would be nonsense as a price is a perfectly good trims value.
+  assert.ok(matchOutputRules(isSet, resolver({ trims: "See customer order" })));
+  assert.equal(matchOutputRules(isSet, resolver({ trims: "" })), null);
 });

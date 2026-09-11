@@ -165,6 +165,22 @@ function usableRules(rules: OutputRule[] | undefined): OutputRule[] {
   );
 }
 
+// Is there a value here the outputs could actually USE? Blank is the obvious
+// no, but Price has a second kind: a cell that holds text which isn't a price.
+// "See customer order" (100 live styles) and "99 SEK, 69 DKK" (two markets)
+// both print nothing via {{price}}, so an operator asking for "styles with no
+// price" means those too — a sticker that leaves the price blank is exactly
+// what they need. Matching raw emptiness instead would quietly strand them in
+// the gap between the priced and unpriced outputs, which is the bug that
+// prompted these ops.
+//
+// Every other field is its own text, so presence is just "is it blank".
+function hasUsableValue(field: string, raw: string): boolean {
+  if (!raw) return false;
+  if (field === "price") return parsePriceAmount(raw) !== undefined;
+  return true;
+}
+
 // Stand-in "keyword" for a presence match: matchingKeyword's contract is a
 // truthy string or null, and a presence op has no keyword of its own. It never
 // reaches the UI — the wording helpers print no value for these ops.
@@ -179,7 +195,7 @@ function matchingKeyword(rule: OutputRule, resolveField: (field: string) => stri
   // that matches precisely when there's nothing there.
   if (isPresenceOp(rule.op)) {
     const filled = rule.op === "notEmpty";
-    return raw !== "" === filled ? PRESENCE_HIT : null;
+    return hasUsableValue(rule.field, raw) === filled ? PRESENCE_HIT : null;
   }
   if (!raw) return null;
   if (isNumericOp(rule.op)) return numericMatch(rule, raw);
