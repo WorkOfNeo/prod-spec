@@ -1,14 +1,31 @@
-# Wash-care symbols → vector swap
+# Wash-care symbols → swap to the delivered set
 
 Grounding for the ledger task *"Replace the wash care symbols with Dilip's set
-(trace to vector + reseed)"*. Everything below was measured against the delivered
-`Care_symbols_1.zip` and this repo — it is not a proposal sketch. Read it before
-touching the catalogue.
+(exact PNGs, no conversion)"*. Everything below was measured against the
+delivered `Care_symbols_1.zip` and this repo — it is not a proposal sketch.
+
+> ## DECISION (11-09-2026): use the EXACT delivered PNGs
+>
+> No tracing, no vectorisation, no re-cutting. Artwork fidelity to the supplied
+> files wins over vector output. **The "trace to SVG" plan below is superseded**
+> — it is kept only because the measurements behind it (sizing, artboard
+> geometry, the filename→code map) still apply.
+>
+> **PNG is fine at these sizes.** The symbols print into a 4.5 mm box, and the
+> files are 843 px wide — an effective **4,758 DPI** (3,569 DPI in the 6 mm
+> Output Builder box). Print line-art target is ~1200 DPI.
+>
+> **No code changes are needed.** The renderer already embeds PNG data URLs
+> untouched (`src/lib/pdf/washcare-symbols.ts:103-110`) and the admin UI already
+> accepts PNG (`wash-symbol-list.tsx:394-406`).
+>
+> ⚠️ **Do NOT add a raster-blocking guardrail** on the upload path — it would
+> reject exactly the files we want.
 
 ## The requirement
 
-Swap the whole wash-care symbol catalogue to the supplied set, and guarantee the
-symbols stay **vector** in the printed PDFs.
+Swap the whole wash-care symbol catalogue to the supplied set, using the exact
+delivered files.
 
 ## What was delivered
 
@@ -67,7 +84,11 @@ Three need an explicit alias. Do **not** fuzzy-match at runtime:
 | `Any Solvent except Trichloroethylene- Very Delicate` | `dryclean_no_trichloroethylene_very_delicate` | same |
 | `Iron, High  Temperature` | `iron_high` | filename has a comma + double space |
 
-## Sizing — the real risk
+## Sizing — still a live risk
+
+> With PNGs there is no viewBox to re-cut, so if the size reads wrong the lever
+> is **CSS** (box size or aspect), not the assets. The 800×800 recommendation
+> below is superseded; the measurements are not.
 
 Symbols render into a **square** box with `object-fit: contain`: 4.5 mm on the
 care-label templates (`care-label-02.ts:172`, `spec-generic.ts:277`,
@@ -98,7 +119,7 @@ Calibrate the final figure against a current proof before committing.
 canvas height) — the only one of the 64 off-centre by more than 1 %. Re-centre
 it during conversion or it prints visibly dropped next to its neighbours.
 
-## Work
+## Work (superseded — see the ledger task for the current plan)
 
 1. **Trace** — potrace + SVGO. Clean 1-bit geometry, traces well; no manual
    redraw needed. Neither tool is currently in the toolchain.
@@ -125,6 +146,14 @@ it during conversion or it prints visibly dropped next to its neighbours.
 - **Provenance** — these are auto-traced approximations of a supplied raster. If
   a licensed GINETEX / ISO 3758 vector master exists, use it instead. At 4.5 mm
   the trace error is invisible, but the master is the better source of record.
+
+## No alpha — the one defect the exact files carry
+
+The PNGs are 8-bit **RGB on white, not transparent**. `src/lib/output-layouts/render.ts:1431`
+defines an inverted block mode (`.ol-binvert`, black background) and `:941` allows a
+per-block custom background. A symbol placed in one of those will print inside a
+**white rectangle**. Harmless on the white labels the care-label templates use;
+check whether any live Output Builder layout puts symbols on a dark or tinted block.
 
 ## Filename → code map
 
