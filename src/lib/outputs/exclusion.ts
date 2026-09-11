@@ -38,12 +38,25 @@ import { parsePriceAmount } from "@/lib/pdf/price-parse";
 // the fields where a keyword match is meaningless (Price). A field whose
 // value isn't a parseable amount matches NEITHER, exactly as an empty field
 // doesn't — see numericMatch.
-export type RuleOp = "contains" | "equals" | "gt" | "lt";
+// "empty"/"notEmpty" are PRESENCE tests and take no value at all — "is this
+// field filled in?". They exist because the other ops all need a value to
+// compare against, and a field with nothing in it can never supply one: a
+// numeric op on a missing price matches neither direction (see numericMatch),
+// so without these there is no way to write "…or it has no price".
+export type RuleOp = "contains" | "equals" | "gt" | "lt" | "empty" | "notEmpty";
 
 // The numeric ops, which take one threshold rather than a keyword list. The
 // editors switch their input on this, and the wording helpers read from it.
 export function isNumericOp(op: RuleOp): boolean {
   return op === "gt" || op === "lt";
+}
+
+// The presence ops, which take NO value. Everything that requires a rule to
+// carry a keyword has to make an exception for these — the editors hide the
+// input, usableRules stops demanding one, and parseOutputRules keeps a row
+// with an empty keyword list instead of dropping it.
+export function isPresenceOp(op: RuleOp): boolean {
+  return op === "empty" || op === "notEmpty";
 }
 
 // "exclude" — don't generate when this matches (the original behaviour, and
@@ -145,16 +158,45 @@ function usableRules(rules: OutputRule[] | undefined): OutputRule[] {
       r &&
       typeof r.field === "string" &&
       r.field.trim() !== "" &&
-      Array.isArray(r.keywords) &&
-      r.keywords.some((k) => (k ?? "").trim() !== ""),
+      // A presence op is complete on its own; every other op needs something
+      // to compare against, and a blank one would match everything.
+      (isPresenceOp(r.op) ||
+        (Array.isArray(r.keywords) && r.keywords.some((k) => (k ?? "").trim() !== ""))),
   );
 }
+
+// Is there a value here the outputs could actually USE? Blank is the obvious
+// no, but Price has a second kind: a cell that holds text which isn't a price.
+// "See customer order" (100 live styles) and "99 SEK, 69 DKK" (two markets)
+// both print nothing via {{price}}, so an operator asking for "styles with no
+// price" means those too — a sticker that leaves the price blank is exactly
+// what they need. Matching raw emptiness instead would quietly strand them in
+// the gap between the priced and unpriced outputs, which is the bug that
+// prompted these ops.
+//
+// Every other field is its own text, so presence is just "is it blank".
+function hasUsableValue(field: string, raw: string): boolean {
+  if (!raw) return false;
+  if (field === "price") return parsePriceAmount(raw) !== undefined;
+  return true;
+}
+
+// Stand-in "keyword" for a presence match: matchingKeyword's contract is a
+// truthy string or null, and a presence op has no keyword of its own. It never
+// reaches the UI — the wording helpers print no value for these ops.
+const PRESENCE_HIT = "__present__";
 
 // The first keyword of `rule` the style matches, or null. Case-insensitive and
 // trimmed on both sides; an empty field value matches nothing (so it can never
 // satisfy an include rule either).
 function matchingKeyword(rule: OutputRule, resolveField: (field: string) => string): string | null {
   const raw = (resolveField(rule.field) ?? "").trim();
+  // Checked BEFORE the empty-value bail below: "is not set" is the one rule
+  // that matches precisely when there's nothing there.
+  if (isPresenceOp(rule.op)) {
+    const filled = rule.op === "notEmpty";
+    return hasUsableValue(rule.field, raw) === filled ? PRESENCE_HIT : null;
+  }
   if (!raw) return null;
   if (isNumericOp(rule.op)) return numericMatch(rule, raw);
   const value = raw.toLowerCase();
@@ -204,7 +246,15 @@ export function matchOutputRules(
   for (const rule of usable) {
     if (ruleMode(rule) !== "exclude") continue;
     const kw = matchingKeyword(rule, resolveField);
-    if (kw) return { field: rule.field, op: rule.op, mode: "exclude", keywords: [kw] };
+    if (kw)
+      return {
+        field: rule.field,
+        op: rule.op,
+        mode: "exclude",
+        // A presence op has no keyword to name — the wording prints the op
+        // alone ("Price is set"), so the sentinel stops here.
+        keywords: isPresenceOp(rule.op) ? [] : [kw],
+      };
   }
 
   // The include gate: with no "generate when…" rule this scope is open, with
@@ -253,6 +303,8 @@ function quoteList(keywords: string[]): string {
 function ruleVerb(op: RuleOp): string {
   if (op === "gt") return "is greater than";
   if (op === "lt") return "is less than";
+  if (op === "empty") return "isn’t set";
+  if (op === "notEmpty") return "is set";
   return op === "equals" ? "is" : "contains";
 }
 
@@ -262,6 +314,10 @@ function ruleVerb(op: RuleOp): string {
 function ruleVerbNegated(op: RuleOp): string {
   if (op === "gt") return "isn’t greater than";
   if (op === "lt") return "isn’t less than";
+  // The presence ops negate into each other: failing "only when Price isn’t
+  // set" means the style HAS one, and that's the useful thing to say.
+  if (op === "empty") return "is set";
+  if (op === "notEmpty") return "isn’t set";
   return op === "equals" ? "isn’t" : "doesn’t contain";
 }
 
@@ -273,7 +329,8 @@ function ruleVerbNegated(op: RuleOp): string {
 export function exclusionReasonText(hit: ExclusionHit, sourceLabel: string): string {
   const field = exclusionFieldLabel(hit.field);
   const verb = hit.mode === "include" ? ruleVerbNegated(hit.op) : ruleVerb(hit.op);
-  return `Not generated — ${field} ${verb} ${quoteList(hit.keywords)} (${sourceLabel} rule)`;
+  const clause = isPresenceOp(hit.op) ? verb : `${verb} ${quoteList(hit.keywords)}`;
+  return `Not generated — ${field} ${clause} (${sourceLabel} rule)`;
 }
 
 // Plain-English echo of a single rule, for the editors — the operator reads
@@ -283,8 +340,9 @@ export function exclusionReasonText(hit: ExclusionHit, sourceLabel: string): str
 export function ruleSentence(rule: OutputRule): string {
   const field = exclusionFieldLabel(rule.field);
   const verb = ruleVerb(rule.op);
-  const keywords = rule.keywords.map((k) => (k ?? "").trim()).filter(Boolean);
   const lead = ruleMode(rule) === "include" ? "Only when" : "Never when";
+  if (isPresenceOp(rule.op)) return `${lead} ${field} ${verb}`;
+  const keywords = rule.keywords.map((k) => (k ?? "").trim()).filter(Boolean);
   return `${lead} ${field} ${verb} ${quoteList(keywords)}`;
 }
 
@@ -300,14 +358,22 @@ export function parseOutputRules(raw: unknown): OutputRule[] {
     const rec = r as Record<string, unknown>;
     const field = typeof rec.field === "string" ? rec.field.trim() : "";
     const op: RuleOp =
-      rec.op === "equals" || rec.op === "gt" || rec.op === "lt" ? rec.op : "contains";
+      rec.op === "equals" ||
+      rec.op === "gt" ||
+      rec.op === "lt" ||
+      rec.op === "empty" ||
+      rec.op === "notEmpty"
+        ? rec.op
+        : "contains";
     const mode: RuleMode = rec.mode === "include" ? "include" : "exclude";
     const keywords = Array.isArray(rec.keywords)
       ? rec.keywords
           .map((k) => (typeof k === "string" ? k.trim() : ""))
           .filter((k): k is string => k.length > 0)
       : [];
-    if (!field || keywords.length === 0) continue;
+    // A presence op carries no keywords by design, so it must survive the
+    // drop-the-incomplete filter that every other op needs.
+    if (!field || (keywords.length === 0 && !isPresenceOp(op))) continue;
     out.push({ field, op, keywords, mode });
   }
   return out;
