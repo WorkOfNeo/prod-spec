@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   isNumericOp,
+  isPresenceOp,
   ruleSentence,
   type RuleMode,
   type RuleOp,
@@ -55,7 +56,9 @@ export function rulesFromDrafts(drafts: RuleDraft[]): EditedRule[] {
         .map((s) => s.trim())
         .filter(Boolean),
     }))
-    .filter((r) => r.field && r.keywords.length > 0);
+    // A presence op ("is set" / "isn’t set") carries no keywords by design;
+    // every other op is incomplete without one and stays filtered out.
+    .filter((r) => r.field && (r.keywords.length > 0 || isPresenceOp(r.op)));
 }
 
 export function OutputRulesEditor({
@@ -147,12 +150,14 @@ export function OutputRulesEditor({
                 <option value="equals">equals</option>
                 <option value="gt">is greater than</option>
                 <option value="lt">is less than</option>
+                <option value="notEmpty">is set</option>
+                <option value="empty">is not set</option>
               </select>
               {/* One threshold for a numeric op, a keyword LIST for a text one
                   — "contains 0, 5" is a sensible thing to ask for, "greater
                   than 0, 5" is not. Both write the same keywordsText, so
                   switching the op back keeps whatever was typed. */}
-              {isNumericOp(r.op) ? (
+              {isPresenceOp(r.op) ? null : isNumericOp(r.op) ? (
                 <input
                   type="text"
                   inputMode="decimal"
@@ -219,9 +224,9 @@ export function OutputRulesEditor({
         Keywords are comma-separated and case-insensitive — “contains” matches substrings,
         “equals” needs the whole field. “Is greater/less than” compares Price as a number
         against one threshold; a style with no price, or one we can’t read as a single amount
-        (“See customer order”), matches neither — so “only when Price is greater than 0” skips
-        it while “never when Price is greater than 0” still generates. A{" "}
-        <span className="font-medium">Don’t generate</span> match always wins.
+        (“See customer order”), matches neither — which is what “is set” / “is not set” are
+        for: they test only whether the field is filled in, so a missing price has a rule that
+        catches it. A <span className="font-medium">Don’t generate</span> match always wins.
         {hasInclude ? (
           <>
             {" "}

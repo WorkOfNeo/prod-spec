@@ -291,3 +291,86 @@ test("parseOutputRules — round-trips the numeric ops, defaults junk to contain
   assert.equal(parsed[1].op, "lt");
   assert.equal(parsed[2].op, "contains");
 });
+
+// =====================================================
+// Presence ops (empty/notEmpty) — "is this field filled in?". Added because
+// the two-include-rule pair an operator naturally reaches for
+//   priced   → Generate when Price is greater than 1
+//   unpriced → Generate when Price is less than 1
+// leaves styles that match NEITHER, and those get no output at all. A
+// missing price is the big one; an exact 1 is the other.
+// =====================================================
+
+test("empty/notEmpty — test presence, nothing else", () => {
+  const isSet: OutputRule[] = [{ field: "price", op: "notEmpty", keywords: [] }];
+  const notSet: OutputRule[] = [{ field: "price", op: "empty", keywords: [] }];
+
+  for (const price of ["69,95", "0", "See customer order"]) {
+    assert.ok(matchOutputRules(isSet, resolver({ price })), `isSet: ${price}`);
+    assert.equal(matchOutputRules(notSet, resolver({ price })), null, `notSet: ${price}`);
+  }
+  // Nothing in the cell — the one case the other ops can't reach.
+  assert.equal(matchOutputRules(isSet, resolver({ price: "" })), null);
+  assert.ok(matchOutputRules(notSet, resolver({ price: "" })));
+});
+
+test("empty — survives the filters that drop a keyword-less rule", () => {
+  // usableRules and parseOutputRules both require a keyword for every other
+  // op; a presence rule has none and must not be silently discarded.
+  const parsed = parseOutputRules([{ field: "price", op: "empty", keywords: [], mode: "include" }]);
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0].op, "empty");
+  // A satisfied include returns null (= generate).
+  assert.equal(matchOutputRules(parsed, resolver({ price: "" })), null);
+  // And it must still DECIDE when unsatisfied — a dropped rule would leave
+  // usableRules empty and return null here too, which is the failure this
+  // test is actually guarding against.
+  assert.ok(matchOutputRules(parsed, resolver({ price: "69,95" })));
+});
+
+test("empty — ORs with a numeric rule to close the gap", () => {
+  // The fix for the real case: "less than 1 OR not set at all". Include rules
+  // are alternatives, so the two rules compose without any new syntax.
+  const unpriced: OutputRule[] = [
+    { field: "price", op: "lt", keywords: ["1"], mode: "include" },
+    { field: "price", op: "empty", keywords: [], mode: "include" },
+  ];
+  // Generates (rule satisfied → null hit) for every style without a real price.
+  for (const price of ["", "0", "0,50"]) {
+    assert.equal(matchOutputRules(unpriced, resolver({ price })), null, `unpriced: ${price}`);
+  }
+  // And still stays off the styles that DO have one.
+  assert.ok(matchOutputRules(unpriced, resolver({ price: "69,95" })));
+});
+
+test("presence ops — wording carries no value", () => {
+  assert.equal(
+    ruleSentence({ field: "price", op: "empty", keywords: [], mode: "include" }),
+    "Only when Price isn’t set",
+  );
+  assert.equal(
+    ruleSentence({ field: "price", op: "notEmpty", keywords: [], mode: "exclude" }),
+    "Never when Price is set",
+  );
+  // An unmet "only when not set" means the style HAS a price — say that,
+  // and never leak the internal presence marker or an empty “”.
+  const reason = exclusionReasonText(
+    { field: "price", op: "empty", mode: "include", keywords: [] },
+    "Price sticker",
+  );
+  assert.equal(reason, "Not generated — Price is set (Price sticker rule)");
+  assert.ok(!reason.includes("__present__"));
+  assert.ok(!reason.includes("“”"));
+});
+
+test("presence ops — the exclude direction doesn't leak the marker either", () => {
+  const hit = matchOutputRules(
+    [{ field: "price", op: "notEmpty", keywords: [], mode: "exclude" }],
+    resolver({ price: "69,95" }),
+  );
+  assert.deepEqual(hit?.keywords, []);
+  assert.equal(
+    exclusionReasonText(hit!, "Unpriced sticker"),
+    "Not generated — Price is set (Unpriced sticker rule)",
+  );
+});

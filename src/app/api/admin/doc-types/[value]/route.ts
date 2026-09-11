@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 
 const RULE_SCHEMA = z.object({
   field: z.string().min(1).max(60),
-  op: z.enum(["contains", "equals", "gt", "lt"]),
+  op: z.enum(["contains", "equals", "gt", "lt", "empty", "notEmpty"]),
   keywords: z.array(z.string().max(120)).max(50),
   // "exclude" (don't generate when it matches) is the default and what every
   // rule written before modes existed means; "include" flips it to "generate
