@@ -187,3 +187,107 @@ test("ruleSentence — reads back what the editor built", () => {
     "Never when Product group is “Socks”",
   );
 });
+
+// =====================================================
+// Numeric ops (gt/lt) — built so ONE layout can split into a priced and an
+// unpriced output. The pair that does it:
+//   priced   → "Generate when Price is greater than 0"
+//   unpriced → "Don't generate when Price is greater than 0"
+// Everything below exists to keep that pair total: every style must land in
+// exactly one of the two, including the ones with no readable price.
+// =====================================================
+
+test("gt/lt — compares the amount, not the text", () => {
+  const gt: OutputRule[] = [{ field: "price", op: "gt", keywords: ["0"] }];
+  assert.ok(matchOutputRules(gt, resolver({ price: "69,95" })));
+  assert.ok(matchOutputRules(gt, resolver({ price: "0,01" })));
+  assert.equal(matchOutputRules(gt, resolver({ price: "0" })), null);
+  assert.equal(matchOutputRules(gt, resolver({ price: "0,00" })), null);
+
+  const lt: OutputRule[] = [{ field: "price", op: "lt", keywords: ["100"] }];
+  assert.ok(matchOutputRules(lt, resolver({ price: "69,95" })));
+  // Text ops would compare "1.299,95" as a string and call it less than "100".
+  assert.equal(matchOutputRules(lt, resolver({ price: "1.299,95" })), null);
+});
+
+test("gt — reads the messy live formats the price token reads", () => {
+  const rules: OutputRule[] = [{ field: "price", op: "gt", keywords: ["0"] }];
+  for (const price of ["KR 69,95", "Kr. 39,00", "129.95 DKK", "PER SÆT:KR 129,95", "1.299,95"]) {
+    assert.ok(matchOutputRules(rules, resolver({ price })), price);
+  }
+});
+
+test("gt/lt — an unreadable price matches NEITHER direction", () => {
+  // The load-bearing case. A blank price, "See customer order" (100 live
+  // styles) and a dual-market value all print nothing via {{price}}, so a
+  // numeric rule must not treat them as 0 — otherwise "Price is less than
+  // 999" would put a priced label on a style with no price on it.
+  for (const price of ["", "See customer order", "99 SEK, 69 DKK"]) {
+    const gt: OutputRule[] = [{ field: "price", op: "gt", keywords: ["0"] }];
+    const lt: OutputRule[] = [{ field: "price", op: "lt", keywords: ["999"] }];
+    assert.equal(matchOutputRules(gt, resolver({ price })), null, `gt: ${price}`);
+    assert.equal(matchOutputRules(lt, resolver({ price })), null, `lt: ${price}`);
+  }
+});
+
+test("gt — the include/exclude pair covers every style exactly once", () => {
+  const priced: OutputRule[] = [
+    { field: "price", op: "gt", keywords: ["0"], mode: "include" },
+  ];
+  const unpriced: OutputRule[] = [
+    { field: "price", op: "gt", keywords: ["0"], mode: "exclude" },
+  ];
+  // A real price: the priced output generates, the unpriced one is skipped.
+  const withPrice = resolver({ price: "KR 69,95" });
+  assert.equal(matchOutputRules(priced, withPrice), null);
+  assert.ok(matchOutputRules(unpriced, withPrice));
+
+  // No price at all — the whole point of the exercise: the unpriced output
+  // STILL generates, and the priced one is the one held back.
+  for (const price of ["", "0", "See customer order"]) {
+    const r = resolver({ price });
+    assert.ok(matchOutputRules(priced, r), `priced skipped: ${price}`);
+    assert.equal(matchOutputRules(unpriced, r), null, `unpriced skipped: ${price}`);
+  }
+});
+
+test("numeric rules — a threshold that isn't a number decides nothing", () => {
+  const rules: OutputRule[] = [{ field: "price", op: "gt", keywords: ["free"] }];
+  assert.equal(matchOutputRules(rules, resolver({ price: "69,95" })), null);
+});
+
+test("numeric ops — wording reads as English", () => {
+  assert.equal(
+    ruleSentence({ field: "price", op: "gt", keywords: ["0"], mode: "include" }),
+    "Only when Price is greater than “0”",
+  );
+  assert.equal(
+    ruleSentence({ field: "price", op: "gt", keywords: ["0"], mode: "exclude" }),
+    "Never when Price is greater than “0”",
+  );
+  assert.equal(
+    exclusionReasonText(
+      { field: "price", op: "gt", mode: "include", keywords: ["0"] },
+      "Price sticker",
+    ),
+    "Not generated — Price isn’t greater than “0” (Price sticker rule)",
+  );
+  assert.equal(
+    exclusionReasonText(
+      { field: "price", op: "lt", mode: "exclude", keywords: ["100"] },
+      "Price sticker",
+    ),
+    "Not generated — Price is less than “100” (Price sticker rule)",
+  );
+});
+
+test("parseOutputRules — round-trips the numeric ops, defaults junk to contains", () => {
+  const parsed = parseOutputRules([
+    { field: "price", op: "gt", keywords: ["0"], mode: "include" },
+    { field: "price", op: "lt", keywords: ["100"], mode: "exclude" },
+    { field: "price", op: "nonsense", keywords: ["0"] },
+  ]);
+  assert.equal(parsed[0].op, "gt");
+  assert.equal(parsed[1].op, "lt");
+  assert.equal(parsed[2].op, "contains");
+});
