@@ -35,6 +35,20 @@ import {
   type SewingLine,
 } from "@/lib/output-layouts/schema";
 import {
+  blocksForPaste,
+  readBlockClipboard,
+  remapRectToGrid,
+  writeBlockClipboard,
+  type BlockClipboard,
+} from "@/lib/output-layouts/block-clipboard";
+import {
+  PLAIN_APPEARANCE,
+  appearancePatch,
+  duplicateRect,
+  pickAppearance,
+  type BlockAppearance,
+} from "@/lib/output-layouts/block-appearance";
+import {
   LAYOUT_TOKENS,
   tokenMeta,
   SIBLING_FIELDS,
@@ -244,6 +258,26 @@ export function LayoutEditor({
   // The cell size (mm) the "Regenerate grid" button uses. Defaults to 4 mm.
   const [gridCellMm, setGridCellMm] = useState(String(DEFAULT_GRID_CELL_MM));
   const [sel, setSel] = useState<string | null>(null);
+  // Shift/⌘-clicked companions of `sel`. The PRIMARY selection stays `sel`:
+  // it is the block whose values the panel shows and the only one placement
+  // edits (column/row/width/height) move. Formatting edits apply to the
+  // primary AND these, so setting a font size on five blocks is one trip to
+  // the panel instead of five.
+  const [alsoSel, setAlsoSel] = useState<string[]>([]);
+  // "Copy format" clipboard — an appearance lifted off a block, ready to
+  // stamp onto the selection. Lives for the session, not the document.
+  const [formatClip, setFormatClip] = useState<BlockAppearance | null>(null);
+  // The CROSS-LAYOUT block clipboard, backed by localStorage so it survives
+  // navigating to another layout (see block-clipboard.ts). Null until the
+  // after-mount read, because there is no localStorage during SSR.
+  const [blockClip, setBlockClip] = useState<BlockClipboard | null>(null);
+  // One-line feedback for copy/paste, so a storage failure isn't silent.
+  const [clipNote, setClipNote] = useState<string | null>(null);
+  // The look a freshly drawn block inherits: whatever was last selected or
+  // formatted. A ref, not state — it must never trigger a render, and it
+  // deliberately survives deselecting and switching pages (a 3-page care
+  // label wants one type treatment throughout).
+  const inheritRef = useRef<BlockAppearance | null>(null);
   // The block the Blocks list is hovering — highlights that block on the
   // canvas with a blue locator ring, so a tiny or overlapped block can be
   // found by scanning the list rather than hunting the crammed canvas.
@@ -336,7 +370,12 @@ export function LayoutEditor({
   const testStyle = styles[styleIdx] ?? null;
   // The current page's placement grid (cols×rows) — stored, or the legacy
   // 12×12 default. Drives the canvas overlay, drawing and block geometry.
-  const grid = page ? pageGrid(page) : { cols: LAYOUT_GRID_COLS, rows: LAYOUT_GRID_ROWS };
+  // Memoised because it is a dependency of the duplicate-block callback: a
+  // fresh object each render would rebuild that callback on every keystroke.
+  const grid = useMemo(
+    () => (page ? pageGrid(page) : { cols: LAYOUT_GRID_COLS, rows: LAYOUT_GRID_ROWS }),
+    [page],
+  );
 
   // ---- definition mutators (immutably rewrite def) --------------------
 
@@ -397,15 +436,11 @@ export function LayoutEditor({
     if (!Number.isFinite(cell) || cell <= 0) return;
     const next = gridFromCellMm(page.widthMm, page.heightMm, cell);
     const old = pageGrid(page);
-    const blocks = page.blocks.map((b) => {
-      if (!b.rect) return b;
-      const r = b.rect;
-      const col = Math.min(next.cols - 1, Math.round((r.col / old.cols) * next.cols));
-      const row = Math.min(next.rows - 1, Math.round((r.row / old.rows) * next.rows));
-      const colSpan = Math.max(1, Math.min(next.cols - col, Math.round((r.colSpan / old.cols) * next.cols)));
-      const rowSpan = Math.max(1, Math.min(next.rows - row, Math.round((r.rowSpan / old.rows) * next.rows)));
-      return { ...b, rect: { col, row, colSpan, rowSpan } };
-    });
+    // Same remap a cross-layout paste uses — the two must agree, or a
+    // block would land differently depending on how it got resized.
+    const blocks = page.blocks.map((b) =>
+      b.rect ? { ...b, rect: remapRectToGrid(b.rect, old, next) } : b,
+    );
     updatePage({ gridCols: next.cols, gridRows: next.rows, blocks });
   }
 
@@ -421,6 +456,219 @@ export function LayoutEditor({
       }));
     },
     [pageIdx],
+  );
+
+  // ---- the selection ----------------------------------------------------
+  //
+  // Every block a formatting edit reaches: the primary first, then its
+  // shift-clicked companions, de-duplicated and filtered to blocks that
+  // actually exist on THIS page — so a deleted block or a page switch can
+  // never leave a stale id in the selection.
+  const selIds = useMemo(() => {
+    if (!sel) return [] as string[];
+    const onPage = new Set((page?.blocks ?? []).map(blockId));
+    return [sel, ...alsoSel].filter(
+      (id, i, arr) => onPage.has(id) && arr.indexOf(id) === i,
+    );
+  }, [sel, alsoSel, page]);
+
+  // Click selects; shift/⌘-click extends. Clicking a companion again drops
+  // it, and clicking the primary promotes the next companion — so a
+  // mis-shift-click is undone by repeating it.
+  const selectBlock = useCallback(
+    (id: string, additive = false) => {
+      if (!additive || !sel) {
+        setSel(id);
+        setAlsoSel([]);
+      } else if (id === sel) {
+        const [next, ...rest] = alsoSel;
+        setSel(next ?? null);
+        setAlsoSel(rest);
+      } else if (alsoSel.includes(id)) {
+        setAlsoSel(alsoSel.filter((x) => x !== id));
+      } else {
+        setAlsoSel([...alsoSel, id]);
+      }
+      // Touching a block makes its look the seed for the next drawn one.
+      const b = page?.blocks.find((x) => blockId(x) === id);
+      if (b) inheritRef.current = pickAppearance(b);
+    },
+    [sel, alsoSel, page],
+  );
+
+  // Patch every selected block, computing the patch PER BLOCK so a
+  // field-level edit keeps each block's other fields. Returning null skips
+  // that block (e.g. a border tweak must not invent a border on a block
+  // that doesn't have one).
+  const patchSelected = useCallback(
+    (make: (b: LayoutBlock) => Partial<LayoutBlock> | null) => {
+      const ids = new Set(selIds);
+      if (ids.size === 0) return;
+      setDef((d) => ({
+        ...d,
+        pages: d.pages.map((p, i) =>
+          i === pageIdx
+            ? {
+                ...p,
+                blocks: p.blocks.map((b) => {
+                  if (!ids.has(blockId(b))) return b;
+                  const patch = make(b);
+                  return patch ? { ...b, ...patch } : b;
+                }),
+              }
+            : p,
+        ),
+      }));
+    },
+    [pageIdx, selIds],
+  );
+
+  // A flat formatting field (font size, bold, align, …) across the whole
+  // selection, and remembered as the seed for the next drawn block.
+  const updateAppearance = useCallback(
+    (patch: Partial<LayoutBlock>) => {
+      patchSelected(() => patch);
+      if (selBlock) inheritRef.current = pickAppearance({ ...selBlock, ...patch });
+    },
+    [patchSelected, selBlock],
+  );
+
+  // One field INSIDE the border, for each selected block that has a border.
+  // Skipping border-less blocks is deliberate: nudging the colour shouldn't
+  // draw a box around blocks that never had one.
+  const updateBorderField = useCallback(
+    (patch: Partial<NonNullable<LayoutBlock["border"]>>) => {
+      patchSelected((b) => (b.border ? { border: { ...b.border, ...patch } } : null));
+      if (selBlock?.border) {
+        inheritRef.current = pickAppearance({
+          ...selBlock,
+          border: { ...selBlock.border, ...patch },
+        });
+      }
+    },
+    [patchSelected, selBlock],
+  );
+
+  // Per-side border padding, resolved per block through effectiveBorderPad
+  // so each keeps its own other three sides (and legacy `padMm` blocks
+  // migrate cleanly). `sides` undefined ⇒ all four (the linked case).
+  const updateBorderPad = useCallback(
+    (value: number, sides?: Array<"topMm" | "rightMm" | "bottomMm" | "leftMm">) => {
+      const write = (border: NonNullable<LayoutBlock["border"]>) => {
+        const cur = effectiveBorderPad(border);
+        const next = sides
+          ? { ...cur, ...Object.fromEntries(sides.map((s) => [s, value])) }
+          : { topMm: value, rightMm: value, bottomMm: value, leftMm: value };
+        // Writing `pad` retires the legacy single `padMm` — effectiveBorderPad
+        // prefers `pad`, but leaving the old field behind keeps a stale value
+        // in the saved JSON.
+        return { ...border, pad: next, padMm: undefined };
+      };
+      patchSelected((b) => (b.border ? { border: write(b.border) } : null));
+      if (selBlock?.border) {
+        inheritRef.current = pickAppearance({ ...selBlock, border: write(selBlock.border) });
+      }
+    },
+    [patchSelected, selBlock],
+  );
+
+  // ---- copy / paste / reset formatting ----------------------------------
+
+  // ---- the cross-layout block clipboard ---------------------------------
+  //
+  // Copy here, open a different layout, paste there. Blocks travel whole —
+  // tokens, text and formatting — because the case this exists for is
+  // reusing a finished block (the importer address, a barcode arrangement)
+  // rather than re-typing it into every customer's layout.
+
+  // Max blocks on a page, from LayoutPageSchema. Refusing an over-cap paste
+  // beats letting the page fail validation only at publish.
+  const PAGE_BLOCK_CAP = 200;
+
+  function copyBlocks() {
+    const blocks = (page?.blocks ?? []).filter((b) => selIds.includes(blockId(b)));
+    if (blocks.length === 0) return;
+    const ok = writeBlockClipboard({ blocks, grid, layoutName: name || "Untitled layout" });
+    setBlockClip(ok ? readBlockClipboard() : null);
+    setClipNote(
+      ok
+        ? `${blocks.length} block${blocks.length === 1 ? "" : "s"} copied — open another layout to paste.`
+        : "Couldn't copy: this browser won't allow local storage.",
+    );
+  }
+
+  function pasteBlocks() {
+    if (!blockClip || !page) return;
+    if (page.blocks.length + blockClip.blocks.length > PAGE_BLOCK_CAP) {
+      setClipNote(`That would take this page past ${PAGE_BLOCK_CAP} blocks.`);
+      return;
+    }
+    // Remapped onto THIS page's grid and given fresh ids — see
+    // block-clipboard.ts for why both are necessary.
+    const added = blocksForPaste(blockClip, grid, newBlockId);
+    setDef((d) => ({
+      ...d,
+      pages: d.pages.map((p, i) => (i === pageIdx ? { ...p, blocks: [...p.blocks, ...added] } : p)),
+    }));
+    // Land with the pasted blocks selected, so they can be dragged into
+    // place or reformatted as a group straight away.
+    setSel(added[0].id!);
+    setAlsoSel(added.slice(1).map((b) => b.id!));
+    inheritRef.current = pickAppearance(added[0]);
+    setClipNote(
+      `Pasted ${added.length} block${added.length === 1 ? "" : "s"} from “${blockClip.layoutName}”.`,
+    );
+  }
+
+  function copyFormat() {
+    if (selBlock) setFormatClip(pickAppearance(selBlock));
+  }
+  function pasteFormat() {
+    if (!formatClip) return;
+    // appearancePatch names every appearance field, so pasting a plain look
+    // also CLEARS a border the target had — "make it look like that".
+    patchSelected(() => appearancePatch(formatClip));
+    inheritRef.current = formatClip;
+  }
+  function resetFormat() {
+    patchSelected(() => appearancePatch(PLAIN_APPEARANCE));
+    inheritRef.current = PLAIN_APPEARANCE;
+  }
+  // Select every block on the page, keeping the current primary so the
+  // panel keeps showing the values you were looking at.
+  function selectAllOnPage() {
+    const ids = (page?.blocks ?? []).map(blockId);
+    if (ids.length === 0) return;
+    const primary = sel && ids.includes(sel) ? sel : ids[0];
+    setSel(primary);
+    setAlsoSel(ids.filter((id) => id !== primary));
+  }
+
+  // ⌘D / Ctrl+D — a copy of the selected block, same look and text, landing
+  // directly below it. Formatting AND content, because the case it exists
+  // for is a run of near-identical lines (one per size, per language).
+  const duplicateBlock = useCallback(
+    (id: string) => {
+      const src = page?.blocks.find((b) => blockId(b) === id);
+      // Rect-only: a corner block is unique per corner, so a copy of one
+      // would fail publish validation. parseLayoutDef converts every legacy
+      // anchor block to a rect, so in practice nothing takes this branch.
+      if (!src?.rect) return;
+      const copy: LayoutBlock = {
+        ...src,
+        ...pickAppearance(src), // deep-clones `border` so the copy can't alias
+        id: newBlockId(),
+        rect: duplicateRect(src.rect, grid),
+        lines: [...src.lines],
+      };
+      setDef((d) => ({
+        ...d,
+        pages: d.pages.map((p, i) => (i === pageIdx ? { ...p, blocks: [...p.blocks, copy] } : p)),
+      }));
+      setSel(copy.id!);
+      setAlsoSel([]);
+    },
+    [page, pageIdx, grid],
   );
 
   const settings = layoutSettings(def);
@@ -494,18 +742,23 @@ export function LayoutEditor({
   }
 
   function addRectBlock(rect: LayoutRect) {
+    // A new block INHERITS the look you last worked with, rather than being
+    // born at a hardcoded 9 pt that matched the page's dominant size on
+    // only a quarter of pages. Placement and text always start fresh; the
+    // seed falls back to the last block on the page (so re-opening a layout
+    // and drawing picks up its type), then to PLAIN_APPEARANCE.
+    const lastOnPage = page?.blocks[page.blocks.length - 1];
+    const seed =
+      inheritRef.current ?? (lastOnPage ? pickAppearance(lastOnPage) : PLAIN_APPEARANCE);
     const block: LayoutBlock = {
       id: newBlockId(),
       rect,
       cols: 6,
-      align: "left",
-      valign: "top",
-      fontPt: 9,
-      bold: false,
-      invert: false,
-      fitWidth: false,
-      fitHeight: false,
-      lineHeight: 1.4,
+      ...PLAIN_APPEARANCE,
+      // pickAppearance (not appearancePatch) so only what the seed actually
+      // carries overrides the plain baseline — an unset `align` stays left
+      // rather than being written back as undefined.
+      ...pickAppearance(seed),
       lines: ["New text"],
     };
     setDef((d) => ({
@@ -513,6 +766,8 @@ export function LayoutEditor({
       pages: d.pages.map((p, i) => (i === pageIdx ? { ...p, blocks: [...p.blocks, block] } : p)),
     }));
     setSel(block.id!);
+    setAlsoSel([]);
+    inheritRef.current = pickAppearance(block);
   }
 
   function removeBlock(id: string) {
@@ -928,11 +1183,23 @@ export function LayoutEditor({
     customLogo,
   ]);
 
-  // Delete / Backspace removes the selected block — unless the user is
-  // typing in an input, textarea or select (e.g. the content editor).
+  // Block keyboard shortcuts:
+  //   ⌘D / Ctrl+D  duplicate the selected block
+  //   Del / ⌫      delete it — unless the user is typing in an input,
+  //                textarea or select (e.g. the content editor)
   useEffect(() => {
     if (!sel) return;
     const onKeyDown = (e: KeyboardEvent) => {
+      // ⌘D is Chrome's "bookmark this page". Unlike ⌘T/⌘W/⌘N it IS
+      // cancellable from the page, so preventDefault here is what stops the
+      // bookmark dialog — and it comes BEFORE the typing guard, since ⌘D is
+      // not a text-editing key and duplicating while the cursor sits in the
+      // content box is still what the author meant.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === "d" || e.key === "D")) {
+        e.preventDefault();
+        duplicateBlock(sel);
+        return;
+      }
       if (e.key !== "Delete" && e.key !== "Backspace") return;
       const el = document.activeElement as HTMLElement | null;
       const tag = el?.tagName;
@@ -945,6 +1212,17 @@ export function LayoutEditor({
     // removeBlock isn't memoized; re-binding per render tick is cheap.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel, pageIdx, def]);
+
+  // Load the cross-layout clipboard after mount (there is no localStorage
+  // during SSR), and follow it while the editor is open: the `storage`
+  // event fires in OTHER tabs, so copying in one tab makes the Paste button
+  // appear in the other without a reload.
+  useEffect(() => {
+    const sync = () => setBlockClip(readBlockClipboard());
+    sync();
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
+  }, []);
 
   // A hovered Blocks-list row highlights its block by id; clear that when the
   // page switches so an id from the old page can't linger.
@@ -2539,8 +2817,9 @@ export function LayoutEditor({
                   page={page}
                   scale={scale}
                   selected={sel === blockId(block)}
+                  coSelected={sel !== blockId(block) && selIds.includes(blockId(block))}
                   highlighted={hoverBlock === blockId(block)}
-                  onSelect={() => setSel(blockId(block))}
+                  onSelect={(additive) => selectBlock(blockId(block), additive)}
                   onRemove={() => removeBlock(blockId(block))}
                 />
               ))}
@@ -2695,8 +2974,35 @@ export function LayoutEditor({
           <div className="rounded-lg border border-zinc-200 p-4">
             <div className="flex items-baseline justify-between">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Blocks</div>
-              <span className="text-[11px] tabular-nums text-zinc-400">{page.blocks.length}</span>
+              <div className="flex items-baseline gap-2">
+                {page.blocks.length > 1 ? (
+                  <button
+                    type="button"
+                    onClick={selectAllOnPage}
+                    className="text-[11px] font-medium text-zinc-400 hover:text-zinc-900"
+                    title="Select every block on this page, so one panel edit formats them all"
+                  >
+                    Select all
+                  </button>
+                ) : null}
+                <span className="text-[11px] tabular-nums text-zinc-400">{page.blocks.length}</span>
+              </div>
             </div>
+            {/* Paste sits here, not in the Block panel, because it acts on
+                the PAGE — it has to work when nothing is selected, which is
+                exactly the state you arrive in from another layout. */}
+            {blockClip ? (
+              <button
+                type="button"
+                onClick={pasteBlocks}
+                className="mt-2 w-full truncate rounded-md border border-dashed border-zinc-300 px-2 py-1.5 text-left text-[11px] text-zinc-600 hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-900"
+                title={`Paste onto this page, rescaled from a ${blockClip.grid.cols}×${blockClip.grid.rows} grid to this page's ${grid.cols}×${grid.rows}`}
+              >
+                Paste {blockClip.blocks.length} block{blockClip.blocks.length === 1 ? "" : "s"} from “
+                {blockClip.layoutName}”
+              </button>
+            ) : null}
+            {clipNote ? <p className="mt-1.5 text-[10px] text-zinc-500">{clipNote}</p> : null}
             {page.blocks.length === 0 ? (
               <p className="mt-2 text-xs text-zinc-400">No blocks yet — drag on the grid to draw one.</p>
             ) : (
@@ -2704,17 +3010,20 @@ export function LayoutEditor({
                 {orderedBlocks.map((b) => {
                   const id = blockId(b);
                   const isSel = sel === id;
+                  // A companion of the primary: formatting edits reach it,
+                  // so it gets a lighter version of the selected outline.
+                  const isCoSel = !isSel && selIds.includes(id);
                   const { kind, text, extra } = blockSummary(b);
                   return (
                     <li key={id}>
                       <div
                         role="button"
                         tabIndex={0}
-                        onClick={() => setSel(id)}
+                        onClick={(e) => selectBlock(id, e.shiftKey || e.metaKey || e.ctrlKey)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
-                            setSel(id);
+                            selectBlock(id, e.shiftKey || e.metaKey || e.ctrlKey);
                           }
                         }}
                         onMouseEnter={() => setHoverBlock(id)}
@@ -2724,7 +3033,9 @@ export function LayoutEditor({
                         className={`group flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 ${
                           isSel
                             ? "border-zinc-900 bg-zinc-50"
-                            : "border-transparent hover:border-zinc-200 hover:bg-zinc-50"
+                            : isCoSel
+                              ? "border-dashed border-zinc-400 bg-zinc-50"
+                              : "border-transparent hover:border-zinc-200 hover:bg-zinc-50"
                         }`}
                       >
                         {kind ? (
@@ -2768,7 +3079,7 @@ export function LayoutEditor({
           <div className="rounded-lg border border-zinc-200 p-4">
             <div className="flex items-baseline justify-between">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                Block
+                {selIds.length > 1 ? `Block · ${selIds.length} selected` : "Block"}
               </div>
               {selBlock ? (
                 <button
@@ -2783,10 +3094,59 @@ export function LayoutEditor({
             </div>
             {!selBlock ? (
               <p className="mt-2 text-xs text-zinc-400">
-                Select a block on the canvas, or drag on the grid to draw a new one.
+                Select a block on the canvas, or drag on the grid to draw a new one. Shift-click to
+                add more blocks to the selection and format them together.
               </p>
             ) : (
               <div className="mt-3 space-y-4">
+                {/* Formatting actions. A new block already inherits the look
+                    of the last one you touched, so these are for the cases
+                    that inheritance can't cover: cloning a finished block,
+                    and pushing one block's look onto others after the fact. */}
+                <div className="flex flex-wrap items-center gap-1">
+                  <PanelButton
+                    onClick={() => duplicateBlock(blockId(selBlock))}
+                    disabled={!selBlock.rect}
+                    title="Copy this block — look and text — directly below it (⌘D)"
+                  >
+                    Duplicate
+                  </PanelButton>
+                  <PanelButton
+                    onClick={copyBlocks}
+                    title={`Copy ${selIds.length > 1 ? `these ${selIds.length} blocks` : "this block"} — text and formatting — to paste into ANOTHER layout`}
+                  >
+                    Copy {selIds.length > 1 ? `${selIds.length} blocks` : "block"}
+                  </PanelButton>
+                  <PanelButton
+                    onClick={copyFormat}
+                    title="Remember this block's formatting, to paste onto others in this layout"
+                  >
+                    Copy format
+                  </PanelButton>
+                  <PanelButton
+                    onClick={pasteFormat}
+                    disabled={!formatClip}
+                    title={
+                      formatClip
+                        ? `Apply the copied formatting (${String(formatClip.fontPt ?? PLAIN_APPEARANCE.fontPt).replace(".", ",")} pt${formatClip.bold ? ", bold" : ""}${formatClip.border ? ", bordered" : ""}) to ${selIds.length > 1 ? `all ${selIds.length} selected blocks` : "this block"}`
+                        : "Copy a block's formatting first"
+                    }
+                  >
+                    Paste format
+                  </PanelButton>
+                  <PanelButton
+                    onClick={resetFormat}
+                    title={`Back to the plain default — ${PLAIN_APPEARANCE.fontPt} pt, left, no border`}
+                  >
+                    Plain
+                  </PanelButton>
+                </div>
+                {selIds.length > 1 ? (
+                  <p className="rounded-md bg-zinc-50 px-2 py-1.5 text-[10px] leading-relaxed text-zinc-500">
+                    Font, alignment, border, fit and invert apply to all {selIds.length} selected
+                    blocks. Position and text stay on this one. Shift-click a block again to drop it.
+                  </p>
+                ) : null}
                 {selBlock.rect ? (
                   <>
                     <div className="grid grid-cols-2 gap-2">
@@ -2831,7 +3191,7 @@ export function LayoutEditor({
                             <button
                               key={a}
                               type="button"
-                              onClick={() => updateBlock(blockId(selBlock), { align: a })}
+                              onClick={() => updateAppearance({ align: a })}
                               className={`px-2 py-1 text-[11px] font-medium capitalize ${
                                 (selBlock.align ?? "left") === a
                                   ? "bg-zinc-900 text-white"
@@ -2850,7 +3210,7 @@ export function LayoutEditor({
                             <button
                               key={v}
                               type="button"
-                              onClick={() => updateBlock(blockId(selBlock), { valign: v })}
+                              onClick={() => updateAppearance({ valign: v })}
                               className={`px-2 py-1 text-[11px] font-medium capitalize ${
                                 (selBlock.valign ?? "top") === v
                                   ? "bg-zinc-900 text-white"
@@ -2875,7 +3235,7 @@ export function LayoutEditor({
                       max={144}
                       step={0.5}
                       suffix="pt"
-                      onChange={(v) => updateBlock(blockId(selBlock), { fontPt: v })}
+                      onChange={(v) => updateAppearance({ fontPt: v })}
                     />
                   </div>
                   <p className="mt-0.5 text-[10px] text-zinc-400">Barcodes and wash symbols scale with the font size.</p>
@@ -2886,7 +3246,7 @@ export function LayoutEditor({
                     <input
                       type="checkbox"
                       checked={selBlock.bold}
-                      onChange={(e) => updateBlock(blockId(selBlock), { bold: e.target.checked })}
+                      onChange={(e) => updateAppearance({ bold: e.target.checked })}
                       className="accent-zinc-900"
                     />
                     Bold
@@ -2895,7 +3255,7 @@ export function LayoutEditor({
                     Line height
                     <select
                       value={selBlock.lineHeight}
-                      onChange={(e) => updateBlock(blockId(selBlock), { lineHeight: Number(e.target.value) })}
+                      onChange={(e) => updateAppearance({ lineHeight: Number(e.target.value) })}
                       className="rounded border border-zinc-200 px-1 py-0.5 text-xs"
                     >
                       {[1.2, 1.3, 1.4, 1.5, 1.6, 1.8].map((lh) => (
@@ -2914,21 +3274,27 @@ export function LayoutEditor({
                       value={selBlock.border?.widthMm ?? 0}
                       onChange={(e) => {
                         const w = Number(e.target.value);
-                        updateBlock(blockId(selBlock), {
+                        // Applies to the whole selection — "box these five"
+                        // is the reason multi-select exists. Each block keeps
+                        // its OWN colour, padding and per-side choice; only
+                        // the width changes.
+                        patchSelected((b) => ({
                           border:
                             w > 0
                               ? {
+                                  ...b.border,
                                   widthMm: w,
-                                  color: selBlock.border?.color ?? "#000000",
+                                  color: b.border?.color ?? "#000000",
                                   // Keep existing padding; a brand-new border
                                   // starts at 0.5 mm (linked) so it's never
                                   // flush against the text.
-                                  pad: selBlock.border
-                                    ? effectiveBorderPad(selBlock.border)
+                                  pad: b.border
+                                    ? effectiveBorderPad(b.border)
                                     : { topMm: 0.5, rightMm: 0.5, bottomMm: 0.5, leftMm: 0.5 },
+                                  padMm: undefined,
                                 }
                               : undefined,
-                        });
+                        }));
                       }}
                       className="rounded border border-zinc-200 px-1 py-0.5 text-xs"
                     >
@@ -2946,9 +3312,7 @@ export function LayoutEditor({
                         type="color"
                         value={selBlock.border.color}
                         onChange={(e) =>
-                          updateBlock(blockId(selBlock), {
-                            border: { ...selBlock.border!, color: e.target.value },
-                          })
+                          updateBorderField({ color: e.target.value })
                         }
                         className="h-6 w-8 cursor-pointer rounded border border-zinc-200 bg-white p-0.5"
                         title="Border colour"
@@ -2959,7 +3323,7 @@ export function LayoutEditor({
                         onChange={(e) => {
                           const v = e.target.value.trim();
                           if (/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v)) {
-                            updateBlock(blockId(selBlock), { border: { ...selBlock.border!, color: v } });
+                            updateBorderField({ color: v });
                           }
                         }}
                         className="w-20 rounded border border-zinc-200 px-1.5 py-0.5 font-mono text-[11px]"
@@ -2972,7 +3336,7 @@ export function LayoutEditor({
                   <BorderSidePicker
                     sides={effectiveBorderSides(selBlock.border)}
                     onChange={(sides) =>
-                      updateBlock(blockId(selBlock), { border: { ...selBlock.border!, sides } })
+                      updateBorderField({ sides })
                     }
                   />
                 ) : null}
@@ -2986,14 +3350,7 @@ export function LayoutEditor({
                           if (padLinked) {
                             setPadLinked(false);
                           } else {
-                            const v = effectiveBorderPad(selBlock.border).topMm;
-                            updateBlock(blockId(selBlock), {
-                              border: {
-                                ...selBlock.border!,
-                                pad: { topMm: v, rightMm: v, bottomMm: v, leftMm: v },
-                                padMm: undefined,
-                              },
-                            });
+                            updateBorderPad(effectiveBorderPad(selBlock.border).topMm);
                             setPadLinked(true);
                           }
                         }}
@@ -3020,14 +3377,7 @@ export function LayoutEditor({
                         value={effectiveBorderPad(selBlock.border).topMm}
                         onChange={(e) => {
                           const v = Number(e.target.value);
-                          if (Number.isFinite(v) && v >= 0 && v <= 20)
-                            updateBlock(blockId(selBlock), {
-                              border: {
-                                ...selBlock.border!,
-                                pad: { topMm: v, rightMm: v, bottomMm: v, leftMm: v },
-                                padMm: undefined,
-                              },
-                            });
+                          if (Number.isFinite(v) && v >= 0 && v <= 20) updateBorderPad(v);
                         }}
                         className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm tabular-nums"
                         title="Inner padding between the border and the text"
@@ -3052,14 +3402,7 @@ export function LayoutEditor({
                               value={effectiveBorderPad(selBlock.border)[k]}
                               onChange={(e) => {
                                 const v = Number(e.target.value);
-                                if (Number.isFinite(v) && v >= 0 && v <= 20)
-                                  updateBlock(blockId(selBlock), {
-                                    border: {
-                                      ...selBlock.border!,
-                                      pad: { ...effectiveBorderPad(selBlock.border), [k]: v },
-                                      padMm: undefined,
-                                    },
-                                  });
+                                if (Number.isFinite(v) && v >= 0 && v <= 20) updateBorderPad(v, [k]);
                               }}
                               className="w-full rounded-md border border-zinc-200 px-2 py-1 text-sm tabular-nums"
                             />
@@ -3078,7 +3421,7 @@ export function LayoutEditor({
                     <input
                       type="checkbox"
                       checked={selBlock.invert ?? false}
-                      onChange={(e) => updateBlock(blockId(selBlock), { invert: e.target.checked })}
+                      onChange={(e) => updateAppearance({ invert: e.target.checked })}
                       className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
                     />
                     Invert block (solid background, contrasting text)
@@ -3090,8 +3433,8 @@ export function LayoutEditor({
                         label="Background"
                         value={invertColors(selBlock).bg}
                         isDefault={selBlock.invertBg === undefined}
-                        onChange={(hex) => updateBlock(blockId(selBlock), { invertBg: hex })}
-                        onReset={() => updateBlock(blockId(selBlock), { invertBg: undefined })}
+                        onChange={(hex) => updateAppearance({ invertBg: hex })}
+                        onReset={() => updateAppearance({ invertBg: undefined })}
                         fallback={INVERT_BG}
                       />
                       <HexColorField
@@ -3099,8 +3442,8 @@ export function LayoutEditor({
                         label="Text"
                         value={invertColors(selBlock).text}
                         isDefault={selBlock.invertText === undefined}
-                        onChange={(hex) => updateBlock(blockId(selBlock), { invertText: hex })}
-                        onReset={() => updateBlock(blockId(selBlock), { invertText: undefined })}
+                        onChange={(hex) => updateAppearance({ invertText: hex })}
+                        onReset={() => updateAppearance({ invertText: undefined })}
                         fallback={INVERT_TEXT}
                       />
                     </div>
@@ -3110,7 +3453,7 @@ export function LayoutEditor({
                   <input
                     type="checkbox"
                     checked={selBlock.fitWidth ?? false}
-                    onChange={(e) => updateBlock(blockId(selBlock), { fitWidth: e.target.checked })}
+                    onChange={(e) => updateAppearance({ fitWidth: e.target.checked })}
                     className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
                   />
                   Fit width (one line, auto-scale to fill)
@@ -3119,7 +3462,7 @@ export function LayoutEditor({
                   <input
                     type="checkbox"
                     checked={selBlock.fitHeight ?? false}
-                    onChange={(e) => updateBlock(blockId(selBlock), { fitHeight: e.target.checked })}
+                    onChange={(e) => updateAppearance({ fitHeight: e.target.checked })}
                     className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
                   />
                   Shrink text to fit cell (no overflow onto other blocks)
@@ -3740,6 +4083,33 @@ export function LayoutEditor({
 // vertical space a slider takes. The middle field accepts a comma or dot and
 // commits on blur/Enter (so a "9,5" decimal can be typed without the value
 // resetting mid-keystroke); the buttons step immediately.
+// A small secondary action in the Block panel (Duplicate / Copy format /
+// Paste format / Plain) — the same chip styling as the border padding's
+// link toggle, so the panel keeps one button vocabulary.
+function PanelButton({
+  onClick,
+  disabled,
+  title,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 hover:border-zinc-300 hover:text-zinc-900 disabled:cursor-not-allowed disabled:border-zinc-100 disabled:text-zinc-300 disabled:hover:border-zinc-100 disabled:hover:text-zinc-300"
+    >
+      {children}
+    </button>
+  );
+}
+
 function NumberStepper({
   value,
   min,
@@ -3837,6 +4207,7 @@ function CanvasBlock({
   page,
   scale,
   selected,
+  coSelected,
   highlighted,
   onSelect,
   onRemove,
@@ -3845,10 +4216,14 @@ function CanvasBlock({
   page: LayoutPage;
   scale: number;
   selected: boolean;
+  // Shift/⌘-clicked alongside the primary selection: formatting edits in the
+  // panel reach this block too, so it needs to look included without looking
+  // like the block the panel is showing.
+  coSelected: boolean;
   // Hovered in the Blocks list — a blue locator ring + raised stack order so
   // it stands out from (and above) overlapping neighbours.
   highlighted: boolean;
-  onSelect: () => void;
+  onSelect: (additive: boolean) => void;
   onRemove: () => void;
 }) {
   const fontPx = Math.max(block.fontPt * PT_TO_MM * scale, 7);
@@ -3895,15 +4270,17 @@ function CanvasBlock({
   // Either state raises z-index so the block isn't hidden behind neighbours.
   const ringCls = selected
     ? "z-10 ring-2 ring-zinc-900/80 ring-offset-1"
-    : highlighted
-      ? "z-10 ring-2 ring-sky-500 ring-offset-1"
-      : "hover:ring-1 hover:ring-zinc-300";
+    : coSelected
+      ? "z-10 ring-2 ring-zinc-900/30 ring-offset-1"
+      : highlighted
+        ? "z-10 ring-2 ring-sky-500 ring-offset-1"
+        : "hover:ring-1 hover:ring-zinc-300";
   const bgCls = block.rect ? (highlighted && !selected ? "bg-sky-100/60" : "bg-white/40") : "";
 
   return (
     <div
       data-block
-      onClick={onSelect}
+      onClick={(e) => onSelect(e.shiftKey || e.metaKey || e.ctrlKey)}
       className={`absolute cursor-pointer rounded-sm px-1 py-0.5 ${ringCls} ${bgCls}`}
       style={positionStyle}
     >
