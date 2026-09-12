@@ -35,6 +35,13 @@ import {
   type SewingLine,
 } from "@/lib/output-layouts/schema";
 import {
+  blocksForPaste,
+  readBlockClipboard,
+  remapRectToGrid,
+  writeBlockClipboard,
+  type BlockClipboard,
+} from "@/lib/output-layouts/block-clipboard";
+import {
   PLAIN_APPEARANCE,
   appearancePatch,
   duplicateRect,
@@ -260,6 +267,12 @@ export function LayoutEditor({
   // "Copy format" clipboard — an appearance lifted off a block, ready to
   // stamp onto the selection. Lives for the session, not the document.
   const [formatClip, setFormatClip] = useState<BlockAppearance | null>(null);
+  // The CROSS-LAYOUT block clipboard, backed by localStorage so it survives
+  // navigating to another layout (see block-clipboard.ts). Null until the
+  // after-mount read, because there is no localStorage during SSR.
+  const [blockClip, setBlockClip] = useState<BlockClipboard | null>(null);
+  // One-line feedback for copy/paste, so a storage failure isn't silent.
+  const [clipNote, setClipNote] = useState<string | null>(null);
   // The look a freshly drawn block inherits: whatever was last selected or
   // formatted. A ref, not state — it must never trigger a render, and it
   // deliberately survives deselecting and switching pages (a 3-page care
@@ -423,15 +436,11 @@ export function LayoutEditor({
     if (!Number.isFinite(cell) || cell <= 0) return;
     const next = gridFromCellMm(page.widthMm, page.heightMm, cell);
     const old = pageGrid(page);
-    const blocks = page.blocks.map((b) => {
-      if (!b.rect) return b;
-      const r = b.rect;
-      const col = Math.min(next.cols - 1, Math.round((r.col / old.cols) * next.cols));
-      const row = Math.min(next.rows - 1, Math.round((r.row / old.rows) * next.rows));
-      const colSpan = Math.max(1, Math.min(next.cols - col, Math.round((r.colSpan / old.cols) * next.cols)));
-      const rowSpan = Math.max(1, Math.min(next.rows - row, Math.round((r.rowSpan / old.rows) * next.rows)));
-      return { ...b, rect: { col, row, colSpan, rowSpan } };
-    });
+    // Same remap a cross-layout paste uses — the two must agree, or a
+    // block would land differently depending on how it got resized.
+    const blocks = page.blocks.map((b) =>
+      b.rect ? { ...b, rect: remapRectToGrid(b.rect, old, next) } : b,
+    );
     updatePage({ gridCols: next.cols, gridRows: next.rows, blocks });
   }
 
@@ -564,6 +573,52 @@ export function LayoutEditor({
   );
 
   // ---- copy / paste / reset formatting ----------------------------------
+
+  // ---- the cross-layout block clipboard ---------------------------------
+  //
+  // Copy here, open a different layout, paste there. Blocks travel whole —
+  // tokens, text and formatting — because the case this exists for is
+  // reusing a finished block (the importer address, a barcode arrangement)
+  // rather than re-typing it into every customer's layout.
+
+  // Max blocks on a page, from LayoutPageSchema. Refusing an over-cap paste
+  // beats letting the page fail validation only at publish.
+  const PAGE_BLOCK_CAP = 200;
+
+  function copyBlocks() {
+    const blocks = (page?.blocks ?? []).filter((b) => selIds.includes(blockId(b)));
+    if (blocks.length === 0) return;
+    const ok = writeBlockClipboard({ blocks, grid, layoutName: name || "Untitled layout" });
+    setBlockClip(ok ? readBlockClipboard() : null);
+    setClipNote(
+      ok
+        ? `${blocks.length} block${blocks.length === 1 ? "" : "s"} copied — open another layout to paste.`
+        : "Couldn't copy: this browser won't allow local storage.",
+    );
+  }
+
+  function pasteBlocks() {
+    if (!blockClip || !page) return;
+    if (page.blocks.length + blockClip.blocks.length > PAGE_BLOCK_CAP) {
+      setClipNote(`That would take this page past ${PAGE_BLOCK_CAP} blocks.`);
+      return;
+    }
+    // Remapped onto THIS page's grid and given fresh ids — see
+    // block-clipboard.ts for why both are necessary.
+    const added = blocksForPaste(blockClip, grid, newBlockId);
+    setDef((d) => ({
+      ...d,
+      pages: d.pages.map((p, i) => (i === pageIdx ? { ...p, blocks: [...p.blocks, ...added] } : p)),
+    }));
+    // Land with the pasted blocks selected, so they can be dragged into
+    // place or reformatted as a group straight away.
+    setSel(added[0].id!);
+    setAlsoSel(added.slice(1).map((b) => b.id!));
+    inheritRef.current = pickAppearance(added[0]);
+    setClipNote(
+      `Pasted ${added.length} block${added.length === 1 ? "" : "s"} from “${blockClip.layoutName}”.`,
+    );
+  }
 
   function copyFormat() {
     if (selBlock) setFormatClip(pickAppearance(selBlock));
@@ -1157,6 +1212,17 @@ export function LayoutEditor({
     // removeBlock isn't memoized; re-binding per render tick is cheap.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel, pageIdx, def]);
+
+  // Load the cross-layout clipboard after mount (there is no localStorage
+  // during SSR), and follow it while the editor is open: the `storage`
+  // event fires in OTHER tabs, so copying in one tab makes the Paste button
+  // appear in the other without a reload.
+  useEffect(() => {
+    const sync = () => setBlockClip(readBlockClipboard());
+    sync();
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
+  }, []);
 
   // A hovered Blocks-list row highlights its block by id; clear that when the
   // page switches so an id from the old page can't linger.
@@ -2922,6 +2988,21 @@ export function LayoutEditor({
                 <span className="text-[11px] tabular-nums text-zinc-400">{page.blocks.length}</span>
               </div>
             </div>
+            {/* Paste sits here, not in the Block panel, because it acts on
+                the PAGE — it has to work when nothing is selected, which is
+                exactly the state you arrive in from another layout. */}
+            {blockClip ? (
+              <button
+                type="button"
+                onClick={pasteBlocks}
+                className="mt-2 w-full truncate rounded-md border border-dashed border-zinc-300 px-2 py-1.5 text-left text-[11px] text-zinc-600 hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-900"
+                title={`Paste onto this page, rescaled from a ${blockClip.grid.cols}×${blockClip.grid.rows} grid to this page's ${grid.cols}×${grid.rows}`}
+              >
+                Paste {blockClip.blocks.length} block{blockClip.blocks.length === 1 ? "" : "s"} from “
+                {blockClip.layoutName}”
+              </button>
+            ) : null}
+            {clipNote ? <p className="mt-1.5 text-[10px] text-zinc-500">{clipNote}</p> : null}
             {page.blocks.length === 0 ? (
               <p className="mt-2 text-xs text-zinc-400">No blocks yet — drag on the grid to draw one.</p>
             ) : (
@@ -3031,8 +3112,14 @@ export function LayoutEditor({
                     Duplicate
                   </PanelButton>
                   <PanelButton
+                    onClick={copyBlocks}
+                    title={`Copy ${selIds.length > 1 ? `these ${selIds.length} blocks` : "this block"} — text and formatting — to paste into ANOTHER layout`}
+                  >
+                    Copy {selIds.length > 1 ? `${selIds.length} blocks` : "block"}
+                  </PanelButton>
+                  <PanelButton
                     onClick={copyFormat}
-                    title="Remember this block's formatting, to paste onto others"
+                    title="Remember this block's formatting, to paste onto others in this layout"
                   >
                     Copy format
                   </PanelButton>
