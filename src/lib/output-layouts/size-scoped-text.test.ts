@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { narrowSizeScopedText } from "./size-scoped-text";
+import { narrowSizeScopedText, hasSizeAnchors } from "./size-scoped-text";
 
 // Real-world shapes: the Customer Item No / Description columns filled as
 // per-size lists keyed by the style's size labels ("4-5 ÅR: 7307204, …").
@@ -97,4 +97,32 @@ test("empty / blank inputs pass through", () => {
   assert.equal(narrowSizeScopedText("", SIZES, ["4-5 ÅR"]), "");
   assert.equal(narrowSizeScopedText("x: 1", [], ["4-5 ÅR"]), "x: 1");
   assert.equal(narrowSizeScopedText("4-5 ÅR: 7307204", SIZES, []), "4-5 ÅR: 7307204");
+});
+
+// A per-size list wrapped in a heading ("Carton: …, Product: S: 1, M: 2").
+// The FIRST size sits behind the heading with no comma before it, so the
+// candidate label read as "Product: S", matched nothing, and the whole raw
+// cell — carton number included — fell through onto that size's label.
+// Every later size is preceded by a comma and always worked.
+test("a size behind a heading still anchors (first-size regression)", () => {
+  const raw = "Carton: 933977900, Product: S: 933977001, M: 933977002, L: 933977003";
+  const sizes = ["S", "M", "L"];
+  assert.equal(narrowSizeScopedText(raw, sizes, ["S"]), "933977001");
+  assert.equal(narrowSizeScopedText(raw, sizes, ["M"]), "933977002");
+  assert.equal(narrowSizeScopedText(raw, sizes, ["L"]), "933977003");
+});
+
+test("a heading that is not a size label still opens no anchor", () => {
+  // "Carton" and "Product" must never be treated as sizes themselves.
+  const raw = "Carton: 933977900, Product: S: 933977001";
+  assert.equal(narrowSizeScopedText(raw, ["S"], ["S"]), "933977001");
+});
+
+test("hasSizeAnchors separates a labelled list from a plain one", () => {
+  assert.equal(hasSizeAnchors("S: 1, M: 2", ["S", "M"]), true);
+  assert.equal(hasSizeAnchors("Carton: 9, Product: S: 1", ["S", "M"]), true);
+  assert.equal(hasSizeAnchors("924126001, 924126002", ["S", "M"]), false);
+  assert.equal(hasSizeAnchors("Carton: 933985001", ["35/38"]), false);
+  assert.equal(hasSizeAnchors("", ["S"]), false);
+  assert.equal(hasSizeAnchors("S: 1", []), false);
 });

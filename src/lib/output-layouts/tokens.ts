@@ -13,10 +13,13 @@ import {
   tokenMeta,
   parseSiblingTokenKey,
   CARE_SOURCE_STYLE_COMMENTS,
+  ITEM_NO_SALLING,
+  ITEM_NO_SALLING_CARTON,
   SIZE_JOIN_ARG,
   TABLE_TOTAL_ARG,
   type BarcodeSource,
 } from "./token-meta";
+import { resolveSallingCartonItemNo, resolveSallingItemNo } from "./salling-item-no";
 import {
   declaredColours,
   formatCompositionFibreLines,
@@ -138,7 +141,19 @@ const RESOLVERS: Record<string, TextResolver> = {
       })
       .join(", ");
   },
-  customerItemNo: (s) => s.customerItemNo ?? "",
+  // Bare: the value repetitionStyles already narrowed to this row.
+  // ":salling" / ":sallingCarton" read the WHOLE cell instead, pulling the
+  // product number for this row's size or the style's carton number out of
+  // Salling's two-number column — see salling-item-no.ts.
+  customerItemNo: (s, arg) => {
+    if (arg === ITEM_NO_SALLING_CARTON) return resolveSallingCartonItemNo(s.customerItemNoRaw);
+    if (arg === ITEM_NO_SALLING) {
+      const all = (s.allSizes ?? s.sizes).map((x) => x.label).filter(Boolean);
+      const row = s.sizes.map((x) => x.label).filter(Boolean);
+      return resolveSallingItemNo(s.customerItemNoRaw, all, row);
+    }
+    return s.customerItemNo ?? "";
+  },
   countryOfOrigin: (s) => s.countryOfOrigin ?? "",
   // The style's declared certifications (Monday "certifications__1"
   // column), joined — and the usual field for

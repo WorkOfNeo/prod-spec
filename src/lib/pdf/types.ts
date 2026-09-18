@@ -123,6 +123,15 @@ export type StyleData = {
   // omit it.
   sizeRatioRaw?: string;
 
+  // Raw "Customer Item No" column text. `customerItemNo` is the same value
+  // AFTER repetitionStyles narrowed it to the row's size, which for a
+  // labelled list drops everything the row didn't claim — including
+  // Salling's "Carton: …" heading. Kept VERBATIM so
+  // {{customerItemNo:salling}} / {{customerItemNo:sallingCarton}} can read
+  // the whole cell; see output-layouts/salling-item-no.ts. Optional:
+  // non-mapper constructors omit it.
+  customerItemNoRaw?: string;
+
   // Raw "Style Comments" column text — the Styles board's free-text
   // production notes. Kept VERBATIM (never narrowed by repetitionStyles):
   // it describes the style, not a size row. Only the "TEXT ON LABEL:"
