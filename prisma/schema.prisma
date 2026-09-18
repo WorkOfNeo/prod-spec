@@ -640,6 +640,18 @@ model ProdSpec {
   columnMapping            Json     @default("{}")
   // [{ id: "monday_column_id", label: "Composition" }, ...]
   requiredFields           Json     @default("[]")
+  // Per-spec opt-in to the trims layer on the cover, independent of the global
+  // AppSetting `trimsOnCoverEnabled`. Resolution is OR: global on ⇒ every spec,
+  // global off ⇒ only the specs ticked here. So a spec ticked before the global
+  // flip keeps working after it, and un-flipping the global never strands a
+  // spec that had been switched on deliberately — there is no fallback to fall
+  // back FROM.
+  //
+  // Exists so one customer can be moved onto the new cover for a live request
+  // without deciding it for the whole book. NOT a replacement for the global
+  // switch, and NOT related to `forceTrims`, which stays confined to callers
+  // that hand the bytes straight back and persist nothing.
+  trimsOnCoverEnabled Boolean @default(false)
   autoGenerateThresholdPct Int      @default(100)
   // Defaults to false so auto-created scaffolds (Style ingest, /import
   // Accept) land in "needs configuration" until an admin reviews them.

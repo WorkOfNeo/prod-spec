@@ -2,6 +2,7 @@ import type { BundleDocSummary } from "@/lib/pdf/bundle-page-keys";
 import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { classifyLayoutName } from "@/lib/trims/classify";
 import { assembleTrimManifest, type ManifestOutput } from "@/lib/trims/manifest";
+import { trimsEnabledFor } from "@/lib/trims/cover-enablement";
 import type { TrimContext } from "@/lib/trims/style-trims";
 
 // =====================================================
@@ -196,7 +197,7 @@ export async function buildRequiredPackagingForStyle(
       supplier: { select: { country: true } },
       eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, cartonEan: true } },
       customer: { select: { config: true } },
-      prodSpec: { select: { outputs: true, columnMapping: true } },
+      prodSpec: { select: { outputs: true, columnMapping: true, trimsOnCoverEnabled: true } },
     },
   });
   if (!style) return [];
@@ -237,7 +238,15 @@ export async function buildRequiredPackagingForStyle(
   // The master switch. Off (the default) means every cover renders exactly as
   // it did before trims existed — same rows, same fingerprint — so shipping
   // this code changes nothing a supplier sees until somebody decides it should.
-  const trimsEnabled = opts?.forceTrims === true || (await getTrimsOnCoverEnabled());
+  const trimsEnabled =
+    opts?.forceTrims === true ||
+    trimsEnabledFor({
+      globalEnabled: await getTrimsOnCoverEnabled(),
+      // Per-spec opt-in: OR with the global, so one customer can be moved onto
+      // the new cover without deciding it for the book. Already in hand from the
+      // style read above — no second query.
+      specEnabled: style.prodSpec?.trimsOnCoverEnabled,
+    });
 
   // THE SWITCH GATES EVERYTHING THE TRIM LAYER ADDS — Monday's list AND the
   // per-concept wording it brought with it.

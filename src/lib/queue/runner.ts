@@ -16,6 +16,7 @@ import { supersedeOpenTicketsForStyleOp } from "@/lib/tickets/rejection-tickets"
 import { findCarryForwardClaim } from "@/lib/review-flow/claim";
 import { getReviewNotificationEmails, getCoverPageInfoMd } from "@/lib/settings/app-settings";
 import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-pages";
+import { trimsEnabledFor } from "@/lib/trims/cover-enablement";
 import type { TriggerSource } from "@/generated/prisma/enums";
 import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
 import {
@@ -896,7 +897,13 @@ export async function processJob(jobId: string): Promise<void> {
   //
   // Fail-soft on both reads — a settings hiccup must not fail a generation, and
   // "no context" is the safe fallback because it is what covers already print.
-  const trimContext = (await getTrimsOnCoverEnabled().catch(() => false))
+  const trimContext = trimsEnabledFor({
+    globalEnabled: await getTrimsOnCoverEnabled().catch(() => false),
+    // The per-spec opt-in, read off the ProdSpec already loaded above. Resolved
+    // through the SAME helper buildRequiredPackagingForStyle uses, so the two
+    // cannot drift apart and strand a style in a rebuild loop.
+    specEnabled: prodSpec?.trimsOnCoverEnabled,
+  })
     ? await loadTrimSettings()
         .then((settings) => ({ ...settings, trimLabels: resolveStyleTrimLabels(job.style) }))
         .catch(() => undefined)
