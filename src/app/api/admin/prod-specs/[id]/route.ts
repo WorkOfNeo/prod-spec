@@ -16,6 +16,11 @@ export const runtime = "nodejs";
 const PATCH_SCHEMA = z.object({
   name: z.string().min(1).max(200).optional(),
   active: z.boolean().optional(),
+  // Per-spec opt-in to the trims layer on the cover. DELIBERATELY absent from
+  // `hasOtherChange` below: auto-activation exists because editing a spec's
+  // CONTENT implies approving it, and a release toggle is not content. Ticking
+  // this must never activate a draft spec as a side effect.
+  trimsOnCoverEnabled: z.boolean().optional(),
   // "Fully approved" admin toggle — its own explicit control, deliberately
   // excluded from `hasOtherChange` below so flipping it never auto-activates
   // the spec (approval readiness and active/enqueue-eligibility are separate).
@@ -96,6 +101,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         ...(d.name !== undefined ? { name: d.name } : {}),
         ...(resolvedActive !== undefined ? { active: resolvedActive } : {}),
         ...(d.fullyApproved !== undefined ? { fullyApproved: d.fullyApproved } : {}),
+        ...(d.trimsOnCoverEnabled !== undefined ? { trimsOnCoverEnabled: d.trimsOnCoverEnabled } : {}),
         ...(d.autoGenerateThresholdPct !== undefined ? { autoGenerateThresholdPct: d.autoGenerateThresholdPct } : {}),
         ...(d.outputs !== undefined ? { outputs: d.outputs as unknown as object } : {}),
         ...(d.logoSvg !== undefined ? { logoSvg: d.logoSvg } : {}),

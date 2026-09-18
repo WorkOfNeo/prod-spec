@@ -44,6 +44,7 @@ type Props = {
   initialName: string;
   initialActive: boolean;
   initialFullyApproved: boolean;
+  initialTrimsOnCoverEnabled: boolean;
   initialThreshold: number;
   initialOutputs: ProdSpecOutput[];
   initialLogoSvg: string | null;
@@ -86,6 +87,7 @@ export function ProdSpecEditor(props: Props) {
   const [name, setName] = useState(props.initialName);
   const [active, setActive] = useState(props.initialActive);
   const [fullyApproved, setFullyApproved] = useState(props.initialFullyApproved);
+  const [trimsOnCover, setTrimsOnCover] = useState(props.initialTrimsOnCoverEnabled);
   const [threshold, setThreshold] = useState(props.initialThreshold);
   const [outputs, setOutputs] = useState<ProdSpecOutput[]>(props.initialOutputs);
   const [logoSvg, setLogoSvg] = useState<string>(props.initialLogoSvg ?? "");
@@ -293,6 +295,7 @@ export function ProdSpecEditor(props: Props) {
       name,
       active,
       fullyApproved,
+      trimsOnCoverEnabled: trimsOnCover,
       autoGenerateThresholdPct: threshold,
       outputs,
       logoSvg: logoSvg.trim() ? logoSvg : null,
@@ -305,6 +308,7 @@ export function ProdSpecEditor(props: Props) {
       name,
       active,
       fullyApproved,
+      trimsOnCover,
       threshold,
       outputs,
       logoSvg,
@@ -527,6 +531,32 @@ export function ProdSpecEditor(props: Props) {
                 builds the real one from the documents a job actually generated. Tune how the
                 cover sheet prints below.
               </p>
+            </Section>
+
+            <Section title="Packaging list on this spec's covers">
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={trimsOnCover}
+                  onChange={(e) => setTrimsOnCover(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <strong>Print the packaging list on this spec&apos;s covers</strong>
+                  <span className="mt-1 block text-xs text-zinc-500">
+                    Turns the new cover on for <em>this Prod Spec only</em>, ahead of the
+                    app-wide switch — so one customer can be moved over for a live request
+                    without deciding it for everybody. When the app-wide switch is turned on
+                    later this tick becomes redundant but stays harmless: the two combine with
+                    OR, so nothing here can ever turn the packaging list back <em>off</em>.
+                  </span>
+                  <span className="mt-1 block text-xs text-zinc-500">
+                    Covers already delivered keep their current text. New ones print the list,
+                    and existing ones follow when somebody rebuilds them — nothing regenerates
+                    on its own.
+                  </span>
+                </span>
+              </label>
             </Section>
 
             <Section title="Page settings · cover page">

@@ -54,6 +54,13 @@ export async function trimsEnabledForProdSpec(prodSpecId: string | null | undefi
   if (!prodSpecId) return false;
 
   const { db } = await import("@/lib/db");
+
+  // Catch-all on purpose, and it covers a real window: between this code
+  // merging and the migration running, `trimsOnCoverEnabled` does not exist on
+  // prod_specs and Prisma raises P2022. Railway runs migrate deploy BEFORE
+  // start, so that window is narrow — but the failure mode if we let it throw
+  // is no cover at all, which is far worse than a spec not yet reading as
+  // opted-in. Same stance as the packaging-rows loader's P2021 fallback.
   const spec = await db.prodSpec
     .findUnique({ where: { id: prodSpecId }, select: { trimsOnCoverEnabled: true } })
     .catch(() => null);
