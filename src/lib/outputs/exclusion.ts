@@ -93,10 +93,23 @@ export function ruleMode(rule: OutputRule): RuleMode {
 // without having to load and thread a second map.
 export type DocTypeRulesMap = Record<string, OutputRule[]>;
 
-// The synced fields offered in the rule editors. A curated subset of the
-// ColumnMapping keys (the ones worth gating on), labelled from the shared
-// STYLE_FIELD_LABELS so the names match the Details tab. productGroup is the
-// primary one (carries Socks / Shoes / Boots / …).
+// Every synced style field can be gated on. The list is DERIVED from
+// STYLE_FIELD_LABELS rather than curated, so a newly mapped column shows up
+// in the rule editors with no code change — the same property that map
+// already gives the Details tab. It satisfies Record<keyof ColumnMapping,
+// string>, so TypeScript guarantees the coverage is complete.
+//
+// Matching never needed a curated list: the runner and the readiness chain
+// resolve `rule.field` straight through resolveMappedField, so any
+// ColumnMapping key has always worked. The array only ever decided what the
+// editors OFFER, and keeping it hand-written meant a deploy per field.
+//
+// COMMON_RULE_FIELDS keeps the handful that most rules are written against at
+// the top of the menu, in a deliberate order; everything else follows
+// alphabetically. Grouping is presentation only — a rule on a "common" field
+// is no different from any other.
+//
+// productGroup is the primary one (carries Socks / Shoes / Boots / …).
 //
 // The ORDER-NUMBER fields gate on how a PO is packed rather than on what the
 // product is. A PO shipping BOTH packings carries both numbers in one cell —
@@ -107,7 +120,13 @@ export type DocTypeRulesMap = Record<string, OutputRule[]>;
 // same time: a single-packing PO carries a bare number that matches NEITHER
 // include rule, so without that the split PO prints three labels per size
 // and a normal PO still prints one.
-export const EXCLUSION_FIELDS: ReadonlyArray<{ field: string; label: string }> = [
+//
+// Price is only worth gating on numerically — hence the gt/lt ops. A style
+// whose price cell is blank or unparseable ("See customer order") matches no
+// rule at all, so an "only when Price > 0" output skips it while a "never
+// when Price > 0" output still generates: that pair is how one layout splits
+// into a priced and an unpriced variant.
+export const COMMON_RULE_FIELDS: readonly string[] = [
   "productGroup",
   "targetGroup",
   "businessArea",
@@ -119,17 +138,32 @@ export const EXCLUSION_FIELDS: ReadonlyArray<{ field: string; label: string }> =
   "trims",
   "customerOrderNo",
   "poNumber",
-  // Free-text retail price ("KR 69,95", "129.95 DKK"). Only worth gating on
-  // numerically — hence the gt/lt ops. A style whose price cell is blank or
-  // unparseable ("See customer order") matches no rule at all, so an
-  // "only when Price > 0" output skips it while a "never when Price > 0"
-  // output still generates: that pair is how one layout splits into a
-  // priced and an unpriced variant.
   "price",
-].map((field) => ({
-  field,
-  label: (STYLE_FIELD_LABELS as Record<string, string>)[field] ?? field,
-}));
+];
+
+// Menu section a field sits in. Presentation only — see above.
+export const RULE_FIELD_GROUPS = { common: "Common", all: "All fields" } as const;
+
+export type ExclusionField = {
+  field: string;
+  label: string;
+  group: (typeof RULE_FIELD_GROUPS)[keyof typeof RULE_FIELD_GROUPS];
+};
+
+const labelOf = (field: string): string =>
+  (STYLE_FIELD_LABELS as Record<string, string>)[field] ?? field;
+
+export const EXCLUSION_FIELDS: ReadonlyArray<ExclusionField> = [
+  ...COMMON_RULE_FIELDS.map((field) => ({
+    field,
+    label: labelOf(field),
+    group: RULE_FIELD_GROUPS.common,
+  })),
+  ...Object.keys(STYLE_FIELD_LABELS)
+    .filter((field) => !COMMON_RULE_FIELDS.includes(field))
+    .map((field) => ({ field, label: labelOf(field), group: RULE_FIELD_GROUPS.all }))
+    .sort((a, b) => a.label.localeCompare(b.label)),
+];
 
 const FIELD_LABELS = new Map(EXCLUSION_FIELDS.map((f) => [f.field, f.label]));
 
