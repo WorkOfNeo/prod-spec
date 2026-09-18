@@ -5,10 +5,18 @@ import { loadTranslationDictionary, translateComposition, translatePhrase } from
 import { loadCareLabels } from "@/lib/care-labels";
 import { isCareLabelVisible, type PresentSymbol } from "@/lib/care-labels/visibility";
 import { sanitizeCareInstructions } from "@/lib/care-labels/format";
+import { parseStyleCommentCareInstructions } from "@/lib/care-labels/style-comments";
 import { getWashcareSymbol, loadWashcareSymbols } from "@/lib/pdf/washcare-symbols";
 import { ruleRequiredColumns } from "@/lib/pdf/spec-fields";
 import { ORDER_NO_RULE } from "@/lib/pdf/templates/netto-dk-privatelabel/carton-marking";
-import { tokenMeta, parseSiblingTokenKey, SIZE_JOIN_ARG, TABLE_TOTAL_ARG, type BarcodeSource } from "./token-meta";
+import {
+  tokenMeta,
+  parseSiblingTokenKey,
+  CARE_SOURCE_STYLE_COMMENTS,
+  SIZE_JOIN_ARG,
+  TABLE_TOTAL_ARG,
+  type BarcodeSource,
+} from "./token-meta";
 import {
   declaredColours,
   formatCompositionFibreLines,
@@ -385,8 +393,16 @@ const RESOLVERS: Record<string, TextResolver> = {
   productName: (s, arg) => tFor(s.productNameTranslations, (arg ?? "en").toLowerCase()),
   // Every care line prints capitalized regardless of source (board
   // translation, catalogue, or free-text override) — see sanitizeCareInstructions.
+  // The ":salling" argument switches SOURCE, not language: the care wording
+  // comes from the customer via Monday's Style Comments field instead of the
+  // catalogue + translation bank (the text arrives already in its final
+  // language, so there is nothing to translate). Gated on the
+  // "TEXT ON LABEL:" heading — see care-labels/style-comments.ts. Every other
+  // argument is a language code, as before.
   careInstructions: (s, arg) =>
-    sanitizeCareInstructions(s.careInstructionsByLang?.[(arg ?? "en").toLowerCase()]),
+    arg?.toLowerCase() === CARE_SOURCE_STYLE_COMMENTS
+      ? parseStyleCommentCareInstructions(s.styleCommentsRaw)
+      : sanitizeCareInstructions(s.careInstructionsByLang?.[(arg ?? "en").toLowerCase()]),
 
   // Text representation of the wash-care symbol tokens (the renderer
   // draws the actual artwork; this backs show-values + unresolved checks).
@@ -885,13 +901,24 @@ export async function augmentCompositionTranslations(
 // the bare labels; {{country}} the translated country name.
 // ---------------------------------------------------------------------
 
+// Arguments that share a language token's namespace without BEING languages.
+// langArgsInDef skips these so the translation bank is never asked for a
+// "salling" language.
+const NON_LANG_ARGS = new Set<string>([CARE_SOURCE_STYLE_COMMENTS]);
+
 export function langArgsInDef(def: LayoutDef, tokenKey: string): string[] {
   const langs = new Set<string>();
   for (const page of def.pages) {
     for (const block of page.blocks) {
       for (const line of block.lines) {
         for (const ref of tokensInLine(line)) {
-          if (ref.key === tokenKey && ref.arg) langs.add(ref.arg.toLowerCase());
+          if (ref.key !== tokenKey || !ref.arg) continue;
+          const arg = ref.arg.toLowerCase();
+          // Not every argument in this namespace is a language:
+          // {{careInstructions:salling}} picks a SOURCE. Letting it through
+          // would send the translation bank looking for a "salling" language.
+          if (NON_LANG_ARGS.has(arg)) continue;
+          langs.add(arg);
         }
       }
     }

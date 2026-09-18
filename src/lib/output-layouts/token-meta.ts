@@ -19,6 +19,13 @@ export const TABLE_TOTAL_ARG = "total";
 // the labels "S-M-L-XL" instead of the default "S, M, L, XL".
 export const SIZE_JOIN_ARG = "dash";
 
+// The one {{careInstructions:...}} argument that is NOT a language code.
+// It switches the SOURCE to the customer-supplied "TEXT ON LABEL:" block in
+// Monday's Style Comments field — see care-labels/style-comments.ts. Named
+// for the customer whose workflow it serves, the way the layout authors
+// asked for it.
+export const CARE_SOURCE_STYLE_COMMENTS = "salling";
+
 // Re-exported so the builder surfaces (palette, autocomplete) can offer the
 // size-form chips without reaching past this client-safe module.
 export { SIZE_FORMS };
@@ -276,7 +283,9 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
   { key: "productName", label: "Product name", group: "Per language", kind: "text", arg: "lang", example: "{{productName:de}}" },
   {
     key: "careInstructions",
-    label: "Care instructions (standard, filtered by wash icons; Prod Spec text overrides)",
+    label:
+      "Care instructions (standard, filtered by wash icons; Prod Spec text overrides). " +
+      "Use {{careInstructions:salling}} for the customer-supplied \"TEXT ON LABEL:\" text in Style Comments",
     group: "Per language",
     kind: "text",
     arg: "lang",

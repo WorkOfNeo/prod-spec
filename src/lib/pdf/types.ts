@@ -123,6 +123,14 @@ export type StyleData = {
   // omit it.
   sizeRatioRaw?: string;
 
+  // Raw "Style Comments" column text — the Styles board's free-text
+  // production notes. Kept VERBATIM (never narrowed by repetitionStyles):
+  // it describes the style, not a size row. Only the "TEXT ON LABEL:"
+  // convention inside it is printable, via {{careInstructions:salling}};
+  // see care-labels/style-comments.ts. Optional: non-mapper constructors
+  // omit it.
+  styleCommentsRaw?: string;
+
   carton: {
     klNumber: string;
     supplierNumber: string;
