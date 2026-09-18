@@ -86,6 +86,14 @@ export const ColumnMappingSchema = z.object({
   // against the Certificate library for logos on care-label-02 page 4.
   // Default mapping points at the Styles board's __certificates__1 column.
   certificates: z.string().optional(),
+  // "Style Comments" — the Styles board's free-text production notes
+  // (long_text). Ordinary rows carry production chatter ("Info Area: Yes.",
+  // "Customer requires mock-up…"), so nothing here is printable on its own.
+  // The one printable convention is a leading "TEXT ON LABEL:" block, which
+  // Salling use to supply care instructions directly; {{careInstructions:salling}}
+  // is gated on that prefix and resolves empty without it. See
+  // src/lib/care-labels/style-comments.ts.
+  styleComments: z.string().optional(),
 });
 export type ColumnMapping = z.infer<typeof ColumnMappingSchema>;
 
@@ -175,6 +183,7 @@ export const DEFAULT_COLUMN_MAPPING: Partial<ColumnMapping> = {
   salesUnit: "numeric_mkta4201", // Sales unit
   trims: "dropdown4__1", // 👜 Trims
   productGroup: "dropdown9__1", // 🗂️ Product Group (Socks / Shoes / T-Shirt / …)
+  styleComments: "___style_comments__1", // 💬 Style Comments (long_text)
 };
 
 // Legacy alias — old import sites still reference this name. Kept as a
@@ -248,6 +257,7 @@ export const MANUAL_COLUMN_IDS = {
   poNumber: "manual.poNumber",
   countryOfOrigin: "manual.countryOfOrigin",
   certificates: "manual.certificates",
+  styleComments: "manual.styleComments",
 } as const satisfies Record<keyof ColumnMapping, string>;
 
 // Default config for Netto Germany. Ships pointing at the manual.* column
