@@ -24,7 +24,10 @@ import {
 // its own button; the layout editor lets its autosave pick them up.
 // =====================================================
 
-export type RuleFieldOption = { field: string; label: string };
+// `group` is an optional menu section ("Common" / "All fields"). Fields
+// carrying one are rendered under an <optgroup> in declaration order;
+// ungrouped lists render flat, exactly as before.
+export type RuleFieldOption = { field: string; label: string; group?: string };
 
 // What the editor emits: an OutputRule with `mode` always written out. The
 // engine reads a missing mode as "exclude", but being explicit keeps the
@@ -59,6 +62,19 @@ export function rulesFromDrafts(drafts: RuleDraft[]): EditedRule[] {
     // A presence op ("is set" / "isn’t set") carries no keywords by design;
     // every other op is incomplete without one and stays filtered out.
     .filter((r) => r.field && (r.keywords.length > 0 || isPresenceOp(r.op)));
+}
+
+// Fields bucketed into their menu sections, in first-seen order so a
+// deliberate order within a group survives. A list with no groups yields a
+// single unlabelled bucket, which renders flat.
+function groupFields(fields: RuleFieldOption[]): Array<[string | undefined, RuleFieldOption[]]> {
+  const out: Array<[string | undefined, RuleFieldOption[]]> = [];
+  for (const f of fields) {
+    const last = out[out.length - 1];
+    if (last && last[0] === f.group) last[1].push(f);
+    else out.push([f.group, [f]]);
+  }
+  return out;
 }
 
 export function OutputRulesEditor({
@@ -130,11 +146,20 @@ export function OutputRulesEditor({
                 className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-zinc-700"
                 aria-label="Field"
               >
-                {fields.map((f) => (
-                  <option key={f.field} value={f.field}>
-                    {f.label}
-                  </option>
-                ))}
+                {groupFields(fields).map(([group, opts]) => {
+                  const options = opts.map((f) => (
+                    <option key={f.field} value={f.field}>
+                      {f.label}
+                    </option>
+                  ));
+                  return group ? (
+                    <optgroup key={group} label={group}>
+                      {options}
+                    </optgroup>
+                  ) : (
+                    options
+                  );
+                })}
                 {/* A field that's no longer offered still round-trips. */}
                 {!fields.some((f) => f.field === r.field) && (
                   <option value="__other__">{r.field}</option>
