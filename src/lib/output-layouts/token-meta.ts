@@ -26,6 +26,13 @@ export const SIZE_JOIN_ARG = "dash";
 // asked for it.
 export const CARE_SOURCE_STYLE_COMMENTS = "salling";
 
+// {{customerItemNo:…}} selectors for Salling's two-number Customer Item No
+// column: the per-size PRODUCT article number, or the style's CARTON one.
+// Bare {{customerItemNo}} is unchanged (already narrowed per row).
+export const ITEM_NO_SALLING = "salling";
+export const ITEM_NO_SALLING_CARTON = "sallingCarton";
+export const ITEM_NO_SOURCES = [ITEM_NO_SALLING, ITEM_NO_SALLING_CARTON] as const;
+
 // Re-exported so the builder surfaces (palette, autocomplete) can offer the
 // size-form chips without reaching past this client-safe module.
 export { SIZE_FORMS };
@@ -79,7 +86,8 @@ export type LayoutTokenMeta = {
     | "imageSlug"
     | "tableTotal"
     | "orderKind"
-    | "sizeJoin";
+    | "sizeJoin"
+    | "itemNoSource";
   // Optional SECOND argument (TOKEN_RE group 3, numeric-only).
   // "heightMm" → bar height in mm, e.g. {{barcode:ean13:8}} (8 mm bars).
   // "widthPct" → print width as a % of the block, e.g. {{image:x:40}}.
@@ -115,7 +123,16 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     kind: "text",
     example: "T-Shirt Paw Patrol – Blue, T-Shirt Paw Patrol – Red",
   },
-  { key: "customerItemNo", label: "Customer item no", group: "Style", kind: "text", example: "223609" },
+  {
+    key: "customerItemNo",
+    label:
+      "Customer item no (bare = this row's size). " +
+      ":salling picks the product number out of a \"Carton: … Product: …\" cell, :sallingCarton the carton number",
+    group: "Style",
+    kind: "text",
+    arg: "itemNoSource",
+    example: "223609 · {{customerItemNo:salling}} · {{customerItemNo:sallingCarton}}",
+  },
   { key: "countryOfOrigin", label: "Country of origin", group: "Style", kind: "text", example: "India" },
   {
     key: "certificates",
@@ -563,6 +580,13 @@ export function validateTokenRef(key: string, arg?: string, arg2?: string): stri
     errs.push(
       `{{${key}${arg ? `:${arg}` : ""}}} needs an image name from Settings → Images, e.g. {{${key}:coop-hanger}}` +
         ` (lowercase letters, digits and hyphens)`,
+    );
+  }
+  // "itemNoSource" is optional (bare resolves the row's own value); the only
+  // accepted selectors are the two Salling ones.
+  if (meta.arg === "itemNoSource" && arg !== undefined && !ITEM_NO_SOURCES.includes(arg as (typeof ITEM_NO_SOURCES)[number])) {
+    errs.push(
+      `{{${key}:${arg}}} — the only item-number options are ${ITEM_NO_SOURCES.map((k) => `{{${key}:${k}}}`).join(" or ")}`,
     );
   }
   if (!meta.arg && arg) {

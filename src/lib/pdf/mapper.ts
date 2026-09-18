@@ -93,6 +93,7 @@ export function mapMondayItemToStyleData(
     deliveryTerm: readField("deliveryTerm") || undefined,
     countryOfOrigin: readField("countryOfOrigin") || undefined,
     customerItemNo: readField("customerItemNo") || undefined,
+    customerItemNoRaw: readField("customerItemNo") || undefined,
     campaignWeek: readField("campaignWeek") || undefined,
     batchNo: readField("batchNo") || undefined,
     prodNumber: readField("prodNumber") || undefined,

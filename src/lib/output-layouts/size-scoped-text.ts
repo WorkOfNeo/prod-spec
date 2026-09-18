@@ -25,7 +25,7 @@
 // =====================================================
 
 // Space-insensitive, case-insensitive size key ("4-5 ÅR" ≡ "4-5ÅR").
-function sizeKey(label: string): string {
+export function sizeKey(label: string): string {
   return label.replace(/\s+/g, "").toUpperCase();
 }
 
@@ -43,7 +43,22 @@ function findAnchors(
   for (let i = 0; i < text.length; i++) {
     if (!separators.includes(text[i])) continue;
     let segStart = i - 1;
-    while (segStart >= 0 && text[segStart] !== "," && text[segStart] !== "\n") segStart--;
+    // A candidate label runs back to the previous delimiter. As well as the
+    // list delimiters, ANOTHER separator closes it — buyers sometimes wrap
+    // the per-size list in a heading ("Carton: 9339, Product: S: 1, M: 2"),
+    // and without this the first size after that heading ("Product: S")
+    // reads as the label, matches nothing, and the whole raw value falls
+    // through the no-anchor fallback onto the label. Every LATER size is
+    // preceded by a comma and anchored fine, so the bug only ever ate the
+    // first one.
+    while (
+      segStart >= 0 &&
+      text[segStart] !== "," &&
+      text[segStart] !== "\n" &&
+      !separators.includes(text[segStart])
+    ) {
+      segStart--;
+    }
     segStart++;
     const key = sizeKey(text.slice(segStart, i));
     if (!key || !knownKeys.has(key)) continue;
@@ -53,6 +68,21 @@ function findAnchors(
     anchors.push({ key, start: segStart, valueStart: i + 1 });
   }
   return anchors;
+}
+
+// Whether `text` carries at least one "<size><sep>" anchor from this style's
+// own size vocabulary — i.e. whether it is a LABELLED per-size list rather
+// than a plain value or an unlabelled list. Shares findAnchors, so it can
+// never disagree with what narrowSizeScopedText would do.
+export function hasSizeAnchors(
+  text: string | undefined,
+  allSizeLabels: readonly string[],
+  separators: readonly string[] = [":"],
+): boolean {
+  if (!text?.trim()) return false;
+  const knownKeys = new Set(allSizeLabels.map(sizeKey).filter(Boolean));
+  if (knownKeys.size === 0) return false;
+  return findAnchors(text, knownKeys, separators).length > 0;
 }
 
 // Narrow a possibly per-size text value to the given row size(s).
