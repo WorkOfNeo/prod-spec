@@ -29,9 +29,31 @@ export const CARE_SOURCE_STYLE_COMMENTS = "salling";
 // {{customerItemNo:…}} selectors for Salling's two-number Customer Item No
 // column: the per-size PRODUCT article number, or the style's CARTON one.
 // Bare {{customerItemNo}} is unchanged (already narrowed per row).
-export const ITEM_NO_SALLING = "salling";
-export const ITEM_NO_SALLING_CARTON = "sallingCarton";
-export const ITEM_NO_SOURCES = [ITEM_NO_SALLING, ITEM_NO_SALLING_CARTON] as const;
+// The per-size PRODUCT article number and the style's CARTON one. Named for
+// what they select, not for the customer who happens to need them: the parser
+// reads any "Carton: … Product: …" cell, and nothing about it is
+// Salling-specific.
+export const ITEM_NO_PRODUCT = "product";
+export const ITEM_NO_CARTON = "carton";
+
+// The names these shipped under in #359. Kept accepted — published layouts
+// were authored against ":salling" — but no longer offered in the palette.
+// Each resolves identically to its canonical name above.
+export const ITEM_NO_PRODUCT_ALIAS = "salling";
+export const ITEM_NO_CARTON_ALIAS = "sallingCarton";
+
+// What validation accepts. The canonical pair comes first so the error
+// message names those, not the aliases.
+export const ITEM_NO_SOURCES = [
+  ITEM_NO_PRODUCT,
+  ITEM_NO_CARTON,
+  ITEM_NO_PRODUCT_ALIAS,
+  ITEM_NO_CARTON_ALIAS,
+] as const;
+
+// Just the names worth suggesting — the aliases are legacy, so an error
+// shouldn't teach them to anyone new.
+const ITEM_NO_OFFERED = [ITEM_NO_PRODUCT, ITEM_NO_CARTON] as const;
 
 // Re-exported so the builder surfaces (palette, autocomplete) can offer the
 // size-form chips without reaching past this client-safe module.
@@ -127,11 +149,11 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     key: "customerItemNo",
     label:
       "Customer item no (bare = this row's size). " +
-      ":salling picks the product number out of a \"Carton: … Product: …\" cell, :sallingCarton the carton number",
+      ":product picks the per-size product number out of a \"Carton: … Product: …\" cell, :carton the carton number",
     group: "Style",
     kind: "text",
     arg: "itemNoSource",
-    example: "223609 · {{customerItemNo:salling}} · {{customerItemNo:sallingCarton}}",
+    example: "223609 · {{customerItemNo:product}} · {{customerItemNo:carton}}",
   },
   { key: "countryOfOrigin", label: "Country of origin", group: "Style", kind: "text", example: "India" },
   {
@@ -586,7 +608,7 @@ export function validateTokenRef(key: string, arg?: string, arg2?: string): stri
   // accepted selectors are the two Salling ones.
   if (meta.arg === "itemNoSource" && arg !== undefined && !ITEM_NO_SOURCES.includes(arg as (typeof ITEM_NO_SOURCES)[number])) {
     errs.push(
-      `{{${key}:${arg}}} — the only item-number options are ${ITEM_NO_SOURCES.map((k) => `{{${key}:${k}}}`).join(" or ")}`,
+      `{{${key}:${arg}}} — the only item-number options are ${ITEM_NO_OFFERED.map((k) => `{{${key}:${k}}}`).join(" or ")}`,
     );
   }
   if (!meta.arg && arg) {

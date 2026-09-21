@@ -13,8 +13,10 @@ import {
   tokenMeta,
   parseSiblingTokenKey,
   CARE_SOURCE_STYLE_COMMENTS,
-  ITEM_NO_SALLING,
-  ITEM_NO_SALLING_CARTON,
+  ITEM_NO_CARTON,
+  ITEM_NO_CARTON_ALIAS,
+  ITEM_NO_PRODUCT,
+  ITEM_NO_PRODUCT_ALIAS,
   SIZE_JOIN_ARG,
   TABLE_TOTAL_ARG,
   type BarcodeSource,
@@ -142,12 +144,16 @@ const RESOLVERS: Record<string, TextResolver> = {
       .join(", ");
   },
   // Bare: the value repetitionStyles already narrowed to this row.
-  // ":salling" / ":sallingCarton" read the WHOLE cell instead, pulling the
-  // product number for this row's size or the style's carton number out of
-  // Salling's two-number column — see salling-item-no.ts.
+  // ":product" / ":carton" read the WHOLE cell instead, pulling the product
+  // number for this row's size or the style's carton number out of a
+  // two-number column — see salling-item-no.ts. Their ":salling" /
+  // ":sallingCarton" aliases (the names #359 shipped) resolve identically, so
+  // layouts authored against those keep rendering.
   customerItemNo: (s, arg) => {
-    if (arg === ITEM_NO_SALLING_CARTON) return resolveSallingCartonItemNo(s.customerItemNoRaw);
-    if (arg === ITEM_NO_SALLING) {
+    if (arg === ITEM_NO_CARTON || arg === ITEM_NO_CARTON_ALIAS) {
+      return resolveSallingCartonItemNo(s.customerItemNoRaw);
+    }
+    if (arg === ITEM_NO_PRODUCT || arg === ITEM_NO_PRODUCT_ALIAS) {
       const all = (s.allSizes ?? s.sizes).map((x) => x.label).filter(Boolean);
       const row = s.sizes.map((x) => x.label).filter(Boolean);
       return resolveSallingItemNo(s.customerItemNoRaw, all, row);
