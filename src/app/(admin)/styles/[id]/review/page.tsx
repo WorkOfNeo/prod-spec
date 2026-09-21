@@ -14,6 +14,7 @@ import { ReviewCartonCustomize } from "./review-carton-customize";
 import { UndoIgnoreButton } from "./undo-ignore-button";
 import { RunOutputButton } from "../run-output-button";
 import { RerunButton } from "../rerun-button";
+import { ManualTrimsPanel } from "../manual-trims-panel";
 import { LogStyleView } from "@/components/log-style-view";
 import { groupByDocType, DocTypeAccordion } from "../doc-type-groups";
 import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
@@ -560,6 +561,19 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           </DocTypeAccordion>
         </div>
       ) : null}
+
+      {/* The documents this app does NOT produce.
+          A reviewer deciding on a style asks one question — is everything here?
+          — and the generated grid above only answers half of it. The lines the
+          buyer named on the order but nobody generated are answered here, and
+          they are just as much a reason to hold an approval. Same panel as the
+          style page's Review tab, deliberately: two renderings of "what is
+          still missing" would drift, and the one a reviewer trusted would be
+          whichever they happened to open. */}
+      <section className="mt-8">
+        <h2 className="mb-2 text-sm font-semibold text-zinc-700">Manually supplied packaging</h2>
+        <ManualTrimsPanel styleId={style.id} />
+      </section>
     </div>
   );
 }
