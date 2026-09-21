@@ -136,6 +136,7 @@ export default async function ProdSpecDetailPage({
         initialName={prodSpec.name}
         initialActive={prodSpec.active}
         initialFullyApproved={prodSpec.fullyApproved}
+        initialCoverOnly={prodSpec.coverOnly}
         initialThreshold={prodSpec.autoGenerateThresholdPct}
         initialOutputs={outputs}
         initialLogoSvg={prodSpec.logoSvg}

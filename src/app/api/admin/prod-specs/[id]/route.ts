@@ -16,6 +16,10 @@ export const runtime = "nodejs";
 const PATCH_SCHEMA = z.object({
   name: z.string().min(1).max(200).optional(),
   active: z.boolean().optional(),
+  // "Produces the cover and nothing else." Content, not a release switch — it
+  // changes what a run generates — so it sits in hasOtherChange below with
+  // `outputs`, and saving it approves the spec the same way adding an output does.
+  coverOnly: z.boolean().optional(),
   // "Fully approved" admin toggle — its own explicit control, deliberately
   // excluded from `hasOtherChange` below so flipping it never auto-activates
   // the spec (approval readiness and active/enqueue-eligibility are separate).
@@ -77,6 +81,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     d.name !== undefined ||
     d.autoGenerateThresholdPct !== undefined ||
     d.outputs !== undefined ||
+    d.coverOnly !== undefined ||
     d.logoSvg !== undefined ||
     d.generalInfoMd !== undefined ||
     d.bundlePageSettings !== undefined ||
@@ -96,6 +101,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         ...(d.name !== undefined ? { name: d.name } : {}),
         ...(resolvedActive !== undefined ? { active: resolvedActive } : {}),
         ...(d.fullyApproved !== undefined ? { fullyApproved: d.fullyApproved } : {}),
+        ...(d.coverOnly !== undefined ? { coverOnly: d.coverOnly } : {}),
         ...(d.autoGenerateThresholdPct !== undefined ? { autoGenerateThresholdPct: d.autoGenerateThresholdPct } : {}),
         ...(d.outputs !== undefined ? { outputs: d.outputs as unknown as object } : {}),
         ...(d.logoSvg !== undefined ? { logoSvg: d.logoSvg } : {}),

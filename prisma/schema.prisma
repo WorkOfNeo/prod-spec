@@ -640,6 +640,18 @@ model ProdSpec {
   columnMapping            Json     @default("{}")
   // [{ id: "monday_column_id", label: "Composition" }, ...]
   requiredFields           Json     @default("[]")
+  // "This customer supplies every layout themselves; we produce the cover and
+  // nothing else." An EXPLICIT state, deliberately not inferred from an empty
+  // Outputs list — zero outputs still means "somebody forgot", which is a real
+  // misconfiguration the runner is right to refuse. Without this flag the two
+  // are indistinguishable and the guard has to be dropped for everybody.
+  //
+  // Set it and the runner renders the framing pages alone: no DEFAULT_OUTPUTS
+  // fallback (which would quietly produce one of every variant — the opposite
+  // of the intent) and no NO_OUTPUTS failure when nothing else is generated.
+  // The rest of the packaging arrives through the manual upload zones on the
+  // style's Review tab, which is where a cover-only customer's documents live.
+  coverOnly Boolean @default(false)
   autoGenerateThresholdPct Int      @default(100)
   // Defaults to false so auto-created scaffolds (Style ingest, /import
   // Accept) land in "needs configuration" until an admin reviews them.
