@@ -37,16 +37,43 @@ function row(size: string, raw = RAW): StyleData {
   });
 }
 
-test("{{customerItemNo:salling}} resolves the row's own product number", () => {
-  assert.equal(resolveTextToken(row("S"), "customerItemNo", "salling"), "933977001");
-  assert.equal(resolveTextToken(row("L"), "customerItemNo", "salling"), "933977003");
-  assert.equal(resolveTextToken(row("2XL"), "customerItemNo", "salling"), "933977005");
+test("{{customerItemNo:product}} resolves the row's own product number", () => {
+  assert.equal(resolveTextToken(row("S"), "customerItemNo", "product"), "933977001");
+  assert.equal(resolveTextToken(row("L"), "customerItemNo", "product"), "933977003");
+  assert.equal(resolveTextToken(row("2XL"), "customerItemNo", "product"), "933977005");
 });
 
-test("{{customerItemNo:sallingCarton}} is the same on every row", () => {
+test("{{customerItemNo:carton}} is the same on every row", () => {
   for (const size of ["S", "M", "L", "XL", "2XL"]) {
-    assert.equal(resolveTextToken(row(size), "customerItemNo", "sallingCarton"), "933977900");
+    assert.equal(resolveTextToken(row(size), "customerItemNo", "carton"), "933977900");
   }
+});
+
+// The names #359 shipped under. Published layouts were authored against
+// ":salling", so these must keep resolving identically — forever, unless
+// those layouts are re-authored.
+test("the legacy :salling / :sallingCarton aliases still resolve", () => {
+  for (const size of ["S", "M", "L", "XL", "2XL"]) {
+    assert.equal(
+      resolveTextToken(row(size), "customerItemNo", "salling"),
+      resolveTextToken(row(size), "customerItemNo", "product"),
+    );
+    assert.equal(
+      resolveTextToken(row(size), "customerItemNo", "sallingCarton"),
+      resolveTextToken(row(size), "customerItemNo", "carton"),
+    );
+  }
+  assert.equal(resolveTextToken(row("S"), "customerItemNo", "salling"), "933977001");
+  assert.equal(resolveTextToken(row("S"), "customerItemNo", "sallingCarton"), "933977900");
+});
+
+// The whole point of the rename: a carton marking asked for the carton
+// number and got the entire cell, product numbers and all.
+test("the carton selector never falls through to the raw cell", () => {
+  const got = resolveTextToken(row("S"), "customerItemNo", "carton");
+  assert.equal(got, "933977900");
+  assert.equal(got.includes("Product"), false);
+  assert.equal(got.includes("933977001"), false);
 });
 
 test("a plain positional list resolves per row", () => {
@@ -54,10 +81,10 @@ test("a plain positional list resolves per row", () => {
   const sizes = ["98/104", "110/116", "122/128"];
   const at = (i: number) =>
     makeStyle({ customerItemNoRaw: plain, sizes: [sv(sizes[i])], allSizes: sizes.map(sv) });
-  assert.equal(resolveTextToken(at(0), "customerItemNo", "salling"), "924126001");
-  assert.equal(resolveTextToken(at(2), "customerItemNo", "salling"), "924126003");
+  assert.equal(resolveTextToken(at(0), "customerItemNo", "product"), "924126001");
+  assert.equal(resolveTextToken(at(2), "customerItemNo", "product"), "924126003");
   // …and carries no carton number.
-  assert.equal(resolveTextToken(at(0), "customerItemNo", "sallingCarton"), "");
+  assert.equal(resolveTextToken(at(0), "customerItemNo", "carton"), "");
 });
 
 test("the bare token is untouched — still the pre-narrowed row value", () => {
@@ -65,9 +92,17 @@ test("the bare token is untouched — still the pre-narrowed row value", () => {
   assert.equal(resolveTextToken(style, "customerItemNo"), "933977002");
 });
 
-test("both selectors validate, and a wrong one is rejected", () => {
-  assert.deepEqual(validateTokenRef("customerItemNo", "salling"), []);
-  assert.deepEqual(validateTokenRef("customerItemNo", "sallingCarton"), []);
-  assert.deepEqual(validateTokenRef("customerItemNo", undefined), []);
-  assert.equal(validateTokenRef("customerItemNo", "carton").length, 1);
+test("canonical names and legacy aliases all validate", () => {
+  for (const arg of ["product", "carton", "salling", "sallingCarton", undefined]) {
+    assert.deepEqual(validateTokenRef("customerItemNo", arg), [], `${arg} should validate`);
+  }
+});
+
+test("an unknown selector is still rejected, and suggests the canonical pair", () => {
+  const errs = validateTokenRef("customerItemNo", "cartons");
+  assert.equal(errs.length, 1);
+  assert.match(errs[0], /\{\{customerItemNo:product\}\}/);
+  assert.match(errs[0], /\{\{customerItemNo:carton\}\}/);
+  // The legacy names are accepted but never suggested.
+  assert.equal(errs[0].includes("salling"), false);
 });
