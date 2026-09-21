@@ -44,6 +44,7 @@ type Props = {
   initialName: string;
   initialActive: boolean;
   initialFullyApproved: boolean;
+  initialCoverOnly: boolean;
   initialThreshold: number;
   initialOutputs: ProdSpecOutput[];
   initialLogoSvg: string | null;
@@ -86,6 +87,7 @@ export function ProdSpecEditor(props: Props) {
   const [name, setName] = useState(props.initialName);
   const [active, setActive] = useState(props.initialActive);
   const [fullyApproved, setFullyApproved] = useState(props.initialFullyApproved);
+  const [coverOnly, setCoverOnly] = useState(props.initialCoverOnly);
   const [threshold, setThreshold] = useState(props.initialThreshold);
   const [outputs, setOutputs] = useState<ProdSpecOutput[]>(props.initialOutputs);
   const [logoSvg, setLogoSvg] = useState<string>(props.initialLogoSvg ?? "");
@@ -293,6 +295,7 @@ export function ProdSpecEditor(props: Props) {
       name,
       active,
       fullyApproved,
+      coverOnly,
       autoGenerateThresholdPct: threshold,
       outputs,
       logoSvg: logoSvg.trim() ? logoSvg : null,
@@ -305,6 +308,7 @@ export function ProdSpecEditor(props: Props) {
       name,
       active,
       fullyApproved,
+      coverOnly,
       threshold,
       outputs,
       logoSvg,
@@ -558,6 +562,31 @@ export function ProdSpecEditor(props: Props) {
         />
       ) : (
         <div className="flex flex-col gap-4">
+          <Section title="What this spec produces">
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={coverOnly}
+                onChange={(e) => setCoverOnly(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                <strong>Cover page only — the customer supplies every layout themselves</strong>
+                <span className="mt-1 block text-xs text-zinc-500">
+                  A run produces the cover and nothing else. Use this when the customer sends
+                  us finished artwork and only needs the cover generated; the rest arrives
+                  through the upload zones on each style&apos;s Review tab.
+                </span>
+                <span className="mt-1 block text-xs text-zinc-500">
+                  Leave this off and an empty Outputs list below is treated as a mistake — a
+                  run fails with &ldquo;no Outputs configured&rdquo; rather than quietly
+                  producing a bare cover. That is the point of the tick: it tells the app the
+                  emptiness is deliberate.
+                </span>
+              </span>
+            </label>
+          </Section>
+
           <Section title="Outputs">
             <p className="mb-3 text-xs text-zinc-500">
               Each enabled entry generates one PDF when the style runs through the runner. Width

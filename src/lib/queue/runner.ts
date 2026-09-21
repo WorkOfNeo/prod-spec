@@ -290,9 +290,21 @@ export async function processJob(jobId: string): Promise<void> {
 
   // Pick which variants to render. ProdSpec.outputs is the source of truth
   // when available — the operator selected those explicitly in the editor.
-  // Falls back to DEFAULT_OUTPUTS (one of each variant) for manual styles
-  // that haven't resolved a ProdSpec yet.
+  //
+  // DEFAULT_OUTPUTS is the fallback for a style with no ProdSpec yet, and it is
+  // EMPTY (src/lib/prod-spec/config.ts). It once meant "one of each variant";
+  // that stopped being true and the comment here outlived it. So an empty spec
+  // does not quietly generate a default set — it selects nothing and raises
+  // NO_OUTPUTS further down, which is the behaviour cover-only exists to make
+  // deliberate rather than accidental.
+  // A cover-only spec means it: no outputs, and crucially NO fallback. Letting
+  // DEFAULT_OUTPUTS stand in here would produce one of every variant for a
+  // customer who supplies all their own layouts — the exact opposite of what
+  // was asked for, and it would reach their folder before anyone noticed.
+  const coverOnly = prodSpec?.coverOnly === true;
+
   let outputs: ProdSpecOutput[] = (() => {
+    if (coverOnly) return [];
     if (prodSpec) {
       const parsed = parseProdSpecOutputs(prodSpec.outputs);
       const enabled = parsed.filter((o) => o.enabled !== false);
@@ -803,6 +815,20 @@ export async function processJob(jobId: string): Promise<void> {
               `surfaced as "awaiting data" for review (cover refreshed).`
             : `scoped re-run produced no outputs — ${scopedKeys.join(", ")} no longer maps to a ` +
               `ready output in "${prodSpec?.name ?? "this spec"}"; nothing regenerated (cover refreshed).`,
+      },
+    });
+  } else if (generated.length === 0 && coverOnly) {
+    // Expected, not a failure: this spec exists to produce the cover. Fall
+    // through to the framing-page build below, which is what the operator
+    // actually asked for. Recorded so a run that produced "only" a cover reads
+    // as deliberate in /automation rather than as a near-miss.
+    await db.log.create({
+      data: {
+        jobId: job.id,
+        level: "INFO",
+        message:
+          `cover-only spec — "${prodSpec?.name ?? "this spec"}" produces the cover page and ` +
+          `nothing else; every other document is supplied by hand on the style.`,
       },
     });
   } else if (generated.length === 0) {
