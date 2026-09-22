@@ -55,6 +55,14 @@ type Upload = {
 
 type Line = { label: string; normalizedLabel: string; upload: Upload | null };
 
+// What the server did to the cover PDF after the mutation — see
+// refreshCoverAfterManualTrimChange.
+type CoverOutcome = {
+  cover: "refreshed" | "unchanged" | "no-cover" | "error";
+  pushed: number;
+  message: string | null;
+};
+
 type Payload = {
   trimsEnabled: boolean;
   accepts: string[];
@@ -70,6 +78,10 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
   const [error, setError] = useState<string | null>(null);
   // Normalised label currently uploading — drives the per-zone busy state.
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
+  // What the last action did to the cover page. Shown because the cover is the
+  // half of this the operator CANNOT see: the zone going green says the row
+  // changed here, and only this says the supplier's copy was corrected too.
+  const [coverNote, setCoverNote] = useState<CoverOutcome | null>(null);
 
   const fetchPayload = useCallback(async (): Promise<Payload> => {
     const res = await fetch(base, { cache: "no-store" });
@@ -112,6 +124,7 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
 
   async function upload(line: Line, file: File) {
     setError(null);
+    setCoverNote(null);
     setBusyLabel(line.normalizedLabel);
     try {
       const form = new FormData();
@@ -121,9 +134,14 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
       form.set("label", line.label);
       form.set("file", file);
       const res = await fetch(base, { method: "POST", body: form });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; delivered?: boolean };
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        delivered?: boolean;
+        cover?: CoverOutcome;
+      };
       if (!res.ok) setError(body.error ?? `Upload failed (HTTP ${res.status})`);
       else if (body.delivered === false && body.error) setError(body.error);
+      setCoverNote(body.cover ?? null);
       await refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -137,6 +155,7 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
   // withdraws it again.
   async function setApproved(line: Line, approved: boolean) {
     setError(null);
+    setCoverNote(null);
     setBusyLabel(line.normalizedLabel);
     try {
       const res = await fetch(base, {
@@ -144,10 +163,12 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ label: line.label, approved }),
       });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(body.error ?? `Couldn't update it (HTTP ${res.status})`);
-      }
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        cover?: CoverOutcome;
+      };
+      if (!res.ok) setError(body.error ?? `Couldn't update it (HTTP ${res.status})`);
+      setCoverNote(res.ok ? (body.cover ?? null) : null);
       await refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -158,13 +179,16 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
 
   async function remove(upload: Upload) {
     setError(null);
+    setCoverNote(null);
     setBusyLabel(upload.normalizedLabel);
     try {
       const res = await fetch(`${base}/${upload.id}`, { method: "DELETE" });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(body.error ?? `Couldn't remove it (HTTP ${res.status})`);
-      }
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        cover?: CoverOutcome;
+      };
+      if (!res.ok) setError(body.error ?? `Couldn't remove it (HTTP ${res.status})`);
+      setCoverNote(res.ok ? (body.cover ?? null) : null);
       await refresh();
     } finally {
       setBusyLabel(null);
@@ -185,15 +209,27 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
       </p>
       <p className="text-xs text-zinc-500">
         Already put it in the supplier&apos;s folder yourself? Press <strong>Approve</strong> on that
-        line instead — the cover treats it exactly as it treats an upload made here. Nothing is sent
-        to SharePoint and nothing is deleted from it; the app is simply told the folder already has
-        the document.
+        line instead — the cover treats it exactly as it treats an upload made here. No trim
+        document is uploaded and nothing is deleted from the folder; the app is simply told it
+        already has the file.
       </p>
       <p className="text-[11px] text-zinc-400">
-        An already-generated cover PDF is rewritten by the &ldquo;Regenerate cover pages&rdquo; sweep
-        (Settings ▸ Cover page), which now sees this style&apos;s manifest as changed. A cover
-        generated after the upload carries it straight away.
+        Either way the cover page is rebuilt on the spot and re-uploaded to the supplier&apos;s
+        folder, so their copy stops waiting on the line. A cover that would print exactly the same
+        thing is left alone rather than overwritten.
       </p>
+
+      {coverNote?.message && (
+        <p
+          className={
+            coverNote.cover === "error"
+              ? "rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+              : "rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800"
+          }
+        >
+          {coverNote.message}
+        </p>
+      )}
 
       {error && (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
