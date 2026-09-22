@@ -7,6 +7,7 @@ import { toPlainBytes } from "@/lib/pdf/bytes";
 import { buildRequiredPackagingForStyle } from "@/lib/outputs/required-packaging";
 import { getTrimsOnCoverEnabled } from "@/lib/settings/app-settings";
 import { listManualTrimUploads, normalizeTrimLabel } from "@/lib/trims/manual-uploads";
+import { refreshCoverAfterManualTrimChangeSafe } from "@/lib/trims/manual-trim-cover-refresh";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import { manualTrimFileName, MANUAL_TRIM_EXTENSIONS } from "@/lib/trims/manual-upload-name";
 import {
@@ -33,9 +34,15 @@ export const maxDuration = 120;
 // the cover saying the same thing about that line, because from the supplier's
 // side the outcome is the same: the folder holds the document.
 //
-// PATCH NEVER TOUCHES SHAREPOINT. It has no file to send and it records no
-// drive/item id, so nothing downstream — the DELETE next door included — can
-// use it to reach a file this app did not put there.
+// PATCH SENDS NO TRIM FILE AND RECORDS NO DRIVE/ITEM ID, so nothing downstream
+// — the DELETE next door included — can use it to reach a file this app did not
+// put there. What it DOES do, like POST, is rebuild the style's cover page and
+// re-push THAT: see refreshCoverAfterManualTrimChange. Supplying a line only
+// changes the manifest in the database; the cover the supplier actually holds
+// is a PDF, and leaving it saying "Waiting for Customer Information" about a
+// document already in their folder was the whole point of the feature going
+// unmet. The rebuild is gated on the manifest genuinely differing, so a
+// replacement upload on an already-delivered line still overwrites nothing.
 //
 // THE LABELS COME FROM THE MANIFEST, NEVER FROM THE CLIENT. The whole point of
 // the panel is that its zones read exactly as the cover reads, so the server
@@ -288,7 +295,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       byUserId: session.user.id,
     });
 
-    return NextResponse.json({ ok: true, delivered: true, id: stored.id, fileName: up.fileName, webUrl: up.webUrl });
+    // The line now reads as supplied, so the cover has to say so — in the
+    // supplier's folder, not just in our database.
+    const cover = await refreshCoverAfterManualTrimChangeSafe(id);
+
+    return NextResponse.json({
+      ok: true,
+      delivered: true,
+      id: stored.id,
+      fileName: up.fileName,
+      webUrl: up.webUrl,
+      cover,
+    });
   } catch (err) {
     const message =
       err instanceof ApprovedLayoutsFolderError
@@ -390,7 +408,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       byUserId: session.user.id,
     });
 
-    return NextResponse.json({ ok: true, approved: true });
+    const cover = await refreshCoverAfterManualTrimChangeSafe(id);
+    return NextResponse.json({ ok: true, approved: true, cover });
   }
 
   if (!existing) return NextResponse.json({ ok: true, approved: false });
@@ -414,5 +433,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     byUserId: session.user.id,
   });
 
-  return NextResponse.json({ ok: true, approved: false });
+  // Withdrawal moves the manifest too, and in the direction that matters most:
+  // a cover still claiming an un-supplied line is approved is a promise to the
+  // supplier that nobody is keeping.
+  const cover = await refreshCoverAfterManualTrimChangeSafe(id);
+  return NextResponse.json({ ok: true, approved: false, cover });
 }
