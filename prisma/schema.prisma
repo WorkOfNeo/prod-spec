@@ -1612,11 +1612,17 @@ model StyleManualTrimUpload {
   // What the operator dropped in, and what we uploaded it AS. The two differ:
   // the stored name is built by manualTrimFileName() so it cannot collide with
   // another style on the same (PO-scoped) folder.
-  originalName String
-  fileName     String
-  mimeType     String
-  byteSize     Int
-  file         Bytes
+  //
+  // ALL FIVE ARE NULL ON A HAND-APPROVED ROW. A person who put the document in
+  // the supplier's folder themselves gives this app no bytes to keep, and a row
+  // that invented an empty file would be a lie the GET-bytes route would then
+  // serve. The row still exists because the manifest line still needs an
+  // answer — see manualApprovedAt.
+  originalName String?
+  fileName     String?
+  mimeType     String?
+  byteSize     Int?
+  file         Bytes?
 
   // Where it landed. NULL until Graph accepted the upload — a row with no
   // sharepointItemId is stored-but-not-delivered, and the panel says so and
@@ -1628,6 +1634,24 @@ model StyleManualTrimUpload {
   // Last failure reason, for the panel's retry hint (no folder yet, ambiguous
   // PO folder, write not granted). Cleared on a successful push.
   uploadError       String?
+
+  // THE SECOND WAY A LINE GETS ANSWERED: somebody states the document is
+  // already in the supplier's folder because they put it there by hand, outside
+  // this app. No bytes, no Graph call, no sharepointItemId — just a person's
+  // word, attributed and timestamped. The cover treats it exactly as it treats
+  // an upload this app pushed (loadManualDeliveredLabels unions the two), which
+  // is the whole point: the supplier has the document either way.
+  //
+  // It can sit ALONGSIDE stored bytes. The common case is an upload this app
+  // couldn't push (no PO folder yet, ambiguous match) that the operator then
+  // carried across by hand — the file stays, and this stamp says the folder
+  // now holds it.
+  //
+  // Because nothing here records a drive/item id, DELETE on such a row never
+  // asks Graph to remove anything. This app didn't put that file there and has
+  // no business deleting it.
+  manualApprovedAt   DateTime?
+  manualApprovedById String?
 
   uploadedById String?
   createdAt    DateTime @default(now())

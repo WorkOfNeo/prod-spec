@@ -1,10 +1,10 @@
 // Role-gate + delete-blast-radius test for the manually-supplied packaging
 // routes on a style:
 //
-//   GET/POST   /api/admin/styles/[id]/manual-trims
-//   GET/DELETE /api/admin/styles/[id]/manual-trims/[uploadId]
+//   GET/POST/PATCH /api/admin/styles/[id]/manual-trims
+//   GET/DELETE     /api/admin/styles/[id]/manual-trims/[uploadId]
 //
-// Two things are under test, and the second is the important one:
+// Three things are under test, and the last two are the important ones:
 //
 //   1. The gate: attaching a document is canReview, not isAdmin. ADMIN and
 //      REVIEWER pass, any other signed-in role is 403'd before the DB is
@@ -18,6 +18,12 @@
 //      path — never a name, never a path, never a folder. If someone later
 //      makes this route look files up instead of reading its own row, they
 //      fail.
+//   3. WHAT PATCH CAN REACH — which is nothing. "Approve by hand" exists
+//      precisely because the document is already in the supplier's folder;
+//      the app neither put it there nor may take it away. So PATCH must never
+//      call Graph, in either direction, whatever it is asked to do. Same label
+//      gate as POST, because a row keyed on a label the cover doesn't list is
+//      a row nothing will ever read.
 //
 // Drives the REAL route handlers with a mocked session, a spy `db` and a spy
 // Graph layer, so the gate is exercised end-to-end WITHOUT the live Railway DB
@@ -79,8 +85,24 @@ const uploadFindFirst = mock.fn(async (args: FindFirstArgs) => {
   return STORED_ROW as unknown;
 });
 const uploadFindMany = mock.fn(async () => [] as unknown[]);
-const uploadUpsert = mock.fn(async () => ({ id: "upload-1" }));
-const uploadUpdate = mock.fn(async () => ({}));
+// What PATCH's "is there already a row for this line?" read returns. Default:
+// a row that is nothing but a hand-approval (no bytes, never pushed).
+const uploadFindUnique = mock.fn(
+  async () => ({ id: "upload-1", fileName: null, sharepointItemId: null }) as unknown,
+);
+// Captured the same way lastUploadFindFirst is, so assertions can read back
+// WHAT was written and not merely that something was.
+type WriteArgs = { create?: Record<string, unknown>; update?: Record<string, unknown>; data?: Record<string, unknown> };
+let lastUpsert: WriteArgs | null = null;
+let lastUpdate: WriteArgs | null = null;
+const uploadUpsert = mock.fn(async (args: WriteArgs) => {
+  lastUpsert = args;
+  return { id: "upload-1" };
+});
+const uploadUpdate = mock.fn(async (args: WriteArgs) => {
+  lastUpdate = args;
+  return {};
+});
 const uploadDelete = mock.fn(async () => ({}));
 
 // ── SharePoint spies ────────────────────────────────────────────────────────
@@ -119,6 +141,7 @@ before(() => {
         style: { findUnique: styleFindUnique },
         styleManualTrimUpload: {
           findFirst: uploadFindFirst,
+          findUnique: uploadFindUnique,
           findMany: uploadFindMany,
           upsert: uploadUpsert,
           update: uploadUpdate,
@@ -151,6 +174,7 @@ beforeEach(() => {
   styleFindUnique.mock.resetCalls();
   buildRequiredPackagingForStyle.mock.resetCalls();
   uploadFindFirst.mock.resetCalls();
+  uploadFindUnique.mock.resetCalls();
   uploadFindMany.mock.resetCalls();
   uploadUpsert.mock.resetCalls();
   uploadUpdate.mock.resetCalls();
@@ -159,6 +183,8 @@ beforeEach(() => {
   uploadIntoApprovedLayouts.mock.resetCalls();
   removeArgs = [];
   lastUploadFindFirst = null;
+  lastUpsert = null;
+  lastUpdate = null;
 });
 
 // ── Driving the handlers ────────────────────────────────────────────────────
@@ -168,7 +194,12 @@ const oneCtx = { params: Promise.resolve({ id: STYLE_ID, uploadId: "upload-1" })
 
 async function readBody(res: Response) {
   try {
-    return (await res.clone().json()) as { error?: string; ok?: boolean; deleted?: boolean } | null;
+    return (await res.clone().json()) as {
+      error?: string;
+      ok?: boolean;
+      deleted?: boolean;
+      approved?: boolean;
+    } | null;
   } catch {
     return null;
   }
@@ -186,6 +217,19 @@ async function post(label = LABEL, fileName = "artwork.pdf") {
   form.set("label", label);
   form.set("file", new File([new Uint8Array([1, 2, 3, 4])], fileName, { type: "application/pdf" }));
   const res = await mod.POST(new NextRequest(base, { method: "POST", body: form }), listCtx);
+  return { status: res.status, body: await readBody(res) };
+}
+
+async function patch(approved: boolean, label = LABEL) {
+  const mod = await import("@/app/api/admin/styles/[id]/manual-trims/route");
+  const res = await mod.PATCH(
+    new NextRequest(base, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label, approved }),
+    }),
+    listCtx,
+  );
   return { status: res.status, body: await readBody(res) };
 }
 
@@ -344,4 +388,135 @@ test("a label that isn't a MANUAL manifest line is refused — no store, no push
   assert.equal(status, 409);
   assert.equal(uploadUpsert.mock.callCount(), 0);
   assert.equal(uploadIntoApprovedLayouts.mock.callCount(), 0);
+});
+
+// ── The gate: approving by hand ─────────────────────────────────────────────
+
+test("REVIEWER may approve a line by hand", async () => {
+  asReviewer();
+  const { status, body } = await patch(true);
+  assert.equal(status, 200);
+  assert.equal(body?.approved, true);
+  assert.equal(uploadUpsert.mock.callCount(), 1, "the statement was recorded");
+});
+
+test("ADMIN may approve a line by hand", async () => {
+  asAdmin();
+  const { status } = await patch(true);
+  assert.equal(status, 200);
+  assert.equal(uploadUpsert.mock.callCount(), 1);
+});
+
+test("a non-review role (VIEWER) can't approve — 403 before any DB work", async () => {
+  asViewer();
+  const { status, body } = await patch(true);
+  assert.equal(status, 403);
+  assert.match(body?.error ?? "", /ADMIN or REVIEWER/);
+  assert.equal(styleFindUnique.mock.callCount(), 0, "gate blocks before touching the DB");
+  assert.equal(uploadUpsert.mock.callCount(), 0);
+});
+
+test("no session can't approve — 401", async () => {
+  asAnon();
+  const { status } = await patch(true);
+  assert.equal(status, 401);
+  assert.equal(uploadUpsert.mock.callCount(), 0);
+});
+
+// ── The blast radius of PATCH: zero ─────────────────────────────────────────
+// The entire justification for this verb is that the document is ALREADY in the
+// supplier's folder, put there by a person. So the app must not upload to that
+// folder, and must not delete from it, on either edge of the switch. If someone
+// later "helpfully" makes approving push the stored bytes, or makes undoing
+// tidy the folder up, these fail — and they should.
+
+test("approving by hand never touches SharePoint", async () => {
+  asReviewer();
+  await patch(true);
+  assert.equal(uploadIntoApprovedLayouts.mock.callCount(), 0, "nothing is uploaded");
+  assert.equal(removeFromApprovedLayouts.mock.callCount(), 0, "and nothing is removed");
+});
+
+test("withdrawing the approval never touches SharePoint either", async () => {
+  asReviewer();
+  await patch(false);
+  assert.equal(removeFromApprovedLayouts.mock.callCount(), 0, "we did not put that file there");
+  assert.equal(uploadIntoApprovedLayouts.mock.callCount(), 0);
+});
+
+// ── What PATCH writes ───────────────────────────────────────────────────────
+
+test("approving stamps the row and attributes it to the signed-in user", async () => {
+  asReviewer();
+  await patch(true);
+  assert.ok(lastUpsert, "the row was written");
+  const { create, update } = lastUpsert! as Required<Pick<WriteArgs, "create" | "update">>;
+  assert.equal(create.manualApprovedById, "rev-1", "who said it is part of the record");
+  assert.ok(create.manualApprovedAt instanceof Date, "and when");
+  assert.equal(create.trimLabel, LABEL, "labelled with the manifest's own wording");
+  assert.equal(create.file, undefined, "a hand-approved row carries no bytes");
+  assert.equal(update.uploadError, null, "a failed push the operator resolved stops nagging");
+});
+
+test("withdrawing drops a row that was nothing but the statement", async () => {
+  asReviewer();
+  const { status } = await patch(false);
+  assert.equal(status, 200);
+  assert.equal(uploadDelete.mock.callCount(), 1, "no bytes and no push — nothing left to keep");
+  assert.equal(uploadUpdate.mock.callCount(), 0);
+});
+
+test("withdrawing KEEPS a row that also holds an uploaded file", async () => {
+  asReviewer();
+  uploadFindUnique.mock.mockImplementationOnce(
+    async () =>
+      ({ id: "upload-1", fileName: "12345-black-hang-tag.pdf", sharepointItemId: null }) as unknown,
+  );
+  const { status } = await patch(false);
+  assert.equal(status, 200);
+  assert.equal(uploadDelete.mock.callCount(), 0, "the operator's file must survive the undo");
+  assert.equal(uploadUpdate.mock.callCount(), 1);
+  assert.ok(lastUpdate, "the row was updated in place");
+  assert.deepEqual(lastUpdate!.data, { manualApprovedAt: null, manualApprovedById: null });
+});
+
+test("withdrawing on a line with no row at all is a no-op success", async () => {
+  asReviewer();
+  uploadFindUnique.mock.mockImplementationOnce(async () => null as unknown);
+  const { status, body } = await patch(false);
+  assert.equal(status, 200);
+  assert.equal(body?.approved, false);
+  assert.equal(uploadDelete.mock.callCount(), 0);
+  assert.equal(uploadUpdate.mock.callCount(), 0);
+});
+
+// ── The label gate, same as POST's ──────────────────────────────────────────
+
+test("a label that isn't a MANUAL manifest line can't be approved", async () => {
+  asReviewer();
+  const { status } = await patch(true, "Care Label"); // exists, but kind: "generated"
+  assert.equal(status, 409);
+  assert.equal(uploadUpsert.mock.callCount(), 0, "no row for a line the cover never reads");
+});
+
+test("a label nothing on the cover lists at all can't be approved", async () => {
+  asReviewer();
+  const { status } = await patch(true, "Invented Trim");
+  assert.equal(status, 409);
+  assert.equal(uploadUpsert.mock.callCount(), 0);
+});
+
+test("`approved` must actually be a boolean — 400, no write", async () => {
+  asReviewer();
+  const mod = await import("@/app/api/admin/styles/[id]/manual-trims/route");
+  const res = await mod.PATCH(
+    new NextRequest(base, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: LABEL }),
+    }),
+    listCtx,
+  );
+  assert.equal(res.status, 400);
+  assert.equal(uploadUpsert.mock.callCount(), 0);
 });
