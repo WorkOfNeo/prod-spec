@@ -7,7 +7,7 @@ import { toPlainBytes } from "@/lib/pdf/bytes";
 import { buildRequiredPackagingForStyle } from "@/lib/outputs/required-packaging";
 import { getTrimsOnCoverEnabled } from "@/lib/settings/app-settings";
 import { listManualTrimUploads, normalizeTrimLabel } from "@/lib/trims/manual-uploads";
-import { refreshCoverAfterManualTrimChangeSafe } from "@/lib/trims/manual-trim-cover-refresh";
+import { scheduleCoverRegen } from "@/lib/pdf/cover-regen-schedule";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import { manualTrimFileName, MANUAL_TRIM_EXTENSIONS } from "@/lib/trims/manual-upload-name";
 import {
@@ -36,13 +36,18 @@ export const maxDuration = 120;
 //
 // PATCH SENDS NO TRIM FILE AND RECORDS NO DRIVE/ITEM ID, so nothing downstream
 // — the DELETE next door included — can use it to reach a file this app did not
-// put there. What it DOES do, like POST, is rebuild the style's cover page and
-// re-push THAT: see refreshCoverAfterManualTrimChange. Supplying a line only
-// changes the manifest in the database; the cover the supplier actually holds
-// is a PDF, and leaving it saying "Waiting for Customer Information" about a
-// document already in their folder was the whole point of the feature going
-// unmet. The rebuild is gated on the manifest genuinely differing, so a
-// replacement upload on an already-delivered line still overwrites nothing.
+// put there.
+//
+// WHAT EVERY MUTATION HERE DOES DO is stamp the style into the cover-regen
+// debounce ledger (scheduleCoverRegen), exactly as approving or rejecting an
+// output does. Supplying a line only moves a row in this database; the cover
+// the supplier holds is a PDF, and leaving it saying "Waiting for Customer
+// Information" about a document already in their folder is the feature not
+// actually happening. The ledger's drain rebuilds the cover in place, re-arms
+// the supplier-send row and pushes it — one mechanism, shared with output
+// decisions, debounced so three approvals in a row are one render rather than
+// three, and durable: the demand is in the DB, so a lost in-process timer is
+// picked up by /api/cron/cover-regen rather than dropped.
 //
 // THE LABELS COME FROM THE MANIFEST, NEVER FROM THE CLIENT. The whole point of
 // the panel is that its zones read exactly as the cover reads, so the server
@@ -297,7 +302,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
     // The line now reads as supplied, so the cover has to say so — in the
     // supplier's folder, not just in our database.
-    const cover = await refreshCoverAfterManualTrimChangeSafe(id);
+    await scheduleCoverRegen(id);
 
     return NextResponse.json({
       ok: true,
@@ -305,7 +310,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       id: stored.id,
       fileName: up.fileName,
       webUrl: up.webUrl,
-      cover,
+      coverQueued: true,
     });
   } catch (err) {
     const message =
@@ -408,8 +413,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       byUserId: session.user.id,
     });
 
-    const cover = await refreshCoverAfterManualTrimChangeSafe(id);
-    return NextResponse.json({ ok: true, approved: true, cover });
+    await scheduleCoverRegen(id);
+    return NextResponse.json({ ok: true, approved: true, coverQueued: true });
   }
 
   if (!existing) return NextResponse.json({ ok: true, approved: false });
@@ -436,6 +441,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   // Withdrawal moves the manifest too, and in the direction that matters most:
   // a cover still claiming an un-supplied line is approved is a promise to the
   // supplier that nobody is keeping.
-  const cover = await refreshCoverAfterManualTrimChangeSafe(id);
-  return NextResponse.json({ ok: true, approved: false, cover });
+  await scheduleCoverRegen(id);
+  return NextResponse.json({ ok: true, approved: false, coverQueued: true });
 }

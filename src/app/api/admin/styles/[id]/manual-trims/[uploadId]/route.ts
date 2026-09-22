@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { canReview } from "@/lib/roles";
 import { removeFromApprovedLayouts } from "@/lib/sharepoint/upload";
-import { refreshCoverAfterManualTrimChangeSafe } from "@/lib/trims/manual-trim-cover-refresh";
+import { scheduleCoverRegen } from "@/lib/pdf/cover-regen-schedule";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -27,10 +27,10 @@ export const maxDuration = 60;
 // refuses the delete, the row STAYS (with the reason) rather than being dropped
 // on the floor, so nothing claims the supplier's folder is clean when it isn't.
 //
-// REMOVING A LINE REBUILDS THE COVER, like supplying one does — a cover left
-// claiming an un-supplied line is approved is the same leak in reverse. See
-// refreshCoverAfterManualTrimChange; it is gated on the manifest genuinely
-// differing and can never fail the delete that already happened.
+// REMOVING A LINE SCHEDULES A COVER REGEN, like supplying one does — a cover
+// left claiming an un-supplied line is approved is the same leak in reverse.
+// scheduleCoverRegen is the same debounced ledger an output approval uses, and
+// is fail-soft inside, so it can never undo the delete that already happened.
 //
 // A HAND-APPROVED ROW HAS NO FILE AND NO ITEM ID, so DELETE on one removes the
 // row and calls Graph not at all — exactly right, because this app never put
@@ -133,9 +133,8 @@ export async function DELETE(
     .catch(() => {});
 
   // The line goes back to waiting, so the cover must stop saying it is supplied
-  // — in the supplier's folder, not only here. Gated on the manifest actually
-  // differing, and fail-soft: the row is already gone either way.
-  const cover = await refreshCoverAfterManualTrimChangeSafe(id);
+  // — in the supplier's folder, not only here.
+  await scheduleCoverRegen(id);
 
-  return NextResponse.json({ ok: true, deleted: true, cover });
+  return NextResponse.json({ ok: true, deleted: true, coverQueued: true });
 }

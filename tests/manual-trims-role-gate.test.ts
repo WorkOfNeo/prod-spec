@@ -21,9 +21,10 @@
 //   3. THAT THE COVER LOOP IS CLOSED. Supplying or un-supplying a line only
 //      moves a row in the database; the cover the supplier holds is a PDF, and
 //      for one release nothing rebuilt it — the whole feature was invisible to
-//      the person it was for. Every mutation here must now hand off to
-//      refreshCoverAfterManualTrimChange, and no cover failure may undo an
-//      action that already succeeded.
+//      the person it was for. Every mutation here must now stamp the style into
+//      the SHARED cover-regen ledger (scheduleCoverRegen), the same one an
+//      output approval uses. Shared is the point: a private rebuild path here
+//      would be a second thing to keep in step with the first.
 //   4. WHAT PATCH CAN REACH — which is nothing. "Approve by hand" exists
 //      precisely because the document is already in the supplier's folder;
 //      the app neither put it there nor may take it away. So PATCH must never
@@ -125,19 +126,12 @@ const uploadIntoApprovedLayouts = mock.fn(async (input: { fileName: string }) =>
   folderUrl: "https://example.invalid/folder",
 }));
 
-// The cover-refresh hand-off. Spied rather than run: the real one pulls in
-// puppeteer, and what is under test here is that each mutation calls it with
-// this style's id — not how a PDF renders.
+// The cover-regen hand-off. Spied rather than run: the real drain renders PDFs.
+// What is under test is that each mutation registers demand for THIS style —
+// not how a cover renders, which cover-regen-schedule owns and tests.
 let coverRefreshCalls: string[] = [];
-type CoverOutcome = {
-  cover: string;
-  requeue: string | null;
-  pushed: number;
-  message: string | null;
-};
-const refreshCoverAfterManualTrimChange = mock.fn(async (styleId: string): Promise<CoverOutcome> => {
+const scheduleCoverRegen = mock.fn(async (styleId: string) => {
   coverRefreshCalls.push(styleId);
-  return { cover: "refreshed", requeue: "queued", pushed: 1, message: "Cover page updated." };
 });
 
 class ApprovedLayoutsFolderError extends Error {
@@ -189,13 +183,7 @@ before(() => {
   mock.module("@/lib/sharepoint/upload", {
     namedExports: { uploadIntoApprovedLayouts, removeFromApprovedLayouts, ApprovedLayoutsFolderError },
   });
-  // ONLY the Safe name is exported here, deliberately. A route that reaches for
-  // the unguarded refreshCoverAfterManualTrimChange gets undefined and blows up
-  // in these tests — which is the point: the routes call an action that is
-  // already committed, so they may only use the variant that cannot throw.
-  mock.module("@/lib/trims/manual-trim-cover-refresh", {
-    namedExports: { refreshCoverAfterManualTrimChangeSafe: refreshCoverAfterManualTrimChange },
-  });
+  mock.module("@/lib/pdf/cover-regen-schedule", { namedExports: { scheduleCoverRegen } });
 });
 
 beforeEach(() => {
@@ -211,7 +199,7 @@ beforeEach(() => {
   uploadIntoApprovedLayouts.mock.resetCalls();
   removeArgs = [];
   coverRefreshCalls = [];
-  refreshCoverAfterManualTrimChange.mock.resetCalls();
+  scheduleCoverRegen.mock.resetCalls();
   lastUploadFindFirst = null;
   lastUpsert = null;
   lastUpdate = null;
@@ -558,19 +546,19 @@ test("`approved` must actually be a boolean — 400, no write", async () => {
 // everywhere except where anyone could see it. Each assertion below is one
 // mutation that must hand the style off for a cover rebuild.
 
-test("approving by hand rebuilds and re-pushes the cover", async () => {
+test("approving by hand schedules the cover regen", async () => {
   asReviewer();
   const { status, body } = await patch(true);
   assert.equal(status, 200);
-  assert.deepEqual(coverRefreshCalls, [STYLE_ID], "the style's cover is rebuilt, once");
+  assert.deepEqual(coverRefreshCalls, [STYLE_ID], "demand is registered for this style, once");
   assert.equal(
-    (body as { cover?: { message?: string } })?.cover?.message,
-    "Cover page updated.",
-    "and the outcome comes back so the panel can say so",
+    (body as { coverQueued?: boolean })?.coverQueued,
+    true,
+    "and the caller is told the cover is coming",
   );
 });
 
-test("withdrawing an approval rebuilds the cover too", async () => {
+test("withdrawing an approval schedules the regen too", async () => {
   asReviewer();
   await patch(false);
   assert.deepEqual(
@@ -580,20 +568,20 @@ test("withdrawing an approval rebuilds the cover too", async () => {
   );
 });
 
-test("a successful upload rebuilds and re-pushes the cover", async () => {
+test("a successful upload schedules the regen", async () => {
   asReviewer();
   const { status } = await post();
   assert.equal(status, 200);
   assert.deepEqual(coverRefreshCalls, [STYLE_ID]);
 });
 
-test("removing a document rebuilds the cover", async () => {
+test("removing a document schedules the regen", async () => {
   asReviewer();
   await del();
   assert.deepEqual(coverRefreshCalls, [STYLE_ID]);
 });
 
-test("an upload that never reached SharePoint does NOT rebuild the cover", async () => {
+test("an upload that never reached SharePoint does NOT schedule a regen", async () => {
   asReviewer();
   uploadIntoApprovedLayouts.mock.mockImplementationOnce(async () => {
     throw new Error("no PO folder yet");
@@ -604,30 +592,13 @@ test("an upload that never reached SharePoint does NOT rebuild the cover", async
   assert.equal(
     coverRefreshCalls.length,
     0,
-    "the line is not delivered, so the manifest did not move — rebuilding would overwrite a supplier's cover to change nothing",
+    "the line is not delivered, so the manifest did not move — a rebuild would overwrite a supplier's cover to change nothing",
   );
 });
 
-test("a refused label rebuilds nothing", async () => {
+test("a refused label schedules nothing", async () => {
   asReviewer();
   await patch(true, "Care Label");
   assert.equal(coverRefreshCalls.length, 0);
 });
 
-test("the cover outcome is handed back so the panel can report a stale cover", async () => {
-  asReviewer();
-  refreshCoverAfterManualTrimChange.mock.mockImplementationOnce(async () => ({
-    cover: "error",
-    requeue: null,
-    pushed: 0,
-    message: "Saved, but the cover page couldn't be rebuilt: puppeteer died",
-  }));
-  const { status, body } = await patch(true);
-  assert.equal(status, 200, "the approval stands even when the cover cannot be rebuilt");
-  assert.equal(uploadUpsert.mock.callCount(), 1, "and it really was written");
-  assert.match(
-    (body as { cover?: { message?: string } })?.cover?.message ?? "",
-    /couldn't be rebuilt/,
-    "the reviewer is told the cover is stale rather than left guessing",
-  );
-});
