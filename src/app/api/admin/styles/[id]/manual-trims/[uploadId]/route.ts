@@ -26,6 +26,13 @@ export const maxDuration = 60;
 // refuses the delete, the row STAYS (with the reason) rather than being dropped
 // on the floor, so nothing claims the supplier's folder is clean when it isn't.
 //
+// A HAND-APPROVED ROW HAS NO FILE AND NO ITEM ID, so DELETE on one removes the
+// row and calls Graph not at all — exactly right, because this app never put
+// that document in the folder and has no business deleting what it didn't
+// upload. (The panel offers "Undo" for those, which goes to PATCH instead and
+// leaves any stored bytes alone; DELETE remains the "take the whole line back"
+// action.)
+//
 // ITS REACH IS THE ROW, AND ONLY THE ROW. The drive id and item id handed to
 // Graph are the ones THIS feature recorded when it uploaded the file, read off
 // a StyleManualTrimUpload scoped to the style in the path — never a name, a
@@ -50,13 +57,22 @@ export async function GET(
     select: { file: true, mimeType: true, fileName: true },
   });
   if (!row) return NextResponse.json({ error: "Upload not found" }, { status: 404 });
+  // A hand-approved line has no bytes here by design — somebody put the
+  // document in the supplier's folder themselves and this app never held it.
+  // 404 rather than an empty body: there is no file at this address.
+  if (!row.file) {
+    return NextResponse.json(
+      { error: "This line was approved by hand — no document is stored here." },
+      { status: 404 },
+    );
+  }
 
   return new NextResponse(new Uint8Array(row.file), {
     status: 200,
     headers: {
       "Content-Type": row.mimeType || "application/octet-stream",
       // inline so a PDF opens in the browser tab rather than downloading.
-      "Content-Disposition": `inline; filename="${row.fileName.replace(/"/g, "")}"`,
+      "Content-Disposition": `inline; filename="${(row.fileName ?? "document").replace(/"/g, "")}"`,
       "Cache-Control": "private, no-store",
     },
   });
@@ -104,7 +120,7 @@ export async function DELETE(
       data: {
         jobId: latestJob?.id ?? null,
         level: "INFO",
-        message: `manual trim removed · ${row.trimLabel} (${row.fileName})`,
+        message: `manual trim removed · ${row.trimLabel}${row.fileName ? ` (${row.fileName})` : " (approved by hand — no file)"}`,
         payload: { styleId: id, label: row.trimLabel, fileName: row.fileName, byUserId: session.user.id },
       },
     })

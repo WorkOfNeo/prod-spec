@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { canReview } from "@/lib/roles";
@@ -19,9 +20,22 @@ export const maxDuration = 120;
 // =====================================================
 // The manually-supplied trim documents for one style.
 //
-//   GET  /api/admin/styles/<id>/manual-trims        → the manifest's manual
-//        lines, each with its stored upload (or null)
-//   POST /api/admin/styles/<id>/manual-trims        multipart: label + file
+//   GET   /api/admin/styles/<id>/manual-trims       → the manifest's manual
+//         lines, each with its stored upload (or null)
+//   POST  /api/admin/styles/<id>/manual-trims       multipart: label + file
+//   PATCH /api/admin/styles/<id>/manual-trims       json: label + approved
+//
+// POST AND PATCH ANSWER THE SAME QUESTION BY DIFFERENT MEANS. POST hands this
+// app the document and lets it do the upload. PATCH is for the document that is
+// ALREADY in the supplier's folder because a person put it there — a cover line
+// waiting on a file the operator mailed across, or an upload this app couldn't
+// push (no PO folder yet) that they then carried over by hand. Both end with
+// the cover saying the same thing about that line, because from the supplier's
+// side the outcome is the same: the folder holds the document.
+//
+// PATCH NEVER TOUCHES SHAREPOINT. It has no file to send and it records no
+// drive/item id, so nothing downstream — the DELETE next door included — can
+// use it to reach a file this app did not put there.
 //
 // THE LABELS COME FROM THE MANIFEST, NEVER FROM THE CLIENT. The whole point of
 // the panel is that its zones read exactly as the cover reads, so the server
@@ -45,6 +59,37 @@ export const maxDuration = 120;
 // Graph's direct PUT is good to ~4 MB (see uploadIntoFolder); above that it
 // needs an upload session, so refuse rather than fail halfway.
 const MAX_BYTES = 4_000_000;
+
+// The manifest line a caller's label names, or null. Shared by POST and PATCH
+// so "is this a live manually-supplied line?" is decided once: both write a row
+// keyed on the normalised label, and a label only one of them accepted would
+// put a row on the cover's blind side.
+async function resolveManualLine(styleId: string, label: string) {
+  const manifest = await buildRequiredPackagingForStyle(styleId);
+  const normalized = normalizeTrimLabel(label);
+  const line = manifest.find(
+    (r) => r.kind === "manual" && normalizeTrimLabel(r.displayName) === normalized,
+  );
+  return line ? { line, normalized } : null;
+}
+
+const STALE_LABEL =
+  "That isn't a manually-supplied line on this style's cover any more — reload the page to see the current list.";
+
+// Audit line, hung off the style's newest run so it lands in the same activity
+// feed as generation / approval / push events (Log has no styleId of its own).
+// Best-effort: a style that has never generated has no job to hang it on, and
+// that must not fail an action that already succeeded.
+async function auditLog(styleId: string, message: string, payload: Prisma.InputJsonObject) {
+  const latestJob = await db.job.findFirst({
+    where: { styleId },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  await db.log
+    .create({ data: { jobId: latestJob?.id ?? null, level: "INFO", message, payload } })
+    .catch(() => {});
+}
 
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { session, role } = await getSessionWithRole();
@@ -135,18 +180,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   // normalised form so a re-typed apostrophe or a case change still lands on
   // the row it means. The stored trimLabel is the manifest's own wording, not
   // the caller's — so the panel and the cover can never disagree.
-  const manifest = await buildRequiredPackagingForStyle(id);
-  const normalized = normalizeTrimLabel(label);
-  const line = manifest.find((r) => r.kind === "manual" && normalizeTrimLabel(r.displayName) === normalized);
-  if (!line) {
-    return NextResponse.json(
-      {
-        error:
-          "That isn't a manually-supplied line on this style's cover any more — reload the page to see the current list.",
-      },
-      { status: 409 },
-    );
-  }
+  const resolved = await resolveManualLine(id, label);
+  if (!resolved) return NextResponse.json({ error: STALE_LABEL }, { status: 409 });
+  const { line, normalized } = resolved;
 
   // The colourway, resolved through the SAME chain the cover file name uses
   // (StyleData.colour), so a manual document sorts beside the cover of the
@@ -194,11 +230,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       byteSize: bytes.byteLength,
       file: toPlainBytes(bytes),
       uploadedById: session.user.id,
-      // A replacement is not delivered until the new bytes are up there.
+      // A replacement is not delivered until the new bytes are up there — and
+      // that includes superseding a hand-approval. Somebody stating the folder
+      // held the OLD document says nothing about this one, so the stamp goes
+      // and the line waits on the push like any other upload.
       sharepointItemId: null,
       sharepointDriveId: null,
       sharepointWebUrl: null,
       deliveredAt: null,
+      manualApprovedAt: null,
+      manualApprovedById: null,
       uploadError: null,
     },
     select: { id: true },
@@ -239,31 +280,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       },
     });
 
-    // Audit line, hung off the style's newest run so it lands in the same
-    // activity feed as generation / approval / push events (Log has no styleId
-    // of its own). Best-effort: a style that has never generated has no job to
-    // hang it on, and that must not fail an upload that already succeeded.
-    const latestJob = await db.job.findFirst({
-      where: { styleId: id },
-      orderBy: { createdAt: "desc" },
-      select: { id: true },
+    await auditLog(id, `manual trim uploaded · ${line.displayName} → ${up.fileName}`, {
+      styleId: id,
+      label: line.displayName,
+      fileName: up.fileName,
+      webUrl: up.webUrl,
+      byUserId: session.user.id,
     });
-    await db.log
-      .create({
-        data: {
-          jobId: latestJob?.id ?? null,
-          level: "INFO",
-          message: `manual trim uploaded · ${line.displayName} → ${up.fileName}`,
-          payload: {
-            styleId: id,
-            label: line.displayName,
-            fileName: up.fileName,
-            webUrl: up.webUrl,
-            byUserId: session.user.id,
-          },
-        },
-      })
-      .catch(() => {});
 
     return NextResponse.json({ ok: true, delivered: true, id: stored.id, fileName: up.fileName, webUrl: up.webUrl });
   } catch (err) {
@@ -279,4 +302,117 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     // `delivered:false` + message is the honest report.
     return NextResponse.json({ ok: true, delivered: false, error: message, id: stored.id });
   }
+}
+
+// =====================================================
+// PATCH — "the supplier already has this one; I put it there myself."
+//
+// Body: { label, approved }. `approved: true` stamps the line as supplied;
+// `approved: false` takes the statement back.
+//
+// WHAT IT DOES NOT DO is the point of it. No file is read, no Graph call is
+// made, no drive or item id is recorded. The row it writes holds a person's
+// word and nothing else, so the cover can stop saying "Waiting for Customer
+// Information" about a document that is demonstrably already in the folder.
+// Attribution (manualApprovedById) and the audit line are what make that word
+// accountable — this is a claim someone makes, not a fact the app verified.
+//
+// WITHDRAWING IT NEVER DELETES A FILE ANYWHERE. A row that exists only to carry
+// the stamp is dropped outright; a row that also holds bytes this app stored
+// keeps them and simply stops claiming the folder has them. Either way
+// SharePoint is untouched — we did not put that document there.
+// =====================================================
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { session, role } = await getSessionWithRole();
+  if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  if (!canReview(role))
+    return NextResponse.json({ error: "Requires role: ADMIN or REVIEWER" }, { status: 403 });
+
+  const { id } = await ctx.params;
+
+  let body: { label?: unknown; approved?: unknown };
+  try {
+    body = (await req.json()) as typeof body;
+  } catch {
+    return NextResponse.json({ error: "Expected a JSON body" }, { status: 400 });
+  }
+
+  const label = String(body.label ?? "").trim();
+  if (!label) return NextResponse.json({ error: "Missing label" }, { status: 400 });
+  if (typeof body.approved !== "boolean") {
+    return NextResponse.json({ error: "Missing approved (true/false)" }, { status: 400 });
+  }
+  const approved = body.approved;
+
+  const style = await db.style.findUnique({ where: { id }, select: { id: true } });
+  if (!style) return NextResponse.json({ error: "Style not found" }, { status: 404 });
+
+  // Same gate as POST: the label has to be a manual line of THIS style's
+  // manifest right now. A stale one would write a row the cover never reads.
+  const resolved = await resolveManualLine(id, label);
+  if (!resolved) return NextResponse.json({ error: STALE_LABEL }, { status: 409 });
+  const { line, normalized } = resolved;
+
+  // fileName stands in for "this row holds bytes" — the five file columns are
+  // written and cleared together, and selecting `file` itself would drag up to
+  // 4 MB of blob out of Postgres to answer a null check.
+  const existing = await db.styleManualTrimUpload.findUnique({
+    where: { styleId_normalizedLabel: { styleId: id, normalizedLabel: normalized } },
+    select: { id: true, fileName: true, sharepointItemId: true },
+  });
+
+  if (approved) {
+    await db.styleManualTrimUpload.upsert({
+      where: { styleId_normalizedLabel: { styleId: id, normalizedLabel: normalized } },
+      create: {
+        styleId: id,
+        trimLabel: line.displayName,
+        normalizedLabel: normalized,
+        manualApprovedAt: new Date(),
+        manualApprovedById: session.user.id,
+      },
+      update: {
+        // The manifest's wording refreshes, in case Monday's changed only in
+        // case or punctuation since the row was written.
+        trimLabel: line.displayName,
+        manualApprovedAt: new Date(),
+        manualApprovedById: session.user.id,
+        // The operator resolved by hand whatever the push failed on, so the
+        // stale "couldn't reach the folder" hint would now be misleading.
+        uploadError: null,
+      },
+      select: { id: true },
+    });
+
+    await auditLog(id, `manual trim approved by hand · ${line.displayName}`, {
+      styleId: id,
+      label: line.displayName,
+      byUserId: session.user.id,
+    });
+
+    return NextResponse.json({ ok: true, approved: true });
+  }
+
+  if (!existing) return NextResponse.json({ ok: true, approved: false });
+
+  // Bytes we hold (or a push we made) are the row's other reason to exist —
+  // withdrawing the statement must not throw them away. Only a row that was
+  // nothing but the statement goes.
+  const isStatementOnly = existing.fileName === null && existing.sharepointItemId === null;
+  if (isStatementOnly) {
+    await db.styleManualTrimUpload.delete({ where: { id: existing.id } });
+  } else {
+    await db.styleManualTrimUpload.update({
+      where: { id: existing.id },
+      data: { manualApprovedAt: null, manualApprovedById: null },
+    });
+  }
+
+  await auditLog(id, `manual trim approval withdrawn · ${line.displayName}`, {
+    styleId: id,
+    label: line.displayName,
+    byUserId: session.user.id,
+  });
+
+  return NextResponse.json({ ok: true, approved: false });
 }

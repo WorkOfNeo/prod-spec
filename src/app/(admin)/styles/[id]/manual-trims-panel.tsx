@@ -13,6 +13,15 @@ import { FileDropZone } from "@/components/file-drop-zone";
 // APPROVED LAYOUTS folder the generated outputs land in, and flips that line on
 // the cover from "Waiting for Customer Information" to "Approved".
 //
+// TWO WAYS TO ANSWER A LINE, and the second one is not a lesser version of the
+// first. Drop the file here and the app uploads it; or press Approve, which
+// says "the supplier's folder already has this — I put it there myself". The
+// cover reads the same either way, because from the supplier's side it IS the
+// same: the folder holds the document. The distinction the panel keeps is about
+// what this app can offer you afterwards — there is no stored file to open and
+// no SharePoint link to follow on a line that was approved by hand, and no file
+// of ours to withdraw from the folder either.
+//
 // ANYONE WHO CAN REVIEW SEES THIS, reviewers included — the routes behind it
 // gate on canReview, and the Review tab this sits on is already reviewer-
 // reachable, so no role prop is threaded down here.
@@ -29,12 +38,18 @@ type Upload = {
   id: string;
   trimLabel: string;
   normalizedLabel: string;
-  originalName: string;
-  fileName: string;
-  byteSize: number;
+  // Null when the line was approved by hand — there is no file on this side.
+  originalName: string | null;
+  fileName: string | null;
+  byteSize: number | null;
+  // `pushed` = this app put it in the folder. `manuallyApproved` = a person
+  // says they did. `delivered` is the union, and is what the cover acts on.
+  pushed: boolean;
+  manuallyApproved: boolean;
   delivered: boolean;
   webUrl: string | null;
   deliveredAt: string | null;
+  manualApprovedAt: string | null;
   uploadError: string | null;
 };
 
@@ -117,6 +132,30 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
     }
   }
 
+  // "The supplier already has this one." No file, no Graph call — PATCH records
+  // the statement and the cover stops waiting on the line. `approved: false`
+  // withdraws it again.
+  async function setApproved(line: Line, approved: boolean) {
+    setError(null);
+    setBusyLabel(line.normalizedLabel);
+    try {
+      const res = await fetch(base, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: line.label, approved }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(body.error ?? `Couldn't update it (HTTP ${res.status})`);
+      }
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusyLabel(null);
+    }
+  }
+
   async function remove(upload: Upload) {
     setError(null);
     setBusyLabel(upload.normalizedLabel);
@@ -143,6 +182,12 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
         Trims column, but not produced by this app. Drop the finished document here and it goes into
         the same <span className="font-mono">APPROVED LAYOUTS</span> folder the generated outputs do,
         and the cover stops saying &ldquo;Waiting for Customer Information&rdquo; for that line.
+      </p>
+      <p className="text-xs text-zinc-500">
+        Already put it in the supplier&apos;s folder yourself? Press <strong>Approve</strong> on that
+        line instead — the cover treats it exactly as it treats an upload made here. Nothing is sent
+        to SharePoint and nothing is deleted from it; the app is simply told the folder already has
+        the document.
       </p>
       <p className="text-[11px] text-zinc-400">
         An already-generated cover PDF is rewritten by the &ldquo;Regenerate cover pages&rdquo; sweep
@@ -181,6 +226,7 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
             styleId={styleId}
             onFile={(f) => void upload(line, f)}
             onRemove={(u) => void remove(u)}
+            onApprove={(v) => void setApproved(line, v)}
           />
         ))}
       </div>
@@ -188,17 +234,24 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
       {data && data.orphaned.length > 0 && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
           <p className="text-xs font-medium text-amber-900">
-            No longer on the cover — still in the supplier&apos;s folder
+            No longer on the cover — still standing against the supplier&apos;s folder
           </p>
           <p className="mb-2 text-[11px] text-amber-800">
-            The Trims column changed since these were uploaded. Remove them unless the supplier
-            should still have them.
+            The Trims column changed since these were supplied. Remove them unless the supplier
+            should still have them. Removing an uploaded file takes it out of the folder; removing a
+            line approved by hand only drops the record here — the document you put there yourself
+            stays where it is.
           </p>
           <ul className="flex flex-col gap-1">
             {data.orphaned.map((u) => (
               <li key={u.id} className="flex items-center justify-between gap-2 text-xs text-amber-900">
                 <span className="truncate">
-                  {u.trimLabel} · <span className="font-mono">{u.fileName}</span>
+                  {u.trimLabel} ·{" "}
+                  {u.fileName ? (
+                    <span className="font-mono">{u.fileName}</span>
+                  ) : (
+                    <span className="italic">approved by hand</span>
+                  )}
                 </span>
                 <button
                   type="button"
@@ -216,6 +269,20 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
   );
 }
 
+// One manifest line. It can be in any of five states, and the card has to read
+// honestly in all of them:
+//
+//   nothing yet                → drop zone, plus "Approve" for the document
+//                                that is already in the folder
+//   file stored + pushed       → the file, its SharePoint link, replace/remove
+//   file stored, push failed   → the file, the reason, and "Approve" — the
+//                                operator's usual way out is to carry it across
+//                                by hand, which is precisely what Approve says
+//   approved by hand, no file  → the statement, with Undo; the drop zone stays,
+//                                because supplying the real file is still an
+//                                improvement on someone's word
+//   approved by hand + file    → both, with the statement explaining why a line
+//                                this app never pushed nonetheless counts
 function ZoneCard({
   line,
   accept,
@@ -224,6 +291,7 @@ function ZoneCard({
   styleId,
   onFile,
   onRemove,
+  onApprove,
 }: {
   line: Line;
   accept?: string;
@@ -232,8 +300,13 @@ function ZoneCard({
   styleId: string;
   onFile: (file: File) => void;
   onRemove: (upload: Upload) => void;
+  onApprove: (approved: boolean) => void;
 }) {
   const upload = line.upload;
+  const hasFile = upload?.fileName != null;
+  const approvedByHand = upload?.manuallyApproved === true;
+  // Nothing to approve once this app has the file in the folder itself.
+  const canApprove = !upload?.pushed && !approvedByHand;
 
   return (
     <div className="flex flex-col rounded-lg border border-zinc-200 bg-white p-3">
@@ -244,41 +317,80 @@ function ZoneCard({
         <StatePill upload={upload} />
       </div>
 
-      {upload ? (
-        <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2">
+        {upload && hasFile && (
           <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-xs">
             <a
               href={`/api/admin/styles/${styleId}/manual-trims/${upload.id}`}
               target="_blank"
               rel="noreferrer"
               className="block truncate font-medium text-zinc-800 underline-offset-2 hover:underline"
-              title={upload.originalName}
+              title={upload.originalName ?? undefined}
             >
               {upload.originalName}
             </a>
-            <p className="mt-0.5 truncate font-mono text-[10px] text-zinc-500" title={upload.fileName}>
+            <p className="mt-0.5 truncate font-mono text-[10px] text-zinc-500" title={upload.fileName ?? undefined}>
               {upload.fileName}
             </p>
-            <p className="mt-0.5 text-[10px] text-zinc-400">{formatBytes(upload.byteSize)}</p>
-          </div>
-
-          {upload.uploadError && (
-            <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
-              {upload.uploadError}
-            </p>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2">
-            {upload.webUrl && (
-              <a
-                href={upload.webUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded border border-zinc-300 bg-white px-2 py-1 text-[11px] font-medium text-zinc-700 hover:bg-zinc-50"
-              >
-                Open in SharePoint
-              </a>
+            {upload.byteSize != null && (
+              <p className="mt-0.5 text-[10px] text-zinc-400">{formatBytes(upload.byteSize)}</p>
             )}
+          </div>
+        )}
+
+        {/* The statement, stated. A line the cover calls approved on somebody's
+            word should say whose word it was on the screen where it was given. */}
+        {approvedByHand && (
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-[11px] text-emerald-900">
+            <p className="font-medium">Approved by hand — uploaded to SharePoint outside this app.</p>
+            <p className="mt-0.5 text-emerald-800">
+              The cover lists this line as approved
+              {upload?.manualApprovedAt ? ` since ${formatStamp(upload.manualApprovedAt)}` : ""}.
+              {hasFile ? " The file above stayed here; it was never pushed from this app." : ""}
+            </p>
+          </div>
+        )}
+
+        {upload?.uploadError && (
+          <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+            {upload.uploadError}
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          {upload?.webUrl && (
+            <a
+              href={upload.webUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded border border-zinc-300 bg-white px-2 py-1 text-[11px] font-medium text-zinc-700 hover:bg-zinc-50"
+            >
+              Open in SharePoint
+            </a>
+          )}
+          {canApprove && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onApprove(true)}
+              title="I have already put this document in the supplier's SharePoint folder myself — mark the cover line approved. Nothing is uploaded."
+              className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+            >
+              {busy ? "Working…" : "✓ Approve"}
+            </button>
+          )}
+          {approvedByHand && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onApprove(false)}
+              title="Take the statement back — the cover goes back to waiting for this line. Nothing is removed from SharePoint."
+              className="rounded border border-zinc-300 bg-white px-2 py-1 text-[11px] font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+            >
+              {busy ? "Working…" : "Undo approval"}
+            </button>
+          )}
+          {upload && hasFile && (
             <button
               type="button"
               disabled={busy}
@@ -287,32 +399,37 @@ function ZoneCard({
             >
               {busy ? "Working…" : "Remove"}
             </button>
-          </div>
+          )}
+        </div>
 
-          {/* Replace = drop a new file on the same line. The server overwrites
-              the row and the SharePoint file rather than adding a second one. */}
-          <FileDropZone accept={accept} busy={busy} onFiles={(files) => files[0] && onFile(files[0])}>
-            {({ dragOver, busy: b }) => (
+        {/* The drop zone never goes away while there is something better to
+            have: the real file. Only a line this app has already pushed is
+            finished, and there "replace" is what dropping means. */}
+        <FileDropZone accept={accept} busy={busy} onFiles={(files) => files[0] && onFile(files[0])}>
+          {({ dragOver, busy: b }) =>
+            hasFile ? (
               <span className="text-[11px] text-zinc-500">
                 {b ? "Uploading…" : dragOver ? "Drop to replace" : "Drop a new file to replace this"}
               </span>
-            )}
-          </FileDropZone>
-        </div>
-      ) : (
-        <FileDropZone accept={accept} busy={busy} onFiles={(files) => files[0] && onFile(files[0])}>
-          {({ dragOver, busy: b }) => (
-            <>
-              <span className="text-sm font-medium text-zinc-700">
-                {b ? "Uploading…" : dragOver ? "Drop it" : "Drop the document here"}
-              </span>
-              <span className="text-[11px] text-zinc-500">
-                or click to browse · PDF, artwork or an office document · max {formatBytes(maxBytes)}
-              </span>
-            </>
-          )}
+            ) : (
+              <>
+                <span className="text-sm font-medium text-zinc-700">
+                  {b
+                    ? "Uploading…"
+                    : dragOver
+                      ? "Drop it"
+                      : approvedByHand
+                        ? "Optional: keep a copy here too"
+                        : "Drop the document here"}
+                </span>
+                <span className="text-[11px] text-zinc-500">
+                  or click to browse · PDF, artwork or an office document · max {formatBytes(maxBytes)}
+                </span>
+              </>
+            )
+          }
         </FileDropZone>
-      )}
+      </div>
     </div>
   );
 }
@@ -325,7 +442,14 @@ function StatePill({ upload }: { upload: Upload | null }) {
       </span>
     );
   }
-  if (!upload.delivered) {
+  if (upload.manuallyApproved) {
+    return (
+      <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+        Approved by hand
+      </span>
+    );
+  }
+  if (!upload.pushed) {
     return (
       <span className="shrink-0 rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-medium text-zinc-700">
         Saved, not in the folder
@@ -337,6 +461,12 @@ function StatePill({ upload }: { upload: Upload | null }) {
       In the supplier folder
     </span>
   );
+}
+
+// Date only — the hour somebody pressed a button is noise on a manifest line.
+function formatStamp(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString();
 }
 
 function formatBytes(n: number): string {
