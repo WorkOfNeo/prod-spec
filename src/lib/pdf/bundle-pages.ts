@@ -85,19 +85,38 @@ export type GeneralInfoInput = {
 // Does this manifest have ≥1 not-yet-approved row?
 //
 // Two things key off this and they MUST agree:
-//   • the cover render — a pending row switches the Status column on, so the
-//     supplier reads the manifest as "what's still to come". When every row is
-//     approved (or approval isn't tracked, e.g. the editor preview) the sizes
-//     are all confirmed and the column would just be a wall of "Approved".
-//   • the "Regenerate cover pages" sweep — an all-approved cover prints no
-//     status wording at all, so re-rendering it changes nothing visible while
-//     still overwriting the supplier's file for a finished order. The sweep
-//     skips those (see refreshStyleCoverAsset's onlyWhenPending).
+//   • the cover render — a pending row prints the "Waiting for Customer
+//     Information" wording, in the Status cell and again in the note that
+//     explains the marking, so the supplier reads those rows as "still to come".
+//   • the "Regenerate cover pages" sweep — an all-approved manifest has
+//     nothing left to say, so re-rendering it only overwrites the supplier's
+//     file for a finished order. The sweep skips those (see
+//     refreshStyleCoverAsset's onlyWhenPending).
 //
 // Shared rather than duplicated: if these two ever disagreed, the sweep would
 // either skip covers that DO show pending wording or churn ones that don't.
+//
+// This is NOT what switches the Status column on — see hasTrackedApproval.
 export function hasPendingRows(docs: ReadonlyArray<{ approved?: boolean }>): boolean {
   return docs.some((d) => d.approved === false);
+}
+
+// Does this manifest know anything about delivery at all?
+//
+// That, and not hasPendingRows, is what puts the Status column on the page.
+// The column used to appear only alongside a pending row, on the reasoning
+// that an all-approved manifest would just be a wall of "Approved" — but a
+// cover with no status anywhere reads to the supplier as one nobody has
+// approved, which is exactly how a finished order was read in the field. It
+// now says so in as many words, row by row.
+//
+// Only a manifest where NO row carries a delivery state drops the column: the
+// layout editor's preview, which renders a cover with no style behind it, and
+// a manifest of nothing but packing instructions (an `info` row has no
+// `approved` flag by design — a hanger is never delivered). Those pages stay
+// byte-identical to what they have always been.
+export function hasTrackedApproval(docs: ReadonlyArray<{ approved?: boolean }>): boolean {
+  return docs.some((d) => d.approved !== undefined);
 }
 
 export function renderCoverPageHtml(input: CoverPageInput): string {
@@ -109,6 +128,9 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
   ];
 
   const hasPending = hasPendingRows(input.docs);
+  // Whether the Status column prints. Deliberately a WIDER test than
+  // hasPending: an approved row has something to say too.
+  const showStatus = hasTrackedApproval(input.docs);
   // Drives the second half of the note below: without a packing-instruction row
   // on the page, explaining that marking would describe something the supplier
   // cannot find — the same trap the pending wording has.
@@ -123,10 +145,12 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
   // otherwise from the house defaults — see src/lib/trims/concept-copy.ts. The
   // renderer only prints what the manifest resolved; it holds no special cases.
   const pendingWording = (d: BundleDocSummary): string => d.copy?.pending?.trim() || DEFAULT_PENDING_STATUS;
+  const deliveredWording = (d: BundleDocSummary): string =>
+    d.copy?.delivered?.trim() || DEFAULT_DELIVERED_STATUS;
   const statusCell = (d: BundleDocSummary): string => {
     if (d.kind === "info") return `<span class="note-cell">See packing instructions</span>`;
     if (d.approved === true) {
-      return `<span class="ok">${esc(d.copy?.delivered?.trim() || DEFAULT_DELIVERED_STATUS)}</span>`;
+      return `<span class="ok">${esc(deliveredWording(d))}</span>`;
     }
     if (d.approved === false) return `<span class="await">${esc(pendingWording(d))}</span>`;
     return "—";
@@ -136,6 +160,12 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
   // cannot find is the same trap the whole conditional note exists to avoid.
   const pendingWordings = [
     ...new Set(input.docs.filter((d) => d.approved === false).map(pendingWording)),
+  ];
+  // Same rule for the delivered side: a concept may reword it ("Approved" is
+  // only the house default), so the note names the marking that is actually in
+  // the table rather than the one we assume is there.
+  const deliveredWordings = [
+    ...new Set(input.docs.filter((d) => d.approved === true).map(deliveredWording)),
   ];
   const rows = input.docs
     .map((d, i) => {
@@ -166,7 +196,7 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
           <td class="num">${i + 1}</td>
           <td class="doc">${esc(d.displayName)}${suppliedAs}${conceptNote}</td>
           <td class="size">${size}</td>
-          ${hasPending ? `<td class="status">${statusCell(d)}</td>` : ""}
+          ${showStatus ? `<td class="status">${statusCell(d)}</td>` : ""}
         </tr>`;
     })
     .join("");
@@ -189,7 +219,7 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
     <table class="docs">
       <thead>
         <tr><th>#</th><th>Packaging</th><th>Size (W × H)</th>${
-          hasPending ? "<th>Status</th>" : ""
+          showStatus ? "<th>Status</th>" : ""
         }</tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -208,6 +238,15 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
               .map((w) => `<strong>${esc(w)}</strong>`)
               .join(" or ")} are still under review — their
       artwork will follow once approved, so please expect them.`
+          : ""
+      }${
+        // Nothing outstanding: say so. Silence here is what made a finished
+        // order look like one nobody had signed off.
+        !hasPending && deliveredWordings.length
+          ? ` Every item marked ${deliveredWordings
+              .map((w) => `<strong>${esc(w)}</strong>`)
+              .join(" or ")} is confirmed — that artwork is final and
+      nothing on this order is outstanding.`
           : ""
       }
     </p>`;

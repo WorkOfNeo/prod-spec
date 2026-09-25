@@ -31,10 +31,11 @@ export type CoverRefreshResult =
   // No cover asset exists yet (style never generated a bundle) — nothing to
   // refresh; it'll get the current format when it's first generated.
   | { styleId: string; status: "no-cover" }
-  // Every declared output is approved, so the cover's manifest prints no status
-  // wording at all — a rebuild would produce a visually identical page while
-  // overwriting the supplier's copy for a finished order. Only returned when
-  // the caller asks for it (onlyWhenPending).
+  // Every declared output is approved, so the manifest has nothing left to
+  // report — its rows already read "Approved" and a rebuild would produce a
+  // visually identical page while overwriting the supplier's copy for a
+  // finished order. Only returned when the caller asks for it
+  // (onlyWhenPending).
   | { styleId: string; status: "skipped-all-approved" }
   // The manifest this cover would print is byte-identical to the one it already
   // carries, so rebuilding it would overwrite a supplier's file to change
@@ -71,10 +72,17 @@ export async function getCurrentCoverAsset(
 export async function refreshStyleCoverAsset(
   styleId: string,
   opts?: {
-    // Skip styles whose every declared output is approved. Their manifest
-    // prints no status wording, so a rebuild is visually a no-op — but it still
-    // overwrites the cover in the supplier's folder for an order that's already
-    // finished. Off by default so the plain refresh path is unchanged.
+    // Skip styles whose every declared output is approved. Their manifest has
+    // nothing left to say — every row already reads "Approved" — so a rebuild
+    // is visually a no-op, but it still overwrites the cover in the supplier's
+    // folder for an order that's already finished. Off by default so the plain
+    // refresh path is unchanged.
+    //
+    // WATCH OUT after a change to what an ALL-APPROVED cover prints (the
+    // Approved column itself was one): this filter skips exactly the covers
+    // that change, and onlyWhenChanged skips them too, since the manifest DATA
+    // is the same and only the render moved. Such a rollout needs one sweep
+    // with both filters off.
     //
     // NOTE this filter lost most of its power when Monday's Trims entries
     // joined the manifest: a style that is waiting on a manually supplied

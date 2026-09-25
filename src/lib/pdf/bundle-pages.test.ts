@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   renderCoverPageHtml,
   hasPendingRows,
+  hasTrackedApproval,
   type BundleDocSummary,
   type CoverPageInput,
 } from "./bundle-pages";
@@ -90,14 +91,59 @@ test("a pending row is flagged with the agreed label, in the table and the note"
   assert.ok(!html.includes("Awaiting Contrast"), "the pre-rename wording is gone");
 });
 
-test("all-approved cover shows no Status column and no pending label", () => {
+// The whole point of the Status column on a finished order: a cover that says
+// nothing about approval reads as one nobody approved. Reported from the field
+// — every output approved, every manual trim hand-approved, and the supplier's
+// cover carried no approval anywhere.
+test("all-approved cover still says Approved — in the table and the note", () => {
   const html = renderCoverPageHtml({
     ...baseInput,
     generalInfo: null,
-    docs: [{ displayName: "Care Label 01", widthMm: 35, heightMm: 50, fileCount: 1, approved: true }],
+    docs: [
+      { displayName: "Care Label 01", widthMm: 35, heightMm: 50, fileCount: 1, approved: true },
+      { displayName: "Price Sticker", widthMm: 40, heightMm: 30, fileCount: 1, approved: true },
+    ],
   });
-  assert.ok(!html.includes("<th>Status</th>"), "no Status column when nothing is pending");
+  assert.ok(html.includes("<th>Status</th>"), "the Status column survives an all-approved manifest");
+  assert.ok(html.includes(`<span class="ok">Approved</span>`), "every row reads Approved");
+  assert.ok(html.includes("<strong>Approved</strong>"), "and the note names that marking");
+  assert.ok(html.includes("nothing on this order is outstanding"), "and says nothing is outstanding");
   assert.ok(!html.includes(PENDING_LABEL), "no pending label when nothing is pending");
+});
+
+test("the delivered wording in the note is the concept's, not the default", () => {
+  // Same trap as the pending side: naming a marking the supplier cannot find
+  // in the table is worse than saying nothing.
+  const html = renderCoverPageHtml({
+    ...baseInput,
+    generalInfo: null,
+    docs: [
+      {
+        displayName: "Banderole",
+        widthMm: 60,
+        heightMm: 40,
+        fileCount: 1,
+        approved: true,
+        copy: { delivered: "Photo samples received" },
+      },
+    ],
+  });
+  assert.ok(html.includes(`<span class="ok">Photo samples received</span>`));
+  assert.ok(html.includes("<strong>Photo samples received</strong>"), "the note quotes the same words");
+  assert.ok(!html.includes("<strong>Approved</strong>"), "and not the default it replaced");
+});
+
+test("a cover with no approval tracked at all keeps its columnless shape", () => {
+  // The layout editor's preview renders a cover with no style behind it, so no
+  // row has a delivery state and there is nothing to report.
+  const html = renderCoverPageHtml({
+    ...baseInput,
+    generalInfo: null,
+    docs: [{ displayName: "Care Label 01", widthMm: 35, heightMm: 50, fileCount: 1 }],
+  });
+  assert.ok(!html.includes("<th>Status</th>"), "no Status column when approval is untracked");
+  assert.ok(!html.includes(PENDING_LABEL));
+  assert.ok(!html.includes("is confirmed"), "and no approval claim either");
 });
 
 // hasPendingRows is the single predicate behind two decisions that must agree:
@@ -128,7 +174,8 @@ test("hasPendingRows — true only when a row is explicitly not approved", () =>
 
 test("hasPendingRows agrees with what the cover actually renders", () => {
   // The contract the sweep's skip relies on: predicate false ⇒ the rendered
-  // page contains no pending wording, so rebuilding it is a visual no-op.
+  // page carries no pending wording, so the manifest has nothing left to say
+  // and rebuilding it only overwrites a finished order's file.
   for (const docs of [
     [doc(true)],
     [doc(true), doc(true)],
@@ -138,7 +185,6 @@ test("hasPendingRows agrees with what the cover actually renders", () => {
     const html = renderCoverPageHtml({ ...baseInput, generalInfo: null, docs });
     assert.equal(hasPendingRows(docs), false, "precondition: predicate says nothing pending");
     assert.ok(!html.includes(PENDING_LABEL), "so the page shows no pending label");
-    assert.ok(!html.includes("<th>Status</th>"), "and no Status column");
   }
 
   // And the converse: predicate true ⇒ the wording IS on the page, so the
@@ -148,6 +194,23 @@ test("hasPendingRows agrees with what the cover actually renders", () => {
     assert.equal(hasPendingRows(docs), true, "precondition: predicate says pending");
     assert.ok(html.includes(PENDING_LABEL), "so the page shows the pending label");
     assert.ok(html.includes("<th>Status</th>"), "and the Status column");
+  }
+});
+
+// hasTrackedApproval is the other half: it, and not hasPendingRows, is what
+// puts the Status column on the page. Pinned against the render the same way,
+// because a cover that goes quiet about approval is read as unapproved.
+test("hasTrackedApproval agrees with whether the Status column prints", () => {
+  for (const docs of [[doc(true)], [doc(false)], [doc(true), doc(false)], [doc(true), doc(undefined)]]) {
+    const html = renderCoverPageHtml({ ...baseInput, generalInfo: null, docs });
+    assert.equal(hasTrackedApproval(docs), true, "precondition: approval is tracked");
+    assert.ok(html.includes("<th>Status</th>"), "so the column prints");
+  }
+
+  for (const docs of [[], [doc(undefined)], [doc(undefined), doc(undefined)]]) {
+    const html = renderCoverPageHtml({ ...baseInput, generalInfo: null, docs });
+    assert.equal(hasTrackedApproval(docs), false, "precondition: nothing tracked");
+    assert.ok(!html.includes("<th>Status</th>"), "so no column");
   }
 });
 
