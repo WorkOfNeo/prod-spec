@@ -4,12 +4,15 @@ import { formatDate } from "@/lib/utils";
 import { timeAgo } from "@/lib/time";
 import { requireAdminPage } from "@/lib/auth-server";
 import { activeStylesWhere } from "@/lib/styles/active-filter";
+import { RejectionRowActions } from "./rejection-row-actions";
 
 // =====================================================
 // Admin oversight panel (/admin). One admin-only page, four tabs:
 //   views      — full chronological log of who opened a style and when
 //   approvals  — outputs currently approved (who/what/when)
-//   rejections — rejection tickets with their message + a link to the output
+//   rejections — rejection tickets with their message, links to the output and
+//                the customer × business-area prod spec, and per-ticket
+//                mark-fixed actions (with or without a re-render)
 //   gaps       — Customer × Business Area with active styles but no actively
 //                generating prod spec (inactive OR missing)
 // Each tab is its own async server component, so only the active tab queries.
@@ -394,15 +397,51 @@ async function RejectionsTab() {
     include: { reportedBy: { select: { name: true, email: true } } },
   });
 
+  // The prod spec behind each ticket's customer × business area. Prefer the
+  // style's applied spec — that's what actually generated the rejected output —
+  // and fall back to the customer|BA combo so a style that never resolved one
+  // (ingest gap, spec created later) still links where the fix belongs.
+  const styleIds = [...new Set(tickets.map((t) => t.styleId))];
+  const styles =
+    styleIds.length === 0
+      ? []
+      : await db.style.findMany({
+          where: { id: { in: styleIds } },
+          select: { id: true, prodSpecId: true, customerId: true, businessAreaId: true },
+        });
+
+  // Combo lookup only for the stragglers that never resolved an applied spec —
+  // normally none, so this second query usually doesn't run at all.
+  const unresolved = styles.filter(
+    (s): s is typeof s & { businessAreaId: string } => !s.prodSpecId && !!s.businessAreaId,
+  );
+  const specByCombo = new Map<string, string>();
+  if (unresolved.length > 0) {
+    const specs = await db.prodSpec.findMany({
+      where: {
+        OR: unresolved.map((s) => ({ customerId: s.customerId, businessAreaId: s.businessAreaId })),
+      },
+      select: { id: true, customerId: true, businessAreaId: true },
+    });
+    for (const p of specs) specByCombo.set(`${p.customerId}|${p.businessAreaId}`, p.id);
+  }
+
+  const prodSpecByStyle = new Map(
+    styles.map((s) => [
+      s.id,
+      s.prodSpecId ?? specByCombo.get(`${s.customerId}|${s.businessAreaId}`) ?? null,
+    ]),
+  );
+
   return (
     <>
       <p className="mb-3 text-xs text-zinc-400">
-        Every rejection ticket with the reviewer&rsquo;s message and a link to the output. Work them on
-        the{" "}
+        Every rejection ticket with the reviewer&rsquo;s message, links to the output and the prod spec
+        behind it, and the same mark-fixed actions the{" "}
         <Link href="/settings/rejection-log" className="underline">
           rejection log
-        </Link>
-        . Latest 200.
+        </Link>{" "}
+        offers — that workbench still has the previews, AI fix and bulk tools. Latest 200.
       </p>
       <TableShell
         head={
@@ -412,12 +451,13 @@ async function RejectionsTab() {
             <th className="px-4 py-3">Output</th>
             <th className="px-4 py-3">Message</th>
             <th className="px-4 py-3">Status</th>
-            <th className="px-4 py-3">Link</th>
+            <th className="px-4 py-3">Links</th>
+            <th className="px-4 py-3">Actions</th>
           </tr>
         }
       >
         {tickets.length === 0 ? (
-          <EmptyRow colSpan={6}>No rejections logged.</EmptyRow>
+          <EmptyRow colSpan={7}>No rejections logged.</EmptyRow>
         ) : (
           tickets.map((t) => (
             <tr key={t.id} className="border-t border-zinc-100 align-top hover:bg-zinc-50">
@@ -444,10 +484,35 @@ async function RejectionsTab() {
               <td className="whitespace-nowrap px-4 py-3">
                 <Link
                   href={`/styles/${t.styleId}/review`}
-                  className="text-zinc-800 underline hover:text-zinc-950"
+                  className="block text-zinc-800 underline hover:text-zinc-950"
                 >
                   Output →
                 </Link>
+                {prodSpecByStyle.get(t.styleId) ? (
+                  <a
+                    href={`/prod-specs/${prodSpecByStyle.get(t.styleId)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open the prod spec for this customer / business area (new tab)"
+                    className="mt-1 block text-zinc-500 underline hover:text-zinc-900"
+                  >
+                    Prod spec ↗
+                  </a>
+                ) : (
+                  <span
+                    className="mt-1 block text-zinc-300"
+                    title="No prod spec for this customer / business area yet — see the Config gaps tab."
+                  >
+                    Prod spec —
+                  </span>
+                )}
+              </td>
+              <td className="px-4 py-3">
+                {t.status === "OPEN" || t.status === "IN_PROGRESS" ? (
+                  <RejectionRowActions ticketId={t.id} />
+                ) : (
+                  <span className="text-xs text-zinc-300">—</span>
+                )}
               </td>
             </tr>
           ))
