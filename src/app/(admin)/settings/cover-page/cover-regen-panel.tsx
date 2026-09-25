@@ -215,10 +215,11 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
               className="mt-0.5"
             />
             <span>
-              Skip styles where every output is approved. Their manifest shows no
-              status column at all, so rebuilding changes nothing a supplier can see — but it
-              still overwrites the cover in the folder for an order that&rsquo;s already finished.
-              Uncheck only if you changed something that shows on every cover.
+              Skip styles where every output is approved. Their cover already prints the
+              finished manifest, every row marked Approved, so rebuilding changes nothing a
+              supplier can see — but it still overwrites the cover in the folder for an order
+              that&rsquo;s already finished. Uncheck only if you changed something that shows on
+              every cover — including anything about how an all-approved cover reads.
             </span>
           </label>
           <label className="mt-3 flex items-start gap-2 text-[13px] text-amber-900">
