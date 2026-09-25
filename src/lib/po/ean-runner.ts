@@ -9,7 +9,14 @@ import { triggerRunner } from "@/lib/queue/trigger";
 import { maybeEnqueueStyleGeneration } from "@/lib/queue/generation-sweep";
 import { getAutomationMinPo } from "@/lib/settings/app-settings";
 import { resolveStyleEans, type StyleEanStatus as ResolveStatus } from "./resolve-style-eans";
-import { MAX_EAN_ATTEMPTS, FLOATABLE_STATUSES } from "./ean-status-meta";
+import {
+  MAX_EAN_ATTEMPTS,
+  FLOATABLE_STATUSES,
+  RECYCLE_MIN_AGE_MS,
+  RECYCLE_DAILY_QUOTA,
+  RECYCLE_PER_TICK,
+  RECYCLE_CRON_KIND,
+} from "./ean-status-meta";
 import {
   resolveStyleEansFromMonday,
   readMondayCartonOverlay,
@@ -119,6 +126,129 @@ export async function runPendingEanResolutions(
     }
   }
 
+  return summary;
+}
+
+// =====================================================
+// Recycle lane — the slow second pass over rows the fast lane gave up on.
+//
+// After MAX_EAN_ATTEMPTS strikes requeueRetryable() stops re-queueing a row,
+// so it rests indefinitely. That's wrong for the dominant failure mode: 91% of
+// the gave-up pile is PO_FOUND_NO_EANS, which means "the supplier hasn't added
+// the barcode page to the PO *yet*". Only another scrape can discover that
+// they have. This lane rotates the pile least-recently-checked first, bounded
+// by an age floor (RECYCLE_MIN_AGE_MS) and a 24h quota (RECYCLE_DAILY_QUOTA).
+//
+// It rides the existing EAN cron tick rather than a schedule of its own, so
+// there's no new Railway cron to register. Scope follows the PO cutoff — a
+// parked (below-cutoff) row is never recycled, matching the fast lane.
+//
+// Nothing here resets a row's status: a recycle check that fails just stamps
+// eanResolvedAt (sending it to the back of the queue) and bumps eanAttempts,
+// which doubles as the "times checked" counter. A check that SUCCEEDS goes
+// through the normal persist path — status flips to RESOLVED*/PARTIAL, the
+// counter resets, and the generation handoff fires — so the row leaves the
+// pile on its own.
+// =====================================================
+
+export type EanRecycleSummary = {
+  checked: number;
+  recovered: number;
+  styleIds: string[];
+};
+
+// How much of the rolling-24h recycle budget is left. Summed from the recycle
+// lane's own CronRun rows, so it survives restarts and is visible on
+// /automation — no extra bookkeeping table.
+async function recycleQuotaRemaining(): Promise<number> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const agg = await db.cronRun.aggregate({
+    where: { kind: RECYCLE_CRON_KIND, createdAt: { gte: since } },
+    _sum: { processed: true },
+  });
+  return Math.max(0, RECYCLE_DAILY_QUOTA - (agg._sum.processed ?? 0));
+}
+
+// Claim the least-recently-checked gave-up row that's past the age floor and
+// flip it to RESOLVING. Mirrors claimNextPendingStyle's FOR UPDATE SKIP LOCKED
+// so two overlapping sweeps can't grab the same style. A row left RESOLVING by
+// a crashed pass is recovered by releaseStaleResolving() like any other.
+async function claimNextRecycleStyle(minPo: number | null): Promise<{ id: string } | null> {
+  const staleBefore = new Date(Date.now() - RECYCLE_MIN_AGE_MS);
+  // Compared as text: casting a JS string[] to the Postgres enum array type
+  // needs an explicit cast that the adapter won't infer.
+  const statuses = [...FLOATABLE_STATUSES] as string[];
+  const rows = minPo !== null
+    ? await db.$queryRaw<Array<{ id: string }>>`
+        UPDATE styles
+        SET "eanStatus" = 'RESOLVING', "eanResolveStartedAt" = NOW(), "updatedAt" = NOW()
+        WHERE id = (
+          SELECT id FROM styles
+          WHERE "poNumber" IS NOT NULL
+            AND "eanStatus"::text = ANY(${statuses})
+            AND "eanAttempts" >= ${MAX_EAN_ATTEMPTS}
+            AND "poSeq" >= ${minPo}
+            AND ("eanResolvedAt" IS NULL OR "eanResolvedAt" < ${staleBefore})
+          ORDER BY "eanResolvedAt" ASC NULLS FIRST
+          FOR UPDATE SKIP LOCKED
+          LIMIT 1
+        )
+        RETURNING id
+      `
+    : await db.$queryRaw<Array<{ id: string }>>`
+        UPDATE styles
+        SET "eanStatus" = 'RESOLVING', "eanResolveStartedAt" = NOW(), "updatedAt" = NOW()
+        WHERE id = (
+          SELECT id FROM styles
+          WHERE "poNumber" IS NOT NULL
+            AND "eanStatus"::text = ANY(${statuses})
+            AND "eanAttempts" >= ${MAX_EAN_ATTEMPTS}
+            AND ("eanResolvedAt" IS NULL OR "eanResolvedAt" < ${staleBefore})
+          ORDER BY "eanResolvedAt" ASC NULLS FIRST
+          FOR UPDATE SKIP LOCKED
+          LIMIT 1
+        )
+        RETURNING id
+      `;
+  return rows[0] ?? null;
+}
+
+// One recycle slice. Returns {checked: 0} cheaply when the quota is spent or
+// nothing is due, so it's safe to call on every cron tick.
+export async function runEanRecycle(limit = RECYCLE_PER_TICK): Promise<EanRecycleSummary> {
+  const summary: EanRecycleSummary = { checked: 0, recovered: 0, styleIds: [] };
+
+  const budget = Math.min(limit, await recycleQuotaRemaining());
+  if (budget <= 0) return summary;
+
+  const minPo = await getAutomationMinPo();
+
+  for (let i = 0; i < budget; i++) {
+    const claimed = await claimNextRecycleStyle(minPo);
+    if (!claimed) break;
+    summary.styleIds.push(claimed.id);
+    summary.checked++;
+    try {
+      const view = await resolveAndPersistStyleEans(claimed.id);
+      // "Recovered" = the row left the gave-up pile under its own steam.
+      if (["RESOLVED", "RESOLVED_FROM_MONDAY", "PARTIAL"].includes(view.status)) {
+        summary.recovered++;
+      }
+    } catch (err) {
+      // markEanError stamps eanResolvedAt, so a throwing row still rotates to
+      // the back of the cycle rather than being re-claimed on the next tick.
+      await markEanError(claimed.id, (err as Error).message);
+    }
+  }
+
+  if (summary.recovered > 0) {
+    await db.log.create({
+      data: {
+        level: "INFO",
+        message: `ean recycle: recovered ${summary.recovered}/${summary.checked} gave-up styles`,
+      },
+    });
+  }
   return summary;
 }
 
