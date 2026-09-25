@@ -5,6 +5,9 @@ import { sweepReadyStyleGenerations, describeGenSweep, type GenSweepSummary } fr
 import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin } from "@/lib/roles";
 import { triggerRunner } from "@/lib/queue/trigger";
+// Type-only: the module itself is dynamically imported below so the Graph stack
+// stays out of the hot inline-trigger path.
+import type { DeliveryTickOutcome } from "@/lib/sharepoint/po-delivery-tick";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -86,6 +89,24 @@ export async function POST(req: NextRequest) {
     draining = false;
   }
 
+  // Piggyback: the PO delivery audit rides this tick rather than needing its own
+  // Railway cron service (there are only two, both added by hand in the
+  // dashboard). SWEEP ONLY — the inline webhook trigger hits this endpoint after
+  // every enqueue and must stay fast. The slice throttles itself to ~15 minutes,
+  // sizes itself from the budget this drain left behind, and never throws; see
+  // po-delivery-tick.ts. Read-only: it records what is missing, it never pushes.
+  //
+  // Skipped when the drain came up FULL: that means more jobs are queued and
+  // the self-chain below is about to fire, so spending up to a minute auditing
+  // folders would stall a bulk "Run all" mid-flight. Generation has priority;
+  // the audit waits for a tick where the queue has room.
+  const queueSaturated = summary.jobIds.length >= limit;
+  let deliveryTick: DeliveryTickOutcome | null = null;
+  if (sweep && !queueSaturated) {
+    const { maybeSweepPoDeliveryTick } = await import("@/lib/sharepoint/po-delivery-tick");
+    deliveryTick = await maybeSweepPoDeliveryTick(startedAt);
+  }
+
   // Record cron ticks (sweep) + operator "Run now" (session); skip the
   // high-frequency inline webhook triggers (secret without sweep).
   if (sweep || authz.source === "session") {
@@ -112,11 +133,11 @@ export async function POST(req: NextRequest) {
   // continuously. Fired AFTER releasing the guard so the next invocation can
   // claim it. The chain ends on its own when a drain comes up short (queue
   // emptied → fewer than `limit` claimed → no re-trigger).
-  if (summary.jobIds.length >= limit) {
+  if (queueSaturated) {
     void triggerRunner();
   }
 
-  return NextResponse.json({ ...summary, sweepEnqueued });
+  return NextResponse.json({ ...summary, sweepEnqueued, deliveryTick });
 }
 
 export function GET() {
