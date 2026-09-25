@@ -104,6 +104,7 @@ export function assembleRequiredPackagingDocs(
     overrides: trimContext.overrides,
     manualDelivered: trimContext.manualDelivered,
     conceptCopy: trimContext.conceptCopy,
+    customerId: trimContext.customerId,
   });
 }
 
@@ -195,6 +196,7 @@ export async function buildRequiredPackagingForStyle(
       cartonEan: true,
       supplier: { select: { country: true } },
       eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, cartonEan: true } },
+      customerId: true,
       customer: { select: { config: true } },
       prodSpec: { select: { outputs: true, columnMapping: true } },
     },
@@ -280,5 +282,9 @@ export async function buildRequiredPackagingForStyle(
     ...settings,
     trimLabels,
     manualDelivered,
+    // Selects this buyer's status wording out of the settings blob above. The
+    // blob is global and shared across a sweep; this is what makes two styles
+    // loaded from one `trimSettings` still print their own customers' words.
+    customerId: style.customerId,
   });
 }

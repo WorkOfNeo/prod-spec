@@ -87,6 +87,13 @@ export type TrimManifestInput = {
   // built-in defaults, so a caller that knows nothing about copy still prints
   // the standing notes.
   conceptCopy?: TrimConceptCopyMap;
+  // WHOSE cover this is, so a row whose status wording was written for this
+  // buyer prints that instead of the row's own. Per STYLE, unlike everything
+  // else on this input bar the labels: the copy MAP is one global settings
+  // blob threaded across a whole sweep, and the customer is what selects out
+  // of it per style. Absent ⇒ the row's own wording, which is every caller
+  // with no style behind it.
+  customerId?: string | null;
 };
 
 // Strongest-first. A row advertising "we produce this" must not be downgraded
@@ -137,6 +144,7 @@ export function assembleTrimManifest(input: TrimManifestInput): BundleDocSummary
   const { trimLabels, rules, overrides } = input;
   const manualDelivered = input.manualDelivered ?? new Set<string>();
   const conceptCopy = input.conceptCopy ?? DEFAULT_TRIM_CONCEPT_COPY;
+  const customerId = input.customerId ?? null;
 
   // A hidden row leaves the picture HERE, before anything else runs, so every
   // rule below is written against a world in which it does not exist — no
@@ -229,7 +237,7 @@ export function assembleTrimManifest(input: TrimManifestInput): BundleDocSummary
         fileCount: single ? single.fileCount : null,
         approved: matched.every((o) => o.approved),
         kind: "app",
-        ...copyField(resolveTrimCopy(concepts, conceptCopy)),
+        ...copyField(resolveTrimCopy(concepts, conceptCopy, { customerId })),
       });
       continue;
     }
@@ -247,7 +255,9 @@ export function assembleTrimManifest(input: TrimManifestInput): BundleDocSummary
       // allowStatus follows the row's delivery state, not the wording: an info
       // row has none, so it must not pick up "waiting"/"delivered" phrasing
       // from any concept it happens to name.
-      ...copyField(resolveTrimCopy(concepts, conceptCopy, { allowStatus: kind !== "info" })),
+      ...copyField(
+        resolveTrimCopy(concepts, conceptCopy, { allowStatus: kind !== "info", customerId }),
+      ),
     });
   }
 
@@ -263,7 +273,7 @@ export function assembleTrimManifest(input: TrimManifestInput): BundleDocSummary
       fileCount: o.fileCount,
       approved: o.approved,
       kind: "app",
-      ...copyField(resolveTrimCopy(o.concept ? [o.concept] : [], conceptCopy)),
+      ...copyField(resolveTrimCopy(o.concept ? [o.concept] : [], conceptCopy, { customerId })),
     });
   }
 

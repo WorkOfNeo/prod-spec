@@ -2373,6 +2373,28 @@ model TrimConceptRow {
   pendingStatus   String?
   deliveredStatus String?
 
+  // PER-CUSTOMER status wording, overriding the two columns above for the
+  // customers it names. A banderole for Netto reads "Awaiting Photo Samples
+  // from the supplier."; the same banderole for another buyer may not, and the
+  // difference is about the BUYER rather than about the kind of packaging, so
+  // it cannot live in the columns above.
+  //
+  // STILL NOT A PER-CUSTOMER ROW. The row — what this kind of packaging is,
+  // whether it has a file, whether it prints — stays global, for exactly the
+  // reason the whole concept layer exists (see src/lib/trims/concepts.ts): a
+  // per-customer "Care label" would have to be remapped for every customer we
+  // take on. Only the two SENTENCES vary here, and only for the customers
+  // explicitly named; every other customer reads the row's own wording.
+  //
+  // Shape: [{ customerIds: string[], pending?: string, delivered?: string }],
+  // validated on write by normalizeTrimConceptRows. An array rather than a
+  // map keyed by customer because one sentence usually covers several buyers
+  // at once, and writing it three times is three places for it to drift.
+  //
+  // Stripped on an artwork:false row, exactly as the two columns above are: a
+  // polybag has no delivery state for any customer.
+  customerCopy Json?
+
   // Display order on the settings screens only. The cover's own order comes
   // from Monday's Trims column, never from here.
   sortOrder Int @default(0)

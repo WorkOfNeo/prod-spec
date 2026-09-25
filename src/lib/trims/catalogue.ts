@@ -34,9 +34,11 @@
 // costs us elsewhere.
 // =====================================================
 
+import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import {
   DEFAULT_TRIM_CONCEPT_ROWS,
+  normalizeCustomerCopy,
   normalizeTrimConceptRows,
   setTrimConceptCatalogue,
   uniqueTrimConceptValue,
@@ -50,6 +52,7 @@ type DbRow = {
   note: string | null;
   pendingStatus: string | null;
   deliveredStatus: string | null;
+  customerCopy: unknown;
   sortOrder: number;
   builtIn: boolean;
   active: boolean;
@@ -70,6 +73,10 @@ function fromDb(row: DbRow): TrimConceptRow {
       note: row.note ?? undefined,
       pending: row.pendingStatus ?? undefined,
       delivered: row.deliveredStatus ?? undefined,
+      // A Json column: whatever is in there is re-validated by
+      // normalizeCustomerCopy on the way through, so a row hand-edited in SQL
+      // cannot hand the render chain a shape it does not expect.
+      customerCopy: normalizeCustomerCopy(row.customerCopy),
       sortOrder: row.sortOrder,
       builtIn: row.builtIn,
       active: row.active,
@@ -156,6 +163,15 @@ export async function saveTrimConceptRows(
       // these for a packing instruction.
       pendingStatus: row.pending ?? null,
       deliveredStatus: row.delivered ?? null,
+      // DbNull rather than [] when empty, so a row with no overrides reads back
+      // exactly as it did before this column existed. Prisma's DbNull (SQL
+      // NULL) rather than JsonNull (the JSON value `null`): the column is
+      // nullable, and a JSON `null` sitting in it would be a third state for
+      // normalizeCustomerCopy to have an opinion about.
+      customerCopy:
+        row.customerCopy.length > 0
+          ? (row.customerCopy as unknown as Prisma.InputJsonValue)
+          : Prisma.DbNull,
       sortOrder: row.sortOrder,
       active: row.active,
       // normalizeTrimConceptRows has already forced alwaysManual off for a

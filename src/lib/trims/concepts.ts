@@ -137,6 +137,39 @@ export type TrimConcept = {
   note?: string;
   pending?: string;
   delivered?: string;
+  // PER-CUSTOMER status wording. Each entry names the customers it applies to
+  // and the sentences they read instead of `pending` / `delivered` above.
+  //
+  // WHY THE ROW STAYS GLOBAL ANYWAY. Everything else about a row — what this
+  // kind of packaging is, whether it has a file, whether it prints — is a
+  // property of the packaging, and the header above is the argument for why
+  // that must never become per-customer. What a BUYER is told while they wait
+  // is not a property of the packaging: "Awaiting Photo Samples from the
+  // supplier." is true of a Netto banderole because of how Netto works, not
+  // because of how banderoles work. So exactly two sentences vary, for exactly
+  // the customers named, and nothing else does.
+  //
+  // Absent or empty ⇒ every customer reads the row's own wording, which is the
+  // behaviour that predates this field. Read it through customerTrimCopy,
+  // never directly — the lookup has to survive a hand-edited row.
+  customerCopy?: TrimCustomerCopy[];
+};
+
+// One per-customer wording override. `customerIds` are Customer.id values; a
+// customer deleted out from under one simply never matches again, which is why
+// this stores ids and resolves names at render/edit time rather than caching a
+// name that would go stale.
+//
+// An entry with no customers, or with neither sentence filled in, says nothing
+// and is dropped on write rather than stored as an empty husk — the same
+// sparseness rule the concept copy map keeps, and for the same reason: a row
+// that prints no override must fingerprint exactly as it did before overrides
+// existed, or the whole estate sweeps into a rebuild for covers that read the
+// same.
+export type TrimCustomerCopy = {
+  customerIds: string[];
+  pending?: string;
+  delivered?: string;
 };
 
 // One row as the table stores it: a concept plus the three columns that are
@@ -160,6 +193,11 @@ export type TrimConceptRow = TrimConcept & {
   // the seed and a hand-built concept can arrive without them.
   alwaysManual: boolean;
   printOnCover: boolean;
+  // Required on a stored row for the same reason the two booleans above are:
+  // everything that has been through normalizeTrimConceptRows carries an
+  // explicit value, so a reader holding a ROW never has to decide what
+  // `undefined` meant. Empty array ⇒ no customer reads anything special.
+  customerCopy: TrimCustomerCopy[];
 };
 
 // The seed catalogue. Values are stable ids (stored in the per-label mapping and
@@ -216,6 +254,7 @@ export const DEFAULT_TRIM_CONCEPT_ROWS: TrimConceptRow[] = DEFAULT_TRIM_CONCEPTS
     active: true,
     alwaysManual: false,
     printOnCover: true,
+    customerCopy: [],
   }),
 );
 
@@ -347,6 +386,86 @@ export function uniqueTrimConceptValue(label: string, taken: ReadonlySet<string>
 // order, and silently keeping the last would make an accidental duplicate
 // overwrite the row a person was actually editing.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Per-customer status wording.
+// ---------------------------------------------------------------------------
+
+// The override that applies to ONE customer on ONE row, or undefined when the
+// customer is not named (the overwhelmingly common case) or the row has none.
+//
+// FIRST ENTRY NAMING THE CUSTOMER WINS, and normalizeCustomerCopy has already
+// made that unambiguous by dropping a repeat naming of the same customer. The
+// tie-break is stated here as well because a row hand-edited in SQL can still
+// arrive with one, and a resolver that silently merged two entries would print
+// a sentence nobody wrote.
+export function customerTrimCopy(
+  row: Pick<TrimConcept, "customerCopy"> | null | undefined,
+  customerId: string | null | undefined,
+): { pending?: string; delivered?: string } | undefined {
+  if (!customerId) return undefined;
+  const list = row?.customerCopy;
+  if (!Array.isArray(list)) return undefined;
+  for (const entry of list) {
+    if (!Array.isArray(entry?.customerIds)) continue;
+    if (!entry.customerIds.includes(customerId)) continue;
+    const out: { pending?: string; delivered?: string } = {};
+    if (typeof entry.pending === "string" && entry.pending.trim()) out.pending = entry.pending.trim();
+    if (typeof entry.delivered === "string" && entry.delivered.trim()) {
+      out.delivered = entry.delivered.trim();
+    }
+    // An entry naming this customer but saying nothing is not a match: the
+    // customer falls through to the row's own wording rather than to a blank.
+    return Object.keys(out).length > 0 ? out : undefined;
+  }
+  return undefined;
+}
+
+// Shape-validate the override list on the way in. Anything that could not be
+// displayed or could not be resolved is dropped rather than stored:
+//
+//   * an entry naming no customer, or neither sentence — it says nothing, and
+//     an empty husk would make the row's fingerprint move for a cover that
+//     reads identically (see TrimCustomerCopy);
+//   * a second naming of a customer an earlier entry already claimed — the
+//     resolver takes the first, so keeping the second would leave a sentence
+//     visible in the editor that no cover will ever print. It is removed from
+//     the later entry only; that entry survives for its other customers.
+export function normalizeCustomerCopy(
+  list: unknown,
+): TrimCustomerCopy[] {
+  if (!Array.isArray(list)) return [];
+  const out: TrimCustomerCopy[] = [];
+  const claimed = new Set<string>();
+  for (const raw of list) {
+    const entry = raw as Partial<TrimCustomerCopy> | null;
+    const ids = Array.isArray(entry?.customerIds)
+      ? Array.from(
+          new Set(
+            entry.customerIds
+              .filter((id): id is string => typeof id === "string")
+              .map((id) => id.trim())
+              .filter((id) => id !== "" && !claimed.has(id)),
+          ),
+        )
+      : [];
+    if (ids.length === 0) continue;
+    const text = (v: unknown): string | undefined => {
+      const t = typeof v === "string" ? v.trim() : "";
+      return t === "" ? undefined : t;
+    };
+    const pending = text(entry?.pending);
+    const delivered = text(entry?.delivered);
+    if (!pending && !delivered) continue;
+    for (const id of ids) claimed.add(id);
+    out.push({
+      customerIds: ids,
+      ...(pending ? { pending } : {}),
+      ...(delivered ? { delivered } : {}),
+    });
+  }
+  return out;
+}
+
 export function normalizeTrimConceptRows(
   rows: ReadonlyArray<Partial<TrimConceptRow>>,
 ): TrimConceptRow[] {
@@ -384,6 +503,10 @@ export function normalizeTrimConceptRows(
       // Default TRUE: an absent flag means a row written before this existed,
       // and it printed.
       printOnCover: row.printOnCover !== false,
+      // Stripped on a packing instruction alongside the two status columns it
+      // overrides — an override of nothing is nothing, and storing it would
+      // leave a row whose editor showed wording the cover can never print.
+      customerCopy: artwork ? normalizeCustomerCopy(row.customerCopy) : [],
     });
   });
   return out;

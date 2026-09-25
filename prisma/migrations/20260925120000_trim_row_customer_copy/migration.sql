@@ -1,0 +1,28 @@
+-- Per-customer status wording on the cover page's packaging rows.
+--
+-- One packaging row says two sentences: what the Status column reads while the
+-- artwork is still to come, and what it reads once the artwork is confirmed.
+-- Both are properties of the KIND OF PACKAGING ("Awaiting Photo Samples from
+-- the supplier." is true of banderoles because of how banderoles are drawn),
+-- which is why they sit on the row and not in a per-customer text block.
+--
+-- What this column adds is the case that is genuinely about the BUYER rather
+-- than about the packaging: a banderole for one customer is waited on
+-- differently from a banderole for another, and only the two sentences differ.
+-- Everything else about the row — its name, whether it has a file, whether it
+-- prints — stays global, exactly as src/lib/trims/concepts.ts requires. A row
+-- per customer is the per-customer layout mapping again, wearing a hat.
+--
+-- Shape: [{ "customerIds": ["<Customer.id>", ...], "pending": "...",
+--           "delivered": "..." }]
+-- validated on every read AND every write by normalizeCustomerCopy, so a row
+-- hand-edited in SQL cannot hand the render chain a shape it does not expect.
+--
+-- NULLABLE WITH NO DEFAULT, so applying this changes no cover: every existing
+-- row comes out with no overrides, every customer reads the row's own wording,
+-- and each row's manifest fingerprint is byte-identical to yesterday's. An
+-- override only does something once a person writes one against a named
+-- customer. Stripped on an artwork = false row, alongside the two status
+-- columns it overrides — a polybag has no delivery state for anybody.
+ALTER TABLE "trim_concept_rows"
+  ADD COLUMN "customerCopy" JSONB;

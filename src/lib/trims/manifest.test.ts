@@ -444,6 +444,65 @@ test("the wording is stored data, so a different setting produces different word
   assert.equal(docs[0].copy?.pending, "Awaiting supplier samples");
 });
 
+test("a client with its own wording gets it, and the next client does not", () => {
+  // End to end, on the case that asked for the feature: a Netto banderole is
+  // waited on differently from anyone else's, and the difference is about the
+  // BUYER rather than about banderoles. The row stays global — same name, same
+  // kind, same everything — and only the two sentences move.
+  const conceptCopy = conceptCopyFromRows([
+    {
+      value: "BANDEROLE",
+      label: "Banderole",
+      artwork: true,
+      pending: "Awaiting Photo Samples from the supplier.",
+      customerCopy: [
+        {
+          customerIds: ["cust_netto_de"],
+          pending: "Banderole artwork follows once samples are photographed.",
+        },
+      ],
+    },
+  ]);
+  const input = { trimLabels: ["Banderole"], outputs: [], rules: RULES, overrides: {} } as const;
+
+  const netto = assembleTrimManifest({ ...input, conceptCopy, customerId: "cust_netto_de" });
+  assert.equal(
+    netto[0].copy?.pending,
+    "Banderole artwork follows once samples are photographed.",
+  );
+  // Same row, same assembler, different buyer.
+  const other = assembleTrimManifest({ ...input, conceptCopy, customerId: "cust_someone_else" });
+  assert.equal(other[0].copy?.pending, "Awaiting Photo Samples from the supplier.");
+  // And the row itself is unchanged in every other respect — this is wording,
+  // not a second row.
+  assert.equal(netto[0].displayName, other[0].displayName);
+  assert.equal(netto[0].kind, other[0].kind);
+});
+
+test("a cover whose client has no wording fingerprints exactly as before", () => {
+  // The no-op guarantee. Adding the feature must not move a single existing
+  // cover's fingerprint, or the whole estate sweeps into a rebuild for pages
+  // that read identically.
+  const rows = [
+    {
+      value: "BANDEROLE",
+      label: "Banderole",
+      artwork: true,
+      pending: "Awaiting Photo Samples from the supplier.",
+    },
+  ];
+  const input = { trimLabels: ["Banderole"], outputs: [], rules: RULES, overrides: {} } as const;
+  const before = assembleTrimManifest({ ...input, conceptCopy: conceptCopyFromRows(rows) });
+  const after = assembleTrimManifest({
+    ...input,
+    conceptCopy: conceptCopyFromRows([
+      { ...rows[0], customerCopy: [{ customerIds: ["cust_netto_de"], pending: "Their words" }] },
+    ]),
+    customerId: "cust_someone_else",
+  });
+  assert.equal(manifestFingerprint(before), manifestFingerprint(after));
+});
+
 test("a packing instruction is given no status wording, whatever is configured", () => {
   // The hard rule, end to end: Master Polybag is on 1,733 styles and must stay
   // a note. A status would park all of them at "waiting" forever and bury the

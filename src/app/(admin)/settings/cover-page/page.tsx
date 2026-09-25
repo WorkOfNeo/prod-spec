@@ -10,7 +10,7 @@ import { CoverChangesPanel } from "./cover-changes-panel";
 import { CoverRegenPanel } from "./cover-regen-panel";
 import { TrimsSwitch } from "./trims-switch";
 import { GeneralInfoEditor, type ProdSpecOption } from "./general-info-editor";
-import { PackagingRowsEditor } from "./packaging-rows-editor";
+import { PackagingRowsEditor, type CustomerOption } from "./packaging-rows-editor";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Cover page · Settings" };
@@ -51,10 +51,20 @@ export default async function CoverPageSettingsPage({
   const tab: Tab =
     requestedTab === "general-info" || requestedTab === "packaging" ? requestedTab : "cover";
 
-  const [markdown, trimsEnabled, packagingRows, specRows] = await Promise.all([
+  const [markdown, trimsEnabled, packagingRows, customerRows, specRows] = await Promise.all([
     getCoverPageInfoMd(),
     getTrimsOnCoverEnabled(),
     loadTrimConceptRows(),
+    // Who a per-row status override can be written against. ACTIVE ONLY here,
+    // because this is a picker: a retired customer must not be offered for a
+    // new override. An override already naming one keeps resolving regardless
+    // — it is stored by id, and the editor falls back to the id when a name
+    // cannot be found, rather than dropping the entry and losing the words.
+    db.customer.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
     db.prodSpec.findMany({
       orderBy: [{ active: "desc" }, { name: "asc" }],
       select: {
@@ -70,6 +80,11 @@ export default async function CoverPageSettingsPage({
 
   // Business areas can carry a blank name in live data — fall back so the
   // picker never renders a bare separator.
+  const customers: CustomerOption[] = customerRows.map((c) => ({
+    id: c.id,
+    name: c.name.trim() || "Unnamed client",
+  }));
+
   const prodSpecs: ProdSpecOption[] = specRows.map((p) => ({
     id: p.id,
     name: p.name,
@@ -128,7 +143,11 @@ export default async function CoverPageSettingsPage({
       ) : tab === "general-info" ? (
         <GeneralInfoEditor prodSpecs={prodSpecs} />
       ) : (
-        <PackagingRowsEditor initialRows={packagingRows} trimsEnabled={trimsEnabled} />
+        <PackagingRowsEditor
+          initialRows={packagingRows}
+          trimsEnabled={trimsEnabled}
+          customers={customers}
+        />
       )}
     </div>
   );

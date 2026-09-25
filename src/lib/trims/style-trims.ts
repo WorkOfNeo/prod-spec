@@ -48,4 +48,11 @@ export type TrimContext = {
   // loadManualDeliveredLabels (src/lib/trims/manual-uploads.ts); absent ⇒
   // nothing delivered, so every manual row reads as still-to-come.
   manualDelivered?: Set<string>;
+  // The style's customer, so a packaging row whose status wording was written
+  // for this buyer prints that instead of the row's own (see
+  // TrimConceptRow.customerCopy). Per style like `trimLabels` and
+  // `manualDelivered`, not part of the global settings blob: one loaded
+  // settings object is threaded across a sweep of styles belonging to
+  // different customers. Absent ⇒ the row's own wording everywhere.
+  customerId?: string | null;
 };
