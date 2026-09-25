@@ -34,6 +34,24 @@ const ROW = z.object({
   // cannot rest on the editor.
   pending: z.string().max(200).optional(),
   delivered: z.string().max(200).optional(),
+  // PER-CUSTOMER status wording. Sent for an artwork:false row too and
+  // stripped server-side alongside the two above — an override of a status a
+  // packing instruction can never have is still nothing.
+  //
+  // Capped at 50 entries and 200 customers each: generous against any real
+  // estate (~60 customers exist), and a bound rather than a limit, so a
+  // runaway client cannot push an unbounded Json blob into the row that every
+  // cover render reads.
+  customerCopy: z
+    .array(
+      z.object({
+        customerIds: z.array(z.string().max(64)).max(200),
+        pending: z.string().max(200).optional(),
+        delivered: z.string().max(200).optional(),
+      }),
+    )
+    .max(50)
+    .optional(),
   sortOrder: z.number().int().min(0).max(100000).optional(),
   // "Removed" in the editor. Rows are deactivated, never deleted — something
   // may still be mapped to one. NOT a visibility switch: a removed row keeps
@@ -76,9 +94,12 @@ export async function PUT(req: NextRequest) {
   }
 
   // saveTrimConceptRows normalises before storing — including STRIPPING the
-  // status wording AND the always-supplied-by-hand flag from any
-  // packing-instruction row, so a hand-rolled PUT cannot give a polybag a
-  // delivery state the cover would then have to print, nor an upload zone for
-  // a file that does not exist.
+  // status wording, the PER-CUSTOMER status wording AND the
+  // always-supplied-by-hand flag from any packing-instruction row, so a
+  // hand-rolled PUT cannot give a polybag a delivery state the cover would
+  // then have to print, nor an upload zone for a file that does not exist.
+  // The same pass drops an override naming no customer or saying nothing, and
+  // takes a second naming of a customer off the later entry — so what comes
+  // back is exactly what a cover will read.
   return NextResponse.json({ rows: await saveTrimConceptRows(parsed.data.rows) });
 }

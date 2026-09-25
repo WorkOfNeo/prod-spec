@@ -51,7 +51,12 @@
 // CLIENT-SAFE: pure, no db, no server imports.
 // =====================================================
 
-import { conceptHasArtwork, DEFAULT_TRIM_CONCEPTS, type TrimConcept } from "./concepts";
+import {
+  conceptHasArtwork,
+  customerTrimCopy,
+  DEFAULT_TRIM_CONCEPTS,
+  type TrimConcept,
+} from "./concepts";
 
 // The wording used when a concept says nothing of its own. These are the
 // sentences covers have always printed, so an unconfigured estate reads exactly
@@ -66,6 +71,18 @@ export type TrimConceptCopy = {
   // concept.
   pending?: string;
   delivered?: string;
+  // PER-CUSTOMER status wording: customer id -> the sentences that customer
+  // reads instead of the two above. Carried on the MAP rather than resolved
+  // away when the map is built, because one loaded settings blob is threaded
+  // across every style in a sweep and those styles belong to different
+  // customers — baking one customer's answer into it would make the second
+  // style print the first one's cover.
+  //
+  // Sparse, like every other field here: a concept with no overrides carries
+  // no key, so its fingerprint is byte-identical to what it was before this
+  // existed. The note is deliberately absent — a standing fact about how the
+  // artwork is built does not change because of who is buying it.
+  byCustomer?: Readonly<Record<string, { pending?: string; delivered?: string }>>;
 };
 
 export type TrimConceptCopyMap = Readonly<Record<string, TrimConceptCopy>>;
@@ -97,6 +114,22 @@ export function conceptCopyFromRows(rows: ReadonlyArray<TrimConcept>): TrimConce
       if (field !== "note" && !row.artwork) continue;
       const v = typeof row[field] === "string" ? (row[field] as string).trim() : "";
       if (v) entry[field] = v;
+    }
+    // The per-customer overrides, folded in AFTER the strip above so the
+    // artwork:false guarantee covers them too — a hand-edited polybag row
+    // carrying customer wording loses it here, not just on write.
+    if (row.artwork && Array.isArray(row.customerCopy) && row.customerCopy.length > 0) {
+      const byCustomer: Record<string, { pending?: string; delivered?: string }> = {};
+      for (const override of row.customerCopy) {
+        if (!Array.isArray(override?.customerIds)) continue;
+        for (const id of override.customerIds) {
+          // First entry naming a customer wins, matching customerTrimCopy.
+          if (typeof id !== "string" || !id.trim() || byCustomer[id.trim()]) continue;
+          const resolved = customerTrimCopy(row, id.trim());
+          if (resolved) byCustomer[id.trim()] = resolved;
+        }
+      }
+      if (Object.keys(byCustomer).length > 0) entry.byCustomer = byCustomer;
     }
     if (Object.keys(entry).length > 0) out[value] = entry;
   }
@@ -130,26 +163,68 @@ export function resolveTrimCopy(
     // names a real document alongside a polybag still cannot borrow a status
     // from the polybag.
     allowStatus?: boolean;
+    // WHOSE cover this is. When the concept has a sentence written for this
+    // customer, it is taken instead of the row's own — but only for the field
+    // it actually fills, so an override that sets "not yet delivered" alone
+    // leaves "delivered" reading the row's wording rather than blanking it.
+    //
+    // Absent ⇒ the row's own wording throughout, which is every caller that
+    // predates overrides and every render with no customer in hand (the layout
+    // editor's preview has no style behind it).
+    customerId?: string | null;
   },
 ): ResolvedTrimCopy | undefined {
   const allowStatus = opts?.allowStatus !== false;
+  const customerId = opts?.customerId?.trim() || null;
   // Fixed key order, so two runs over the same input serialise identically into
   // the manifest fingerprint.
   const resolved: ResolvedTrimCopy = {};
   for (const field of FIELDS) {
     if (field !== "note" && !allowStatus) continue;
-    for (const concept of concepts) {
-      // Statuses only ever come from a concept that HAS artwork; a note can
-      // come from any of them.
-      if (field !== "note" && !conceptHasArtwork(concept)) continue;
-      const value = map[concept]?.[field]?.trim();
-      // First concept with something to say wins, per field — a compound entry
-      // is one row and can only print one of each.
-      if (value) {
-        resolved[field] = value;
-        break;
+    // Statuses only ever come from a concept that HAS artwork; a note can come
+    // from any of them.
+    const usable = concepts.filter((c) => field === "note" || conceptHasArtwork(c));
+
+    // TWO PASSES, AND THE ORDER OF THEM IS THE PRECEDENCE RULE.
+    //
+    // Within one pass, the first concept with something to say wins — a
+    // compound Monday entry ("Hanger & Hangtag") is ONE row and can only print
+    // one of each field, so it takes the first answer in the order the entry
+    // named them. That is the rule this file has always had.
+    //
+    // What the customer pass adds is that an override outranks the row wording
+    // ACROSS concepts, not merely within one. Take "Hanger & Hangtag" where
+    // HANGER carries the house sentence and HANGTAG carries the one written
+    // for this buyer: a single pass would print the house sentence, because
+    // HANGER came first and had something to say. That is the wrong answer —
+    // somebody deliberately wrote words for this client, and a generic
+    // sentence that happened to be earlier in the list is not a reason to
+    // ignore them. An override is by definition more specific than the thing
+    // it overrides, so it is looked for everywhere before the fallback is
+    // looked for anywhere.
+    //
+    // The note is never customer-specific (see TrimConceptCopy.byCustomer), so
+    // it skips the first pass entirely.
+    let value: string | undefined;
+    if (field !== "note" && customerId) {
+      for (const concept of usable) {
+        const v = map[concept]?.byCustomer?.[customerId]?.[field]?.trim();
+        if (v) {
+          value = v;
+          break;
+        }
       }
     }
+    if (!value) {
+      for (const concept of usable) {
+        const v = map[concept]?.[field]?.trim();
+        if (v) {
+          value = v;
+          break;
+        }
+      }
+    }
+    if (value) resolved[field] = value;
   }
   return Object.keys(resolved).length > 0 ? resolved : undefined;
 }
