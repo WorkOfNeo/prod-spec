@@ -8,6 +8,7 @@ import type {
   RenamedRow,
   UnexpectedRow,
 } from "@/lib/sharepoint/reconcile-folder";
+import { StyleFolderMoveButton } from "./style-folder-move";
 
 // =====================================================
 // "Does the supplier's folder actually match what we should have sent?" — the
@@ -330,6 +331,19 @@ export function FolderReconcilePanel({ styleId, poNumber, className = "mt-8" }: 
             >
               {summary && summary.issueCount > 0 ? `Details (${summary.issueCount})` : "Details"}
             </button>
+          ) : null}
+          {/* Tidy this style's already-delivered files into its own
+              "<style> - <colour>" folder inside APPROVED LAYOUTS. Only once the
+              folder has been listed — the move plans against that listing. */}
+          {data?.state === "ok" ? (
+            <StyleFolderMoveButton
+              styleId={styleId}
+              disabled={loading || busy !== null}
+              onDone={async (message) => {
+                setNotice(message);
+                await refresh();
+              }}
+            />
           ) : null}
           {/* The folder is the PO's, and this panel only ever repairs THIS
               style. The whole-PO ledger — every style sharing the folder,

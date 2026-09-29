@@ -94,7 +94,9 @@ before(() => {
         return { status: "found", folder: { id: "po", name: "C-PO1 - Cust - Sup", webUrl: "https://po", childCount: 1 } };
       },
       findChildFolder: async () => ({ id: "leaf", webUrl: "https://leaf", childCount: 1 }),
-      listChildFileNames: async () => folderNames,
+      // Verify lists APPROVED LAYOUTS and every style subfolder in it
+      // ("<style> - <colour>/") — the names-only form of that walk.
+      listApprovedLayoutsFileNames: async () => folderNames,
     },
   });
 });

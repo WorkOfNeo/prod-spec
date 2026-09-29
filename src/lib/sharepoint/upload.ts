@@ -9,6 +9,7 @@ import {
   uploadIntoFolder,
 } from "./supplier-folder";
 import { APPROVED_LAYOUTS_SUBFOLDER } from "./supplier-folder-names";
+import { ensureStyleDeliveryFolder, styleSubfolderForUpload } from "./style-subfolder";
 
 export type UploadResult = SharePointFile & { docType: string };
 
@@ -46,6 +47,8 @@ export async function uploadJobAssets(input: {
 //   <supplier's own folder, from a sharing link>/
 //     <PO> - <customer> - <supplier>/     ← SEARCHED, never created
 //       APPROVED LAYOUTS/                  ← ours to get-or-create
+//         <style> - <colour>/              ← ours to get-or-create, from the
+//                                            style-subfolder PO cutoff on
 //
 // The site-scoped path needs SHAREPOINT_SITE_ID, which production does not set;
 // the supplier path needs only the three Azure credentials, which it does. A
@@ -59,6 +62,10 @@ export async function uploadJobAssets(input: {
 // =====================================================
 
 export type ApprovedLayoutsTarget = {
+  // The style the file belongs to — decides whether it lands in the style's own
+  // "<style> - <colour>" folder or flat in APPROVED LAYOUTS (style-subfolder.ts),
+  // exactly as that style's generated outputs do.
+  styleId: string;
   // The supplier's "Supplier Folder" sharing URL (Supplier.sharepointUrl).
   sharingUrl: string;
   poNumber: string | null;
@@ -81,8 +88,8 @@ export class ApprovedLayoutsFolderError extends Error {
 
 export type ResolvedApprovedLayouts = { driveId: string; folderItemId: string; webUrl: string | null };
 
-// Resolve (and get-or-create the subfolder of) the style's APPROVED LAYOUTS
-// folder. Throws ApprovedLayoutsFolderError when the PO folder is missing or
+// Resolve (and get-or-create the subfolders of) the style's delivery folder:
+// APPROVED LAYOUTS itself, or the style's own folder inside it. Throws ApprovedLayoutsFolderError when the PO folder is missing or
 // ambiguous — both are "a human must act", never "create it anyway".
 export async function resolveApprovedLayoutsFolder(
   target: ApprovedLayoutsTarget,
@@ -107,11 +114,20 @@ export async function resolveApprovedLayoutsFolder(
     );
   }
 
-  const subfolder = await ensureChildFolder(
+  const approvedLayouts = await ensureChildFolder(
     supplierRoot.driveId,
     resolution.folder.id,
     APPROVED_LAYOUTS_SUBFOLDER,
   );
+  const styleSubfolder = await styleSubfolderForUpload(target.styleId);
+  const subfolder = styleSubfolder
+    ? await ensureStyleDeliveryFolder({
+        driveId: supplierRoot.driveId,
+        approvedLayoutsItemId: approvedLayouts.id,
+        styleId: target.styleId,
+        subfolderName: styleSubfolder,
+      })
+    : approvedLayouts;
   return { driveId: supplierRoot.driveId, folderItemId: subfolder.id, webUrl: subfolder.webUrl };
 }
 
@@ -127,8 +143,8 @@ export type UploadedIntoApprovedLayouts = {
 // PUT /content replaces the bytes at the same name, so re-uploading a
 // correction overwrites rather than duplicating — the caller is responsible for
 // having built a name that cannot collide with ANOTHER style's file
-// (manualTrimFileName does exactly that; the folder is PO-scoped, not
-// style-scoped).
+// (manualTrimFileName does exactly that; on the flat layout the folder is
+// PO-scoped, not style-scoped).
 export async function uploadIntoApprovedLayouts(input: {
   target: ApprovedLayoutsTarget;
   fileName: string;

@@ -84,7 +84,7 @@ before(() => {
         folder: { id: "po", name: "C-PO1 - Cust - Sup", webUrl: "https://po", childCount: 1 },
       }),
       findChildFolder: async () => ({ id: "leaf", webUrl: "https://leaf", childCount: 1 }),
-      listChildFileNames: async () => folderNames,
+      listApprovedLayoutsFileNames: async () => folderNames, // APPROVED LAYOUTS + style subfolders
     },
   });
 });

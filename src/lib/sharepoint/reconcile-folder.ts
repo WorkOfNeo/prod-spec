@@ -1,7 +1,7 @@
 import {
   resolveSupplierFolder,
   findChildFolder,
-  listChildFiles,
+  listApprovedLayoutsFiles,
   listChildFolders,
   resolvePoFolder,
   renameDriveItem,
@@ -1179,7 +1179,9 @@ async function runReconcile(
   let present: ChildFile[] = [];
   if (target.state === "ok") {
     try {
-      present = await listChildFiles(target.driveId as string, target.leafItemId as string);
+      // APPROVED LAYOUTS and every style subfolder in it — a style delivering
+      // into "<style> - <colour>/" is as present as one delivering flat.
+      present = await listApprovedLayoutsFiles(target.driveId as string, target.leafItemId as string);
     } catch {
       return { result: shell("unavailable", located), target, style: resolved };
     }

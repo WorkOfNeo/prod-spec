@@ -4,7 +4,7 @@ import { layoutIdFromVariantKey } from "@/lib/output-layouts/variant-keys";
 import {
   resolveSupplierFolder,
   findChildFolder,
-  listChildFileNames,
+  listApprovedLayoutsFileNames,
   listChildFolders,
   resolvePoFolder,
   sanitizeFileName,
@@ -320,7 +320,8 @@ export async function auditStyleDelivery(styleId: string): Promise<StyleDelivery
       };
     }
     folderUrl = leaf.webUrl;
-    names = await listChildFileNames(root.driveId, leaf.id);
+    // APPROVED LAYOUTS and the style subfolders in it, by name.
+    names = await listApprovedLayoutsFileNames(root.driveId, leaf.id);
   } catch (err) {
     // A 403 or network blip must never read as "the files are gone".
     return emptyAudit(

@@ -891,6 +891,14 @@ model Style {
   // stored name no longer present in the supplier folder falls back to
   // auto-resolve, so a deleted/renamed choice safely re-flags.
   supplierPoFolderName String?
+  // This style's own folder inside the PO's "APPROVED LAYOUTS" folder
+  // ("<style> - <colour>", e.g. "AB10001 - Navy"). Null = the style delivers
+  // into APPROVED LAYOUTS itself (the flat, pre-subfolder layout). Set the first
+  // time a push lands in a subfolder — for POs at/above the style-subfolder
+  // cutoff — or when an operator moves a style's files there from /styles/[id].
+  // PINNED on purpose: a Monday colour edit after delivery must not silently
+  // start a second folder; re-running the move re-homes the files instead.
+  supplierSubfolderName String?
   // Monday group this item lives in (e.g. "✅ Done", "⏰ Behind
   // Schedule", "Cancelled"). Captured from MondayItem.group on every
   // ingest so list views / scans can default-hide archived items

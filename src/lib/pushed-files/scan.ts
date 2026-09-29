@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { getSupplierSendMinPo } from "@/lib/settings/app-settings";
-import { listChildFiles } from "@/lib/sharepoint/supplier-folder";
+import { listApprovedLayoutsFiles } from "@/lib/sharepoint/supplier-folder";
 import {
   resolveApprovedLayoutsFolder,
   reconcileStateMessage,
@@ -312,7 +312,7 @@ export async function scanPushedFolder(
 
   let present;
   try {
-    present = await listChildFiles(target.driveId, target.leafItemId);
+    present = await listApprovedLayoutsFiles(target.driveId, target.leafItemId);
   } catch {
     return { ...empty, folderUrl: target.folderUrl, stateNote: "the folder could not be listed" };
   }
