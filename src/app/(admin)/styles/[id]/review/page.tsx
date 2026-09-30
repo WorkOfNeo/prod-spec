@@ -670,7 +670,10 @@ function OutputReviewCard({
   // Reviewer line rewrites, base + per-document keys (absent on history cards).
   lineValuesByKey?: ReadonlyMap<string, Record<string, string>>;
 }) {
-  const previewUrl = `/api/admin/jobs/${o.jobId}/preview?variantKey=${encodeURIComponent(o.variantKey)}`;
+  // `v` isn't read by the route — it changes when the asset's bytes are
+  // rewritten in place (a cover rebuilt after an approval), so the iframe
+  // reloads on router.refresh() instead of keeping the page it already shows.
+  const previewUrl = `/api/admin/jobs/${o.jobId}/preview?variantKey=${encodeURIComponent(o.variantKey)}${o.assetVersion ? `&v=${o.assetVersion}` : ""}`;
   // Carton-capable outputs (numbering / multi-style) get an in-review Customize
   // action — regenerate the set in place and re-review it. Capability + print
   // dims come from the layout variant; the registry is already loaded by

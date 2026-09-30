@@ -45,6 +45,10 @@ export type CurrentOutput = {
   rejectReason: string | null;
   placeholderCount: number;
   generatedAt: Date | null; // asset.createdAt — when the output became available
+  // asset.updatedAt, as epoch ms. Changes whenever the bytes are rewritten in
+  // place (a cover rebuilt after an approval), so a preview URL carrying it
+  // reloads instead of showing the old page. Absent/null without an asset.
+  assetVersion?: number | null;
   // true ⇒ this output's latest asset was produced by the style's NEWEST
   // generation job (the current run). false for outputs whose latest asset
   // comes from an earlier run, and for still-coming outputs (no asset yet).
@@ -360,6 +364,7 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
       rejectReason: true,
       placeholderCount: true,
       createdAt: true,
+      updatedAt: true,
     },
   });
   // The newest generation job = the job behind the most recent asset (assets
@@ -434,6 +439,7 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
       rejectReason: a.rejectReason,
       placeholderCount: a.placeholderCount,
       generatedAt: a.createdAt,
+      assetVersion: a.updatedAt.getTime(),
       fromLatestGeneration: latestJobId != null && a.jobId === latestJobId,
       exclusionReason: null,
       ignored: false,

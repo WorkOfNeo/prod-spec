@@ -49,17 +49,22 @@ export type CoverRefreshResult =
 // makes the refreshed cover current everywhere.
 export async function getCurrentCoverAsset(
   styleId: string,
-): Promise<{ id: string; jobId: string; coverManifestKey: string | null } | null> {
+): Promise<{ id: string; jobId: string; coverManifestKey: string | null; updatedAt: Date } | null> {
   const asset = await db.jobAsset.findFirst({
     where: {
       variantKey: COVER_VARIANT_KEY,
       job: { styleId, status: { not: "FAILED" } },
     },
     orderBy: { job: { createdAt: "desc" } },
-    select: { id: true, jobId: true, coverManifestKey: true },
+    select: { id: true, jobId: true, coverManifestKey: true, updatedAt: true },
   });
   return asset
-    ? { id: asset.id, jobId: asset.jobId, coverManifestKey: asset.coverManifestKey }
+    ? {
+        id: asset.id,
+        jobId: asset.jobId,
+        coverManifestKey: asset.coverManifestKey,
+        updatedAt: asset.updatedAt,
+      }
     : null;
 }
 

@@ -239,22 +239,22 @@ export default async function StyleDetail({
   const recentAssets = await db.jobAsset.findMany({
     where: { job: { styleId: id }, variantKey: { not: null } },
     orderBy: { createdAt: "desc" },
-    select: { id: true, jobId: true, variantKey: true, createdAt: true, reviewStatus: true },
+    select: { id: true, jobId: true, variantKey: true, createdAt: true, updatedAt: true, reviewStatus: true },
     take: 400,
   });
   const latestAssetByVariant = new Map<
     string,
-    { id: string; jobId: string; createdAt: Date; reviewStatus: AssetReviewStatus }
+    { id: string; jobId: string; createdAt: Date; updatedAt: Date; reviewStatus: AssetReviewStatus }
   >();
   for (const a of recentAssets) {
     if (a.variantKey && !latestAssetByVariant.has(a.variantKey)) {
-      latestAssetByVariant.set(a.variantKey, { id: a.id, jobId: a.jobId, createdAt: a.createdAt, reviewStatus: a.reviewStatus });
+      latestAssetByVariant.set(a.variantKey, { id: a.id, jobId: a.jobId, createdAt: a.createdAt, updatedAt: a.updatedAt, reviewStatus: a.reviewStatus });
     }
     // Multi-document assets ("layout:<id>#<size>") also register under
     // their BASE key so the output card finds its latest asset.
     const base = a.variantKey?.split("#")[0];
     if (base && base !== a.variantKey && !latestAssetByVariant.has(base)) {
-      latestAssetByVariant.set(base, { id: a.id, jobId: a.jobId, createdAt: a.createdAt, reviewStatus: a.reviewStatus });
+      latestAssetByVariant.set(base, { id: a.id, jobId: a.jobId, createdAt: a.createdAt, updatedAt: a.updatedAt, reviewStatus: a.reviewStatus });
     }
   }
 
@@ -496,7 +496,7 @@ export default async function StyleDetail({
       pins,
       notes: outputDataNotes(o.variantKey, effItem, reqMapping),
       thumbSrc: asset
-        ? `/api/admin/jobs/${asset.jobId}/thumbnail?${query}&v=${asset.id}`
+        ? `/api/admin/jobs/${asset.jobId}/thumbnail?${query}&v=${asset.id}.${asset.updatedAt.getTime()}`
         : null,
       pdfHref: asset
         ? `/api/admin/jobs/${asset.jobId}/preview?${query}#zoom=fit&toolbar=0&navpanes=0`
