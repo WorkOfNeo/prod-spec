@@ -83,22 +83,50 @@ const COVER_REGEN_QUEUE_KEY = "coverRegenQueue";
 export type { CoverRegenQueue } from "@/lib/pdf/cover-regen-ledger";
 import type { CoverRegenQueue } from "@/lib/pdf/cover-regen-ledger";
 
-export async function getCoverRegenQueue(): Promise<CoverRegenQueue> {
-  const row = await db.appSetting.findUnique({ where: { key: COVER_REGEN_QUEUE_KEY } });
-  const value = (row?.value ?? null) as Record<string, unknown> | null;
+function toCoverRegenQueue(value: unknown): CoverRegenQueue {
   if (!value || typeof value !== "object") return {};
   const out: CoverRegenQueue = {};
-  for (const [styleId, iso] of Object.entries(value)) {
-    if (typeof iso === "string") out[styleId] = iso;
+  for (const [styleId, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof entry === "string") out[styleId] = entry;
   }
   return out;
 }
 
-export async function setCoverRegenQueue(queue: CoverRegenQueue): Promise<void> {
-  await db.appSetting.upsert({
-    where: { key: COVER_REGEN_QUEUE_KEY },
-    create: { key: COVER_REGEN_QUEUE_KEY, value: queue },
-    update: { value: queue },
+export async function getCoverRegenQueue(): Promise<CoverRegenQueue> {
+  const row = await db.appSetting.findUnique({ where: { key: COVER_REGEN_QUEUE_KEY } });
+  return toCoverRegenQueue(row?.value ?? null);
+}
+
+// EVERY WRITE TO THE LEDGER GOES THROUGH HERE, under a row lock.
+//
+// The ledger is one JSON blob that every output approval/rejection, every
+// manual-packaging change and every drain rewrites. It used to be a plain
+// read → modify → write, so two writers overlapping lost one side's update:
+// reviewer A approves an output on style X while reviewer B hand-approves a
+// packaging line on style Y, both read {}, and whichever writes second wipes
+// the other's entry. The in-process timer then fires, finds nothing due for
+// that style, and its cover is never rebuilt — the cover keeps saying "Waiting
+// for Customer Information" about a line that was approved, and nothing will
+// ever come back for it. The drain's claim had the same hole: a style stamped
+// between the drain's read and its write was erased by the claim.
+//
+// SELECT … FOR UPDATE serialises the writers on the one row; the INSERT … ON
+// CONFLICT DO NOTHING first makes sure there IS a row to lock the very first
+// time. The transaction is two tiny statements, so the lock is held for
+// milliseconds — the render never happens inside it.
+export async function updateCoverRegenQueue<T>(
+  mutate: (queue: CoverRegenQueue) => { queue: CoverRegenQueue; result: T },
+): Promise<T> {
+  return db.$transaction(async (tx) => {
+    await tx.$executeRaw`
+      INSERT INTO "app_settings" ("key", "value", "updatedAt")
+      VALUES (${COVER_REGEN_QUEUE_KEY}, '{}'::jsonb, now())
+      ON CONFLICT ("key") DO NOTHING`;
+    const rows = await tx.$queryRaw<{ value: unknown }[]>`
+      SELECT "value" FROM "app_settings" WHERE "key" = ${COVER_REGEN_QUEUE_KEY} FOR UPDATE`;
+    const { queue, result } = mutate(toCoverRegenQueue(rows[0]?.value ?? null));
+    await tx.appSetting.update({ where: { key: COVER_REGEN_QUEUE_KEY }, data: { value: queue } });
+    return result;
   });
 }
 

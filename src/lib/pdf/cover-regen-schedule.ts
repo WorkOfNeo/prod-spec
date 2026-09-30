@@ -1,5 +1,5 @@
-import { getCoverRegenQueue, setCoverRegenQueue } from "@/lib/settings/app-settings";
-import { dueStyleIds, withoutDue } from "@/lib/pdf/cover-regen-ledger";
+import { getCoverRegenQueue, updateCoverRegenQueue } from "@/lib/settings/app-settings";
+import { dueStyleIds, rearmFailed, withoutDue, type CoverRegenQueue } from "@/lib/pdf/cover-regen-ledger";
 import { processCoverRefreshChunk } from "@/lib/pdf/cover-regen-sweep";
 
 // =====================================================
@@ -55,9 +55,9 @@ function armTimer(styleId: string): void {
 // if the in-process timer is lost to a restart).
 export async function scheduleCoverRegen(styleId: string): Promise<void> {
   try {
-    const queue = await getCoverRegenQueue();
-    queue[styleId] = new Date(Date.now() + DEBOUNCE_MS).toISOString();
-    await setCoverRegenQueue(queue);
+    // A fresh decision is fresh demand: a plain entry, attempt count reset.
+    const dueAt = new Date(Date.now() + DEBOUNCE_MS).toISOString();
+    await updateCoverRegenQueue((queue) => ({ queue: { ...queue, [styleId]: dueAt }, result: null }));
   } catch (err) {
     console.warn(`[cover-regen] schedule failed for ${styleId}:`, err);
   }
@@ -87,13 +87,16 @@ export async function runDueCoverRegens(): Promise<CoverRegenDrainResult> {
     errors: 0,
   };
 
+  // Claim: take the due entries out of the ledger in the same locked
+  // transaction that reads them, so nothing stamped concurrently is erased.
   const now = Date.now();
-  const queue = await getCoverRegenQueue();
-  const due = dueStyleIds(queue, now);
+  const claimed = await updateCoverRegenQueue((queue) => {
+    const taken: CoverRegenQueue = {};
+    for (const styleId of dueStyleIds(queue, now)) taken[styleId] = queue[styleId];
+    return { queue: withoutDue(queue, now), result: taken };
+  });
+  const due = Object.keys(claimed);
   if (due.length === 0) return empty;
-
-  // Claim: persist the ledger without the due entries.
-  await setCoverRegenQueue(withoutDue(queue, now));
 
   try {
     // Deliberately NOT onlyPending. The bulk sweep skips all-approved styles
@@ -111,25 +114,51 @@ export async function runDueCoverRegens(): Promise<CoverRegenDrainResult> {
       deliver: true,
       trigger: "content",
     });
+    const failed = outcomes.filter((o) => o.status === "error");
+    for (const o of failed) {
+      console.warn(`[cover-regen] cover render failed for ${o.styleId}:`, "error" in o ? o.error : "");
+    }
+    // A per-style failure is retried rather than dropped — the claim already
+    // took it out of the ledger, so without this nothing would ever rebuild it.
+    if (failed.length > 0) await rearm(failed.map((o) => o.styleId), claimed);
     return {
       processed: due.length,
       refreshed: outcomes.filter((o) => o.status === "refreshed").length,
       noCover: outcomes.filter((o) => o.status === "no-cover").length,
       pushed,
-      errors: outcomes.filter((o) => o.status === "error").length,
+      errors: failed.length,
     };
   } catch (err) {
-    // Catastrophic drain failure (not a per-style error — those are captured in
-    // outcomes). Put the claimed styles back so the next cron tick retries them.
+    // Catastrophic drain failure (not a per-style error — those are handled
+    // above). Put the claimed styles back so a later tick retries them.
     console.warn(`[cover-regen] drain failed, re-arming ${due.length} style(s):`, err);
-    try {
-      const current = await getCoverRegenQueue();
-      const retryAt = new Date(Date.now() + DEBOUNCE_MS).toISOString();
-      for (const styleId of due) if (!current[styleId]) current[styleId] = retryAt;
-      await setCoverRegenQueue(current);
-    } catch {
-      /* best-effort */
-    }
+    await rearm(due, claimed);
     return { ...empty, errors: due.length };
+  }
+}
+
+// Put failed styles back in the ledger with a backoff (see rearmFailed).
+// Best-effort: a ledger hiccup here is logged, never thrown over the drain.
+async function rearm(styleIds: string[], claimed: CoverRegenQueue): Promise<void> {
+  try {
+    const gaveUp = await updateCoverRegenQueue((queue) => {
+      const r = rearmFailed(queue, styleIds, claimed, Date.now());
+      return { queue: r.queue, result: r.gaveUp };
+    });
+    for (const styleId of gaveUp) {
+      console.warn(`[cover-regen] giving up on ${styleId} after repeated render failures`);
+    }
+  } catch (err) {
+    console.warn(`[cover-regen] could not re-arm ${styleIds.length} style(s):`, err);
+  }
+}
+
+// Is a cover rebuild for this style still waiting in the ledger? Lets the
+// review panel tell "queued, give it a moment" apart from "done".
+export async function isCoverRegenPending(styleId: string): Promise<boolean> {
+  try {
+    return styleId in (await getCoverRegenQueue());
+  } catch {
+    return false;
   }
 }

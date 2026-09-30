@@ -183,7 +183,14 @@ before(() => {
   mock.module("@/lib/sharepoint/upload", {
     namedExports: { uploadIntoApprovedLayouts, removeFromApprovedLayouts, ApprovedLayoutsFolderError },
   });
-  mock.module("@/lib/pdf/cover-regen-schedule", { namedExports: { scheduleCoverRegen } });
+  mock.module("@/lib/pdf/cover-regen-schedule", {
+    namedExports: { scheduleCoverRegen, isCoverRegenPending: async () => false },
+  });
+  // GET reports the cover's version so the panel can follow a rebuild; the
+  // real lookup reads jobAsset, which this suite doesn't model.
+  mock.module("@/lib/pdf/refresh-cover", {
+    namedExports: { getCurrentCoverAsset: async () => null },
+  });
 });
 
 beforeEach(() => {
