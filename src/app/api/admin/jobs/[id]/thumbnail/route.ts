@@ -10,11 +10,13 @@ export const runtime = "nodejs";
 //
 //   GET /api/admin/jobs/{jobId}/thumbnail?variantKey=care-label-01&v=<assetId>
 //
-// Cached per ASSET id, not per (jobId, variantKey): a job retry deletes and
-// recreates its assets under the same job, so the asset id is the only
-// stable identity for the bytes. `v` isn't read here — the page embeds the
-// asset id purely so the browser's cache key changes when the asset does,
-// which is what lets us send a long max-age below.
+// Cached per ASSET VERSION (id + updatedAt), not per (jobId, variantKey): a job
+// retry deletes and recreates its assets under the same job, and a cover is
+// rebuilt in place under the SAME id whenever its manifest moves (an output or
+// a manual packaging line approved). Keying on the id alone kept serving the
+// old cover's picture after such a rebuild. `v` isn't read here — the page
+// embeds the same version purely so the browser's cache key changes when the
+// bytes do, which is what lets us send a long max-age below.
 const pngCache = new Map<string, Buffer>();
 const CACHE_MAX = 200;
 const WIDTH_PX = 720;
@@ -31,11 +33,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   // PDF bytes across the wire at all.
   const asset = await db.jobAsset.findFirst({
     where: { jobId: id, variantKey },
-    select: { id: true },
+    select: { id: true, updatedAt: true },
   });
   if (!asset) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  let png = pngCache.get(asset.id);
+  const cacheKey = `${asset.id}@${asset.updatedAt.getTime()}`;
+  let png = pngCache.get(cacheKey);
   if (!png) {
     const withBytes = await db.jobAsset.findUnique({
       where: { id: asset.id },
@@ -53,7 +56,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       const oldest = pngCache.keys().next().value;
       if (oldest) pngCache.delete(oldest);
     }
-    pngCache.set(asset.id, png);
+    pngCache.set(cacheKey, png);
   }
 
   return new NextResponse(new Uint8Array(png), {

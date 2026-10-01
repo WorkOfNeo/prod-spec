@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { FileDropZone } from "@/components/file-drop-zone";
 
 // =====================================================
@@ -61,7 +62,18 @@ type Payload = {
   maxBytes: number;
   lines: Line[];
   orphaned: Upload[];
+  // The style's current cover: `version` moves when its bytes are rewritten,
+  // `pending` while a rebuild is still queued. Null before a first generation.
+  cover: { version: number; pending: boolean } | null;
 };
+
+// How long to follow a change through to the rebuilt cover before saying it is
+// taking longer than usual. The debounce is ~8 s and a render a few more; past
+// this the cron backstop (every few minutes) is what will pick it up.
+const COVER_WATCH_MS = 90_000;
+const COVER_POLL_MS = 3_000;
+
+type CoverStatus = "idle" | "updating" | "updated" | "slow";
 
 export function ManualTrimsPanel({ styleId }: { styleId: string }) {
   const base = `/api/admin/styles/${styleId}/manual-trims`;
@@ -70,6 +82,10 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
   const [error, setError] = useState<string | null>(null);
   // Normalised label currently uploading — drives the per-zone busy state.
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
+  const router = useRouter();
+  const [coverStatus, setCoverStatus] = useState<CoverStatus>("idle");
+  // Bumped on every new watch, so an older one still polling stops quietly.
+  const watchToken = useRef(0);
 
   const fetchPayload = useCallback(async (): Promise<Payload> => {
     const res = await fetch(base, { cache: "no-store" });
@@ -89,6 +105,39 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
       setError((e as Error).message);
     }
   }, [fetchPayload]);
+
+  // Follow a change through to the rebuilt cover, then refresh the page so the
+  // cover preview on it shows the new version. Without this the cover on
+  // screen was the one loaded before the click — the rebuild lands ~10 s later
+  // and nothing told the page — which read as "approved, but the cover didn't
+  // change".
+  const watchCover = useCallback(
+    async (before: Payload["cover"]) => {
+      if (!before) return;
+      const token = ++watchToken.current;
+      setCoverStatus("updating");
+      const deadline = Date.now() + COVER_WATCH_MS;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, COVER_POLL_MS));
+        if (token !== watchToken.current) return;
+        let p: Payload;
+        try {
+          p = await fetchPayload();
+        } catch {
+          continue;
+        }
+        if (token !== watchToken.current) return;
+        setData(p);
+        if (p.cover && p.cover.version !== before.version && !p.cover.pending) {
+          setCoverStatus("updated");
+          router.refresh();
+          return;
+        }
+      }
+      if (token === watchToken.current) setCoverStatus("slow");
+    },
+    [fetchPayload, router],
+  );
 
   useEffect(() => {
     let active = true;
@@ -120,14 +169,17 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
       // manual line.
       form.set("label", line.label);
       form.set("file", file);
+      const coverBefore = data?.cover ?? null;
       const res = await fetch(base, { method: "POST", body: form });
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
         delivered?: boolean;
+        coverQueued?: boolean;
       };
       if (!res.ok) setError(body.error ?? `Upload failed (HTTP ${res.status})`);
       else if (body.delivered === false && body.error) setError(body.error);
       await refresh();
+      if (res.ok && body.coverQueued) void watchCover(coverBefore);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -142,6 +194,7 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
     setError(null);
     setBusyLabel(line.normalizedLabel);
     try {
+      const coverBefore = data?.cover ?? null;
       const res = await fetch(base, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -149,9 +202,11 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
       });
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
+        coverQueued?: boolean;
       };
       if (!res.ok) setError(body.error ?? `Couldn't update it (HTTP ${res.status})`);
       await refresh();
+      if (res.ok && body.coverQueued) void watchCover(coverBefore);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -163,12 +218,15 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
     setError(null);
     setBusyLabel(upload.normalizedLabel);
     try {
+      const coverBefore = data?.cover ?? null;
       const res = await fetch(`${base}/${upload.id}`, { method: "DELETE" });
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
+        coverQueued?: boolean;
       };
       if (!res.ok) setError(body.error ?? `Couldn't remove it (HTTP ${res.status})`);
       await refresh();
+      if (res.ok && body.coverQueued) void watchCover(coverBefore);
     } finally {
       setBusyLabel(null);
     }
@@ -198,6 +256,22 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
         refresh that runs when an output is approved.
       </p>
 
+      {coverStatus === "updating" && (
+        <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+          Rebuilding the cover page… it refreshes here by itself when it&apos;s done.
+        </p>
+      )}
+      {coverStatus === "updated" && (
+        <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+          Cover page rebuilt and sent on to the supplier&apos;s folder.
+        </p>
+      )}
+      {coverStatus === "slow" && (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          The cover rebuild is taking longer than usual. It stays queued and is retried automatically
+          — reload the page in a few minutes to see it.
+        </p>
+      )}
 
       {error && (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">

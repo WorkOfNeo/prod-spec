@@ -7,7 +7,8 @@ import { toPlainBytes } from "@/lib/pdf/bytes";
 import { buildRequiredPackagingForStyle } from "@/lib/outputs/required-packaging";
 import { getTrimsOnCoverEnabled } from "@/lib/settings/app-settings";
 import { listManualTrimUploads, normalizeTrimLabel } from "@/lib/trims/manual-uploads";
-import { scheduleCoverRegen } from "@/lib/pdf/cover-regen-schedule";
+import { isCoverRegenPending, scheduleCoverRegen } from "@/lib/pdf/cover-regen-schedule";
+import { getCurrentCoverAsset } from "@/lib/pdf/refresh-cover";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import { manualTrimFileName, MANUAL_TRIM_EXTENSIONS } from "@/lib/trims/manual-upload-name";
 import {
@@ -113,10 +114,12 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   const style = await db.style.findUnique({ where: { id }, select: { id: true } });
   if (!style) return NextResponse.json({ error: "Style not found" }, { status: 404 });
 
-  const [rows, uploads, trimsEnabled] = await Promise.all([
+  const [rows, uploads, trimsEnabled, cover, coverPending] = await Promise.all([
     buildRequiredPackagingForStyle(id),
     listManualTrimUploads(id),
     getTrimsOnCoverEnabled(),
+    getCurrentCoverAsset(id),
+    isCoverRegenPending(id),
   ]);
 
   const byLabel = new Map(uploads.map((u) => [u.normalizedLabel, u]));
@@ -142,6 +145,11 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     maxBytes: MAX_BYTES,
     lines,
     orphaned,
+    // Lets the panel follow a change through to the rebuilt cover: `version`
+    // moves when the cover's bytes are rewritten, `pending` is true while the
+    // rebuild is still waiting in the debounce ledger. Null when the style has
+    // never generated a cover — there is nothing to rebuild yet.
+    cover: cover ? { version: cover.updatedAt.getTime(), pending: coverPending } : null,
   });
 }
 

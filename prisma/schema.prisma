@@ -1215,6 +1215,11 @@ model JobAsset {
   reviewedAt       DateTime?
   reviewedById     String?
   createdAt        DateTime          @default(now())
+  // Bumped on every write. A cover is rebuilt IN PLACE (same id, new bytes)
+  // whenever its manifest moves, so the asset id alone can't tell a browser
+  // or the thumbnail cache that the page changed — this is the version the
+  // preview and thumbnail URLs carry.
+  updatedAt        DateTime          @default(now()) @updatedAt
 
   job              Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
   reviewedBy       User?             @relation("AssetReviewer", fields: [reviewedById], references: [id])
