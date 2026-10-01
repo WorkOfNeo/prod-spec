@@ -368,6 +368,12 @@ export type PoDeliverySweepResult = {
   withShortfall: number;
   unresolvable: number;
   skipped: number;
+  // The deadline cut the slice short. Reported rather than silent: a caller
+  // that keeps hitting this is under-provisioned, and a sweep that quietly
+  // stops early looks identical to one that had nothing left to do.
+  ranOutOfTime: boolean;
+  // Folders still waiting after this slice — the fleet's remaining backlog.
+  remaining: number;
 };
 
 // Every (supplier, PO) worth auditing: has a supplier, has a PO at or above the
@@ -400,7 +406,17 @@ export async function listDeliverablePoKeys(): Promise<Array<{ supplierId: strin
 // Check the least-recently-checked folders, bounded per tick. Graph is the
 // budget here — a few hundred folders at ~5 calls each is far more than one
 // cron tick should spend, so the sweep rotates and every folder comes round.
-export async function sweepPoDelivery(opts?: { limit?: number }): Promise<PoDeliverySweepResult> {
+export async function sweepPoDelivery(opts?: {
+  limit?: number;
+  // Stop starting new folders once this epoch-ms passes. `limit` bounds the
+  // Graph SPEND; this bounds the wall CLOCK, and they are not the same bound —
+  // one slow supplier tenant can make five folders take longer than fifty fast
+  // ones. Needed because this sweep now also runs inside the shared 5-minute
+  // job-runner tick, where overrunning would eat the generation drain's budget.
+  // A folder already in flight always finishes: abandoning it mid-way would
+  // record nothing and re-do the same Graph calls next tick.
+  deadlineAt?: number;
+}): Promise<PoDeliverySweepResult> {
   const { db } = await import("@/lib/db");
   const limit = opts?.limit ?? 25;
 
@@ -423,9 +439,18 @@ export async function sweepPoDelivery(opts?: { limit?: number }): Promise<PoDeli
     withShortfall: 0,
     unresolvable: 0,
     skipped: 0,
+    ranOutOfTime: false,
+    remaining: Math.max(0, queue.length - limit),
   };
 
   for (const k of queue.slice(0, limit)) {
+    // Out of time. The remaining folders keep their old checkedAt, so the
+    // least-recently-checked ordering hands them straight back on the next
+    // tick — a truncated sweep loses nothing but this tick's progress.
+    if (opts?.deadlineAt != null && Date.now() >= opts.deadlineAt) {
+      result.ranOutOfTime = true;
+      break;
+    }
     let report: PoDeliveryReport;
     try {
       report = await checkPoDelivery({ supplierId: k.supplierId, poNumber: k.poNumber });
