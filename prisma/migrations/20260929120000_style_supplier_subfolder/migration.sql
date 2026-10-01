@@ -7,4 +7,4 @@
 -- colour edit can't silently start a second folder. NULL = the flat layout.
 -- Additive and nullable: every existing style keeps delivering exactly where it
 -- does today.
-ALTER TABLE "Style" ADD COLUMN "supplierSubfolderName" TEXT;
+ALTER TABLE "styles" ADD COLUMN IF NOT EXISTS "supplierSubfolderName" TEXT;
