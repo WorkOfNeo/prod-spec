@@ -10,7 +10,11 @@ import {
   type ResolvedSpecField,
 } from "@/lib/styles/resolved-fields";
 import type { MondayItem } from "@/lib/monday/client";
-import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
+import {
+  getAutoGenerateEnabled,
+  getGenerationMinPo,
+  getSupplierSendMinPo,
+} from "@/lib/settings/app-settings";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { shareUrl } from "@/lib/supplier-share/share";
 import { findMissingDetailFields } from "@/lib/styles/detail-fields";
@@ -22,6 +26,11 @@ import {
 } from "@/lib/styles/effective-status";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import { styleReadinessNotice } from "@/lib/styles/readiness-notice";
+import { coverStatus } from "@/lib/styles/cover-status";
+import { hasPoNumber } from "@/lib/styles/active-filter";
+import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
+import { MAX_GEN_ATTEMPTS } from "@/lib/queue/generation-sweep";
+import { MAX_PUSH_ATTEMPTS } from "@/lib/sharepoint/push-queued-to-supplier";
 import { OutputReadinessNotice, type ReadinessHrefs } from "@/components/output-readiness-notice";
 import { mondayItemUrl } from "@/lib/monday/url";
 import { loadDocTypeExclusionRules, loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
@@ -556,8 +565,62 @@ export default async function StyleDetail({
   const readinessNoticeHasPdfs =
     style.jobs.some((j) => j.status !== "FAILED" && j.assets.length > 0) ||
     recentAssets.length > 0;
+  // Cover page — "why hasn't the cover been generated / uploaded?". The cover
+  // is built by every generation job, so these are the auto-generate gates
+  // plus the cover's supplier-send gates (see lib/styles/cover-status.ts).
+  const [generationMinPo, supplierSendMinPo, inFlightJobs, failedJobs, coverAsset, realOutputsGenerated, coverQueueRow] =
+    await Promise.all([
+      getGenerationMinPo(),
+      getSupplierSendMinPo(),
+      db.job.count({ where: { styleId: id, status: { in: ["QUEUED", "RUNNING"] } } }),
+      db.job.count({ where: { styleId: id, status: "FAILED" } }),
+      db.jobAsset.findFirst({
+        where: { job: { styleId: id, status: { not: "FAILED" } }, variantKey: COVER_VARIANT_KEY },
+        orderBy: { updatedAt: "desc" },
+        select: { updatedAt: true },
+      }),
+      db.jobAsset.count({
+        where: {
+          job: { styleId: id, status: { not: "FAILED" } },
+          variantKey: { notIn: [COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY], not: null },
+        },
+      }),
+      db.supplierSendQueueItem.findUnique({
+        where: { styleId_variantKey: { styleId: id, variantKey: COVER_VARIANT_KEY } },
+        select: {
+          sharePointStatus: true,
+          sharePointError: true,
+          sharePointFolderUrl: true,
+          pushAttempts: true,
+          lastPushAt: true,
+        },
+      }),
+    ]);
+  const cover = coverStatus({
+    hasPo: hasPoNumber(style.poNumber),
+    poSeq: style.poSeq,
+    autoGenerateEnabled,
+    hasProdSpec: Boolean(style.prodSpec),
+    prodSpecActive: style.prodSpec?.active === true,
+    coverOnly: style.prodSpec?.coverOnly === true,
+    generationMinPo,
+    readyOutputs: outputReadiness.filter((o) => !o.excluded && o.ready).length,
+    waitingOutputs: outputReadiness.filter((o) => !o.excluded && !o.ready).length,
+    inFlightJobs,
+    failedJobs,
+    maxGenAttempts: MAX_GEN_ATTEMPTS,
+    cover: coverAsset,
+    realOutputsGenerated,
+    hasSupplier: Boolean(style.supplierId),
+    skipSupplierDelivery: customerConfig.skipSupplierDelivery === true,
+    supplierSendMinPo,
+    queueRow: coverQueueRow,
+    maxPushAttempts: MAX_PUSH_ATTEMPTS,
+  });
+
   const readinessNotice = styleReadinessNotice(
     {
+      coverStep: cover.step,
       eanStatus: style.eanStatus,
       eanAttempts: style.eanAttempts,
       poNumber: style.poNumber,
@@ -584,6 +647,10 @@ export default async function StyleDetail({
       : {}),
     ...(style.supplier?.sharepointUrl
       ? { openSuppliersDrive: style.supplier.sharepointUrl }
+      : {}),
+    ...(isAdmin ? { openSettings: "/settings" } : {}),
+    ...((coverQueueRow?.sharePointFolderUrl ?? supplierDelivery?.folderUrl)
+      ? { openSupplierFolder: (coverQueueRow?.sharePointFolderUrl ?? supplierDelivery?.folderUrl)! }
       : {}),
   };
 

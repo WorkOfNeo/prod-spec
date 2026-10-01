@@ -43,6 +43,8 @@ export type ReadinessActionKey =
   | "setBusinessArea"
   | "openPoEans"
   | "openSuppliersDrive"
+  | "openSettings"
+  | "openSupplierFolder"
   | "rerun"
   | "review";
 
@@ -110,6 +112,11 @@ export type ReadinessNoticeInput = {
   // and the newest job's status (for render/barcode failure detection).
   hasPdfs?: boolean;
   latestJobStatus?: string | null;
+
+  // The cover-page step (coverStatus in styles/cover-status.ts) — why the
+  // cover hasn't been generated / uploaded. Only the style page supplies it;
+  // it's appended to the ladder and competes for the headline like any step.
+  coverStep?: ReadinessStep | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -283,7 +290,7 @@ function sourceStep(input: ReadinessNoticeInput): ReadinessStep | null {
         tone: "amber",
         title: "No PO number yet",
         detail:
-          "No PO on Monday, so EAN-dependent outputs can't resolve. Add the PO number on Monday; non-EAN outputs may still be ready.",
+          "Monday's \"Navision Task\" (PO number) is empty, so nothing generates for this style yet — no outputs, no cover. Fill it on Monday; the EAN lookup and generation start from there.",
         owner: "REVIEWER",
         actions: [{ label: "Open on Monday", key: "openMonday", kind: "default" }],
       };
@@ -682,6 +689,9 @@ export function styleReadinessNotice(
     }
     steps.push(...outputSteps(n, role, input.latestJobStatus));
   }
+
+  // 4. Cover page — generated and delivered to the supplier folder?
+  if (input.coverStep) steps.push(input.coverStep);
 
   const { headline, tone } = buildHeadline(steps, n, sourceBlocking || specBlocking);
 
