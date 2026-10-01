@@ -5,6 +5,7 @@ import {
   resolvePoFolder,
 } from "./supplier-folder";
 import { listDriveChildren } from "./shares";
+import { APPROVED_LAYOUTS_SUBFOLDER } from "./supplier-folder-names";
 
 // =====================================================
 // Read-only "how many files are in this style's PO folder" — powers the live
@@ -13,10 +14,12 @@ import { listDriveChildren } from "./shares";
 // (the SAME match the upload sweep uses — resolvePoFolder), then counts the
 // files inside it. All READ calls; safe before write access is granted.
 //
-// The count includes files directly in the PO folder AND files one level down
-// (the "APPROVED LAYOUTS" subfolder is where approved PDFs land) so the number
-// reflects what a person opening the folder would actually see. Bounded to one
-// level so a page render never fans out unboundedly.
+// The count includes files directly in the PO folder, files one level down (the
+// "APPROVED LAYOUTS" subfolder is where approved PDFs land) and — inside
+// APPROVED LAYOUTS only — one level further, where each style's own
+// "<style> - <colour>" folder sits. So the number reflects what a person
+// opening the folder would actually see, and a page render never fans out
+// beyond folders the app itself creates.
 // =====================================================
 
 export type PoFolderFilesStatus =
@@ -39,7 +42,8 @@ export type PoFolderFiles = {
 
 // Files directly in the folder plus files in each immediate subfolder — the
 // "APPROVED LAYOUTS" subfolder holds the approved PDFs, so a parent-only count
-// would read 0 even when the folder is full. One level deep only.
+// would read 0 even when the folder is full. APPROVED LAYOUTS is followed one
+// level further for the per-style folders; everything else stays one deep.
 async function countFiles(driveId: string, folderId: string): Promise<number> {
   const top = await listDriveChildren(driveId, folderId);
   let files = top.filter((i) => i.file).length;
@@ -47,6 +51,12 @@ async function countFiles(driveId: string, folderId: string): Promise<number> {
     if (!sub.folder || !sub.id) continue;
     const kids = await listDriveChildren(driveId, sub.id);
     files += kids.filter((i) => i.file).length;
+    if (sub.name?.toLowerCase() !== APPROVED_LAYOUTS_SUBFOLDER.toLowerCase()) continue;
+    for (const styleFolder of kids) {
+      if (!styleFolder.folder || !styleFolder.id) continue;
+      const styleFiles = await listDriveChildren(driveId, styleFolder.id);
+      files += styleFiles.filter((i) => i.file).length;
+    }
   }
   return files;
 }

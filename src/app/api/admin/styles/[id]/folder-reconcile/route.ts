@@ -8,6 +8,7 @@ import {
   repushRenamedFiles,
   ReconcileApplyError,
 } from "@/lib/sharepoint/reconcile-folder";
+import { moveStyleIntoSubfolder, MoveToStyleFolderError } from "@/lib/sharepoint/move-to-style-subfolder";
 
 export const runtime = "nodejs";
 // A handful of sequential Graph reads (resolve link → list the supplier root's
@@ -63,6 +64,7 @@ type ApplyBody = {
   itemId?: unknown; // action: "adopt-renamed"
   toFileName?: unknown; // action: "adopt-renamed"
   jobAssetIds?: unknown; // action: "repush-renamed"
+  dryRun?: unknown; // action: "move-to-style-folder" — true = preview only
 };
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -138,16 +140,30 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       return NextResponse.json({ ok: true, action, ...result });
     }
 
+    // ---- Move this style's already-delivered files out of the flat APPROVED
+    // LAYOUTS folder (or an old subfolder, after a colour fix) into its own
+    // "<style> - <colour>" folder. dryRun:true returns the plan and touches
+    // nothing; the panel always previews first, and the apply re-plans against
+    // a fresh listing inside the lib rather than trusting the preview.
+    if (action === "move-to-style-folder") {
+      const result = await moveStyleIntoSubfolder({
+        styleId: id,
+        dryRun: body.dryRun === true,
+        userId: session.user.id,
+      });
+      return NextResponse.json({ ok: true, action, ...result });
+    }
+
     return NextResponse.json(
       {
-        error: `Unknown action “${action}” — expected "rearm-missing", "adopt-renamed" or "repush-renamed".`,
+        error: `Unknown action “${action}” — expected "rearm-missing", "adopt-renamed", "repush-renamed" or "move-to-style-folder".`,
       },
       { status: 400 },
     );
   } catch (err) {
     // The lib's refusals are the USER's to resolve (folder moved, file already
     // re-uploaded, write not granted) rather than bugs — keep their status.
-    if (err instanceof ReconcileApplyError) {
+    if (err instanceof ReconcileApplyError || err instanceof MoveToStyleFolderError) {
       return NextResponse.json({ error: err.message }, { status: err.httpStatus });
     }
     console.error(`[folder-reconcile] ${action} failed for style ${id}:`, err);

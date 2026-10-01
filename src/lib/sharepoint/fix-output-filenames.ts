@@ -81,6 +81,8 @@ type StyleMeta = {
   name: string;
   poNumber: string | null;
   supplierPoFolderName: string | null;
+  // The style's own folder inside APPROVED LAYOUTS, when it has one.
+  supplierSubfolderName: string | null;
   supplierUrl: string | null;
 };
 
@@ -242,10 +244,24 @@ export async function fixOutputFileNames(opts?: {
   const styleIds = [...new Set(rows.map((r) => r.styleId))];
   const styleRows = await db.style.findMany({
     where: { id: { in: styleIds } },
-    select: { id: true, name: true, poNumber: true, supplierPoFolderName: true, supplier: { select: { sharepointUrl: true } } },
+    select: {
+      id: true,
+      name: true,
+      poNumber: true,
+      supplierPoFolderName: true,
+      supplierSubfolderName: true,
+      supplier: { select: { sharepointUrl: true } },
+    },
   });
   const styleMeta = new Map<string, StyleMeta>(
-    styleRows.map((s) => [s.id, { id: s.id, name: s.name, poNumber: s.poNumber, supplierPoFolderName: s.supplierPoFolderName, supplierUrl: s.supplier?.sharepointUrl ?? null }]),
+    styleRows.map((s) => [s.id, {
+        id: s.id,
+        name: s.name,
+        poNumber: s.poNumber,
+        supplierPoFolderName: s.supplierPoFolderName,
+        supplierSubfolderName: s.supplierSubfolderName,
+        supplierUrl: s.supplier?.sharepointUrl ?? null,
+      }]),
   );
 
   // ---- Plan: group by style, build StyleData once, diff each row's name.
@@ -407,9 +423,11 @@ async function writeBack(p: Planned, newWebUrl: string | null): Promise<void> {
     .catch(() => {});
 }
 
-// Resolve the APPROVED LAYOUTS folder (driveId + itemId) for a row: the stored
-// folder URL is the fast path; if it's stale (folder renamed), fall back to the
-// PO search the push/verify use. Cached per style.
+// Resolve the folder a row's file was pushed into (driveId + itemId): the
+// stored folder URL is the fast path; if it's stale (folder renamed), fall back
+// to the PO search the push/verify use — landing in the style's own
+// "<style> - <colour>" folder when it has one, APPROVED LAYOUTS otherwise.
+// Cached per style.
 async function resolveFolder(
   row: Row,
   meta: StyleMeta | undefined,
@@ -435,7 +453,12 @@ async function resolveFolder(
       const po = resolvePoFolder(children, meta.poNumber, meta.supplierPoFolderName);
       if (po.status === "found") {
         const leaf = await findChildFolder(rootFolder.driveId, po.folder.id, APPROVED_LAYOUTS_SUBFOLDER);
-        if (leaf) resolved = { driveId: rootFolder.driveId, itemId: leaf.id };
+        const styleLeaf =
+          leaf && meta.supplierSubfolderName
+            ? await findChildFolder(rootFolder.driveId, leaf.id, meta.supplierSubfolderName)
+            : null;
+        const target = styleLeaf ?? leaf;
+        if (target) resolved = { driveId: rootFolder.driveId, itemId: target.id };
       }
     } catch {
       resolved = null;

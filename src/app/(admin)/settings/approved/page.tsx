@@ -6,13 +6,14 @@ import {
   getSupplierBatchSendEnabled,
   getSupplierSendMinPo,
   getSupplierSendMinPoExplicit,
+  getStyleSubfolderMinPo,
 } from "@/lib/settings/app-settings";
 import { combineSupplierRecipients } from "@/lib/suppliers/recipients";
 import { loadContactEmailsBySupplier } from "@/lib/suppliers/contact-emails";
 import { MAX_PUSH_ATTEMPTS, SENT_RETRY_LEASE_MS } from "@/lib/sharepoint/push-queued-to-supplier";
 import { parseFolderMatches } from "@/lib/sharepoint/po-folder-matches";
 import { PoFolderPicker } from "@/app/(admin)/styles/[id]/po-folder-picker";
-import { SupplierSendSetting, SupplierSendCutoff } from "./supplier-send-setting";
+import { SupplierSendSetting, SupplierSendCutoff, StyleSubfolderCutoff } from "./supplier-send-setting";
 import {
   SupplierPreviewButton,
   RunBatchNowButton,
@@ -64,6 +65,7 @@ export default async function ApprovedDeliveryPage({
     batches,
     floatedCount,
     queuedRefs,
+    styleSubfolderCutoff,
   ] = await Promise.all([
     getSupplierBatchSendEnabled(),
     getSupplierSendMinPoExplicit(),
@@ -102,6 +104,7 @@ export default async function ApprovedDeliveryPage({
     // Exact totals for the summary cards — independent of the 500-row display
     // cap. (Live upload-status counts moved into the UploadProgress widget.)
     db.supplierSendQueueItem.findMany({ where: { sentAt: null }, select: { styleId: true, customerId: true } }),
+    getStyleSubfolderMinPo(),
   ]);
 
   // Last push error per row, read separately + guarded: the sharePointError
@@ -310,12 +313,13 @@ export default async function ApprovedDeliveryPage({
           </span>{" "}
           →{" "}
           <span className="font-mono text-[11px] text-zinc-600">APPROVED LAYOUTS</span>, shared across
-          styles on the same PO. Run this once to move styles that were already pushed under an older
+          styles on the same PO — and, from the PO set below, inside a folder per style/colourway. Run this once to move styles that were already pushed under an older
           naming into the new folders. Old folders are left in place — use the cleanup script
           (<span className="font-mono text-[11px]">npm run cleanup-legacy-supplier-folders</span>) to
           remove them.
         </p>
         <BackfillFoldersButton />
+        <StyleSubfolderCutoff initial={styleSubfolderCutoff} />
       </div>
 
       {/* Reconcile uploaded filenames with the layout's CURRENT template. Needed

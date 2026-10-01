@@ -200,6 +200,36 @@ export async function setSupplierSendMinPo(cutoff: number | null): Promise<void>
   });
 }
 
+const STYLE_SUBFOLDER_MIN_PO_KEY = "styleSubfolderMinPo";
+
+// PO-number cutoff for per-style subfolders inside "APPROVED LAYOUTS" — "from
+// this PO on, every style/colourway delivers into its own
+// "<style> - <colour>" folder". Below it (and for every PO while this is unset)
+// the flat layout stays exactly as the supplier already has it.
+//
+// Deliberately NO fallback chain: the other cutoffs follow each other because
+// they all mean "which orders are we working on", whereas this one changes the
+// SHAPE of the supplier's folder. It is a separate, explicit opt-in — unset
+// means off. Stored as the numeric part of the PO (63144 for "C-PO63144").
+export async function getStyleSubfolderMinPo(): Promise<number | null> {
+  const row = await db.appSetting.findUnique({ where: { key: STYLE_SUBFOLDER_MIN_PO_KEY } });
+  const value = typeof row?.value === "number" ? row.value : null;
+  return value !== null && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export async function setStyleSubfolderMinPo(cutoff: number | null): Promise<void> {
+  if (cutoff === null) {
+    // Cleared — drop the row (Prisma's Json type has no plain null write).
+    await db.appSetting.deleteMany({ where: { key: STYLE_SUBFOLDER_MIN_PO_KEY } });
+    return;
+  }
+  await db.appSetting.upsert({
+    where: { key: STYLE_SUBFOLDER_MIN_PO_KEY },
+    create: { key: STYLE_SUBFOLDER_MIN_PO_KEY, value: cutoff },
+    update: { value: cutoff },
+  });
+}
+
 const PO_EAN_AUTO_RUN_KEY = "poEanAutoRunEnabled";
 
 // Master switch for AUTOMATIC PO→EAN resolution (the barcode scrape).

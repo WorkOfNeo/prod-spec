@@ -1,4 +1,4 @@
-import { listChildFiles, sanitizeFileName, deleteDriveItem, SharePointWriteForbiddenError } from "./supplier-folder";
+import { listApprovedLayoutsFiles, sanitizeFileName, deleteDriveItem, SharePointWriteForbiddenError } from "./supplier-folder";
 import { missingGraphEnvVars } from "./auth";
 import { APPROVED_LAYOUTS_SUBFOLDER } from "./supplier-folder-names";
 import {
@@ -171,7 +171,9 @@ export async function checkPoDelivery(input: {
   let present: DeliveryFile[] = [];
   if (target.state === "ok") {
     try {
-      const files = await listChildFiles(target.driveId as string, target.leafItemId as string);
+      // Flat files and every style subfolder's files: a PO can hold both
+      // layouts, and the ledger matches on name across the whole PO.
+      const files = await listApprovedLayoutsFiles(target.driveId as string, target.leafItemId as string);
       present = files.map((f) => ({
         fileName: f.name,
         itemId: f.id,

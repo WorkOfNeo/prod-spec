@@ -164,3 +164,81 @@ export function SupplierSendCutoff({
     </div>
   );
 }
+
+// Per-style subfolder cutoff. From this PO on, every style/colourway delivers
+// into its own "<style> - <colour>" folder inside APPROVED LAYOUTS. Unset ⇒ off
+// (the flat layout everywhere). Forward-only — no fallback to the other cutoffs,
+// because this one changes the SHAPE of the supplier's folder.
+export function StyleSubfolderCutoff({ initial }: { initial: number | null }) {
+  const [value, setValue] = useState(initial === null ? "" : String(initial));
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function save(cutoff: number | null) {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/admin/settings/style-subfolder-min-po", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cutoff }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(j.error ?? `Failed to save (${res.status})`);
+      setMsg(
+        cutoff === null
+          ? "Cleared — every PO keeps delivering flat into APPROVED LAYOUTS."
+          : `Saved — from PO ${cutoff} on, each style gets its own folder in APPROVED LAYOUTS.`,
+      );
+      if (cutoff === null) setValue("");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t border-zinc-200 pt-3">
+      <div className="text-sm font-medium text-zinc-800">One folder per style, from PO</div>
+      <p className="mt-0.5 text-xs text-zinc-500">
+        From this PO number on, each style/colourway delivers into its own folder inside APPROVED LAYOUTS
+        (<span className="font-mono text-[11px] text-zinc-600">APPROVED LAYOUTS → AB10001 - Navy</span>).
+        Earlier orders keep the flat folder and nothing already delivered is moved — to tidy one style up,
+        use <strong>Move to style folder</strong> in the Supplier folder check on its page. Leave empty to
+        keep the flat layout everywhere.
+      </p>
+      <div className="mt-2 flex items-center gap-2">
+        <input
+          type="number"
+          inputMode="numeric"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="e.g. 63144"
+          className="w-44 rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm tabular-nums"
+        />
+        <button
+          type="button"
+          disabled={saving || value.trim() === "" || !Number.isFinite(Number(value)) || Number(value) <= 0}
+          onClick={() => save(Number(value))}
+          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => save(null)}
+          className="rounded-md px-2 py-1.5 text-xs text-zinc-500 underline disabled:opacity-50"
+        >
+          Clear
+        </button>
+      </div>
+      <div className="mt-2 text-xs text-zinc-500">
+        {saving
+          ? "Saving…"
+          : (msg ?? (initial === null ? "Off — every PO delivers flat into APPROVED LAYOUTS." : `On from PO ${initial}.`))}
+      </div>
+    </div>
+  );
+}

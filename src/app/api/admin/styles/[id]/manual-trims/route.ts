@@ -280,6 +280,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   try {
     const up = await uploadIntoApprovedLayouts({
       target: {
+        styleId: id,
         sharingUrl,
         poNumber: style.poNumber,
         preferredFolderName: style.supplierPoFolderName,

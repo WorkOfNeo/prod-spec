@@ -464,3 +464,81 @@ export async function uploadIntoFolder(
     throw err;
   }
 }
+
+// Move a drive item into another folder of the SAME drive (PATCH its
+// parentReference) — same item id, same bytes, same version history. This is
+// how the per-style "move into style folder" action re-homes files that were
+// delivered into the flat APPROVED LAYOUTS folder before styles had their own
+// subfolder, without a delete + re-upload. 404 → notFound; 409 (a file with the
+// same name already sits in the destination) → conflict, so the caller decides
+// which copy wins; 403 → write-forbidden.
+export async function moveDriveItem(
+  driveId: string,
+  itemId: string,
+  newParentItemId: string,
+): Promise<{ moved: boolean; notFound?: boolean; conflict?: boolean; webUrl?: string | null }> {
+  const client = getGraphClient();
+  try {
+    const res = (await client
+      .api(`/drives/${driveId}/items/${itemId}`)
+      .update({ parentReference: { id: newParentItemId } })) as SharedDriveItem;
+    return { moved: true, webUrl: res.webUrl ?? null };
+  } catch (err) {
+    const code = statusCodeOf(err);
+    if (code === 404) return { moved: false, notFound: true };
+    if (code === 409) return { moved: false, conflict: true };
+    if (code === 403) {
+      throw new SharePointWriteForbiddenError(`SharePoint refused the move (403) — ${WRITE_FORBIDDEN_HINT}`);
+    }
+    throw err;
+  }
+}
+
+// A file somewhere under APPROVED LAYOUTS: either directly in it (subfolder
+// null — the flat, pre-subfolder layout) or inside one style's subfolder.
+export type ApprovedLayoutsFile = ChildFile & {
+  subfolder: { id: string; name: string; webUrl: string | null } | null;
+};
+
+// Every file under APPROVED LAYOUTS, one level of subfolders deep — the flat
+// files AND each style subfolder's files, in one list.
+//
+// Since styles got their own subfolder ("APPROVED LAYOUTS/<style> - <colour>/")
+// a PO folder can hold both shapes at once: older styles still flat, newer ones
+// nested. Every surface that asks "is this file delivered?" matches on NAME
+// across the whole PO, so the answer has to look in both places — a reader that
+// only listed the flat folder would call every nested file missing and the
+// verify sweep would re-arm it forever.
+//
+// Exactly one level: the app only ever creates APPROVED LAYOUTS/<style>/, never
+// deeper, so recursing further would only pick up folders a person made by hand
+// (which the checks must not start acting on).
+export async function listApprovedLayoutsFiles(
+  driveId: string,
+  approvedLayoutsItemId: string,
+): Promise<ApprovedLayoutsFile[]> {
+  const [files, folders] = await Promise.all([
+    listChildFiles(driveId, approvedLayoutsItemId),
+    listChildFolders(driveId, approvedLayoutsItemId),
+  ]);
+  const out: ApprovedLayoutsFile[] = files.map((f) => ({ ...f, subfolder: null }));
+  for (const folder of folders) {
+    // An empty folder costs nothing to skip — childCount rides on the listing.
+    if (folder.childCount === 0) continue;
+    for (const f of await listChildFiles(driveId, folder.id)) {
+      out.push({ ...f, subfolder: { id: folder.id, name: folder.name, webUrl: folder.webUrl } });
+    }
+  }
+  return out;
+}
+
+// The names-only form of listApprovedLayoutsFiles, lowercased — what the verify
+// sweep and the delivery audit ask ("is this name anywhere under APPROVED
+// LAYOUTS?").
+export async function listApprovedLayoutsFileNames(
+  driveId: string,
+  approvedLayoutsItemId: string,
+): Promise<Set<string>> {
+  const files = await listApprovedLayoutsFiles(driveId, approvedLayoutsItemId);
+  return new Set(files.map((f) => f.name.toLowerCase()));
+}

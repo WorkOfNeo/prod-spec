@@ -3,7 +3,7 @@ import { getSupplierBatchSendEnabled } from "@/lib/settings/app-settings";
 import {
   resolveSupplierFolder,
   findChildFolder,
-  listChildFileNames,
+  listApprovedLayoutsFileNames,
   listChildFolders,
   resolvePoFolder,
   sanitizeFileName,
@@ -228,7 +228,9 @@ export async function verifySupplierUploads(opts?: {
             folderExists = false;
           } else {
             folderWebUrl = leaf.webUrl;
-            names = await listChildFileNames(root.driveId, leaf.id);
+            // Flat files AND every style subfolder's — a style delivering into
+            // "<style> - <colour>/" must read as present, not be re-armed forever.
+            names = await listApprovedLayoutsFileNames(root.driveId, leaf.id);
             listingCache.set(cacheKey, names);
           }
         } catch {

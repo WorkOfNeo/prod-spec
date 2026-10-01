@@ -1,7 +1,7 @@
 import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { coverSlug } from "@/lib/pdf/cover-file-name";
 import { missingGraphEnvVars } from "@/lib/sharepoint/auth";
-import { listChildFiles, sanitizeFileName } from "@/lib/sharepoint/supplier-folder";
+import { listApprovedLayoutsFiles, listChildFiles, sanitizeFileName } from "@/lib/sharepoint/supplier-folder";
 import { APPROVED_LAYOUTS_SUBFOLDER } from "@/lib/sharepoint/supplier-folder-names";
 import {
   loadExpectedFiles,
@@ -234,7 +234,9 @@ async function listFolderFiles(target: FolderTarget): Promise<FolderFile[] | nul
 
   if (target.leafItemId) {
     try {
-      for (const f of await listChildFiles(driveId, target.leafItemId)) {
+      // The flat files and each style subfolder's ("<style> - <colour>/") —
+      // both are the app's own writes, so both sit behind the same gate.
+      for (const f of await listApprovedLayoutsFiles(driveId, target.leafItemId)) {
         files.push({
           fileName: f.name,
           itemId: f.id,

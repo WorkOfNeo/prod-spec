@@ -11,6 +11,7 @@ import {
 } from "./supplier-folder";
 import { supplierParentFolderName, APPROVED_LAYOUTS_SUBFOLDER } from "./supplier-folder-names";
 import type { PoFolderMatch } from "./po-folder-matches";
+import { ensureStyleDeliveryFolder, styleSubfolderForUpload } from "./style-subfolder";
 
 // =====================================================
 // Push approved output PDFs into the supplier's own SharePoint folder. Layout:
@@ -18,6 +19,9 @@ import type { PoFolderMatch } from "./po-folder-matches";
 //   <supplier root>/
 //     <PO> - <customer> - <supplier>/      ← the PO folder — SEARCHED, never created
 //       APPROVED LAYOUTS/                   ← subfolder the PDFs land in (get-or-create)
+//         <style> - <colour>/               ← the style's own folder, from the
+//                                             style-subfolder PO cutoff on
+//                                             (get-or-create; see style-subfolder.ts)
 //
 // The PO folder is owned upstream (created by another process/person), so the
 // push SEARCHES the supplier's folder for the child whose name matches this
@@ -28,8 +32,10 @@ import type { PoFolderMatch } from "./po-folder-matches";
 // refuses with "ambiguous-folder" for a human to resolve. Inside the found PO
 // folder the "APPROVED LAYOUTS" subfolder IS ours to get-or-create.
 //
-// Every style under one PO therefore resolves to the SAME PO folder (filenames
-// are style-number-prefixed, so styles never clobber each other). Manual, admin-
+// Every style under one PO therefore resolves to the SAME PO folder. On the flat
+// layout they share APPROVED LAYOUTS too (filenames are style-number-prefixed,
+// and the cover carries the colour, so styles don't clobber each other); from
+// the style-subfolder cutoff on each style/colourway has its own folder there. Manual, admin-
 // triggered (phase 1) — distinct from the auto publish-on-approval upload in
 // publish-approved-job.ts, which targets the configured SHAREPOINT_SITE_ID site.
 // Only APPROVED, print-safe (no-placeholder) assets are ever pushed.
@@ -60,7 +66,11 @@ export type SupplierPushResult = {
   supplierName: string;
   folderName: string; // the "<PO> - <customer> - <supplier>" name the app would look for
   supplierFolderUrl: string | null; // the supplier's root folder
-  targetFolderUrl: string | null; // the "APPROVED LAYOUTS" subfolder (null on dry run / not found)
+  // Where the PDFs landed: the style's own "<style> - <colour>" folder, or the
+  // "APPROVED LAYOUTS" folder itself on the flat layout (null on dry run / not found).
+  targetFolderUrl: string | null;
+  // The style subfolder's name when the push used one (null = flat layout).
+  styleSubfolderName: string | null;
   poFolderStatus: PoFolderStatus; // did the PO folder search resolve?
   poFolderUrl: string | null; // the matched PO folder itself (null when missing)
   poFolderMatches?: PoFolderMatch[]; // competing folders (name + link) when ambiguous
@@ -189,6 +199,7 @@ export async function pushApprovedAssetsToSupplier(input: {
       folderName,
       supplierFolderUrl: folder.webUrl,
       targetFolderUrl: null,
+      styleSubfolderName: await styleSubfolderForUpload(style.id),
       poFolderStatus: resolution.status,
       poFolderUrl: resolution.status === "found" ? resolution.folder.webUrl : null,
       poFolderMatches: matchList,
@@ -221,13 +232,26 @@ export async function pushApprovedAssetsToSupplier(input: {
   const poFolder = resolution.folder;
 
   // Inside the found PO folder, get-or-create the "APPROVED LAYOUTS" subfolder
-  // (that one IS ours), then upload each PDF into it.
+  // (that one IS ours) and — from the style-subfolder cutoff on, or once the
+  // style has been moved — the style's own "<style> - <colour>" folder inside
+  // it, then upload each PDF into the innermost one.
   let subfolder;
+  let styleSubfolder: string | null;
   try {
-    subfolder = await ensureChildFolder(folder.driveId, poFolder.id, APPROVED_LAYOUTS_SUBFOLDER);
+    const approvedLayouts = await ensureChildFolder(folder.driveId, poFolder.id, APPROVED_LAYOUTS_SUBFOLDER);
+    styleSubfolder = await styleSubfolderForUpload(style.id);
+    subfolder = styleSubfolder
+      ? await ensureStyleDeliveryFolder({
+          driveId: folder.driveId,
+          approvedLayoutsItemId: approvedLayouts.id,
+          styleId: style.id,
+          subfolderName: styleSubfolder,
+        })
+      : approvedLayouts;
   } catch (err) {
     throw toPushError(err);
   }
+  const targetPath = `${folderName}/${APPROVED_LAYOUTS_SUBFOLDER}${styleSubfolder ? `/${styleSubfolder}` : ""}`;
 
   const pushed: PushedFile[] = [];
   for (const a of pushable) {
@@ -257,9 +281,16 @@ export async function pushApprovedAssetsToSupplier(input: {
       jobId: pushable[0]?.jobId ?? null,
       level: "INFO",
       message:
-        `pushed ${pushed.length} output(s) to supplier folder · ${supplier.name} → ${folderName}/${APPROVED_LAYOUTS_SUBFOLDER}` +
+        `pushed ${pushed.length} output(s) to supplier folder · ${supplier.name} → ${targetPath}` +
         (subfolder.webUrl ? ` · ${subfolder.webUrl}` : ""),
-      payload: { supplier: supplier.name, folderName, pushed, skipped, byUserId: input.userId ?? null },
+      payload: {
+        supplier: supplier.name,
+        folderName,
+        styleSubfolder,
+        pushed,
+        skipped,
+        byUserId: input.userId ?? null,
+      },
     },
   });
 
@@ -269,6 +300,7 @@ export async function pushApprovedAssetsToSupplier(input: {
     folderName,
     supplierFolderUrl: folder.webUrl,
     targetFolderUrl: subfolder.webUrl,
+    styleSubfolderName: styleSubfolder,
     poFolderStatus: "found",
     poFolderUrl: poFolder.webUrl,
     pushed,
