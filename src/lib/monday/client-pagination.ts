@@ -4,6 +4,7 @@
 // cursor-driven paging needed for bulk mirrors.
 
 import { MondayError, type MondayItem } from "./client";
+import { assertMondayWriteAllowed } from "@/lib/sandbox";
 
 const MONDAY_API_URL = "https://api.monday.com/v2";
 
@@ -16,6 +17,7 @@ function getConfig(): Config {
 }
 
 async function gql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+  assertMondayWriteAllowed(query);
   const { token, apiVersion } = getConfig();
   const res = await fetch(MONDAY_API_URL, {
     method: "POST",

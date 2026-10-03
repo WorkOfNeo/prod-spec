@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { changeItemValue } from "@/lib/monday/client";
 import { getMondayWriteBackEnabled } from "@/lib/settings/app-settings";
+import { isSandbox } from "@/lib/sandbox";
 
 // =====================================================
 // The ONE place every outbound Monday status write goes through.
@@ -53,7 +54,9 @@ export type WriteBackInput = {
 export async function writeBackStatus(input: WriteBackInput): Promise<WriteBackResult> {
   const from = input.currentLabel ?? null;
   const to = input.label;
-  const enabled = await getMondayWriteBackEnabled();
+  // Sandbox (dev on a prod snapshot) forces SIMULATED whatever the switch in
+  // the copied app_settings says — the log row still shows what would fire.
+  const enabled = !isSandbox() && (await getMondayWriteBackEnabled());
 
   let mode: WriteBackMode;
   let error: string | undefined;

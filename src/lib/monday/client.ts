@@ -1,3 +1,5 @@
+import { assertMondayWriteAllowed } from "@/lib/sandbox";
+
 const MONDAY_API_URL = "https://api.monday.com/v2";
 
 export class MondayError extends Error {
@@ -73,6 +75,8 @@ function getConfig(): MondayConfig {
 }
 
 async function gql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+  // Sandbox (dev on a prod snapshot): reads pass, mutations throw.
+  assertMondayWriteAllowed(query);
   const { token, apiVersion } = getConfig();
   const res = await fetch(MONDAY_API_URL, {
     method: "POST",
