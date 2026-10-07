@@ -28,8 +28,9 @@ export default async function StyleDashboardPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Style dashboard</h1>
         <p className="mt-1 max-w-2xl text-sm text-zinc-500">
           Live view of output generation — what&rsquo;s in the queue and for how long, how much has
-          been generated and sent over time, and every generated output with its SharePoint and
-          supplier-email state.
+          been generated and sent over time, and every style with a PO number: its cover page, its
+          outputs with their SharePoint and supplier-email state, and — for a style that hasn&rsquo;t
+          started — why not. Filter Progress → Not started to see what&rsquo;s waiting.
         </p>
       </div>
 
