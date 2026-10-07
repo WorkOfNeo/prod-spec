@@ -573,9 +573,10 @@ export function ProdSpecEditor(props: Props) {
               <span>
                 <strong>Cover page only — the customer supplies every layout themselves</strong>
                 <span className="mt-1 block text-xs text-zinc-500">
-                  A run produces the cover and nothing else. Use this when the customer sends
-                  us finished artwork and only needs the cover generated; the rest arrives
-                  through the upload zones on each style&apos;s Review tab.
+                  Every style on this spec gets its cover page generated automatically, even
+                  with no Outputs below — the rest arrives through the upload zones on each
+                  style&apos;s Review tab. Outputs you do add later still generate as normal, so
+                  the customer can start using our layouts without this tick getting in the way.
                 </span>
                 <span className="mt-1 block text-xs text-zinc-500">
                   Leave this off and an empty Outputs list below is treated as a mistake — a

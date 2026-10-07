@@ -19,13 +19,12 @@ import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-pa
 import type { TriggerSource } from "@/generated/prisma/enums";
 import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
 import {
-  DEFAULT_OUTPUTS,
   parseBundlePageSettings,
   parseProdSpecColumnMapping,
-  parseProdSpecOutputs,
   resolveOutputVariant,
   type ProdSpecOutput,
 } from "@/lib/prod-spec/config";
+import { selectRunOutputs } from "@/lib/queue/select-outputs";
 import { eanResolveInputs, eanResolveKey } from "@/lib/po/resolve-inputs";
 import { resolveAndPersistStyleEans } from "@/lib/po/ean-runner";
 import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
@@ -288,30 +287,14 @@ export async function processJob(jobId: string): Promise<void> {
     throw new RunnerError("MAPPING_FAILED", `monday → style data mapping failed: ${(err as Error).message}`);
   }
 
-  // Pick which variants to render. ProdSpec.outputs is the source of truth
-  // when available — the operator selected those explicitly in the editor.
-  //
-  // DEFAULT_OUTPUTS is the fallback for a style with no ProdSpec yet, and it is
-  // EMPTY (src/lib/prod-spec/config.ts). It once meant "one of each variant";
-  // that stopped being true and the comment here outlived it. So an empty spec
-  // does not quietly generate a default set — it selects nothing and raises
-  // NO_OUTPUTS further down, which is the behaviour cover-only exists to make
-  // deliberate rather than accidental.
-  // A cover-only spec means it: no outputs, and crucially NO fallback. Letting
-  // DEFAULT_OUTPUTS stand in here would produce one of every variant for a
-  // customer who supplies all their own layouts — the exact opposite of what
-  // was asked for, and it would reach their folder before anyone noticed.
+  // Pick which variants to render — every enabled output on the spec. A
+  // cover-only spec with none selects nothing (and no fallback), and the run
+  // still builds the cover below instead of raising NO_OUTPUTS. Configured
+  // outputs always render, cover-only or not, so a customer who starts using
+  // our layouts isn't blocked by the tick. See selectRunOutputs.
   const coverOnly = prodSpec?.coverOnly === true;
 
-  let outputs: ProdSpecOutput[] = (() => {
-    if (coverOnly) return [];
-    if (prodSpec) {
-      const parsed = parseProdSpecOutputs(prodSpec.outputs);
-      const enabled = parsed.filter((o) => o.enabled !== false);
-      if (enabled.length > 0) return enabled;
-    }
-    return DEFAULT_OUTPUTS;
-  })();
+  let outputs: ProdSpecOutput[] = selectRunOutputs(prodSpec);
   // The FULL declared/enabled set, captured before the scope / durable-approval
   // / missing-field filters below narrow `outputs` down to this run's render
   // subset. The cover page lists ALL of these as "required packaging" (minus
@@ -1067,10 +1050,16 @@ export async function processJob(jobId: string): Promise<void> {
             : {}),
         },
       }),
-      db.style.update({
-        where: { id: job.styleId },
-        data: { status: "AWAITING_REVIEW" },
-      }),
+      // A run that generated nothing (only the cover — the first-cover run for
+      // a style whose outputs aren't ready yet, or a scoped re-run whose
+      // targets dropped out) leaves the style's status alone: there is no
+      // layout to review, and flipping a PENDING/READY style to
+      // AWAITING_REVIEW would drop it out of the backlog sweep that generates
+      // its outputs once they're ready. A cover-only spec is the exception —
+      // its cover IS the deliverable, so it goes to review.
+      ...(generated.length > 0 || coverOnly
+        ? [db.style.update({ where: { id: job.styleId }, data: { status: "AWAITING_REVIEW" } })]
+        : []),
       // A FULL re-run is a fresh review round: the whole style regenerated, so
       // every prior open rejection ticket is superseded and moves to history in
       // the same commit as the asset swap. Scoped/partial runs (ticket re-runs,

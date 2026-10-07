@@ -84,6 +84,10 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const router = useRouter();
   const [coverStatus, setCoverStatus] = useState<CoverStatus>("idle");
+  // The style had no cover when the change was made, so the server queued a
+  // generation run to build its FIRST one (see enqueueFirstCovers) rather than
+  // a rebuild — worded differently, since it lands on the Review tab.
+  const [firstCover, setFirstCover] = useState(false);
   // Bumped on every new watch, so an older one still polling stops quietly.
   const watchToken = useRef(0);
 
@@ -110,11 +114,11 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
   // cover preview on it shows the new version. Without this the cover on
   // screen was the one loaded before the click — the rebuild lands ~10 s later
   // and nothing told the page — which read as "approved, but the cover didn't
-  // change".
+  // change". With no cover yet, it waits for the first one to appear instead.
   const watchCover = useCallback(
     async (before: Payload["cover"]) => {
-      if (!before) return;
       const token = ++watchToken.current;
+      setFirstCover(!before);
       setCoverStatus("updating");
       const deadline = Date.now() + COVER_WATCH_MS;
       while (Date.now() < deadline) {
@@ -128,7 +132,7 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
         }
         if (token !== watchToken.current) return;
         setData(p);
-        if (p.cover && p.cover.version !== before.version && !p.cover.pending) {
+        if (p.cover && (!before || p.cover.version !== before.version) && !p.cover.pending) {
           setCoverStatus("updated");
           router.refresh();
           return;
@@ -258,12 +262,16 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
 
       {coverStatus === "updating" && (
         <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
-          Rebuilding the cover page… it refreshes here by itself when it&apos;s done.
+          {firstCover
+            ? "This style has no cover page yet — generating it now… it refreshes here by itself when it\u2019s done."
+            : "Rebuilding the cover page… it refreshes here by itself when it\u2019s done."}
         </p>
       )}
       {coverStatus === "updated" && (
         <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-          Cover page rebuilt and sent on to the supplier&apos;s folder.
+          {firstCover
+            ? "Cover page generated — it\u2019s on the Review tab."
+            : "Cover page rebuilt and sent on to the supplier\u2019s folder."}
         </p>
       )}
       {coverStatus === "slow" && (

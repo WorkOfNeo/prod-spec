@@ -1,6 +1,8 @@
 import { getCoverRegenQueue, updateCoverRegenQueue } from "@/lib/settings/app-settings";
 import { dueStyleIds, rearmFailed, withoutDue, type CoverRegenQueue } from "@/lib/pdf/cover-regen-ledger";
 import { processCoverRefreshChunk } from "@/lib/pdf/cover-regen-sweep";
+import { maybeEnqueueCoverRun } from "@/lib/queue/generation-sweep";
+import { triggerRunner } from "@/lib/queue/trigger";
 
 // =====================================================
 // Automatic, debounced cover refresh. Every output approval/rejection stamps
@@ -68,6 +70,8 @@ export type CoverRegenDrainResult = {
   processed: number;
   refreshed: number;
   noCover: number;
+  // no-cover styles handed to a generation run so they get their FIRST cover.
+  coverRuns: number;
   pushed: number;
   errors: number;
 };
@@ -83,6 +87,7 @@ export async function runDueCoverRegens(): Promise<CoverRegenDrainResult> {
     processed: 0,
     refreshed: 0,
     noCover: 0,
+    coverRuns: 0,
     pushed: 0,
     errors: 0,
   };
@@ -121,10 +126,13 @@ export async function runDueCoverRegens(): Promise<CoverRegenDrainResult> {
     // A per-style failure is retried rather than dropped — the claim already
     // took it out of the ledger, so without this nothing would ever rebuild it.
     if (failed.length > 0) await rearm(failed.map((o) => o.styleId), claimed);
+    const noCover = outcomes.filter((o) => o.status === "no-cover").map((o) => o.styleId);
+    const coverRuns = await enqueueFirstCovers(noCover);
     return {
       processed: due.length,
       refreshed: outcomes.filter((o) => o.status === "refreshed").length,
-      noCover: outcomes.filter((o) => o.status === "no-cover").length,
+      noCover: noCover.length,
+      coverRuns,
       pushed,
       errors: failed.length,
     };
@@ -135,6 +143,30 @@ export async function runDueCoverRegens(): Promise<CoverRegenDrainResult> {
     await rearm(due, claimed);
     return { ...empty, errors: due.length };
   }
+}
+
+// The failsafe for "a packaging line changed, but there is no cover to
+// rebuild". The refresh path only rewrites an EXISTING cover in place, and a
+// cover is only ever built by a generation run — so a style whose first run
+// never happened (no output ready yet, or a cover-only spec with none at all)
+// used to drop out here as "no-cover" and stay without one. A manual
+// upload or approval is demand for the cover, so hand those styles to a run:
+// it renders the ready outputs (none, for a cover-only spec) and builds the
+// cover with the manifest as it stands now. Bounded — the gate closes once the
+// cover exists, and it stops after repeated failures. Best-effort per style.
+async function enqueueFirstCovers(styleIds: string[]): Promise<number> {
+  let enqueued = 0;
+  for (const styleId of styleIds) {
+    try {
+      const r = await maybeEnqueueCoverRun(styleId, "CRON_SWEEP");
+      if (r.enqueued) enqueued += 1;
+      else console.info(`[cover-regen] ${styleId} has no cover and no run was queued: ${r.reason}`);
+    } catch (err) {
+      console.warn(`[cover-regen] could not queue a cover run for ${styleId}:`, err);
+    }
+  }
+  if (enqueued > 0) await triggerRunner();
+  return enqueued;
 }
 
 // Put failed styles back in the ledger with a backoff (see rearmFailed).
