@@ -50,8 +50,8 @@ export type AutoEnqueueResult =
 //      the per-output model each output gates on its own required fields,
 //      the granular successor to the union completion threshold (see
 //      computeReadiness in src/lib/styles/readiness.ts).
-//   5. cover run — nothing pending, but a cover-only style with no cover yet
-//      still gets one run for its cover (maybeEnqueueCoverRun).
+//   5. cover run — nothing pending, but a style with a PO number and no cover
+//      yet still gets one run for its cover (maybeEnqueueCoverRun).
 //
 // Deliberately does NOT call triggerRunner(): the caller fires it once (a
 // single inline kick for a webhook event; one kick at the end of a bulk
@@ -97,11 +97,9 @@ export async function autoEnqueueReadyOutputs(input: {
 
   const variantKeys = await pendingOutputKeysForStyle(input.styleId, client);
   if (variantKeys.length === 0) {
-    // A cover-only style has no output to become "ready", so without this the
-    // ingest would never generate it — and its cover is only built by a run.
-    // One run for the first cover; closed for good once it exists.
+    // Nothing ready to render — but the PO number alone earns the style its
+    // cover. One run for the first cover; closed for good once it exists.
     const cover = await maybeEnqueueCoverRun(input.styleId, input.triggerSource, {
-      requireCoverOnly: true,
       autoGenerateEnabled: true,
       client,
     });

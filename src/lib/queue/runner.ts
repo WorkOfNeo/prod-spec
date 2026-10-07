@@ -1050,10 +1050,16 @@ export async function processJob(jobId: string): Promise<void> {
             : {}),
         },
       }),
-      db.style.update({
-        where: { id: job.styleId },
-        data: { status: "AWAITING_REVIEW" },
-      }),
+      // A run that generated nothing (only the cover — the first-cover run for
+      // a style whose outputs aren't ready yet, or a scoped re-run whose
+      // targets dropped out) leaves the style's status alone: there is no
+      // layout to review, and flipping a PENDING/READY style to
+      // AWAITING_REVIEW would drop it out of the backlog sweep that generates
+      // its outputs once they're ready. A cover-only spec is the exception —
+      // its cover IS the deliverable, so it goes to review.
+      ...(generated.length > 0 || coverOnly
+        ? [db.style.update({ where: { id: job.styleId }, data: { status: "AWAITING_REVIEW" } })]
+        : []),
       // A FULL re-run is a fresh review round: the whole style regenerated, so
       // every prior open rejection ticket is superseded and moves to history in
       // the same commit as the asset swap. Scoped/partial runs (ticket re-runs,

@@ -148,8 +148,8 @@ export async function runDueCoverRegens(): Promise<CoverRegenDrainResult> {
 // The failsafe for "a packaging line changed, but there is no cover to
 // rebuild". The refresh path only rewrites an EXISTING cover in place, and a
 // cover is only ever built by a generation run — so a style whose first run
-// never happened (a cover-only spec has no output to trigger one) or never got
-// that far used to drop out here as "no-cover" and stay without one. A manual
+// never happened (no output ready yet, or a cover-only spec with none at all)
+// used to drop out here as "no-cover" and stay without one. A manual
 // upload or approval is demand for the cover, so hand those styles to a run:
 // it renders the ready outputs (none, for a cover-only spec) and builds the
 // cover with the manifest as it stands now. Bounded — the gate closes once the
@@ -158,7 +158,7 @@ async function enqueueFirstCovers(styleIds: string[]): Promise<number> {
   let enqueued = 0;
   for (const styleId of styleIds) {
     try {
-      const r = await maybeEnqueueCoverRun(styleId, "CRON_SWEEP", { requireCoverOnly: false });
+      const r = await maybeEnqueueCoverRun(styleId, "CRON_SWEEP");
       if (r.enqueued) enqueued += 1;
       else console.info(`[cover-regen] ${styleId} has no cover and no run was queued: ${r.reason}`);
     } catch (err) {
