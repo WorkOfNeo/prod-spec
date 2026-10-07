@@ -69,6 +69,7 @@ export function mapMondayItemToStyleData(
     sizes: parseSizes(readField("sizes"), readField("ean13")),
     cartonQtyRaw: readField("cartonQty") || undefined,
     sizeRatioRaw: readField("sizeRatio") || undefined,
+    unitOfMeasure: readField("unitOfMeasure") || undefined,
     styleCommentsRaw: readField("styleComments") || undefined,
     carton: {
       klNumber: readField("klNumber"),

@@ -16,7 +16,7 @@ import {
 } from "@/lib/prod-spec/config";
 import { mapMondayItemToStyleData } from "@/lib/pdf/mapper";
 import { loadWashcareSymbols, rejoinWashTokens } from "@/lib/pdf/washcare-symbols";
-import type { MondayItem } from "@/lib/monday/client";
+import { columnText, type MondayItem } from "@/lib/monday/client";
 import type { StyleData } from "@/lib/pdf/types";
 import { effectiveStyleItem } from "./resolved-fields";
 import { outputReadinessForStyle, type OutputReadiness } from "./output-readiness";
@@ -198,6 +198,13 @@ export async function buildStyleData(
     styleData.washSymbols = rejoinWashTokens(styleData.washSymbols, symbolMap);
   }
 
+  // Unit of measurement ("Sets" / "PCS") for the assortment total. When no
+  // mapping names its column, find the board's column by title instead.
+  if (!styleData.unitOfMeasure && !effectiveMapping.unitOfMeasure) {
+    const colId = await unitOfMeasureColumnId(style.mondayBoardId);
+    if (colId) styleData.unitOfMeasure = columnText(item, colId) || undefined;
+  }
+
   // Custom Carton Marking: pre-fetch the same-PO siblings POOL so the carton
   // dialog can offer candidates and a multi-style preview/print resolves
   // {{style2}}+ SYNC. Opt-in (loadSiblings) + guarded by poNumber. The flag
@@ -214,6 +221,30 @@ export async function buildStyleData(
   }
 
   return styleData;
+}
+
+// The Monday column id of the board's "Unit of measurement" column, read
+// from the synced ghost schema by title (no id is hard-coded in
+// DEFAULT_COLUMN_MAPPING). Memoised per board for a few minutes so a batch
+// render doesn't query it per style; fail-soft — a lookup error just leaves
+// the total on PCS.
+const UOM_TITLE = /^\s*unit\s+of\s+measure(ment)?\s*$/i;
+const UOM_TTL_MS = 5 * 60 * 1000;
+const uomColumnCache = new Map<string, { at: number; id: Promise<string | null> }>();
+
+async function unitOfMeasureColumnId(mondayBoardId: string): Promise<string | null> {
+  if (!mondayBoardId || mondayBoardId === "manual") return null;
+  const hit = uomColumnCache.get(mondayBoardId);
+  if (hit && Date.now() - hit.at < UOM_TTL_MS) return hit.id;
+  const id = db.mondayGhostColumn
+    .findMany({
+      where: { board: { mondayBoardId } },
+      select: { mondayColumnId: true, title: true },
+    })
+    .then((cols) => cols.find((c) => UOM_TITLE.test(c.title))?.mondayColumnId ?? null)
+    .catch(() => null);
+  uomColumnCache.set(mondayBoardId, { at: Date.now(), id });
+  return id;
 }
 
 // How many same-PO siblings to load into the pool. A layout can reference
