@@ -166,6 +166,18 @@ test("sizes with no ratio contribute nothing to the total", async () => {
   assert.equal(totalCell(html), "6 PCS", "the empty cells add nothing");
 });
 
+test("the total takes the style's Monday unit of measurement", async () => {
+  const style = { ...buildSampleStyleData(), unitOfMeasure: "sets" };
+  const html = await renderLayoutHtml(defWith(["{{assortmentTable:total}}"]), style);
+  assert.equal(totalCell(html), "12 Sets", "capitalised, in place of PCS");
+});
+
+test("an empty unit of measurement falls back to PCS", async () => {
+  const style = { ...buildSampleStyleData(), unitOfMeasure: "  " };
+  const html = await renderLayoutHtml(defWith(["{{assortmentTable:total}}"]), style);
+  assert.equal(totalCell(html), "12 PCS");
+});
+
 test("{{assortmentTotal}} prints the same number on its own", async () => {
   const html = await renderLayoutHtml(
     defWith(["Total {{assortmentTotal}} PCS"]),

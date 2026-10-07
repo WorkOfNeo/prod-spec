@@ -259,7 +259,7 @@ const RESOLVERS: Record<string, TextResolver> = {
     const entries = sizeRatioEntries(s);
     const flat = formatSizeRatio(entries);
     if (arg !== TABLE_TOTAL_ARG || !flat) return flat;
-    const total = formatSizeRatioTotal(entries);
+    const total = formatSizeRatioTotal(entries, s.unitOfMeasure);
     return total ? `${flat} (${total})` : flat;
   },
   // The same total on its own — the number only, so a layout can print it

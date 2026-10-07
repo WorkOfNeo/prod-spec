@@ -112,6 +112,7 @@ export const STYLE_FIELD_LABELS = {
   washCare: "Wash care",
   sizes: "Sizes",
   sizeRatio: "Size ratio (assortment)",
+  unitOfMeasure: "Unit of measurement",
   ean13: "EAN-13 (per size)",
   cartonEan: "Carton EAN",
   assortEan: "Assortment EAN",

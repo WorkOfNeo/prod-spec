@@ -869,15 +869,16 @@ function renderLine(line: string, style: StyleData, ctx: RenderCtx, blockWidthMm
 // {{assortmentTable:total}} adds ONE trailing column: the pack's total in
 // the bottom-right corner, on the qty row, under an empty corner header.
 // It sums exactly the numbers the qty row prints, so the table always adds
-// up for whoever reads it. A ratio that totals nothing drops the column
-// rather than printing "0 PCS".
+// up for whoever reads it. The unit is the style's Monday "Unit of
+// measurement" ("12 Sets"), PCS when empty. A ratio that totals nothing
+// drops the column rather than printing "0 PCS".
 function renderAssortmentTableHtml(style: StyleData, withTotal: boolean): string {
   const entries = sizeRatioEntries(style);
   if (entries.length === 0) return "";
 
   const head = entries.map((e) => `<th>${escapeHtml(e.size)}</th>`).join("");
   const body = entries.map((e) => `<td>${escapeHtml(e.qty)}</td>`).join("");
-  const total = withTotal ? formatSizeRatioTotal(entries) : "";
+  const total = withTotal ? formatSizeRatioTotal(entries, style.unitOfMeasure) : "";
   return (
     `<table class="ol-assort">` +
     `<tr><th class="ol-assort-lbl">Size</th>${head}` +

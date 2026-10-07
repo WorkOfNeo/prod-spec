@@ -28,6 +28,11 @@ export const ColumnMappingSchema = z.object({
   // EANs follow). Free text with six live shapes; see output-layouts/
   // size-ratio.ts for the parser and {{assortmentTable}} for the output.
   sizeRatio: z.string().optional(),
+  // "Unit of measurement" — what one counted piece of the style is ("Sets",
+  // "PCS", …). Printed as the unit after the assortment total
+  // ({{assortmentTable:total}} → "12 Sets"); PCS when empty. No default id:
+  // when unmapped, render-context resolves the Pre-Order column by its title.
+  unitOfMeasure: z.string().optional(),
   ean13: z.string().optional(),
   klNumber: z.string().optional(),
   supplierNumber: z.string().optional(),
@@ -229,6 +234,7 @@ export const MANUAL_COLUMN_IDS = {
   washCare: "manual.washCare",
   sizes: "manual.sizes",
   sizeRatio: "manual.sizeRatio",
+  unitOfMeasure: "manual.unitOfMeasure",
   ean13: "manual.ean13",
   klNumber: "manual.klNumber",
   supplierNumber: "manual.supplierNumber",
