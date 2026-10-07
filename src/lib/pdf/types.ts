@@ -123,6 +123,11 @@ export type StyleData = {
   // omit it.
   sizeRatioRaw?: string;
 
+  // Monday "Unit of measurement" ("Sets", "PCS", …) — the unit printed after
+  // the assortment total. Empty → PCS (see formatSizeRatioTotal). Optional:
+  // non-mapper constructors omit it.
+  unitOfMeasure?: string;
+
   // Raw "Customer Item No" column text. `customerItemNo` is the same value
   // AFTER repetitionStyles narrowed it to the row's size, which for a
   // labelled list drops everything the row didn't claim — including

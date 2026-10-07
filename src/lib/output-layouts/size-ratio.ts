@@ -256,9 +256,18 @@ export function formatSizeRatio(entries: readonly SizeRatioEntry[]): string {
     .join(", ");
 }
 
-// The unit printed beside the assortment total. One constant so the table
-// cell and the text stand-in can never drift apart.
+// The unit printed beside the assortment total when the style carries no
+// Monday "Unit of measurement". One constant so the table cell and the text
+// stand-in can never drift apart.
 export const ASSORT_TOTAL_UNIT = "PCS";
+
+// The unit as it prints: the style's Monday "Unit of measurement" with its
+// first letter capitalised ("sets" → "Sets", "PCS" stays "PCS"), or PCS
+// when the column is empty.
+export function assortTotalUnit(unitOfMeasure?: string): string {
+  const u = (unitOfMeasure ?? "").trim();
+  return u ? u.charAt(0).toUpperCase() + u.slice(1) : ASSORT_TOTAL_UNIT;
+}
 
 // The pack's total: every number the table PRINTS, added up — "1,2,2,1" → 6.
 // Sizes the buyer gave no value contribute nothing (they show as an empty
@@ -271,11 +280,15 @@ export function sumSizeRatio(entries: readonly SizeRatioEntry[]): number {
   }, 0);
 }
 
-// The total as it prints — "12 PCS". "" when the run totals nothing, so an
-// unreadable ratio drops the cell rather than printing a misleading 0.
-export function formatSizeRatioTotal(entries: readonly SizeRatioEntry[]): string {
+// The total as it prints — "12 PCS", or "12 Sets" for a style whose unit of
+// measurement is sets. "" when the run totals nothing, so an unreadable
+// ratio drops the cell rather than printing a misleading 0.
+export function formatSizeRatioTotal(
+  entries: readonly SizeRatioEntry[],
+  unitOfMeasure?: string,
+): string {
   const total = sumSizeRatio(entries);
-  return total > 0 ? `${total} ${ASSORT_TOTAL_UNIT}` : "";
+  return total > 0 ? `${total} ${assortTotalUnit(unitOfMeasure)}` : "";
 }
 
 // The ratio for the size(s) a repetition row was narrowed to — backs
