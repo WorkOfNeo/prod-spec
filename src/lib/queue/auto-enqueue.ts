@@ -4,6 +4,7 @@ import { enqueueGenerationJob } from "./enqueue";
 import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
 import { pendingOutputKeysForStyle } from "@/lib/styles/output-readiness";
 import { hasPoNumber } from "@/lib/styles/active-filter";
+import { maybeEnqueueCoverRun } from "./generation-sweep";
 
 // Why the style was NOT auto-enqueued. Surfaced for logging/tests so a
 // caller can tell "switched off" apart from "already covered".
@@ -49,6 +50,8 @@ export type AutoEnqueueResult =
 //      the per-output model each output gates on its own required fields,
 //      the granular successor to the union completion threshold (see
 //      computeReadiness in src/lib/styles/readiness.ts).
+//   5. cover run — nothing pending, but a cover-only style with no cover yet
+//      still gets one run for its cover (maybeEnqueueCoverRun).
 //
 // Deliberately does NOT call triggerRunner(): the caller fires it once (a
 // single inline kick for a webhook event; one kick at the end of a bulk
@@ -94,6 +97,15 @@ export async function autoEnqueueReadyOutputs(input: {
 
   const variantKeys = await pendingOutputKeysForStyle(input.styleId, client);
   if (variantKeys.length === 0) {
+    // A cover-only style has no output to become "ready", so without this the
+    // ingest would never generate it — and its cover is only built by a run.
+    // One run for the first cover; closed for good once it exists.
+    const cover = await maybeEnqueueCoverRun(input.styleId, input.triggerSource, {
+      requireCoverOnly: true,
+      autoGenerateEnabled: true,
+      client,
+    });
+    if (cover.enqueued) return { enqueued: true, jobId: cover.jobId, variantKeys: [] };
     return { enqueued: false, skipped: "nothing_pending", variantKeys: [] };
   }
 
