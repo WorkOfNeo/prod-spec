@@ -1,6 +1,5 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
-import { formatDate } from "@/lib/utils";
 import { computeReadiness } from "@/lib/styles/readiness";
 import { computeEffectiveStatus } from "@/lib/styles/effective-status";
 import { findMissingDetailFields, requiredFieldKeysFromOutputs } from "@/lib/styles/detail-fields";
@@ -80,6 +79,21 @@ export const STYLE_LIST_SELECT = {
   // Style.status, which Monday re-syncs reset (see ingest.ts).
   jobs: { orderBy: { createdAt: "desc" }, take: 1, select: { status: true } },
 } satisfies Prisma.StyleSelect;
+
+// formatDate (src/lib/utils.ts) via ONE shared formatter. toLocaleString
+// builds a fresh Intl formatter on every call (~80 µs), and three dates per
+// row made it the single most expensive step of building ~4k rows. Same
+// locale and options — list-rows.test.ts pins the output to formatDate's.
+const LIST_DATE_FORMAT = new Intl.DateTimeFormat("en-GB", {
+  year: "numeric",
+  month: "short",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+export function formatListDate(d: Date | null): string {
+  return d ? LIST_DATE_FORMAT.format(d) : "—";
+}
 
 export type StyleListSource = Prisma.StyleGetPayload<{ select: typeof STYLE_LIST_SELECT }> & {
   rawData: unknown;
@@ -315,8 +329,8 @@ export function buildStyleListRow(
     styleFolderUrl: s.styleFolderUrl,
     mondayItemId: s.mondayItemId,
     mondayBoardId: s.mondayBoardId,
-    createdAt: formatDate(s.createdAt),
-    updatedAt: formatDate(s.updatedAt),
+    createdAt: formatListDate(s.createdAt),
+    updatedAt: formatListDate(s.updatedAt),
     // ── SharePoint & delivery ──
     // Supplier has a "Supplier Folder" link on the Suppliers board.
     folderConnected: Boolean(s.supplier?.sharepointUrl?.trim()),
@@ -363,7 +377,7 @@ export function buildStyleListRow(
     // hidden from the default view — nothing can generate without a
     // PO, so the flow hasn't started. The "No PO" chip reveals them.
     missingPo: !hasPoNumber(s.poNumber),
-    lastSyncedAt: formatDate(s.lastSyncedAt),
+    lastSyncedAt: formatListDate(s.lastSyncedAt),
     searchBlob: [
       s.name,
       customer.name,

@@ -19,6 +19,7 @@
 
 import { isDeepStrictEqual } from "node:util";
 import { db } from "@/lib/db";
+import { formatDate } from "@/lib/utils";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { getAutoGenerateEnabled, getDoneGroupPoCutoff } from "@/lib/settings/app-settings";
 import { resolveDoneCutoffIds } from "@/lib/styles/active-filter";
@@ -56,7 +57,18 @@ async function legacyRows(base: Base): Promise<StyleListRow[]> {
     orderBy: [{ poSeq: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }],
   });
   const ctx = await loadStyleListContext(styles, base);
-  return styles.map((s) => buildStyleListRow(s, s.customer, s.prodSpec, ctx));
+  return styles.map((s) => {
+    const row = buildStyleListRow(s, s.customer, s.prodSpec, ctx);
+    // The page used to print these through formatDate itself.
+    for (const [k, d] of [
+      ["createdAt", s.createdAt],
+      ["updatedAt", s.updatedAt],
+      ["lastSyncedAt", s.lastSyncedAt],
+    ] as const) {
+      if (row[k] !== formatDate(d)) fail(`style ${s.id}: ${k} ${row[k]} !== formatDate ${formatDate(d)}`);
+    }
+    return row;
+  });
 }
 
 // First differing path between two JSON-ish values, for the report.

@@ -259,3 +259,16 @@ test("the fixtures exercise readiness, exclusion and fallbacks (not just empty r
   assert.ok(rows.some((r) => r.archived) && rows.some((r) => !r.archived));
   assert.ok(rows.some((r) => r.customerDeliversOwn));
 });
+
+test("formatListDate prints exactly what formatDate does", async () => {
+  const { formatListDate } = await import("./list-rows");
+  const { formatDate } = await import("@/lib/utils");
+  assert.equal(formatListDate(null), formatDate(null));
+  // A spread of instants: year/month boundaries, both DST switches, midnight
+  // and noon, single- and double-digit days.
+  const start = Date.UTC(2025, 11, 31, 23, 30);
+  for (let i = 0; i < 400; i++) {
+    const d = new Date(start + i * 22 * 3600 * 1000 + i * 7 * 60 * 1000);
+    assert.equal(formatListDate(d), formatDate(d), d.toISOString());
+  }
+});
