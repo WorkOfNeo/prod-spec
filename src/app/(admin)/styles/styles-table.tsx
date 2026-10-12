@@ -2,27 +2,23 @@
 
 // Single-input filtered table for /styles. Mirrors prod-specs-table.tsx
 // in approach: server-side fetches all rows once, client filters with
-// substring match on a pre-built blob (name + customer + BA + PO# +
-// status). Trade-off: ~4k rows live in the DOM, but the table is light
-// (no per-row interactivity) so browsers handle it fine.
+// substring match on a per-row blob (name + customer + BA + PO# + status,
+// built here from the row — see styleSearchBlob). Search, facets, counts and
+// the bulk run all work on the full filtered list; only the <tr>s are
+// windowed (ROW_PAGE at a time, growing as the end of the table scrolls into
+// view), so a ~4k-row list doesn't mount ~4k rows up front.
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import {
-  STATUS_FACET_KEYS,
-  STATUS_FACET_LABELS,
-  type EffectiveStatus,
-} from "@/lib/styles/effective-status";
+import { STATUS_FACET_KEYS, STATUS_FACET_LABELS } from "@/lib/styles/effective-status";
 import {
   STYLE_TABLE_COLUMNS,
   RESOLVED_FIELD_COLUMN_KEYS,
   type StyleColumnKey,
 } from "@/lib/styles/table-columns";
-import type { SupplierUploadRollup, ReviewRollup } from "@/lib/styles/table-rollups";
-// Type-only on purpose: related.ts imports @/lib/db, and only an erased
-// `import type` keeps Prisma out of this client bundle.
-import type { LookalikeChip } from "@/lib/styles/related";
+import type { SupplierUploadRollup } from "@/lib/styles/table-rollups";
+import { styleSearchBlob, type StyleListRow } from "@/lib/styles/table-row";
 import { mondayItemUrl } from "@/lib/monday/url";
 import { eanStatusMeta, EAN_STATUS_META } from "@/lib/po/ean-status-meta";
 import {
@@ -42,7 +38,6 @@ import { STYLES_FILTER_KEY } from "@/lib/styles/back-link";
 import type { EanView } from "@/lib/po/ean-view";
 import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
 import { ReadinessPill } from "@/components/output-readiness-notice";
-import type { ReadinessNotice } from "@/lib/styles/readiness-notice";
 import { ColumnsPopover } from "./columns-popover";
 import { FacetFilter, type FacetOption } from "@/components/facet-filter";
 import { BulkRunOutputs } from "./bulk-run-outputs";
@@ -150,98 +145,14 @@ function serializeFilters(state: {
   return params;
 }
 
-export type StyleRow = {
-  id: string;
-  name: string;
-  poNumber: string | null;
-  // Parsed numeric PO (Style.poSeq) — the DEFAULT SORT KEY. Null when there's
-  // no PO or it doesn't parse; those rows sort last. Never sort on poNumber:
-  // "C-PO9" beats "C-PO12345" as a string. See @/lib/styles/table-sort.
-  poSeq: number | null;
-  // Who is reviewing — the reviewer who claimed this style's newest claimed
-  // job (Job.reviewClaimedBy). Null = unclaimed. Drives the Reviewer facet,
-  // the Reviewer attribute chip and the opt-in Reviewer column.
-  reviewerName: string | null;
-  // Set when this style's name also exists on another PO's Monday row — the
-  // "1 of 2 rows with this name" chip. Null (the common case) renders nothing.
-  // Computed server-side in ONE bulk query; see src/lib/styles/related.ts.
-  lookalike: LookalikeChip | null;
-  customerName: string;
-  // Customer.config.skipSupplierDelivery — shows a "Delivers own" chip next
-  // to the customer so the row isn't mistaken for one that sends supplier
-  // delivery on generation.
-  customerDeliversOwn: boolean;
-  businessArea: string | null;
-  completionPct: number;
-  // % of required columns this style must reach before it can generate.
-  // From the linked ProdSpec; null when no ProdSpec is linked.
-  threshold: number | null;
-  hasProdSpec: boolean;
-  // Linked AND active — the "Prod spec" chip's "applied" sense. Distinct from
-  // hasProdSpec (mere linkage), which the completion column still relies on.
-  prodSpecActive: boolean;
-  hasSupplier: boolean;
-  // Required detail fields filled / total (Settings ▸ Required fields).
-  // requiredTotal 0 = none configured.
-  requiredFilled: number;
-  requiredTotal: number;
-  // The Status pill — computed: review flow when PDFs/jobs exist, otherwise
-  // the field-readiness ladder. See computeEffectiveStatus(). Drives the
-  // Status facet filter + searchBlob; the *visible* pill now renders `notice`.
-  statusView: EffectiveStatus;
-  // Cause-aware readiness notice (harder-blocker-wins headline + count). This
-  // is what the Status cell renders via <ReadinessPill>. statusView remains the
-  // filtering/sorting key — do not swap that.
-  notice: ReadinessNotice;
-  // PO → EAN resolution state (StyleEanStatus). Badge via eanStatusMeta.
-  eanStatus: string;
-  groupTitle: string | null;
-  // Server-computed: hide behind "Show archived". Done/cancelled/archived
-  // groups — except Done-group styles re-admitted by the PO cutoff, which
-  // stay in the main view (see /styles page query).
-  archived: boolean;
-  // Manually pulled into the styleboard for layout testing — surfaced via the
-  // "Pulled" attribute chip (Settings ▸ Pull style by PO).
-  pulledForTest: boolean;
-  // Server-computed: no PO number ("Navision Task") on the Monday row. Hidden
-  // from the default view — nothing generates without a PO, so these styles
-  // haven't entered the flow. Revealed by the "No PO" chip.
-  missingPo: boolean;
-  lastSyncedAt: string;
-  searchBlob: string;
-  // ── Opt-in columns (hydrated only when the column is visible) ──
-  // Identity & links — small, always hydrated.
-  supplierName: string | null;
-  supplierCountry: string | null;
-  prodSpecName: string | null;
-  prodSpecId: string | null;
-  cartonEan: string | null;
-  poFileName: string | null;
-  styleFolderUrl: string | null;
-  mondayItemId: string | null;
-  mondayBoardId: string | null;
-  createdAt: string;
-  updatedAt: string;
-  // SharePoint & delivery.
-  folderConnected: boolean;
-  supplierFolderUrl: string | null;
-  upload: SupplierUploadRollup | null;
-  // Spec fields, keyed by column key (only the visible ones are present).
-  resolved: Record<string, string>;
-  // Review / approval rollup (null unless a review column is on).
-  review: ReviewRollup | null;
-};
+// The row shape lives in @/lib/styles/table-row (built server-side by
+// list-rows.ts); aliased here for the readers below.
+type StyleRow = StyleListRow;
 
-// Hover text for the status pill: the count (which moves out of the headline
-// when a harder blocker wins) plus the top blocking step's detail, so the row
-// still explains itself on hover. Falls back to the headline when nothing
-// blocks.
-function statusTitle(notice: ReadinessNotice): string {
-  const blocking = notice.steps.find((s) => s.tone === "red" || s.tone === "amber");
-  const count = notice.total > 0 ? `${notice.ready} of ${notice.total} ready` : null;
-  const detail = blocking ? `${blocking.title} — ${blocking.detail}` : notice.headline;
-  return count && detail !== count ? `${count}\n${detail}` : detail;
-}
+// Rows mounted per step. The table grows by this much each time the sentinel
+// under it scrolls into view (or "Show more" is clicked), and drops back to it
+// whenever the search / filters change.
+const ROW_PAGE = 150;
 
 export function StylesTable({
   rows,
@@ -315,8 +226,15 @@ export function StylesTable({
   // is what makes the search + facets survive Back from a style detail page.
   // Mirrors appliedFacets (what filters the table), not draftFacets (the
   // in-dropdown selection awaiting Apply).
+  //
+  // The same string keys the row window below: any change to it is a new
+  // result set, which starts again from the top.
+  const filterKey = useMemo(
+    () => serializeFilters({ q, showArchived, attrFilters, appliedFacets }).toString(),
+    [q, showArchived, attrFilters, appliedFacets],
+  );
   useEffect(() => {
-    const qs = serializeFilters({ q, showArchived, attrFilters, appliedFacets }).toString();
+    const qs = filterKey;
     window.history.replaceState(
       null,
       "",
@@ -331,7 +249,7 @@ export function StylesTable({
     } catch {
       /* no stash, no back link — the style's own PO is the fallback */
     }
-  }, [q, showArchived, attrFilters, appliedFacets]);
+  }, [filterKey]);
 
   // Per-row live EAN resolve results (manual "Resolve" button). A row's
   // freshly-resolved view overrides its stored eanStatus badge in-place.
@@ -377,6 +295,10 @@ export function StylesTable({
   const missingPoFlags = useMemo(() => rows.map((r) => r.missingPo), [rows]);
   const missingPoCount = useMemo(() => missingPoFlags.filter(Boolean).length, [missingPoFlags]);
   const revealMissingPo = (attrFilters.po ?? "any") === "no";
+
+  // The search haystack per row, built once per row set rather than shipped
+  // with every row (it only repeated the row's own values).
+  const searchBlobs = useMemo(() => rows.map(styleSearchBlob), [rows]);
 
   // Distinct option lists (+counts) per facet, derived once from the loaded
   // rows — a value only appears if a real style carries it. Counts are over
@@ -452,7 +374,7 @@ export function StylesTable({
         if (want === "no" && has) return false;
       }
       if (!needle) return true;
-      return r.searchBlob.includes(needle);
+      return searchBlobs[i].includes(needle);
     });
     // Newest PO first. The server already ships the rows in this order; the
     // client re-applies it so the guarantee is testable (table-sort.test.ts)
@@ -465,6 +387,7 @@ export function StylesTable({
     archivedFlags,
     revealMissingPo,
     missingPoFlags,
+    searchBlobs,
     attrFilters,
     activeAttrFilters,
     appliedFacets,
@@ -474,6 +397,38 @@ export function StylesTable({
   // rows, in table order. The browser already holds the filtered list, so the
   // ids go straight to the server (no need to re-derive the filter there).
   const filteredIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
+
+  // The mounted slice of `filtered`. Tied to the filter it was grown under:
+  // a different filterKey reads as a fresh ROW_PAGE, so a new search starts
+  // at the top without a reset in every handler. A refresh that only
+  // replaces `rows` (column toggle, cutoff save) keeps the window.
+  const [rowWindow, setRowWindow] = useState({ key: filterKey, count: ROW_PAGE });
+  const shownCount = rowWindow.key === filterKey ? rowWindow.count : ROW_PAGE;
+  const shownRows = useMemo(() => filtered.slice(0, shownCount), [filtered, shownCount]);
+  const hasMore = shownCount < filtered.length;
+  const sentinel = useRef<HTMLDivElement>(null);
+  // Grow the window as the sentinel under the table nears the viewport.
+  // Attached once per filter while there is more to show — not per step — so
+  // it only fires on a real intersection change (the user scrolling down), as
+  // in the style dashboard's list; "Show more" is the manual fallback.
+  useEffect(() => {
+    if (!hasMore) return;
+    const el = sentinel.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setRowWindow((w) => ({
+            key: filterKey,
+            count: (w.key === filterKey ? w.count : ROW_PAGE) + ROW_PAGE,
+          }));
+        }
+      },
+      { rootMargin: "600px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMore, filterKey]);
 
   // A human description of the active filter, stored on the batch so the
   // progress widget reads "Customer: Netto · Ready to generate · 42 styles"
@@ -630,7 +585,7 @@ export function StylesTable({
       case "status":
         return (
           <td key={key} className="px-4 py-3">
-            <span title={statusTitle(s.notice)}>
+            <span title={s.statusTitle}>
               <ReadinessPill notice={s.notice} />
             </span>
           </td>
@@ -1044,7 +999,7 @@ export function StylesTable({
                 </td>
               </tr>
             ) : (
-              filtered.map((s) => (
+              shownRows.map((s) => (
                 <tr key={s.id} className="border-t border-zinc-100 hover:bg-zinc-50">
                   {columns.map((c) => cellFor(c.key, s))}
                 </tr>
@@ -1053,6 +1008,20 @@ export function StylesTable({
           </tbody>
         </table>
       </div>
+      {hasMore && (
+        <div ref={sentinel} className="flex items-center justify-center gap-3 py-4">
+          <span className="text-xs tabular-nums text-zinc-500">
+            Showing {shownRows.length} of {filtered.length}
+          </span>
+          <button
+            type="button"
+            onClick={() => setRowWindow({ key: filterKey, count: shownCount + ROW_PAGE })}
+            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+          >
+            Show {Math.min(ROW_PAGE, filtered.length - shownCount)} more
+          </button>
+        </div>
+      )}
     </div>
   );
 }
