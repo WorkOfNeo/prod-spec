@@ -20,10 +20,18 @@ const FIRST_CALL_MAX_WAIT_MS = 1_500;
  * - turning visible again calls at once if the last call is older than the
  *   interval, otherwise picks up where the interval left off.
  *
+ * pauseWhileHidden: false (the presence heartbeat) keeps only the deferred
+ * first call: it carries on every interval while hidden and calls at once on
+ * every return to the tab.
+ *
  * Timing lives in decidePoll (poll-schedule.ts). `run` gets a signal that
  * aborts on unmount; it may be a fresh closure each render.
  */
-export function useVisiblePoll(run: (signal: AbortSignal) => void, intervalMs: number): void {
+export function useVisiblePoll(
+  run: (signal: AbortSignal) => void,
+  intervalMs: number,
+  { pauseWhileHidden = true }: { pauseWhileHidden?: boolean } = {},
+): void {
   const onPoll = useEffectEvent(run);
 
   useEffect(() => {
@@ -32,7 +40,7 @@ export function useVisiblePoll(run: (signal: AbortSignal) => void, intervalMs: n
     let timer: ReturnType<typeof setTimeout> | undefined;
     let started = false;
 
-    const step = () => {
+    const step = (becameVisible = false) => {
       clearTimeout(timer);
       timer = undefined;
       // performance.now() is monotonic — a wall-clock change can't stall or
@@ -43,12 +51,14 @@ export function useVisiblePoll(run: (signal: AbortSignal) => void, intervalMs: n
         lastRunAt,
         intervalMs,
         hidden: document.hidden,
+        pauseWhileHidden,
+        becameVisible,
       });
       if (due) {
         lastRunAt = now;
         onPoll(controller.signal);
       }
-      if (nextInMs !== null) timer = setTimeout(step, nextInMs);
+      if (nextInMs !== null) timer = setTimeout(() => step(), nextInMs);
     };
 
     const cancelStart = afterPageLoad(() => {
@@ -57,7 +67,7 @@ export function useVisiblePoll(run: (signal: AbortSignal) => void, intervalMs: n
     });
     // Before the first call is due, visibility changes are left to it.
     const onVisibility = () => {
-      if (started) step();
+      if (started) step(!document.hidden);
     };
     document.addEventListener("visibilitychange", onVisibility);
 
@@ -67,7 +77,7 @@ export function useVisiblePoll(run: (signal: AbortSignal) => void, intervalMs: n
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [intervalMs]);
+  }, [intervalMs, pauseWhileHidden]);
 }
 
 // Call `fn` once the page's load event has fired and the main thread is idle,

@@ -57,6 +57,34 @@ test("a clock that went backwards is treated as due, not parked", () => {
   });
 });
 
+test("by default turning visible soon after a run does not force one", () => {
+  assert.deepEqual(
+    decidePoll({ now: 20_000, lastRunAt: 0, intervalMs: MIN, hidden: false, becameVisible: true }),
+    { run: false, nextInMs: 40_000 },
+  );
+});
+
+test("pauseWhileHidden: false keeps the interval in a hidden tab", () => {
+  const keepGoing = { intervalMs: MIN, hidden: true, pauseWhileHidden: false };
+  assert.deepEqual(decidePoll({ ...keepGoing, now: 5, lastRunAt: null }), { run: true, nextInMs: MIN });
+  assert.deepEqual(decidePoll({ ...keepGoing, now: MIN, lastRunAt: 0 }), { run: true, nextInMs: MIN });
+  assert.deepEqual(decidePoll({ ...keepGoing, now: 20_000, lastRunAt: 0 }), { run: false, nextInMs: 40_000 });
+});
+
+test("pauseWhileHidden: false runs at once on turning visible, however recent the last run", () => {
+  assert.deepEqual(
+    decidePoll({
+      now: 20_000,
+      lastRunAt: 0,
+      intervalMs: MIN,
+      hidden: false,
+      pauseWhileHidden: false,
+      becameVisible: true,
+    }),
+    { run: true, nextInMs: MIN },
+  );
+});
+
 test("as a throttle: one run per window, and a skipped ask learns when the window ends", () => {
   const w = 30_000;
   let lastRunAt: number | null = null;
