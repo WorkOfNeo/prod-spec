@@ -49,12 +49,17 @@ export default async function ReviewsPage({
           ? "approved"
           : "in-progress";
 
-  const [{ groups, inProgress }, needsInput, approved] = await Promise.all([
-    getReviewBoard(),
-    getNeedsInputStyles(),
-    getApprovedStyles(),
-  ]);
-  const queueCount = groups.reduce((n, g) => n + g.tasks.length, 0);
+  // The tab bar needs every count, but only the active tab's cards render —
+  // so the board builds cards for that tab alone (none on Needs input /
+  // Approved).
+  const [{ groups, inProgress, queueCount, inProgressCount }, needsInput, approved] =
+    await Promise.all([
+      getReviewBoard({
+        cards: tab === "queue" ? ["queue"] : tab === "in-progress" ? ["inProgress"] : [],
+      }),
+      getNeedsInputStyles(),
+      getApprovedStyles(),
+    ]);
   // The readiness notice defaults to the REVIEWER lens; admins get the ADMIN
   // ladder (they own PO/scrape/SharePoint steps).
   const readinessRole = role === "ADMIN" ? "ADMIN" : "REVIEWER";
@@ -86,7 +91,7 @@ export default async function ReviewsPage({
       <ReviewTabs
         active={tab}
         queueCount={queueCount}
-        inProgressCount={inProgress.length}
+        inProgressCount={inProgressCount}
         needsInputCount={needsInput.length}
         approvedCount={approved.total}
       />

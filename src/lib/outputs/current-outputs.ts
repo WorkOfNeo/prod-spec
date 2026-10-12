@@ -1,5 +1,8 @@
+import type { Prisma } from "@/generated/prisma/client";
 import type { MissingDetailField } from "@/lib/styles/detail-fields";
-import type { ReadinessStyle } from "@/lib/styles/output-readiness";
+import type { OutputReadiness, ReadinessStyle } from "@/lib/styles/output-readiness";
+import type { DocTypeRulesMap } from "@/lib/outputs/exclusion";
+import type { StyleFieldValues } from "@/lib/outputs/output-field-values";
 import { GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { currentOutputBaseKeys, isOrphanedOutputKey } from "@/lib/tickets/orphan";
 
@@ -12,9 +15,10 @@ import { currentOutputBaseKeys, isOrphanedOutputKey } from "@/lib/tickets/orphan
 // (a Carton sticker today, a Care label next week) roll up under one Prod Spec.
 //
 // The supplier portal (app/s/[token]) already dedupes assets this way; this
-// lib centralises it. The pure helpers (deriveOutputState, rollupOutputs) are
-// DB-free so they can be unit-tested; getCurrentOutputsForStyle lazy-imports
-// the DB + readiness chain.
+// lib centralises it. The pure helpers (deriveOutputState, rollupOutputs,
+// deriveCurrentOutputs) are DB-free so they can be unit-tested; the loaders
+// (getCurrentOutputsForStyle and its batch twin) lazy-import the DB +
+// readiness chain.
 // =====================================================
 
 export type OutputState =
@@ -297,76 +301,44 @@ export function rollupOutputSlots(outputs: CurrentOutput[]): StyleOutputRollup {
   };
 }
 
-// DB read. Resolves the style's declared outputs + readiness, the newest asset
-// per output across all non-FAILED jobs, and any in-flight generation, then
-// derives each output's current state.
-export async function getCurrentOutputsForStyle(styleId: string): Promise<CurrentOutput[]> {
-  const { db } = await import("@/lib/db");
-  const { ensureLayoutVariantsLoaded } = await import("@/lib/output-layouts/variants");
-  const { outputReadinessForStyle } = await import("@/lib/styles/output-readiness");
-  const { getVariant } = await import("@/lib/pdf/template-registry");
-  const { loadDocTypeExclusionRules, loadDocTypeLabels } = await import("@/lib/pdf/doc-types-db");
-  const { loadIgnoredOutputKeys } = await import("@/lib/outputs/output-ignores");
-  const { loadStyleFieldValues } = await import("@/lib/outputs/output-field-values");
-  const { parseProdSpecOutputs } = await import("@/lib/prod-spec/config");
+// One generated document as the current-output walk reads it — the JobAsset
+// columns both loaders select (never the pdf blob).
+export type CurrentOutputAsset = {
+  id: string;
+  jobId: string;
+  variantKey: string | null;
+  docType: string;
+  fileName: string;
+  displayName: string | null;
+  reviewStatus: "PENDING_REVIEW" | "APPROVED" | "REJECTED";
+  reviewedAt: Date | null;
+  reviewedById: string | null;
+  rejectReason: string | null;
+  placeholderCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
-  // ProdSpec.outputs may reference Output Builder layouts (`layout:<id>`) —
-  // load them before the readiness walk resolves variants.
-  await ensureLayoutVariantsLoaded();
-
-  // Doc-type keyword rules + per-style operator ignores drive the EXCLUDED
-  // state below; labels flavour the reason text; per-style field values let a
-  // reviewer-filled field count as satisfied (so a blocked output stops showing
-  // "missing X"). All degrade to empty before db:deploy (feature dormant).
-  const [exclusionRules, docTypeLabels, ignoredKeys, fieldValues] = await Promise.all([
-    loadDocTypeExclusionRules(),
-    loadDocTypeLabels(),
-    loadIgnoredOutputKeys(styleId),
-    loadStyleFieldValues(styleId),
-  ]);
-
-  const style = await db.style.findUnique({
-    where: { id: styleId },
-    select: {
-      rawData: true,
-      poNumber: true,
-      cartonEan: true,
-      supplier: { select: { country: true } },
-      eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, cartonEan: true } },
-      customer: { select: { config: true } },
-      prodSpec: { select: { outputs: true, columnMapping: true } },
-    },
-  });
-  if (!style) return [];
-
-  const readiness = outputReadinessForStyle(
-    style as ReadinessStyle,
-    exclusionRules,
-    docTypeLabels,
-    ignoredKeys,
-    fieldValues,
-  );
-
+// Pure: a style's current outputs from rows already loaded. This is the whole
+// derivation behind getCurrentOutputsForStyle; the single and the batch loader
+// (getCurrentOutputsForStyles) differ only in how they fetch these inputs, so
+// the review page and the list surfaces can never disagree on an output.
+export function deriveCurrentOutputs(input: {
+  // outputReadinessForStyle for the style: its ENABLED declared outputs, with
+  // readiness, exclusion and ignores already resolved.
+  readiness: OutputReadiness[];
+  // Base keys of ALL declared outputs (enabled or not) — the orphan check.
+  declaredBaseKeys: Set<string>;
   // Every non-FAILED asset, newest job first.
-  const assets = await db.jobAsset.findMany({
-    where: { job: { styleId, status: { not: "FAILED" } } },
-    orderBy: { job: { createdAt: "desc" } },
-    select: {
-      id: true,
-      jobId: true,
-      variantKey: true,
-      docType: true,
-      fileName: true,
-      displayName: true,
-      reviewStatus: true,
-      reviewedAt: true,
-      reviewedById: true,
-      rejectReason: true,
-      placeholderCount: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-  });
+  assets: CurrentOutputAsset[];
+  // variantKeys of each in-flight (QUEUED/RUNNING) job. Empty = full run.
+  inflight: Array<{ variantKeys: unknown }>;
+  // Template-registry lookup by base key — injected so this step stays free
+  // of the registry's render imports.
+  variantOf: (baseKey: string) => { name: string; docType: string } | null | undefined;
+}): CurrentOutput[] {
+  const { readiness, declaredBaseKeys, assets, inflight, variantOf } = input;
+
   // The newest generation job = the job behind the most recent asset (assets
   // are ordered job-createdAt desc, so the first one wins). Used to flag each
   // output as belonging to the current run vs. an earlier one.
@@ -380,9 +352,7 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
   // review forever — pressing Re-run now clears the prior run's documents from
   // the "to decide" list. Base keys come from ALL declared outputs (enabled or
   // not), matching the rejection-ticket orphan check.
-  const declaredBaseKeys = currentOutputBaseKeys(
-    parseProdSpecOutputs(style.prodSpec?.outputs ?? []),
-  );
+  //
   // Bases excluded by a doc-type keyword rule (socks → no wash care). Their
   // stale assets must not surface; the declared-output pass below re-emits them
   // as EXCLUDED so the rule is honoured and a re-run clears any prior reject.
@@ -390,14 +360,10 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
     readiness.filter((r) => r.excluded === true).map((r) => base(r.variantKey)),
   );
   const current = selectCurrentAssets(assets, declaredBaseKeys, excludedBaseKeys);
-  const latestByVariant = new Map<string, (typeof assets)[number]>();
+  const latestByVariant = new Map<string, CurrentOutputAsset>();
   for (const a of current) latestByVariant.set(a.variantKey ?? `doc:${a.docType}`, a);
 
   // Bases with an in-flight (QUEUED/RUNNING) job. Empty variantKeys = full run.
-  const inflight = await db.job.findMany({
-    where: { styleId, status: { in: ["QUEUED", "RUNNING"] } },
-    select: { variantKeys: true },
-  });
   let generatingAll = false;
   const generatingSet = new Set<string>();
   for (const j of inflight) {
@@ -421,7 +387,7 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
     const generating = generatingAll || generatingSet.has(b);
     outputs.push({
       variantKey: key,
-      name: a.displayName ?? declaredNameByBase.get(b) ?? getVariant(b)?.name ?? a.docType,
+      name: a.displayName ?? declaredNameByBase.get(b) ?? variantOf(b)?.name ?? a.docType,
       state: deriveOutputState({
         ready: true,
         generating,
@@ -462,7 +428,7 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
       state: excluded ? "EXCLUDED" : deriveOutputState({ ready: o.ready, generating, latest: null }),
       ready: o.ready,
       missing: excluded ? [] : o.missing,
-      docType: getVariant(b)?.docType ?? "OTHER",
+      docType: variantOf(b)?.docType ?? "OTHER",
       jobId: null,
       fileName: null,
       jobAssetId: null,
@@ -479,6 +445,231 @@ export async function getCurrentOutputsForStyle(styleId: string): Promise<Curren
   }
 
   return outputs;
+}
+
+// The style columns readiness reads (ReadinessStyle) — shared by both loaders.
+const READINESS_STYLE_SELECT = {
+  rawData: true,
+  poNumber: true,
+  cartonEan: true,
+  supplier: { select: { country: true } },
+  eans: { orderBy: { position: "asc" }, select: { size: true, ean13: true, cartonEan: true } },
+  customer: { select: { config: true } },
+  prodSpec: { select: { outputs: true, columnMapping: true } },
+} satisfies Prisma.StyleSelect;
+
+const CURRENT_ASSET_SELECT = {
+  id: true,
+  jobId: true,
+  variantKey: true,
+  docType: true,
+  fileName: true,
+  displayName: true,
+  reviewStatus: true,
+  reviewedAt: true,
+  reviewedById: true,
+  rejectReason: true,
+  placeholderCount: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.JobAssetSelect;
+
+// Newest job first — what selectCurrentAssets and latestJobId rely on — then a
+// total tiebreak. Every document of a job shares the job's createdAt, and
+// Postgres leaves ties in whatever order its sort happens to produce, which
+// differs between a one-style and a many-style query. Generation order within
+// a job pins it, so both loaders hand deriveCurrentOutputs identical lists.
+const CURRENT_ASSET_ORDER: Prisma.JobAssetOrderByWithRelationInput[] = [
+  { job: { createdAt: "desc" } },
+  { jobId: "desc" },
+  { createdAt: "asc" },
+  { id: "asc" },
+];
+
+// The DB + readiness chain, imported lazily so the pure helpers above stay
+// unit-testable without a database.
+async function loadDeps() {
+  const { db } = await import("@/lib/db");
+  const { ensureLayoutVariantsLoaded } = await import("@/lib/output-layouts/variants");
+  const { outputReadinessForStyle } = await import("@/lib/styles/output-readiness");
+  const { getVariant } = await import("@/lib/pdf/template-registry");
+  const { loadDocTypeExclusionRules, loadDocTypeLabels } = await import("@/lib/pdf/doc-types-db");
+  const { loadIgnoredOutputKeys, loadIgnoredOutputKeysByStyle } = await import(
+    "@/lib/outputs/output-ignores"
+  );
+  const { loadStyleFieldValues, loadStyleFieldValuesByStyle, EMPTY_FIELD_VALUES } = await import(
+    "@/lib/outputs/output-field-values"
+  );
+  const { parseProdSpecOutputs } = await import("@/lib/prod-spec/config");
+  return {
+    db,
+    ensureLayoutVariantsLoaded,
+    outputReadinessForStyle,
+    getVariant,
+    loadDocTypeExclusionRules,
+    loadDocTypeLabels,
+    loadIgnoredOutputKeys,
+    loadIgnoredOutputKeysByStyle,
+    loadStyleFieldValues,
+    loadStyleFieldValuesByStyle,
+    EMPTY_FIELD_VALUES,
+    parseProdSpecOutputs,
+  };
+}
+
+type Deps = Awaited<ReturnType<typeof loadDeps>>;
+
+// One style's loaded rows → its current outputs: readiness and the declared
+// base keys from the style, then the pure walk. The only place either loader
+// turns rows into CurrentOutputs.
+function currentOutputsFromRows(
+  deps: Deps,
+  rows: {
+    style: ReadinessStyle;
+    exclusionRules: DocTypeRulesMap;
+    docTypeLabels: Record<string, string>;
+    ignoredKeys: ReadonlySet<string>;
+    fieldValues: ReadonlyMap<string, StyleFieldValues>;
+    assets: CurrentOutputAsset[];
+    inflight: Array<{ variantKeys: unknown }>;
+  },
+): CurrentOutput[] {
+  // Doc-type keyword rules + per-style operator ignores drive the EXCLUDED
+  // state; labels flavour the reason text; per-style field values let a
+  // reviewer-filled field count as satisfied (so a blocked output stops showing
+  // "missing X").
+  const readiness = deps.outputReadinessForStyle(
+    rows.style,
+    rows.exclusionRules,
+    rows.docTypeLabels,
+    rows.ignoredKeys,
+    rows.fieldValues,
+  );
+  return deriveCurrentOutputs({
+    readiness,
+    declaredBaseKeys: currentOutputBaseKeys(deps.parseProdSpecOutputs(rows.style.prodSpec?.outputs ?? [])),
+    assets: rows.assets,
+    inflight: rows.inflight,
+    variantOf: deps.getVariant,
+  });
+}
+
+// DB read. Resolves the style's declared outputs + readiness, the newest asset
+// per output across all non-FAILED jobs, and any in-flight generation, then
+// derives each output's current state.
+export async function getCurrentOutputsForStyle(styleId: string): Promise<CurrentOutput[]> {
+  const deps = await loadDeps();
+  const { db } = deps;
+
+  // ProdSpec.outputs may reference Output Builder layouts (`layout:<id>`) —
+  // load them before the readiness walk resolves variants.
+  await deps.ensureLayoutVariantsLoaded();
+
+  // The reads are independent, so they go out together — one round trip
+  // instead of four. Rules/labels/ignores/field values all degrade to empty
+  // before db:deploy (feature dormant).
+  const [exclusionRules, docTypeLabels, ignoredKeys, fieldValues, style, assets, inflight] =
+    await Promise.all([
+      deps.loadDocTypeExclusionRules(),
+      deps.loadDocTypeLabels(),
+      deps.loadIgnoredOutputKeys(styleId),
+      deps.loadStyleFieldValues(styleId),
+      db.style.findUnique({ where: { id: styleId }, select: READINESS_STYLE_SELECT }),
+      // Every non-FAILED asset, newest job first.
+      db.jobAsset.findMany({
+        where: { job: { styleId, status: { not: "FAILED" } } },
+        orderBy: CURRENT_ASSET_ORDER,
+        select: CURRENT_ASSET_SELECT,
+      }),
+      db.job.findMany({
+        where: { styleId, status: { in: ["QUEUED", "RUNNING"] } },
+        select: { variantKeys: true },
+      }),
+    ]);
+  if (!style) return [];
+
+  return currentOutputsFromRows(deps, {
+    style,
+    exclusionRules,
+    docTypeLabels,
+    ignoredKeys,
+    fieldValues,
+    assets,
+    inflight,
+  });
+}
+
+// Batch flavour for list surfaces (/dashboard cards, the /reviews board): the
+// same result as getCurrentOutputsForStyle for every id, from one query per
+// kind instead of a dozen per style. Every requested id gets an entry — [] for
+// a style that doesn't exist, as the single read returns.
+export async function getCurrentOutputsForStyles(
+  styleIds: readonly string[],
+): Promise<Map<string, CurrentOutput[]>> {
+  const ids = [...new Set(styleIds)];
+  const byStyle = new Map<string, CurrentOutput[]>();
+  if (ids.length === 0) return byStyle;
+
+  const deps = await loadDeps();
+  const { db } = deps;
+  await deps.ensureLayoutVariantsLoaded();
+
+  const [exclusionRules, docTypeLabels, ignoredByStyle, fieldValuesByStyle, styles, assets, inflight] =
+    await Promise.all([
+      deps.loadDocTypeExclusionRules(),
+      deps.loadDocTypeLabels(),
+      deps.loadIgnoredOutputKeysByStyle(ids),
+      deps.loadStyleFieldValuesByStyle(ids),
+      db.style.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, ...READINESS_STYLE_SELECT },
+      }),
+      // Same order as the single read. The job's styleId comes along because a
+      // JobAsset row doesn't carry it, and assets are split per style below.
+      db.jobAsset.findMany({
+        where: { job: { styleId: { in: ids }, status: { not: "FAILED" } } },
+        orderBy: CURRENT_ASSET_ORDER,
+        select: { ...CURRENT_ASSET_SELECT, job: { select: { styleId: true } } },
+      }),
+      db.job.findMany({
+        where: { styleId: { in: ids }, status: { in: ["QUEUED", "RUNNING"] } },
+        select: { styleId: true, variantKeys: true },
+      }),
+    ]);
+
+  // Splitting a globally ordered list keeps each style's slice in that order.
+  const assetsByStyle = new Map<string, CurrentOutputAsset[]>();
+  for (const { job, ...asset } of assets) {
+    const list = assetsByStyle.get(job.styleId);
+    if (list) list.push(asset);
+    else assetsByStyle.set(job.styleId, [asset]);
+  }
+  const inflightByStyle = new Map<string, Array<{ variantKeys: unknown }>>();
+  for (const j of inflight) {
+    const list = inflightByStyle.get(j.styleId);
+    if (list) list.push(j);
+    else inflightByStyle.set(j.styleId, [j]);
+  }
+  const styleById = new Map(styles.map((s) => [s.id, s]));
+
+  for (const id of ids) {
+    const style = styleById.get(id);
+    byStyle.set(
+      id,
+      style
+        ? currentOutputsFromRows(deps, {
+            style,
+            exclusionRules,
+            docTypeLabels,
+            ignoredKeys: ignoredByStyle.get(id) ?? new Set(),
+            fieldValues: fieldValuesByStyle.get(id) ?? deps.EMPTY_FIELD_VALUES,
+            assets: assetsByStyle.get(id) ?? [],
+            inflight: inflightByStyle.get(id) ?? [],
+          })
+        : [],
+    );
+  }
+  return byStyle;
 }
 
 // DB read. The style's currently-approved base variantKeys — the "durable

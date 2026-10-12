@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import {
-  getCurrentOutputsForStyle,
+  getCurrentOutputsForStyles,
   rollupOutputSlots,
   type CurrentOutput,
   type OutputState,
@@ -117,56 +117,46 @@ export type ReviewGroup = {
   tasks: ReviewTask[];
 };
 
-// The awaiting-review jobs, one entry per STYLE (newest job wins). Shared by
-// getReviewWork (per-user buckets) and getReviewBoard (the /reviews two tabs)
-// so both see the same collapse and the same task shape. The raw `job` is carried
-// alongside the built task because the bucketing reads per-asset reviewer ids.
-function queryAwaitingReviewJobs() {
+// The awaiting-review jobs in the slim shape the bucketing reads — newest
+// first, all of them (latestPerStyle collapses). ONE query shared by
+// getReviewCounts (the badge), getReviewWork (per-user buckets) and
+// getReviewBoard (the /reviews tabs), so all three see the same collapse and
+// the same buckets. It carries nothing a card renders: the badge poller runs it
+// every 60s per open tab, and cards load their own fields for just the jobs
+// they show (queryCardJobs). `select` (not include) also keeps the additive
+// reviewEndedAt column out, so this works before that column is deployed.
+function queryAwaitingReviewHeads() {
   return db.job.findMany({
     where: { status: "AWAITING_REVIEW" },
-    // This list never renders reviewEndedAt — omit it, both to trim the
-    // payload (same reason queries elsewhere avoid the pdf blob) and so the
-    // dashboard keeps working before the additive column is deployed.
-    omit: { reviewEndedAt: true },
-    include: {
-      style: {
-        include: {
-          customer: true,
-          businessAreaRef: true,
-          // ProdSpec identity drives the /reviews grouping — a ProdSpec is
-          // unique per customer × business area, so grouping by it is exactly
-          // grouping by category (Netto · Private Label, …). `outputs` is
-          // widened in additionally so the readiness notice can tell whether
-          // the spec has any enabled outputs (prodSpecHasOutputs).
-          prodSpec: { select: { id: true, name: true, outputs: true } },
-        },
-      },
-      reviewClaimedBy: { select: { email: true } },
-      assets: {
-        select: {
-          variantKey: true,
-          docType: true,
-          displayName: true,
-          reviewStatus: true,
-          reviewedById: true,
-          reviewedAt: true,
-          placeholderCount: true,
-          reviewedBy: { select: { email: true } },
-        },
-      },
+    select: {
+      id: true,
+      styleId: true,
+      reviewClaimedById: true,
+      assets: { select: { reviewStatus: true, reviewedById: true } },
     },
     orderBy: { createdAt: "desc" },
   });
 }
 
-type AwaitingReviewJob = Awaited<ReturnType<typeof queryAwaitingReviewJobs>>[number];
+type AwaitingReviewHead = Awaited<ReturnType<typeof queryAwaitingReviewHeads>>[number];
 
-// Newest awaiting-review job per STYLE. The review screen always opens the
-// newest awaiting job, so that is the actionable unit — a style re-run can
-// strand older jobs in AWAITING_REVIEW, and listing those would duplicate the
-// row with a CTA that opens a different job. Drops jobs that rendered nothing.
-function latestPerStyle(jobs: AwaitingReviewJob[]): AwaitingReviewJob[] {
-  const latest = new Map<string, AwaitingReviewJob>();
+// The fields the bucketing reads off a job. Structural, so the badge, the
+// cards and the tests all run the same functions on whatever shape they load.
+export type BucketableJob = {
+  styleId: string;
+  reviewClaimedById: string | null;
+  assets: ReadonlyArray<{ reviewStatus: string; reviewedById: string | null }>;
+};
+
+export type ReviewBucket = keyof ReviewWork;
+
+// Newest awaiting-review job per STYLE (input newest first). The review screen
+// always opens the newest awaiting job, so that is the actionable unit — a
+// style re-run can strand older jobs in AWAITING_REVIEW, and listing those
+// would duplicate the row with a CTA that opens a different job. Drops jobs
+// that rendered nothing.
+export function latestPerStyle<J extends BucketableJob>(jobs: J[]): J[] {
+  const latest = new Map<string, J>();
   for (const job of jobs) {
     if (!latest.has(job.styleId)) latest.set(job.styleId, job);
   }
@@ -176,8 +166,8 @@ function latestPerStyle(jobs: AwaitingReviewJob[]): AwaitingReviewJob[] {
 // Which bucket a style falls in, read off its NEWEST job — unchanged from the
 // per-job model: ownership/claim is a property of the actionable job, not the
 // style's whole cross-job history. Deliberately cheap (no cross-job rollup) so
-// the badge poller (getReviewCounts) can stay one query.
-function bucketOf(job: AwaitingReviewJob, userId: string): "mine" | "others" | "untouched" {
+// every caller can bucket the whole queue before building any card.
+export function bucketOf(job: BucketableJob, userId: string): ReviewBucket {
   const decided = job.assets.filter((a) => a.reviewStatus !== "PENDING_REVIEW");
   const touched = decided.length > 0 || job.reviewClaimedById != null;
   if (!touched) return "untouched";
@@ -187,12 +177,12 @@ function bucketOf(job: AwaitingReviewJob, userId: string): "mine" | "others" | "
   return "others";
 }
 
-// Bucket COUNTS only — for the sidebar badge poller. No cross-job output
-// fetch: the numbers come straight off the newest job per style, one query.
+// Bucket COUNTS only — for the sidebar badge poller. No cards, no cross-job
+// output fetch: the numbers come straight off the newest job per style.
 export async function getReviewCounts(
   userId: string,
 ): Promise<{ mine: number; others: number; untouched: number }> {
-  const jobs = latestPerStyle(await queryAwaitingReviewJobs());
+  const jobs = latestPerStyle(await queryAwaitingReviewHeads());
   let mine = 0;
   let others = 0;
   let untouched = 0;
@@ -205,25 +195,97 @@ export async function getReviewCounts(
   return { mine, others, untouched };
 }
 
-// Full per-style tasks for the CARDS (/dashboard + /reviews). Each task's
-// output list, completeness and review progress are CROSS-JOB — resolved via
-// getCurrentOutputsForStyle, the same source the review page renders — so a
-// style whose documents landed across several runs shows its true "1 of 3
-// ready, 2 still coming" picture instead of just the newest job's slice.
-async function awaitingReviewEntries(): Promise<{ job: AwaitingReviewJob; task: ReviewTask }[]> {
-  const jobs = latestPerStyle(await queryAwaitingReviewJobs());
-  // One cross-job rollup per style. N+1 by style, but the review queue is a
-  // small admin surface and parity with the review page matters more; the
-  // frequent badge poll uses getReviewCounts, which skips this entirely.
-  const outputsByStyle = await Promise.all(jobs.map((j) => getCurrentOutputsForStyle(j.styleId)));
-  return jobs.map((job, i) => ({ job, task: buildTask(job, outputsByStyle[i]) }));
+// What a card needs beyond the head it was bucketed from, and nothing more —
+// no customer config, no style rawData — for just the jobs a caller shows. The
+// per-asset decisions come from the head itself, so a card always agrees with
+// the bucket it sits in.
+function queryCardJobs(jobIds: string[]) {
+  return db.job.findMany({
+    where: { id: { in: jobIds } },
+    select: {
+      id: true,
+      createdAt: true,
+      reviewClaimedAt: true,
+      style: {
+        select: {
+          name: true,
+          businessArea: true,
+          prodSpecId: true,
+          poNumber: true,
+          poFileName: true,
+          eanStatus: true,
+          eanAttempts: true,
+          mondayBoardId: true,
+          mondayItemId: true,
+          customer: { select: { name: true } },
+          businessAreaRef: { select: { name: true } },
+          // ProdSpec identity drives the /reviews grouping — a ProdSpec is
+          // unique per customer × business area, so grouping by it is exactly
+          // grouping by category (Netto · Private Label, …). `outputs` lets
+          // the readiness notice tell whether the spec has any enabled outputs
+          // (prodSpecHasOutputs).
+          prodSpec: { select: { name: true, outputs: true } },
+        },
+      },
+    },
+  });
 }
+
+type CardJob = Awaited<ReturnType<typeof queryCardJobs>>[number];
+
+const isDecided = (a: { reviewStatus: string }) => a.reviewStatus !== "PENDING_REVIEW";
+
+// Full tasks for the CARDS of the given newest jobs, keyed by job id. Each
+// task's output list, completeness and review progress are CROSS-JOB —
+// resolved via getCurrentOutputsForStyles, the batch twin of the read the
+// review page renders — so a style whose documents landed across several runs
+// shows its true "1 of 3 ready, 2 still coming" picture instead of just the
+// newest job's slice. One query per kind for the whole list, not per style.
+// A job deleted between the reads simply has no entry.
+async function buildTasks(jobs: AwaitingReviewHead[]): Promise<Map<string, ReviewTask>> {
+  const tasks = new Map<string, ReviewTask>();
+  if (jobs.length === 0) return tasks;
+  // Reviewer labels need emails for the claimers and deciders only.
+  const userIds = [
+    ...new Set(
+      jobs.flatMap((j) => [
+        j.reviewClaimedById,
+        ...j.assets.filter(isDecided).map((a) => a.reviewedById),
+      ]),
+    ),
+  ].filter((id): id is string => id != null);
+  const [cards, users, outputsByStyle] = await Promise.all([
+    queryCardJobs(jobs.map((j) => j.id)),
+    userIds.length > 0
+      ? db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, email: true } })
+      : [],
+    getCurrentOutputsForStyles(jobs.map((j) => j.styleId)),
+  ]);
+  const cardById = new Map(cards.map((c) => [c.id, c]));
+  const emailById = new Map(users.map((u) => [u.id, u.email]));
+  for (const job of jobs) {
+    const card = cardById.get(job.id);
+    if (!card) continue;
+    tasks.set(job.id, buildTask(job, card, emailById, outputsByStyle.get(job.styleId) ?? []));
+  }
+  return tasks;
+}
+
+// The built tasks for `jobs`, in the order of `jobs`.
+const tasksFor = (jobs: AwaitingReviewHead[], tasks: Map<string, ReviewTask>): ReviewTask[] =>
+  jobs.flatMap((j) => tasks.get(j.id) ?? []);
 
 // A current output is "reviewable" when a document exists AND no fresh render
 // is in flight — mirrors the review page's reviewable/notReady split exactly.
 const isReviewable = (o: CurrentOutput) => o.jobAssetId != null && o.state !== "GENERATING";
 
-function buildTask(job: AwaitingReviewJob, currentOutputs: CurrentOutput[]): ReviewTask {
+function buildTask(
+  job: AwaitingReviewHead,
+  card: CardJob,
+  emailById: ReadonlyMap<string, string>,
+  currentOutputs: CurrentOutput[],
+): ReviewTask {
+  const { style } = card;
   // The card is a FRESH worklist: it shows only what still needs a decision
   // (to-review / blocked) plus what's still coming, and hides settled outputs
   // (approved / rejected). So when a style is rerun for one fix, the reviewer
@@ -244,7 +306,7 @@ function buildTask(job: AwaitingReviewJob, currentOutputs: CurrentOutput[]): Rev
   const lastActivity = [
     ...currentOutputs.map((o) => o.reviewedAt),
     ...currentOutputs.map((o) => o.generatedAt),
-    job.reviewClaimedAt,
+    card.reviewClaimedAt,
   ]
     .filter((d): d is Date => d != null)
     .sort((a, b) => b.getTime() - a.getTime())[0];
@@ -253,8 +315,9 @@ function buildTask(job: AwaitingReviewJob, currentOutputs: CurrentOutput[]): Rev
   // both describe the actionable job, not the cross-job history. `decided`
   // counts the newest job's decisions so the CTA can read "Finish review"
   // mid-pass even though those decided documents have dropped off the list.
-  const newestDecided = job.assets.filter((a) => a.reviewStatus !== "PENDING_REVIEW");
-  const newestPending = job.assets.filter((a) => a.reviewStatus === "PENDING_REVIEW");
+  const newestDecided = job.assets.filter(isDecided);
+  const newestPending = job.assets.filter((a) => !isDecided(a));
+  const emailOf = (userId: string | null) => (userId ? emailById.get(userId) : undefined);
 
   const outputs = fresh.map(
     (o): ReviewTaskOutput => ({
@@ -273,14 +336,14 @@ function buildTask(job: AwaitingReviewJob, currentOutputs: CurrentOutput[]): Rev
   // data the reviewer adds themselves). Built from the FULL cross-job output set
   // — not `fresh` — so the source/spec/generation/review/excluded ladder reflects
   // the style's whole picture, matching the per-style review page.
-  const prodSpecOutputs = parseProdSpecOutputs(job.style.prodSpec?.outputs ?? []);
+  const prodSpecOutputs = parseProdSpecOutputs(style.prodSpec?.outputs ?? []);
   const notice = styleReadinessNotice(
     {
-      eanStatus: job.style.eanStatus,
-      eanAttempts: job.style.eanAttempts,
-      poNumber: job.style.poNumber,
-      poFileName: job.style.poFileName,
-      hasProdSpec: job.style.prodSpec != null,
+      eanStatus: style.eanStatus,
+      eanAttempts: style.eanAttempts,
+      poNumber: style.poNumber,
+      poFileName: style.poFileName,
+      hasProdSpec: style.prodSpec != null,
       prodSpecHasOutputs: prodSpecOutputs.some((o) => o.enabled !== false),
       currentOutputs,
     },
@@ -290,13 +353,13 @@ function buildTask(job: AwaitingReviewJob, currentOutputs: CurrentOutput[]): Rev
   return {
     jobId: job.id,
     styleId: job.styleId,
-    styleName: job.style.name,
-    customerName: job.style.customer.name,
-    businessArea: job.style.businessAreaRef?.name ?? job.style.businessArea ?? null,
-    prodSpecId: job.style.prodSpecId ?? null,
-    prodSpecName: job.style.prodSpec?.name ?? null,
-    poNumber: job.style.poNumber ?? null,
-    mondayUrl: mondayItemUrl(job.style.mondayBoardId, job.style.mondayItemId) ?? "",
+    styleName: style.name,
+    customerName: style.customer.name,
+    businessArea: style.businessAreaRef?.name ?? style.businessArea ?? null,
+    prodSpecId: style.prodSpecId ?? null,
+    prodSpecName: style.prodSpec?.name ?? null,
+    poNumber: style.poNumber ?? null,
+    mondayUrl: mondayItemUrl(style.mondayBoardId, style.mondayItemId) ?? "",
     total: pending.length,
     decided: newestDecided.length,
     stillComing: stillComing.length,
@@ -304,12 +367,13 @@ function buildTask(job: AwaitingReviewJob, currentOutputs: CurrentOutput[]): Rev
     totalSlots: slots.total,
     blocked: pending.length > 0 && pending.every((o) => o.state === "BLOCKED"),
     needsPublishRetry: newestPending.length === 0,
-    lastActivityAt: lastActivity ?? job.createdAt,
+    lastActivityAt: lastActivity ?? card.createdAt,
     reviewerEmails: Array.from(
       new Set(
-        [...newestDecided.map((a) => a.reviewedBy?.email), job.reviewClaimedBy?.email].filter(
-          (e): e is string => !!e,
-        ),
+        [
+          ...newestDecided.map((a) => emailOf(a.reviewedById)),
+          emailOf(job.reviewClaimedById),
+        ].filter((e): e is string => !!e),
       ),
     ),
     outputs,
@@ -330,7 +394,7 @@ const byRecency = (a: ReviewTask, b: ReviewTask) =>
 // "Started" = the global form of bucketOf's `touched`: a review is underway on
 // the newest job (claimed, or ≥1 document already decided), regardless of WHO
 // started it. Drives the Review → In Progress split.
-const isStarted = (job: AwaitingReviewJob) =>
+const isStarted = (job: BucketableJob) =>
   job.reviewClaimedById != null ||
   job.assets.some((a) => a.reviewStatus !== "PENDING_REVIEW");
 
@@ -342,45 +406,55 @@ const normalizeBa = (ba: string | null): string | null => {
   return t === "" || t === "–" || t === "-" ? null : t;
 };
 
-export async function getReviewWork(userId: string): Promise<ReviewWork> {
-  const entries = await awaitingReviewEntries();
+const ALL_BUCKETS: readonly ReviewBucket[] = ["mine", "others", "untouched"];
 
-  const mine: ReviewTask[] = [];
-  const others: ReviewTask[] = [];
-  const untouched: ReviewTask[] = [];
+// The per-user buckets, with cards built only for the buckets asked for:
+// /dashboard shows mine + others, so the untouched queue — the biggest bucket,
+// shown on /reviews instead — is bucketed but never built for it. Without
+// `buckets`, all three come back.
+export async function getReviewWork<B extends ReviewBucket = ReviewBucket>(
+  userId: string,
+  opts: { buckets?: readonly B[] } = {},
+): Promise<Pick<ReviewWork, B>> {
+  const wanted = new Set<ReviewBucket>(opts.buckets ?? ALL_BUCKETS);
+  const jobs = latestPerStyle(await queryAwaitingReviewHeads());
 
-  for (const { job, task } of entries) {
-    const b = bucketOf(job, userId);
-    if (b === "mine") mine.push(task);
-    else if (b === "others") others.push(task);
-    else untouched.push(task);
+  const jobsByBucket = new Map<ReviewBucket, AwaitingReviewHead[]>(
+    [...wanted].map((b) => [b, []]),
+  );
+  for (const job of jobs) jobsByBucket.get(bucketOf(job, userId))?.push(job);
+
+  const tasks = await buildTasks([...jobsByBucket.values()].flat());
+  const work: Partial<ReviewWork> = {};
+  for (const [bucket, bucketJobs] of jobsByBucket) {
+    work[bucket] = tasksFor(bucketJobs, tasks).sort(byAge);
   }
-
-  mine.sort(byAge);
-  others.sort(byAge);
-  untouched.sort(byAge);
-
-  return { mine, others, untouched };
+  return work as Pick<ReviewWork, B>;
 }
 
-// The /reviews board — ONE fetch, both tabs. Splits the awaiting-review styles
-// into the untouched queue (grouped by prod spec) and the shared In Progress
-// list (any style whose review has been STARTED, or that still has an
+export type ReviewBoardList = "queue" | "inProgress";
+
+// The /reviews board — ONE bucketing pass, both tabs. Splits the awaiting-review
+// styles into the untouched queue (grouped by prod spec) and the shared In
+// Progress list (any style whose review has been STARTED, or that still has an
 // unresolved rejection being reworked). Same per-style collapse and card shape
-// as the dashboard; the awaiting-review fetch is the same one the flat queue
-// used, so both tab counts come from a single pass.
-export async function getReviewBoard(): Promise<{
+// as the dashboard. Both tab counts always come back; cards are built only for
+// the `cards` lists asked for (default both), since the page shows one tab.
+export async function getReviewBoard(opts: { cards?: readonly ReviewBoardList[] } = {}): Promise<{
   groups: ReviewGroup[];
   inProgress: ReviewTask[];
+  queueCount: number;
+  inProgressCount: number;
 }> {
-  const entries = await awaitingReviewEntries();
+  const wanted = new Set<ReviewBoardList>(opts.cards ?? ["queue", "inProgress"]);
+  const jobs = latestPerStyle(await queryAwaitingReviewHeads());
 
   // Durable rework signal: a rejected style's fix re-run creates a NEW, unclaimed
   // job that on its own would look "untouched" and fall back to the queue. An
   // open RejectionTicket (anything not RESOLVED) keeps the style in In Progress
   // across that regeneration gap — approving the fix resolves the ticket and
   // settles the job, so it leaves on its own. One indexed query, no Bytes.
-  const styleIds = entries.map((e) => e.job.styleId);
+  const styleIds = jobs.map((j) => j.styleId);
   const reworkingRows = styleIds.length
     ? await db.rejectionTicket.findMany({
         where: { styleId: { in: styleIds }, status: { not: "RESOLVED" } },
@@ -389,12 +463,19 @@ export async function getReviewBoard(): Promise<{
     : [];
   const reworking = new Set(reworkingRows.map((r) => r.styleId));
 
-  const inProgress: ReviewTask[] = [];
-  const untouched: ReviewTask[] = [];
-  for (const { job, task } of entries) {
-    if (isStarted(job) || reworking.has(job.styleId)) inProgress.push(task);
-    else untouched.push(task);
+  const inProgressJobs: AwaitingReviewHead[] = [];
+  const queueJobs: AwaitingReviewHead[] = [];
+  for (const job of jobs) {
+    if (isStarted(job) || reworking.has(job.styleId)) inProgressJobs.push(job);
+    else queueJobs.push(job);
   }
+
+  const tasks = await buildTasks([
+    ...(wanted.has("inProgress") ? inProgressJobs : []),
+    ...(wanted.has("queue") ? queueJobs : []),
+  ]);
+  const inProgress = wanted.has("inProgress") ? tasksFor(inProgressJobs, tasks) : [];
+  const untouched = wanted.has("queue") ? tasksFor(queueJobs, tasks) : [];
 
   // Group the untouched queue by prod spec (== customer × business area). Styles
   // with no prod spec fall into a synthetic per-customer/BA group so the queue
@@ -425,7 +506,12 @@ export async function getReviewBoard(): Promise<{
   );
 
   inProgress.sort(byRecency);
-  return { groups, inProgress };
+  return {
+    groups,
+    inProgress,
+    queueCount: queueJobs.length,
+    inProgressCount: inProgressJobs.length,
+  };
 }
 
 // Relative-time formatting moved to lib/time so client components (the
