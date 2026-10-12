@@ -48,6 +48,44 @@ test("multi-part: comma between parts is kept", () => {
   );
 });
 
+// ---- multi-word part labels ("Outer Fabric :") ---------------------------
+
+const DA_OUTER = dict({
+  "Outer Fabric": "Yderstof",
+  Fabric: "Stof",
+  Lining: "For",
+  Cotton: "Bomuld",
+  "Organic Cotton": "Økologisk Bomuld",
+});
+
+test("multi-word label: whole label resolves, not just its last word", () => {
+  assert.deepEqual(
+    translateComposition(DA_OUTER, "Outer Fabric : 100% Polyester Lining : 100% Cotton", "da"),
+    { text: "Yderstof : 100% Polyester For : 100% Bomuld", changed: true },
+  );
+});
+
+test("multi-word label: comma-separated parts", () => {
+  assert.equal(
+    translateComposition(DA_OUTER, "Outer Fabric : 100% Cotton, Lining : 100% Polyester", "da").text,
+    "Yderstof : 100% Bomuld, For : 100% Polyester",
+  );
+});
+
+test("multi-word label after a fibre: the fibre stops before it", () => {
+  assert.equal(
+    translateComposition(DA_OUTER, "Lining: 100% Cotton Outer Fabric: 100% Organic Cotton", "da").text,
+    "For: 100% Bomuld Yderstof: 100% Økologisk Bomuld",
+  );
+});
+
+test("multi-word label the board lacks falls back to the word before the colon", () => {
+  assert.equal(
+    translateComposition(DA_OUTER, "Main Fabric: 100% Cotton", "da").text,
+    "Main Stof: 100% Bomuld",
+  );
+});
+
 test("a bare label with no percentage translates whole", () => {
   assert.deepEqual(translateComposition(DA, "Top", "da"), { text: "Overdel", changed: true });
 });
