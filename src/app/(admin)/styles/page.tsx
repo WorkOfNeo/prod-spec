@@ -36,10 +36,10 @@ export default async function StylesPage() {
   // See src/lib/styles/active-filter.ts for the shared predicate.
   const doneCutoffIds = await resolveDoneCutoffIds(doneCutoff);
 
-  // Load all styles for client-side search. At ~4k rows the initial
-  // HTML payload is bigger than the legacy 200-row cap, but the table
-  // renders in <500 ms and the filtering UX is instant. Switch to
-  // server-side pagination if the row count ever crosses ~20k.
+  // Load all styles for client-side search. At ~4k rows the payload is
+  // bigger than the legacy 200-row cap, but the filtering UX is instant and
+  // the table only mounts the rows scrolled into view (see styles-table.tsx).
+  // Switch to server-side pagination if the row count ever crosses ~20k.
   // Rows are built in src/lib/styles/list-rows.ts, which selects only the
   // columns they read and projects rawData in SQL (rawdata-projection.ts).
   const rows = await loadStyleListRows({

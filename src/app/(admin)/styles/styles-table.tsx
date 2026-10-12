@@ -3,12 +3,13 @@
 // Single-input filtered table for /styles. Mirrors prod-specs-table.tsx
 // in approach: server-side fetches all rows once, client filters with
 // substring match on a per-row blob (name + customer + BA + PO# + status,
-// built here from the row — see styleSearchBlob). Trade-off: ~4k rows live
-// in the DOM, but the table is light (no per-row interactivity) so browsers
-// handle it fine.
+// built here from the row — see styleSearchBlob). Search, facets, counts and
+// the bulk run all work on the full filtered list; only the <tr>s are
+// windowed (ROW_PAGE at a time, growing as the end of the table scrolls into
+// view), so a ~4k-row list doesn't mount ~4k rows up front.
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { STATUS_FACET_KEYS, STATUS_FACET_LABELS } from "@/lib/styles/effective-status";
 import {
@@ -148,6 +149,11 @@ function serializeFilters(state: {
 // list-rows.ts); aliased here for the readers below.
 type StyleRow = StyleListRow;
 
+// Rows mounted per step. The table grows by this much each time the sentinel
+// under it scrolls into view (or "Show more" is clicked), and drops back to it
+// whenever the search / filters change.
+const ROW_PAGE = 150;
+
 export function StylesTable({
   rows,
   autoGenerateEnabled,
@@ -220,8 +226,15 @@ export function StylesTable({
   // is what makes the search + facets survive Back from a style detail page.
   // Mirrors appliedFacets (what filters the table), not draftFacets (the
   // in-dropdown selection awaiting Apply).
+  //
+  // The same string keys the row window below: any change to it is a new
+  // result set, which starts again from the top.
+  const filterKey = useMemo(
+    () => serializeFilters({ q, showArchived, attrFilters, appliedFacets }).toString(),
+    [q, showArchived, attrFilters, appliedFacets],
+  );
   useEffect(() => {
-    const qs = serializeFilters({ q, showArchived, attrFilters, appliedFacets }).toString();
+    const qs = filterKey;
     window.history.replaceState(
       null,
       "",
@@ -236,7 +249,7 @@ export function StylesTable({
     } catch {
       /* no stash, no back link — the style's own PO is the fallback */
     }
-  }, [q, showArchived, attrFilters, appliedFacets]);
+  }, [filterKey]);
 
   // Per-row live EAN resolve results (manual "Resolve" button). A row's
   // freshly-resolved view overrides its stored eanStatus badge in-place.
@@ -384,6 +397,38 @@ export function StylesTable({
   // rows, in table order. The browser already holds the filtered list, so the
   // ids go straight to the server (no need to re-derive the filter there).
   const filteredIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
+
+  // The mounted slice of `filtered`. Tied to the filter it was grown under:
+  // a different filterKey reads as a fresh ROW_PAGE, so a new search starts
+  // at the top without a reset in every handler. A refresh that only
+  // replaces `rows` (column toggle, cutoff save) keeps the window.
+  const [rowWindow, setRowWindow] = useState({ key: filterKey, count: ROW_PAGE });
+  const shownCount = rowWindow.key === filterKey ? rowWindow.count : ROW_PAGE;
+  const shownRows = useMemo(() => filtered.slice(0, shownCount), [filtered, shownCount]);
+  const hasMore = shownCount < filtered.length;
+  const sentinel = useRef<HTMLDivElement>(null);
+  // Grow the window as the sentinel under the table nears the viewport.
+  // Attached once per filter while there is more to show — not per step — so
+  // it only fires on a real intersection change (the user scrolling down), as
+  // in the style dashboard's list; "Show more" is the manual fallback.
+  useEffect(() => {
+    if (!hasMore) return;
+    const el = sentinel.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setRowWindow((w) => ({
+            key: filterKey,
+            count: (w.key === filterKey ? w.count : ROW_PAGE) + ROW_PAGE,
+          }));
+        }
+      },
+      { rootMargin: "600px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMore, filterKey]);
 
   // A human description of the active filter, stored on the batch so the
   // progress widget reads "Customer: Netto · Ready to generate · 42 styles"
@@ -954,7 +999,7 @@ export function StylesTable({
                 </td>
               </tr>
             ) : (
-              filtered.map((s) => (
+              shownRows.map((s) => (
                 <tr key={s.id} className="border-t border-zinc-100 hover:bg-zinc-50">
                   {columns.map((c) => cellFor(c.key, s))}
                 </tr>
@@ -963,6 +1008,20 @@ export function StylesTable({
           </tbody>
         </table>
       </div>
+      {hasMore && (
+        <div ref={sentinel} className="flex items-center justify-center gap-3 py-4">
+          <span className="text-xs tabular-nums text-zinc-500">
+            Showing {shownRows.length} of {filtered.length}
+          </span>
+          <button
+            type="button"
+            onClick={() => setRowWindow({ key: filterKey, count: shownCount + ROW_PAGE })}
+            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+          >
+            Show {Math.min(ROW_PAGE, filtered.length - shownCount)} more
+          </button>
+        </div>
+      )}
     </div>
   );
 }
