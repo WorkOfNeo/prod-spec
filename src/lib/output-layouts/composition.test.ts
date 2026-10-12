@@ -125,3 +125,14 @@ test("empty / colon-free input is returned unchanged", () => {
   assert.equal(formatCompositionLines(""), "");
   assert.equal(formatCompositionLines("100% Cotton"), "100% Cotton");
 });
+
+test("each split line starts with a capital, even a lowercase translated label", () => {
+  assert.equal(
+    formatCompositionLines("For: 100% Bomuld yderstof: 100% Bomuld"),
+    "For: 100% Bomuld\nYderstof: 100% Bomuld",
+  );
+});
+
+test("a line opening with a percentage keeps its casing", () => {
+  assert.equal(formatCompositionLines("100% bomuld"), "100% bomuld");
+});

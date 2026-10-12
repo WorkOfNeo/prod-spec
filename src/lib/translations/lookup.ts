@@ -1,3 +1,5 @@
+import { capitaliseLines } from "@/lib/output-layouts/composition";
+
 // Normalise an English phrase to the Translation.key form: trim, collapse
 // internal whitespace, lowercase. The Monday sync (which WRITES keys) and
 // the renderer (which READS them) MUST normalise identically — otherwise a
@@ -161,5 +163,6 @@ export function translateComposition(
       return translated;
     })
     .join(", ");
-  return { text, changed };
+  // Each line opens with a capital, whatever casing the bank stores.
+  return { text: capitaliseLines(text), changed };
 }

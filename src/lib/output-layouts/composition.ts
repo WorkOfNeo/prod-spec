@@ -58,12 +58,21 @@ const BREAK_RE = new RegExp(
 const HAS_PERCENT = /\d\s*%/;
 const HAS_LABELLED_VALUE = /(?:^|\s)[\p{L}][\p{L}.\-/&]*\s{0,2}:\s*\S/u;
 
-// Split a composition string onto one line per labelled part. Returns the
-// input unchanged when there is nothing to split (no colon, a single part,
-// or a lone descriptive label) — so single-composition styles are never
-// touched. Idempotent: an already-split value re-splits to itself.
+// Every printed composition line starts with a capital letter. A bank
+// translation can be stored in lowercase ("yderstof"), and a line break
+// puts it at the start of a line, so the casing is fixed where lines are
+// made rather than in the bank. Only a leading lowercase LETTER changes — a
+// line opening with a percentage ("100% bomuld") is left alone.
+export function capitaliseLines(text: string): string {
+  return text.replace(/(^|\n)([ \t]*)(\p{Ll})/gu, (_m, nl: string, ws: string, ch: string) => nl + ws + ch.toUpperCase());
+}
+
+// Split a composition string onto one line per labelled part, each line
+// capitalised. Returns the input otherwise unchanged when there is nothing to
+// split (no colon, a single part, or a lone descriptive label). Idempotent:
+// an already-split value re-splits to itself.
 export function formatCompositionLines(text: string): string {
-  if (!text || !text.includes(":")) return text;
+  if (!text || !text.includes(":")) return capitaliseLines(text);
 
   let out = "";
   let cursor = 0; // next unconsumed index in `text`
@@ -91,7 +100,7 @@ export function formatCompositionLines(text: string): string {
     .split("\n")
     .map((l) => l.trim().replace(/[,;./]+$/, "").trim())
     .filter(Boolean);
-  return lines.join("\n");
+  return capitaliseLines(lines.join("\n"));
 }
 
 // =====================================================
