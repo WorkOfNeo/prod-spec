@@ -1,3 +1,4 @@
+import { cache } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -58,20 +59,10 @@ export const dynamic = "force-dynamic";
 // so outputs generated in different runs roll up here together. Decisions stay
 // per output; the bulk shortcuts loop the per-output endpoints.
 
-export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const style = await db.style.findUnique({ where: { id }, select: { name: true } });
-  return { title: style ? `Review ${style.name}` : "Review" };
-}
-
-export default async function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const { session, role } = await getSessionWithRole();
-  // Push-to-supplier is an ADMIN-only action (no REVIEWER) — distinct from the
-  // approve/reject gate (canReview). The endpoints enforce the same.
-  const canPush = isAdmin(role);
-
-  const style = await db.style.findUnique({
+// The page's style read. cache() is request-scoped, so generateMetadata (which
+// only wants the name) shares this one query instead of issuing its own.
+const loadStyle = cache(async (id: string) =>
+  db.style.findUnique({
     where: { id },
     select: {
       id: true,
@@ -88,12 +79,31 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
       supplier: { select: { sharepointUrl: true } },
       prodSpec: { select: { id: true, outputs: true } },
     },
-  });
-  if (!style) notFound();
+  }),
+);
 
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const style = await loadStyle(id);
+  return { title: style ? `Review ${style.name}` : "Review" };
+}
+
+export default async function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const { loadStyleFieldValues } = await import("@/lib/outputs/output-field-values");
   const { loadStyleLineValues } = await import("@/lib/outputs/output-line-values");
+  // Test-phase follow-through (claim popup/chip + leave guard) — bound to the
+  // newest still-pending generation job for this style, with style-level counts.
+  const followThrough = reviewFollowThroughEnabled();
+
+  // Every read on this page is keyed on the id alone, so they go out as ONE
+  // wave: the session, the style row and the follow-through / fixed-ticket
+  // reads used to be four more sequential round trips around the main batch.
+  // A missing style still 404s right after it; the fixed-ticket read is simply
+  // unused when the page takes the "No outputs to review" early return.
   const [
+    { session, role },
+    style,
     outputs,
     docTypeLabels,
     fieldValuesByKey,
@@ -102,25 +112,51 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     infoAreaSizes,
     infoAreaSizeMap,
     inflightJobs,
-  ] =
-    await Promise.all([
-      getCurrentOutputsForStyle(id),
-      loadDocTypeLabels(),
-      loadStyleFieldValues(id),
-      // Reviewer LINE rewrites — the catch-all editor's current values.
-      loadStyleLineValues(id),
-      // StyleData for pre-filling the field editor with each output's current
-      // resolved values. Fail-soft: a preview-build hiccup just means blank
-      // pre-fills, never a broken review page.
-      loadStyleRenderContext(id).catch(() => null),
-      // Info-area print sizes: the active list feeds the in-review picker;
-      // the full map resolves the current pick (even a deactivated one).
-      listActiveInfoAreaSizes(),
-      loadInfoAreaSizeMap(),
-      // Is a generation already running? The same condition /rerun enforces —
-      // asking here just disables the button instead of answering 409.
-      db.job.count({ where: { styleId: id, status: { in: ["QUEUED", "RUNNING"] } } }),
-    ]);
+    pendingJob,
+    fixedTickets,
+  ] = await Promise.all([
+    getSessionWithRole(),
+    loadStyle(id),
+    getCurrentOutputsForStyle(id),
+    loadDocTypeLabels(),
+    loadStyleFieldValues(id),
+    // Reviewer LINE rewrites — the catch-all editor's current values.
+    loadStyleLineValues(id),
+    // StyleData for pre-filling the field editor with each output's current
+    // resolved values. Fail-soft: a preview-build hiccup just means blank
+    // pre-fills, never a broken review page.
+    loadStyleRenderContext(id).catch(() => null),
+    // Info-area print sizes: the active list feeds the in-review picker;
+    // the full map resolves the current pick (even a deactivated one).
+    listActiveInfoAreaSizes(),
+    loadInfoAreaSizeMap(),
+    // Is a generation already running? The same condition /rerun enforces —
+    // asking here just disables the button instead of answering 409.
+    db.job.count({ where: { styleId: id, status: { in: ["QUEUED", "RUNNING"] } } }),
+    followThrough
+      ? db.job.findFirst({
+          where: { styleId: id, status: "AWAITING_REVIEW" },
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            reviewClaimedById: true,
+            reviewClaimedAt: true,
+            reviewClaimedBy: { select: { name: true, email: true } },
+          },
+        })
+      : null,
+    // Outputs the admin marked FIXED on the rejection log — see fixedTicketBases.
+    db.rejectionTicket.findMany({
+      where: { styleId: id, status: "FIXED" },
+      select: { variantKey: true },
+    }),
+  ]);
+  if (!style) notFound();
+
+  // Push-to-supplier is an ADMIN-only action (no REVIEWER) — distinct from the
+  // approve/reject gate (canReview). The endpoints enforce the same.
+  const canPush = isAdmin(role);
+
   const styleData = renderContext?.styleData ?? null;
   const rollup = rollupOutputSlots(outputs);
   // Reviewers (ADMIN or REVIEWER) may fill/override output fields inline; other
@@ -216,21 +252,6 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     .filter(Boolean)
     .join(" · ");
 
-  // Test-phase follow-through (claim popup/chip + leave guard) — bound to the
-  // newest still-pending generation job for this style, with style-level counts.
-  const followThrough = reviewFollowThroughEnabled();
-  const pendingJob = followThrough
-    ? await db.job.findFirst({
-        where: { styleId: id, status: "AWAITING_REVIEW" },
-        orderBy: { createdAt: "desc" },
-        select: {
-          id: true,
-          reviewClaimedById: true,
-          reviewClaimedAt: true,
-          reviewClaimedBy: { select: { name: true, email: true } },
-        },
-      })
-    : null;
   const decided = reviewable.filter(
     (o) => o.reviewStatus === "APPROVED" || o.reviewStatus === "REJECTED",
   ).length;
@@ -256,14 +277,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   // latest asset is an older-generation rejection that wasn't re-rendered — the
   // "locate on /review when marked fixed" guard (the rejection-log History split
   // relies on this so a fixed thread is always findable here).
-  const fixedTicketBases = new Set(
-    (
-      await db.rejectionTicket.findMany({
-        where: { styleId: id, status: "FIXED" },
-        select: { variantKey: true },
-      })
-    ).map((t) => baseVariantKey(t.variantKey)),
-  );
+  const fixedTicketBases = new Set(fixedTickets.map((t) => baseVariantKey(t.variantKey)));
   const hasFixedTicket = (o: CurrentOutput) =>
     fixedTicketBases.has(baseVariantKey(o.variantKey));
 
