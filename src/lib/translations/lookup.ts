@@ -71,17 +71,28 @@ export function translatePhrase(
 //
 // Multi-part compositions head each section with a "<label>:" ("Top:",
 // "Skirt:", "Shell:", "Lining:", …) and string the parts together — usually
-// space-separated, no comma between them. The label word is ALSO a board
-// lookup, and a fibre name STOPS before the next label so it resolves on its
-// own instead of swallowing the following label:
+// space-separated, no comma between them. The label is ALSO a board lookup,
+// and a fibre name STOPS before the next label so it resolves on its own
+// instead of swallowing the following label:
 //
 //   "Top: 100% Cotton Skirt: 100% Polyester"
 //                                --(da)-->  "Overdel: 100% Bomuld Nederdel: 100% Polyester"
+//
+// A label may run several words ("Outer Fabric :"). Nothing in the text says
+// where such a label starts — "100% Cotton Outer Fabric:" reads either way —
+// so the BOARD decides: the longest run of words before the colon (up to
+// MAX_LABEL_WORDS) that the board knows is the label, else just the one word
+// before the colon. A fibre clause always keeps at least its first word.
+//
+//   "Outer Fabric : 100% Polyester Lining : 100% Cotton"
+//                                --(da)-->  "Yderstof : 100% Polyester For : 100% Bomuld"
 //
 // A comma segment without any percentage is translated whole. `changed`
 // reports whether at least one term actually resolved to a non-English
 // value, so callers can skip a language row that would otherwise just
 // reprint the English composition under a foreign flag.
+const MAX_LABEL_WORDS = 4;
+
 export function translateComposition(
   dict: TranslationDictionary,
   composition: string,
@@ -90,10 +101,9 @@ export function translateComposition(
   let changed = false;
 
   // "<NN%> <fibre…>" where the fibre runs lazily up to the next percentage
-  // token, the next part label ("<space><word>:"), or the end of the segment
-  // — so "100% Cotton Skirt:" captures "Cotton", not "Cotton Skirt".
-  const PERCENT_CLAUSE =
-    /(\d+(?:[.,]\d+)?\s*%\s*)([^%]+?)(?=\s*\d+(?:[.,]\d+)?\s*%|\s+[^\s%:,]+\s*:|$)/g;
+  // token or the end of the text. Only ever run on a part's VALUE — the text
+  // between two labels — so a following label can't be swallowed.
+  const PERCENT_CLAUSE = /(\d+(?:[.,]\d+)?\s*%\s*)([^%]+?)(?=\s*\d+(?:[.,]\d+)?\s*%|$)/g;
 
   const translateFibreClauses = (segment: string): string =>
     segment.replace(PERCENT_CLAUSE, (whole, pct: string, fibreRaw: string) => {
@@ -106,25 +116,46 @@ export function translateComposition(
       return pct + fibreRaw.replace(fibre, translated);
     });
 
-  // Section labels: the word before each "<word>:" is looked up on the board
-  // (degrading to English) with the colon and its spacing preserved. A no-op
-  // on single-part compositions, which carry no labels.
-  const PART_LABEL = /([^\s%:,]+)(\s*:)/g;
-  const translatePartLabels = (segment: string): string =>
-    segment.replace(PART_LABEL, (_whole, label: string, colon: string) => {
+  // Section labels: each "<word>:" ends one. Its start is the longest run of
+  // words before the colon the board knows (see above), bounded by the
+  // previous label's colon and by the last fibre clause's first word; the
+  // colon and its spacing are left in the value that follows. A segment with
+  // no labels (a single-part composition) is one value.
+  const PART_LABEL = /([^\s%:,]+)\s*:/g;
+  const translateLabelledSegment = (segment: string): string => {
+    let out = "";
+    let cursor = 0; // start of the text not yet emitted
+    let wordsFrom = 0; // just past the previous label's colon
+    for (const m of segment.matchAll(PART_LABEL)) {
+      const labelEnd = m.index + m[1].length;
+      // Earlier words this label could start at, longest label first.
+      const before = segment.slice(wordsFrom, m.index);
+      const floor = before.lastIndexOf("%") + 1;
+      const starts = [...before.slice(floor).matchAll(/\S+/g)].map((w) => wordsFrom + floor + w.index);
+      if (floor > 0) starts.shift(); // the fibre clause keeps its first word
+      let labelStart = m.index;
+      for (const start of starts.slice(-(MAX_LABEL_WORDS - 1))) {
+        if (dict.has(normaliseTranslationKey(segment.slice(start, labelEnd)))) {
+          labelStart = start;
+          break;
+        }
+      }
+      const label = segment.slice(labelStart, labelEnd);
       const translated = translatePhrase(dict, label, lang);
       if (translated !== label) changed = true;
-      return translated + colon;
-    });
+      out += translateFibreClauses(segment.slice(cursor, labelStart)) + translated;
+      cursor = labelEnd;
+      wordsFrom = m.index + m[0].length;
+    }
+    return out + translateFibreClauses(segment.slice(cursor));
+  };
 
   const text = composition
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
     .map((segment) => {
-      // Fibres first (their capture stops before the next label), then the
-      // part labels heading each section.
-      if (/\d\s*%/.test(segment)) return translatePartLabels(translateFibreClauses(segment));
+      if (/\d\s*%/.test(segment)) return translateLabelledSegment(segment);
       const translated = translatePhrase(dict, segment, lang);
       if (translated !== segment) changed = true;
       return translated;
