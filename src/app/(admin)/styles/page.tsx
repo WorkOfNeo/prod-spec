@@ -48,7 +48,7 @@ export default async function StylesPage() {
   // renders in <500 ms and the filtering UX is instant. Switch to
   // server-side pagination if the row count ever crosses ~20k.
   // Rows are built in src/lib/styles/list-rows.ts, which selects only the
-  // columns they read.
+  // columns they read and projects rawData in SQL (rawdata-projection.ts).
   const rows = await loadStyleListRows({
     // The active set — not archived/deleted, Templates/Done hidden,
     // Done-cutoff styles re-admitted. Shared with /combos via activeStylesWhere.

@@ -26,6 +26,7 @@ import {
   type ReviewAsset,
   type SupplierUploadRollup,
 } from "@/lib/styles/table-rollups";
+import { listPathColumnIds, loadProjectedRawData } from "@/lib/styles/rawdata-projection";
 import type { StyleListRow } from "@/lib/styles/table-row";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { currentOutputBaseKeys } from "@/lib/tickets/orphan";
@@ -33,14 +34,16 @@ import { eanStatusMeta } from "@/lib/po/ean-status-meta";
 
 // =====================================================
 // The /styles list: load every listed style and build its table row. Lives
-// here rather than in page.tsx so the row build is one function that can be
-// fed a style from any query shape.
+// here (not in page.tsx) so scripts/perf/parity-styles-list.ts can build the
+// exact rows the page ships and compare the projected-rawData path against
+// the full one.
 // =====================================================
 
 // Only the Style columns the row build reads. In particular NOT rawData (the
-// whole Monday item — loaded separately), missingFields or poScrapeSnapshot.
-// Customer and ProdSpec are loaded once per id rather than joined per row:
-// their config / outputs JSON is the same for thousands of styles.
+// whole Monday item — loaded separately, projected, see rawdata-projection.ts),
+// missingFields or poScrapeSnapshot. Customer and ProdSpec are loaded once per
+// id rather than joined per row: their config / outputs JSON is the same for
+// thousands of styles.
 export const STYLE_LIST_SELECT = {
   id: true,
   name: true,
@@ -180,7 +183,8 @@ export async function loadStyleListContext(
   };
 }
 
-// One table row. Pure given its inputs.
+// One table row. Pure given its inputs — rawData only has to carry the
+// columns rawdata-projection.ts keeps.
 export function buildStyleListRow(
   s: StyleListSource,
   customer: StyleListCustomer,
@@ -379,15 +383,20 @@ export function buildStyleListRow(
   };
 }
 
-// Load and build the rows for every style matching `where`, in list order:
-// the styles (selected columns only), then their customers, prod specs,
-// rawData and the page-wide lookups side by side, then the rows.
+// Load and build the rows for every style matching `where`, in list order.
+// Four steps, the per-id ones batched and run side by side: the styles
+// (selected columns only) → their customers, prod specs and the page-wide
+// lookups → rawData, projected to the columns the live customer mappings
+// can read (or the full item, for the parity script) → the rows.
 export async function loadStyleListRows(opts: {
   where: Prisma.StyleWhereInput;
   visibleColumns: readonly StyleColumnKey[];
   autoGenerateEnabled: boolean;
   stylesWithPdfs: ReadonlySet<string>;
   doneCutoffIds: ReadonlySet<string>;
+  // "projected" (the page) or "full" — the reference the parity script
+  // compares the projection against.
+  rawData?: "projected" | "full";
 }): Promise<StyleListRow[]> {
   const styles = await db.style.findMany({
     where: opts.where,
@@ -406,20 +415,32 @@ export async function loadStyleListRows(opts: {
   const prodSpecIds = [...new Set(styles.flatMap((s) => (s.prodSpecId ? [s.prodSpecId] : [])))];
   const configFor = customerConfigCache();
 
+  const customersP = db.customer.findMany({
+    where: { id: { in: customerIds } },
+    select: { id: true, name: true, config: true },
+  });
+  // The projection needs the customers' mappings, so it chains off that
+  // query instead of waiting for the whole batch below.
+  const rawDataP: Promise<Map<string, unknown>> =
+    opts.rawData === "full"
+      ? db.style
+          .findMany({ where: { id: { in: styleIds } }, select: { id: true, rawData: true } })
+          .then((rows) => new Map(rows.map((r) => [r.id, r.rawData])))
+      : customersP.then((customers) =>
+          loadProjectedRawData(
+            styleIds,
+            listPathColumnIds(customers.map((c) => configFor(c.id, c.config).columnMapping)),
+          ),
+        );
   const [customers, prodSpecs, rawDataById, ctx] = await Promise.all([
-    db.customer.findMany({
-      where: { id: { in: customerIds } },
-      select: { id: true, name: true, config: true },
-    }),
+    customersP,
     prodSpecIds.length > 0
       ? db.prodSpec.findMany({
           where: { id: { in: prodSpecIds } },
           select: { id: true, name: true, autoGenerateThresholdPct: true, active: true, outputs: true },
         })
       : Promise.resolve([]),
-    db.style
-      .findMany({ where: { id: { in: styleIds } }, select: { id: true, rawData: true } })
-      .then((rows) => new Map(rows.map((r) => [r.id, r.rawData]))),
+    rawDataP,
     loadStyleListContext(styles, { ...opts, configFor }),
   ]);
   const customerById = new Map(customers.map((c) => [c.id, c]));
