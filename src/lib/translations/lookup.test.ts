@@ -86,6 +86,24 @@ test("multi-word label the board lacks falls back to the word before the colon",
   );
 });
 
+// ---- line casing ----------------------------------------------------------
+
+test("a lowercase bank label at the start of a line is capitalised", () => {
+  const lower = dict({ "Outer Fabric": "yderstof", Lining: "For", Cotton: "Bomuld" });
+  assert.deepEqual(
+    translateComposition(lower, "Outer fabric : 100% Cotton\nLining: 100% Polyester", "da"),
+    { text: "Yderstof : 100% Bomuld\nFor: 100% Polyester", changed: true },
+  );
+});
+
+test("only line starts are capitalised; mid-line casing is kept", () => {
+  const lower = dict({ Lining: "for", Cotton: "bomuld" });
+  assert.equal(
+    translateComposition(lower, "Lining: 100% Cotton", "da").text,
+    "For: 100% bomuld",
+  );
+});
+
 test("a bare label with no percentage translates whole", () => {
   assert.deepEqual(translateComposition(DA, "Top", "da"), { text: "Overdel", changed: true });
 });
