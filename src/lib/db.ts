@@ -21,6 +21,19 @@ function resolveSsl(url: string): false | { rejectUnauthorized: boolean } | unde
   return { rejectUnauthorized: false };
 }
 
+// Pool size per app process. pg's default of 10 queues a page's parallel
+// queries behind the sidebar polls and the job runner on a busy instance.
+// Railway Postgres allows 100 connections; the cron service only calls the
+// app over HTTP, so its work runs inside this pool. 15 leaves room for a
+// second instance overlapping during a deploy, `prisma migrate deploy` and
+// ad-hoc psql sessions. Override with DATABASE_POOL_MAX (a positive integer).
+const DEFAULT_POOL_MAX = 15;
+
+function resolvePoolMax(raw: string | undefined): number {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_POOL_MAX;
+}
+
 function makeClient() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL not set");
@@ -28,6 +41,7 @@ function makeClient() {
   const ssl = resolveSsl(connectionString);
   const adapter = new PrismaPg({
     connectionString,
+    max: resolvePoolMax(process.env.DATABASE_POOL_MAX),
     ...(ssl !== undefined ? { ssl } : {}),
   });
 
