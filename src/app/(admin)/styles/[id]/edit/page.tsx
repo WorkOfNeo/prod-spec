@@ -1,3 +1,4 @@
+import { cache } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -14,9 +15,15 @@ type WashSymbolLite = { code: string; name: string; mondayValue: string | null }
 
 export const dynamic = "force-dynamic";
 
+// The page's style read. cache() is request-scoped, so generateMetadata (which
+// only wants the name) shares this one query instead of issuing its own.
+const loadStyle = cache(async (id: string) =>
+  db.style.findUnique({ where: { id }, include: { customer: true } }),
+);
+
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const style = await db.style.findUnique({ where: { id }, select: { name: true } });
+  const style = await loadStyle(id);
   return { title: style ? `Edit ${style.name}` : "Edit style" };
 }
 
@@ -24,7 +31,7 @@ export default async function EditStylePage({ params }: { params: Promise<{ id: 
   const { id } = await params;
 
   const [style, customers, suppliers, businessAreas, washSymbols, qrImages, prodSpecs] = await Promise.all([
-    db.style.findUnique({ where: { id }, include: { customer: true } }),
+    loadStyle(id),
     db.customer.findMany({
       where: { active: true },
       orderBy: { name: "asc" },

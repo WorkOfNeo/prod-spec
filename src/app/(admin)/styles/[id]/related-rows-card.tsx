@@ -106,8 +106,7 @@ function Row({
 }
 
 // Presentational only — pure over its props, no I/O. Pair it with
-// loadRelatedRowsCardProps() below, or render RelatedRowsCardForStyle() which
-// composes the two.
+// loadRelatedRowsCardProps() below.
 export function RelatedRowsCard({ current, related, className = "mt-4" }: RelatedRowsCardProps) {
   if (related.length === 0) return null;
 
@@ -185,27 +184,14 @@ export function RelatedRowsCard({ current, related, className = "mt-4" }: Relate
 
 // Server-side loader. Returns null when there is nothing to say — no style, or
 // no lookalikes — so a caller can `const p = await …; return p && <Card {...p} />`
-// without knowing the rules.
+// without knowing the rules. The style page calls it in its own first wave of
+// reads instead of through an async wrapper component: an async child only
+// starts once the page has returned, so its reads would queue up behind all of
+// the page's own.
 export async function loadRelatedRowsCardProps(
   styleId: string,
 ): Promise<RelatedRowsCardProps | null> {
   const report = await loadLookalikes(styleId);
   if (!report || report.matches.length === 0) return null;
   return { current: report.subject, related: report.matches };
-}
-
-// Async server component that composes the loader and the card, so the style
-// page can drop in one line and stay unaware of both. Use RelatedRowsCard +
-// loadRelatedRowsCardProps directly if a caller needs the data for anything
-// else (e.g. to decide layout before rendering).
-export async function RelatedRowsCardForStyle({
-  styleId,
-  className,
-}: {
-  styleId: string;
-  className?: string;
-}) {
-  const props = await loadRelatedRowsCardProps(styleId);
-  if (!props) return null;
-  return <RelatedRowsCard {...props} className={className} />;
 }

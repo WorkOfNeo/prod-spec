@@ -17,13 +17,24 @@ export const metadata = { title: "Jobs" };
 export default async function JobsPage() {
   await requireAdminPage();
 
+  // Only the columns the two lists print. `include: { style: true }` used to
+  // drag the whole style row — rawData, the Monday snapshot that runs to tens
+  // of KB — across the wire 100 times to show its name, and each log row's
+  // JSON payload came along unread too.
   const [jobs, recentLogs] = await Promise.all([
     db.job.findMany({
-      include: { style: true },
+      select: {
+        id: true,
+        status: true,
+        triggerSource: true,
+        createdAt: true,
+        style: { select: { name: true } },
+      },
       orderBy: { createdAt: "desc" },
       take: 100,
     }),
     db.log.findMany({
+      select: { id: true, level: true, message: true, createdAt: true },
       orderBy: { createdAt: "desc" },
       take: 100,
     }),
