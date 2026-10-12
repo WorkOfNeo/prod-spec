@@ -1,16 +1,18 @@
 "use client";
 
 // Sidebar notification bell. Icon-only — sits next to the "Prod Spec"
-// logo at the top of the sidebar. Polls /api/admin/import/counts every
-// 60s for the badge number. Clicking opens a popover with the actual
-// notification list (lazy-loaded from /api/admin/import/notifications
-// so the cheap 60s poll stays small).
+// logo at the top of the sidebar. Polls /api/admin/import/counts for the
+// badge number every 60s while the tab is visible (the route memoizes its
+// scan for 60s, so the badge can trail by up to a minute). Clicking opens a
+// popover with the actual notification list (lazy-loaded, always fresh, from
+// /api/admin/import/notifications so the cheap 60s poll stays small).
 //
 // Popover rows are plain links into /import. The bell is "first click
 // shows the list" — actions still live on the full dashboard page.
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { useVisiblePoll } from "@/lib/use-visible-poll";
 
 type Counts = {
   badge: number;
@@ -70,26 +72,16 @@ export function NotificationBell() {
   const [listError, setListError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
-  // ---------- Poll badge count ----------
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchCounts() {
-      try {
-        const res = await fetch("/api/admin/import/counts", { cache: "no-store" });
-        if (!res.ok) return;
-        const body = (await res.json()) as Counts;
-        if (!cancelled) setCounts(body);
-      } catch {
-        // Silent — bell stays in last-known state.
-      }
+  // ---------- Poll badge count (visible tabs only — useVisiblePoll) ----------
+  useVisiblePoll(async (signal) => {
+    try {
+      const res = await fetch("/api/admin/import/counts", { cache: "no-store", signal });
+      if (!res.ok) return;
+      setCounts((await res.json()) as Counts);
+    } catch {
+      // Silent — bell stays in last-known state (or unmounted).
     }
-    fetchCounts();
-    const id = setInterval(fetchCounts, POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, []);
+  }, POLL_MS);
 
   // ---------- Click-outside + Escape to close ----------
   useEffect(() => {

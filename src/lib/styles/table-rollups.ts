@@ -2,12 +2,27 @@ import { db } from "@/lib/db";
 import { selectCurrentAssets, approvedBaseVariantKeys } from "@/lib/outputs/current-outputs";
 
 // =====================================================
-// Batched rollups for the /styles table's opt-in columns. Both are ONE query
-// for the whole page (never per-row), and page.tsx only calls them when a
-// column that needs them is visible (needsSupplierUploadData /
-// needsReviewRollupData). Everything degrades to an empty map on error so the
-// styles list never 500s over an optional column.
+// Batched lookups for the /styles table. Each is ONE query for the whole page
+// (never per-row), and the opt-in rollups only run when a column that needs
+// them is visible (needsSupplierUploadData / needsReviewRollupData, checked
+// in list-rows.ts). Those degrade to an empty map on error so the styles list
+// never 500s over an optional column.
 // =====================================================
+
+// ── Styles with a generated PDF (core) ──────────────────────────────────────
+// Which styles have at least one generated PDF — the gate for the review-flow
+// statuses ("Ready for review" must mean real outputs). A GROUP BY in SQL, so
+// only distinct style ids come back: Prisma's `distinct` dedupes in memory
+// after fetching every matching job. Indexed, never touches the JobAsset
+// Bytes column. Not caught like the opt-in rollups — the Status column is
+// core, and an empty set would silently misreport every style.
+export async function loadStyleIdsWithPdfs(): Promise<Set<string>> {
+  const rows = await db.job.groupBy({
+    by: ["styleId"],
+    where: { status: { not: "FAILED" }, assets: { some: {} } },
+  });
+  return new Set(rows.map((r) => r.styleId));
+}
 
 // ── SharePoint upload rollup (delivery group) ────────────────────────────────
 export type SupplierUploadRollup = {

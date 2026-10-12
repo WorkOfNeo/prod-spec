@@ -51,6 +51,16 @@ export const auth = betterAuth({
   session: {
     expiresIn: 60 * 60 * 24 * 30,
     updateAge: 60 * 60 * 24,
+    // Every page and API call gates on the session; with the cookie cache
+    // getSession answers from a signed cookie for up to maxAge instead of
+    // reading the session + user rows each time. Authorization never rests
+    // on the cookie alone: loadSession (auth-server.ts) still checks the
+    // session row is live and reads the role from the DB in one query, so a
+    // password reset or a removed user still loses access on the next
+    // request. What can lag by maxAge is display data (session.user.email /
+    // name) and /api/auth/get-session, which the app itself doesn't call.
+    // Keep refreshCache off — it extends the cookie without re-reading the DB.
+    cookieCache: { enabled: true, maxAge: 5 * 60 },
   },
   user: {
     additionalFields: {

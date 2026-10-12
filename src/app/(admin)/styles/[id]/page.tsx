@@ -1,3 +1,4 @@
+import { cache } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -52,7 +53,7 @@ import { buildStyleData } from "@/lib/styles/render-context";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
 import { SupplierFolderStatus, type PoFolderDelivery } from "./supplier-folder-status";
-import { RelatedRowsCardForStyle } from "./related-rows-card";
+import { RelatedRowsCard, loadRelatedRowsCardProps } from "./related-rows-card";
 import { BackToStyles } from "./back-to-styles";
 import { FolderReconcilePanel } from "./folder-reconcile-panel";
 import { AskStylePanel } from "./ask-style-panel";
@@ -76,9 +77,61 @@ import {
 
 export const dynamic = "force-dynamic";
 
+// The page's style read. cache() is request-scoped, so generateMetadata (which
+// only wants the name) shares this one query instead of issuing its own.
+const loadStyle = cache(async (id: string) =>
+  db.style.findUnique({
+    where: { id },
+    // useStyleBoardColour is read separately (guarded, via readUseStyleBoardColour)
+    // so this page keeps loading before the additive column is deployed
+    // (db:deploy) — same hardening as the jobs.reviewEndedAt omit below.
+    omit: { useStyleBoardColour: true },
+    include: {
+      customer: true,
+      supplier: true,
+      businessAreaRef: true,
+      qrImage: { select: { name: true } },
+      eans: { orderBy: { position: "asc" } },
+      prodSpec: { include: { businessArea: true, suppliers: { include: { supplier: true } } } },
+      jobs: {
+        // reviewEndedAt isn't read on this page — omit it so the style page
+        // keeps loading before the additive column is deployed (db:deploy).
+        // Matches the hardening on the review screen / dashboard reads.
+        omit: { reviewEndedAt: true },
+        include: {
+          // Pull asset METADATA only. The `pdf` Bytes column lives here
+          // too and runs ~50-200 KB per asset — with 10 jobs × 2-3
+          // assets each that's multiple MB pulled across the Railway
+          // proxy on every page load. The preview endpoint loads the
+          // single asset's bytes on demand when an iframe asks for it.
+          assets: {
+            select: {
+              id: true,
+              jobId: true,
+              docType: true,
+              variantKey: true,
+              fileName: true,
+              displayName: true,
+              reviewStatus: true,
+              rejectReason: true,
+              reviewedAt: true,
+              reviewedBy: { select: { email: true } },
+              createdAt: true,
+            },
+          },
+          reviewActions: { include: { user: true } },
+          reviewClaimedBy: { select: { name: true, email: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      },
+    },
+  }),
+);
+
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const style = await db.style.findUnique({ where: { id }, select: { name: true } });
+  const style = await loadStyle(id);
   return { title: style?.name ?? "Style" };
 }
 
@@ -158,9 +211,6 @@ export default async function StyleDetail({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ tab?: string }>;
 }) {
-  // Output Builder layouts resolve as variants in the readiness walks below.
-  await ensureLayoutVariantsLoaded();
-
   const { id } = await params;
   const tabParam = (await searchParams).tab;
   const tab: TabKey =
@@ -172,76 +222,100 @@ export default async function StyleDetail({
           ? "history"
           : "details";
 
+  // ONE wave for every read that needs nothing but the id. These used to run
+  // as ~20 sequential awaits — each a full round trip over the Railway proxy —
+  // though none of them reads another's result. The style row is one of them:
+  // a missing style still 404s right after the wave, its siblings' (now
+  // unused) reads just settle first. Each loader keeps its own fail-soft
+  // behaviour; nothing is caught collectively here.
+  const [
+    { role },
+    style,
+    recentAssets,
+    supplierShare,
+    sendQueueRows,
+    autoGenerateEnabled,
+    exclusionRules,
+    exclusionLabels,
+    ignoredOutputKeys,
+    washcareSymbolMap,
+    careLabels,
+    infoAreaSizesActive,
+    infoAreaSizeMap,
+    useStyleBoardColour,
+    currentOutputs,
+    relatedRows,
+  ] = await Promise.all([
+    getSessionWithRole(),
+    loadStyle(id),
+    // Latest generated asset per output variant — powers the realistic
+    // thumbnail on each Outputs row. Queried directly instead of scanning
+    // style.jobs: that window only holds the last 10 jobs, and per-output
+    // reruns (one asset per job) push older outputs' assets out of it fast.
+    // Metadata only — the PNG bytes come from the thumbnail endpoint.
+    db.jobAsset.findMany({
+      where: { job: { styleId: id }, variantKey: { not: null } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, jobId: true, variantKey: true, createdAt: true, updatedAt: true, reviewStatus: true },
+      take: 400,
+    }),
+    // The style's durable supplier share (if approved at least once) — drives
+    // the "Supplier link" panel on the prod-spec tab: the stable link + PIN to
+    // forward, and whether the supplier has opened it. No other tab shows it.
+    tab === "prod-spec"
+      ? db.supplierShare.findUnique({
+          where: { styleId: id },
+          select: {
+            token: true,
+            pin: true,
+            email: true,
+            visitCount: true,
+            firstVisitedAt: true,
+            lastVisitedAt: true,
+          },
+        })
+      : null,
+    // This style's supplier-send queue rows — the ACTUAL SharePoint push outcome
+    // for the "Supplier folder" panel (found + link / no PO folder / ambiguous).
+    db.supplierSendQueueItem.findMany({
+      where: { styleId: id },
+      select: { sharePointStatus: true, sharePointFolderUrl: true, sharePointFolderMatches: true },
+    }),
+    getAutoGenerateEnabled(),
+    // Doc-type keyword exclusion rules + per-style operator ignores → mark
+    // outputs skipped for this style (rule hit, or ignored from the review
+    // surfaces), with a reason for the card.
+    loadDocTypeExclusionRules(),
+    loadDocTypeLabels(),
+    loadIgnoredOutputKeys(id),
+    // The catalogues behind the derived care instructions (careDerived).
+    loadWashcareSymbols(),
+    loadCareLabels(),
+    // Info-area sizing catalogue: the active sizes the dropdown offers, plus a
+    // full map (incl. inactive) to resolve a current pick's name + printed
+    // dims. Resilient to a not-yet-deployed table (empty → custom only).
+    listActiveInfoAreaSizes(),
+    loadInfoAreaSizeMap(),
+    readUseStyleBoardColour(id),
+    // The style's current outputs for the Review tab — see currentFiles.
+    getCurrentOutputsForStyle(id),
+    // The lookalike-rows card's data — loaded here, not by the card itself
+    // (see loadRelatedRowsCardProps for why).
+    loadRelatedRowsCardProps(id),
+    // Output Builder layouts resolve as variants in the readiness walks below.
+    ensureLayoutVariantsLoaded(),
+  ]);
+  if (!style) notFound();
+
   // The output cards' generation actions (per-output Run, carton prints) stay
   // ADMIN-only — the API enforces it, and REVIEWERs (who can reach this page)
   // must not see buttons that would only 403. The header Generate / Re-run is
   // the exception: a reviewer opening a style that hasn't generated yet has no
   // review screen to work from, so kicking off a whole-style (re)generation is
   // part of reviewing (canReview) — the rerun endpoint enforces the same.
-  const { role } = await getSessionWithRole();
   const isAdmin = role === "ADMIN";
   const canRun = role === "ADMIN" || role === "REVIEWER";
 
-  const style = await db.style.findUnique({
-    where: { id },
-    // useStyleBoardColour is read separately (guarded, via readUseStyleBoardColour)
-    // so this page keeps loading before the additive column is deployed
-    // (db:deploy) — same hardening as the jobs.reviewEndedAt omit below.
-    omit: { useStyleBoardColour: true },
-    include: {
-      customer: true,
-      supplier: true,
-      businessAreaRef: true,
-      qrImage: { select: { name: true } },
-      eans: { orderBy: { position: "asc" } },
-      prodSpec: { include: { businessArea: true, suppliers: { include: { supplier: true } } } },
-      jobs: {
-        // reviewEndedAt isn't read on this page — omit it so the style page
-        // keeps loading before the additive column is deployed (db:deploy).
-        // Matches the hardening on the review screen / dashboard reads.
-        omit: { reviewEndedAt: true },
-        include: {
-          // Pull asset METADATA only. The `pdf` Bytes column lives here
-          // too and runs ~50-200 KB per asset — with 10 jobs × 2-3
-          // assets each that's multiple MB pulled across the Railway
-          // proxy on every page load. The preview endpoint loads the
-          // single asset's bytes on demand when an iframe asks for it.
-          assets: {
-            select: {
-              id: true,
-              jobId: true,
-              docType: true,
-              variantKey: true,
-              fileName: true,
-              displayName: true,
-              reviewStatus: true,
-              rejectReason: true,
-              reviewedAt: true,
-              reviewedBy: { select: { email: true } },
-              createdAt: true,
-            },
-          },
-          reviewActions: { include: { user: true } },
-          reviewClaimedBy: { select: { name: true, email: true } },
-        },
-        orderBy: { createdAt: "desc" },
-        take: 10,
-      },
-    },
-  });
-  if (!style) notFound();
-
-  // Latest generated asset per output variant — powers the realistic
-  // thumbnail on each Outputs row. Queried directly instead of scanning
-  // style.jobs: that window only holds the last 10 jobs, and per-output
-  // reruns (one asset per job) push older outputs' assets out of it fast.
-  // Metadata only — the PNG bytes come from the thumbnail endpoint.
-  const recentAssets = await db.jobAsset.findMany({
-    where: { job: { styleId: id }, variantKey: { not: null } },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, jobId: true, variantKey: true, createdAt: true, updatedAt: true, reviewStatus: true },
-    take: 400,
-  });
   const latestAssetByVariant = new Map<
     string,
     { id: string; jobId: string; createdAt: Date; updatedAt: Date; reviewStatus: AssetReviewStatus }
@@ -261,27 +335,6 @@ export default async function StyleDetail({
   const latestJob = style.jobs[0];
   const missing = (style.missingFields as Array<{ id: string; label: string }>) ?? [];
 
-  // The style's durable supplier share (if approved at least once) — drives
-  // the "Supplier link" panel on the prod-spec tab: the stable link + PIN to
-  // forward, and whether the supplier has opened it.
-  const supplierShare = await db.supplierShare.findUnique({
-    where: { styleId: id },
-    select: {
-      token: true,
-      pin: true,
-      email: true,
-      visitCount: true,
-      firstVisitedAt: true,
-      lastVisitedAt: true,
-    },
-  });
-
-  // This style's supplier-send queue rows — the ACTUAL SharePoint push outcome
-  // for the "Supplier folder" panel (found + link / no PO folder / ambiguous).
-  const sendQueueRows = await db.supplierSendQueueItem.findMany({
-    where: { styleId: id },
-    select: { sharePointStatus: true, sharePointFolderUrl: true, sharePointFolderMatches: true },
-  });
   const supplierDelivery: PoFolderDelivery | null =
     sendQueueRows.length > 0
       ? {
@@ -301,8 +354,6 @@ export default async function StyleDetail({
           ),
         }
       : null;
-
-  const autoGenerateEnabled = await getAutoGenerateEnabled();
 
   // Required-field set for this style = the UNION of the fields each ENABLED
   // output on its ProdSpec declares it needs (template-registry). Single
@@ -326,15 +377,6 @@ export default async function StyleDetail({
     fields: requiredKeys.map((k) => ({ label: STYLE_FIELD_LABELS[k], ok: !reqMissing.has(k) })),
   };
 
-  // Doc-type keyword exclusion rules + per-style operator ignores → mark
-  // outputs skipped for this style (rule hit, or ignored from the review
-  // surfaces), with a reason for the card.
-  const [exclusionRules, exclusionLabels, ignoredOutputKeys] = await Promise.all([
-    loadDocTypeExclusionRules(),
-    loadDocTypeLabels(),
-    loadIgnoredOutputKeys(id),
-  ]);
-
   // Per-output readiness for the banner — each output generates as soon as
   // its own fields land. Customer mapping (empty override) matches reqMapping.
   const outputReadiness = style.prodSpec
@@ -354,67 +396,81 @@ export default async function StyleDetail({
       )
     : [];
 
-  // Pre-run files preview for the Prod Spec popover: per enabled output,
-  // the PDFs the NEXT run would emit (count + resolved names). Assembled
-  // from the SAME StyleData builder, pins and naming rules the runner
-  // uses — repeat/split-aware for Output Builder layouts — so the
-  // operator can verify the split settings against this style's actual
-  // size/EAN rows before generating anything. qrImage is deliberately
-  // null: the page only selects its name (the image is heavy) and file
-  // naming never reads it.
-  const outputsFilesPreview: Array<{
-    variantKey: string;
-    name: string;
-    known: boolean;
-    files: string[];
-  }> = await (async () => {
-    if (!style.prodSpec || enabledOutputs.length === 0) return [];
-    const base = await buildStyleData(
-      {
-        id: style.id,
-        rawData: style.rawData,
-        poNumber: style.poNumber,
-        cartonEan: style.cartonEan,
-        mondayBoardId: style.mondayBoardId,
-        supplier: style.supplier,
-        eans: style.eans,
-        customer: { name: style.customer.name, config: style.customer.config },
-        qrImage: null,
-      },
-      style.prodSpec,
-      parseCustomerConfig(style.customer.config),
-    );
-    return enabledOutputs.map((o) => {
-      const variant = getVariant(o.variantKey);
-      if (!variant) return { variantKey: o.variantKey, name: o.variantKey, known: false, files: [] };
-      const renderStyle = applyFieldOverrides(base, o.fieldOverrides);
-      const plan = variant.filesPreview?.(renderStyle) ?? [
-        { suffix: null, fileName: variant.fileNameFor?.(renderStyle) ?? null },
-      ];
-      return {
-        variantKey: o.variantKey,
-        name: variant.name,
-        known: true,
-        files: plan.map(
-          (p) => p.fileName ?? defaultArtifactFileName(variant, renderStyle.styleNumber, p.suffix),
-        ),
-      };
-    });
-  })();
+  // The second and last wave: the two reads that need the style row itself.
+  // Only the Prod Spec tab renders either, so the other tabs skip both — they
+  // used to pay for a whole buildStyleData pass that nothing on them shows.
+  const onProdSpecTab = tab === "prod-spec";
+  const [outputsFilesPreview, candidateBusinessArea] = await Promise.all([
+    // Pre-run files preview for the Prod Spec popover: per enabled output,
+    // the PDFs the NEXT run would emit (count + resolved names). Assembled
+    // from the SAME StyleData builder, pins and naming rules the runner
+    // uses — repeat/split-aware for Output Builder layouts — so the
+    // operator can verify the split settings against this style's actual
+    // size/EAN rows before generating anything. qrImage is deliberately
+    // null: the page only selects its name (the image is heavy) and file
+    // naming never reads it.
+    (async (): Promise<Array<{ variantKey: string; name: string; known: boolean; files: string[] }>> => {
+      if (!onProdSpecTab || !style.prodSpec || enabledOutputs.length === 0) return [];
+      const base = await buildStyleData(
+        {
+          id: style.id,
+          rawData: style.rawData,
+          poNumber: style.poNumber,
+          cartonEan: style.cartonEan,
+          mondayBoardId: style.mondayBoardId,
+          supplier: style.supplier,
+          eans: style.eans,
+          customer: { name: style.customer.name, config: style.customer.config },
+          qrImage: null,
+        },
+        style.prodSpec,
+        parseCustomerConfig(style.customer.config),
+      );
+      return enabledOutputs.map((o) => {
+        const variant = getVariant(o.variantKey);
+        if (!variant) return { variantKey: o.variantKey, name: o.variantKey, known: false, files: [] };
+        const renderStyle = applyFieldOverrides(base, o.fieldOverrides);
+        const plan = variant.filesPreview?.(renderStyle) ?? [
+          { suffix: null, fileName: variant.fileNameFor?.(renderStyle) ?? null },
+        ];
+        return {
+          variantKey: o.variantKey,
+          name: variant.name,
+          known: true,
+          files: plan.map(
+            (p) => p.fileName ?? defaultArtifactFileName(variant, renderStyle.styleNumber, p.suffix),
+          ),
+        };
+      });
+    })(),
+    // If the FK is missing but we have business-area text, see if any
+    // active BusinessArea row matches by mondayValue or name. The tab
+    // shows a "Link to <BA>" one-click action when there's a match.
+    (async () => {
+      if (!onProdSpecTab || style.businessAreaId) return null;
+      const text = (style.businessArea ?? "").trim();
+      if (!text) return null;
+      const lowered = text.toLowerCase();
+      const rows = await db.businessArea.findMany({ where: { active: true } });
+      const match =
+        rows.find((b) => b.mondayValue.toLowerCase() === lowered) ??
+        rows.find((b) => b.name.toLowerCase() === lowered);
+      return match ? { id: match.id, name: match.name, mondayValue: match.mondayValue } : null;
+    })(),
+  ]);
 
   // Derived care instructions for THIS style — the standard catalogue
   // filtered by the row's wash-care symbols, with per-line verdicts. The
   // same pure rule the renderer applies; shown so the operator sees WHAT
   // will print and WHY a line is dropped, before generating anything.
-  const careDerived = await (async () => {
-    const symbolMap = await loadWashcareSymbols();
+  const careDerived = (() => {
     const rawTokens = resolveMappedField(effItem, reqMapping, "washCare")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    const tokens = rejoinWashTokens(rawTokens, symbolMap);
+    const tokens = rejoinWashTokens(rawTokens, washcareSymbolMap);
     const symbols = tokens.map((token) => {
-      const resolved = getWashcareSymbol(symbolMap, token);
+      const resolved = getWashcareSymbol(washcareSymbolMap, token);
       return {
         token,
         name: resolved?.name ?? token,
@@ -425,8 +481,7 @@ export default async function StyleDetail({
       };
     });
     const present = symbols.map((s) => s.present);
-    const labels = await loadCareLabels();
-    const lines = labels.map((label) => {
+    const lines = careLabels.map((label) => {
       const verdict = explainCareLabelVisibility(label, present);
       const reason =
         verdict.reason === "action-prohibited"
@@ -446,13 +501,6 @@ export default async function StyleDetail({
     };
   })();
 
-  // Info-area sizing catalogue: the active sizes the dropdown offers, plus a
-  // full map (incl. inactive) to resolve a current pick's name + printed
-  // dims. Resilient to a not-yet-deployed table (empty → custom only).
-  const [infoAreaSizesActive, infoAreaSizeMap] = await Promise.all([
-    listActiveInfoAreaSizes(),
-    loadInfoAreaSizeMap(),
-  ]);
   const infoAreaSizeOptions = infoAreaSizesActive.map((s) => ({
     id: s.id,
     name: s.name,
@@ -633,7 +681,7 @@ export default async function StyleDetail({
     poFileName: style.poFileName,
     cartonEan: style.cartonEan,
     sizeEans: style.eans.map(toEanSize),
-    useStyleBoardColour: await readUseStyleBoardColour(style.id),
+    useStyleBoardColour,
     // The last scrape's section dump, so the "what did this PO contain / why
     // these sizes" panel renders on LOAD. It used to appear only after a
     // Re-resolve (the dump lived in live diagnostics and nowhere else), which
@@ -643,21 +691,6 @@ export default async function StyleDetail({
     // hand-edited value just renders as "no snapshot".
     scrapeSnapshot: parsePoScrapeSnapshot(style.poScrapeSnapshot, style.eanResolvedAt),
   };
-
-  // If the FK is missing but we have business-area text, see if any
-  // active BusinessArea row matches by mondayValue or name. The tab
-  // shows a "Link to <BA>" one-click action when there's a match.
-  const candidateBusinessArea = await (async () => {
-    if (style.businessAreaId) return null;
-    const text = (style.businessArea ?? "").trim();
-    if (!text) return null;
-    const lowered = text.toLowerCase();
-    const rows = await db.businessArea.findMany({ where: { active: true } });
-    const match =
-      rows.find((b) => b.mondayValue.toLowerCase() === lowered) ??
-      rows.find((b) => b.name.toLowerCase() === lowered);
-    return match ? { id: match.id, name: match.name, mondayValue: match.mondayValue } : null;
-  })();
 
   // One serialised job list feeds BOTH tabs: the Prod Spec tab renders it
   // as the runs table (counts + owner only), the Review tab renders the
@@ -707,9 +740,10 @@ export default async function StyleDetail({
   // produced it, and per-output reruns spawn new jobs, so a fully-approved
   // style's approved layouts scatter across several jobs; keying off "the
   // latest job" hides everything not touched by the most recent run. This is
-  // the SAME set /review decides on (getCurrentOutputsForStyle), so the tab and
-  // the review screen can never disagree about what's approved.
-  const currentOutputs = await getCurrentOutputsForStyle(style.id);
+  // the SAME set /review decides on (getCurrentOutputsForStyle, loaded in the
+  // first wave), so the tab and the review screen can never disagree about
+  // what's approved.
+  //
   // reviewedBy email is cosmetic ("by X · <date>"); resolve it from the jobs
   // window we already loaded. An approved asset older than that window keeps
   // its date (from the current output) but shows no email — acceptable.
@@ -799,7 +833,7 @@ export default async function StyleDetail({
           because a correct answer to the wrong row is still the wrong answer.
           Renders nothing at all — no wrapper, no spacing — when this style has
           no lookalikes, which is the norm. */}
-      <RelatedRowsCardForStyle styleId={style.id} />
+      {relatedRows && <RelatedRowsCard {...relatedRows} />}
 
       {/* Above the tabs, side by side: the pipeline readiness notice (a
           collapsible accordion) on the left, the Supplier folder / SharePoint
