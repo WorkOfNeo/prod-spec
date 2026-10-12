@@ -14,8 +14,9 @@
 //   • legacy    — the pre-projection query (`include`, every Style scalar,
 //                 customer / prod spec joined per row) through the same row
 //                 builder
-// plus the SQL projection against its JS twin (projectRawData). Exits 1 on any
-// difference.
+// plus the SQL projection against its JS twin (projectRawData), and the
+// styles-with-PDFs set against the old in-memory `distinct` query. Exits 1 on
+// any difference.
 
 import { isDeepStrictEqual } from "node:util";
 import { db } from "@/lib/db";
@@ -24,6 +25,7 @@ import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { getAutoGenerateEnabled, getDoneGroupPoCutoff } from "@/lib/settings/app-settings";
 import { resolveDoneCutoffIds } from "@/lib/styles/active-filter";
 import { STYLE_TABLE_COLUMNS } from "@/lib/styles/table-columns";
+import { loadStyleIdsWithPdfs } from "@/lib/styles/table-rollups";
 import {
   buildStyleListRow,
   customerConfigCache,
@@ -178,16 +180,20 @@ async function main() {
   const t0 = Date.now();
   await ensureLayoutVariantsLoaded();
 
-  const [autoGenerateEnabled, doneCutoff, withPdfs] = await Promise.all([
+  const [autoGenerateEnabled, doneCutoff, stylesWithPdfs, legacyPdfJobs] = await Promise.all([
     getAutoGenerateEnabled(),
     getDoneGroupPoCutoff(),
+    loadStyleIdsWithPdfs(),
     db.job.findMany({
       where: { status: { not: "FAILED" }, assets: { some: {} } },
       select: { styleId: true },
       distinct: ["styleId"],
     }),
   ]);
-  const stylesWithPdfs = new Set(withPdfs.map((j) => j.styleId));
+  const legacyPdfs = new Set(legacyPdfJobs.map((j) => j.styleId));
+  if (legacyPdfs.size !== stylesWithPdfs.size || [...legacyPdfs].some((id) => !stylesWithPdfs.has(id))) {
+    fail(`styles-with-PDFs: groupBy ${stylesWithPdfs.size} ids vs distinct ${legacyPdfs.size} ids`);
+  }
   const doneCutoffIds = await resolveDoneCutoffIds(doneCutoff);
   const base = {
     visibleColumns: STYLE_TABLE_COLUMNS.map((c) => c.key),

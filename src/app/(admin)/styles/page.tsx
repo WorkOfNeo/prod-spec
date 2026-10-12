@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { db } from "@/lib/db";
 import {
   getAutoGenerateEnabled,
   getDoneGroupPoCutoff,
@@ -9,6 +8,7 @@ import { getSessionWithRole } from "@/lib/auth-server";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { activeStylesWhere, resolveDoneCutoffIds } from "@/lib/styles/active-filter";
 import { loadStyleListRows } from "@/lib/styles/list-rows";
+import { loadStyleIdsWithPdfs } from "@/lib/styles/table-rollups";
 import { StylesTable } from "./styles-table";
 import { DonePoCutoffSetting } from "./done-po-cutoff-setting";
 
@@ -17,24 +17,17 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Styles" };
 
 export default async function StylesPage() {
-  const [autoGenerateEnabled, doneCutoff, visibleColumns, { role }, withPdfs] = await Promise.all([
+  const [autoGenerateEnabled, doneCutoff, visibleColumns, { role }, stylesWithPdfs] = await Promise.all([
     getAutoGenerateEnabled(),
     getDoneGroupPoCutoff(),
     getStylesTableColumns(),
     getSessionWithRole(),
-    // Which styles have at least one generated PDF — the gate for the
-    // review-flow statuses ("Ready for review" must mean real outputs).
-    // Indexed, never touches the JobAsset Bytes column.
-    db.job.findMany({
-      where: { status: { not: "FAILED" }, assets: { some: {} } },
-      select: { styleId: true },
-      distinct: ["styleId"],
-    }),
+    // The review-flow gate: styles with at least one generated PDF.
+    loadStyleIdsWithPdfs(),
     // Output Builder layouts resolve as variants in the readiness walks
     // behind every row (loadStyleListRows).
     ensureLayoutVariantsLoaded(),
   ]);
-  const stylesWithPdfs = new Set(withPdfs.map((j) => j.styleId));
 
   // Done-group exception: when the cutoff is set, Done-group styles whose
   // PO number parses ABOVE it join the list (in the MAIN view, not behind
