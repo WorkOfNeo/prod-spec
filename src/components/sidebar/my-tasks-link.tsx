@@ -1,13 +1,15 @@
 "use client";
 
 // Sidebar "My tasks" link with the waiting-on-you badge. Polls
-// /api/admin/dashboard/counts every 60s — same rhythm as the import
-// notification bell. Badge counts only reviews YOU'VE STARTED and haven't
-// finished; the untouched first-review queue and others' in-flight reviews
-// are excluded (the full queue lives on /reviews).
+// /api/admin/dashboard/counts every 60s while the tab is visible — same
+// rhythm as the import notification bell (scheduling: useVisiblePoll). Badge
+// counts only reviews YOU'VE STARTED and haven't finished; the untouched
+// first-review queue and others' in-flight reviews are excluded (the full
+// queue lives on /reviews).
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useVisiblePoll } from "@/lib/use-visible-poll";
 
 type Counts = {
   badge: number;
@@ -19,25 +21,15 @@ const POLL_MS = 60_000;
 export function MyTasksLink() {
   const [counts, setCounts] = useState<Counts | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchCounts() {
-      try {
-        const res = await fetch("/api/admin/dashboard/counts", { cache: "no-store" });
-        if (!res.ok) return;
-        const body = (await res.json()) as Counts;
-        if (!cancelled) setCounts(body);
-      } catch {
-        // Silent — the badge stays in its last-known state.
-      }
+  useVisiblePoll(async (signal) => {
+    try {
+      const res = await fetch("/api/admin/dashboard/counts", { cache: "no-store", signal });
+      if (!res.ok) return;
+      setCounts((await res.json()) as Counts);
+    } catch {
+      // Silent — the badge stays in its last-known state (or unmounted).
     }
-    fetchCounts();
-    const id = setInterval(fetchCounts, POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, []);
+  }, POLL_MS);
 
   const badge = counts?.badge ?? 0;
 
