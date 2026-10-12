@@ -2,9 +2,10 @@
 
 // Single-input filtered table for /styles. Mirrors prod-specs-table.tsx
 // in approach: server-side fetches all rows once, client filters with
-// substring match on a pre-built blob (name + customer + BA + PO# +
-// status). Trade-off: ~4k rows live in the DOM, but the table is light
-// (no per-row interactivity) so browsers handle it fine.
+// substring match on a per-row blob (name + customer + BA + PO# + status,
+// built here from the row — see styleSearchBlob). Trade-off: ~4k rows live
+// in the DOM, but the table is light (no per-row interactivity) so browsers
+// handle it fine.
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -16,7 +17,7 @@ import {
   type StyleColumnKey,
 } from "@/lib/styles/table-columns";
 import type { SupplierUploadRollup } from "@/lib/styles/table-rollups";
-import type { StyleListRow } from "@/lib/styles/table-row";
+import { styleSearchBlob, type StyleListRow } from "@/lib/styles/table-row";
 import { mondayItemUrl } from "@/lib/monday/url";
 import { eanStatusMeta, EAN_STATUS_META } from "@/lib/po/ean-status-meta";
 import {
@@ -36,7 +37,6 @@ import { STYLES_FILTER_KEY } from "@/lib/styles/back-link";
 import type { EanView } from "@/lib/po/ean-view";
 import { SkipSupplierDeliveryBadge } from "@/components/skip-supplier-delivery-badge";
 import { ReadinessPill } from "@/components/output-readiness-notice";
-import type { ReadinessNotice } from "@/lib/styles/readiness-notice";
 import { ColumnsPopover } from "./columns-popover";
 import { FacetFilter, type FacetOption } from "@/components/facet-filter";
 import { BulkRunOutputs } from "./bulk-run-outputs";
@@ -147,17 +147,6 @@ function serializeFilters(state: {
 // The row shape lives in @/lib/styles/table-row (built server-side by
 // list-rows.ts); aliased here for the readers below.
 type StyleRow = StyleListRow;
-
-// Hover text for the status pill: the count (which moves out of the headline
-// when a harder blocker wins) plus the top blocking step's detail, so the row
-// still explains itself on hover. Falls back to the headline when nothing
-// blocks.
-function statusTitle(notice: ReadinessNotice): string {
-  const blocking = notice.steps.find((s) => s.tone === "red" || s.tone === "amber");
-  const count = notice.total > 0 ? `${notice.ready} of ${notice.total} ready` : null;
-  const detail = blocking ? `${blocking.title} — ${blocking.detail}` : notice.headline;
-  return count && detail !== count ? `${count}\n${detail}` : detail;
-}
 
 export function StylesTable({
   rows,
@@ -294,6 +283,10 @@ export function StylesTable({
   const missingPoCount = useMemo(() => missingPoFlags.filter(Boolean).length, [missingPoFlags]);
   const revealMissingPo = (attrFilters.po ?? "any") === "no";
 
+  // The search haystack per row, built once per row set rather than shipped
+  // with every row (it only repeated the row's own values).
+  const searchBlobs = useMemo(() => rows.map(styleSearchBlob), [rows]);
+
   // Distinct option lists (+counts) per facet, derived once from the loaded
   // rows — a value only appears if a real style carries it. Counts are over
   // all loaded rows (static); they don't react to other facets' selections
@@ -368,7 +361,7 @@ export function StylesTable({
         if (want === "no" && has) return false;
       }
       if (!needle) return true;
-      return r.searchBlob.includes(needle);
+      return searchBlobs[i].includes(needle);
     });
     // Newest PO first. The server already ships the rows in this order; the
     // client re-applies it so the guarantee is testable (table-sort.test.ts)
@@ -381,6 +374,7 @@ export function StylesTable({
     archivedFlags,
     revealMissingPo,
     missingPoFlags,
+    searchBlobs,
     attrFilters,
     activeAttrFilters,
     appliedFacets,
@@ -546,7 +540,7 @@ export function StylesTable({
       case "status":
         return (
           <td key={key} className="px-4 py-3">
-            <span title={statusTitle(s.notice)}>
+            <span title={s.statusTitle}>
               <ReadinessPill notice={s.notice} />
             </span>
           </td>

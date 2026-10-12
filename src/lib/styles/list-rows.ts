@@ -26,10 +26,9 @@ import {
   type SupplierUploadRollup,
 } from "@/lib/styles/table-rollups";
 import { listPathColumnIds, loadProjectedRawData } from "@/lib/styles/rawdata-projection";
-import type { StyleListRow } from "@/lib/styles/table-row";
+import { statusTitle, type StyleListRow } from "@/lib/styles/table-row";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { currentOutputBaseKeys } from "@/lib/tickets/orphan";
-import { eanStatusMeta } from "@/lib/po/ean-status-meta";
 
 // =====================================================
 // The /styles list: load every listed style and build its table row. Lives
@@ -359,10 +358,11 @@ export function buildStyleListRow(
     // (filled / total). 0 total = its outputs need nothing / none set.
     requiredTotal: requiredKeys.length,
     requiredFilled: requiredKeys.length - missingDetailFields.length,
-    statusView,
+    statusView: { key: statusView.key, label: statusView.label },
     // Cause-aware readiness pill (replaces the visible statusView pill
     // in the table). statusView is kept for filtering/sorting.
-    notice,
+    notice: { headline: notice.headline, tone: notice.tone },
+    statusTitle: statusTitle(notice),
     eanStatus: s.eanStatus,
     groupTitle: s.groupTitle,
     // Soft-hidden behind "Show archived" — except Done-group styles
@@ -378,22 +378,6 @@ export function buildStyleListRow(
     // PO, so the flow hasn't started. The "No PO" chip reveals them.
     missingPo: !hasPoNumber(s.poNumber),
     lastSyncedAt: formatListDate(s.lastSyncedAt),
-    searchBlob: [
-      s.name,
-      customer.name,
-      ba ?? "",
-      s.poNumber ?? "",
-      statusView.label,
-      s.groupTitle ?? "",
-      eanStatusMeta(s.eanStatus).label,
-      // Opt-in columns join search too — but only the hydrated
-      // (visible) ones, so hidden columns don't bloat the blob.
-      s.supplier?.name ?? "",
-      prodSpec?.name ?? "",
-      ...Object.values(resolved),
-    ]
-      .join(" ")
-      .toLowerCase(),
   };
 }
 

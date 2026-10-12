@@ -1,6 +1,11 @@
 // The /styles table row — what the server ships per style and the browser
-// filters, sorts and renders. Client-safe on purpose (types only):
-// styles-table.tsx imports it, and list-rows.ts builds it server-side.
+// filters, sorts and renders. Client-safe on purpose (types and pure helpers
+// only): styles-table.tsx imports it, and list-rows.ts builds it server-side.
+//
+// Every field here is read by the table. Values the browser can derive itself
+// (the search blob) or never reads (the notice ladder, the status pill's tone
+// and hint) are left out — at ~4–5k rows each per-row byte is paid thousands
+// of times in the page payload.
 
 import type { EffectiveStatus } from "@/lib/styles/effective-status";
 import type { ReadinessNotice } from "@/lib/styles/readiness-notice";
@@ -8,6 +13,7 @@ import type { SupplierUploadRollup, ReviewRollup } from "@/lib/styles/table-roll
 // Type-only on purpose: related.ts imports @/lib/db, and only an erased
 // `import type` keeps Prisma out of this client bundle.
 import type { LookalikeChip } from "@/lib/styles/related";
+import { eanStatusMeta } from "@/lib/po/ean-status-meta";
 
 export type StyleListRow = {
   id: string;
@@ -44,14 +50,18 @@ export type StyleListRow = {
   // requiredTotal 0 = none configured.
   requiredFilled: number;
   requiredTotal: number;
-  // The Status pill — computed: review flow when PDFs/jobs exist, otherwise
-  // the field-readiness ladder. See computeEffectiveStatus(). Drives the
-  // Status facet filter + searchBlob; the *visible* pill now renders `notice`.
-  statusView: EffectiveStatus;
-  // Cause-aware readiness notice (harder-blocker-wins headline + count). This
-  // is what the Status cell renders via <ReadinessPill>. statusView remains the
+  // The computed status (see computeEffectiveStatus()): review flow when
+  // PDFs/jobs exist, otherwise the field-readiness ladder. `key` drives the
+  // Status facet filter, `label` joins the search blob; the *visible* pill
+  // renders `notice`.
+  statusView: Pick<EffectiveStatus, "key" | "label">;
+  // Cause-aware readiness notice (harder-blocker-wins headline). This is what
+  // the Status cell renders via <ReadinessPill>. statusView remains the
   // filtering/sorting key — do not swap that.
-  notice: ReadinessNotice;
+  notice: Pick<ReadinessNotice, "headline" | "tone">;
+  // The pill's hover text, built server-side from the full notice (see
+  // statusTitle) so the step ladder never ships per row.
+  statusTitle: string;
   // PO → EAN resolution state (StyleEanStatus). Badge via eanStatusMeta.
   eanStatus: string;
   groupTitle: string | null;
@@ -67,7 +77,6 @@ export type StyleListRow = {
   // haven't entered the flow. Revealed by the "No PO" chip.
   missingPo: boolean;
   lastSyncedAt: string;
-  searchBlob: string;
   // ── Opt-in columns (hydrated only when the column is visible) ──
   // Identity & links — small, always hydrated.
   supplierName: string | null;
@@ -90,3 +99,35 @@ export type StyleListRow = {
   // Review / approval rollup (null unless a review column is on).
   review: ReviewRollup | null;
 };
+
+// The lowercase haystack the search box matches against: name + customer +
+// BA + PO# + status + group + EAN status, plus the opt-in supplier / prod spec
+// names and the hydrated (visible) spec fields. Built in the browser from the
+// row itself rather than shipped — it repeated every one of these values.
+export function styleSearchBlob(r: StyleListRow): string {
+  return [
+    r.name,
+    r.customerName,
+    r.businessArea ?? "",
+    r.poNumber ?? "",
+    r.statusView.label,
+    r.groupTitle ?? "",
+    eanStatusMeta(r.eanStatus).label,
+    r.supplierName ?? "",
+    r.prodSpecName ?? "",
+    ...Object.values(r.resolved),
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+// Hover text for the status pill: the count (which moves out of the headline
+// when a harder blocker wins) plus the top blocking step's detail, so the row
+// still explains itself on hover. Falls back to the headline when nothing
+// blocks.
+export function statusTitle(notice: ReadinessNotice): string {
+  const blocking = notice.steps.find((s) => s.tone === "red" || s.tone === "amber");
+  const count = notice.total > 0 ? `${notice.ready} of ${notice.total} ready` : null;
+  const detail = blocking ? `${blocking.title} — ${blocking.detail}` : notice.headline;
+  return count && detail !== count ? `${count}\n${detail}` : detail;
+}

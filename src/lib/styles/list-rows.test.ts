@@ -1,6 +1,7 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import type { StyleListContext, StyleListProdSpec, StyleListSource } from "./list-rows";
+import type { StyleListRow } from "./table-row";
 
 // list-rows.ts imports @/lib/db, whose client construction needs DATABASE_URL
 // at import time. Nothing here queries — the pg pool is lazy.
@@ -10,7 +11,10 @@ let buildStyleListRow: typeof import("./list-rows").buildStyleListRow;
 let customerConfigCache: typeof import("./list-rows").customerConfigCache;
 let listPathColumnIds: typeof import("./rawdata-projection").listPathColumnIds;
 let projectRawData: typeof import("./rawdata-projection").projectRawData;
+let styleSearchBlob: typeof import("./table-row").styleSearchBlob;
+let statusTitle: typeof import("./table-row").statusTitle;
 let RESOLVED_FIELD_COLUMN_KEYS: typeof import("./table-columns").RESOLVED_FIELD_COLUMN_KEYS;
+let eanStatusMeta: typeof import("@/lib/po/ean-status-meta").eanStatusMeta;
 let parseCustomerConfig: typeof import("@/lib/customers/config").parseCustomerConfig;
 
 const LAYOUT_KEY = "layout:fixture-conditional";
@@ -18,7 +22,9 @@ const LAYOUT_KEY = "layout:fixture-conditional";
 before(async () => {
   ({ buildStyleListRow, customerConfigCache } = await import("./list-rows"));
   ({ listPathColumnIds, projectRawData } = await import("./rawdata-projection"));
+  ({ styleSearchBlob, statusTitle } = await import("./table-row"));
   ({ RESOLVED_FIELD_COLUMN_KEYS } = await import("./table-columns"));
+  ({ eanStatusMeta } = await import("@/lib/po/ean-status-meta"));
   ({ parseCustomerConfig } = await import("@/lib/customers/config"));
   // An Output Builder layout exercising every way readiness reads the row: a
   // conditional (branch-aware readiness), {{orderNo}} (the FOB/DDP rule), an
@@ -258,6 +264,54 @@ test("the fixtures exercise readiness, exclusion and fallbacks (not just empty r
   assert.ok(rows.some((r) => r.review && r.review.total > 0), "review rollup");
   assert.ok(rows.some((r) => r.archived) && rows.some((r) => !r.archived));
   assert.ok(rows.some((r) => r.customerDeliversOwn));
+});
+
+test("the row ships only what the table reads", () => {
+  const [{ s, customer, prodSpec }] = [...fixtures()].slice(4, 5);
+  const row = buildStyleListRow(s, customer, prodSpec, context());
+  assert.deepEqual(Object.keys(row.statusView).sort(), ["key", "label"]);
+  assert.deepEqual(Object.keys(row.notice).sort(), ["headline", "tone"]);
+  assert.equal("searchBlob" in row, false);
+  assert.equal(typeof row.statusTitle, "string");
+});
+
+test("styleSearchBlob matches the blob the server used to ship", () => {
+  const ctx = context();
+  for (const { s, customer, prodSpec } of fixtures()) {
+    const row: StyleListRow = buildStyleListRow(s, customer, prodSpec, ctx);
+    // The pre-move expression from page.tsx, over the same source values.
+    const ba = s.businessAreaRef?.name ?? s.businessArea ?? null;
+    const legacy = [
+      s.name,
+      customer.name,
+      ba ?? "",
+      s.poNumber ?? "",
+      row.statusView.label,
+      s.groupTitle ?? "",
+      eanStatusMeta(s.eanStatus).label,
+      s.supplier?.name ?? "",
+      prodSpec?.name ?? "",
+      ...Object.values(row.resolved),
+    ]
+      .join(" ")
+      .toLowerCase();
+    assert.equal(styleSearchBlob(row), legacy, s.id);
+  }
+});
+
+test("statusTitle: count + top blocking step, else the headline", () => {
+  const notice = {
+    headline: "Missing data",
+    tone: "amber" as const,
+    ready: 1,
+    total: 3,
+    steps: [
+      { key: "po", status: "ok" as const, tone: "green" as const, title: "PO", detail: "found" },
+      { key: "fields", status: "waiting" as const, tone: "amber" as const, title: "Fields", detail: "Wash care" },
+    ],
+  };
+  assert.equal(statusTitle(notice), "1 of 3 ready\nFields — Wash care");
+  assert.equal(statusTitle({ ...notice, total: 0, steps: [] }), "Missing data");
 });
 
 test("formatListDate prints exactly what formatDate does", async () => {
