@@ -61,7 +61,7 @@ What a default run produces:
 | Styles | 5,000 | Avg `rawData` ≈ 12 KB (≈ 4.5 KB TOASTed). About 3.9k are in the active set. Included: ~16% Done group (a slice re-admitted by `doneGroupPoCutoff`), ~4% without a PO, ~2% archived, Cancelled/Templates rows, ~4% lookalike names on other POs, ~30% missing 1–3 mapped Monday fields, and ~50% of scraped styles carry a `poScrapeSnapshot` |
 | `Style.rawData` | 68 column values + `__name__` | The Pre-Order item exactly as `ingestMondayItem` stores it: `value` is a JSON string, board relations have `linked_item_ids`/`display_value`, mirrors have `display_value`, and cells carry `changed_at` stamps |
 | Style EANs | ~25.6k | 5–8 per style for every resolved/partial EAN status |
-| Jobs / job assets | ~7.8k / ~31.9k | Full runs carry a cover (and sometimes general info). Per-output reruns spread a style's documents across several jobs. `pdf` is a 270-byte PDF |
+| Jobs / job assets | ~7.8k / ~31.9k | Full runs carry a cover (and sometimes general info). Per-output reruns spread a style's documents across several jobs. `pdf` is a 192-byte PDF |
 | Review queue | 80 styles whose newest job is `AWAITING_REVIEW` | 10 claimed or partly decided by `perf-admin`, 10 by `perf-reviewer`, 60 untouched. About a third are reruns, and some also have an older stranded awaiting job |
 | Review trail | ~7k review actions, ~1k rejection tickets, ~14k user notifications | REVIEW_READY for the admin and the reviewer, resolved when the job settles |
 | Delivery | ~23k supplier-send queue rows, ~3.4k supplier shares | One queue row per currently approved (style × output) |
