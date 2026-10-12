@@ -27,7 +27,9 @@ export default async function DashboardPage() {
   const isAdmin = role === "ADMIN";
 
   const [work, openTickets, notifications] = await Promise.all([
-    getReviewWork(session.user.id),
+    // Only the two buckets this page renders get cards built; the untouched
+    // queue lives on /reviews.
+    getReviewWork(session.user.id, { buckets: ["mine", "others"] }),
     db.rejectionTicket.count({
       where: { reportedById: session.user.id, status: { not: "RESOLVED" } },
     }),
