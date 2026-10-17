@@ -4,6 +4,7 @@ import { loadDocTypeExclusionRules, loadDocTypeLabels } from "@/lib/pdf/doc-type
 import { outputReadinessForStyle, type ReadinessStyle } from "@/lib/styles/output-readiness";
 import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 import { baseVariantKey } from "@/lib/tickets/orphan";
+import { COVER_DISPLAY_NAME } from "@/lib/pdf/bundle-page-keys";
 
 // =====================================================
 // Per-output (base variantKey) snapshot for the rejection workbench: what the
@@ -19,7 +20,7 @@ import { baseVariantKey } from "@/lib/tickets/orphan";
 // =====================================================
 
 const FRAMING_NAMES: Record<string, string> = {
-  __cover__: "Cover page",
+  __cover__: COVER_DISPLAY_NAME,
   __general_info__: "General information",
 };
 

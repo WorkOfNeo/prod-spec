@@ -11,22 +11,36 @@
 // =====================================================
 
 // Anything cover-page-shaped: the convention coverFileName() writes
-// ("00-<style>[-<colour>]-cover-page.pdf") and, deliberately more loosely,
-// anything else carrying "cover page" in any of the spellings a person types
-// when they drop one in by hand. The looseness is the point — a hand-named
+// ("00-<style>[-<colour>]-prod-spec.pdf"), the "-cover-page.pdf" spelling it
+// wrote before that, and, deliberately more loosely, anything else carrying
+// "cover page" or "prod spec" in any of the spellings a person types when they
+// drop one in by hand. The looseness is the point — a hand-named
 // "Cover Page (2).pdf" is exactly the kind of file this check exists to notice,
 // and a false positive here only ever means one extra row for a human to read.
+//
+// Both spellings stay for as long as old-named covers can sit in a folder: a
+// "-cover-page.pdf" this stopped recognising would drop out of the cover check
+// and into the output-file-names check, which has no way to rename it.
 export function looksLikeCoverPage(fileName: string): boolean {
-  return /cover[-_ ]?page/i.test(fileName);
+  return /cover[-_ ]?page|prod[-_ ]?spec/i.test(fileName);
 }
 
-// The "<style>[-<colour>]" body of a name that follows the convention, or null
-// when it does not. Used to attribute an UNRECOGNISED cover to a style: a
-// cover for a style number that is not on this PO is a different (and much
-// more actionable) finding than a cover we merely can't place.
+// The "<style>[-<colour>]" body of a name that follows the convention (either
+// spelling), or null when it does not. Used to attribute an UNRECOGNISED cover
+// to a style: a cover for a style number that is not on this PO is a different
+// (and much more actionable) finding than a cover we merely can't place.
 export function coverNameBody(fileName: string): string | null {
-  const m = fileName.match(/^00-(.+?)-cover-page\.pdf$/i);
+  const m = fileName.match(/^00-(.+?)-(?:prod-spec|cover-page)\.pdf$/i);
   return m ? m[1].toLowerCase() : null;
+}
+
+// The old "-cover-page.pdf" spelling of a current cover name, or null when the
+// name is not in the current "-prod-spec.pdf" shape. A style re-generated since
+// the rename is stamped with the new spelling, so this is the only way to know
+// its leftover old copy is still its own cover.
+export function legacyCoverSpelling(fileName: string): string | null {
+  const legacy = fileName.replace(/-prod-spec\.pdf$/i, "-cover-page.pdf");
+  return legacy === fileName ? null : legacy;
 }
 
 // Does a convention body belong to this style? The colour is appended AFTER the

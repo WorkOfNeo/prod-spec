@@ -42,7 +42,8 @@ import { DEFAULT_DELIVERED_STATUS, DEFAULT_PENDING_STATUS } from "@/lib/trims/co
 // Reserved synthetic variantKeys for the bundle pages' JobAsset rows live in
 // bundle-page-keys.ts (no render-pipeline imports) and are re-exported here so
 // existing callers keep importing them from this module.
-export { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "./bundle-page-keys";
+export { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY, COVER_DISPLAY_NAME } from "./bundle-page-keys";
+import { COVER_DISPLAY_NAME } from "./bundle-page-keys";
 
 // The manifest row type now lives in the import-free leaf alongside the
 // variant keys, because the pure trims assembler and the settings screens need
@@ -288,7 +289,7 @@ export function renderCoverPageHtml(input: CoverPageInput): string {
     );
   }
 
-  return a4Document({ title: "Cover page", sections });
+  return a4Document({ title: COVER_DISPLAY_NAME, sections });
 }
 
 export function renderGeneralInfoHtml(input: GeneralInfoInput): string {

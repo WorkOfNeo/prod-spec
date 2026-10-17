@@ -1,5 +1,11 @@
 import { sanitizeFileName } from "@/lib/sharepoint/supplier-folder";
-import { looksLikeCoverPage, coverNameBody, coverBodyMentionsStyle, carriesLayoutId } from "./file-name-shape";
+import {
+  looksLikeCoverPage,
+  coverNameBody,
+  coverBodyMentionsStyle,
+  carriesLayoutId,
+  legacyCoverSpelling,
+} from "./file-name-shape";
 
 // =====================================================
 // The two self-service folder checks, as PURE functions: expected set + folder
@@ -257,6 +263,16 @@ function sortRows(rows: CheckRow[]): CheckRow[] {
 // cover named for a style number that is not on this PO is the finding this
 // check exists for: it means a push went to the wrong folder, or a style moved
 // off the order and left its cover behind.
+
+// Every name a cover answered to before today's: the one it was generated
+// under, and the old "-cover-page.pdf" spelling of its current name. The second
+// is what a cover re-generated since the rename leaves behind — its stamp is
+// already the new spelling, so without it the old copy would read as a file
+// this app never made.
+function previousCoverNames(e: ExpectedCover): string[] {
+  return [e.previousName, legacyCoverSpelling(e.currentName)].filter((n): n is string => n != null);
+}
+
 export function buildCoverCheck(input: {
   expected: ExpectedCover[];
   present: FolderFile[];
@@ -265,7 +281,7 @@ export function buildCoverCheck(input: {
   const previousByKey = new Map<string, ExpectedCover>();
   for (const e of input.expected) {
     currentByKey.set(key(e.currentName), e);
-    if (e.previousName) previousByKey.set(key(e.previousName), e);
+    for (const n of previousCoverNames(e)) previousByKey.set(key(n), e);
   }
   const presentKeys = new Set(input.present.map((f) => key(f.fileName)));
 
@@ -393,7 +409,7 @@ export function buildCoverCheck(input: {
         kind: "cover-not-ours",
         verdict: "Cover-page-shaped, but not named by this app.",
         detail:
-          "It does not follow the “00-<style>-cover-page.pdf” convention, so it was not generated here. It may well be the supplier's or the customer's own file — check before removing it.",
+          "It does not follow the “00-<style>-prod-spec.pdf” convention, so it was not generated here. It may well be the supplier's or the customer's own file — check before removing it.",
         owner: null,
         proposed: null,
         allowed: ["delete"],
@@ -407,7 +423,7 @@ export function buildCoverCheck(input: {
   // cover coverage needs to know the folder is short as well as crowded.
   const notes: string[] = [];
   const absent = input.expected.filter(
-    (e) => !presentKeys.has(key(e.currentName)) && !(e.previousName && presentKeys.has(key(e.previousName))),
+    (e) => !presentKeys.has(key(e.currentName)) && !previousCoverNames(e).some((n) => presentKeys.has(key(n))),
   );
   if (absent.length > 0) {
     notes.push(

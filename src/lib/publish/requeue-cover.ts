@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
+import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY, COVER_DISPLAY_NAME } from "@/lib/pdf/bundle-page-keys";
 import { parseCustomerConfig } from "@/lib/customers/config";
 import { isDeliverablePo } from "./supplier-send-cutoff";
 
@@ -120,7 +120,7 @@ export async function enqueueCoverForSupplier(
       styleId,
       variantKey: COVER_VARIANT_KEY,
       docType: "COVER",
-      displayName: "Cover page",
+      displayName: COVER_DISPLAY_NAME,
       customerId: style.customerId,
       supplierId: style.supplierId,
       poSeq: style.poSeq,
@@ -128,7 +128,7 @@ export async function enqueueCoverForSupplier(
     },
     update: {
       docType: "COVER",
-      displayName: "Cover page",
+      displayName: COVER_DISPLAY_NAME,
       customerId: style.customerId,
       supplierId: style.supplierId,
       poSeq: style.poSeq,

@@ -9,6 +9,12 @@
 export const COVER_VARIANT_KEY = "__cover__";
 export const GENERAL_INFO_VARIANT_KEY = "__general_info__";
 
+// What the cover document is called wherever a person reads it: the JobAsset
+// and supplier-send queue rows (and so the supplier digest email and the share
+// page), the Test tab, and the PDF's own title. Its file name is built
+// separately, in cover-file-name.ts.
+export const COVER_DISPLAY_NAME = "Prod Spec";
+
 // One row of the cover's "Required packaging" manifest.
 //
 // Lives here, in the import-free leaf, because the manifest is now assembled

@@ -15,7 +15,7 @@ import { notifyReviewReady } from "@/lib/notifications/user-notifications";
 import { supersedeOpenTicketsForStyleOp } from "@/lib/tickets/rejection-tickets";
 import { findCarryForwardClaim } from "@/lib/review-flow/claim";
 import { getReviewNotificationEmails, getCoverPageInfoMd } from "@/lib/settings/app-settings";
-import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-pages";
+import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY, COVER_DISPLAY_NAME } from "@/lib/pdf/bundle-pages";
 import type { TriggerSource } from "@/generated/prisma/enums";
 import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
 import {
@@ -750,7 +750,7 @@ export async function processJob(jobId: string): Promise<void> {
                 jobId: job.id,
                 docType: "COVER",
                 variantKey: COVER_VARIANT_KEY,
-                displayName: "Cover page",
+                displayName: COVER_DISPLAY_NAME,
                 fileName: refreshedCoverName,
                 pdf: toPlainBytes(coverPdf),
                 placeholderCount: 0,
@@ -959,7 +959,7 @@ export async function processJob(jobId: string): Promise<void> {
     bundlePages.push({
       docType: "COVER",
       variantKey: COVER_VARIANT_KEY,
-      displayName: "Cover page",
+      displayName: COVER_DISPLAY_NAME,
       fileName: coverFileName({
         styleNumber: styleData.styleNumber,
         colour: styleData.colour,
