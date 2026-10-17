@@ -52,22 +52,9 @@ export type ManifestDiffChunk = {
   changedCount: number;
 };
 
-// Every style holding a current cover — the same target set the regen sweep
-// uses, so a preview and the run that follows it cannot describe different
-// populations.
-export async function listCoverStyleIds(opts: { prodSpecId?: string } = {}): Promise<string[]> {
-  const rows = await db.job.findMany({
-    where: {
-      status: { not: "FAILED" },
-      assets: { some: { variantKey: COVER_VARIANT_KEY } },
-      ...(opts.prodSpecId ? { style: { prodSpecId: opts.prodSpecId } } : {}),
-    },
-    select: { styleId: true },
-    distinct: ["styleId"],
-    orderBy: { styleId: "asc" },
-  });
-  return rows.map((r) => r.styleId);
-}
+// The target set (listCoverStyleIdSet) lives in cover-style-ids.ts, shared with
+// the sweep so a preview and the run that follows it cannot describe different
+// populations — including once the PO cutoff narrows them.
 
 // Diff one bounded chunk. Trim settings are loaded once for the chunk (three
 // AppSetting reads that are identical for every style in it).
