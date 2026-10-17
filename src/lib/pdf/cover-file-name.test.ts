@@ -29,9 +29,8 @@ test("no colour at all resolves to an empty label", () => {
 });
 
 // ---------------------------------------------------------------------
-// The cutoff gate. This is what keeps the archive from churning: a style
-// delivered under the old name must keep it, or its supplier folder grows a
-// stale duplicate for a cosmetic change.
+// The cutoff gate. This is what keeps the colour out of the archive: a style
+// below the cutoff never gains a colour segment in its cover name.
 // ---------------------------------------------------------------------
 
 test("the cutoff gate: at or above the cutoff is in, below is out", () => {
@@ -56,38 +55,52 @@ test("the cutoff gate: a style with no parseable PO is left alone", () => {
 test("the two colourways of one style number get DIFFERENT cover names", () => {
   const blue = coverFileName({ styleNumber: "AB10001", colour: { name: "", code: "*Blue" }, ...IN_SCOPE });
   const yellow = coverFileName({ styleNumber: "AB10001", colour: { name: "", code: "*Yellow" }, ...IN_SCOPE });
-  assert.equal(blue, "00-ab10001-blue-cover-page.pdf");
-  assert.equal(yellow, "00-ab10001-yellow-cover-page.pdf");
+  assert.equal(blue, "00-ab10001-blue-prod-spec.pdf");
+  assert.equal(yellow, "00-ab10001-yellow-prod-spec.pdf");
   assert.notEqual(blue, yellow);
 });
 
-test("below the cutoff, a coloured style keeps its historic name", () => {
+test("below the cutoff, a coloured style gets no colour segment", () => {
   // The regression that matters most: this is every already-delivered cover.
   assert.equal(
     coverFileName({ styleNumber: "AB10001", colour: { name: "", code: "*Blue" }, poSeq: 49000, minPo: 50000 }),
-    "00-ab10001-cover-page.pdf",
+    "00-ab10001-prod-spec.pdf",
   );
 });
 
-test("with no cutoff configured, nothing is renamed even above it", () => {
+test("with no cutoff configured, no colour is added even above it", () => {
   assert.equal(
     coverFileName({ styleNumber: "AB10001", colour: { name: "Navy", code: "" }, poSeq: 99999, minPo: null }),
-    "00-ab10001-cover-page.pdf",
+    "00-ab10001-prod-spec.pdf",
   );
 });
 
-test("a style with no colour keeps the name it has today", () => {
-  assert.equal(coverFileName({ styleNumber: "AB10001", colour: { name: "", code: "" }, ...IN_SCOPE }), "00-ab10001-cover-page.pdf");
-  assert.equal(coverFileName({ styleNumber: "AB10001", colour: null, ...IN_SCOPE }), "00-ab10001-cover-page.pdf");
+test("a style with no colour is named on the style number alone", () => {
+  assert.equal(coverFileName({ styleNumber: "AB10001", colour: { name: "", code: "" }, ...IN_SCOPE }), "00-ab10001-prod-spec.pdf");
+  assert.equal(coverFileName({ styleNumber: "AB10001", colour: null, ...IN_SCOPE }), "00-ab10001-prod-spec.pdf");
 });
 
 test("a colour of only punctuation adds no segment", () => {
-  assert.equal(coverFileName({ styleNumber: "AB10001", colour: { name: "", code: "*" }, ...IN_SCOPE }), "00-ab10001-cover-page.pdf");
-  assert.equal(coverFileName({ styleNumber: "AB10001", colour: { name: "-", code: "" }, ...IN_SCOPE }), "00-ab10001-cover-page.pdf");
+  assert.equal(coverFileName({ styleNumber: "AB10001", colour: { name: "", code: "*" }, ...IN_SCOPE }), "00-ab10001-prod-spec.pdf");
+  assert.equal(coverFileName({ styleNumber: "AB10001", colour: { name: "-", code: "" }, ...IN_SCOPE }), "00-ab10001-prod-spec.pdf");
 });
 
 test("spaces and punctuation in a colour are slugged, never left raw", () => {
   const name = coverFileName({ styleNumber: "AB10001", colour: { name: "Navy Blue", code: "" }, ...IN_SCOPE });
-  assert.equal(name, "00-ab10001-navy-blue-cover-page.pdf");
+  assert.equal(name, "00-ab10001-navy-blue-prod-spec.pdf");
   assert.ok(!/[ /\\:*?"<>|]/.test(name), "must be safe as a SharePoint file name");
+});
+
+test("every cover is named prod-spec, never the old cover-page spelling", () => {
+  // Below the cutoff too: the old spelling is not grandfathered, so "Fix output
+  // filenames" renames already-delivered covers in place.
+  for (const input of [
+    { styleNumber: "AB10001", colour: null, poSeq: 49000, minPo: 50000 },
+    { styleNumber: "AB10001", colour: { name: "Navy", code: "" }, ...IN_SCOPE },
+    { styleNumber: "AB10001", colour: { name: "Navy", code: "" }, poSeq: null, minPo: null },
+  ]) {
+    const name = coverFileName(input);
+    assert.ok(name.endsWith("-prod-spec.pdf"), name);
+    assert.ok(!name.includes("cover-page"), name);
+  }
 });

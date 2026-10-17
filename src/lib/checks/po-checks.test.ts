@@ -32,8 +32,8 @@ const row = (s: CheckSection, fileName: string) => s.flagged.find((r) => r.fileN
 
 test("a cover the PO expects is coverage, not a finding", () => {
   const s = buildCoverCheck({
-    expected: [cover("AB10001", "00-ab10001-cover-page.pdf")],
-    present: [file("00-ab10001-cover-page.pdf")],
+    expected: [cover("AB10001", "00-ab10001-prod-spec.pdf")],
+    present: [file("00-ab10001-prod-spec.pdf")],
   });
   assert.equal(s.flagged.length, 0);
   assert.equal(s.ok.length, 1, "it still has to be SHOWN — coverage is the second group");
@@ -45,10 +45,10 @@ test("every style on the PO is expected, because the folder is the PO's", () => 
   // style, the other's perfectly good cover would read as a stray to delete.
   const s = buildCoverCheck({
     expected: [
-      cover("AB10001", "00-ab10001-blue-cover-page.pdf"),
-      cover("AB10002", "00-ab10002-cover-page.pdf"),
+      cover("AB10001", "00-ab10001-blue-prod-spec.pdf"),
+      cover("AB10002", "00-ab10002-prod-spec.pdf"),
     ],
-    present: [file("00-ab10001-blue-cover-page.pdf"), file("00-ab10002-cover-page.pdf")],
+    present: [file("00-ab10001-blue-prod-spec.pdf"), file("00-ab10002-prod-spec.pdf")],
   });
   assert.equal(s.flagged.length, 0);
   assert.equal(s.ok.length, 2);
@@ -56,30 +56,30 @@ test("every style on the PO is expected, because the folder is the PO's", () => 
 
 test("a cover under an old name is renamed, never deleted — it is the only copy", () => {
   const s = buildCoverCheck({
-    expected: [cover("AB10001", "00-ab10001-blue-cover-page.pdf", "00-ab10001-cover-page.pdf")],
-    present: [file("00-ab10001-cover-page.pdf")],
+    expected: [cover("AB10001", "00-ab10001-blue-prod-spec.pdf", "00-ab10001-prod-spec.pdf")],
+    present: [file("00-ab10001-prod-spec.pdf")],
   });
-  const r = row(s, "00-ab10001-cover-page.pdf");
+  const r = row(s, "00-ab10001-prod-spec.pdf");
   assert.equal(r.proposed, "rename");
-  assert.equal(r.renameTo, "00-ab10001-blue-cover-page.pdf");
+  assert.equal(r.renameTo, "00-ab10001-blue-prod-spec.pdf");
 });
 
 test("an old cover whose replacement is already there is a leftover, and delete is proposed", () => {
   const s = buildCoverCheck({
-    expected: [cover("AB10001", "00-ab10001-blue-cover-page.pdf", "00-ab10001-cover-page.pdf")],
-    present: [file("00-ab10001-cover-page.pdf"), file("00-ab10001-blue-cover-page.pdf")],
+    expected: [cover("AB10001", "00-ab10001-blue-prod-spec.pdf", "00-ab10001-prod-spec.pdf")],
+    present: [file("00-ab10001-prod-spec.pdf"), file("00-ab10001-blue-prod-spec.pdf")],
   });
   assert.equal(s.flagged.length, 1);
-  assert.equal(row(s, "00-ab10001-cover-page.pdf").proposed, "delete");
+  assert.equal(row(s, "00-ab10001-prod-spec.pdf").proposed, "delete");
   assert.equal(s.ok.length, 1, "the current one is coverage");
 });
 
 test("a cover for a style that is NOT on this PO is the finding this check exists for", () => {
   const s = buildCoverCheck({
-    expected: [cover("AB10001", "00-ab10001-cover-page.pdf")],
-    present: [file("00-ab10001-cover-page.pdf"), file("00-zz90099-cover-page.pdf")],
+    expected: [cover("AB10001", "00-ab10001-prod-spec.pdf")],
+    present: [file("00-ab10001-prod-spec.pdf"), file("00-zz90099-prod-spec.pdf")],
   });
-  const r = row(s, "00-zz90099-cover-page.pdf");
+  const r = row(s, "00-zz90099-prod-spec.pdf");
   assert.equal(r.proposed, "delete");
   assert.deepEqual(r.allowed, ["delete"]);
   assert.ok(/zz90099/.test(r.verdict));
@@ -89,10 +89,10 @@ test("a cover we cannot explain is listed with NOTHING pre-selected", () => {
   // Two shapes, one rule: the app does not recommend a deletion it cannot
   // justify in a sentence. Both are still actionable by a human.
   const s = buildCoverCheck({
-    expected: [cover("AB10001", "00-ab10001-cover-page.pdf")],
-    present: [file("00-ab10001-old-final-cover-page.pdf"), file("Cover Page.pdf")],
+    expected: [cover("AB10001", "00-ab10001-prod-spec.pdf")],
+    present: [file("00-ab10001-old-final-prod-spec.pdf"), file("Cover Page.pdf")],
   });
-  const attributed = row(s, "00-ab10001-old-final-cover-page.pdf");
+  const attributed = row(s, "00-ab10001-old-final-prod-spec.pdf");
   assert.equal(attributed.proposed, null);
   assert.deepEqual(attributed.allowed, ["delete"]);
   assert.equal(attributed.owner?.styleName, "AB10001", "it still says whose it looks like");
@@ -104,18 +104,18 @@ test("a cover we cannot explain is listed with NOTHING pre-selected", () => {
 
 test("nothing outside APPROVED LAYOUTS is ever offered an action", () => {
   const s = buildCoverCheck({
-    expected: [cover("AB10001", "00-ab10001-cover-page.pdf")],
-    present: [file("00-zz90099-cover-page.pdf", "po-folder")],
+    expected: [cover("AB10001", "00-ab10001-prod-spec.pdf")],
+    present: [file("00-zz90099-prod-spec.pdf", "po-folder")],
   });
-  const r = row(s, "00-zz90099-cover-page.pdf");
+  const r = row(s, "00-zz90099-prod-spec.pdf");
   assert.equal(r.proposed, null, "it would be a delete inside APPROVED LAYOUTS — here it is report-only");
   assert.deepEqual(r.allowed, []);
 });
 
 test("a style with no cover in the folder is a note, not a file row", () => {
   const s = buildCoverCheck({
-    expected: [cover("AB10001", "00-ab10001-cover-page.pdf"), cover("AB10002", "00-ab10002-cover-page.pdf")],
-    present: [file("00-ab10001-cover-page.pdf")],
+    expected: [cover("AB10001", "00-ab10001-prod-spec.pdf"), cover("AB10002", "00-ab10002-prod-spec.pdf")],
+    present: [file("00-ab10001-prod-spec.pdf")],
   });
   assert.equal(s.flagged.length, 0);
   assert.equal(s.notes.length, 1);
@@ -124,10 +124,57 @@ test("a style with no cover in the folder is a note, not a file row", () => {
 
 test("matching is case-insensitive and uses the sanitised name the push writes", () => {
   const s = buildCoverCheck({
-    expected: [cover("AB10001", "00-AB10001-Cover-Page.pdf")],
-    present: [file("00-ab10001-cover-page.pdf")],
+    expected: [cover("AB10001", "00-AB10001-Prod-Spec.pdf")],
+    present: [file("00-ab10001-prod-spec.pdf")],
   });
   assert.equal(s.flagged.length, 0);
+});
+
+test("a cover still under the old -cover-page spelling is renamed to -prod-spec", () => {
+  // What every supplier folder holds until the backfill runs: the stored name
+  // is the old spelling, the resolver answers with the new one.
+  const s = buildCoverCheck({
+    expected: [cover("AB10001", "00-ab10001-prod-spec.pdf", "00-ab10001-cover-page.pdf")],
+    present: [file("00-ab10001-cover-page.pdf")],
+  });
+  const r = row(s, "00-ab10001-cover-page.pdf");
+  assert.equal(r.kind, "cover-renamed");
+  assert.equal(r.proposed, "rename");
+  assert.equal(r.renameTo, "00-ab10001-prod-spec.pdf");
+});
+
+test("a style re-generated since the rename still owns its old -cover-page copy", () => {
+  // Its stamp is already the new spelling, so previousName is null — the old
+  // copy is only recognisable as the old spelling of the current name.
+  const s = buildCoverCheck({
+    expected: [cover("AB10001", "00-ab10001-prod-spec.pdf")],
+    present: [file("00-ab10001-prod-spec.pdf"), file("00-ab10001-cover-page.pdf")],
+  });
+  const r = row(s, "00-ab10001-cover-page.pdf");
+  assert.equal(r.kind, "cover-superseded");
+  assert.equal(r.proposed, "delete");
+  assert.equal(s.ok.length, 1);
+});
+
+test("an old -cover-page copy with no new one beside it is renamed, and the style is not absent", () => {
+  const s = buildCoverCheck({
+    expected: [cover("AB10001", "00-ab10001-prod-spec.pdf")],
+    present: [file("00-ab10001-cover-page.pdf")],
+  });
+  const r = row(s, "00-ab10001-cover-page.pdf");
+  assert.equal(r.kind, "cover-renamed");
+  assert.equal(r.renameTo, "00-ab10001-prod-spec.pdf");
+  assert.equal(s.notes.length, 0, "the style has a cover — only its name is behind");
+});
+
+test("an old -cover-page cover for a style not on this PO is still attributed", () => {
+  const s = buildCoverCheck({
+    expected: [cover("AB10001", "00-ab10001-prod-spec.pdf")],
+    present: [file("00-ab10001-prod-spec.pdf"), file("00-zz90099-cover-page.pdf")],
+  });
+  const r = row(s, "00-zz90099-cover-page.pdf");
+  assert.equal(r.kind, "cover-foreign");
+  assert.equal(r.proposed, "delete");
 });
 
 // --- Check 2: misnamed output files ---------------------------------------
@@ -208,8 +255,8 @@ test("a file nobody claims is left alone, not flagged", () => {
 test("covers are check 1's subject and never appear in check 2", () => {
   const s = buildFileNameCheck({
     expected: [doc("Care label", "ab10001-care-label.pdf")],
-    present: [file("00-ab10001-cover-page.pdf"), file("ab10001-care-label.pdf")],
+    present: [file("00-ab10001-prod-spec.pdf"), file("00-ab10001-cover-page.pdf"), file("ab10001-care-label.pdf")],
   });
-  assert.equal(s.scanned, 1);
+  assert.equal(s.scanned, 1, "both cover spellings are check 1's");
   assert.equal(s.flagged.length + s.ok.length, 1);
 });

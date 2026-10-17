@@ -13,7 +13,7 @@ import {
 } from "@/lib/outputs/output-field-values";
 import { countPlaceholderMarkers } from "@/lib/pdf/placeholders";
 import { defaultArtifactFileName } from "@/lib/pdf/template-registry";
-import { COVER_VARIANT_KEY, renderCoverPageHtml } from "@/lib/pdf/bundle-pages";
+import { COVER_VARIANT_KEY, COVER_DISPLAY_NAME, renderCoverPageHtml } from "@/lib/pdf/bundle-pages";
 import { buildRequiredPackagingForStyle } from "@/lib/outputs/required-packaging";
 import { parseCustomerConfig, type ColumnMapping } from "@/lib/customers/config";
 import { loadDocTypeExclusionRules, loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
@@ -352,7 +352,7 @@ export async function renderProdSpecTestBundle(
     coverDoc = {
       kind: "cover",
       variantKey: COVER_VARIANT_KEY,
-      name: generalInfoMd ? "Cover page · incl. general information" : "Cover page",
+      name: generalInfoMd ? `${COVER_DISPLAY_NAME} · incl. general information` : COVER_DISPLAY_NAME,
       fileName: coverFileName({
         styleNumber: styleData.styleNumber,
         colour: styleData.colour,
@@ -370,7 +370,7 @@ export async function renderProdSpecTestBundle(
     coverDoc = {
       kind: "cover",
       variantKey: COVER_VARIANT_KEY,
-      name: "Cover page",
+      name: COVER_DISPLAY_NAME,
       fileName: null,
       widthMm: 210,
       heightMm: 297,

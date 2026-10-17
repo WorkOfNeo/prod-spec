@@ -473,7 +473,7 @@ export function ProdSpecEditor(props: Props) {
                 Write it once — general requirements, inspection standards, packing rules. When
                 non-empty, these pages ride inside the{" "}
                 <strong>cover page of every bundle</strong> generated under this prod spec, right
-                after the cover sheet (<code className="font-mono">00-…-cover-page.pdf</code>). Type{" "}
+                after the cover sheet (<code className="font-mono">00-…-prod-spec.pdf</code>). Type{" "}
                 <code className="font-mono">#</code> + space for a heading,{" "}
                 <code className="font-mono">-</code> + space for a list; tables and images insert
                 from the toolbar. Markdown under the hood — flip to the Markdown view to paste raw

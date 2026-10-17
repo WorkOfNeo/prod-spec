@@ -13,7 +13,7 @@ import {
 } from "@/lib/sharepoint/current-file-names";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { getVariant } from "@/lib/pdf/template-registry";
-import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
+import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY, COVER_DISPLAY_NAME } from "@/lib/pdf/bundle-page-keys";
 import {
   buildPushedFileCheck,
   summarisePushedRows,
@@ -155,7 +155,7 @@ export type PushedScanInventory = {
 // variant registry and falls back to the key only when the layout is gone.
 function documentLabel(variantKey: string): string {
   const base = variantKey.split("#")[0];
-  if (base === COVER_VARIANT_KEY) return "Cover page";
+  if (base === COVER_VARIANT_KEY) return COVER_DISPLAY_NAME;
   if (base === GENERAL_INFO_VARIANT_KEY) return "General information";
   return getVariant(base)?.name ?? base;
 }
