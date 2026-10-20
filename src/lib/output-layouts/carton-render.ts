@@ -49,6 +49,11 @@ export type CartonRenderResult =
       numbered: boolean;
       // True when other styles were placed on the box.
       multi: boolean;
+      // Every style printed on the box, in SLOT order (index 0 = the base style
+      // = slot 1). Resolved through the customer's column mapping, which is the
+      // only correct way to get a style number — callers that need to name a
+      // multi-style artefact must use these rather than re-deriving them.
+      styleNumbers: string[];
     };
 
 export async function renderCartonCustomization(
@@ -145,5 +150,9 @@ export async function renderCartonCustomization(
     placeholderCount: countPlaceholderMarkers(html),
     numbered,
     multi,
+    styleNumbers: [
+      renderStyle.styleNumber,
+      ...(renderStyle.siblings ?? []).map((s) => s.styleNumber),
+    ],
   };
 }

@@ -247,6 +247,17 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
     }),
   ]);
 
+  // Record WHERE each asset landed in SharePoint, so surfaces can link straight
+  // to the delivered file and sort by "newest delivered" instead of digging
+  // through Log.payload. Matched on fileName, which is unique within a job.
+  //
+  // Deliberately AFTER the transaction and fail-soft: this is provenance, not
+  // state. A publish that already uploaded and flipped every status must not be
+  // undone because a metadata column is missing (a deploy that reaches the app
+  // before `migrate deploy` lands) — the file is in the supplier's folder either
+  // way, and the backfill in the migration recovers the link from the log.
+  await stampSharepointProvenance(job.id, publishable, uploaded);
+
   // The job just left AWAITING_REVIEW — stamp every user's open dashboard
   // notifications pointing at it so nobody is summoned to a settled review.
   await resolveNotificationsForJob(job.id);
@@ -445,6 +456,42 @@ export async function publishApprovedJob(jobId: string, userId: string): Promise
 // runs the write throws (ColumnNotFound), so we swallow it — reports already
 // tolerate a null, and the value starts persisting the moment the column
 // lands. Shared by every settle path (this file + the reject routes).
+// Best-effort SharePoint provenance stamp. Never throws — see the call site.
+async function stampSharepointProvenance(
+  jobId: string,
+  assets: ReadonlyArray<{ id: string; fileName: string }>,
+  uploaded: ReadonlyArray<UploadResult>,
+): Promise<void> {
+  if (uploaded.length === 0) return;
+  const uploadedAt = new Date();
+  try {
+    await Promise.all(
+      uploaded.flatMap((file) => {
+        const asset = assets.find((a) => a.fileName === file.name);
+        if (!asset || !file.webUrl) return [];
+        return [
+          db.jobAsset.update({
+            where: { id: asset.id },
+            data: { spFileUrl: file.webUrl, spFileId: file.id, spUploadedAt: uploadedAt },
+          }),
+        ];
+      }),
+    );
+  } catch (err) {
+    await db.log
+      .create({
+        data: {
+          jobId,
+          level: "WARN",
+          message: `could not record SharePoint file links: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        },
+      })
+      .catch(() => {});
+  }
+}
+
 export async function stampReviewEnded(jobId: string): Promise<void> {
   try {
     await db.job.update({ where: { id: jobId }, data: { reviewEndedAt: new Date() } });
