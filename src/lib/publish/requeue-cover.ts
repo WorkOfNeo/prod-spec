@@ -25,7 +25,9 @@ import { isDeliverablePo } from "./supplier-send-cutoff";
 //   • the style has ≥1 real output generated. A cover for a style with NO
 //     outputs is just the manifest with everything "Waiting for Customer
 //     Information"; it must not be auto-shipped to the supplier folder on its
-//     own. The cover ships only once there's an actual layout to accompany, and
+//     own. The cover ships only once there's an actual layout to accompany —
+//     a generated one, a manually supplied one that reached the folder, or, on
+//     a cover-only spec, none (the cover is the deliverable there), and
 //   • the style clears the supplier-send PO cutoff.
 //
 // That last gate is why this function was at the centre of the 2026-08-13 mass
@@ -62,6 +64,7 @@ export async function enqueueCoverForSupplier(
       supplierId: true,
       poSeq: true,
       customer: { select: { config: true } },
+      prodSpec: { select: { coverOnly: true } },
     },
   });
   if (!style) return "not-delivered";
@@ -91,7 +94,15 @@ export async function enqueueCoverForSupplier(
       variantKey: { notIn: [COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY], not: null },
     },
   });
-  if (outputCount === 0) return "no-outputs";
+  // …unless the style's layouts are the ones the customer supplies. On a
+  // cover-only spec the cover IS the generated deliverable — there will never
+  // be a generated output to wait for — and a manually supplied document that
+  // has reached the supplier's folder (pushed by us or confirmed by hand) is
+  // as real a layout as one we rendered. Either way the cover isn't alone.
+  if (outputCount === 0 && style.prodSpec?.coverOnly !== true) {
+    const { loadManualDeliveredLabels } = await import("@/lib/trims/manual-uploads");
+    if ((await loadManualDeliveredLabels(styleId)).size === 0) return "no-outputs";
+  }
 
   // Force-armed state: whether the row existed (previously sent) or not, it
   // must end up pending + unpushed so the sweep + digest pick the fresh cover.

@@ -3,7 +3,19 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { OutputState } from "@/lib/outputs/current-outputs";
-import type { StyleDashboardRow, StyleOutputDetailRow } from "@/lib/dashboard/style-dashboard";
+import type { CoverStatus, StyleDashboardRow, StyleOutputDetailRow } from "@/lib/dashboard/style-dashboard";
+
+// The cover is the one document every style with a PO number gets, so its
+// state rides on the collapsed row — "did anything happen for this style?"
+// is answerable without expanding it.
+export const COVER_CHIP: Record<CoverStatus, { cls: string; label: string }> = {
+  none: { cls: "border-zinc-200 bg-zinc-50 text-zinc-500", label: "no cover yet" },
+  generating: { cls: "border-blue-200 bg-blue-50 text-blue-700", label: "cover generating…" },
+  "to-review": { cls: "border-blue-200 bg-blue-50 text-blue-700", label: "cover to review" },
+  approved: { cls: "border-emerald-200 bg-emerald-50 text-emerald-700", label: "cover approved" },
+  uploaded: { cls: "border-emerald-200 bg-emerald-50 text-emerald-700", label: "cover uploaded" },
+  sent: { cls: "border-emerald-200 bg-emerald-50 text-emerald-700", label: "cover sent" },
+};
 
 const STATE_CHIP: Record<OutputState, { cls: string; label: string }> = {
   APPROVED: { cls: "border-emerald-200 bg-emerald-50 text-emerald-700", label: "approved" },
@@ -33,6 +45,15 @@ function fmtDate(iso: string | null): string {
 
 function RollupChips({ row, green }: { row: StyleDashboardRow; green?: boolean }) {
   const r = row.rollup;
+  // Nothing generated yet — upload/sent ratios would read "0/0"; the reason
+  // under the name says what's going on instead.
+  if (row.progress === "not-started") {
+    return (
+      <span className="text-[11px] tabular-nums text-amber-700">
+        {r.notGenerated > 0 ? `${r.notGenerated} output${r.notGenerated === 1 ? "" : "s"} + cover to make` : "cover to make"}
+      </span>
+    );
+  }
   const chips: { n: number; cls: string; label: string }[] = [
     { n: r.generating, cls: "text-blue-700", label: "generating" },
     { n: r.toReview, cls: "text-blue-700", label: "to review" },
@@ -167,12 +188,39 @@ export function StyleRow({ row }: { row: StyleDashboardRow }) {
                 generating
               </span>
             )}
+            {row.progress === "not-started" && (
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                not started
+              </span>
+            )}
+            {row.coverOnly && (
+              <span
+                className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${
+                  green ? "border-white/30 text-white" : "border-zinc-200 bg-zinc-50 text-zinc-600"
+                }`}
+                title="The prod spec is “Cover page only” — every other document is supplied by hand."
+              >
+                cover only
+              </span>
+            )}
+            {!green && (
+              <span
+                className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${COVER_CHIP[row.cover].cls}`}
+              >
+                {COVER_CHIP[row.cover].label}
+              </span>
+            )}
           </div>
           <div className={`truncate text-xs ${green ? "text-emerald-100" : "text-zinc-500"}`}>
             {row.customer ?? "—"}
             {row.poNumber ? ` · PO ${row.poNumber}` : ""}
             {row.supplier ? ` · ${row.supplier}` : ""}
           </div>
+          {row.waiting && (
+            <div className={`mt-0.5 text-xs ${row.waiting.attention ? "text-amber-700" : "text-zinc-500"}`}>
+              {row.waiting.reason}
+            </div>
+          )}
         </div>
         <div className="hidden shrink-0 sm:block">
           <RollupChips row={row} green={green} />
@@ -194,7 +242,11 @@ export function StyleRow({ row }: { row: StyleDashboardRow }) {
         {loading && <p className="py-3 text-xs text-zinc-500">Loading outputs…</p>}
         {error && <p className="py-3 text-xs text-red-600">{error}</p>}
         {outputs != null && outputs.length === 0 && (
-          <p className="py-3 text-xs text-zinc-500">No outputs.</p>
+          <p className="py-3 text-xs text-zinc-500">
+            {row.coverOnly
+              ? "Cover page only — nothing else is generated for this style. The cover shows here once it has been made."
+              : "No outputs."}
+          </p>
         )}
         {outputs != null && outputs.length > 0 && (
           <ul className="divide-y divide-zinc-100">

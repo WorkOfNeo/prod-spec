@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { baseKey, rollupStyleSlots, isFullyDelivered } from "./style-dashboard";
+import { baseKey, rollupStyleSlots, isFullyDelivered, coverStatusOf, explainNotStarted } from "./style-dashboard";
 
 // A slot document as rollupStyleSlots consumes it.
 function doc(
@@ -105,4 +105,37 @@ test("isFullyDelivered — an undecided (to review) output keeps it un-delivered
 test("isFullyDelivered — a style with nothing generated is not delivered", () => {
   const { rollup } = rollupStyleSlots([], 2);
   assert.equal(isFullyDelivered(rollup), false);
+});
+
+// ---- Cover status + not-started reasons ----
+
+const noCover = { hasCover: false, reviewStatus: null, uploaded: false, emailed: false, inflight: false };
+
+test("cover status: none until a run makes it, generating while one is in flight", () => {
+  assert.equal(coverStatusOf(noCover), "none");
+  assert.equal(coverStatusOf({ ...noCover, inflight: true }), "generating");
+});
+
+test("cover status: delivery wins over review state", () => {
+  const cover = { ...noCover, hasCover: true, reviewStatus: "PENDING_REVIEW" };
+  assert.equal(coverStatusOf(cover), "to-review");
+  assert.equal(coverStatusOf({ ...cover, reviewStatus: "APPROVED" }), "approved");
+  assert.equal(coverStatusOf({ ...cover, uploaded: true }), "uploaded");
+  assert.equal(coverStatusOf({ ...cover, uploaded: true, emailed: true }), "sent");
+});
+
+test("not started: a style the sweep will pick up just waits — no alarm", () => {
+  const r = explainNotStarted(null, { count: 0, lastError: null });
+  assert.equal(r.attention, false);
+  assert.match(r.reason, /next sweep/);
+});
+
+test("not started: anything a person must act on is flagged, with the error", () => {
+  assert.equal(explainNotStarted("auto_off", { count: 0, lastError: null }).attention, true);
+  assert.match(explainNotStarted("no_outputs", { count: 0, lastError: null }).reason, /Cover page only/);
+  const floated = explainNotStarted("floated", { count: 3, lastError: "NO_OUTPUTS: boom" });
+  assert.equal(floated.attention, true);
+  assert.match(floated.reason, /3×/);
+  assert.match(floated.reason, /boom/);
+  assert.match(explainNotStarted(null, { count: 1, lastError: "render failed" }).reason, /render failed/);
 });

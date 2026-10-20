@@ -40,6 +40,8 @@ import {
   type OutputState,
 } from "@/lib/outputs/current-outputs";
 import { currentOutputBaseKeys } from "@/lib/tickets/orphan";
+import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
+import { decideCoverRun, type CoverRunSkip } from "@/lib/queue/cover-run-gate";
 // Type-only — output-readiness itself is import-safe, but the fn is lazy-loaded
 // below since it's only needed for the narrow exclusion pass.
 import type { ReadinessStyle } from "@/lib/styles/output-readiness";
@@ -110,6 +112,14 @@ export type EmailState = "sent" | "not-sent";
 // output that never generated") would be unfilterable.
 export type StyleFacetState = OutputState | "NOT_GENERATED";
 
+// Where the style's cover page is, end to end — the one document every style
+// with a PO number gets, so it's the first thing to look at when asking "did
+// anything happen for this style?".
+export type CoverStatus = "none" | "generating" | "to-review" | "approved" | "uploaded" | "sent";
+
+// The coarse lifecycle the Progress facet filters on.
+export type ProgressState = "not-started" | "in-progress" | "delivered";
+
 export type StyleDashboardRow = {
   styleId: string;
   name: string;
@@ -117,7 +127,15 @@ export type StyleDashboardRow = {
   customer: string | null;
   businessArea: string | null;
   supplier: string | null;
+  // The spec is "Cover page only" — every other document is supplied by hand.
+  coverOnly: boolean;
   hasInflight: boolean;
+  cover: CoverStatus;
+  progress: ProgressState;
+  // Set when nothing has been generated for this style yet: why not, in the
+  // operator's words, and whether that needs a person (attention) or just the
+  // next sweep.
+  waiting: { reason: string; attention: boolean } | null;
   rollup: StyleRollup;
   // Everything this style declares is generated, approved, uploaded to SharePoint
   // AND emailed to the supplier — nothing left to do. Drives the green row.
@@ -262,6 +280,65 @@ export function isFullyDelivered(rollup: StyleRollup): boolean {
   );
 }
 
+// Pure: where the cover is. Delivery wins over review state — once the file
+// is in the supplier's folder (the cover ships regardless of approval), that's
+// the fact that matters.
+export function coverStatusOf(input: {
+  hasCover: boolean;
+  reviewStatus: string | null;
+  uploaded: boolean;
+  emailed: boolean;
+  inflight: boolean;
+}): CoverStatus {
+  if (!input.hasCover) return input.inflight ? "generating" : "none";
+  if (input.emailed) return "sent";
+  if (input.uploaded) return "uploaded";
+  if (input.inflight) return "generating";
+  return input.reviewStatus === "APPROVED" ? "approved" : "to-review";
+}
+
+// Pure: why a style with a PO number and an active spec hasn't started, read
+// off the SAME gate the generator uses (decideCoverRun) so the dashboard can't
+// claim a run is coming that the sweep would refuse.
+export function explainNotStarted(
+  skip: CoverRunSkip | null,
+  failures: { count: number; lastError: string | null },
+): { reason: string; attention: boolean } {
+  const lastError = failures.lastError ? ` Last error: ${failures.lastError.slice(0, 200)}` : "";
+  switch (skip) {
+    case null:
+      return failures.count > 0
+        ? {
+            reason: `The last run failed — the next sweep retries it (or press Run all).${lastError}`,
+            attention: true,
+          }
+        : {
+            reason: "Not started yet — the next sweep queues it, cover page first (or press Run all).",
+            attention: false,
+          };
+    case "auto_off":
+      return {
+        reason:
+          "Auto-generate is switched off, so nothing starts on its own. Re-run the style, or switch auto-generate on.",
+        attention: true,
+      };
+    case "no_outputs":
+      return {
+        reason: "Its prod spec has no outputs. Add outputs, or tick “Cover page only” on the spec.",
+        attention: true,
+      };
+    case "floated":
+      return {
+        reason: `Failed ${failures.count}× since the spec last changed — left for a person to look at.${lastError}`,
+        attention: true,
+      };
+    case "in_flight":
+      return { reason: "Queued — generating now.", attention: false };
+    default:
+      return { reason: "Not started.", attention: false };
+  }
+}
+
 // ---- Live queue --------------------------------------------------------------
 
 // In-flight generation jobs (QUEUED = waiting, RUNNING = rendering), oldest
@@ -371,13 +448,14 @@ export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
       customer: { select: { name: true } },
       businessAreaRef: { select: { name: true } },
       supplier: { select: { name: true } },
-      prodSpec: { select: { outputs: true } },
+      prodSpec: { select: { outputs: true, coverOnly: true } },
     },
     orderBy: { updatedAt: "desc" },
   });
-  if (styles.length === 0) return [];
 
   const ids = styles.map((s) => s.id);
+  const notStarted = await getNotStartedRows();
+  if (styles.length === 0) return notStarted;
 
   // All non-FAILED assets (light — no pdf bytes), newest job first so
   // selectCurrentAssets can supersede per base. Grouped by style in memory.
@@ -466,6 +544,7 @@ export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
     latestGeneratedAt: Date | null;
     hasInflight: boolean;
     ungenerated: Set<string>;
+    cover: CoverStatus;
   };
   const pending: Pending[] = [];
   const needsExclusionCheck: string[] = [];
@@ -532,6 +611,8 @@ export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
       };
     });
 
+    const coverAsset = current.find((a) => a.variantKey === COVER_VARIANT_KEY);
+    const coverDelivery = delivery.get(COVER_VARIANT_KEY) ?? { uploaded: false, emailed: false };
     pending.push({
       style,
       docs,
@@ -539,6 +620,13 @@ export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
       latestGeneratedAt,
       hasInflight: inf.all || inf.bases.size > 0,
       ungenerated,
+      cover: coverStatusOf({
+        hasCover: !!coverAsset,
+        reviewStatus: coverAsset?.reviewStatus ?? null,
+        uploaded: coverDelivery.uploaded,
+        emailed: coverDelivery.emailed,
+        inflight: inf.all,
+      }),
     });
   }
 
@@ -602,6 +690,7 @@ export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
       .join(" ")
       .toLowerCase();
 
+    const fullyDelivered = isFullyDelivered(rollup);
     return {
       styleId: style.id,
       name: style.name,
@@ -609,9 +698,13 @@ export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
       customer: style.customer?.name ?? null,
       businessArea: style.businessAreaRef?.name ?? null,
       supplier: style.supplier?.name ?? null,
+      coverOnly: style.prodSpec?.coverOnly === true,
       hasInflight: p.hasInflight,
+      cover: p.cover,
+      progress: fullyDelivered ? "delivered" : "in-progress",
+      waiting: null,
       rollup,
-      fullyDelivered: isFullyDelivered(rollup),
+      fullyDelivered,
       states,
       uploadStates,
       emailStates,
@@ -620,13 +713,135 @@ export async function getStyleDashboardRows(): Promise<StyleDashboardRow[]> {
     };
   });
 
-  // In-flight styles first (that's the unclog view), then most-recent activity.
+  rows.push(...notStarted);
+
+  // In-flight styles first (that's the unclog view), then most-recent activity;
+  // not-started styles (no activity yet) settle at the end.
   rows.sort((a, b) => {
     if (a.hasInflight !== b.hasInflight) return a.hasInflight ? -1 : 1;
     return (b.latestGeneratedAt ?? "").localeCompare(a.latestGeneratedAt ?? "");
   });
 
   return rows;
+}
+
+// ---- Not-started styles -------------------------------------------------------
+
+// The styles that SHOULD be in the pipeline but have nothing in it yet: a PO
+// number ("Navision Task"), an active prod spec, inside the generation PO
+// cutoff, and no generated document or in-flight job. Without these the list
+// only ever showed styles that had already produced something, so "my cover
+// pages aren't being made" looked identical to "there's nothing to make".
+// Each carries the reason it hasn't started, from the generator's own gate.
+// Capped: this is a "what's stuck" view, newest first, not an archive.
+const NOT_STARTED_CAP = 500;
+
+// The jobs filter is the exact complement of getStyleDashboardRows' "started"
+// filter, so the two lists never overlap.
+async function getNotStartedRows(): Promise<StyleDashboardRow[]> {
+  const { db } = await import("@/lib/db");
+  const { parseProdSpecOutputs } = await import("@/lib/prod-spec/config");
+  const { HAS_PO_NUMBER_WHERE } = await import("@/lib/styles/active-filter");
+  const { getAutoGenerateEnabled, getGenerationMinPo } = await import("@/lib/settings/app-settings");
+
+  const [autoGenerateEnabled, minPo] = await Promise.all([getAutoGenerateEnabled(), getGenerationMinPo()]);
+  const styles = await db.style.findMany({
+    where: {
+      ...HAS_PO_NUMBER_WHERE,
+      prodSpec: { is: { active: true } },
+      jobs: {
+        none: {
+          OR: [
+            { status: { in: ["QUEUED", "RUNNING"] } },
+            { AND: [{ status: { not: "FAILED" } }, { assets: { some: {} } }] },
+          ],
+        },
+      },
+      ...(minPo !== null ? { OR: [{ poSeq: { gte: minPo } }, { poSeq: null }] } : {}),
+    },
+    select: {
+      id: true,
+      name: true,
+      poNumber: true,
+      customer: { select: { name: true } },
+      businessAreaRef: { select: { name: true } },
+      supplier: { select: { name: true } },
+      prodSpec: { select: { active: true, outputs: true, coverOnly: true, updatedAt: true } },
+    },
+    orderBy: { updatedAt: "desc" },
+    take: NOT_STARTED_CAP,
+  });
+  if (styles.length === 0) return [];
+
+  const failed = await db.job.findMany({
+    where: { styleId: { in: styles.map((s) => s.id) }, status: "FAILED" },
+    orderBy: { createdAt: "desc" },
+    select: { styleId: true, createdAt: true, error: true },
+  });
+  const failedByStyle = new Map<string, typeof failed>();
+  for (const f of failed) {
+    const arr = failedByStyle.get(f.styleId);
+    if (arr) arr.push(f);
+    else failedByStyle.set(f.styleId, [f]);
+  }
+
+  return styles.map((style) => {
+    const spec = style.prodSpec;
+    const enabled = parseProdSpecOutputs(spec?.outputs ?? []).filter((o) => o.enabled !== false);
+    // Same window the generator counts: failures since the spec last changed.
+    const recent = (failedByStyle.get(style.id) ?? []).filter(
+      (f) => !spec || f.createdAt >= spec.updatedAt,
+    );
+    const gate = decideCoverRun({
+      hasPo: true,
+      belowCutoff: false,
+      prodSpec: spec,
+      specHasOutputs: enabled.length > 0,
+      autoGenerateEnabled,
+      inflight: 0,
+      recentFailures: recent.length,
+      hasCover: false,
+    });
+    // With auto-generate off the backlog sweep doesn't run at all, so even a
+    // cover-only style (which the gate lets through) waits for a person.
+    const skip = gate === null && !autoGenerateEnabled ? "auto_off" : gate;
+    const { rollup, states, uploadStates, emailStates } = rollupStyleSlots(
+      [],
+      currentOutputBaseKeys(enabled).size,
+    );
+    return {
+      styleId: style.id,
+      name: style.name,
+      poNumber: style.poNumber,
+      customer: style.customer?.name ?? null,
+      businessArea: style.businessAreaRef?.name ?? null,
+      supplier: style.supplier?.name ?? null,
+      coverOnly: spec?.coverOnly === true,
+      hasInflight: false,
+      cover: "none" as const,
+      progress: "not-started" as const,
+      waiting: explainNotStarted(skip, {
+        count: recent.length,
+        lastError: recent[0]?.error ?? null,
+      }),
+      rollup,
+      fullyDelivered: false,
+      states,
+      uploadStates,
+      emailStates,
+      latestGeneratedAt: null,
+      searchBlob: [
+        style.name,
+        style.poNumber,
+        style.customer?.name,
+        style.businessAreaRef?.name,
+        style.supplier?.name,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+    };
+  });
 }
 
 // ---- Per-style output detail (expand) ----------------------------------------

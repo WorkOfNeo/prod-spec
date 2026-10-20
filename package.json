@@ -16,6 +16,7 @@
     "db:deploy": "prisma migrate deploy",
     "release": "prisma migrate deploy",
     "explain-style": "tsx --env-file=.env scripts/explain-style.ts",
+    "cover-wave-dryrun": "tsx --env-file=.env scripts/cover-wave-dryrun.ts",
     "seed-column-mapping": "tsx --env-file=.env scripts/seed-default-column-mapping.ts",
     "seed-washsymbol-monday": "tsx --env-file=.env scripts/seed-washsymbol-monday-values.ts",
     "seed-print-spec-outputs": "tsx --env-file=.env scripts/seed-print-spec-outputs.ts",

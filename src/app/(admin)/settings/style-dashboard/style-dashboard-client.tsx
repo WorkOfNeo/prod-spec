@@ -27,6 +27,19 @@ const STATE_LABEL: Record<StyleFacetState, string> = {
   AWAITING_DATA: "Missing fields",
   EXCLUDED: "Excluded",
 };
+const PROGRESS_LABEL: Record<string, string> = {
+  "not-started": "Not started",
+  "in-progress": "In progress",
+  delivered: "Delivered",
+};
+const COVER_LABEL: Record<string, string> = {
+  none: "No cover yet",
+  generating: "Generating",
+  "to-review": "To review",
+  approved: "Approved",
+  uploaded: "Uploaded",
+  sent: "Sent",
+};
 const UPLOAD_LABEL: Record<string, string> = { uploaded: "Uploaded", "not-uploaded": "Not uploaded" };
 const EMAIL_LABEL: Record<string, string> = { sent: "Sent", "not-sent": "Not sent" };
 
@@ -40,6 +53,14 @@ const FACETS: {
   { key: "customer", label: "Customer", values: (r) => [r.customer ?? BLANK], labelOf: (v) => v },
   { key: "ba", label: "Business area", values: (r) => [r.businessArea ?? BLANK], labelOf: (v) => v },
   { key: "supplier", label: "Supplier", values: (r) => [r.supplier ?? BLANK], labelOf: (v) => v },
+  { key: "progress", label: "Progress", values: (r) => [r.progress], labelOf: (v) => PROGRESS_LABEL[v] ?? v },
+  { key: "cover", label: "Cover page", values: (r) => [r.cover], labelOf: (v) => COVER_LABEL[v] ?? v },
+  {
+    key: "coverOnly",
+    label: "Spec",
+    values: (r) => [r.coverOnly ? "cover-only" : "outputs"],
+    labelOf: (v) => (v === "cover-only" ? "Cover page only" : "Generates outputs"),
+  },
   { key: "state", label: "Output state", values: (r) => r.states, labelOf: (v) => STATE_LABEL[v as StyleFacetState] ?? v },
   { key: "upload", label: "Upload", values: (r) => r.uploadStates, labelOf: (v) => UPLOAD_LABEL[v] ?? v },
   { key: "email", label: "Email", values: (r) => r.emailStates, labelOf: (v) => EMAIL_LABEL[v] ?? v },
@@ -175,7 +196,9 @@ export function StyleDashboardClient({
       {filtered.length === 0 ? (
         <div className="mt-6 rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-6 py-16 text-center">
           <p className="text-sm font-medium text-zinc-700">
-            {rows.length === 0 ? "No styles have generated outputs yet." : "No styles match these filters."}
+            {rows.length === 0
+              ? "No styles with a PO number on an active prod spec yet."
+              : "No styles match these filters."}
           </p>
         </div>
       ) : (
