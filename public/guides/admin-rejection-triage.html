@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Admin guide · Triaging a rejection — output edit, code, human, or missing artwork</title>
+<link rel="stylesheet" href="_guide.css" />
+</head>
+<body>
+
+  <div class="doc-head">
+    <div class="kicker">Prod Spec · Admin guide</div>
+    <h1>Triaging a rejection</h1>
+    <p class="sub">A reviewer rejects something, or a customer sends an edit. Before anyone touches anything, work out <b>which of four kinds it is</b> — because each has a different owner, a different cost, and a different way of going wrong.</p>
+    <div class="crumb">Admins only · start from <b>Settings ▸ Rejection log</b>. This guide is the human version of the same question the rejection-query tool answers.</div>
+  </div>
+
+  <!-- SECTION 1 -->
+  <div class="section">
+    <h2><span class="n">1</span> The four answers</h2>
+    <p class="lead">Every rejection and every customer edit lands in exactly one of these. Getting the bucket right first is most of the work — the wrong bucket sends a two-minute layout tweak to a developer, or sends an unfixable request to an agent that will confidently produce something wrong.</p>
+
+    <table class="tbl">
+      <tr class="head-strong"><th style="width:19%">Kind</th><th style="width:31%">What it means</th><th style="width:26%">The one-line test</th><th style="width:24%">Who does it</th></tr>
+      <tr>
+        <td><b>1 · Output edit</b></td>
+        <td>The layout is wrong: something is missing, misplaced, mis-sized or in the wrong language. The system can already print it.</td>
+        <td>Could you fix it by editing the layout in the Output&nbsp;Builder, without new code?</td>
+        <td>You, in the builder. Or Claude, against a named layout id.</td>
+      </tr>
+      <tr>
+        <td><b>2 · Needs code</b></td>
+        <td>The capability doesn't exist, or exists and is broken. A control that isn't there; a token that renders empty though it's placed and the data is present.</td>
+        <td>Is the thing being asked for absent from the app, or present-but-wrong?</td>
+        <td>Claude, in a worktree, with a test.</td>
+      </tr>
+      <tr>
+        <td><b>3 · Human touch</b></td>
+        <td>A judgement, a negotiation, or a decision only you can make. Which of two drafts is the keeper; what a customer will accept; whether to publish.</td>
+        <td>Would two competent people reasonably disagree, with no fact in the repo settling it?</td>
+        <td>You. Don't delegate it.</td>
+      </tr>
+      <tr>
+        <td><b>4 · Missing artwork</b></td>
+        <td>The correct format lives outside the app — an email attachment, an Excel sheet, a supplier PDF, a customer's own template.</td>
+        <td>Does the comment say <i>"as per the attached"</i>, <i>"sent through your mail"</i>, <i>"on excel sheet"</i>?</td>
+        <td>You, to fetch the file. Then it becomes 1 or 2.</td>
+      </tr>
+    </table>
+
+    <div class="note warn">
+      <div class="h">Bucket 4 is the one that wastes the most time</div>
+      <p>An agent cannot author against a file it has never seen. When a comment points at an attachment, no amount of reading the codebase will recover what the customer actually wants — and a confident guess ships wrong artwork to a supplier. Fetch the file first; the task is blocked until you do.</p>
+    </div>
+  </div>
+
+  <!-- SECTION 2 -->
+  <div class="section">
+    <h2><span class="n">2</span> First, consolidate — never triage ticket by ticket</h2>
+    <p class="lead">A rejection pile is far smaller than it looks. Reviewers paste near-identical text with tiny wording changes, and each per-size variant raises its own ticket, so one complaint becomes dozens of rows. Group before you read.</p>
+
+    <div class="flow">
+      <div class="step"><span class="si">1</span><span class="st">Take the tickets for the POs in question. Note <b>poNumber</b> is stored as <span style="font-family:ui-monospace,Menlo,monospace">C-PO12345</span>, so match on the bare number.</span></div>
+      <div class="step"><span class="si">2</span><span class="st">Group by the comment, <b>normalised</b> — lowercase it, collapse whitespace, truncate. That collapses "as per mentioned Monday style wise" and "as per the mentioned as Monday style wise" into one complaint.</span></div>
+      <div class="step"><span class="si">3</span><span class="st">Per group, look at: ticket count, <b>status set</b>, which POs, how many distinct styles, the docTypes, and — most important — the <b>distinct layout ids</b> (split the variantKey on <span style="font-family:ui-monospace,Menlo,monospace">#</span>, since per-size variants look like <span style="font-family:ui-monospace,Menlo,monospace">layout:cmqt7…#110116</span>).</span></div>
+      <div class="step"><span class="si">4</span><span class="st">Read <b>one verbatim sample</b> per group. Never a paraphrase — the reviewer's exact words carry the answer more often than not.</span></div>
+    </div>
+
+    <div class="two">
+      <div class="variant">
+        <div class="vh">What it looks like before <span class="pill zc">raw</span></div>
+        <div class="vd">SOK, five POs: <b>84 tickets</b>, all OPEN. Unreadable as a list — page after page of the same sentence against different sizes and colours.</div>
+      </div>
+      <div class="variant">
+        <div class="vh">What it looks like after <span class="pill em">grouped</span></div>
+        <div class="vd">Those 84 rows are <b>four phrasings of one complaint</b>, on <b>one layout</b>. Ge-kås's 184 tickets collapse to about ten real complaints across four layouts plus the cover page.</div>
+      </div>
+    </div>
+
+    <div class="note">
+      <div class="h">Grouping by layout is what turns tickets into work</div>
+      <p>A complaint is fixable per <b>layout</b>, not per ticket or per PO. Once a group names one layout id, you have a unit of work with a clear owner. Once it names four, you have four tasks pretending to be one — which is exactly how a task ends up scoped to a quarter of its real size.</p>
+    </div>
+  </div>
+
+  <!-- SECTION 3 -->
+  <div class="section">
+    <h2><span class="n">3</span> Then run the three checks</h2>
+    <p class="lead">For a group of tickets that says something is missing or wrong on a printed document, these three checks decide the bucket. Do all three before concluding — the expensive mistakes all come from stopping after one.</p>
+
+    <table class="tbl">
+      <tr class="head-strong"><th style="width:8%">Check</th><th style="width:32%">Question</th><th style="width:60%">How to answer it</th></tr>
+      <tr><td><b>A</b></td><td>Is the token on the layout?</td><td>Open the layout and look for the token — <span style="font-family:ui-monospace,Menlo,monospace">{{price}}</span>, <span style="font-family:ui-monospace,Menlo,monospace">{{barcode:ean13}}</span>, whatever is said to be missing. <b>Not there → output edit.</b></td></tr>
+      <tr><td><b>B</b></td><td>Is the data on the style?</td><td>Check the style's Monday data for the field behind that token. <b>Empty → not a layout problem at all</b>; it's a data gap, and the readiness gate should have caught it.</td></tr>
+      <tr><td><b>C</b></td><td>Does the comment point outside the app?</td><td>"as per the attached format", "shared through your mail", "on excel sheet". <b>Yes → missing artwork.</b> Stop and fetch it.</td></tr>
+    </table>
+
+    <div class="chips">
+      <span class="chip3 no">A no <span class="s">→ OUTPUT EDIT</span></span>
+      <span class="chip3 no">B no <span class="s">→ DATA / HUMAN</span></span>
+      <span class="chip3 no">C yes <span class="s">→ MISSING ARTWORK</span></span>
+      <span class="chip3 has">A yes + B yes + still blank <span class="s">→ CODE BUG</span></span>
+    </div>
+
+    <div class="note good">
+      <div class="h">The last row is the valuable one</div>
+      <p>Token placed, data present, and the PDF still shows nothing: that is a <b>bug</b>, and it is the single most worthwhile thing to hand to Claude — the diagnosis is sharp, the fix is testable, and it usually reaches far more styles than the POs that were rejected. It is also the case most often misfiled as "just edit the layout", where someone re-places a token that was never the problem.</p>
+    </div>
+  </div>
+
+  <!-- SECTION 4 -->
+  <div class="section">
+    <h2><span class="n">4</span> Four real cases, worked</h2>
+    <p class="lead">All from 12–13&nbsp;August 2026. Each one was initially filed as a different kind than it turned out to be.</p>
+
+    <div class="acc" style="break-inside:avoid">
+      <div class="acc-head"><span class="chev">▾</span><span class="name">SOK · price stickers</span><span class="cnt">84 tickets, all OPEN</span><span class="hint"><span class="pill bl">CODE</span></span></div>
+      <div class="acc-body">
+        <div><b>Complaint:</b> <i>"The retail price is missing on this layout PDF. Could you please add the price as per mentioned Monday style wise."</i> — four phrasings, one layout.</div>
+        <div><b>Check A:</b> the layout <b>already places</b> <span style="font-family:ui-monospace,Menlo,monospace">{{price}}</span>. <b>Check B:</b> all 21 styles have a real Monday price — 19.95, 14.95, 26.95 — in a format the parser accepts. <b>Check C:</b> no attachment referenced.</div>
+        <div><b>Verdict:</b> code bug in the render path. Would have been misfiled as an output edit by anyone who stopped after reading the comment.</div>
+      </div>
+    </div>
+
+    <div class="acc" style="break-inside:avoid">
+      <div class="acc-head"><span class="chev">▾</span><span class="name">Netto DK · wash care label</span><span class="cnt">14 tickets</span><span class="hint"><span class="pill em">OUTPUT EDIT</span></span></div>
+      <div class="acc-body">
+        <div><b>Complaint:</b> <i>"Could you please add the EAN barcode on care label front page."</i></div>
+        <div><b>Check A:</b> the barcode token exists on the layout — but on a later sheet. So nothing is missing; it is <b>placement</b>.</div>
+        <div><b>Verdict:</b> output edit. Note the physical constraint: a crowded front sheet may not hold an EAN-13 at its declared size, and shrinking one until it fits produces a barcode that won't scan. "It doesn't fit" is a legitimate answer.</div>
+      </div>
+    </div>
+
+    <div class="acc" style="break-inside:avoid">
+      <div class="acc-head"><span class="chev">▾</span><span class="name">Netto DK · carton marking</span><span class="cnt">4 tickets, OPEN</span><span class="hint"><span class="pill zc">STALE</span></span></div>
+      <div class="acc-body">
+        <div><b>Complaint:</b> <i>"Could you please add the customize button for this. Because the two styles are packed into the same carton."</i></div>
+        <div><b>Check:</b> the layout already has <span style="font-family:ui-monospace,Menlo,monospace">multipleStyles</span> on, which is what makes that button appear. The fix had already shipped.</div>
+        <div><b>Verdict:</b> a <b>fifth outcome</b> the four buckets don't name — the ticket describes a state that no longer exists. It needs regeneration and closing, not work. Always check this before starting.</div>
+      </div>
+    </div>
+
+    <div class="acc" style="break-inside:avoid">
+      <div class="acc-head"><span class="chev">▾</span><span class="name">Ge-kås · five POs "wrong template"</span><span class="cnt">184 tickets, 156 OPEN</span><span class="hint"><span class="pill am">MIXED</span></span></div>
+      <div class="acc-body">
+        <div><b>Filed as:</b> one problem — the care label used another retailer's template.</div>
+        <div><b>Actually:</b> the care-label group is about a quarter of it. Another 35 open tickets say <i>"The layout PDF template is incorrect. Please correct as per the attached format"</i> against <b>three other layouts</b> — price sticker, price sticker (sets) and carton marking — plus separate cover-page complaints.</div>
+        <div><b>Verdict:</b> the care-label half was a code/data fault (a cross-customer clone). The rest is <b>bucket 4</b>: the correct formats are in email attachments and an Excel sheet. Nothing can proceed on those until the files arrive.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 5 -->
+  <div class="section pagebreak">
+    <h2><span class="n">5</span> Traps that make you classify it wrong</h2>
+
+    <ul class="legend">
+      <li><span class="ln"><span class="mk">1</span></span><span class="tx"><b>A draft layout prints nothing.</b> Only <b>published</b> layouts are loaded at render time. A layout left in draft after an edit doesn't print the old version — the output disappears entirely, which looks like a completely different bug. If an output has gone silent, check its status before anything else.</span></li>
+      <li><span class="ln"><span class="mk">2</span></span><span class="tx"><b>Duplicating a layout copies its owner.</b> A duplicate carries the source's customer and business area, and nothing warns when a spec ends up declaring another customer's row. That is how one retailer's website printed on another's labels across 109 styles. After any duplicate: re-point the owner, rename it, re-author it, then confirm no two layouts share the same definition.</span></li>
+      <li><span class="ln"><span class="mk">3</span></span><span class="tx"><b>The PO on the task may not belong to the customer on the task.</b> One recent task listed four POs under a customer's name; one of them belonged to a different customer entirely and had already been resolved. Trust the ticket's own customer field, not the task title.</span></li>
+      <li><span class="ln"><span class="mk">4</span></span><span class="tx"><b>Re-rejections append, they don't duplicate.</b> Rejecting again after a fix reopens the same ticket and appends the new comment with a <i>— re-rejected &lt;date&gt; —</i> separator. So one ticket can hold two different complaints, and the newest one is at the end. Read to the bottom.</span></li>
+      <li><span class="ln"><span class="mk">5</span></span><span class="tx"><b>A fixed problem leaves its tickets open.</b> Shipping the fix doesn't close anything. Open tickets are a record of what was true when a reviewer looked, not of what is true now.</span></li>
+    </ul>
+  </div>
+
+  <!-- SECTION 6 -->
+  <div class="section">
+    <h2><span class="n">6</span> What to hand over, per bucket</h2>
+    <p class="lead">Once the bucket is settled, this is what actually unblocks the work.</p>
+
+    <div class="compare">
+      <div class="col">
+        <h3><span class="pill em">1 · Output edit</span></h3>
+        <div class="body"><ul>
+          <li>The <b>layout name or id</b> from the ticket group — not the PO.</li>
+          <li>What should change, and on which sheet or page.</li>
+          <li>Whether the layout is published or draft right now.</li>
+          <li>Whether it is shared with another business area, so the edit reaches more than you expect.</li>
+        </ul></div>
+      </div>
+      <div class="col">
+        <h3><span class="pill bl">2 · Needs code</span></h3>
+        <div class="body"><ul>
+          <li>The result of checks A and B — that is the whole diagnosis.</li>
+          <li>One real style to reproduce against, with its PO.</li>
+          <li>The verbatim complaint, grouped, with counts.</li>
+          <li>Say explicitly that regeneration and supplier push are <b>not</b> in scope.</li>
+        </ul></div>
+      </div>
+    </div>
+
+    <div class="compare">
+      <div class="col">
+        <h3><span class="pill am">3 · Human touch</span></h3>
+        <div class="body"><ul>
+          <li>Name the decision as a question with options, not as a task.</li>
+          <li>Typical ones: which of two drafts is the keeper; a sheet size where two sources disagree; whether two business areas share one layout or get their own; whether to publish.</li>
+          <li>Everything downstream stays blocked until it is answered — so answer it first, not last.</li>
+        </ul></div>
+      </div>
+      <div class="col">
+        <h3><span class="pill rd">4 · Missing artwork</span></h3>
+        <div class="body"><ul>
+          <li>The file itself — the attachment, the Excel sheet, the customer's template.</li>
+          <li>Which layout it is the reference for.</li>
+          <li>Whether it is <b>artwork to reproduce</b> or an <b>annotated reference</b>. Annotated drawings must never ship to a supplier as artwork.</li>
+        </ul></div>
+      </div>
+    </div>
+
+    <div class="tip">
+      <b>The single highest-value sentence to write down</b> when handing anything over: what you already checked and ruled out. It is what stops the next person re-deriving the same three facts — and it is the difference between a fix that lands in an hour and one that takes a day.
+    </div>
+  </div>
+
+  <!-- SECTION 7 -->
+  <div class="section">
+    <h2><span class="n">7</span> Case log</h2>
+    <p class="lead">Append a row whenever a rejection turns out to be something other than what it looked like. The pattern only becomes obvious across cases.</p>
+
+    <table class="tbl">
+      <tr class="head-strong"><th style="width:12%">Date</th><th style="width:20%">Customer / output</th><th style="width:30%">Looked like</th><th style="width:38%">Actually was</th></tr>
+      <tr><td>2026-08-12</td><td>Ge-kås · care label</td><td>Wrong template picked at generation time</td><td>The layout row itself was a byte-identical copy of another retailer's. Every pointer in the chain was correct.</td></tr>
+      <tr><td>2026-08-13</td><td>SOK · price sticker</td><td>Price token missing from the layout</td><td>Token placed and data present — a render-path bug affecting far more than the five rejected POs.</td></tr>
+      <tr><td>2026-08-13</td><td>Netto DK · carton marking</td><td>A missing button, i.e. new code</td><td>Already shipped. Stale tickets needing regeneration and closing.</td></tr>
+      <tr><td>2026-08-13</td><td>Ge-kås · price sticker, carton marking, cover</td><td>Part of the care-label problem</td><td>Three separate layouts, all blocked on attachments that only exist in email.</td></tr>
+    </table>
+  </div>
+
+  <div class="foot">
+    <span>Prod Spec · Admin guide · Triaging a rejection</span>
+    <span>Keep this current — add a row to the case log each time.</span>
+  </div>
+
+</body>
+</html>
