@@ -4,7 +4,14 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useUrlSearchState } from "@/lib/use-url-search-state";
 import type { EanView } from "@/lib/po/ean-view";
-import { eanStatusMeta, eanFloated } from "@/lib/po/ean-status-meta";
+import {
+  eanStatusMeta,
+  eanFloated,
+  FLOATABLE_STATUSES,
+  MAX_EAN_ATTEMPTS,
+  RECYCLE_MIN_AGE_MS,
+  RECYCLE_DAILY_QUOTA,
+} from "@/lib/po/ean-status-meta";
 import { colorFromVariantLabel } from "@/lib/po/ean-format";
 import { PoPdfLink } from "@/components/po-pdf-preview";
 
@@ -24,12 +31,28 @@ export type PoEanRow = {
   supplierName: string | null;
   // Formatted timestamp of the last resolution attempt (null = never).
   resolvedAt: string | null;
-  // Consecutive non-resolved scrape attempts; at MAX_EAN_ATTEMPTS the row
-  // "floats" (the sweep gives up) and needs a manual Re-resolve.
+  // Consecutive non-resolved scrape attempts. At MAX_EAN_ATTEMPTS the row
+  // leaves the fast lane; from there the recycle lane keeps re-checking it on
+  // a slow cycle, so this doubles as "times checked".
   eanAttempts: number;
+  // Which lane the row is in, resolved server-side (it needs the PO cutoff and
+  // the row's position in the recycle queue). "cycling" carries the estimated
+  // next check; "parked" means below the cutoff — nothing automatic will run.
+  lane:
+    | { kind: "active" }
+    | { kind: "cycling"; nextCheck: string }
+    | { kind: "parked"; cutoff: number };
   // Persisted resolution snapshot rendered on first paint.
   initial: EanView;
 };
+
+// Statuses where being below the PO cutoff actually matters — i.e. the row is
+// waiting on work that will never come. A resolved row below the cutoff is
+// simply done, so flagging it as "parked" would be noise.
+const PARKABLE = new Set(["PENDING", "RESOLVING", ...FLOATABLE_STATUSES]);
+function parkable(status: string): boolean {
+  return PARKABLE.has(status);
+}
 
 function StatusBadge({ status }: { status: string }) {
   const m = eanStatusMeta(status);
@@ -182,9 +205,10 @@ export function PoEansTable({
           <Link
             href="/po-eans?floated=1"
             aria-pressed={isFloatedView}
-            className={`inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-red-500 ${
-              isFloatedView ? "ring-2 ring-red-300 ring-offset-1" : ""
+            className={`inline-flex items-center gap-1 rounded-full bg-amber-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-amber-500 ${
+              isFloatedView ? "ring-2 ring-amber-300 ring-offset-1" : ""
             }`}
+            title="Out of fast-lane retries. In-scope rows are re-checked on a slow background cycle; rows below the PO cutoff are parked."
           >
             gave up <span className="tabular-nums">{floatedCount}</span>
           </Link>
@@ -208,6 +232,18 @@ export function PoEansTable({
             );
           })}
       </div>
+
+      {isFloatedView && (
+        <div className="mb-3 -mt-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          These used up their {MAX_EAN_ATTEMPTS} fast-lane retries. Nothing here is abandoned:
+          rows <strong>at or above the PO cutoff</strong> are re-checked on a slow background
+          cycle — least-recently-checked first, no more often than every{" "}
+          {Math.round(RECYCLE_MIN_AGE_MS / (24 * 60 * 60 * 1000))} days, up to{" "}
+          {RECYCLE_DAILY_QUOTA}/day — and each row shows its estimated next check. Rows{" "}
+          <strong>below the cutoff</strong> are marked <em>parked</em>: no automation will touch
+          them, so use Re-resolve if you need one now.
+        </div>
+      )}
 
       {truncated && (
         <p className="mb-3 -mt-1 text-xs text-zinc-400">
@@ -252,13 +288,26 @@ export function PoEansTable({
                   <td className="px-4 py-3 text-zinc-600">{r.supplierName ?? "—"}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={loading ? "RESOLVING" : view.status} />
-                    {floated && (
-                      <span className="ml-1 inline-flex rounded-full bg-red-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
-                        gave up · {r.eanAttempts}×
+                    {!ov && floated && r.lane.kind === "cycling" && (
+                      <span className="ml-1 inline-flex rounded-full bg-amber-500 px-1.5 py-0.5 text-[11px] font-semibold text-white">
+                        re-checking · {r.eanAttempts}×
                       </span>
                     )}
-                    {!ov && r.resolvedAt && (
-                      <div className="mt-0.5 text-[11px] text-zinc-400">{r.resolvedAt}</div>
+                    {/* Below the cutoff nothing automatic runs — say so rather
+                        than letting "queued" imply we're getting to it. */}
+                    {!ov && r.lane.kind === "parked" && parkable(r.initial.status) && (
+                      <span className="ml-1 inline-flex rounded-full bg-zinc-500 px-1.5 py-0.5 text-[11px] font-semibold text-white">
+                        parked{r.eanAttempts > 0 ? ` · ${r.eanAttempts}×` : ""}
+                      </span>
+                    )}
+                    {!ov && (r.resolvedAt || r.lane.kind !== "active") && (
+                      <div className="mt-0.5 text-[11px] text-zinc-400">
+                        {r.resolvedAt ? `checked ${r.resolvedAt}` : "never checked"}
+                        {r.lane.kind === "cycling" && <> · next ~{r.lane.nextCheck}</>}
+                        {r.lane.kind === "parked" && parkable(r.initial.status) && (
+                          <> · below PO cutoff {r.lane.cutoff} — no auto re-check</>
+                        )}
+                      </div>
                     )}
                   </td>
                   <td className="px-4 py-3">
