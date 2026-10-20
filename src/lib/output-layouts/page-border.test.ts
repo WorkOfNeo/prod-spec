@@ -73,6 +73,54 @@ test("schema rejects an out-of-range width and a non-hex colour", () => {
   assert.throws(() => defWith({ widthMm: 0.3, color: "black", insetMm: 0 }));
 });
 
+// The two ways a design gets away from the paper edge — the frame's own
+// `insetMm` and the page `margins` that place content — are independent,
+// and BOTH measure from the paper edge rather than from each other. So a
+// frame 2.5 mm in with 3 mm margins leaves content 0.5 mm inside the rule,
+// and margins SMALLER than the inset put content on top of it. Authors set
+// margin > inset to keep text clear of the frame; pinned here because the
+// arithmetic is invisible in the builder and easy to "helpfully" nest.
+function defBoth(insetMm: number, marginMm: number) {
+  return LayoutDefSchema.parse({
+    pages: [
+      {
+        id: "p1",
+        title: "Carton marking",
+        widthMm: 100,
+        heightMm: 50,
+        margins: { topMm: marginMm, rightMm: marginMm, bottomMm: marginMm, leftMm: marginMm },
+        pageBorder: { widthMm: 0.4, color: "#000000", insetMm },
+        blocks: [
+          {
+            id: "b1",
+            rect: { col: 0, row: 0, colSpan: 12, rowSpan: 4 },
+            fontPt: 11,
+            lines: ["{{styleNumber}}"],
+          },
+        ],
+      },
+    ],
+  });
+}
+
+test("frame inset and content margins are independent, both from the paper edge", async () => {
+  const html = await renderLayoutHtml(defBoth(2.5, 3), buildSampleStyleData());
+  const frame = html.match(/class="ol-page-border"[^>]*/)![0];
+  assert.ok(frame.includes("inset: 2.5mm"), frame);
+  // Top-left block sits at the MARGIN, not at margin+inset: 0.5 mm of
+  // clearance inside the rule, not 3 mm.
+  const block = html.match(/class="ol-block ol-rect"[^>]*/)![0];
+  assert.ok(block.includes("left: 3.00mm"), block);
+  assert.ok(block.includes("top: 3.00mm"), block);
+});
+
+test("margins under the inset let content cross the frame (author's call, not clamped)", async () => {
+  const html = await renderLayoutHtml(defBoth(2.5, 0), buildSampleStyleData());
+  const block = html.match(/class="ol-block ol-rect"[^>]*/)![0];
+  assert.ok(block.includes("left: 0.00mm"), block);
+  assert.ok(block.includes("top: 0.00mm"), block);
+});
+
 // ---------------------------------------------------------------------
 // File-name presets — a hand-edited / stale AppSetting row must never
 // break the builder, so normalization drops rather than throws.
