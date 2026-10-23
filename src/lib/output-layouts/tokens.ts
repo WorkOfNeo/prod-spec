@@ -29,6 +29,7 @@ import {
   formatCompositionMixLines,
 } from "./composition";
 import { pickCartonQtyPair, pickCartonQtyVariant, pickSolidAssortVariant } from "./carton-qty";
+import { resolvePolybagQty } from "./polybag-qty";
 import { pickSizeItems } from "./size-scoped-text";
 import { formatSizeFormRun, parseSizeForm, sizeFormRun } from "./size-form";
 import {
@@ -327,7 +328,12 @@ const RESOLVERS: Record<string, TextResolver> = {
     const kind = arg === "solid" || arg === "assort" ? arg : s.isAssortment ? "assort" : "solid";
     return pickCartonQtyVariant(source, kind);
   },
-  cartonEan: (s) => (s.carton.ean13 && s.carton.ean13 !== EAN_SENTINEL ? s.carton.ean13 : ""),
+  // Pieces per solid polybag from Monday's Trims ("Solid polybag- 5 Pcs /
+  // Polybag" → "5"). Only a count above one resolves — one piece needs no
+  // quantity field on the sticker — so it doubles as the condition:
+  // {{if polybagQty != ""}}QTY: {{polybagQty}} PCS{{endif}}. See polybag-qty.ts.
+  polybagQty: (s) => resolvePolybagQty(s.trimsRaw),
+  cartonEan:(s) => (s.carton.ean13 && s.carton.ean13 !== EAN_SENTINEL ? s.carton.ean13 : ""),
   assortEan: (s) =>
     s.carton.assortEan && s.carton.assortEan !== EAN_SENTINEL ? s.carton.assortEan : "",
   isAssortment: (s) => (s.isAssortment ? "1" : ""),

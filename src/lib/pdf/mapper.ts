@@ -71,6 +71,7 @@ export function mapMondayItemToStyleData(
     sizeRatioRaw: readField("sizeRatio") || undefined,
     unitOfMeasure: readField("unitOfMeasure") || undefined,
     styleCommentsRaw: readField("styleComments") || undefined,
+    trimsRaw: readField("trims") || undefined,
     carton: {
       klNumber: readField("klNumber"),
       supplierNumber: readField("supplierNumber"),
