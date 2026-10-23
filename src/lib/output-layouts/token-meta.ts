@@ -259,6 +259,13 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     arg: "cartonKind",
     example: "48 · {{qtyPerCarton:assort}} · {{qtyPerCarton:outer}}",
   },
+  {
+    key: "polybagQty",
+    label: 'Pieces per solid polybag, from Monday Trims — empty when 1 pc; use as {{if polybagQty != ""}}QTY: {{polybagQty}} PCS{{endif}}',
+    group: "Order & carton",
+    kind: "text",
+    example: "5",
+  },
   { key: "cartonEan", label: "Carton EAN (number)", group: "Order & carton", kind: "text", example: "5701234567890" },
   { key: "assortEan", label: "Assortment EAN (number)", group: "Order & carton", kind: "text", example: "5701234567890" },
   {

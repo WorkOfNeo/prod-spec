@@ -145,6 +145,12 @@ export type StyleData = {
   // omit it.
   styleCommentsRaw?: string;
 
+  // Raw Monday "Trims" column text — the buyer's packing/label list for the
+  // style. Read for the pieces-per-polybag count it carries
+  // ({{polybagQty}}, see output-layouts/polybag-qty.ts). Optional:
+  // non-mapper constructors omit it.
+  trimsRaw?: string;
+
   carton: {
     klNumber: string;
     supplierNumber: string;
