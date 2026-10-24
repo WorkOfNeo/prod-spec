@@ -16,8 +16,15 @@
 //
 //   rerunApprovedDocuments  the explicit SECOND confirmation (rail 3): changed
 //                           documents that were already approved go back to
-//                           review. Delivery to a supplier still only happens
-//                           when someone approves them again.
+//                           review, and with them the changed documents the
+//                           approval HELD because their style has an approved
+//                           document of the output (plus that style's other
+//                           approved documents of the output — a scoped job
+//                           regenerates them all). Runs as
+//                           CHANGE_REQUEST_APPROVED, the only change-request
+//                           trigger the runner lets regenerate approved
+//                           documents. Delivery to a supplier still only
+//                           happens when someone approves them again.
 //
 //   rejectOutput            no change: the output's open drafts are discarded,
 //                           the reason is kept and sent to the requester.
@@ -173,6 +180,14 @@ export type ApprovedRerunPlan = {
   runnable: RunnableStyle[];
   // The approved changed documents sent back to review.
   rerunRows: ImpactRow[];
+  // Changed documents, not approved, that the approval held (planScopedRerun
+  // heldByApproved: their style has an approved document of this output).
+  // Their style is rerun now, so they are regenerated with the new layout.
+  heldRows: ImpactRow[];
+  // The other approved documents of the output on a rerun style (unchanged,
+  // or already current): the scoped job regenerates every document of the
+  // output for the style, so these go back to review too.
+  approvedSiblings: ImpactRow[];
   skippedInFlight: ImpactRow[];
   // Approved, but the current document was generated after the publish — it
   // already prints the new layout, so it is not "changed" any more.
@@ -184,8 +199,10 @@ export function docRef(styleId: string, variantKey: string): string {
 }
 
 // The explicit second confirmation: changed documents that are approved,
-// optionally only on the picked styles. `regenerated` holds docRef()s whose
-// current document was generated after the publish.
+// and the changed documents held with them (a style with an approved
+// document of the output), optionally only on the picked styles.
+// `regenerated` holds docRef()s whose current document was generated after
+// the publish (they already print the new layout).
 export function planApprovedRerun(
   rows: readonly ImpactRow[],
   opts: {
@@ -195,19 +212,33 @@ export function planApprovedRerun(
   },
 ): ApprovedRerunPlan {
   const allow = opts.styleIds ? new Set(opts.styleIds) : null;
-  const plan: ApprovedRerunPlan = { runnable: [], rerunRows: [], skippedInFlight: [], alreadyCurrent: [] };
+  const plan: ApprovedRerunPlan = {
+    runnable: [],
+    rerunRows: [],
+    heldRows: [],
+    approvedSiblings: [],
+    skippedInFlight: [],
+    alreadyCurrent: [],
+  };
+  const stillOld = (d: ImpactRow) => !opts.regenerated?.has(docRef(d.styleId, d.variantKey));
   for (const [styleId, docs] of groupByStyle(rows)) {
     if (allow && !allow.has(styleId)) continue;
-    const approved = docs.filter((d) => d.changed && d.reviewStatus === "APPROVED");
-    const stale = approved.filter((d) => !opts.regenerated?.has(docRef(d.styleId, d.variantKey)));
-    plan.alreadyCurrent.push(...approved.filter((d) => !stale.includes(d)));
-    if (stale.length === 0) continue;
+    const approvedDocs = docs.filter((d) => d.reviewStatus === "APPROVED");
+    const approvedChanged = approvedDocs.filter((d) => d.changed);
+    const stale = approvedChanged.filter(stillOld);
+    plan.alreadyCurrent.push(...approvedChanged.filter((d) => !stale.includes(d)));
+    // The same rule that held them at publish (planScopedRerun).
+    const held =
+      approvedDocs.length > 0 ? docs.filter((d) => d.changed && d.reviewStatus !== "APPROVED" && stillOld(d)) : [];
+    if (stale.length + held.length === 0) continue;
     if (docs.some((d) => d.inFlight)) {
-      plan.skippedInFlight.push(...stale);
+      plan.skippedInFlight.push(...stale, ...held);
       continue;
     }
-    plan.runnable.push(runnableFor(styleId, stale, opts.styleProdSpec));
+    plan.runnable.push(runnableFor(styleId, [...stale, ...held], opts.styleProdSpec));
     plan.rerunRows.push(...stale);
+    plan.heldRows.push(...held);
+    plan.approvedSiblings.push(...approvedDocs.filter((d) => !stale.includes(d)));
   }
   return plan;
 }
@@ -298,13 +329,31 @@ export function publishSummaryText(input: {
 export function rerunApprovedSummaryText(input: { plan: ApprovedRerunPlan; rerun: RerunOutcome | null }): string {
   const { plan, rerun } = input;
   const lines: string[] = [];
-  if (plan.rerunRows.length === 0) {
+  const held = plan.heldRows.length;
+  const siblings = plan.approvedSiblings.length;
+  if (plan.rerunRows.length === 0 && held === 0) {
     lines.push("No approved documents needed sending back to review.");
   } else {
-    lines.push(
-      `${plural(plan.rerunRows.length, "approved document")} sent back to review; ` +
-        "delivery happens only when someone approves them again.",
-    );
+    if (plan.rerunRows.length > 0) {
+      lines.push(
+        `${plural(plan.rerunRows.length, "approved document")} sent back to review; ` +
+          "delivery happens only when someone approves them again.",
+      );
+    }
+    if (held > 0) {
+      lines.push(
+        `${plural(held, "held document")} rerun as well; ${held === 1 ? "it was" : "they were"} held at publish because ` +
+          `${held === 1 ? "its style has" : "their styles have"} an approved document of this output.`,
+      );
+    }
+    if (siblings > 0) {
+      lines.push(
+        `${plural(siblings, "other approved document")} of this output on the same ` +
+          `${plan.runnable.length === 1 ? "style" : "styles"} ` +
+          `${siblings === 1 ? "goes" : "go"} back to review too, because a rerun regenerates every document of the output ` +
+          `for the style${plan.rerunRows.length === 0 ? "; delivery happens only when someone approves them again" : ""}.`,
+      );
+    }
     const skipped = skippedByEnqueue(rerun);
     if (skipped) lines.push(skipped);
   }
@@ -650,10 +699,16 @@ export type RerunApprovedOptions = {
 };
 
 export type RerunApprovedResult = RerunOutcome & {
+  // Approved changed documents sent back to review.
   documents: number;
+  // Held documents rerun with them, and the other approved documents of the
+  // output those styles send back too.
+  heldDocuments: number;
+  approvedSiblings: number;
   skippedInFlight: number;
   alreadyCurrent: number;
   rows: ImpactRow[];
+  heldRows: ImpactRow[];
   summary: string;
 };
 
@@ -680,7 +735,12 @@ export async function rerunApprovedDocuments(outputId: string, opts: RerunApprov
     });
 
     // A document regenerated after the publish already prints the new layout.
-    const candidates = impact.rows.filter((r) => r.changed && r.reviewStatus === "APPROVED");
+    // Candidates: changed approved documents, and changed documents on a style
+    // with an approved document of the output (held at publish).
+    const stylesWithApproved = new Set(impact.rows.filter((r) => r.reviewStatus === "APPROVED").map((r) => r.styleId));
+    const candidates = impact.rows.filter(
+      (r) => r.changed && (r.reviewStatus === "APPROVED" || stylesWithApproved.has(r.styleId)),
+    );
     const regenerated = new Set<string>();
     const since = revision.publishedAt ?? output.publishedAt;
     if (since && candidates.length > 0) {
@@ -726,6 +786,8 @@ export async function rerunApprovedDocuments(outputId: string, opts: RerunApprov
             enqueued: rerun?.enqueued ?? 0,
             batchId: rerun?.batchId ?? null,
             documents: plan.rerunRows.length,
+            heldDocuments: plan.heldRows.length,
+            approvedSiblings: plan.approvedSiblings.length,
             styleIds: plan.runnable.map((r) => r.id),
           },
         }),
@@ -738,9 +800,12 @@ export async function rerunApprovedDocuments(outputId: string, opts: RerunApprov
       skippedNoPo: rerun?.skippedNoPo ?? 0,
       skippedBelowCutoff: rerun?.skippedBelowCutoff ?? 0,
       documents: plan.rerunRows.length,
+      heldDocuments: plan.heldRows.length,
+      approvedSiblings: plan.approvedSiblings.length,
       skippedInFlight: plan.skippedInFlight.length,
       alreadyCurrent: plan.alreadyCurrent.length,
       rows: plan.rerunRows,
+      heldRows: plan.heldRows,
       summary,
     };
   });

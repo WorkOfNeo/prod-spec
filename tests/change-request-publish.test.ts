@@ -304,6 +304,57 @@ test("planApprovedRerun: only changed APPROVED documents, picked styles only, no
   assert.deepEqual(picked.runnable.map((r) => r.id), ["b"]);
 });
 
+test("planApprovedRerun: a style the approval held goes back with its held and approved documents", async () => {
+  const { planApprovedRerun, docRef } = await import("../src/lib/change-requests/publish");
+  const rows: ImpactRow[] = [
+    // A split output: size S approved and unchanged, size M changed and pending — held at publish.
+    row("h", { variantKey: `${BASE}#s`, changed: false, reviewStatus: "APPROVED" }),
+    row("h", { variantKey: `${BASE}#m` }),
+    // Approved + changed, with a held pending sibling on the same style.
+    row("j", { variantKey: `${BASE}#s`, reviewStatus: "APPROVED" }),
+    row("j", { variantKey: `${BASE}#m`, reviewStatus: "REJECTED" }),
+    // A held document regenerated since the publish is current already.
+    row("k", { variantKey: `${BASE}#s`, changed: false, reviewStatus: "APPROVED" }),
+    row("k", { variantKey: `${BASE}#m` }),
+    // No approved document: nothing was held, nothing to send back.
+    row("n"),
+  ];
+  const plan = planApprovedRerun(rows, { styleProdSpec: new Map(), regenerated: new Set([docRef("k", `${BASE}#m`)]) });
+  assert.deepEqual(plan.runnable.map((r) => [r.id, r.variantKeys]), [
+    ["h", [BASE]],
+    ["j", [BASE]],
+  ]);
+  assert.deepEqual(plan.rerunRows.map((r) => `${r.styleId}:${r.variantKey}`), [`j:${BASE}#s`]);
+  assert.deepEqual(plan.heldRows.map((r) => `${r.styleId}:${r.variantKey}`), [`h:${BASE}#m`, `j:${BASE}#m`]);
+  assert.deepEqual(plan.approvedSiblings.map((r) => `${r.styleId}:${r.variantKey}`), [`h:${BASE}#s`]);
+
+  // Picked styles only; a held style in flight waits.
+  const inFlight = planApprovedRerun(
+    [row("h", { changed: false, reviewStatus: "APPROVED", inFlight: true }), row("h", { variantKey: `${BASE}#m`, inFlight: true })],
+    { styleProdSpec: new Map(), styleIds: ["h"] },
+  );
+  assert.equal(inFlight.runnable.length, 0);
+  assert.deepEqual(inFlight.skippedInFlight.map((r) => r.variantKey), [`${BASE}#m`]);
+});
+
+test("the published panel's held rows are exactly the ones the approval held", async () => {
+  const { planScopedRerun } = await import("../src/lib/change-requests/publish");
+  const { sendBackStyles } = await import("../src/app/(admin)/requests/[id]/shared");
+  const rows: ImpactRow[] = [
+    row("a"),
+    row("b", { reviewStatus: "APPROVED" }),
+    row("f", { variantKey: `${BASE}#s`, changed: false, reviewStatus: "APPROVED" }),
+    row("f", { variantKey: `${BASE}#m` }),
+    row("f", { variantKey: `${BASE}#l`, reviewStatus: "NONE" }),
+    row("g", { variantKey: `${BASE}#s`, reviewStatus: "APPROVED" }),
+    row("g", { variantKey: `${BASE}#m`, reviewStatus: "REJECTED" }),
+    row("x", { changed: false, reviewStatus: "APPROVED" }),
+  ];
+  const held = sendBackStyles(rows).flatMap((s) => s.held);
+  assert.deepEqual(held, planScopedRerun(rows, new Map()).heldByApproved);
+  assert.deepEqual(sendBackStyles(rows).map((s) => s.styleId), ["b", "f", "g"]);
+});
+
 test("summary texts: counts in plain words", async () => {
   const { planScopedRerun, publishSummaryText, rerunApprovedSummaryText, planApprovedRerun } = await import(
     "../src/lib/change-requests/publish"
@@ -731,6 +782,35 @@ test("rerun approved: only changed APPROVED documents not regenerated since the 
     "1 approved document sent back to review; delivery happens only when someone approves them again. 1 document skipped because a run is in progress for its style.",
   );
   assert.deepEqual((note.meta as Row).styleIds, ["style-a"]);
+});
+
+test("rerun approved: a held style is sent back too — its held and approved documents, said in the note", async () => {
+  const { rerunApprovedDocuments } = await import("../src/lib/change-requests/publish");
+  const publishedAt = new Date("2026-10-20T10:00:00Z");
+  output!.status = "PUBLISHED";
+  Object.assign(revisions["rev-2"], { status: "PUBLISHED", publishedAt, publishedVersion: 4 });
+  impactRows = [
+    row("style-h", { variantKey: `${BASE}#s`, changed: false, reviewStatus: "APPROVED" }),
+    row("style-h", { variantKey: `${BASE}#m` }),
+  ];
+  currentOutputs = new Map([["style-h", [{ variantKey: `${BASE}#m`, generatedAt: new Date("2026-10-01T10:00:00Z") }]]]);
+
+  const result = await rerunApprovedDocuments("out-1", { userId: "admin-1", styleIds: ["style-h"] });
+  // The held document was a candidate for "regenerated since" too.
+  assert.deepEqual(getCurrentOutputsForStyles.mock.calls[0].arguments[0], ["style-h"]);
+  const enq = enqueueBulkRun.mock.calls[0].arguments[0] as unknown as Row;
+  assert.equal(enq.triggerSource, "CHANGE_REQUEST_APPROVED");
+  assert.deepEqual(enq.runnable, [{ id: "style-h", prodSpecId: "spec-of-style-h", variantKeys: [BASE] }]);
+  assert.equal(result.documents, 0);
+  assert.equal(result.heldDocuments, 1);
+  assert.equal(result.approvedSiblings, 1);
+  const note = appendMessage.mock.calls[0].arguments[0] as Row;
+  assert.match(String(note.body), /1 held document rerun as well; it was held at publish because its style has an approved document of this output\./);
+  assert.match(String(note.body), /1 other approved document of this output on the same style goes back to review too/);
+  assert.match(String(note.body), /delivery happens only when someone approves them again/);
+  assert.deepEqual((note.meta as Row).styleIds, ["style-h"]);
+  assert.equal((note.meta as Row).heldDocuments, 1);
+  assert.equal((note.meta as Row).approvedSiblings, 1);
 });
 
 test("rerun approved: limited to the picked styles; nothing to send → no job, no note", async () => {

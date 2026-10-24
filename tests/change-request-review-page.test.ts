@@ -278,6 +278,29 @@ test("each status shows its own next step", async () => {
   assert.equal(halfLive.includes("Reject…"), false);
 });
 
+test("live: documents the approval held show with why, and the confirm says which approved ones go back", async () => {
+  const { sendBackConfirmText, sendBackStyles } = await import("../src/app/(admin)/requests/[id]/shared");
+  const rows = [
+    row("s1", { variantKey: "layout:bogus-layout#s", changed: false, reviewStatus: "APPROVED" }),
+    row("s1", { variantKey: "layout:bogus-layout#m" }),
+  ];
+  const view = adminView();
+  const live = view.outputs.find((o) => o.id === "live")!;
+  live.impact = { ...IMPACT, rows };
+  const html = await render(view, "live");
+  assert.ok(html.includes("Changed documents held back · 1"));
+  assert.ok(html.includes("held because an approved document of this output exists for the style"));
+  assert.ok(html.includes("1 held document"));
+  assert.ok(html.includes("Send approved documents back to review…"));
+
+  assert.equal(
+    sendBackConfirmText(sendBackStyles(rows)),
+    "Send 1 style back to review? This regenerates 1 held document with the new layout. 1 other approved document of " +
+      "this output on that style goes back to review too, because a rerun regenerates every document of the output for " +
+      "the style. Nothing reaches a supplier until someone approves them again.",
+  );
+});
+
 test("every open state can be closed: Reject everywhere the agent isn't working; run again where it stopped", async () => {
   const view = adminView();
   const rejectable = ["new", "failed", "info", "code", "question", "review", "replaced"];

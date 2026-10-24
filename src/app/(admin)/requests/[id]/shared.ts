@@ -1,4 +1,4 @@
-import type { ImpactReviewStatus } from "@/lib/change-requests/types";
+import type { ImpactReviewStatus, ImpactRow } from "@/lib/change-requests/types";
 import type { MessageView, OutputView, RequestView, StepView } from "@/lib/change-requests/review-view";
 
 // Small client-safe helpers shared by the review screen's components: the one
@@ -84,6 +84,74 @@ export function count(n: number | null | undefined): string {
 
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n.toLocaleString("en")} ${n === 1 ? one : many}`;
+}
+
+// What a live output can still send back to review, per style (the published
+// panel). From the impact the approval stored:
+//   • approvedChanged — approved documents the change altered (never rerun by
+//     the approval, design §2 rail 3);
+//   • held — changed documents, not approved, that the approval HELD because
+//     the style has an approved document of this output: a scoped rerun
+//     regenerates every document of the output for the style, so it would
+//     have sent that approved one back too (publish.ts planScopedRerun);
+//   • approvedSiblings — the style's other approved documents of the output,
+//     which go back to review with them.
+// Styles with nothing changed to send back are left out.
+export type SendBackStyle = {
+  styleId: string;
+  label: string;
+  poNumber: string | null;
+  approvedChanged: ImpactRow[];
+  held: ImpactRow[];
+  approvedSiblings: ImpactRow[];
+  delivered: boolean;
+};
+
+export function sendBackStyles(rows: readonly ImpactRow[]): SendBackStyle[] {
+  const byStyle = new Map<string, ImpactRow[]>();
+  for (const r of rows) byStyle.set(r.styleId, [...(byStyle.get(r.styleId) ?? []), r]);
+  const out: SendBackStyle[] = [];
+  for (const [styleId, docs] of byStyle) {
+    const approved = docs.filter((d) => d.reviewStatus === "APPROVED");
+    if (approved.length === 0) continue;
+    const approvedChanged = approved.filter((d) => d.changed);
+    const held = docs.filter((d) => d.changed && d.reviewStatus !== "APPROVED");
+    if (approvedChanged.length + held.length === 0) continue;
+    out.push({
+      styleId,
+      label: docs[0].styleLabel,
+      poNumber: docs[0].poNumber,
+      approvedChanged,
+      held,
+      approvedSiblings: approved.filter((d) => !d.changed),
+      delivered: docs.some((d) => d.changed && (d.uploaded || d.emailed)),
+    });
+  }
+  return out;
+}
+
+// The second confirmation, in plain words: what sending these styles back
+// reruns, and which approved documents go back to review with it.
+export function sendBackConfirmText(styles: readonly SendBackStyle[]): string {
+  const sum = (pick: (s: SendBackStyle) => readonly unknown[]) => styles.reduce((n, s) => n + pick(s).length, 0);
+  const approved = sum((s) => s.approvedChanged);
+  const held = sum((s) => s.held);
+  const siblings = sum((s) => s.approvedSiblings);
+  const what = [
+    approved > 0 ? `${plural(approved, "approved document")} that changed` : null,
+    held > 0 ? plural(held, "held document") : null,
+  ].filter((x): x is string => x !== null);
+  const parts = [
+    `Send ${plural(styles.length, "style")} back to review?`,
+    what.length > 0 ? `This regenerates ${what.join(" and ")} with the new layout.` : null,
+    siblings > 0
+      ? `${plural(siblings, "other approved document")} of this output on ${
+          styles.length === 1 ? "that style" : "those styles"
+        } ${siblings === 1 ? "goes" : "go"} back to review too, because a rerun regenerates every document of the output for the style.`
+      : null,
+    "Nothing reaches a supplier until someone approves them again.",
+  ];
+  return parts.filter(Boolean).join(" ");
 }
 
 export const REVIEW_STATUS_LABEL: Record<ImpactReviewStatus, string> = {
