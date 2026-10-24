@@ -8,6 +8,16 @@
 // Usage
 //   npx tsx --env-file=.env scripts/cr-tools.ts list
 //       Every tool: name, description and JSON input schema.
+//   npx tsx --env-file=.env scripts/cr-tools.ts claim --output <id>
+//       Claim the output for this session (status WORKING), as the in-app job
+//       does at the start of a run. The writing tools (propose_patch,
+//       ask_reviewer, declare_gap, propose_memory) refuse unless the output is
+//       claimed, so a trial session starts here.
+//   npx tsx --env-file=.env scripts/cr-tools.ts release '{"summary":"…"}' --output <id>
+//       Hand the output back for review, as the job does when a run finishes:
+//       IN_REVIEW, the summary posted in the thread (linked to the current
+//       draft when there is one) and the draft counted. Skip it after
+//       declare_gap / ask_reviewer — those hand the output back themselves.
 //   npx tsx --env-file=.env scripts/cr-tools.ts <tool> '<json>' [--request <id>] [--output <id>] [--log]
 //       Run one tool. <json> is its input (default {}). --output is the
 //       change-request output (issue) the call works on; --request defaults
@@ -22,6 +32,7 @@
 //   Exit code 0 = ok, 1 = the tool answered with an error, 2 = bad usage/input.
 //
 // A typical trial run on one output (ids from the /requests page):
+//   cr-tools.ts claim --output <outputId>
 //   cr-tools.ts get_request '{}' --output <outputId>
 //   cr-tools.ts find_styles_by_value '{"text":"5 Pcs"}' --output <outputId>
 //   cr-tools.ts find_layouts '{}' --output <outputId>
@@ -30,7 +41,7 @@
 //   cr-tools.ts propose_patch '{"layoutId":"<id>","ops":[…],"note":"…"}' --output <outputId>
 //   cr-tools.ts render_proof '{"revisionId":"<rev>","styleId":"<style>"}' --output <outputId>
 //   cr-tools.ts impact_list '{"revisionId":"<rev>"}' --output <outputId>
-//   cr-tools.ts finish '{"summary":"…"}' --output <outputId>
+//   cr-tools.ts release '{"summary":"…"}' --output <outputId>
 //
 // What it writes: propose_patch creates a DRAFT revision (never printed until
 // an admin publishes it on the review screen); declare_gap / ask_reviewer move
@@ -44,7 +55,8 @@ import { z } from "zod";
 import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { closeBrowser } from "@/lib/pdf/renderer";
-import { logStep } from "@/lib/change-requests/store";
+import { appendMessage, logStep, rollUpRequestStatus, setOutputStatus } from "@/lib/change-requests/store";
+import { CLAIMABLE_STATUSES } from "@/lib/change-requests/agent/job";
 import { toolStepKind } from "@/lib/change-requests/types";
 import type { ToolContext, ToolResult } from "@/lib/change-requests/agent/contract";
 import { AGENT_TOOLS, toolByName } from "@/lib/change-requests/agent/tools";
@@ -76,6 +88,8 @@ function usage(): string {
   return [
     "Usage:",
     "  npx tsx --env-file=.env scripts/cr-tools.ts list",
+    "  npx tsx --env-file=.env scripts/cr-tools.ts claim --output <id>",
+    "  npx tsx --env-file=.env scripts/cr-tools.ts release '{\"summary\":\"…\"}' --output <id>",
     "  npx tsx --env-file=.env scripts/cr-tools.ts <tool> '<json>' [--request <id>] [--output <id>] [--log]",
     "",
     `Tools: ${AGENT_TOOLS.map((t) => t.name).join(", ")}`,
@@ -113,6 +127,72 @@ function excerpt(value: unknown, max = 2000): unknown {
   return s.length > max ? `${s.slice(0, max)}…` : value;
 }
 
+// A trial session works an output the way the in-app job does: claim it
+// (WORKING) so the writing tools accept calls, then hand it back for review.
+async function claimOrRelease(name: "claim" | "release", rawInput: string | undefined, outputId: string | undefined): Promise<number> {
+  if (!outputId) throw new UsageError(`${name} needs --output <id>`);
+  const output = await db.changeRequestOutput.findUnique({
+    where: { id: outputId },
+    select: { id: true, requestId: true, status: true, currentRevisionId: true, draftCount: true },
+  });
+  if (!output) throw new UsageError(`Output ${outputId} not found.`);
+
+  if (name === "claim") {
+    const claimed = await db.changeRequestOutput.updateMany({
+      where: { id: outputId, status: { in: [...CLAIMABLE_STATUSES] } },
+      data: { status: "WORKING" },
+    });
+    if (claimed.count === 0) {
+      console.log(JSON.stringify({ claimed: false, status: output.status, reason: "This output can't be claimed in its current status." }, null, 2));
+      return 1;
+    }
+    await rollUpRequestStatus(output.requestId);
+    await appendMessage({
+      requestId: output.requestId,
+      outputId,
+      authorKind: "SYSTEM",
+      kind: "status",
+      body: "A trial session (Claude Code) is working on this output.",
+    });
+    console.log(JSON.stringify({ claimed: true, outputId }, null, 2));
+    return 0;
+  }
+
+  if (output.status !== "WORKING") {
+    console.log(JSON.stringify({ released: false, status: output.status, reason: "Only a claimed (WORKING) output can be released." }, null, 2));
+    return 1;
+  }
+  let summary = "";
+  if (rawInput !== undefined) {
+    try {
+      const parsed = z.object({ summary: z.string().max(4000) }).parse(JSON.parse(rawInput));
+      summary = parsed.summary.trim();
+    } catch (err) {
+      throw new UsageError(`release takes '{"summary":"…"}': ${(err as Error).message}`);
+    }
+  }
+  const draft = output.currentRevisionId
+    ? await db.outputLayoutRevision.findUnique({
+        where: { id: output.currentRevisionId },
+        select: { id: true, status: true, changeRequestOutputId: true },
+      })
+    : null;
+  const hasDraft = draft?.status === "DRAFT" && draft.changeRequestOutputId === outputId;
+  await setOutputStatus(outputId, "IN_REVIEW", hasDraft ? { draftCount: { increment: 1 } } : {});
+  if (summary) {
+    await appendMessage({
+      requestId: output.requestId,
+      outputId,
+      authorKind: "AGENT",
+      kind: "message",
+      body: summary,
+      revisionId: hasDraft ? draft!.id : null,
+    });
+  }
+  console.log(JSON.stringify({ released: true, status: "IN_REVIEW", draftId: hasDraft ? draft!.id : null }, null, 2));
+  return 0;
+}
+
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));
   const [name, rawInput] = args.positional;
@@ -130,6 +210,8 @@ async function main(): Promise<number> {
     console.log(JSON.stringify(tools, null, 2));
     return 0;
   }
+
+  if (name === "claim" || name === "release") return claimOrRelease(name, rawInput, args.output);
 
   const tool = toolByName(name);
   if (!tool) throw new UsageError(`Unknown tool "${name}".`);
