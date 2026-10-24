@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import type { OutputLayoutRevision, Prisma } from "@/generated/prisma/client";
-import { orEmpty } from "@/lib/change-requests/db-safe";
+import { isMissingTable, orEmpty } from "@/lib/change-requests/db-safe";
 import type { RevisionAuthorKind, RevisionStatus } from "@/lib/change-requests/types";
 import { LayoutDefSchema, parseLayoutDef, type LayoutDef } from "./schema";
 import { validateLayoutForPublish } from "./publish-validation";
@@ -452,6 +452,65 @@ export async function publishRevision(
     superseded: result.superseded,
     overrodeConflict: conflict,
   };
+}
+
+// ── The Output Builder's own Publish button ─────────────────────────────────
+
+export const BUILDER_PUBLISH_NOTE = "Published from the Output Builder";
+
+// The builder's Publish button publishes the live row in place (it never goes
+// through publishRevision), so without this the History panel would have no
+// record of those versions and nothing to restore them from. Called by
+// POST /api/admin/output-layouts/[id]/publish AFTER its publish succeeded.
+//
+// The row is a snapshot of the layout at `publishedVersion`: definition and
+// baseDefinition are both the published definition, and baseVersion is that
+// same version. The builder autosaves over the live row, so what was live
+// before the builder's edits isn't known — base == definition says exactly
+// that, and the History panel offers no "what was live before" for it.
+//
+// History only: never touches OutputLayout, never supersedes open drafts (a
+// change-request draft made before this publish now conflicts, which is the
+// point of the conflict check). A missing table (migration not deployed yet)
+// returns null without a word; any other failure throws — the caller decides
+// it is fail-soft.
+export async function recordBuilderPublish(input: {
+  layoutId: string;
+  definition: unknown;
+  publishedVersion: number;
+  userId: string;
+}): Promise<RevisionRow | null> {
+  const MAX_ATTEMPTS = 5;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const last = await db.outputLayoutRevision.findFirst({
+        where: { layoutId: input.layoutId },
+        orderBy: { number: "desc" },
+        select: { number: true },
+      });
+      return await db.outputLayoutRevision.create({
+        data: {
+          layoutId: input.layoutId,
+          number: nextRevisionNumber(last?.number),
+          status: "PUBLISHED" satisfies RevisionStatus,
+          // Stored exactly as published, like createDraft's base.
+          definition: input.definition as Prisma.InputJsonValue,
+          baseDefinition: input.definition as Prisma.InputJsonValue,
+          baseVersion: input.publishedVersion,
+          authorKind: "USER" satisfies RevisionAuthorKind,
+          authorUserId: input.userId,
+          note: BUILDER_PUBLISH_NOTE,
+          publishedAt: new Date(),
+          publishedById: input.userId,
+          publishedVersion: input.publishedVersion,
+        },
+      });
+    } catch (err) {
+      if (isMissingTable(err)) return null;
+      if (hasCode(err, "P2002") && attempt < MAX_ATTEMPTS) continue;
+      throw err;
+    }
+  }
 }
 
 // Put an earlier state back live, moving history forward: a USER draft is made

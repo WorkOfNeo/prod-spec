@@ -8,6 +8,8 @@ import { LAYOUT_VARIANT_PREFIX } from "@/lib/output-layouts/variants";
 import { generationStatsForLayout } from "@/lib/output-layouts/stats";
 import { loadDocTypes } from "@/lib/pdf/doc-types-db";
 import { EXCLUSION_FIELDS } from "@/lib/outputs/exclusion";
+import { changeRequestsEnabled } from "@/lib/change-requests/flags";
+import { loadLayoutHistory } from "@/lib/output-layouts/revision-history-db";
 import { LayoutEditor } from "./layout-editor";
 import { requireAdminPage } from "@/lib/auth-server";
 
@@ -33,7 +35,7 @@ export default async function OutputLayoutEditorPage(props: { params: Promise<{ 
   }
 
   const { id } = await props.params;
-  const [layout, customers, businessAreas, languages, stats, recentAssetRows, specs, libraryImages] =
+  const [layout, customers, businessAreas, languages, stats, recentAssetRows, specs, libraryImages, history] =
     await Promise.all([
     db.outputLayout.findUnique({ where: { id } }),
     db.customer.findMany({
@@ -80,6 +82,9 @@ export default async function OutputLayoutEditorPage(props: { params: Promise<{ 
       orderBy: { name: "asc" },
       select: { slug: true, name: true, image: true },
     }),
+    // Layout history (change requests): the History panel + open-draft
+    // notice. null while the feature flag is off — the editor shows neither.
+    changeRequestsEnabled() ? loadLayoutHistory(id) : null,
   ]);
   if (!layout) notFound();
 
@@ -119,6 +124,10 @@ export default async function OutputLayoutEditorPage(props: { params: Promise<{ 
 
   return (
     <LayoutEditor
+      // Keyed on the version: a History restore publishes a new version and
+      // refreshes the page, so the editor remounts on the restored definition
+      // instead of keeping — and later autosaving — its stale local copy.
+      key={layout.version}
       layout={{
         id: layout.id,
         name: layout.name,
@@ -153,6 +162,7 @@ export default async function OutputLayoutEditorPage(props: { params: Promise<{ 
       // Fields the Settings tab's generation rules can gate on — same list the
       // Document types popup uses, so both rule scopes offer the same choices.
       ruleFields={[...EXCLUSION_FIELDS]}
+      history={history}
     />
   );
 }

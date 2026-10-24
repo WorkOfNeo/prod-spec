@@ -62,6 +62,8 @@ import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
 import { PreviewFrame } from "@/components/output-preview";
 import { OutputRulesEditor, type RuleFieldOption } from "@/components/output-rules-editor";
 import { TokenAutocomplete, buildTokenSuggestions } from "@/components/token-autocomplete";
+import type { LayoutHistoryData } from "@/lib/output-layouts/revision-history";
+import { LayoutHistory, OpenDraftNotice } from "./layout-history-panel";
 
 // =====================================================
 // Output Builder editor — one layout, three panes:
@@ -188,6 +190,7 @@ export function LayoutEditor({
   recentAssets,
   prodSpecs,
   ruleFields,
+  history,
 }: {
   layout: LayoutProps;
   customers: Customer[];
@@ -208,6 +211,9 @@ export function LayoutEditor({
   // the same list the Document types popup offers, passed in so this client
   // component doesn't reach into the resolver's label table itself.
   ruleFields: RuleFieldOption[];
+  // Layout history (revisions + the open draft) — null/absent while the
+  // change-requests flag is off, and then neither History nor the notice show.
+  history?: LayoutHistoryData | null;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<LayoutTab>("customizer");
@@ -1495,6 +1501,7 @@ export function LayoutEditor({
             >
               {pdfBusy ? "Rendering…" : "Open PDF"}
             </button>
+            {history ? <LayoutHistory history={history} editorDirty={saveState !== "saved"} /> : null}
             {status === "DRAFT" ? (
               <button
                 type="button"
@@ -1522,6 +1529,7 @@ export function LayoutEditor({
             ))}
           </ul>
         ) : null}
+        {history?.openDraft ? <OpenDraftNotice draft={history.openDraft} /> : null}
         {status === "PUBLISHED" ? (
           <p className="mt-1.5 text-xs text-zinc-400">
             Available in the Prod Spec output picker as{" "}
