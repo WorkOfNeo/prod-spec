@@ -1,8 +1,10 @@
 // The /requests/[id] review screen's client half, rendered to static markup for
 // every output status — a smoke test that each state renders what the admin
-// (or the filing reviewer) needs, and nothing it shouldn't, without a browser
-// or a database. Effects don't run in a static render, so no fetch is made;
-// next/navigation and the polling hook are stubbed.
+// needs, and nothing it shouldn't, without a browser or a database. The page
+// is admin-only for now; the requester view (for the filing reviewer) is kept
+// and rendered here for when filing opens to reviewers. Effects don't run in a
+// static render, so no fetch is made; next/navigation and the polling hook are
+// stubbed.
 //
 // Fixtures are synthetic. Runs under:
 //   node --experimental-test-module-mocks --import tsx --test

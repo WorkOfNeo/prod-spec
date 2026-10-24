@@ -19,14 +19,13 @@ export const runtime = "nodejs";
 // =====================================================
 // Change requests — the collection.
 //
-//   GET  [?status=]  → the inbox rows. Reviewers get their own requests only;
-//                      the scoping lives in listChangeRequests, not here.
-//   POST {…}         → file a request (the /requests/new form). An ADMIN files
-//                      with source ADMIN, a REVIEWER with source REQUESTER.
+//   GET  [?status=]  → the inbox rows.
+//   POST {…}         → file a request (the /requests/new form), source ADMIN.
 //
 // Gate: the feature flag first (off → 404, the feature does not exist), then
-// session or 401, then ADMIN or 403 (change requests are admin-only). Filing a request changes nothing that
-// prints — an admin approves every change later — so reviewers may file.
+// session or 401, then ADMIN or 403 — change requests are admin-only for now.
+// (listChangeRequests / createChangeRequest still handle a REVIEWER viewer and
+// source REQUESTER, for when filing opens to reviewers.)
 //
 // Limits on POST, both before the body is parsed: a body over
 // MAX_REQUEST_BODY_BYTES is a 413 (by Content-Length, and counted while

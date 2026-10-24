@@ -2,9 +2,12 @@
 // the REAL handlers with a mocked session, store and job:
 //
 //   POST /api/admin/change-requests/[id]/run       ADMIN only
-//   POST /api/admin/change-requests/[id]/messages  ADMIN; the REVIEWER who filed
-//                                                  the request only to answer a
-//                                                  NEEDS_INFO output
+//   POST /api/admin/change-requests/[id]/messages  ADMIN only
+//
+// Change requests are ADMIN-only for now: every other role — the REVIEWER who
+// filed the request included, even answering the agent's question — is a 403
+// before the request is read. (The messages route keeps a requester branch for
+// when filing opens to reviewers; the role gate refuses them first.)
 //
 // Both 404 for everyone while CHANGE_REQUESTS_ENABLED is off. What must never
 // happen on a refused request: a run starting or a message being stored.
@@ -33,12 +36,11 @@ const startChangeRequestRun = mock.fn<(outputId: string, opts: { trigger: string
     outputId === "out-busy" ? { started: false, reason: "The agent is already working on this output" } : { started: true },
 );
 const appendMessage = mock.fn(async (m: Record<string, unknown>) => ({ id: "msg-1", createdAt: new Date(0), ...m }));
+const getRequestDetail = mock.fn(async (id: string) => (detail && detail.id === id ? detail : null));
 
 before(() => {
   mock.module("@/lib/auth-server", { namedExports: { getSessionWithRole: async () => sessionState } });
-  mock.module("@/lib/change-requests/store", {
-    namedExports: { getRequestDetail: async (id: string) => (detail && detail.id === id ? detail : null), appendMessage },
-  });
+  mock.module("@/lib/change-requests/store", { namedExports: { getRequestDetail, appendMessage } });
   mock.module("@/lib/change-requests/agent/job", { namedExports: { startChangeRequestRun } });
 });
 
@@ -46,6 +48,7 @@ beforeEach(() => {
   process.env.CHANGE_REQUESTS_ENABLED = "true";
   startChangeRequestRun.mock.resetCalls();
   appendMessage.mock.resetCalls();
+  getRequestDetail.mock.resetCalls();
   detail = {
     id: "req-1",
     createdById: "reviewer-1",
@@ -88,6 +91,7 @@ test("run: anonymous → 401, REVIEWER → 403, nothing starts", async () => {
   as("REVIEWER");
   assert.equal((await POST(post("run", {}), ctx())).status, 403);
   assert.equal(startChangeRequestRun.mock.callCount(), 0);
+  assert.equal(getRequestDetail.mock.callCount(), 0);
 });
 
 test("run: ADMIN with no output starts every NEW and FAILED output", async () => {
@@ -142,7 +146,7 @@ test("messages: 404 for everyone while the flag is off", async () => {
   assert.equal(appendMessage.mock.callCount(), 0);
 });
 
-test("messages: anonymous → 401, a role that can't review → 403, nothing stored", async () => {
+test("messages: anonymous → 401, a role that isn't ADMIN → 403, nothing stored", async () => {
   const { POST } = await import("../src/app/api/admin/change-requests/[id]/messages/route");
   asAnon();
   assert.equal((await POST(post("messages", { body: "hi" }), ctx())).status, 401);
@@ -151,29 +155,37 @@ test("messages: anonymous → 401, a role that can't review → 403, nothing sto
   assert.equal(appendMessage.mock.callCount(), 0);
 });
 
-test("messages: a REVIEWER on someone else's request → 403, nothing stored or started", async () => {
+test("messages: a REVIEWER on someone else's request → 403, nothing read, stored or started", async () => {
   const { POST } = await import("../src/app/api/admin/change-requests/[id]/messages/route");
   as("REVIEWER", "reviewer-2");
   const res = await POST(post("messages", { outputId: "out-info", body: "Size M" }), ctx());
   assert.equal(res.status, 403);
+  assert.deepEqual(await res.json(), { error: "Requires role: ADMIN" });
+  assert.equal(getRequestDetail.mock.callCount(), 0);
   assert.equal(appendMessage.mock.callCount(), 0);
   assert.equal(startChangeRequestRun.mock.callCount(), 0);
 });
 
-test("messages: the filing REVIEWER may only answer a NEEDS_INFO output", async () => {
+test("messages: the filing REVIEWER gets 403 too — even answering a NEEDS_INFO output — nothing read, stored or started", async () => {
   const { POST } = await import("../src/app/api/admin/change-requests/[id]/messages/route");
   as("REVIEWER", "reviewer-1");
-  for (const body of [{ outputId: "out-review", body: "Make it bold" }, { body: "General remark" }]) {
+  for (const body of [
+    { outputId: "out-info", body: "Size M" },
+    { outputId: "out-review", body: "Make it bold" },
+    { body: "General remark" },
+  ]) {
     const res = await POST(post("messages", body), ctx());
     assert.equal(res.status, 403, JSON.stringify(body));
+    assert.deepEqual(await res.json(), { error: "Requires role: ADMIN" }, JSON.stringify(body));
   }
+  assert.equal(getRequestDetail.mock.callCount(), 0);
   assert.equal(appendMessage.mock.callCount(), 0);
   assert.equal(startChangeRequestRun.mock.callCount(), 0);
 });
 
-test("messages: the filing REVIEWER's answer is stored and restarts the agent (trigger answer)", async () => {
+test("messages: an ADMIN answer on a NEEDS_INFO output is stored and restarts the agent (trigger answer)", async () => {
   const { POST } = await import("../src/app/api/admin/change-requests/[id]/messages/route");
-  as("REVIEWER", "reviewer-1");
+  as("ADMIN");
   const res = await POST(post("messages", { outputId: "out-info", body: "  Size M  " }), ctx());
   assert.equal(res.status, 201);
   const json = await res.json();
@@ -183,11 +195,11 @@ test("messages: the filing REVIEWER's answer is stored and restarts the agent (t
     requestId: "req-1",
     outputId: "out-info",
     authorKind: "USER",
-    authorUserId: "reviewer-1",
+    authorUserId: "admin-1",
     kind: "message",
     body: "Size M",
   });
-  assert.deepEqual(startChangeRequestRun.mock.calls[0].arguments, ["out-info", { trigger: "answer", userId: "reviewer-1" }]);
+  assert.deepEqual(startChangeRequestRun.mock.calls[0].arguments, ["out-info", { trigger: "answer", userId: "admin-1" }]);
 });
 
 test("messages: an ADMIN comment on a draft in review restarts the agent (trigger comment)", async () => {

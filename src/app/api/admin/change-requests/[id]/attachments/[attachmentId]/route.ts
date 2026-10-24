@@ -7,9 +7,9 @@ import { orEmpty } from "@/lib/change-requests/db-safe";
 
 export const runtime = "nodejs";
 
-// Stream a screenshot attached to a change request, inline. Readable by an
-// ADMIN or by the person who filed the request — a reviewer sees their own
-// requests and nobody else's, and the pictures are part of the request.
+// Stream a screenshot attached to a change request, inline. ADMIN only, like
+// every change-request route (the creator check below is for when filing
+// opens to reviewers).
 // id-addressed + immutable, so it's hard-cached (private — behind the session),
 // the same as the rejection-attachment route.
 //

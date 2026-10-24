@@ -1,15 +1,15 @@
 // Gates and behaviour of the review screen's read routes, through the REAL
 // handlers with a mocked session, store, db, revisions, impact and proofs:
 //
-//   GET /api/admin/change-requests/[id]                       ADMIN, or the
-//                                                             REVIEWER who
-//                                                             filed it (who
-//                                                             gets the
-//                                                             requester view)
+//   GET /api/admin/change-requests/[id]                       ADMIN
 //   GET /api/admin/change-requests/revisions/[id]/diff        ADMIN
 //   GET /api/admin/change-requests/revisions/[id]/proofs      ADMIN
 //
 // All 404 while CHANGE_REQUESTS_ENABLED is off, before the session is read.
+// Change requests are ADMIN-only for now: every other role, the REVIEWER who
+// filed the request included, is a 403 before the request is read.
+// review-view.ts still builds a read-only requester view for when filing
+// opens to reviewers; that is driven on loadRequestView directly below.
 // Fixtures are synthetic. Runs under:
 //   node --experimental-test-module-mocks --import tsx --test
 import { test, mock, before, beforeEach, afterEach } from "node:test";
@@ -151,22 +151,20 @@ const revisionFindMany = mock.fn(async () => [
 ]);
 
 const layoutFindMany = mock.fn(async () => [{ id: "bogus-layout", name: "Polybag 50x60" }]);
+const getRequestDetail = mock.fn(async (id: string) => (detail && detail.id === id ? detail : null));
+const userFindMany = mock.fn(async () => [
+  { id: "reviewer-1", email: "reviewer@example.com" },
+  { id: "admin-1", email: "admin@example.com" },
+]);
 
 before(() => {
   mock.module("@/lib/auth-server", { namedExports: { getSessionWithRole } });
-  mock.module("@/lib/change-requests/store", {
-    namedExports: { getRequestDetail: async (id: string) => (detail && detail.id === id ? detail : null) },
-  });
+  mock.module("@/lib/change-requests/store", { namedExports: { getRequestDetail } });
   mock.module("@/lib/db", {
     namedExports: {
       db: {
         outputLayoutRevision: { findMany: revisionFindMany },
-        user: {
-          findMany: async () => [
-            { id: "reviewer-1", email: "reviewer@example.com" },
-            { id: "admin-1", email: "admin@example.com" },
-          ],
-        },
+        user: { findMany: userFindMany },
         agentMemory: { findMany: async () => [] },
         outputLayout: { findMany: layoutFindMany },
         changeRequestOutput: { findUnique: async () => outputRow },
@@ -198,6 +196,8 @@ beforeEach(() => {
   pickProofsForRevision.mock.resetCalls();
   revisionFindMany.mock.resetCalls();
   layoutFindMany.mock.resetCalls();
+  getRequestDetail.mock.resetCalls();
+  userFindMany.mock.resetCalls();
 });
 afterEach(() => {
   delete process.env.CHANGE_REQUESTS_ENABLED;
@@ -217,7 +217,7 @@ test("detail: 404 while the flag is off, before the session is read", async () =
   assert.equal(getSessionWithRole.mock.callCount(), 0);
 });
 
-test("detail: anonymous → 401, a role that can't review → 403, another reviewer → 403", async () => {
+test("detail: anonymous → 401, a role that isn't ADMIN → 403, another reviewer → 403", async () => {
   const { GET } = await import("../src/app/api/admin/change-requests/[id]/route");
   asAnon();
   assert.equal((await GET(get("req-1"), idCtx())).status, 401);
@@ -225,14 +225,30 @@ test("detail: anonymous → 401, a role that can't review → 403, another revie
   assert.equal((await GET(get("req-1"), idCtx())).status, 403);
   as("REVIEWER", "reviewer-2");
   assert.equal((await GET(get("req-1"), idCtx())).status, 403);
+  assert.equal(getRequestDetail.mock.callCount(), 0);
 });
 
-test("detail: the filing REVIEWER may read it — the requester view, no drafts or run log", async () => {
+test("detail: even the filing REVIEWER gets 403 and nothing is read", async () => {
   const { GET } = await import("../src/app/api/admin/change-requests/[id]/route");
   as("REVIEWER", "reviewer-1");
   const res = await GET(get("req-1"), idCtx());
-  assert.equal(res.status, 200);
-  const view = await res.json();
+  assert.equal(res.status, 403);
+  assert.deepEqual(await res.json(), { error: "Requires role: ADMIN" });
+  assert.equal(getRequestDetail.mock.callCount(), 0, "the request isn't even loaded");
+  assert.equal(revisionFindMany.mock.callCount(), 0, "nor its revisions");
+  assert.equal(layoutFindMany.mock.callCount(), 0, "nor layout names");
+  assert.equal(userFindMany.mock.callCount(), 0, "nor the people on it");
+});
+
+test("loadRequestView keeps the requester view for when filing opens — no drafts or run log, revisions never read", async () => {
+  // Unreachable through the route for now (it refuses every non-admin first).
+  const { loadRequestView } = await import("../src/lib/change-requests/review-view");
+  const other = await loadRequestView("req-1", { userId: "reviewer-2", role: "REVIEWER" });
+  assert.deepEqual(other, { ok: false, reason: "forbidden" });
+
+  const result = await loadRequestView("req-1", { userId: "reviewer-1", role: "REVIEWER" });
+  assert.ok(result.ok);
+  const view = result.view;
   assert.equal(view.admin, false);
   assert.equal(view.ref, "R-0003");
   assert.deepEqual(view.steps, []);

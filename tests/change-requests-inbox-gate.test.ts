@@ -1,12 +1,19 @@
 // Gates of the change-request inbox routes (package H), driven through the
 // REAL route handlers with a mocked session and an in-memory stand-in for the
-// Prisma delegates they touch. requests.ts itself stays real, so the scoping
-// under test is the one that ships: a reviewer lists only their own requests,
-// files as REQUESTER, and reads only their own screenshots.
+// Prisma delegates they touch. requests.ts itself stays real, so the create,
+// list and limit behaviour under test is the one that ships.
 //
-// Every route answers 404 while CHANGE_REQUESTS_ENABLED is off — before the
-// session is even read — then 401 without a session, 403 for a role that is
-// neither ADMIN nor REVIEWER.
+// Change requests are ADMIN-only for now. Every route answers 404 while
+// CHANGE_REQUESTS_ENABLED is off — before the session is even read — then 401
+// without a session, then 403 `Requires role: ADMIN` for every other role, a
+// REVIEWER included, before anything is read, counted, split or written. The
+// behaviour (validation, trust rules, limits, the form helpers, screenshots)
+// is driven as an ADMIN.
+//
+// requests.ts still knows how a non-admin files (as REQUESTER, with a receipt
+// email) and lists (only their own requests), for when filing opens to
+// reviewers at the rollout gate. The routes can't reach those paths now, so
+// they are exercised on the library directly at the end of this file.
 //
 // Requires Node's module-mock API:
 //   node --experimental-test-module-mocks --import tsx --test "tests/**/*.test.ts"
@@ -130,7 +137,7 @@ const splitRequestByOutput = mock.fn(async () => ({ issues: [], note: "ok" }));
 class SplitError extends Error {}
 
 before(() => {
-  // The real canReview / isAdmin from @/lib/roles stay un-mocked.
+  // The real isAdmin from @/lib/roles stays un-mocked.
   mock.module("@/lib/auth-server", { namedExports: { getSessionWithRole } });
   mock.module("@/lib/db", { namedExports: { db: fakeDb } });
   mock.module("@/lib/change-requests/emails", { namedExports: { sendRequesterUpdate } });
@@ -231,29 +238,45 @@ test("no session: every route is a 401 and nothing is read or written", async ()
   assert.equal(splitRequestByOutput.mock.callCount(), 0);
 });
 
-test("a role that is neither ADMIN nor REVIEWER: every route is a 403", async () => {
-  as("SUPPLIER");
-  for (const [name, call] of await routes()) {
-    const res = await call();
-    assert.equal(res.status, 403, name);
+test("any role but ADMIN — a REVIEWER included: every route is a 403 and nothing is read, counted, split or written", async () => {
+  for (const role of ["REVIEWER", "SUPPLIER"] as const) {
+    as(role);
+    for (const [name, call] of await routes()) {
+      const res = await call();
+      assert.equal(res.status, 403, `${role} ${name}`);
+      assert.deepEqual(await res.json(), { error: "Requires role: ADMIN" }, `${role} ${name}`);
+    }
   }
   assert.deepEqual(dbCalls, []);
+  assert.equal(created.requests.length, 0);
+  assert.equal(splitRequestByOutput.mock.callCount(), 0);
+  assert.equal(loadStyleRenderContext.mock.callCount(), 0);
+  assert.equal(sendRequesterUpdate.mock.callCount(), 0);
 });
 
-// ── Scoping ─────────────────────────────────────────────────────────────────
+// ── Listing ─────────────────────────────────────────────────────────────────
 
-test("GET list: a reviewer sees only their own requests; an admin sees all", async () => {
+test("GET list: a REVIEWER gets 403 and nothing is read; an admin sees all, status filter applied", async () => {
   const { GET } = await import("../src/app/api/admin/change-requests/route");
   as("REVIEWER");
+  const refused = await GET(json("/api/admin/change-requests?status=NEW", "GET"));
+  assert.equal(refused.status, 403);
+  assert.deepEqual(await refused.json(), { error: "Requires role: ADMIN" });
+  assert.equal(findManyRequests.mock.callCount(), 0);
+  assert.deepEqual(dbCalls, []);
+
+  as("ADMIN");
   const res = await GET(json("/api/admin/change-requests?status=NEW", "GET"));
   assert.equal(res.status, 200);
+  assert.equal(res.headers.get("Cache-Control"), "no-store");
+  // Not scoped to the admin: only the status narrows the list.
   const where = (findManyRequests.mock.calls[0].arguments[0] as { where: Row }).where;
-  assert.deepEqual(where, { createdById: "reviewer-1", status: "NEW" });
+  assert.deepEqual(where, { status: "NEW" });
+  // A request someone else filed is in the admin's inbox, with its filer.
   const body = (await res.json()) as { requests: Array<{ ref: string; createdByEmail: string }> };
   assert.equal(body.requests[0].ref, "R-0007");
   assert.equal(body.requests[0].createdByEmail, "reviewer@example.com");
 
-  as("ADMIN");
   await GET(json("/api/admin/change-requests", "GET"));
   assert.deepEqual((findManyRequests.mock.calls[1].arguments[0] as { where: Row }).where, {});
 });
@@ -266,17 +289,29 @@ test("GET list: an unknown status is a 400", async () => {
   assert.equal(findManyRequests.mock.callCount(), 0);
 });
 
-test("POST: a reviewer files as REQUESTER, in one go, and is emailed a receipt", async () => {
+test("POST: a REVIEWER gets 403 and nothing is read, counted or written, and no receipt goes out", async () => {
   const { POST } = await import("../src/app/api/admin/change-requests/route");
   as("REVIEWER");
+  const res = await POST(json("/api/admin/change-requests", "POST", validBody));
+  assert.equal(res.status, 403);
+  assert.deepEqual(await res.json(), { error: "Requires role: ADMIN" });
+  assert.equal(countRequests.mock.callCount(), 0, "the hourly limit isn't even counted");
+  assert.deepEqual(dbCalls, []);
+  assert.deepEqual(created, { requests: [], outputs: [], attachments: [], messages: [] });
+  assert.equal(sendRequesterUpdate.mock.callCount(), 0);
+});
+
+test("POST: an admin files as ADMIN, in one go, and no receipt email goes out", async () => {
+  const { POST } = await import("../src/app/api/admin/change-requests/route");
+  as("ADMIN");
   const res = await POST(json("/api/admin/change-requests", "POST", validBody));
   assert.equal(res.status, 201);
   assert.deepEqual(await res.json(), { id: "cr-1", number: 41 });
 
   const [request] = created.requests;
-  assert.equal(request.source, "REQUESTER");
+  assert.equal(request.source, "ADMIN");
   assert.equal(request.status, "NEW");
-  assert.equal(request.createdById, "reviewer-1");
+  assert.equal(request.createdById, "admin-1");
   // The picked style filled in the customer and PO; the title is derived.
   assert.equal(request.customerId, "cust-1");
   assert.equal(request.poNumber, "PO-0000");
@@ -294,17 +329,17 @@ test("POST: a reviewer files as REQUESTER, in one go, and is emailed a receipt",
   assert.equal(created.attachments.length, 1);
   assert.equal(created.attachments[0].outputId, "out-1");
   assert.equal(created.attachments[0].mimeType, "image/png");
-  assert.equal(created.attachments[0].uploadedById, "reviewer-1");
+  assert.equal(created.attachments[0].uploadedById, "admin-1");
 
   assert.deepEqual(
     created.messages.map((m) => [m.authorKind, m.body]),
     [["SYSTEM", "Request received"]],
   );
-  assert.equal(sendRequesterUpdate.mock.callCount(), 1);
-  assert.deepEqual(sendRequesterUpdate.mock.calls[0].arguments, ["cr-1", "received"]);
+  // The receipt email is for a REQUESTER; an admin filing gets none.
+  assert.equal(sendRequesterUpdate.mock.callCount(), 0);
 });
 
-test("POST: an admin files as ADMIN and no receipt goes out", async () => {
+test("POST: an admin may set the title, and still no receipt goes out", async () => {
   const { POST } = await import("../src/app/api/admin/change-requests/route");
   as("ADMIN");
   const res = await POST(json("/api/admin/change-requests", "POST", { ...validBody, title: "Custom title" }));
@@ -316,7 +351,7 @@ test("POST: an admin files as ADMIN and no receipt goes out", async () => {
 
 test("POST: a bad body or a bad screenshot is a 400 with nothing written", async () => {
   const { POST } = await import("../src/app/api/admin/change-requests/route");
-  as("REVIEWER");
+  as("ADMIN");
   const noOutputs = await POST(json("/api/admin/change-requests", "POST", { message: "x", outputs: [] }));
   assert.equal(noOutputs.status, 400);
 
@@ -338,7 +373,7 @@ test("POST: a bad body or a bad screenshot is a 400 with nothing written", async
 
 test("POST: the client can't name the layout, the customer, the order or a foreign style", async () => {
   const { POST } = await import("../src/app/api/admin/change-requests/route");
-  as("REVIEWER");
+  as("ADMIN");
   const res = await POST(
     json("/api/admin/change-requests", "POST", {
       ...validBody,
@@ -375,7 +410,7 @@ test("POST: an output the style doesn't print (or has disabled), or a style of a
 
 test("POST: a body declared over 60 MB is a 413 before anything is read or counted", async () => {
   const { POST } = await import("../src/app/api/admin/change-requests/route");
-  as("REVIEWER");
+  as("ADMIN");
   const req = new NextRequest("http://localhost/api/admin/change-requests", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Content-Length": String(60 * 1024 * 1024 + 1) },
@@ -413,18 +448,16 @@ test("POST: a body without a length is counted as it streams and cut off past 60
 
 test("POST: 20 requests in the last hour is the limit — the 21st is a 429, admins included", async () => {
   const { POST } = await import("../src/app/api/admin/change-requests/route");
-  for (const role of ["REVIEWER", "ADMIN"] as const) {
-    as(role);
-    countRequests.mock.resetCalls();
-    filedLastHour = 20;
-    const res = await POST(json("/api/admin/change-requests", "POST", validBody));
-    assert.equal(res.status, 429, role);
-    assert.match((await res.json()).error, /20 requests in the last hour/);
-    const where = (countRequests.mock.calls[0].arguments[0] as { where: Row }).where;
-    assert.equal(where.createdById, `${role.toLowerCase()}-1`);
-    const since = (where.createdAt as { gte: Date }).gte;
-    assert.ok(Math.abs(Date.now() - 60 * 60 * 1000 - since.getTime()) < 5_000, "a rolling hour");
-  }
+  as("ADMIN");
+  filedLastHour = 20;
+  const res = await POST(json("/api/admin/change-requests", "POST", validBody));
+  assert.equal(res.status, 429);
+  assert.match((await res.json()).error, /20 requests in the last hour/);
+  // Counted per person (the admin's own filings), over a rolling hour.
+  const where = (countRequests.mock.calls[0].arguments[0] as { where: Row }).where;
+  assert.equal(where.createdById, "admin-1");
+  const since = (where.createdAt as { gte: Date }).gte;
+  assert.ok(Math.abs(Date.now() - 60 * 60 * 1000 - since.getTime()) < 5_000, "a rolling hour");
   assert.equal(created.requests.length, 0);
 
   filedLastHour = 19;
@@ -433,22 +466,26 @@ test("POST: 20 requests in the last hour is the limit — the 21st is a 429, adm
 
 // ── Attachments ─────────────────────────────────────────────────────────────
 
-test("attachment: only an admin or the request's creator gets the bytes", async () => {
+test("attachment: a REVIEWER gets 403 — even the request's creator — and nothing is read; an admin gets the bytes", async () => {
   const { GET } = await import("../src/app/api/admin/change-requests/[id]/attachments/[attachmentId]/route");
   const req = json("/api/admin/change-requests/cr-1/attachments/att-1", "GET");
   attachmentRow = { data: Buffer.from([1, 2, 3]), mimeType: "image/png", request: { createdById: "reviewer-1" } };
 
-  as("REVIEWER", "reviewer-2");
-  assert.equal((await GET(req, attachmentCtx)).status, 403);
-
-  as("REVIEWER", "reviewer-1");
-  const own = await GET(req, attachmentCtx);
-  assert.equal(own.status, 200);
-  assert.equal(own.headers.get("Content-Type"), "image/png");
-  assert.deepEqual([...new Uint8Array(await own.arrayBuffer())], [1, 2, 3]);
+  for (const id of ["reviewer-2", "reviewer-1"]) {
+    as("REVIEWER", id);
+    const refused = await GET(req, attachmentCtx);
+    assert.equal(refused.status, 403, id);
+    assert.deepEqual(await refused.json(), { error: "Requires role: ADMIN" }, id);
+  }
+  assert.deepEqual(dbCalls, [], "the attachment row is never read for a reviewer");
 
   as("ADMIN");
-  assert.equal((await GET(req, attachmentCtx)).status, 200);
+  const res = await GET(req, attachmentCtx);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("Content-Type"), "image/png");
+  assert.equal(res.headers.get("X-Content-Type-Options"), "nosniff");
+  assert.deepEqual([...new Uint8Array(await res.arrayBuffer())], [1, 2, 3]);
+  assert.deepEqual(dbCalls, ["changeRequestAttachment.findFirst"]);
 
   attachmentRow = null;
   assert.equal((await GET(req, attachmentCtx)).status, 404);
@@ -456,10 +493,16 @@ test("attachment: only an admin or the request's creator gets the bytes", async 
 
 // ── Form helpers ────────────────────────────────────────────────────────────
 
-test("split: a reviewer may split; a SplitError is a 502 the form can show", async () => {
+test("split: a REVIEWER gets 403 and nothing is split; an admin splits; a SplitError is a 502 the form can show", async () => {
   const { POST } = await import("../src/app/api/admin/change-requests/split/route");
-  as("REVIEWER");
   const body = { text: "Hello", outputs: [{ variantKey: "care-label-02", label: "Care label" }] };
+  as("REVIEWER");
+  const refused = await POST(json("/api/admin/change-requests/split", "POST", body));
+  assert.equal(refused.status, 403);
+  assert.deepEqual(await refused.json(), { error: "Requires role: ADMIN" });
+  assert.equal(splitRequestByOutput.mock.callCount(), 0);
+
+  as("ADMIN");
   const ok = await POST(json("/api/admin/change-requests/split", "POST", body));
   assert.equal(ok.status, 200);
   assert.deepEqual(await ok.json(), { issues: [], note: "ok" });
@@ -477,7 +520,7 @@ test("split: a reviewer may split; a SplitError is a 502 the form can show", asy
 
 test("style-outputs: styleId is required; an unknown style is a 404", async () => {
   const { GET } = await import("../src/app/api/admin/change-requests/style-outputs/route");
-  as("REVIEWER");
+  as("ADMIN");
   assert.equal((await GET(json("/api/admin/change-requests/style-outputs", "GET"))).status, 400);
   assert.equal((await GET(json("/api/admin/change-requests/style-outputs?styleId=nope", "GET"))).status, 404);
   const res = await GET(json("/api/admin/change-requests/style-outputs?styleId=style-1", "GET"));
@@ -490,9 +533,46 @@ test("style-outputs: styleId is required; an unknown style is a 404", async () =
 
 test("search: a one-letter query answers empty without touching the database", async () => {
   const { GET } = await import("../src/app/api/admin/change-requests/search/route");
-  as("REVIEWER");
+  as("ADMIN");
   const res = await GET(json("/api/admin/change-requests/search?q=P", "GET"));
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { pos: [], styles: [] });
   assert.deepEqual(dbCalls, []);
+});
+
+// ── Kept for when filing opens to reviewers ─────────────────────────────────
+// The routes refuse every non-admin first, so these requests.ts paths are
+// unreachable over HTTP for now; they are driven on the library directly so
+// they keep working for the rollout gate.
+
+test("listChangeRequests: a non-admin viewer is still scoped to their own requests; an admin to none", async () => {
+  const { listChangeRequests } = await import("../src/lib/change-requests/requests");
+  const rows = await listChangeRequests({ viewer: { userId: "reviewer-1", role: "REVIEWER" }, status: "NEW" });
+  assert.deepEqual((findManyRequests.mock.calls[0].arguments[0] as { where: Row }).where, {
+    createdById: "reviewer-1",
+    status: "NEW",
+  });
+  assert.equal(rows[0].ref, "R-0007");
+  assert.equal(rows[0].createdByEmail, "reviewer@example.com");
+
+  await listChangeRequests({ viewer: { userId: "admin-1", role: "ADMIN" } });
+  assert.deepEqual((findManyRequests.mock.calls[1].arguments[0] as { where: Row }).where, {});
+});
+
+test("createChangeRequest: a non-admin still files as REQUESTER and is emailed a receipt", async () => {
+  const { createChangeRequest, CreateChangeRequestSchema } = await import("../src/lib/change-requests/requests");
+  const input = CreateChangeRequestSchema.parse(validBody);
+  assert.deepEqual(await createChangeRequest(input, { userId: "reviewer-1", role: "REVIEWER" }), { id: "cr-1", number: 41 });
+
+  const [request] = created.requests;
+  assert.equal(request.source, "REQUESTER");
+  assert.equal(request.status, "NEW");
+  assert.equal(request.createdById, "reviewer-1");
+  assert.equal(created.attachments[0].uploadedById, "reviewer-1");
+  assert.deepEqual(
+    created.messages.map((m) => [m.authorKind, m.body]),
+    [["SYSTEM", "Request received"]],
+  );
+  assert.equal(sendRequesterUpdate.mock.callCount(), 1);
+  assert.deepEqual(sendRequesterUpdate.mock.calls[0].arguments, ["cr-1", "received"]);
 });
