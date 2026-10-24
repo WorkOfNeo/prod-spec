@@ -15,6 +15,7 @@ import {
   type ImpactReviewStatus,
   type ImpactRow,
   type ImpactSummary,
+  type RevisionStatus,
 } from "./types";
 
 // =====================================================
@@ -42,8 +43,8 @@ import {
 // for the style (never rerun underneath it). publish.ts reruns from these rows;
 // the review screen shows them.
 //
-// Read-only: nothing here writes, except impactForRevision caching the summary
-// on its change-request output. The pure core (normaliseHtml, printedHtml,
+// Read-only: nothing here writes, except impactForRevision caching an open
+// draft's summary on its change-request output. The pure core (normaliseHtml, printedHtml,
 // compareDocs, mapReviewStatus, buildImpactRows, summarise) is exported and
 // tested without a database; computeImpact only orchestrates.
 // =====================================================
@@ -338,22 +339,38 @@ export async function computeImpact(input: ComputeImpactInput): Promise<ImpactSu
   return { rows, counts, errors, durationMs };
 }
 
-// The impact of a revision's definition against what is live now. When the
-// revision is still its change-request output's current draft, the summary is
-// cached on the output (ChangeRequestOutput.impact) for the review screen; the
-// conditional update means a newer draft that landed meanwhile is never
-// overwritten with a stale list. Throws RevisionNotFoundError (404) and
+// The impact of a revision. Throws RevisionNotFoundError (404) and
 // ImpactTooLargeError (422).
+//
+//   • A DRAFT (or a draft that was discarded or replaced) is compared with
+//     what is live now. Only an open DRAFT that is still its change-request
+//     output's current draft caches the summary on the output
+//     (ChangeRequestOutput.impact) for the review screen; the conditional
+//     update means a newer draft that landed meanwhile is never overwritten
+//     with a stale list.
+//   • A PUBLISHED revision is (or was) the live layout itself: against the
+//     live definition it would show no change at all. What it changed is
+//     baseDefinition → definition, and it is never written: the output's
+//     stored impact for a published revision is the one its approval
+//     computed, with the review states of that moment.
 export async function impactForRevision(revisionId: string): Promise<ImpactSummary> {
   const revision = await getRevision(revisionId);
   if (!revision) throw new RevisionNotFoundError("revision", revisionId);
+
+  if (revision.status === ("PUBLISHED" satisfies RevisionStatus)) {
+    return computeImpact({
+      layoutId: revision.layoutId,
+      proposedDef: parseLayoutDef(revision.definition),
+      currentDef: parseLayoutDef(revision.baseDefinition),
+    });
+  }
 
   const summary = await computeImpact({
     layoutId: revision.layoutId,
     proposedDef: parseLayoutDef(revision.definition),
   });
 
-  if (revision.changeRequestOutputId) {
+  if (revision.status === ("DRAFT" satisfies RevisionStatus) && revision.changeRequestOutputId) {
     try {
       await db.changeRequestOutput.updateMany({
         where: { id: revision.changeRequestOutputId, currentRevisionId: revision.id },

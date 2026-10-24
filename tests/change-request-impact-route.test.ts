@@ -229,6 +229,7 @@ beforeEach(() => {
       "rev-current",
       {
         id: "rev-current",
+        status: "DRAFT",
         layoutId: LAYOUT_ID,
         definition: structuredClone(PROPOSED_RAW),
         changeRequestOutputId: "cro-1",
@@ -236,7 +237,35 @@ beforeEach(() => {
     ],
     [
       "rev-loose",
-      { id: "rev-loose", layoutId: LAYOUT_ID, definition: structuredClone(PROPOSED_RAW), changeRequestOutputId: null },
+      {
+        id: "rev-loose",
+        status: "DRAFT",
+        layoutId: LAYOUT_ID,
+        definition: structuredClone(PROPOSED_RAW),
+        changeRequestOutputId: null,
+      },
+    ],
+    [
+      // Published: the live layout now IS its definition.
+      "rev-published",
+      {
+        id: "rev-published",
+        status: "PUBLISHED",
+        layoutId: LAYOUT_ID,
+        definition: structuredClone(PROPOSED_RAW),
+        baseDefinition: structuredClone(LIVE_RAW),
+        changeRequestOutputId: "cro-1",
+      },
+    ],
+    [
+      "rev-replaced",
+      {
+        id: "rev-replaced",
+        status: "SUPERSEDED",
+        layoutId: LAYOUT_ID,
+        definition: structuredClone(PROPOSED_RAW),
+        changeRequestOutputId: "cro-1",
+      },
     ],
   ]);
   usageStyles = [...USAGE_ORDER];
@@ -458,6 +487,23 @@ test("impactForRevision compares the revision with the live layout and caches it
   // Conditional on the revision still being the output's current draft.
   assert.deepEqual(updateManyCalls[0].where, { id: "cro-1", currentRevisionId: "rev-current" });
   assert.deepEqual((updateManyCalls[0].data as Row).impact, summary);
+});
+
+test("impactForRevision: a PUBLISHED revision compares its base with itself, against no live state, and never caches", async () => {
+  // What is live now is the published definition: against it nothing would change.
+  layoutRows.set(LAYOUT_ID, { id: LAYOUT_ID, definition: structuredClone(PROPOSED_RAW) });
+  const summary = await impact.impactForRevision("rev-published");
+  assert.deepEqual(summary.rows, EXPECTED_ROWS);
+  const pair = renderCalls.filter((c) => (c.ctx as { styleId: string }).styleId === "style-a");
+  assert.deepEqual(pair[0].input.definition, parseLayoutDef(LIVE_RAW));
+  assert.deepEqual(pair[1].input.definition, parseLayoutDef(PROPOSED_RAW));
+  assert.equal(updateManyCalls.length, 0, "the approval's stored impact is never overwritten");
+});
+
+test("impactForRevision: a replaced or discarded draft is compared with the live layout but never cached", async () => {
+  const summary = await impact.impactForRevision("rev-replaced");
+  assert.equal(summary.counts.changed, 2);
+  assert.equal(updateManyCalls.length, 0);
 });
 
 test("impactForRevision: no output → no cache; unknown → 404; a missing table keeps the list", async () => {
