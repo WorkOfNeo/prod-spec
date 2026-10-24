@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { coverNotifiesSupplier, triggerKind, triggerLabel } from "./trigger-labels";
+import { coverNotifiesSupplier, runMayAutoApprove, runNeedsFreshLayouts, triggerKind, triggerLabel } from "./trigger-labels";
 
 test("a change-request rerun is a manual run labelled 'change request'", () => {
   assert.equal(triggerLabel("CHANGE_REQUEST"), "change request");
@@ -48,4 +48,21 @@ test("the runner derives notifySupplier from the trigger at every cover re-arm",
   for (const args of calls) {
     assert.match(args, /notifySupplier:\s*coverNotifiesSupplier\(job\.triggerSource\)/, args);
   }
+});
+
+// A change-request rerun never auto-approves (its documents go back to a
+// person) and always reloads published layouts first. Other triggers: unchanged.
+test("a change-request rerun never auto-approves and always reads fresh layouts", () => {
+  assert.equal(runMayAutoApprove("CHANGE_REQUEST"), false);
+  assert.equal(runNeedsFreshLayouts("CHANGE_REQUEST"), true);
+  for (const source of ["WEBHOOK", "MANUAL_RERUN", "MANUAL_BULK", "TICKET_FIX", "CRON_SWEEP", "EAN_RESOLVED"]) {
+    assert.equal(runMayAutoApprove(source), true, source);
+    assert.equal(runNeedsFreshLayouts(source), false, source);
+  }
+});
+
+test("the runner consults both guards", () => {
+  const runner = readFileSync(join(process.cwd(), "src/lib/queue/runner.ts"), "utf8");
+  assert.match(runner, /if \(!runMayAutoApprove\(job\.triggerSource\)\) return false;/);
+  assert.match(runner, /if \(runNeedsFreshLayouts\(job\.triggerSource\)\) await ensureLayoutVariantsLoaded\(true\);/);
 });

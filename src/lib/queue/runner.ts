@@ -31,7 +31,7 @@ import { resolveAndPersistStyleEans } from "@/lib/po/ean-runner";
 import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
 import { enqueueCoverForSupplier } from "@/lib/publish/requeue-cover";
-import { coverNotifiesSupplier } from "@/lib/queue/trigger-labels";
+import { coverNotifiesSupplier, runMayAutoApprove, runNeedsFreshLayouts } from "@/lib/queue/trigger-labels";
 import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
 import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
 import { assembleRequiredPackagingDocs, loadTrimSettings } from "@/lib/outputs/required-packaging";
@@ -211,6 +211,10 @@ export async function processJob(jobId: string): Promise<void> {
       },
     },
   });
+
+  // A change-request rerun follows a layout publish by seconds; don't render
+  // from a registry snapshot taken before that publish committed.
+  if (runNeedsFreshLayouts(job.triggerSource)) await ensureLayoutVariantsLoaded(true);
 
   await db.log.create({ data: { jobId: job.id, level: "INFO", message: "job started" } });
 
@@ -1008,6 +1012,7 @@ export async function processJob(jobId: string): Promise<void> {
       : [],
   );
   const isAutoApproved = (doc: (typeof generated)[number]): boolean => {
+    if (!runMayAutoApprove(job.triggerSource)) return false;
     if (doc.placeholderCount !== 0) return false;
     if (specFullyApproved) return true;
     const layoutId = layoutIdFromVariantKey(doc.variantKey);

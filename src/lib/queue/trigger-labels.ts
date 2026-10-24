@@ -56,3 +56,20 @@ export function triggerLabel(source: string): string {
 export function coverNotifiesSupplier(source: string): boolean {
   return source !== "CHANGE_REQUEST";
 }
+
+// May this run auto-approve its documents (layout autoApprove / spec "Fully
+// approved")? Not a change-request rerun: those documents exist because an
+// admin just changed the layout, so a person looks at the new render before it
+// counts as approved — and an auto-approval would also capture it into the
+// supplier-send queue (design §2 rail 3). Every other trigger: unchanged.
+export function runMayAutoApprove(source: string): boolean {
+  return source !== "CHANGE_REQUEST";
+}
+
+// Must this run reload published layouts before rendering? A change-request
+// rerun is enqueued right after its layout was published; the registry's TTL
+// cache could still hold the previous definition (another process, or a load
+// that started before the publish committed), so it forces a fresh read.
+export function runNeedsFreshLayouts(source: string): boolean {
+  return source === "CHANGE_REQUEST";
+}

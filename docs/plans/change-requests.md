@@ -199,7 +199,9 @@ src/lib/change-requests/
   types.ts            status unions, zod schemas for JSON columns, ImpactSummary, CodeSpec, constants
   flags.ts            changeRequestsEnabled()  (env CHANGE_REQUESTS_ENABLED === "true")
   db-safe.ts          isMissingTable(err) (P2021/P2022) + helpers used by every reader
-  requests.ts         create/list/get request + outputs + attachments; status roll-up
+  store.ts            shared writes/reads: appendMessage, logStep, setOutputStatus (+ status roll-up),
+                      createProposedMemory, getRequestDetail, getOutputWithRequest, getAttachmentImages
+  requests.ts         create/list requests + outputs + attachments, form searches
   impact.ts           computeImpact(): pure compare + DB loader
   proofs.ts           pickRepresentatives(), renderProof()
   gap.ts              token catalogue + resolved values; CodeSpec + build prompt builder; resumeAwaitingCode()
@@ -208,6 +210,7 @@ src/lib/change-requests/
   signals.ts          learning signals from outputs + revisions + steps
   emails.ts           requester + developer emails (templates in src/lib/email/templates/)
   agent/
+    contract.ts       AgentTool / ToolResult / ToolContext types + the fixed tool names
     client.ts         Anthropic client (official SDK), model + effort from env, vision blocks, cost calc
     tools.ts          tool definitions (zod) + implementations: the ONLY surface agents act through
     job.ts            runChangeRequestJob(outputId, trigger): tool-use loop, steps log, rails
@@ -274,7 +277,7 @@ Blocks are addressed by id (stable after `parseLayoutDef`). Each op is checked; 
 - `approveOutput(outputId, userId)`: ADMIN. Requires a current DRAFT revision → `publishRevision` → fresh impact on the published def → **scoped rerun** of changed docs that are not APPROVED and not in flight, grouped per style as `{ id, prodSpecId, variantKeys }` → `enqueueBulkRun({ ..., triggerSource: "CHANGE_REQUEST" })`. Returns `{ publishedVersion, rerun: { enqueued, batchId }, approvedChanged: Row[], deliveredChanged: Row[] }`. Status PUBLISHED, `firstTryApproved = draftCount === 1`. Requester gets the "live" email with a before/after.
 - `rerunApproved(outputId, userId, styleIds)`: explicit second confirmation; reruns approved changed docs (they go back to review; delivery to the supplier happens only when someone approves them again, through the normal flow).
 - `rejectOutput(outputId, userId, reason)`: reason required; draft DISCARDED; requester email.
-- Runner change: for `triggerSource === "CHANGE_REQUEST"` call `enqueueCoverForSupplier(styleId, coverId, { notifySupplier: false })` at both call sites, so these reruns never land in the supplier digest. `enqueueBulkRun` gains an optional `triggerSource` (default MANUAL_BULK). `TRIGGER_LABELS`/`MANUAL_SOURCES` get CHANGE_REQUEST.
+- Runner change: for `triggerSource === "CHANGE_REQUEST"` call `enqueueCoverForSupplier(styleId, coverId, { notifySupplier: false })` at both call sites, so these reruns never land in the supplier digest; never auto-approve (layout autoApprove / spec "Fully approved" are skipped, so the new render goes to a person and is not captured into the supplier-send queue); and force a fresh layout registry load before rendering (`coverNotifiesSupplier`, `runMayAutoApprove`, `runNeedsFreshLayouts` in trigger-labels.ts). `enqueueBulkRun` gains an optional `triggerSource` (default MANUAL_BULK). `TRIGGER_LABELS`/`MANUAL_SOURCES` get CHANGE_REQUEST.
 
 ### 5.9 Memory + signals
 - `memory.ts`: the job proposes 0–3 notes after a revision caused by a comment and after approval (`propose_memory` tool, state PROPOSED, shown in the thread as "Remember for <customer>?"). Keep / Dismiss in the thread or on `/settings/agent-memory` (filter by scope, edit, forget, restore, event log). `memoriesForPrompt({ customerId, docType })` returns KEPT notes and bumps `usedCount`.
@@ -312,12 +315,12 @@ Integration branch `claude/change-requests`. Each package works in its own workt
 | 1 | D · History | Layout drafts (rest) | revision routes, Output Builder History panel + open-draft notice |
 | 2 | E · Tools + gap | Assistant tools; Spot requests that need new code; Needs-code email | `agent/tools.ts`, `gap.ts`, `scripts/cr-tools.ts`, needs-code email template, build-prompt page, resume hook in the sweep route |
 | 2 | F · Bench | Test bench | `scripts/cr-bench.ts`, synthetic fixtures under `scripts/cr-bench/` |
-| 2 | G · Job | Assistant job | `agent/{client,job,prompt,split}.ts`, `SYSTEM_PROMPT_DEFS` entry, run + messages routes |
-| 3 | H · Inbox + requester | Change requests inbox; Requester flow | `requests.ts`, `/requests` + `/requests/new`, create/split/attachment routes, requester emails, nav entries |
+| 2 | G · Job | Assistant job | `agent/{client,job,prompt}.ts`, `SYSTEM_PROMPT_DEFS` entry, run + messages routes |
+| 1 | H · Inbox + requester | Change requests inbox; Requester flow | `requests.ts`, `agent/split.ts`, `/requests` + `/requests/new`, create/split/search/attachment routes, requester emails (`emails.ts` + template), nav entries |
 | 3 | I · Review + publish | Review screen; Approve → publish | `/requests/[id]`, `publish.ts`, approve/reject/rerun-approved + diff routes |
-| 3 | J · Memory + signals | Memory notes; Learning signals | `memory.ts`, `signals.ts`, `/settings/agent-memory`, agent-memory routes, signals table component |
+| 1 | J · Memory + signals | Memory notes; Learning signals | `memory.ts`, `signals.ts`, `/settings/agent-memory`, agent-memory routes, signals table component |
 
-Waves start when the previous wave is merged into the integration branch. Packages inside a wave only touch files they own; anything outside their list goes back to the orchestrator.
+Orchestrator-owned: `change-requests/store.ts`, `agent/contract.ts`, the runner guards, and the one-line wiring between packages at integration (auto-start the job after create, mount the signals table on `/requests`). H and J moved into wave 1 because they only need the foundation. Waves start when the previous wave is merged into the integration branch. Packages inside a wave only touch files they own; anything outside their list goes back to the orchestrator.
 
 ## 9. Decisions (settled 2026-10-24)
 
