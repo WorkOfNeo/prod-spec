@@ -126,6 +126,17 @@ const setOutputStatus = mock.fn(async (id: string, status: string, patch: Row = 
   return { id, requestId: "req-1" };
 });
 const sendRequesterUpdate = mock.fn<(...args: unknown[]) => Promise<Row>>(async () => ({ status: "SIMULATED" }));
+const rollUpRequestStatus = mock.fn(async () => "IN_REVIEW");
+// The claim (and its release) — a conditional status update on the output.
+let claimCount = 1;
+const outputUpdateMany = mock.fn(async (args: { where: Row; data: Row }) => {
+  if (args.data.status === "APPROVED") {
+    if (claimCount > 0 && output) output.status = "APPROVED";
+    return { count: claimCount };
+  }
+  if (output && output.status === "APPROVED") output.status = args.data.status;
+  return { count: 1 };
+});
 const styleFindMany = mock.fn(async (args: { where: { id: { in: string[] } } }) =>
   args.where.id.in.map((id) => ({ id, prodSpecId: `spec-of-${id}` })),
 );
@@ -139,6 +150,7 @@ before(() => {
         style: { findMany: styleFindMany },
         outputLayout: { findUnique: layoutFindUnique },
         outputLayoutRevision: { findMany: revisionFindMany },
+        changeRequestOutput: { updateMany: outputUpdateMany },
       },
     },
   });
@@ -154,6 +166,7 @@ before(() => {
     namedExports: {
       appendMessage,
       setOutputStatus,
+      rollUpRequestStatus,
       getOutputWithRequest: async (id: string) => (output && output.id === id ? output : null),
     },
   });
@@ -170,8 +183,10 @@ beforeEach(() => {
     currentRevisionId: "rev-2",
     draftCount: 1,
     publishedAt: null,
+    updatedAt: new Date(),
     request: { id: "req-1", number: 12, source: "REQUESTER" },
   };
+  claimCount = 1;
   revisions = {
     "rev-1": { id: "rev-1", status: "DRAFT", layoutId: LAYOUT_ID },
     "rev-2": {
@@ -218,6 +233,8 @@ beforeEach(() => {
     styleFindMany,
     layoutFindUnique,
     revisionFindMany,
+    rollUpRequestStatus,
+    outputUpdateMany,
   ]) {
     fn.mock.resetCalls();
   }
@@ -342,7 +359,7 @@ test("normaliseRejectReason: required, trimmed, at most 500 characters", async (
 
 test("approve: publishes the draft, fresh impact base → published, reruns only pending + not in flight as CHANGE_REQUEST", async () => {
   const { approveOutput } = await import("../src/lib/change-requests/publish");
-  const result = await approveOutput("out-1", { userId: "admin-1", userEmail: "admin@example.com" });
+  const result = await approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2", userEmail: "admin@example.com" });
 
   assert.deepEqual(publishRevision.mock.calls[0].arguments, ["rev-2", { userId: "admin-1", force: undefined }]);
   // Fresh impact: what was live before (the base) against the published def —
@@ -417,7 +434,7 @@ test("approve: a second draft is not first-try; an admin's own request gets no e
   const { approveOutput } = await import("../src/lib/change-requests/publish");
   output!.draftCount = 2;
   (output!.request as Row).source = "ADMIN";
-  await approveOutput("out-1", { userId: "admin-1" });
+  await approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2" });
   assert.equal((setOutputStatus.mock.calls[0].arguments[2] as Row).firstTryApproved, false);
   assert.equal(sendRequesterUpdate.mock.callCount(), 0);
   assert.equal(renderProof.mock.callCount(), 0);
@@ -428,7 +445,7 @@ test("approve: proofs that fail to render still send the email, without pictures
   proofThrows = true;
   const warn = mock.method(console, "warn", () => {});
   try {
-    await approveOutput("out-1", { userId: "admin-1" });
+    await approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2" });
   } finally {
     warn.mock.restore();
   }
@@ -442,7 +459,7 @@ test("approve: a superseded or discarded draft → 409 'ask the agent for a new 
   const { publishErrorResponse } = await import("../src/lib/change-requests/publish-errors");
   for (const status of ["SUPERSEDED", "DISCARDED"]) {
     revisions["rev-2"].status = status;
-    const err = await approveOutput("out-1", { userId: "admin-1" }).catch((e: unknown) => e);
+    const err = await approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2" }).catch((e: unknown) => e);
     assert.ok(err instanceof OutputStateError, status);
     assert.equal((err as Error).message, REPLACED_DRAFT_MESSAGE);
     assert.deepEqual(publishErrorResponse(err), { status: 409, body: { error: REPLACED_DRAFT_MESSAGE } });
@@ -454,11 +471,11 @@ test("approve: a superseded or discarded draft → 409 'ask the agent for a new 
 test("approve: an output not in review, or in review without a draft, → 409", async () => {
   const { approveOutput, OutputStateError, OutputNotFoundError } = await import("../src/lib/change-requests/publish");
   output!.status = "WORKING";
-  await assert.rejects(approveOutput("out-1", { userId: "admin-1" }), OutputStateError);
+  await assert.rejects(approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2" }), OutputStateError);
   output!.status = "IN_REVIEW";
   output!.currentRevisionId = null;
-  await assert.rejects(approveOutput("out-1", { userId: "admin-1" }), /no draft to approve/);
-  await assert.rejects(approveOutput("nope", { userId: "admin-1" }), OutputNotFoundError);
+  await assert.rejects(approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2" }), /no draft to approve/);
+  await assert.rejects(approveOutput("nope", { userId: "admin-1", revisionId: "rev-2" }), OutputNotFoundError);
   assert.equal(publishRevision.mock.callCount(), 0);
 });
 
@@ -469,7 +486,7 @@ test("approve: a publish conflict passes through (409 with the conflict); a fail
   publishImpl = async () => {
     throw new FakeRevisionConflictError(conflict);
   };
-  const err = await approveOutput("out-1", { userId: "admin-1" }).catch((e: unknown) => e);
+  const err = await approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2" }).catch((e: unknown) => e);
   assert.ok(err instanceof FakeRevisionConflictError);
   const mapped = publishErrorResponse(err);
   assert.equal(mapped?.status, 409);
@@ -478,7 +495,7 @@ test("approve: a publish conflict passes through (409 with the conflict); a fail
   publishImpl = async () => {
     throw new FakeRevisionValidationError("Layout has invalid tokens", ["Unknown token {{nope}}"]);
   };
-  const invalid = publishErrorResponse(await approveOutput("out-1", { userId: "admin-1" }).catch((e: unknown) => e));
+  const invalid = publishErrorResponse(await approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2" }).catch((e: unknown) => e));
   assert.deepEqual(invalid, { status: 422, body: { error: "Layout has invalid tokens", details: ["Unknown token {{nope}}"] } });
 
   assert.equal(computeImpact.mock.callCount(), 0);
@@ -496,7 +513,7 @@ test("approve with force over a conflict: the impact's 'before' is what was live
       overrodeConflict: { baseVersion: 3, liveVersion: 3, versionChanged: false, definitionChanged: true },
     };
   };
-  const result = await approveOutput("out-1", { userId: "admin-1", force: true });
+  const result = await approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2", force: true });
   assert.deepEqual(publishRevision.mock.calls[0].arguments, ["rev-2", { userId: "admin-1", force: true }]);
   assert.deepEqual((computeImpact.mock.calls[0].arguments[0] as Row).currentDef, { parsed: LIVE_EDITED_DEF });
   assert.equal(result.forced, true);
@@ -508,7 +525,7 @@ test("approve: an impact that fails after the publish still marks the output liv
   const errors = mock.method(console, "error", () => {});
   let result;
   try {
-    result = await approveOutput("out-1", { userId: "admin-1" });
+    result = await approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2" });
   } finally {
     errors.mock.restore();
   }
@@ -525,7 +542,7 @@ test("approve: an enqueue that fails after the publish is recorded, not thrown",
   const errors = mock.method(console, "error", () => {});
   let result;
   try {
-    result = await approveOutput("out-1", { userId: "admin-1" });
+    result = await approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2" });
   } finally {
     errors.mock.restore();
   }
@@ -538,7 +555,7 @@ test("approve: an enqueue that fails after the publish is recorded, not thrown",
 test("approve: a draft already published (History panel, or an approval that died) finishes the bookkeeping", async () => {
   const { approveOutput } = await import("../src/lib/change-requests/publish");
   Object.assign(revisions["rev-2"], { status: "PUBLISHED", publishedVersion: 9 });
-  const result = await approveOutput("out-1", { userId: "admin-1" });
+  const result = await approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2" });
   assert.equal(publishRevision.mock.callCount(), 0);
   assert.equal(result.publishedVersion, 9);
   assert.equal(enqueueBulkRun.mock.callCount(), 1);
@@ -554,11 +571,83 @@ test("approve: a second approval of the same output while one runs → 409, publ
     await gate;
     return original(id, opts);
   };
-  const first = approveOutput("out-1", { userId: "admin-1" });
-  await assert.rejects(approveOutput("out-1", { userId: "admin-2" }), OutputStateError);
+  const first = approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2" });
+  await assert.rejects(approveOutput("out-1", { userId: "admin-2", revisionId: "rev-2" }), OutputStateError);
   release();
   await first;
   assert.equal(publishRevision.mock.callCount(), 1);
+});
+
+test("approve: only the draft the admin reviewed — a newer current draft is a 409, nothing claimed or published", async () => {
+  const { approveOutput, OutputStateError, NEWER_DRAFT_MESSAGE } = await import("../src/lib/change-requests/publish");
+  const { publishErrorResponse } = await import("../src/lib/change-requests/publish-errors");
+  const err = await approveOutput("out-1", { userId: "admin-1", revisionId: "rev-1" }).catch((e: unknown) => e);
+  assert.ok(err instanceof OutputStateError);
+  assert.deepEqual(publishErrorResponse(err), { status: 409, body: { error: NEWER_DRAFT_MESSAGE } });
+  assert.equal(outputUpdateMany.mock.callCount(), 0);
+  assert.equal(publishRevision.mock.callCount(), 0);
+});
+
+test("approve: claims the output IN_REVIEW → APPROVED on the reviewed draft first, rolls up, ends PUBLISHED", async () => {
+  const { approveOutput } = await import("../src/lib/change-requests/publish");
+  const order: string[] = [];
+  publishRevision.mock.mockImplementationOnce(async (id: string, opts: Row) => {
+    order.push(`publish while ${output!.status}`);
+    return publishImpl(id, opts);
+  });
+  await approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2" });
+  const claim = outputUpdateMany.mock.calls[0].arguments[0];
+  assert.equal(claim.where.id, "out-1");
+  assert.equal(claim.where.currentRevisionId, "rev-2");
+  assert.deepEqual((claim.where.OR as Row[])[0], { status: "IN_REVIEW" });
+  assert.deepEqual(claim.data, { status: "APPROVED" });
+  assert.deepEqual(order, ["publish while APPROVED"]);
+  assert.deepEqual(rollUpRequestStatus.mock.calls[0].arguments, ["req-1"]);
+  assert.equal(outputUpdateMany.mock.callCount(), 1, "no release after a good approval");
+  assert.equal(setOutputStatus.mock.calls[0].arguments[1], "PUBLISHED");
+});
+
+test("approve: a claim another approval (or a newer draft) won is a 409 and nothing is published", async () => {
+  const { approveOutput, OutputStateError } = await import("../src/lib/change-requests/publish");
+  claimCount = 0;
+  await assert.rejects(approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2" }), OutputStateError);
+  assert.equal(publishRevision.mock.callCount(), 0);
+  assert.equal(setOutputStatus.mock.callCount(), 0);
+  assert.equal(rollUpRequestStatus.mock.callCount(), 0);
+});
+
+test("approve: a failure before PUBLISHED puts the output back IN_REVIEW and passes the error through", async () => {
+  const { approveOutput } = await import("../src/lib/change-requests/publish");
+  const conflict = { baseVersion: 3, liveVersion: 4, versionChanged: true, definitionChanged: false };
+  publishImpl = async () => {
+    throw new FakeRevisionConflictError(conflict);
+  };
+  const err = await approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2" }).catch((e: unknown) => e);
+  assert.ok(err instanceof FakeRevisionConflictError);
+  const release = outputUpdateMany.mock.calls[1].arguments[0];
+  assert.deepEqual(release, { where: { id: "out-1", status: "APPROVED" }, data: { status: "IN_REVIEW" } });
+  assert.equal(output!.status, "IN_REVIEW");
+  // Rolled up after the claim and again after the release.
+  assert.equal(rollUpRequestStatus.mock.callCount(), 2);
+  assert.equal(setOutputStatus.mock.callCount(), 0);
+});
+
+test("approve: an APPROVED output is being approved (409) — unless the claim went stale, then it can be finished", async () => {
+  const { approveOutput, OutputStateError, APPROVE_CLAIM_STALE_MS } = await import("../src/lib/change-requests/publish");
+  output!.status = "APPROVED";
+  output!.updatedAt = new Date();
+  await assert.rejects(approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2" }), (e: unknown) =>
+    e instanceof OutputStateError && /being approved right now/.test((e as Error).message),
+  );
+  assert.equal(outputUpdateMany.mock.callCount(), 0);
+
+  output!.updatedAt = new Date(Date.now() - APPROVE_CLAIM_STALE_MS - 1000);
+  await approveOutput("out-1", { userId: "admin-1", revisionId: "rev-2" });
+  const claim = outputUpdateMany.mock.calls[0].arguments[0];
+  const stale = (claim.where.OR as Row[])[1] as { status: string; updatedAt: { lt: Date } };
+  assert.equal(stale.status, "APPROVED");
+  assert.ok(stale.updatedAt.lt.getTime() <= Date.now() - APPROVE_CLAIM_STALE_MS);
+  assert.equal(setOutputStatus.mock.calls[0].arguments[1], "PUBLISHED");
 });
 
 // ── rejectOutput ────────────────────────────────────────────────────────────
