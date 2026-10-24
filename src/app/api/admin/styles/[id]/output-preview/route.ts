@@ -1,24 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerSession, getSessionWithRole } from "@/lib/auth-server";
 import { canReview } from "@/lib/roles";
-import { getVariant, type OutputDims, type TemplateVariant } from "@/lib/pdf/template-registry";
-import { applyCartonBarcodePrefs, applyFieldOverrides, withSelectedSiblings } from "@/lib/pdf/pins";
-import {
-  ignoreBaseKey,
-  loadStyleFieldValues,
-  mergeFieldOverrides,
-  type StyleFieldValues,
-} from "@/lib/outputs/output-field-values";
 import {
   isLineKey,
   loadStyleLineValues,
   mergeLineValues,
   MAX_LINE_LENGTH,
 } from "@/lib/outputs/output-line-values";
-import { loadStyleRenderContext } from "@/lib/styles/render-context";
-import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
-import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
-import type { StyleData } from "@/lib/pdf/types";
+import {
+  renderOutputTarget,
+  resolveOutputTarget,
+  RenderOutputError,
+  type OutputTarget,
+} from "@/lib/output-layouts/render-output";
 
 export const runtime = "nodejs";
 
@@ -32,69 +26,32 @@ export const runtime = "nodejs";
 //   POST { variantKey, lineOverrides }      — as it WOULD stand after the
 //                                             reviewer saves these line edits
 //
+// The render itself (variant, pins, carton preference, printed size, per-EAN
+// narrowing) is renderStyleOutput's, in src/lib/output-layouts/render-output.ts
+// — shared with change-request proofs and impact, so this preview and those
+// can never disagree about what an output prints.
+//
 // Static-pdf passthrough variants have no live HTML — the artifact is the
 // committed artwork. They return 409 + JSON so the card can say so instead
 // of presenting a reference drawing as "the print".
 
-// Everything both handlers need for one output: the variant, the StyleData
-// with this output's field overrides applied (admin pins ∪ the style's inline
-// values, per-style winning) and the printed dims. Returns a NextResponse
-// instead when the output can't be previewed, so both answer identically.
-type PreviewTarget = {
-  variant: TemplateVariant;
-  styleData: StyleData;
-  dims: OutputDims;
-  fieldValues: Map<string, StyleFieldValues>;
-};
-
+// The variant, the StyleData with this output's field overrides applied (admin
+// pins ∪ the style's inline values, per-style winning) and the printed dims.
+// Returns a NextResponse instead when the output can't be previewed, so both
+// handlers answer identically.
 async function loadPreviewTarget(
   styleId: string,
   baseKey: string,
-): Promise<PreviewTarget | NextResponse> {
-  // Resolve Output Builder layout keys (layout:<id>) too — a route handler
-  // gets its own module registry, so it can't rely on a page having warmed it.
-  await ensureLayoutVariantsLoaded();
-  const variant = getVariant(baseKey);
-  if (!variant) return NextResponse.json({ error: "Unknown variant" }, { status: 404 });
-
-  const context = await loadStyleRenderContext(styleId);
-  if (!context) return NextResponse.json({ error: "Style not found" }, { status: 404 });
-
-  const output = context.outputs.find((o) => o.variantKey === baseKey);
-  if (!output) {
-    return NextResponse.json(
-      { error: "Output not configured on this style's ProdSpec" },
-      { status: 404 },
-    );
+): Promise<OutputTarget | NextResponse> {
+  try {
+    return await resolveOutputTarget({ styleId, variantKey: baseKey, mode: "production" });
+  } catch (e) {
+    if (!(e instanceof RenderOutputError)) throw e;
+    if (e.code === "STATIC_PDF") {
+      return NextResponse.json({ staticPdf: true, message: e.message }, { status: 409 });
+    }
+    return NextResponse.json({ error: e.message }, { status: e.status });
   }
-
-  if (variant.staticPdf) {
-    return NextResponse.json(
-      {
-        staticPdf: true,
-        message: "Static artwork passthrough — the output is the committed source PDF.",
-      },
-      { status: 409 },
-    );
-  }
-
-  // Admin pins ∪ this style's inline field values (per-style wins), plus the
-  // row's carton-barcode preference — the same two steps the runner takes
-  // before rendering, so the preview can't print a different symbology than
-  // production.
-  const fieldValues = await loadStyleFieldValues(styleId);
-  const overrides = mergeFieldOverrides(
-    output.fieldOverrides,
-    fieldValues.get(ignoreBaseKey(baseKey, variant.docType)),
-  );
-  const styleData = applyCartonBarcodePrefs(
-    applyFieldOverrides(context.styleData, overrides),
-    output,
-  );
-  // Resolve the printed size the same way the runner does, so the live
-  // preview matches the real render at the chosen info-area size.
-  const dims = effectiveOutputDims(output, variant.isInfoArea ?? false, await loadInfoAreaSizeMap());
-  return { variant, styleData, dims, fieldValues };
 }
 
 const HTML_HEADERS = {
@@ -114,8 +71,6 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   // Multi-document assets link with "<key>#<suffix>" — resolve the base.
   const target = await loadPreviewTarget(id, variantKey.split("#")[0]);
   if (target instanceof NextResponse) return target;
-  const { variant, dims } = target;
-  let renderStyle = target.styleData;
 
   // Optional "preview as carton N of M" — binds StyleData.cartonSerial so
   // {{cartonNo}}/{{cartonTotal}} resolve, used by the Carton-numbers dialog.
@@ -134,12 +89,15 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const siblingIdsParam = req.nextUrl.searchParams.get("siblingIds");
 
   try {
-    if (siblingIdsParam !== null) {
-      renderStyle = withSelectedSiblings(renderStyle, siblingIdsParam.split(",").filter(Boolean));
-    }
-    if (cartonSerial) renderStyle = { ...renderStyle, cartonSerial };
-    const html = await variant.render(renderStyle, dims);
-    return new NextResponse(html, { status: 200, headers: HTML_HEADERS });
+    // The whole output as ONE document (every repetition stacked) with the
+    // layout's own lines — the card shows the output, not a single PDF.
+    const [doc] = await renderOutputTarget(target, {
+      documents: "combined",
+      lines: "none",
+      siblingIds: siblingIdsParam !== null ? siblingIdsParam.split(",").filter(Boolean) : undefined,
+      cartonSerial,
+    });
+    return new NextResponse(doc.html, { status: 200, headers: HTML_HEADERS });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Render failed" },
@@ -184,18 +142,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const baseKey = variantKey.split("#")[0];
   const target = await loadPreviewTarget(id, baseKey);
   if (target instanceof NextResponse) return target;
-  const { variant, styleData, dims, fieldValues } = target;
-
-  // Narrow to the ONE document being reviewed when this output splits per EAN
-  // — the same per-row style (and per-PDF field override) renderMany builds,
-  // so the preview shows that PDF rather than every repetition stacked.
-  let renderStyle = styleData;
-  const hashIdx = variantKey.indexOf("#");
-  if (hashIdx >= 0 && variant.docStyles) {
-    const suffix = variantKey.slice(hashIdx + 1);
-    const doc = variant.docStyles(styleData).find((d) => d.suffix === suffix);
-    if (doc) renderStyle = applyFieldOverrides(doc.style, fieldValues.get(variantKey));
-  }
 
   // Stored rewrites (whole-output ∪ this document's) with the unsaved edits
   // layered on top.
@@ -213,12 +159,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   }
 
   try {
-    const html = await variant.render(
-      renderStyle,
-      dims,
-      Object.keys(lines).length > 0 ? lines : undefined,
-    );
-    return new NextResponse(html, { status: 200, headers: HTML_HEADERS });
+    // Narrow to the ONE document being reviewed when this output splits per
+    // EAN — the same per-row style (and per-PDF field override) renderMany
+    // builds, so the preview shows that PDF rather than every repetition
+    // stacked. A base key previews the whole output.
+    const hashIdx = variantKey.indexOf("#");
+    const [doc] = await renderOutputTarget(target, {
+      documents: hashIdx >= 0 ? { suffix: variantKey.slice(hashIdx + 1) } : "combined",
+      lines: { base: lines },
+    });
+    return new NextResponse(doc.html, { status: 200, headers: HTML_HEADERS });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Render failed" },
