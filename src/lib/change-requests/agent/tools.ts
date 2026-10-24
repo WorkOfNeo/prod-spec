@@ -6,6 +6,7 @@ import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { applyLayoutOps, describeLayoutChanges, LayoutOpSchema } from "@/lib/output-layouts/ops";
 import { createDraft, definitionsEqual, getRevision, reviseDraft } from "@/lib/output-layouts/revisions";
 import { layoutSettings, pageGrid, parseLayoutDef, type LayoutDef } from "@/lib/output-layouts/schema";
+import { layoutOutputsInSpecs } from "@/lib/output-layouts/usage";
 import {
   isLayoutVariantKey,
   layoutIdFromVariantKey,
@@ -26,6 +27,7 @@ import {
   MemoryScopeSchema,
   MemorySourceKindSchema,
   requestRef,
+  type MemorySourceKind,
   type RevisionStatus,
 } from "../types";
 import type { AgentTool, ToolContext, ToolResult } from "./contract";
@@ -45,8 +47,14 @@ import type { AgentTool, ToolContext, ToolResult } from "./contract";
 //     a hand-off (declare_gap → NEEDS_CODE, ask_reviewer → NEEDS_INFO /
 //     IN_REVIEW), a PROPOSED memory note, and the developer email inside
 //     declare_gap (internal, never a supplier);
+//   • every write re-reads the output first and happens only while it is
+//     WORKING — a run the stale sweep already failed, or an output a person
+//     approved meanwhile, writes nothing;
 //   • propose_patch drafts only on the output's own layout, so a run can't
-//     wander into a layout nobody asked about.
+//     wander into a layout nobody asked about; an output with no layout yet
+//     can only be pinned to a layout the request's style actually prints;
+//   • render_proof and impact_list only take this output's own drafts, and
+//     the heavy and noisy tools have a per-run budget (RUN_LIMITS).
 //
 // Results are plain JSON for the model. A refusal or a failure comes back as
 // an error result with a reason the model can act on ("this block id doesn't
@@ -118,6 +126,69 @@ function defineTool<I extends z.ZodType>(tool: AgentTool<I>): AgentTool {
 
 async function thisOutput(ctx: ToolContext) {
   return ctx.outputId ? getOutputWithRequest(ctx.outputId) : null;
+}
+
+// ── Run guards ───────────────────────────────────────────────────────────────
+
+// A tool that writes re-reads the output and refuses unless this run still
+// holds it (WORKING): the sweep may have failed a slow run, or a person may
+// have approved or rejected the output while the run was busy.
+function notWorking(tool: string, status: string): ToolResult {
+  return fail(
+    `${tool} refused: this output is ${status} now, not WORKING. The run was stopped (the stale-run sweep failed it) ` +
+      "or a person moved the output on meanwhile, so nothing was written. End the run.",
+    { status },
+  );
+}
+
+// Per-run limits on the heavy tools (every impact_list renders each style
+// twice; every render_proof is two Chromium renders sent back as images) and
+// on memory proposals. Keyed by the ToolContext object: the job makes one per
+// run, so each run starts from zero; the CLI makes one per call.
+export const RUN_LIMITS = { impact_list: 4, render_proof: 16, propose_memory: 3 } as const;
+type LimitedTool = keyof typeof RUN_LIMITS;
+const runUsage = new WeakMap<ToolContext, Record<LimitedTool, number>>();
+
+function usageOf(ctx: ToolContext): Record<LimitedTool, number> {
+  let used = runUsage.get(ctx);
+  if (!used) {
+    used = { impact_list: 0, render_proof: 0, propose_memory: 0 };
+    runUsage.set(ctx, used);
+  }
+  return used;
+}
+
+function budgetSpent(ctx: ToolContext, tool: LimitedTool): ToolResult | null {
+  if (usageOf(ctx)[tool] < RUN_LIMITS[tool]) return null;
+  return fail(`${tool} can be called at most ${RUN_LIMITS[tool]} times per run, and this run has used them all.`, {
+    limit: RUN_LIMITS[tool],
+  });
+}
+
+function spendBudget(ctx: ToolContext, tool: LimitedTool): void {
+  usageOf(ctx)[tool]++;
+}
+
+function refundBudget(ctx: ToolContext, tool: LimitedTool): void {
+  const used = usageOf(ctx);
+  used[tool] = Math.max(0, used[tool] - 1);
+}
+
+// render_proof / impact_list work on drafts made for THIS output only (their
+// revision carries its changeRequestOutputId), never on an arbitrary revision
+// of any layout.
+async function ownRevision(ctx: ToolContext, revisionId: string, tool: string) {
+  if (!ctx.outputId) return { error: fail(`${tool} needs the output this run works on; this run has none.`) };
+  const revision = await getRevision(revisionId);
+  if (!revision || revision.changeRequestOutputId !== ctx.outputId) {
+    return {
+      error: fail(
+        `${tool} only works on drafts made for this output (propose_patch returns their revisionId); ${revisionId} is not one of them.`,
+        { revisionId },
+      ),
+    };
+  }
+  return { revision };
 }
 
 // The layout an output prints from: its recorded layoutId, else the one its
@@ -330,13 +401,13 @@ const findStylesByValue = defineTool({
     "Search the Monday data of every active style for a text value and see which column holds it. Screenshots truncate and abbreviate; " +
     "the database has the full value, so use this to turn a fragment you can read in a screenshot (\"5 Pcs / Polybag\", a size, an order " +
     "number) into: the column id and title, the board, how many styles carry it, the most common full values with counts, and up to 5 example " +
-    "styles per column (style id, label, PO, customer, full text). Case-insensitive substring match. Narrow with columnHint (a column id, " +
-    "part of a column title, or a mapped field name such as \"trims\") and customerId. Use it before deciding a value is missing, and to get the " +
-    "real distribution you quote in declare_gap.",
+    "styles per column (style id, label, PO, customer, full text). Case-insensitive substring match. Searches the request's customer unless " +
+    "you pass another customerId; narrow further with columnHint (a column id, part of a column title, or a mapped field name such as " +
+    "\"trims\"). Use it before deciding a value is missing, and to get the real distribution you quote in declare_gap.",
   input: z.object({
     text: z.string().trim().min(2).max(200).describe("The value or fragment to look for, as it appears in the data."),
     columnHint: z.string().trim().min(1).max(120).optional().describe("Column id, part of a column title, or a mapped field name."),
-    customerId: z.string().min(1).optional().describe("Only styles of this customer."),
+    customerId: z.string().min(1).optional().describe("Only styles of this customer (default: the request's customer)."),
     limit: z
       .number()
       .int()
@@ -347,14 +418,20 @@ const findStylesByValue = defineTool({
   }),
   run: async (input, ctx) => {
     const limit = input.limit ?? VALUE_COLUMNS_DEFAULT;
+    // The scan reads every active style's Monday JSON, so it stays on the
+    // request's customer unless the agent names another one.
+    let customerId = input.customerId ?? null;
+    let customerFromRequest = false;
+    if (!customerId) {
+      customerId = (await thisOutput(ctx))?.request.customerId ?? null;
+      customerFromRequest = customerId !== null;
+    }
     const [globalConfig, customer] = await Promise.all([
       orEmpty(
         db.mondayColumnConfig.findUnique({ where: { id: "global" }, select: { columnMapping: true, requiredFields: true } }),
         null,
       ),
-      input.customerId
-        ? db.customer.findUnique({ where: { id: input.customerId }, select: { config: true } })
-        : Promise.resolve(null),
+      customerId ? db.customer.findUnique({ where: { id: customerId }, select: { config: true } }) : Promise.resolve(null),
     ]);
     let customerMapping: Record<string, unknown> | null = null;
     if (customer) {
@@ -395,7 +472,7 @@ const findStylesByValue = defineTool({
       Prisma.sql`s."archivedAt" IS NULL`,
       Prisma.sql`v.val ILIKE ${likePattern(input.text)}`,
     ];
-    if (input.customerId) filters.push(Prisma.sql`s."customerId" = ${input.customerId}`);
+    if (customerId) filters.push(Prisma.sql`s."customerId" = ${customerId}`);
     if (columnIds) filters.push(Prisma.sql`cv->>'id' = ANY(${columnIds}::text[])`);
     // Mirror columns carry their value in display_value with an empty text.
     const hits = Prisma.sql`
@@ -408,24 +485,29 @@ const findStylesByValue = defineTool({
        CROSS JOIN LATERAL (SELECT COALESCE(NULLIF(cv->>'text', ''), cv->>'display_value') AS val) v
        WHERE ${Prisma.join(filters, " AND ")}`;
 
-    const [counts, examples] = await Promise.all([
-      db.$queryRaw<ValueCountRow[]>(Prisma.sql`
+    // Both scans in one transaction with a statement timeout, so a broad
+    // fragment over a large table gives up after 5 s instead of holding a
+    // pooled connection for as long as it takes.
+    const [counts, examples] = await db.$transaction(async (tx) => {
+      await tx.$executeRaw`SET LOCAL statement_timeout = '5s'`;
+      const countRows = await tx.$queryRaw<ValueCountRow[]>(Prisma.sql`
         WITH hits AS (${hits})
         SELECT g.col AS "columnId", g.val AS text, g.n,
                (sum(g.n) OVER (PARTITION BY g.col))::int AS total,
                (count(*) OVER (PARTITION BY g.col))::int AS "distinctValues"
           FROM (SELECT col, val, count(*)::int AS n FROM hits GROUP BY col, val) g
          ORDER BY total DESC, g.col, g.n DESC
-         LIMIT ${VALUE_ROWS_MAX}`),
-      db.$queryRaw<ValueExampleRow[]>(Prisma.sql`
+         LIMIT ${VALUE_ROWS_MAX}`);
+      const exampleRows = await tx.$queryRaw<ValueExampleRow[]>(Prisma.sql`
         WITH hits AS (${hits})
         SELECT r.id AS "styleId", r.name AS label, r."poNumber", c.name AS customer,
                r."mondayBoardId", r.col AS "columnId", r.val AS text
           FROM (SELECT h.*, row_number() OVER (PARTITION BY h.col ORDER BY h."updatedAt" DESC, h.id) AS rn
                   FROM hits h) r
           LEFT JOIN customers c ON c.id = r."customerId"
-         WHERE r.rn <= ${EXAMPLES_PER_COLUMN}`),
-    ]);
+         WHERE r.rn <= ${EXAMPLES_PER_COLUMN}`);
+      return [countRows, exampleRows] as const;
+    });
 
     // Titles and boards from the Monday mirror, preferring the board the
     // examples live on; the shared column config's labels as a fallback.
@@ -479,15 +561,19 @@ const findStylesByValue = defineTool({
       `Value search ${JSON.stringify(clip(input.text, 60))}: ${plural(columns.length, "column")}, ` +
         `${totalStyles} ${totalStyles === 1 ? "match" : "matches"}`,
     );
+    const scopeNote = customerFromRequest
+      ? ` Only the request's customer (${customerId}) was searched; pass customerId to search another customer.`
+      : "";
     return ok({
       query: input.text,
       ...(input.columnHint ? { columnHint: input.columnHint, columnIds } : {}),
-      ...(input.customerId ? { customerId: input.customerId } : {}),
+      ...(customerId ? { customerId, ...(customerFromRequest ? { customerFromRequest: true } : {}) } : {}),
       columns,
       note:
-        columns.length === 0
-          ? "No active style carries this text. Try a shorter fragment, or drop columnHint / customerId."
-          : "Values are the full text from the database (screenshots truncate). styles = active styles with a matching value in that column.",
+        (columns.length === 0
+          ? "No active style carries this text. Try a shorter fragment, or drop columnHint."
+          : "Values are the full text from the database (screenshots truncate). styles = active styles with a matching value in that column.") +
+        scopeNote,
     });
   },
 });
@@ -785,6 +871,34 @@ const listTokens = defineTool({
 
 const OPS_MAX = 50;
 
+// Why an output with no layout may NOT be pinned to `layoutId`, or null when
+// it may: the output's style (else the request's) must print that layout — an
+// enabled output on its ProdSpec whose base key is layout:<id>.
+async function pinRefusal(
+  output: { label: string; styleId: string | null; request: { styleId: string | null } },
+  layoutId: string,
+): Promise<ToolResult | null> {
+  const styleId = output.styleId ?? output.request.styleId;
+  if (!styleId) {
+    return fail(
+      `This output ("${output.label}") has no layout yet and the request names no style, so there is no way to tell which layout ` +
+        "it prints from. Ask the reviewer (ask_reviewer) which output or style this is about.",
+    );
+  }
+  const style = await db.style.findUnique({ where: { id: styleId }, select: { prodSpecId: true } });
+  const spec = style?.prodSpecId
+    ? await db.prodSpec.findUnique({ where: { id: style.prodSpecId }, select: { id: true, outputs: true } })
+    : null;
+  if (!spec || layoutOutputsInSpecs([spec], layoutId).length === 0) {
+    return fail(
+      `This output ("${output.label}") has no layout yet, and the request's style (${styleId}) does not print layout ${layoutId}. ` +
+        "Only a layout that style prints can be drafted: find_layouts lists them. If the issue is about another layout, ask the reviewer.",
+      { styleId, layoutId },
+    );
+  }
+  return null;
+}
+
 const proposePatch = defineTool({
   name: "propose_patch",
   description:
@@ -795,7 +909,8 @@ const proposePatch = defineTool({
     "lineHeight, invert, border), edit_line / remove_line (quote the current text as oldText), insert_line. page and line are 0-based; blocks are " +
     "addressed by id (get_layout). Each op is checked on its own: rejected ops come back with a reason and the rest still apply; warnings flag " +
     "likely overlap or overflow. Returns the revisionId and a plain list of what changed against the live layout. Then render_proof it on the " +
-    "request's style and on one style it must not affect. Only this output's layout can be drafted.",
+    "request's style and on one style it must not affect. Only this output's layout can be drafted; an output with no layout yet can only be " +
+    "drafted on a layout the request's style prints.",
   input: z.object({
     layoutId: z.string().min(1),
     ops: z.array(LayoutOpSchema).min(1).max(OPS_MAX),
@@ -805,6 +920,7 @@ const proposePatch = defineTool({
     if (!ctx.outputId) return fail("propose_patch needs the output this run works on; this run has none.");
     const output = await getOutputWithRequest(ctx.outputId);
     if (!output) return fail(`Output ${ctx.outputId} not found.`);
+    if (output.status !== "WORKING") return notWorking("propose_patch", output.status);
 
     const ownLayoutId = outputLayoutId(output);
     if (ownLayoutId && ownLayoutId !== input.layoutId) {
@@ -819,6 +935,14 @@ const proposePatch = defineTool({
         `This output ("${output.label}") prints from a coded template (${output.variantKey}), not an Output Builder layout, so a layout draft ` +
           "cannot change it. Use ask_reviewer (or declare_gap when it needs new code).",
       );
+    }
+
+    // An output with no layout yet gets pinned to the drafted one. Only to a
+    // layout the request's style really prints: otherwise a run could attach
+    // the request to (and later publish a change of) any layout at all.
+    if (!ownLayoutId) {
+      const refusal = await pinRefusal(output, input.layoutId);
+      if (refusal) return refusal;
     }
 
     const layout = await db.outputLayout.findUnique({
@@ -873,13 +997,15 @@ const proposePatch = defineTool({
       : await createDraft({ ...draftInput, layoutId: layout.id });
 
     // The newest draft becomes the output's current one, so the next patch in
-    // this run builds on it and impact_list caches against it. An output that
-    // had no layout yet is pinned to this one. The job counts drafts per run
-    // (draftCount) when it hands the result to review.
+    // this run builds on it and impact_list caches against it; a stored impact
+    // belonged to the previous revision, so it goes in the same write. An
+    // output that had no layout yet is pinned to this one. The job counts
+    // drafts per run (draftCount) when it hands the result to review.
     await db.changeRequestOutput.update({
       where: { id: output.id },
       data: {
         currentRevisionId: revision.id,
+        impact: Prisma.DbNull,
         ...(ownLayoutId
           ? {}
           : { layoutId: layout.id, ...(output.variantKey ? {} : { variantKey: layoutVariantKey(layout.id) }) }),
@@ -914,6 +1040,31 @@ const proposePatch = defineTool({
 
 // ── render_proof ─────────────────────────────────────────────────────────────
 
+// Proof pictures go back to the model as images: their long edge is capped so
+// a big carton marking doesn't come back as a multi-megapixel PNG. The scale
+// is the device-pixel ratio renderHtmlPng renders at (96 dpi CSS pixels).
+const PROOF_LONG_EDGE_PX = 1600;
+const PROOF_MAX_SCALE = 3;
+const CSS_PX_PER_MM = 96 / 25.4;
+
+export function proofScale(longEdgeMm: number): number {
+  if (!(longEdgeMm > 0)) return PROOF_MAX_SCALE;
+  return Math.min(PROOF_MAX_SCALE, PROOF_LONG_EDGE_PX / (longEdgeMm * CSS_PX_PER_MM));
+}
+
+// The longest page edge any of the definitions declares (0 when none does).
+function longestPageMm(...defs: unknown[]): number {
+  let max = 0;
+  for (const def of defs) {
+    const pages = (def as { pages?: unknown } | null)?.pages;
+    if (!Array.isArray(pages)) continue;
+    for (const page of pages as { widthMm?: unknown; heightMm?: unknown }[]) {
+      for (const mm of [Number(page?.widthMm), Number(page?.heightMm)]) if (mm > max) max = mm;
+    }
+  }
+  return max;
+}
+
 const renderProofTool = defineTool({
   name: "render_proof",
   description:
@@ -921,7 +1072,7 @@ const renderProofTool = defineTool({
     "faithful per-output render the runner uses (pins, carton preference, size). Returns both sides by default, with captions and the page " +
     "size in mm. Look at them: check the change landed where the screenshot asked, nothing overflows or overlaps, text is at least 5 pt, and " +
     "that a style which must not change looks the same on both sides. For an output split into several files, pick one with suffix " +
-    "(e.g. a size) — otherwise the first document is shown.",
+    "(e.g. a size) — otherwise the first document is shown. Only this output's own drafts can be rendered, at most 16 times per run.",
   input: z.object({
     revisionId: z.string().min(1),
     styleId: z.string().min(1),
@@ -929,20 +1080,38 @@ const renderProofTool = defineTool({
     suffix: z.string().min(1).max(200).optional().describe("Document of a split output (the part after # in its key)."),
   }),
   run: async (input, ctx) => {
+    const owned = await ownRevision(ctx, input.revisionId, "render_proof");
+    if (owned.error) return owned.error;
+    const spent = budgetSpent(ctx, "render_proof");
+    if (spent) return spent;
+    spendBudget(ctx, "render_proof");
+
     const { renderProof } = await import("../proofs");
     const sides: readonly ProofSide[] = !input.side || input.side === "both" ? ["before", "after"] : [input.side];
     const style = await db.style.findUnique({ where: { id: input.styleId }, select: { name: true } });
     const label = style?.name ?? input.styleId;
     const images: NonNullable<ToolResult["images"]> = [];
     const rendered: Json[] = [];
+    // The scale from the page size the definitions declare; the output's own
+    // size can differ (ProdSpec dimensions), so a picture that came out too
+    // big is rendered once more at the scale its real size calls for.
+    let scale = proofScale(longestPageMm(owned.revision.definition, owned.revision.baseDefinition));
     for (const side of sides) {
       try {
-        const proof = await renderProof({
-          revisionId: input.revisionId,
-          styleId: input.styleId,
-          side,
-          ...(input.suffix !== undefined ? { suffix: input.suffix } : {}),
-        });
+        const render = (s: number) =>
+          renderProof({
+            revisionId: input.revisionId,
+            styleId: input.styleId,
+            side,
+            scale: s,
+            ...(input.suffix !== undefined ? { suffix: input.suffix } : {}),
+          });
+        let proof = await render(scale);
+        const fit = proofScale(Math.max(proof.widthMm, proof.heightMm));
+        if (fit < scale - 1e-9) {
+          scale = fit;
+          proof = await render(scale);
+        }
         const doc = proof.suffix ?? `doc ${proof.doc + 1}`;
         const caption = `${side} · ${label} · ${doc} · ${round(proof.widthMm, 1)}×${round(proof.heightMm, 1)} mm`;
         images.push({ mediaType: "image/png", base64: proof.png.toString("base64"), caption });
@@ -973,9 +1142,16 @@ const impactList = defineTool({
     "live and the draft definition and compared. Returns counts (styles, documents, changed, unchanged, changed by review status, already " +
     "approved, already delivered), up to 30 changed documents (style, PO, review status, uploaded/emailed, in flight), a few unchanged styles " +
     "you can use as a control for render_proof, and styles that could not be rendered. Run it after the proofs look right; a change that " +
-    "touches far more documents than the request implies is a sign the draft is too broad.",
+    "touches far more documents than the request implies is a sign the draft is too broad. Only this output's own drafts, at most 4 " +
+    "times per run.",
   input: z.object({ revisionId: z.string().min(1) }),
   run: async (input, ctx) => {
+    const owned = await ownRevision(ctx, input.revisionId, "impact_list");
+    if (owned.error) return owned.error;
+    const spent = budgetSpent(ctx, "impact_list");
+    if (spent) return spent;
+    spendBudget(ctx, "impact_list");
+
     const { impactForRevision } = await import("../impact");
     let summary;
     try {
@@ -1049,6 +1225,9 @@ const askReviewer = defineTool({
   }),
   run: async (input, ctx) => {
     if (!ctx.requestId || !ctx.outputId) return fail("ask_reviewer needs the request and output this run works on.");
+    const output = await getOutputWithRequest(ctx.outputId);
+    if (!output) return fail(`Output ${ctx.outputId} not found.`);
+    if (output.status !== "WORKING") return notWorking("ask_reviewer", output.status);
     const message = await appendMessage({
       requestId: ctx.requestId,
       outputId: ctx.outputId,
@@ -1075,61 +1254,87 @@ const proposeMemory = defineTool({
   name: "propose_memory",
   description:
     "Suggest a short note for future runs, learned from this request or from a reviewer's correction (\"this customer wants quantities in " +
-    "bold\"). A person keeps or dismisses it; only kept notes are ever read. scope: GLOBAL, CUSTOMER (scopeRef = customer id; defaults to the " +
+    "bold\"). A person keeps or dismisses it; only kept notes are ever read. scope: CUSTOMER (scopeRef = customer id; defaults to the " +
     "request's customer), DOC_TYPE (scopeRef = doc type, e.g. STICKER; defaults to this output's layout doc type) or MONDAY (how the data " +
     "is written). sourceKind: CORRECTION (a reviewer corrected you), AGENT_FINDING or REQUEST. One fact per note, at most 3 per run.",
   input: z.object({
-    scope: MemoryScopeSchema,
+    // GLOBAL notes steer every future run for every customer: an admin writes
+    // those on /settings/agent-memory, the agent can't propose one.
+    scope: MemoryScopeSchema.exclude(["GLOBAL"]),
     scopeRef: z.string().min(1).max(120).optional(),
     text: z.string().trim().min(1).max(1000),
     sourceKind: MemorySourceKindSchema,
   }),
   run: async (input, ctx) => {
-    if (!ctx.requestId) return fail("propose_memory needs the request this run works on.");
-    let scopeRef = input.scopeRef ?? null;
-    if (!scopeRef && (input.scope === "CUSTOMER" || input.scope === "DOC_TYPE")) {
-      const output = await thisOutput(ctx);
-      if (input.scope === "CUSTOMER") {
-        scopeRef = output?.request.customerId ?? null;
-      } else if (output) {
-        const layoutId = outputLayoutId(output);
-        const layout = layoutId
-          ? await db.outputLayout.findUnique({ where: { id: layoutId }, select: { docType: true } })
-          : null;
-        scopeRef = layout?.docType ?? null;
-      }
-      if (!scopeRef) {
-        return fail(`A ${input.scope} note needs scopeRef (the ${input.scope === "CUSTOMER" ? "customer id" : "doc type"}).`);
-      }
+    if (!ctx.requestId || !ctx.outputId) return fail("propose_memory needs the request and output this run works on.");
+    const output = await getOutputWithRequest(ctx.outputId);
+    if (!output) return fail(`Output ${ctx.outputId} not found.`);
+    if (output.status !== "WORKING") return notWorking("propose_memory", output.status);
+    const spent = budgetSpent(ctx, "propose_memory");
+    if (spent) return spent;
+    // Reserved now, so parallel calls in one turn all count against it;
+    // handed back when no note gets made.
+    spendBudget(ctx, "propose_memory");
+    return proposeMemoryNote(input, ctx, output);
+  },
+});
+
+async function proposeMemoryNote(
+  input: { scope: "CUSTOMER" | "DOC_TYPE" | "MONDAY"; scopeRef?: string; text: string; sourceKind: MemorySourceKind },
+  ctx: ToolContext,
+  output: NonNullable<Awaited<ReturnType<typeof getOutputWithRequest>>>,
+): Promise<ToolResult> {
+  let scopeRef = input.scopeRef ?? null;
+  if (!scopeRef && (input.scope === "CUSTOMER" || input.scope === "DOC_TYPE")) {
+    if (input.scope === "CUSTOMER") {
+      scopeRef = output.request.customerId ?? null;
+    } else {
+      const layoutId = outputLayoutId(output);
+      const layout = layoutId
+        ? await db.outputLayout.findUnique({ where: { id: layoutId }, select: { docType: true } })
+        : null;
+      scopeRef = layout?.docType ?? null;
     }
-    const memory = await createProposedMemory({
+    if (!scopeRef) {
+      refundBudget(ctx, "propose_memory");
+      return fail(`A ${input.scope} note needs scopeRef (the ${input.scope === "CUSTOMER" ? "customer id" : "doc type"}).`);
+    }
+  }
+  let memory;
+  try {
+    memory = await createProposedMemory({
       scope: input.scope,
       scopeRef,
       text: input.text,
       sourceKind: input.sourceKind,
       sourceRequestId: ctx.requestId,
     });
-    await appendMessage({
-      requestId: ctx.requestId,
-      outputId: ctx.outputId,
-      authorKind: "AGENT",
-      kind: "memory_suggestion",
-      body: input.text,
-      meta: { memoryId: memory.id, scope: input.scope, scopeRef },
-    });
-    await note(ctx, "memory", `Suggested a ${input.scope.toLowerCase()} note: ${clip(input.text, 160)}`, { memoryId: memory.id });
-    return ok({ ok: true, memoryId: memory.id, scope: input.scope, scopeRef, state: "PROPOSED" });
-  },
-});
+  } catch (err) {
+    refundBudget(ctx, "propose_memory");
+    throw err;
+  }
+  await appendMessage({
+    requestId: ctx.requestId,
+    outputId: ctx.outputId,
+    authorKind: "AGENT",
+    kind: "memory_suggestion",
+    body: input.text,
+    meta: { memoryId: memory.id, scope: input.scope, scopeRef },
+  });
+  await note(ctx, "memory", `Suggested a ${input.scope.toLowerCase()} note: ${clip(input.text, 160)}`, { memoryId: memory.id });
+  return ok({ ok: true, memoryId: memory.id, scope: input.scope, scopeRef, state: "PROPOSED" });
+}
 
 // ── finish ───────────────────────────────────────────────────────────────────
 
 const finish = defineTool({
   name: "finish",
   description:
-    "End the run with a plain-language summary for the reviewer: what you changed and why, which styles you checked (including the one that " +
-    "must not change), how many documents the impact list says would change, and anything they should look at. Call it after propose_patch, " +
-    "render_proof and impact_list. If you made no draft, explain why instead.",
+    "End the run with a plain-language message for the reviewer. After a draft: what you changed and why, which styles you checked " +
+    "(including the one that must not change), how many documents the impact list says would change, and anything they should look at; " +
+    "call it after propose_patch, render_proof and impact_list. If the reviewer only asked a question, or no layout change is needed or " +
+    "possible, answer with finish and explain — do not make a new draft. Either way the output goes to the reviewer, and a draft you did " +
+    "not change stays as it is.",
   input: z.object({ summary: z.string().trim().min(1).max(4000) }),
   run: async (input, ctx) => {
     await note(ctx, "finish", clip(input.summary.replace(/\s+/g, " "), 300));

@@ -12,6 +12,7 @@
 import { test, mock, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
+import { Prisma } from "@/generated/prisma/client";
 import type { AgentTool, ToolContext, ToolResult } from "@/lib/change-requests/agent/contract";
 import type { StyleData } from "@/lib/pdf/types";
 
@@ -171,7 +172,7 @@ const explicitDb: Record<string, unknown> = {
   },
   style: {
     findUnique: async (args: { where: { id: string } }) =>
-      args.where.id === STYLE_ID ? { id: STYLE_ID, name: "Bogus Tee", poNumber: "PO-0000" } : null,
+      args.where.id === STYLE_ID ? { id: STYLE_ID, name: "Bogus Tee", poNumber: "PO-0000", prodSpecId: "bogus-spec" } : null,
     groupBy: async (args: unknown) => {
       record("style.groupBy", args);
       return styleCounts;
@@ -182,6 +183,7 @@ const explicitDb: Record<string, unknown> = {
       record("prodSpec.findMany", args);
       return specs;
     },
+    findUnique: async (args: { where: { id: string } }) => specs.find((sp) => sp.id === args.where.id) ?? null,
   },
   outputLayout: {
     findUnique: async (args: { where: { id: string } }) => layouts.find((l) => l.id === args.where.id) ?? null,
@@ -219,6 +221,15 @@ const explicitDb: Record<string, unknown> = {
   $queryRaw: async (q: { sql: string; values: unknown[] }) => {
     record("$queryRaw", q);
     return queryRaw(q);
+  },
+  $executeRaw: async (strings: TemplateStringsArray) => {
+    record("$executeRaw", strings.join("?"));
+    return 0;
+  },
+  // Interactive transaction: the callback gets the same fake as `tx`.
+  $transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
+    record("$transaction", true);
+    return fn(fakeDb);
   },
 };
 const fakeDb = new Proxy(explicitDb, {
@@ -493,8 +504,26 @@ test("find_styles_by_value: full values grouped per column with titles, boards, 
     assert.ok(q.values.includes("%5 pcs%"));
     assert.match(q.sql, /"archivedAt" IS NULL/);
     assert.match(q.sql, /"deletedAt" IS NULL/);
+    // No customerId given: the request's customer, and the result says so.
+    assert.ok(q.values.includes(CUSTOMER_ID));
   }
+  assert.equal(content(res).customerId, CUSTOMER_ID);
+  assert.equal(content(res).customerFromRequest, true);
+  assert.match(content(res).note, /Only the request's customer \(bogus-cust\) was searched/);
+  // Both scans in one transaction that first caps the statement time.
+  assert.equal(calls.$transaction.length, 1);
+  assert.deepEqual(calls.$executeRaw, ["SET LOCAL statement_timeout = '5s'"]);
   assert.equal(logs[0].kind, "read");
+});
+
+test("find_styles_by_value: a request without a customer searches every customer", async () => {
+  request.customerId = null;
+  const res = await run("find_styles_by_value", { text: "5 pcs" });
+  const c = content(res);
+  assert.equal(c.customerId, undefined);
+  assert.equal(c.customerFromRequest, undefined);
+  assert.doesNotMatch(c.note, /request's customer/);
+  for (const q of calls.$queryRaw as { sql: string }[]) assert.doesNotMatch(q.sql, /"customerId" = \?/);
 });
 
 test("find_styles_by_value: wildcards are literal, columnHint and customerId narrow the query, nothing found says so", async () => {
@@ -503,6 +532,8 @@ test("find_styles_by_value: wildcards are literal, columnHint and customerId nar
   const c = content(res);
   assert.deepEqual(c.columns, []);
   assert.match(c.note, /No active style carries this text/);
+  assert.equal(c.customerId, CUSTOMER_ID);
+  assert.equal(c.customerFromRequest, undefined, "named explicitly, not defaulted");
   // The hint resolved to itself, the mapped field's column and the mirror's match.
   assert.deepEqual(c.columnIds, ["trims", "dropdown4__1"]);
   const q = (calls.$queryRaw as { sql: string; values: unknown[] }[])[0];
@@ -658,8 +689,9 @@ test("propose_patch: ops on the live layout → an AGENT draft on this output, m
   assert.ok(draft.definition.pages[0].blocks.some((b) => b.lines.includes(QTY_LINE)));
   assert.equal(calls.reviseDraft, undefined);
 
+  // The previous revision's stored impact goes in the same write.
   assert.deepEqual(calls["changeRequestOutput.update"], [
-    { where: { id: OUTPUT_ID }, data: { currentRevisionId: c.revisionId } },
+    { where: { id: OUTPUT_ID }, data: { currentRevisionId: c.revisionId, impact: Prisma.DbNull } },
   ]);
   assert.equal(logs[0].kind, "draft");
 });
@@ -780,14 +812,78 @@ test("propose_patch: an output with no layout yet is pinned to the drafted one",
   assert.deepEqual(calls["changeRequestOutput.update"], [
     {
       where: { id: OUTPUT_ID },
-      data: { currentRevisionId: content(res).revisionId, layoutId: OTHER_LAYOUT_ID, variantKey: `layout:${OTHER_LAYOUT_ID}` },
+      data: {
+        currentRevisionId: content(res).revisionId,
+        impact: Prisma.DbNull,
+        layoutId: OTHER_LAYOUT_ID,
+        variantKey: `layout:${OTHER_LAYOUT_ID}`,
+      },
     },
   ]);
 });
 
+test("propose_patch: an output with no layout is only pinned to a layout the request's style prints", async () => {
+  output.layoutId = null;
+  output.variantKey = null;
+  layouts.push({ id: "bogus-layout-3", name: "Bogus hang tag", docType: "HANGTAG", status: "PUBLISHED", version: 1, definition: stickerDef() });
+  // bogus-spec (the style's ProdSpec) doesn't print bogus-layout-3.
+  const foreign = await run("propose_patch", { layoutId: "bogus-layout-3", ops: [ADD_QTY], note: "n" });
+  assert.equal(foreign.isError, true);
+  assert.match(content(foreign).error, /does not print layout bogus-layout-3/);
+  // A layout the ProdSpec lists but has disabled doesn't count either.
+  specs[0].outputs = [{ variantKey: `layout:${OTHER_LAYOUT_ID}`, widthMm: 150, heightMm: 75, enabled: false }];
+  const disabled = await run("propose_patch", { layoutId: OTHER_LAYOUT_ID, ops: [ADD_QTY], note: "n" });
+  assert.equal(disabled.isError, true);
+  // The request's style stands in for the output's; with neither, nothing can be pinned.
+  output.styleId = null;
+  request.styleId = null;
+  const noStyle = await run("propose_patch", { layoutId: LAYOUT_ID, ops: [ADD_QTY], note: "n" });
+  assert.equal(noStyle.isError, true);
+  assert.match(content(noStyle).error, /no layout yet and the request names no style/);
+  assert.equal(calls.createDraft, undefined);
+  assert.equal(calls["changeRequestOutput.update"], undefined);
+});
+
+test("the writing tools refuse once the output is no longer WORKING (failed by the sweep, approved meanwhile)", async () => {
+  for (const status of ["FAILED", "APPROVED"]) {
+    output.status = status;
+    const patch = await run("propose_patch", { layoutId: LAYOUT_ID, ops: [ADD_QTY], note: "n" });
+    const ask = await run("ask_reviewer", { question: "Which size?", to: "requester" });
+    const memory = await run("propose_memory", { scope: "MONDAY", text: "Trims hold the pack size.", sourceKind: "AGENT_FINDING" });
+    const gapRes = await run("declare_gap", GAP);
+    for (const [name, res] of [
+      ["propose_patch", patch],
+      ["ask_reviewer", ask],
+      ["propose_memory", memory],
+      ["declare_gap", gapRes],
+    ] as const) {
+      assert.equal(res.isError, true, `${name} on ${status}`);
+      assert.match(content(res).error, new RegExp(`${name} refused: this output is ${status} now, not WORKING`));
+    }
+  }
+  for (const k of ["createDraft", "reviseDraft", "changeRequestOutput.update", "appendMessage", "setOutputStatus", "createProposedMemory", "dispatchEmail"]) {
+    assert.equal(calls[k], undefined, `${k} must not run`);
+  }
+});
+
 // ── render_proof ────────────────────────────────────────────────────────────
 
+// A draft this output made: what render_proof and impact_list accept.
+function ownDraft(id = "rev-1", def: unknown = stickerDef()) {
+  revisions.push({
+    id,
+    layoutId: LAYOUT_ID,
+    number: 4,
+    status: "DRAFT",
+    changeRequestOutputId: OUTPUT_ID,
+    definition: def,
+    baseDefinition: stickerDef(),
+    baseVersion: 3,
+  });
+}
+
 test("render_proof: both sides by default, as PNG images with captions and size", async () => {
+  ownDraft();
   const res = await run("render_proof", { revisionId: "rev-1", styleId: STYLE_ID });
   assert.equal(res.isError, undefined);
   assert.equal(res.images?.length, 2);
@@ -799,10 +895,11 @@ test("render_proof: both sides by default, as PNG images with captions and size"
     ],
   );
   assert.deepEqual(
-    (calls.renderProof as Row[]).map((r) => [r.revisionId, r.styleId, r.side]),
+    (calls.renderProof as Row[]).map((r) => [r.revisionId, r.styleId, r.side, r.scale]),
     [
-      ["rev-1", STYLE_ID, "before"],
-      ["rev-1", STYLE_ID, "after"],
+      // A 50 × 60 mm sticker stays at the full scale (≈ 680 px long edge).
+      ["rev-1", STYLE_ID, "before", 3],
+      ["rev-1", STYLE_ID, "after", 3],
     ],
   );
   assert.equal(content(res).images.length, 2);
@@ -813,7 +910,76 @@ test("render_proof: both sides by default, as PNG images with captions and size"
   assert.equal((calls.renderProof as Row[]).at(-1)?.suffix, "M");
 });
 
+test("render_proof: a large page is rendered at a scale that keeps the PNG's long edge within 1600 px", async () => {
+  const big = stickerDef();
+  big.pages[0].widthMm = 150;
+  big.pages[0].heightMm = 300;
+  ownDraft("rev-big", big);
+  renderProofImpl = async (input) => ({ png: Buffer.from("png"), widthMm: 150, heightMm: 300, suffix: null, doc: 0, scale: input.scale });
+  await run("render_proof", { revisionId: "rev-big", styleId: STYLE_ID });
+  const scales = (calls.renderProof as Row[]).map((r) => r.scale as number);
+  assert.equal(scales.length, 2);
+  for (const sc of scales) assert.ok(Math.abs(300 * (96 / 25.4) * sc - 1600) < 1e-6, `long edge ${300 * (96 / 25.4) * sc}`);
+  assert.equal(tools.proofScale(0), 3);
+  assert.equal(tools.proofScale(60), 3);
+
+  // The output renders bigger than its definition says (ProdSpec size): one
+  // more render at the scale the real size calls for, then that scale sticks.
+  for (const k of Object.keys(calls)) delete calls[k];
+  ownDraft("rev-small");
+  renderProofImpl = async () => ({ png: Buffer.from("png"), widthMm: 200, heightMm: 400, suffix: null, doc: 0 });
+  await run("render_proof", { revisionId: "rev-small", styleId: STYLE_ID });
+  const rescaled = (calls.renderProof as Row[]).map((r) => [r.side, Number((r.scale as number).toFixed(4))]);
+  const fit = Number(tools.proofScale(400).toFixed(4));
+  assert.deepEqual(rescaled, [
+    ["before", 3],
+    ["before", fit],
+    ["after", fit],
+  ]);
+});
+
+test("render_proof / impact_list: only drafts made for this output", async () => {
+  revisions.push(
+    { id: "rev-foreign", layoutId: LAYOUT_ID, number: 2, status: "DRAFT", changeRequestOutputId: OTHER_OUTPUT_ID, definition: stickerDef(), baseDefinition: stickerDef() },
+    { id: "rev-manual", layoutId: LAYOUT_ID, number: 3, status: "DRAFT", changeRequestOutputId: null, definition: stickerDef(), baseDefinition: stickerDef() },
+  );
+  for (const revisionId of ["rev-foreign", "rev-manual", "bogus-missing"]) {
+    const proof = await run("render_proof", { revisionId, styleId: STYLE_ID });
+    assert.equal(proof.isError, true, revisionId);
+    assert.match(content(proof).error, /only works on drafts made for this output/);
+    const impact = await run("impact_list", { revisionId });
+    assert.equal(impact.isError, true, revisionId);
+  }
+  ownDraft();
+  const none = await run("render_proof", { revisionId: "rev-1", styleId: STYLE_ID }, ctx({ outputId: null }));
+  assert.equal(none.isError, true);
+  assert.equal(calls.renderProof, undefined);
+  assert.equal(calls.impactForRevision, undefined);
+});
+
+test("render_proof ≤ 16 and impact_list ≤ 4 calls per run (per ToolContext)", async () => {
+  ownDraft();
+  const runCtx = ctx();
+  for (let i = 0; i < 16; i++) {
+    assert.equal((await run("render_proof", { revisionId: "rev-1", styleId: STYLE_ID, side: "after" }, runCtx)).isError, undefined);
+  }
+  const proof = await run("render_proof", { revisionId: "rev-1", styleId: STYLE_ID, side: "after" }, runCtx);
+  assert.equal(proof.isError, true);
+  assert.match(content(proof).error, /render_proof can be called at most 16 times per run/);
+  assert.equal((calls.renderProof as Row[]).length, 16);
+
+  for (let i = 0; i < 4; i++) assert.equal((await run("impact_list", { revisionId: "rev-1" }, runCtx)).isError, undefined);
+  const impact = await run("impact_list", { revisionId: "rev-1" }, runCtx);
+  assert.equal(impact.isError, true);
+  assert.match(content(impact).error, /impact_list can be called at most 4 times per run/);
+  assert.equal((calls.impactForRevision as unknown[]).length, 4);
+
+  // Another run starts from zero.
+  assert.equal((await run("impact_list", { revisionId: "rev-1" }, ctx())).isError, undefined);
+});
+
 test("render_proof: a render failure is an error result", async () => {
+  ownDraft();
   renderProofImpl = async () => {
     throw new Error("This output has no document \"XL\"");
   };
@@ -837,6 +1003,7 @@ test("impact_list: counts, up to 30 changed documents, unchanged controls, error
     emailed: false,
     inFlight: false,
   });
+  ownDraft();
   const rows = [...Array.from({ length: 35 }, (_, i) => row(i, true)), row(100, false), row(101, false)];
   const counts = { styles: 37, docs: 37, changed: 35, unchanged: 2, changedByStatus: {}, approvedChanged: 1, deliveredChanged: 1 };
   impactImpl = async () => ({ rows, counts, errors: [{ styleId: "s-err", message: "boom" }], durationMs: 1200 });
@@ -864,6 +1031,7 @@ test("impact_list: counts, up to 30 changed documents, unchanged controls, error
 });
 
 test("impact_list: too many styles / unknown revision is an error result", async () => {
+  ownDraft();
   impactImpl = async () => {
     throw new Error("This layout prints on more than 400 styles, too many to compare in one go.");
   };
@@ -991,6 +1159,27 @@ test("propose_memory: a PROPOSED note (customer defaults to the request's) and a
   await run("propose_memory", { scope: "DOC_TYPE", text: "Stickers keep 5 pt minimum.", sourceKind: "AGENT_FINDING" });
   assert.equal((calls.createProposedMemory[1] as Row).scopeRef, "STICKER");
   assert.equal(logs.at(-1)?.kind, "memory");
+});
+
+test("propose_memory: no GLOBAL notes, and at most 3 proposals per run", async () => {
+  assert.equal(tool("propose_memory").input.safeParse({ scope: "GLOBAL", text: "x", sourceKind: "REQUEST" }).success, false);
+  const runCtx = ctx();
+  for (let i = 0; i < 3; i++) {
+    const res = await run("propose_memory", { scope: "MONDAY", text: `Fact ${i}`, sourceKind: "AGENT_FINDING" }, runCtx);
+    assert.equal(res.isError, undefined);
+  }
+  const fourth = await run("propose_memory", { scope: "MONDAY", text: "Fact 3", sourceKind: "AGENT_FINDING" }, runCtx);
+  assert.equal(fourth.isError, true);
+  assert.match(content(fourth).error, /at most 3 times per run/);
+  assert.equal((calls.createProposedMemory as unknown[]).length, 3);
+
+  // A refused proposal (no scopeRef) does not use up the budget.
+  request.customerId = null;
+  const fresh = ctx();
+  assert.equal((await run("propose_memory", { scope: "CUSTOMER", text: "x", sourceKind: "REQUEST" }, fresh)).isError, true);
+  for (let i = 0; i < 3; i++) {
+    assert.equal((await run("propose_memory", { scope: "MONDAY", text: `Again ${i}`, sourceKind: "REQUEST" }, fresh)).isError, undefined);
+  }
 });
 
 test("propose_memory: a customer note without a known customer is refused", async () => {
