@@ -4,6 +4,8 @@ import { getSessionWithRole } from "@/lib/auth-server";
 import { canReview } from "@/lib/roles";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { loadRequestView } from "@/lib/change-requests/review-view";
+import { resumeAwaitingCode } from "@/lib/change-requests/gap";
+import { startChangeRequestRun } from "@/lib/change-requests/agent/job";
 import { RequestStatusPill } from "../status-pill";
 import { RequestReview } from "./request-review";
 
@@ -45,6 +47,19 @@ export default async function RequestPage({
     redirect("/requests");
   }
   const view = result.view;
+
+  // Design §5.6: opening the request picks up an output that was waiting for
+  // a new variable once the deploy that added it is live (the cron sweep does
+  // the same every tick). Admins only; fail-soft; starts at most this
+  // request's own outputs and never blocks the page.
+  const waiting = view.admin ? view.outputs.filter((o) => o.status === "NEEDS_CODE").map((o) => o.id) : [];
+  if (waiting.length > 0) {
+    const resumed = await resumeAwaitingCode(
+      (outputId) => startChangeRequestRun(outputId, { trigger: "resume", userId: session.user.id }),
+      { outputIds: waiting },
+    ).catch(() => [] as string[]);
+    if (resumed.length > 0) redirect(`/requests/${id}${sp.output ? `?output=${sp.output}` : ""}`);
+  }
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">

@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { ProdSpecStyleRunList, StyleRunRow } from "@/lib/outputs/prod-spec-rerun";
+import { triggerLabel } from "@/lib/queue/trigger-labels";
 
 type Batch = {
   id: string;
@@ -610,18 +611,8 @@ function statusLabel(status: string): string {
 // into a client bundle without pulling in server-only deps — this is just the
 // tooltip text). Kept tiny; the badge itself is driven by `kind`.
 function triggerLabelClient(source: string): string {
-  const labels: Record<string, string> = {
-    WEBHOOK: "Monday webhook (fields landed)",
-    MANUAL_RERUN: "manual re-run",
-    ADMIN_TEST: "admin test",
-    MANUAL_IMPORT: "import promotion",
-    TICKET_RERUN: "rejection-ticket re-run",
-    TICKET_FIX: "rejection-ticket fix",
-    EAN_RESOLVED: "barcodes landed (EAN handoff)",
-    CRON_SWEEP: "backlog sweep",
-    MANUAL_BULK: "bulk run",
-  };
-  return labels[source] ?? source.toLowerCase().replace(/_/g, " ");
+  // trigger-labels.ts is a pure leaf (no imports), so the client can share it.
+  return triggerLabel(source);
 }
 
 function timeAgo(iso: string): string {

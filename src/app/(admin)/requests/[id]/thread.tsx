@@ -152,8 +152,14 @@ function Composer({ view, output, onChanged }: { view: RequestView; output: Outp
 
   const answering = output.status === "NEEDS_INFO" || (output.status === "IN_REVIEW" && !output.currentRevisionId);
   const revising = view.admin && output.status === "IN_REVIEW" && Boolean(output.currentRevisionId);
+  // In review without a draft the agent either asked something or answered;
+  // only a question gets "Answer the question".
+  const lastAgent = [...view.messages].reverse().find((m) => m.outputId === output.id && m.authorKind === "AGENT");
+  const asked = output.status === "NEEDS_INFO" || lastAgent?.kind === "question";
   const placeholder = answering
-    ? "Answer the question…"
+    ? asked
+      ? "Answer the question…"
+      : "Reply to the agent…"
     : revising
       ? "Ask for changes to this draft…"
       : "Add a note to the thread…";
