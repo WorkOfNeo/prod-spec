@@ -2,31 +2,37 @@
 // Change-request agent — the job (design §5.7).
 //
 // One run = one output (issue) of one request. startChangeRequestRun() is what
-// routes call: it claims the output (status WORKING, plus an in-process lock so
-// a double click can't start two runs), kicks the job off WITHOUT awaiting it
-// and returns at once; the request page polls for the result. The job:
+// routes call: it claims the output (one conditional write to WORKING, plus an
+// in-process lock so a double click can't start two runs), kicks the job off
+// WITHOUT awaiting it and returns at once; the request page polls for the
+// result. The job:
 //
 //   1. loads the request, this output, its screenshots and — on a revision —
 //      the thread since the last draft and a summary of the current draft;
 //   2. runs the tool-use loop (loop.ts) with the agent tools (tools.ts), every
 //      tool call and every model turn (tokens + cost) logged as a step;
-//   3. applies the outcome: a finished draft goes to IN_REVIEW with the agent's
-//      summary in the thread; a code handoff or a question was already applied
-//      by the tool that made it; anything else is FAILED with a plain reason.
+//   3. applies the outcome: a run that made a draft hands it to review with the
+//      agent's summary in the thread; a run that only answered (a question, or
+//      "no layout change is needed or possible") goes to review with that
+//      answer and the current draft, if any, left as it is; a code handoff or a
+//      question was already applied by the tool that made it; only a run that
+//      broke (budget spent, refusal, cut off, error, AI not configured) is
+//      FAILED with a plain reason.
 //
 // Rails (design §2): the job never publishes, reruns or emails — it only moves
 // the output's status and writes thread messages and steps. Drafts are created
 // by the propose_patch tool, never here.
 //
 // A run that dies with the process (deploy, crash) would leave the output
-// WORKING forever, so each model turn touches the output's updatedAt as a
-// heartbeat and failStaleRuns(), wired into the cron sweep, fails outputs with
-// no sign of life for 20 minutes. A run that does finish after being failed
-// that way finds its output no longer WORKING and leaves it alone.
+// WORKING forever, so each model turn and (at most every 30 s) each tool step
+// touches the output's updatedAt as a heartbeat, and failStaleRuns(), wired
+// into the cron sweep, fails outputs with no sign of life for 20 minutes. A
+// run that does finish after being failed that way finds its output no longer
+// WORKING and leaves it alone; its tools refuse to write for the same reason.
 // =====================================================
 
 import type Anthropic from "@anthropic-ai/sdk";
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { orEmpty } from "@/lib/change-requests/db-safe";
 import {
@@ -35,6 +41,7 @@ import {
   getOutputWithRequest,
   getRequestDetail,
   logStep,
+  rollUpRequestStatus,
   setOutputStatus,
   type RequestDetail,
 } from "@/lib/change-requests/store";
@@ -65,6 +72,8 @@ export type StartRunResult = { started: true } | { started: false; reason: strin
 
 export const MAX_TOOL_CALLS = 30;
 export const STALE_RUN_MS = 20 * 60_000;
+// Tool steps refresh the heartbeat at most this often (model turns always do).
+export const HEARTBEAT_THROTTLE_MS = 30_000;
 
 // What a run ended as — returned for tests and callers that await the job.
 export type RunOutcome = {
@@ -77,30 +86,42 @@ export type RunOutcome = {
 };
 
 // ── In-process lock ──────────────────────────────────────────────────────────
-// On globalThis so a dev hot reload doesn't forget runs still in flight.
-const g = globalThis as typeof globalThis & { __changeRequestRuns?: Set<string> };
-const running: Set<string> = (g.__changeRequestRuns ??= new Set<string>());
+// On globalThis so a dev hot reload doesn't forget runs still in flight. Each
+// entry remembers when its run started: an entry older than the stale-run
+// threshold belongs to a run that hung (the sweep has failed its output by
+// then), so it no longer blocks a new start. Only the run that owns an entry
+// removes it, so a hung run that finally ends can't unlock a newer one.
+type RunLock = { startedAt: number };
+const g = globalThis as typeof globalThis & { __changeRequestRunLocks?: Map<string, RunLock> };
+const running: Map<string, RunLock> = (g.__changeRequestRunLocks ??= new Map<string, RunLock>());
 
-export function isRunInProgress(outputId: string): boolean {
-  return running.has(outputId);
+function lockHeld(outputId: string): boolean {
+  const lock = running.get(outputId);
+  return lock !== undefined && Date.now() - lock.startedAt < STALE_RUN_MS;
 }
 
-// Claim the output and start the job in the background. Refuses an output the
-// agent is already working on. Resolves as soon as the output is WORKING.
-// The kept memory notes that apply to this run (global, this customer, this
-// layout's document type, Monday), as one prompt block. Any failure reads as
-// "no notes": memory improves a run, it must never be the reason one fails.
-async function loadMemoryNotes(customerId: string | null, layoutId: string | null): Promise<string> {
-  try {
-    const docType = layoutId
-      ? (await orEmpty(db.outputLayout.findUnique({ where: { id: layoutId }, select: { docType: true } }), null))?.docType
-      : undefined;
-    const memory = await memoriesForPrompt({ customerId: customerId ?? undefined, docType: docType ?? undefined });
-    return memory.text;
-  } catch (err) {
-    console.warn("[change-requests] memory notes unavailable for this run:", err);
-    return "";
-  }
+function releaseLock(outputId: string, lock: RunLock): void {
+  if (running.get(outputId) === lock) running.delete(outputId);
+}
+
+export function isRunInProgress(outputId: string): boolean {
+  return lockHeld(outputId);
+}
+
+// The statuses a run may start from. Never WORKING (a run holds the output)
+// and never APPROVED / PUBLISHED / REJECTED (a person has settled it).
+export const CLAIMABLE_STATUSES = [
+  "NEW",
+  "FAILED",
+  "IN_REVIEW",
+  "NEEDS_INFO",
+  "NEEDS_CODE",
+] as const satisfies readonly OutputStatus[];
+
+function claimRefusal(status: string | null): string {
+  if (status === null) return "Output not found";
+  if (status === "WORKING") return "The agent is already working on this output";
+  return `The output is ${status.toLowerCase().replace(/_/g, " ")}, so the agent can't start on it`;
 }
 
 // Start the agent on every output of a freshly filed request. Called by the
@@ -124,32 +145,52 @@ export async function startRunsForRequest(requestId: string, userId: string | nu
   return results;
 }
 
+// Claim the output and start the job in the background. Resolves as soon as
+// the output is WORKING. The claim is ONE conditional write (status still
+// claimable → WORKING), so two app processes, or a click racing the sweep's
+// resume, can't both win it; the in-process lock only spares the database a
+// double click.
 export async function startChangeRequestRun(outputId: string, opts: RunOptions): Promise<StartRunResult> {
-  if (running.has(outputId)) return { started: false, reason: "A run is already in progress for this output" };
-  running.add(outputId);
+  if (lockHeld(outputId)) return { started: false, reason: "A run is already in progress for this output" };
+  const lock: RunLock = { startedAt: Date.now() };
+  running.set(outputId, lock);
   let requestId: string;
   try {
     const output = await getOutputWithRequest(outputId);
     if (!output) {
-      running.delete(outputId);
+      releaseLock(outputId, lock);
       return { started: false, reason: "Output not found" };
     }
-    if (output.status === "WORKING") {
-      running.delete(outputId);
-      return { started: false, reason: "The agent is already working on this output" };
+    const claim = await db.changeRequestOutput.updateMany({
+      where: { id: outputId, status: { in: [...CLAIMABLE_STATUSES] } },
+      data: { status: "WORKING" },
+    });
+    if (claim.count === 0) {
+      releaseLock(outputId, lock);
+      // Re-read: a claimable status read a moment ago means someone else just
+      // moved it (most likely another start).
+      const now = await getOutputWithRequest(outputId);
+      return { started: false, reason: claimRefusal(now ? now.status : null) };
     }
     requestId = output.requestId;
-    await setOutputStatus(outputId, "WORKING");
   } catch (err) {
-    running.delete(outputId);
+    releaseLock(outputId, lock);
     throw err;
   }
+  // The request's status follows its outputs. A failed roll-up must not
+  // strand a claimed output without its run; the run's own status changes
+  // roll the request up again.
+  await quietly(() => rollUpRequestStatus(requestId));
 
-  void runChangeRequestJob(outputId, opts)
+  // A run whose lock was taken over (it hung past the stale threshold and a
+  // new run started) must not apply its late result over the new run's.
+  const isCurrent = () => running.get(outputId) === lock;
+  void runChangeRequestJob(outputId, opts, isCurrent)
     .catch(async (err) => {
       // runChangeRequestJob records its own failures; this only fires when
       // even that failed (or the output vanished). Last attempt at a status.
       console.error(`[change-requests] run for output ${outputId} crashed:`, err);
+      if (!isCurrent()) return;
       await quietly(() => setOutputStatus(outputId, "FAILED"));
       await quietly(() =>
         appendMessage({
@@ -161,14 +202,36 @@ export async function startChangeRequestRun(outputId: string, opts: RunOptions):
         }),
       );
     })
-    .finally(() => running.delete(outputId));
+    .finally(() => releaseLock(outputId, lock));
 
   return { started: true };
 }
 
+// The kept memory notes that apply to this run (global, this customer, this
+// layout's document type, Monday), as one prompt block. Any failure reads as
+// "no notes": memory improves a run, it must never be the reason one fails.
+async function loadMemoryNotes(customerId: string | null, layoutId: string | null): Promise<string> {
+  try {
+    const docType = layoutId
+      ? (await orEmpty(db.outputLayout.findUnique({ where: { id: layoutId }, select: { docType: true } }), null))?.docType
+      : undefined;
+    const memory = await memoriesForPrompt({ customerId: customerId ?? undefined, docType: docType ?? undefined });
+    return memory.text;
+  } catch (err) {
+    console.warn("[change-requests] memory notes unavailable for this run:", err);
+    return "";
+  }
+}
+
 // ── The job ──────────────────────────────────────────────────────────────────
 
-export async function runChangeRequestJob(outputId: string, opts: RunOptions): Promise<RunOutcome> {
+// `isCurrent` answers whether this run still owns the output (see
+// startChangeRequestRun); a run that doesn't applies nothing when it ends.
+export async function runChangeRequestJob(
+  outputId: string,
+  opts: RunOptions,
+  isCurrent: () => boolean = () => true,
+): Promise<RunOutcome> {
   const output = await getOutputWithRequest(outputId);
   if (!output) throw new Error(`Change-request output ${outputId} not found`);
   const requestId = output.requestId;
@@ -205,12 +268,20 @@ export async function runChangeRequestJob(outputId: string, opts: RunOptions): P
       memoryText ? [memoryText] : [],
     );
 
+    // One heartbeat per run: every model turn beats, tool steps at most every
+    // HEARTBEAT_THROTTLE_MS, so a long phase of tool calls (proofs, impact)
+    // between two turns is not mistaken for a dead run.
+    const beat = heartbeatFor(outputId);
     const ctx: ToolContext = {
       requestId,
       outputId,
       userId: opts.userId,
       log: async (step) => {
-        await logStep({ ...run, kind: step.kind, summary: step.summary, detail: step.detail as Prisma.InputJsonValue });
+        try {
+          await logStep({ ...run, kind: step.kind, summary: step.summary, detail: step.detail as Prisma.InputJsonValue });
+        } finally {
+          await beat();
+        }
       },
     };
 
@@ -250,7 +321,7 @@ export async function runChangeRequestJob(outputId: string, opts: RunOptions): P
           costUsd: t.costUsd,
           detail: { ...t.usage, stopReason: t.stopReason, fallback: t.fallback },
         });
-        await heartbeat(outputId);
+        await beat(true);
       },
     });
 
@@ -271,8 +342,10 @@ export async function runChangeRequestJob(outputId: string, opts: RunOptions): P
       },
     });
 
+    if (!isCurrent()) return superseded(run);
     return await applyOutcome(run, result, before);
   } catch (err) {
+    if (!isCurrent()) return superseded(run);
     const reason =
       err instanceof AiNotConfiguredError
         ? "AI is not configured (ANTHROPIC_API_KEY)"
@@ -283,16 +356,34 @@ export async function runChangeRequestJob(outputId: string, opts: RunOptions): P
 
 type RunRef = { requestId: string; outputId: string };
 
+async function superseded(run: RunRef): Promise<RunOutcome> {
+  await quietly(() =>
+    logStep({ ...run, kind: "error", summary: "Run result not applied: a newer run took over this output" }),
+  );
+  return { status: null, discarded: true };
+}
+
 async function applyOutcome(run: RunRef, result: AgentLoopResult, before: Set<string>): Promise<RunOutcome> {
   // declare_gap / ask_reviewer applied their own status (NEEDS_CODE /
-  // NEEDS_INFO) and thread message. Only a hand-off that somehow left the
-  // output WORKING needs the job, or it would sit there until the sweep.
+  // NEEDS_INFO / IN_REVIEW) and thread message. Only a hand-off that somehow
+  // left the output WORKING needs the job, or it would sit there until the
+  // sweep. A draft the run made before handing off still counts as a draft
+  // (draftCount) and stays the output's current one.
   if (result.stopReason === "terminal" && result.terminal && result.terminal.name !== "finish") {
     const now = await getOutputWithRequest(run.outputId);
     if (now?.status === "WORKING") {
       return failRun(run, `The agent's hand-off (${result.terminal.name}) did not update the output. Start the run again.`);
     }
-    return { status: (now?.status as OutputStatus | undefined) ?? null };
+    const draft = now ? await newestRunDraft(run.outputId, before) : null;
+    if (now && draft) {
+      await db.changeRequestOutput.updateMany({
+        // Same status the hand-off left: never rewrite an output a person
+        // moved on meanwhile.
+        where: { id: run.outputId, status: now.status },
+        data: { draftCount: { increment: 1 }, ...currentRevisionPatch(now.currentRevisionId, draft.id) },
+      });
+    }
+    return { status: (now?.status as OutputStatus | undefined) ?? null, ...(draft ? { revisionId: draft.id } : {}) };
   }
 
   const now = await getOutputWithRequest(run.outputId);
@@ -309,9 +400,9 @@ async function applyOutcome(run: RunRef, result: AgentLoopResult, before: Set<st
 
   switch (result.stopReason) {
     case "terminal":
-      return completeWithDraft(run, before, summaryOf(result));
+      return completeRun(run, now, before, summaryOf(result));
     case "end_turn":
-      return completeWithDraft(run, before, result.finalText ?? "");
+      return completeRun(run, now, before, result.finalText ?? "");
     case "max_calls":
       return failRun(run, `The agent used all ${MAX_TOOL_CALLS} of its tool calls without finishing.`);
     case "refusal":
@@ -327,29 +418,72 @@ async function applyOutcome(run: RunRef, result: AgentLoopResult, before: Set<st
   }
 }
 
-// finish (or a closing text) → the draft this run made goes to review.
-async function completeWithDraft(run: RunRef, before: Set<string>, summary: string): Promise<RunOutcome> {
+// Point the output at `draftId`. A stored impact belongs to the revision it
+// was computed for, so moving to another revision drops it in the same write
+// (the review screen then recomputes it for the new one).
+function currentRevisionPatch(currentRevisionId: string | null, draftId: string) {
+  return currentRevisionId === draftId
+    ? { currentRevisionId: draftId }
+    : { currentRevisionId: draftId, impact: Prisma.DbNull };
+}
+
+// finish (or a closing text). Every way of ending the run on purpose goes to
+// review — only a broken run is FAILED:
+//   • a draft made in this run → it becomes current, draftCount + 1, the
+//     agent's summary in the thread attached to it;
+//   • no new draft (the reviewer only asked a question, or no layout change is
+//     needed or possible) → the agent's answer in the thread; the current
+//     draft, if the output has one, stays current and untouched, so the
+//     reviewer can approve it, reply, or close the request.
+async function completeRun(
+  run: RunRef,
+  now: { currentRevisionId: string | null },
+  before: Set<string>,
+  summary: string,
+): Promise<RunOutcome> {
   const draft = await newestRunDraft(run.outputId, before);
-  if (!draft) {
-    // Keep what the agent said — often why it made no change (a data problem,
-    // not a layout problem) — then fail so an admin looks.
-    if (summary.trim()) {
-      await appendMessage({ ...run, authorKind: "AGENT", kind: "message", body: summary.trim() });
-    }
-    return failRun(run, "The agent finished without a draft");
+  if (draft) {
+    await setOutputStatus(run.outputId, "IN_REVIEW", {
+      draftCount: { increment: 1 },
+      ...currentRevisionPatch(now.currentRevisionId, draft.id),
+    });
+    await appendMessage({
+      ...run,
+      authorKind: "AGENT",
+      kind: "message",
+      body: summary.trim() || "Draft ready for review.",
+      revisionId: draft.id,
+    });
+    return { status: "IN_REVIEW", revisionId: draft.id };
   }
-  await setOutputStatus(run.outputId, "IN_REVIEW", {
-    currentRevisionId: draft.id,
-    draftCount: { increment: 1 },
-  });
-  await appendMessage({
-    ...run,
-    authorKind: "AGENT",
-    kind: "message",
-    body: summary.trim() || "Draft ready for review.",
-    revisionId: draft.id,
-  });
-  return { status: "IN_REVIEW", revisionId: draft.id };
+
+  const current = await openCurrentDraft(now.currentRevisionId);
+  await setOutputStatus(run.outputId, "IN_REVIEW");
+  // Not attached to the draft (no revisionId): the draft's own summary stays
+  // the one the review screen shows next to it.
+  if (summary.trim()) {
+    await appendMessage({ ...run, authorKind: "AGENT", kind: "message", body: summary.trim() });
+  } else {
+    await appendMessage({
+      ...run,
+      authorKind: "SYSTEM",
+      kind: "status",
+      body: current
+        ? "The agent ended its run without a new draft or a reply. The current draft is unchanged."
+        : "The agent ended its run without a draft or an explanation. Reply to ask it again, or close the request.",
+    });
+  }
+  return { status: "IN_REVIEW", ...(current ? { revisionId: current.id } : {}) };
+}
+
+// The output's current revision when it is an open DRAFT.
+async function openCurrentDraft(revisionId: string | null): Promise<{ id: string } | null> {
+  if (!revisionId) return null;
+  const rev = await orEmpty(
+    db.outputLayoutRevision.findUnique({ where: { id: revisionId }, select: { id: true, status: true } }),
+    null,
+  );
+  return rev && rev.status === "DRAFT" ? { id: rev.id } : null;
 }
 
 async function failRun(run: RunRef, reason: string): Promise<RunOutcome> {
@@ -406,6 +540,17 @@ async function heartbeat(outputId: string): Promise<void> {
   );
 }
 
+// A heartbeat that writes at most once per HEARTBEAT_THROTTLE_MS unless forced.
+function heartbeatFor(outputId: string): (force?: boolean) => Promise<void> {
+  let last = Number.NEGATIVE_INFINITY;
+  return async (force = false) => {
+    const now = Date.now();
+    if (!force && now - last < HEARTBEAT_THROTTLE_MS) return;
+    last = now;
+    await heartbeat(outputId);
+  };
+}
+
 // ── The first user message ───────────────────────────────────────────────────
 
 type OutputRow = RequestDetail["outputs"][number];
@@ -447,12 +592,17 @@ export function buildFirstMessage(input: {
     parts.push(`Other outputs in this request are handled in their own runs — leave them alone: ${others.join(", ")}.`);
   }
 
+  // An open draft is what a comment is "on". Without one (the agent answered
+  // last time, or its draft was discarded) the admin is replying to the agent.
+  const openDraft = currentDraft?.status === "DRAFT";
   if (trigger === "comment" || trigger === "answer") {
     const thread = threadSinceLastDraft(detail.messages, output.id);
     const heading =
-      trigger === "comment"
-        ? "A reviewer commented on your draft. The thread since your last draft:"
-        : "You asked the reviewer a question. The thread since your last draft, with their answer:";
+      trigger === "answer"
+        ? "You asked the reviewer a question. The thread since your last draft, with their answer:"
+        : openDraft
+          ? "A reviewer commented on your draft. The thread since your last draft:"
+          : "The admin replied to you. The thread so far:";
     parts.push(thread.length ? `${heading}\n${thread.map(formatMessage).join("\n")}` : `${heading}\n(no messages)`);
   }
   if (trigger === "resume" && output.awaitingToken) {
@@ -463,8 +613,11 @@ export function buildFirstMessage(input: {
 
   if (currentDraft) {
     parts.push(describeDraft(currentDraft));
-    if (trigger === "comment" || trigger === "answer") {
-      parts.push("Revise this draft for the thread above rather than starting over, unless it asks for something different.");
+    if (openDraft && (trigger === "comment" || trigger === "answer")) {
+      parts.push(
+        "Revise this draft for the thread above rather than starting over, unless it asks for something different. " +
+          "If the thread only asks a question, answer it with finish and leave the draft as it is.",
+      );
     }
   }
 

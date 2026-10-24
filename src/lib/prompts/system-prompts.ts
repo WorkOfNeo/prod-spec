@@ -3,6 +3,7 @@ import {
   CHANGE_REQUEST_AGENT_PROMPT_KEY,
   DEFAULT_CHANGE_REQUEST_AGENT_PROMPT,
 } from "@/lib/change-requests/agent/prompt";
+import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 
 // =====================================================
 // Editable AI system prompts.
@@ -72,6 +73,10 @@ type PromptDef = {
   name: string;
   description: string;
   default: string;
+  // For a feature behind a flag: the prompt is listed on Settings → Prompts
+  // only while this returns true. The def stays registered either way, so the
+  // feature's own reads (getSystemPromptContent) work whenever it runs.
+  listed?: () => boolean;
 };
 
 // The registry. Add a new AI feature's prompt by appending an entry here — no
@@ -99,6 +104,9 @@ export const SYSTEM_PROMPT_DEFS: PromptDef[] = [
     description:
       "Guides the agent that works a change request: reads the report and screenshots, drafts a layout change on a copy, renders proofs and hands the draft to an admin. The tools it can use (read and draft only), its call budget and the hand-off rules are fixed in code; kept memory notes are appended automatically — edit the guidance here.",
     default: DEFAULT_CHANGE_REQUEST_AGENT_PROMPT,
+    // Change requests ship dark (CHANGE_REQUESTS_ENABLED): no trace of the
+    // feature on the settings page until it is switched on.
+    listed: changeRequestsEnabled,
   },
 ];
 
@@ -140,8 +148,14 @@ export async function getSystemPromptContent(key: string): Promise<string> {
   }
 }
 
-// Every registered prompt with its current (custom or default) content, for
-// the Settings → Prompts page.
+// The registered prompts the Settings → Prompts page shows: all of them,
+// except those of a feature that is switched off.
+export function listedPromptDefs(): PromptDef[] {
+  return SYSTEM_PROMPT_DEFS.filter((def) => def.listed?.() ?? true);
+}
+
+// Every listed prompt with its current (custom or default) content, for the
+// Settings → Prompts page.
 export async function listSystemPrompts(): Promise<SystemPromptView[]> {
   let rows: { key: string; content: string; updatedByEmail: string | null; updatedAt: Date }[] = [];
   let available = true;
@@ -154,7 +168,7 @@ export async function listSystemPrompts(): Promise<SystemPromptView[]> {
     available = false;
   }
   const byKey = new Map(rows.map((r) => [r.key, r]));
-  return SYSTEM_PROMPT_DEFS.map((def) => {
+  return listedPromptDefs().map((def) => {
     const row = byKey.get(def.key);
     return {
       key: def.key,

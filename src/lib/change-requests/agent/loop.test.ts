@@ -10,7 +10,14 @@ import Anthropic from "@anthropic-ai/sdk";
 import { AnthropicError } from "@anthropic-ai/sdk/core/error";
 import { z } from "zod";
 import type { AgentTool, AgentToolName, ToolContext, ToolResult } from "./contract";
-import { echoableContent, runAgentLoop, toolDefinitions, type AgentLoopClient, type AgentTurn } from "./loop";
+import {
+  admitWithinBudget,
+  echoableContent,
+  runAgentLoop,
+  toolDefinitions,
+  type AgentLoopClient,
+  type AgentTurn,
+} from "./loop";
 
 type Params = Parameters<AgentLoopClient["beta"]["messages"]["stream"]>[0];
 type Msg = Anthropic.Beta.BetaMessage;
@@ -342,6 +349,59 @@ test("the call budget is strict: calls past it never run, and the run stops as m
   // Close to the limit the model is told how many calls are left.
   const reminder = (requests[1].messages[2].content as { type: string; text?: string }[]).find((b) => b.type === "text");
   assert.match(reminder?.text ?? "", /^2 tool calls left/);
+});
+
+test("at the budget's edge a hand-off is admitted first: [impact_list, finish] at 29 of 30 still finishes", async () => {
+  const getLayout = tool("get_layout", () => ({ content: "again" }));
+  const impact = tool("impact_list", () => ({ content: "12 change" }));
+  const finish = tool("finish", () => ({ content: "handed over" }), z.object({ summary: z.string() }));
+  const { client } = fakeClient([
+    msg([use("1", "get_layout", { id: "a" }), use("2", "get_layout", { id: "b" })], "tool_use"),
+    msg([use("3", "impact_list", { id: "rev" }), use("4", "finish", { summary: "Done." })], "tool_use"),
+  ]);
+  const res = await runAgentLoop({ ...base, client, tools: [getLayout, impact, finish], ctx: ctx().ctx, maxToolCalls: 3 });
+  assert.equal(res.stopReason, "terminal");
+  assert.equal(res.terminal?.name, "finish");
+  assert.equal(impact.calls.length, 0, "the ordinary call past the budget never ran");
+  assert.equal(res.calls.length, 3);
+});
+
+test("admitWithinBudget: everything when it fits, hand-offs first when it doesn't, in the model's order", () => {
+  const t = (name: string) => ({ name });
+  const turn = [t("get_layout"), t("impact_list"), t("ask_reviewer"), t("finish")];
+  assert.deepEqual(admitWithinBudget(turn, 4), turn);
+  assert.deepEqual(
+    admitWithinBudget(turn, 3).map((b) => b.name),
+    ["get_layout", "ask_reviewer", "finish"],
+  );
+  assert.deepEqual(
+    admitWithinBudget(turn, 1).map((b) => b.name),
+    ["ask_reviewer"],
+  );
+  assert.deepEqual(admitWithinBudget(turn, 0), []);
+});
+
+test("propose_patch calls of one turn run one at a time, in the model's order", async () => {
+  const events: string[] = [];
+  let active = 0;
+  const patch = tool("propose_patch", async (input) => {
+    active++;
+    events.push(`start:${input.id}:${active}`);
+    await new Promise((r) => setTimeout(r, input.id === "first" ? 20 : 1));
+    events.push(`end:${input.id}`);
+    active--;
+    return { content: `draft for ${input.id}` };
+  });
+  const { client, requests } = fakeClient([
+    msg([use("p1", "propose_patch", { id: "first" }), use("p2", "propose_patch", { id: "second" })], "tool_use"),
+    msg([text("ok")], "end_turn"),
+  ]);
+  await runAgentLoop({ ...base, client, tools: [patch], ctx: ctx().ctx });
+  assert.deepEqual(events, ["start:first:1", "end:first", "start:second:1", "end:second"]);
+  assert.deepEqual(
+    resultsIn(requests[1]).map((r) => r.tool_use_id),
+    ["p1", "p2"],
+  );
 });
 
 test("a refusal stops the run before any of its tool calls run", async () => {
