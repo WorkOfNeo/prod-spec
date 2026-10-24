@@ -217,18 +217,28 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<AgentLoop
 
     messages.push({ role: "assistant", content: content as BetaContentBlockParam[] });
 
-    // The call budget is strict: calls past it are never run. Within a turn,
-    // ordinary calls run in parallel first and hand-off tools run after them,
-    // one at a time, so a hand-off sees every draft the turn made and the first
-    // successful one ends the run.
-    const runnable = toolUses.slice(0, Math.max(0, maxToolCalls - calls.length));
+    // The call budget is strict: calls past it are never run. Hand-off tools
+    // are admitted first, so a turn like [impact_list, finish] at 29 of 30
+    // still hands the request back instead of ending as max_calls with the
+    // work done. Within a turn, ordinary calls run in parallel; drafts
+    // (propose_patch) then run one at a time in the model's order, because
+    // each builds on the output's current draft and two at once would fork
+    // it; hand-off tools run last, one at a time, so a hand-off sees every
+    // draft the turn made and the first successful one ends the run.
+    const runnable = admitWithinBudget(toolUses, Math.max(0, maxToolCalls - calls.length));
     const isTerminal = (name: string) => TERMINAL_TOOLS.has(name as AgentToolName);
+    const isSerial = (name: string) => SERIAL_TOOLS.has(name as AgentToolName);
     const results = new Map<string, BetaToolResultBlockParam>();
 
     const plain = await Promise.all(
-      runnable.filter((b) => !isTerminal(b.name)).map((b) => executeTool(b, byName, ctx)),
+      runnable.filter((b) => !isTerminal(b.name) && !isSerial(b.name)).map((b) => executeTool(b, byName, ctx)),
     );
     for (const r of plain) {
+      calls.push(r.call);
+      results.set(r.block.tool_use_id, r.block);
+    }
+    for (const b of runnable.filter((x) => isSerial(x.name))) {
+      const r = await executeTool(b, byName, ctx);
       calls.push(r.call);
       results.set(r.block.tool_use_id, r.block);
     }
@@ -261,6 +271,22 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<AgentLoop
     }
     messages.push({ role: "user", content: reply });
   }
+}
+
+// ── Budget + ordering ────────────────────────────────────────────────────────
+
+// Tools that run one at a time, in order, within a turn (see the loop).
+const SERIAL_TOOLS: ReadonlySet<AgentToolName> = new Set(["propose_patch"]);
+
+// The calls of one turn that fit in what is left of the budget: hand-off
+// tools first, then the rest in the model's order. Returned in the model's
+// order; the loop decides the execution order by kind.
+export function admitWithinBudget<T extends { name: string }>(toolUses: readonly T[], left: number): T[] {
+  if (left <= 0) return [];
+  if (toolUses.length <= left) return [...toolUses];
+  const isTerminal = (b: T) => TERMINAL_TOOLS.has(b.name as AgentToolName);
+  const admitted = new Set<T>([...toolUses.filter(isTerminal), ...toolUses.filter((b) => !isTerminal(b))].slice(0, left));
+  return toolUses.filter((b) => admitted.has(b));
 }
 
 // ── Tool definitions ─────────────────────────────────────────────────────────
