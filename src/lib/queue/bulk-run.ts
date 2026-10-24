@@ -41,7 +41,10 @@ export type BulkRunResult = {
  *
  * MANUAL_BULK makes the runner suppress the per-style review-email blast (a
  * big run mustn't send hundreds of emails) while still recording in-app review
- * notifications — see src/lib/queue/runner.ts. The runner re-checks each
+ * notifications — see src/lib/queue/runner.ts. A change-request approval
+ * passes triggerSource CHANGE_REQUEST instead: same lane, but the runner then
+ * re-arms each style's cover without the supplier digest email
+ * (coverNotifiesSupplier in trigger-labels.ts). The runner re-checks each
  * variant's readiness at render time, so a field that regresses between here
  * and render still won't ship an incomplete output.
  *
@@ -58,6 +61,9 @@ export async function enqueueBulkRun(input: {
   // sweeping them along silently. The caller sets this when the operator has
   // explicitly ticked "include the below-cutoff styles".
   includeBelowCutoff?: boolean;
+  // Why the jobs run, stamped on each. Default MANUAL_BULK (the admin bulk
+  // actions); CHANGE_REQUEST for the scoped rerun after an approved change.
+  triggerSource?: "MANUAL_BULK" | "CHANGE_REQUEST";
 }): Promise<BulkRunResult> {
   // The PO gate for the bulk lane. This helper creates jobs with createMany and
   // so never reaches enqueueGenerationJob's throw — the check has to happen
@@ -95,7 +101,7 @@ export async function enqueueBulkRun(input: {
     id: randomUUID(),
     styleId: r.id,
     prodSpecId: r.prodSpecId, // analytics snapshot, same as enqueueGenerationJob
-    triggerSource: "MANUAL_BULK" as const,
+    triggerSource: input.triggerSource ?? "MANUAL_BULK",
     status: "QUEUED" as const,
     variantKeys: r.variantKeys,
   }));
