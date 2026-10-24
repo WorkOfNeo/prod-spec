@@ -187,6 +187,10 @@ export type ImpactCounts = z.infer<typeof ImpactCountsSchema>;
 export const ImpactSummarySchema = z.object({
   rows: z.array(ImpactRowSchema),
   counts: ImpactCountsSchema,
+  // Styles that could not be rendered (either side): the reason only, no row.
+  errors: z.array(z.object({ styleId: z.string(), message: z.string() })).optional(),
+  // Wall-clock time of the whole comparison.
+  durationMs: z.number().int().min(0).optional(),
 });
 export type ImpactSummary = z.infer<typeof ImpactSummarySchema>;
 
