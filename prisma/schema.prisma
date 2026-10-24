@@ -787,6 +787,9 @@ model OutputLayout {
 
   customer     Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
   businessArea BusinessArea? @relation(fields: [businessAreaId], references: [id], onDelete: SetNull)
+  // Draft + publish history (change requests). The builder autosave still
+  // writes `definition` directly; revisions are the reviewed path.
+  revisions    OutputLayoutRevision[]
 
   @@index([status])
   @@index([customerId])
@@ -796,6 +799,42 @@ model OutputLayout {
 enum OutputLayoutStatus {
   DRAFT
   PUBLISHED
+}
+
+// A proposed or published copy of an OutputLayout definition. Drafts never
+// change what prints: only publishRevision() (src/lib/output-layouts/
+// revisions.ts) writes OutputLayout.definition, from an admin-initiated route,
+// and it refuses when the live layout moved since the draft was taken
+// (baseVersion / baseDefinition), so a builder edit is never silently
+// overwritten. History only moves forward: a restore is a new draft that is
+// published, never a rewind of rows. Statuses and author kinds are TEXT
+// validated in code (src/lib/change-requests/types.ts) so new states need no
+// enum migration. User ids are loose strings (no FK), like UserNotification.
+model OutputLayoutRevision {
+  id                    String    @id @default(cuid())
+  layoutId              String
+  number                Int // per-layout sequence 1..n
+  status                String // DRAFT | PUBLISHED | DISCARDED | SUPERSEDED
+  definition            Json // proposed (draft) or published definition
+  baseDefinition        Json // live definition when the draft was made: diff + restore
+  baseVersion           Int // OutputLayout.version at draft time; publish refuses on mismatch
+  authorKind            String // USER | AGENT
+  authorUserId          String?
+  changeRequestOutputId String?
+  parentRevisionId      String? // the draft this one revises
+  ops                   Json? // LayoutOp[] that produced it
+  note                  String?
+  publishedAt           DateTime?
+  publishedById         String?
+  publishedVersion      Int? // OutputLayout.version after publish
+  createdAt             DateTime  @default(now())
+
+  layout OutputLayout @relation(fields: [layoutId], references: [id], onDelete: Cascade)
+
+  @@unique([layoutId, number])
+  @@index([layoutId, status])
+  @@index([changeRequestOutputId])
+  @@map("output_layout_revisions")
 }
 
 // UI-managed doc-type catalogue (Custom outputs → Document types card).
@@ -1282,6 +1321,19 @@ enum TriggerSource {
   // BulkRunBatch. Email-suppressed (a 200-style run mustn't blast 200 review
   // emails); reviewers still get the in-app inbox entry per style.
   MANUAL_BULK
+  // Scoped rerun enqueued when an admin approves a change request: exactly the
+  // documents the published layout change altered (never approved ones without
+  // a second confirmation). Email-suppressed like MANUAL_BULK, and the runner
+  // re-arms the cover with notifySupplier: false so these reruns never ride the
+  // supplier digest. See src/lib/change-requests/publish.ts.
+  CHANGE_REQUEST
+  // The explicit second confirmation after a change request went live: an
+  // admin sends the changed documents that were already APPROVED back to
+  // review. The only change-request trigger that may regenerate an approved
+  // document (the runner drops approved bases from CHANGE_REQUEST jobs);
+  // otherwise handled exactly like CHANGE_REQUEST (silent cover, never
+  // auto-approved, fresh layouts).
+  CHANGE_REQUEST_APPROVED
 }
 
 model Log {
@@ -1493,6 +1545,8 @@ enum EmailType {
   INVITE // signup invitation link → invitee
   NEW_COMBO // new (customer × business area) combo detected → admin heads-up
   PASSWORD_RESET // password reset link → the account holder (self-service or admin-sent)
+  CHANGE_REQUEST_UPDATE // change request progress (live / rejected / needs info) → the requester
+  CHANGE_REQUEST_NEEDS_CODE // change request needs a new token → the developer, with the build prompt
 }
 
 enum EmailStatus {
@@ -2525,4 +2579,153 @@ model FolderCheckSweepPo {
   @@index([sweepId, state])
   @@index([sweepId, flaggedFiles])
   @@map("folder_check_sweep_pos")
+}
+
+// =====================================================
+// Change requests — "this print output is wrong", reported with text and
+// screenshots per output, worked by an agent that drafts a layout change ON A
+// COPY (OutputLayoutRevision) and hands it to an admin. A human approves every
+// publish. Design: docs/plans/change-requests.md.
+//
+// Every status / kind column is TEXT validated in code
+// (src/lib/change-requests/types.ts), so later states need no enum migration.
+// User references are loose string ids (no FK), like UserNotification. Every
+// reader degrades on a missing table (P2021) so pages stay up between merge
+// and `prisma migrate deploy`. Everything is behind CHANGE_REQUESTS_ENABLED.
+// =====================================================
+model ChangeRequest {
+  id          String   @id @default(cuid())
+  number      Int      @unique @default(autoincrement()) // shown as R-0001
+  title       String
+  status      String // summary of its outputs: NEW | WORKING | IN_REVIEW | NEEDS_INFO | NEEDS_CODE | DONE | REJECTED
+  message     String // the pasted text, as written
+  source      String // ADMIN | REQUESTER
+  createdById String
+  customerId  String?
+  poNumber    String?
+  styleId     String? // the picked style; null = all styles in the PO / unknown
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  outputs     ChangeRequestOutput[]
+  attachments ChangeRequestAttachment[]
+  messages    ChangeRequestMessage[]
+  steps       ChangeRequestStep[]
+
+  @@index([status, createdAt])
+  @@index([createdById])
+  @@map("change_requests")
+}
+
+// One issue per output: the unit an agent works, a reviewer approves and a
+// publish ships.
+model ChangeRequestOutput {
+  id                String    @id @default(cuid())
+  requestId         String
+  position          Int       @default(0)
+  label             String // "Solid polybag sticker"
+  variantKey        String? // base key, e.g. layout:<id>
+  layoutId          String?
+  styleId           String? // representative style for proofs
+  text              String // the issue text for this output
+  status            String // NEW | WORKING | IN_REVIEW | NEEDS_INFO | NEEDS_CODE | APPROVED | PUBLISHED | REJECTED | FAILED
+  currentRevisionId String?
+  draftCount        Int       @default(0)
+  awaitingToken     String? // NEEDS_CODE: the token key we wait for
+  codeSpec          Json? // NEEDS_CODE: spec + build prompt
+  impact            Json? // last ImpactSummary for currentRevisionId
+  rejectReason      String?
+  approvedById      String?
+  approvedAt        DateTime?
+  publishedAt       DateTime?
+  firstTryApproved  Boolean?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  request ChangeRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@index([status])
+  @@map("change_request_outputs")
+}
+
+// Screenshots attached to a request (or one of its outputs). Bytes live in
+// Postgres and are served only behind an admin route — the
+// RejectionAttachment pattern.
+model ChangeRequestAttachment {
+  id           String   @id @default(cuid())
+  requestId    String
+  outputId     String?
+  data         Bytes
+  mimeType     String
+  fileName     String
+  byteSize     Int
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  request ChangeRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@map("change_request_attachments")
+}
+
+// The review thread: reviewer comments, agent questions, memory suggestions
+// and status notes.
+model ChangeRequestMessage {
+  id           String   @id @default(cuid())
+  requestId    String
+  outputId     String?
+  authorKind   String // USER | AGENT | SYSTEM
+  authorUserId String?
+  kind         String   @default("message") // message | question | memory_suggestion | status
+  body         String
+  revisionId   String? // the draft this message produced or refers to
+  meta         Json?
+  createdAt    DateTime @default(now())
+
+  request ChangeRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, createdAt])
+  @@map("change_request_messages")
+}
+
+// Agent run log: the audit trail of every step an agent took, and its cost.
+model ChangeRequestStep {
+  id           String   @id @default(cuid())
+  requestId    String
+  outputId     String?
+  kind         String // split | read_images | tool:<name> | draft | proof | impact | gap | email | error ...
+  summary      String
+  model        String?
+  inputTokens  Int?
+  outputTokens Int?
+  costUsd      Float?
+  detail       Json?
+  createdAt    DateTime @default(now())
+
+  request ChangeRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, createdAt])
+  @@map("change_request_steps")
+}
+
+// Notes the agent proposes from corrections and findings ("for this customer
+// the polybag quantity goes under the size"). Only KEPT notes reach a prompt;
+// an admin keeps, dismisses, edits or forgets them on /settings/agent-memory.
+model AgentMemory {
+  id              String    @id @default(cuid())
+  scope           String // GLOBAL | CUSTOMER | DOC_TYPE | MONDAY
+  scopeRef        String? // customerId, docType value, ...
+  text            String
+  state           String // PROPOSED | KEPT | DISMISSED | FORGOTTEN
+  sourceKind      String // CORRECTION | AGENT_FINDING | REQUEST | MANUAL
+  sourceRequestId String?
+  usedCount       Int       @default(0)
+  lastUsedAt      DateTime?
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([scope, state])
+  @@map("agent_memories")
 }

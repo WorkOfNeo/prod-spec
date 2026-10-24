@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-server";
-import { CONTROL_RE, IF_RE, LayoutDefSchema, tokensInDef } from "@/lib/output-layouts/schema";
-import { validateLineConditionals, validateTokenRef } from "@/lib/output-layouts/token-meta";
-import { validateLineCalcs } from "@/lib/output-layouts/calc";
+import { validateLayoutForPublish } from "@/lib/output-layouts/publish-validation";
 import { refreshLayoutVariants } from "@/lib/output-layouts/variants";
+import { recordBuilderPublish } from "@/lib/output-layouts/revisions";
+import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 
 export const runtime = "nodejs";
 
@@ -21,35 +21,12 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
   const layout = await db.outputLayout.findUnique({ where: { id } });
   if (!layout) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const defParse = LayoutDefSchema.safeParse(layout.definition);
-  if (!defParse.success) {
-    return NextResponse.json(
-      { error: "Layout definition is invalid", details: defParse.error.issues.map((i) => i.message) },
-      { status: 422 },
-    );
-  }
-  const def = defParse.data;
-
-  const problems: string[] = [];
-  for (const ref of tokensInDef(def)) {
-    problems.push(...validateTokenRef(ref.key, ref.arg, ref.arg2));
-  }
-  // Conditional syntax — malformed {{if}}/{{else}}/{{endif}} is a publish
-  // blocker, not just a preview oddity. Same for calculated fields
-  // ({{= …}}): bad syntax or an unknown/unusable field never reaches print.
-  for (const page of def.pages) {
-    for (const block of page.blocks) {
-      for (const line of block.lines) {
-        problems.push(...validateLineConditionals(line, IF_RE, CONTROL_RE));
-        problems.push(...validateLineCalcs(line));
-      }
-    }
-  }
-  const blockCount = def.pages.reduce((n, p) => n + p.blocks.length, 0);
-  if (blockCount === 0) problems.push("layout has no blocks — nothing would print");
-
-  if (problems.length > 0) {
-    return NextResponse.json({ error: "Layout can't be published", details: problems }, { status: 422 });
+  // The strict gate lives in publish-validation.ts so a reviewed draft
+  // (publishRevision) can never reach print through a looser check than this
+  // button. Both failure kinds answer 422 with { error, details }.
+  const validation = validateLayoutForPublish(layout.definition);
+  if (!validation.ok) {
+    return NextResponse.json({ error: validation.error, details: validation.details }, { status: 422 });
   }
 
   const updated = await db.outputLayout.update({
@@ -57,6 +34,23 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     data: { status: "PUBLISHED", version: { increment: 1 } },
   });
   await refreshLayoutVariants();
+
+  // Layout history (change requests): record this version so the builder's
+  // History panel can show and restore it. Fail-soft — the layout is already
+  // published; a history row that couldn't be written must never turn that
+  // into an error. Inert while the feature flag is off.
+  if (changeRequestsEnabled()) {
+    try {
+      await recordBuilderPublish({
+        layoutId: updated.id,
+        definition: updated.definition,
+        publishedVersion: updated.version,
+        userId: auth.userId,
+      });
+    } catch (err) {
+      console.warn(`[output-layouts] publish history not recorded for ${updated.id}:`, (err as Error).message);
+    }
+  }
 
   return NextResponse.json({
     layout: { id: updated.id, status: updated.status, version: updated.version },

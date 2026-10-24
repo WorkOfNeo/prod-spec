@@ -9,7 +9,7 @@ import {
   staticRequiredColumns,
 } from "./tokens";
 import { hasPerRowCartonEan, layoutSettings, splitsPerFile, type LayoutSettings } from "./schema";
-import { renderLayoutHtml, repetitionStyles } from "./render";
+import { renderLayoutHtml, repetitionStyles, type LayoutRenderMode } from "./render";
 import { pinnableFieldsInDef } from "./tokens";
 import { applyFieldOverrides } from "@/lib/pdf/pins";
 import { mergeLineValues } from "@/lib/outputs/output-line-values";
@@ -44,7 +44,9 @@ import {
 } from "./variant-keys";
 export { LAYOUT_VARIANT_PREFIX, layoutVariantKey, isLayoutVariantKey, layoutIdFromVariantKey };
 
-type LayoutRow = {
+// Exported for render-output.ts, which builds a variant from a layout row with
+// an UNSAVED definition swapped in (change-request proofs and impact).
+export type LayoutRow = {
   id: string;
   name: string;
   docType: string;
@@ -95,7 +97,15 @@ function splitFilePlan(
   });
 }
 
-export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
+// `opts.mode` defaults to "production" — what the registry holds and the
+// runner prints. "preview" (amber gap chips) is only ever asked for by
+// render-output.ts on a variant it builds for one render; the registry never
+// holds a preview-mode variant.
+export function layoutRowToVariant(
+  row: LayoutRow,
+  opts: { mode?: LayoutRenderMode } = {},
+): TemplateVariant | null {
+  const mode = opts.mode ?? "production";
   let def: LayoutDef;
   try {
     def = parseLayoutDef(row.definition);
@@ -137,7 +147,7 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
     // document, so the whole run still ships as exactly one PDF.
     render: (style, dims, lineOverrides) =>
       renderLayoutHtml(def, style, {
-        mode: "production",
+        mode,
         title: row.name,
         sizeOverrideMm: row.isInfoArea ? dims : undefined,
         customLogo: row.customLogo,
@@ -176,7 +186,7 @@ export function layoutRowToVariant(row: LayoutRow): TemplateVariant | null {
                   def,
                   applyFieldOverrides(repStyle, perDocOverrides?.get(suffix)),
                   {
-                    mode: "production",
+                    mode,
                     sizeOverrideMm: row.isInfoArea ? dims : undefined,
                     customLogo: row.customLogo,
                     // Whole-output line rewrites, with THIS document's layered

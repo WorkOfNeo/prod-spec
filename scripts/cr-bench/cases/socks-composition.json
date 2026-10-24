@@ -1,0 +1,194 @@
+{
+  "id": "socks-composition",
+  "title": "Price sticker: composition and care symbols for socks",
+  "request": {
+    "message": "Hello,\n\nFor everything in product group Socks the price sticker must also show the composition in Finnish and Swedish and the care symbols, placed above the price. The other products keep the sticker as it is today.\n\nBest regards",
+    "outputLabel": "Price sticker",
+    "text": "For product group \"Socks\": add the composition (Finnish + Swedish) and the care symbols above the price. Other product groups unchanged."
+  },
+  "layout": {
+    "id": "layout-price-sticker-40x60",
+    "name": "Price sticker 40×60",
+    "docType": "STICKER",
+    "definition": {
+      "settings": {
+        "repeatBy": "size",
+        "splitBy": "ean"
+      },
+      "pages": [
+        {
+          "id": "p1",
+          "title": "Sticker",
+          "widthMm": 40,
+          "heightMm": 60,
+          "gridCols": 40,
+          "gridRows": 60,
+          "blocks": [
+            {
+              "id": "b-name",
+              "rect": {
+                "col": 2,
+                "row": 2,
+                "colSpan": 36,
+                "rowSpan": 5
+              },
+              "fontPt": 8,
+              "bold": true,
+              "lineHeight": 1.2,
+              "lines": [
+                "{{styleName}}"
+              ]
+            },
+            {
+              "id": "b-article",
+              "rect": {
+                "col": 2,
+                "row": 7,
+                "colSpan": 36,
+                "rowSpan": 4
+              },
+              "fontPt": 6,
+              "lineHeight": 1.2,
+              "lines": [
+                "Art. {{customerItemNo}} · {{colourName}}"
+              ]
+            },
+            {
+              "id": "b-size",
+              "rect": {
+                "col": 2,
+                "row": 11,
+                "colSpan": 36,
+                "rowSpan": 5
+              },
+              "fontPt": 9,
+              "bold": true,
+              "lineHeight": 1.2,
+              "lines": [
+                "{{size}}"
+              ]
+            },
+            {
+              "id": "b-ean",
+              "rect": {
+                "col": 2,
+                "row": 17,
+                "colSpan": 36,
+                "rowSpan": 17
+              },
+              "fontPt": 7,
+              "align": "center",
+              "lines": [
+                "{{barcode:ean13}}"
+              ]
+            },
+            {
+              "id": "b-price",
+              "rect": {
+                "col": 2,
+                "row": 47,
+                "colSpan": 36,
+                "rowSpan": 11
+              },
+              "fontPt": 22,
+              "bold": true,
+              "align": "center",
+              "valign": "middle",
+              "lineHeight": 1.2,
+              "lines": [
+                "{{price}} €"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "styles": [
+    {
+      "id": "style-socks",
+      "label": "Ankle socks 3-pack",
+      "group": "changed",
+      "values": {
+        "composition:de": "",
+        "composition:da": "",
+        "composition:no": "",
+        "composition:nl": "",
+        "composition:fr": "",
+        "composition:pl": "",
+        "customerName": "Sample Retailer",
+        "styleName": "Ankle Socks 3-pack",
+        "styleNumber": "STY-30001",
+        "customerItemNo": "770301",
+        "poNumber": "PO-0003",
+        "productGroup": "Socks",
+        "colour.name": "Black",
+        "composition:en": "80% Cotton, 17% Polyamide, 3% Elastane",
+        "composition:fi": "80% Puuvilla, 17% Polyamidi, 3% Elastaani",
+        "composition:sv": "80% Bomull, 17% Polyamid, 3% Elastan",
+        "washSymbols": "wash40, bleach_no, tumble_no, iron_low, dryclean_no",
+        "sizes": "23/26=2000000400013, 27/30=2000000400020",
+        "price": "6,95",
+        "price.currency": "",
+        "outputLanguages": "fi, sv"
+      }
+    },
+    {
+      "id": "style-wool-socks",
+      "label": "Wool socks",
+      "group": "changed",
+      "values": {
+        "composition:de": "",
+        "composition:da": "",
+        "composition:no": "",
+        "composition:nl": "",
+        "composition:fr": "",
+        "composition:pl": "",
+        "customerName": "Sample Retailer",
+        "styleName": "Wool Socks",
+        "styleNumber": "STY-30002",
+        "customerItemNo": "770302",
+        "poNumber": "PO-0003",
+        "productGroup": "Socks",
+        "colour.name": "Grey melange",
+        "composition:en": "70% Wool, 28% Polyamide, 2% Elastane",
+        "composition:fi": "70% Villa, 28% Polyamidi, 2% Elastaani",
+        "composition:sv": "70% Ull, 28% Polyamid, 2% Elastan",
+        "washSymbols": "wash_hand, bleach_no, tumble_no, iron_no, dryclean_no",
+        "sizes": "36/39=2000000400037, 40/43=2000000400044",
+        "price": "9,95",
+        "price.currency": "",
+        "outputLanguages": "fi, sv"
+      }
+    },
+    {
+      "id": "style-tee",
+      "label": "Basic tee (not socks)",
+      "group": "control",
+      "values": {
+        "customerName": "Sample Retailer",
+        "styleName": "Basic Tee",
+        "styleNumber": "STY-30003",
+        "customerItemNo": "770303",
+        "poNumber": "PO-0003",
+        "productGroup": "T-shirt",
+        "colour.name": "White",
+        "sizes": "S=2000000500010, M=2000000500027",
+        "price": "9,95",
+        "price.currency": "",
+        "outputLanguages": "fi, sv"
+      }
+    }
+  ],
+  "expected": {
+    "verdict": "patch",
+    "tokensUsed": [
+      "productGroup",
+      "composition|compositionLines",
+      "washSymbols"
+    ],
+    "mustNotChangeStyleIds": [
+      "style-tee"
+    ]
+  }
+}
