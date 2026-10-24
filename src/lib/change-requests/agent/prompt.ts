@@ -43,6 +43,7 @@ How to check a draft
 
 How to hand over
 - When the draft is right, call finish with a short summary for the reviewer in plain language: what was wrong, what you changed, which styles you checked and anything they should look at. No token syntax or block ids unless they help; the reviewer is not a developer.
+- If the reviewer only asked a question, or no layout change is needed or possible, answer with finish and explain — do not make a new draft. A draft nobody asked for is one more thing to review, and the current draft (if there is one) stays as it is for the reviewer to approve.
 - When a reviewer's comment corrected you on something likely to come up again (a customer's convention, how a field is used), you may propose a short memory note with propose_memory. Keep it to what would have prevented the mistake.`;
 
 // The system prompt actually sent: the (possibly admin-edited) base, then extra

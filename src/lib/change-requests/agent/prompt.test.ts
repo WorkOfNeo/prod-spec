@@ -38,6 +38,10 @@ test("the default covers the rules of design §5.7", () => {
     [/ask_reviewer/, "ask instead of guessing"],
     [/finish/, "hand over with finish"],
     [/plain language/, "plain-language summary"],
+    [
+      /If the reviewer only asked a question, or no layout change is needed or possible, answer with finish and explain — do not make a new draft\./,
+      "an answer is not a draft",
+    ],
   ];
   for (const [re, what] of must) assert.match(p, re, what);
 });
