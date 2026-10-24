@@ -31,6 +31,7 @@ import { resolveAndPersistStyleEans } from "@/lib/po/ean-runner";
 import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
 import { enqueueCoverForSupplier } from "@/lib/publish/requeue-cover";
+import { coverNotifiesSupplier } from "@/lib/queue/trigger-labels";
 import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
 import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
 import { assembleRequiredPackagingDocs, loadTrimSettings } from "@/lib/outputs/required-packaging";
@@ -784,7 +785,11 @@ export async function processJob(jobId: string): Promise<void> {
           select: { id: true },
         });
         if (cover) {
-          await enqueueCoverForSupplier(job.styleId, cover.id);
+          // Silent for change-request reruns (no digest email), see
+          // coverNotifiesSupplier.
+          await enqueueCoverForSupplier(job.styleId, cover.id, {
+            notifySupplier: coverNotifiesSupplier(job.triggerSource),
+          });
           await pushQueuedSupplierUploads({ styleIds: [job.styleId], recordRunAs: "runner" });
         }
       } catch (err) {
@@ -1125,7 +1130,11 @@ export async function processJob(jobId: string): Promise<void> {
           data: { coverManifestKey: manifestFingerprint(coverDocs) },
         })
         .catch(() => {});
-      await enqueueCoverForSupplier(job.styleId, coverAsset.id);
+      // Silent for change-request reruns (no digest email), see
+      // coverNotifiesSupplier.
+      await enqueueCoverForSupplier(job.styleId, coverAsset.id, {
+        notifySupplier: coverNotifiesSupplier(job.triggerSource),
+      });
     }
   } catch (err) {
     console.warn(`[supplier-send-queue] runner cover enqueue failed for ${job.id}:`, err);
