@@ -17,7 +17,13 @@ import {
 import type { OutputView, RequestView } from "@/lib/change-requests/review-view";
 import { useVisiblePoll } from "@/lib/use-visible-poll";
 import { OUTPUT_STATUS_META, StatusPill } from "../status-pill";
-import { ApproveResultView, LayoutLabel, type ApproveResult } from "./approve-bar";
+import {
+  ApproveResultView,
+  FinishPublishingButton,
+  LayoutLabel,
+  RejectControl,
+  type ApproveResult,
+} from "./approve-bar";
 import { PublishedPanel } from "./published-panel";
 import { ReviewBlock } from "./review-block";
 import { RunLog, LiveSteps } from "./run-log";
@@ -233,12 +239,20 @@ function AdminBody({
 }) {
   const messages = messagesFor(view, output.id);
   const question = openQuestion(messages, output.id);
+  // Every open state can be closed (Reject, with a reason) and, where the
+  // agent stopped, started again.
+  const actions = (run?: { label: string; again?: boolean }) => (
+    <div className="mt-3 flex flex-wrap items-start gap-2">
+      {run && <RunButton requestId={view.id} outputId={output.id} label={run.label} again={run.again} onChanged={onChanged} />}
+      <RejectControl outputId={output.id} onChanged={onChanged} />
+    </div>
+  );
 
   switch (output.status) {
     case "NEW":
       return (
         <Panel tone="zinc" icon={<Play className="h-4 w-4" aria-hidden />} title="The agent hasn't started on this output">
-          <RunButton requestId={view.id} outputId={output.id} label="Start the agent" onChanged={onChanged} />
+          {actions({ label: "Start the agent" })}
         </Panel>
       );
     case "WORKING":
@@ -254,21 +268,33 @@ function AdminBody({
       );
     case "IN_REVIEW":
       if (!output.currentRevisionId) {
-        return <QuestionPanel question={question?.body ?? null} waitingFor="you" />;
+        return (
+          <QuestionPanel question={question?.body ?? null} waitingFor="you">
+            {actions({ label: "Run the agent again", again: true })}
+          </QuestionPanel>
+        );
       }
       return (
         <ReviewBlock output={output} messages={messages} onApproved={onApproved} onChanged={onChanged} />
       );
     case "NEEDS_INFO":
-      return <QuestionPanel question={question?.body ?? null} waitingFor="the requester" />;
+      return (
+        <QuestionPanel question={question?.body ?? null} waitingFor="the requester">
+          {actions()}
+        </QuestionPanel>
+      );
     case "NEEDS_CODE":
-      return <NeedsCodePanel view={view} output={output} />;
+      return (
+        <NeedsCodePanel view={view} output={output}>
+          {actions({ label: "Run the agent again", again: true })}
+        </NeedsCodePanel>
+      );
     case "FAILED": {
       const reason = latest(messages, (m) => m.outputId === output.id && m.authorKind === "SYSTEM");
       return (
         <Panel tone="red" icon={<TriangleAlert className="h-4 w-4" aria-hidden />} title="The agent run failed">
           {reason && <p className="whitespace-pre-wrap text-sm text-zinc-700">{reason.body}</p>}
-          <RunButton requestId={view.id} outputId={output.id} label="Run again" onChanged={onChanged} />
+          {actions({ label: "Run again", again: true })}
         </Panel>
       );
     }
@@ -287,8 +313,12 @@ function AdminBody({
       );
     case "APPROVED":
       return (
-        <Panel tone="green" icon={<CircleCheck className="h-4 w-4" aria-hidden />} title="Approved">
-          <p className="text-sm text-zinc-600">Approved; waiting to be published.</p>
+        <Panel tone="green" icon={<CircleCheck className="h-4 w-4" aria-hidden />} title="Approved — publishing">
+          <p className="text-sm text-zinc-600">
+            An approval is publishing this draft. If this doesn&apos;t change within a few minutes, the approval stopped
+            half way: finish it here.
+          </p>
+          <FinishPublishingButton output={output} onApproved={onApproved} onChanged={onChanged} />
         </Panel>
       );
     default:
@@ -296,7 +326,15 @@ function AdminBody({
   }
 }
 
-function NeedsCodePanel({ view, output }: { view: RequestView; output: OutputView }) {
+function NeedsCodePanel({
+  view,
+  output,
+  children,
+}: {
+  view: RequestView;
+  output: OutputView;
+  children?: React.ReactNode;
+}) {
   const spec = output.codeSpec;
   return (
     <Panel tone="orange" icon={<Code className="h-4 w-4" aria-hidden />} title="This change needs new code first">
@@ -324,11 +362,20 @@ function NeedsCodePanel({ view, output }: { view: RequestView; output: OutputVie
         <ExternalLink className="h-4 w-4" aria-hidden />
         Get build prompt
       </a>
+      {children}
     </Panel>
   );
 }
 
-function QuestionPanel({ question, waitingFor }: { question: string | null; waitingFor: "you" | "the requester" }) {
+function QuestionPanel({
+  question,
+  waitingFor,
+  children,
+}: {
+  question: string | null;
+  waitingFor: "you" | "the requester";
+  children?: React.ReactNode;
+}) {
   return (
     <Panel
       tone={waitingFor === "you" ? "amber" : "violet"}
@@ -347,6 +394,7 @@ function QuestionPanel({ question, waitingFor }: { question: string | null; wait
           ? "Answer in the thread; the agent continues with your answer."
           : "They were emailed the question. Their answer in the thread restarts the agent."}
       </p>
+      {children}
     </Panel>
   );
 }
@@ -429,11 +477,14 @@ function RunButton({
   requestId,
   outputId,
   label,
+  again = false,
   onChanged,
 }: {
   requestId: string;
   outputId: string;
   label: string;
+  // A restart (the retry icon) rather than a first start.
+  again?: boolean;
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -452,7 +503,7 @@ function RunButton({
     onChanged();
   };
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-3">
+    <div className="flex flex-wrap items-center gap-3">
       <button
         type="button"
         onClick={run}
@@ -461,7 +512,7 @@ function RunButton({
       >
         {busy ? (
           <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
-        ) : label === "Run again" ? (
+        ) : again ? (
           <RotateCcw className="h-4 w-4" aria-hidden />
         ) : (
           <Play className="h-4 w-4" aria-hidden />

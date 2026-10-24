@@ -194,7 +194,7 @@ export function ReviewBlock({
       <ApproveBar
         output={output}
         impact={selected?.id === output.currentRevisionId ? impact : output.impact}
-        draftOpen={current?.status === "DRAFT"}
+        currentStatus={current?.status ?? null}
         onApproved={onApproved}
         onChanged={onChanged}
       />

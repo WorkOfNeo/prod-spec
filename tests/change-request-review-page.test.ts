@@ -165,6 +165,8 @@ function adminView(): RequestView {
       }),
       output("rejected", "REJECTED", { rejectReason: "The old size was right" }),
       output("replaced", "IN_REVIEW", { currentRevisionId: "rev-5", revisions: [rev("rev-5", 5, "SUPERSEDED")] }),
+      output("half-live", "IN_REVIEW", { currentRevisionId: "rev-6", revisions: [rev("rev-6", 6, "PUBLISHED")] }),
+      output("approving", "APPROVED", { currentRevisionId: "rev-7", revisions: [rev("rev-7", 7, "PUBLISHED")] }),
     ],
     messages: [
       msg("m0", null, { body: "Request received" }),
@@ -261,12 +263,35 @@ test("each status shows its own next step", async () => {
       ],
     ],
     ["rejected", ["Rejected — the layout stays as it is", "The old size was right"]],
-    ["replaced", ["This draft was replaced by another publish"]],
+    ["replaced", ["This draft was replaced by another publish", "Reject…"]],
+    ["half-live", ["This draft is already live", "Finish publishing"]],
+    ["approving", ["Approved — publishing", "Finish publishing"]],
   ];
   for (const [id, texts] of cases) {
     const html = await render(view, id);
     for (const text of texts) assert.ok(html.includes(text), `${id}: missing ${text}`);
     if (id !== "review") assert.equal(html.includes("Approve Output"), false, `${id}: no approve button`);
+  }
+  // A draft that is already live is finished, not called replaced or rejected.
+  const halfLive = await render(view, "half-live");
+  assert.equal(halfLive.includes("replaced by another publish"), false);
+  assert.equal(halfLive.includes("Reject…"), false);
+});
+
+test("every open state can be closed: Reject everywhere the agent isn't working; run again where it stopped", async () => {
+  const view = adminView();
+  const rejectable = ["new", "failed", "info", "code", "question", "review", "replaced"];
+  for (const id of rejectable) {
+    assert.ok((await render(view, id)).includes("Reject…"), `${id}: no Reject…`);
+  }
+  for (const id of ["working", "live", "rejected", "approving"]) {
+    assert.equal((await render(view, id)).includes("Reject…"), false, `${id}: Reject… shown`);
+  }
+  for (const id of ["code", "question"]) {
+    assert.ok((await render(view, id)).includes("Run the agent again"), `${id}: no run again`);
+  }
+  for (const id of ["info", "review", "live"]) {
+    assert.equal((await render(view, id)).includes("Run the agent again"), false, `${id}: run again shown`);
   }
 });
 
@@ -279,13 +304,16 @@ test("requester view: their issue and the thread; an answer box only while the a
     steps: [],
     messages: adminView().messages.filter((m) => m.kind !== "memory_suggestion"),
   };
-  view.outputs = view.outputs.map((o) => ({ ...o, revisions: [], impact: null, currentRevisionId: null, published: null }));
+  // (The APPROVED fixture's tab pill reads "Approved"; leave it out so "Approve" below means a button.)
+  view.outputs = view.outputs
+    .filter((o) => o.status !== "APPROVED")
+    .map((o) => ({ ...o, revisions: [], impact: null, currentRevisionId: null, published: null }));
 
   const info = await render(view, "info");
   assert.ok(info.includes("We need an answer from you"));
   assert.ok(info.includes("Is it per pack or per carton?"));
   assert.ok(info.includes("Answer the question…"));
-  for (const hidden of ["Run log", "Approve", "Reject…", "Which documents change", "Start the agent"]) {
+  for (const hidden of ["Run log", "Approve", "Reject…", "Which documents change", "Start the agent", "Run the agent again"]) {
     assert.equal(info.includes(hidden), false, `requester sees ${hidden}`);
   }
 
@@ -295,4 +323,26 @@ test("requester view: their issue and the thread; an answer box only while the a
 
   const rejected = await render(view, "rejected");
   assert.ok(rejected.includes("Reason: The old size was right"));
+});
+
+test("approve and reject post what the routes require: the reviewed draft's id, a trimmed reason", async () => {
+  const { postApprove, postReject } = await import("../src/app/(admin)/requests/[id]/approve-bar");
+  const calls: Array<{ url: string; body: unknown }> = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init: { body: string }) => {
+    calls.push({ url, body: JSON.parse(init.body) });
+    return new Response(JSON.stringify({}), { status: 200 });
+  }) as unknown as typeof fetch;
+  try {
+    await postApprove("out-1", "rev-2", false);
+    await postApprove("out-1", "rev-2", true);
+    await postReject("out-1", "  Keep the old size  ");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.deepEqual(calls, [
+    { url: "/api/admin/change-request-outputs/out-1/approve", body: { revisionId: "rev-2" } },
+    { url: "/api/admin/change-request-outputs/out-1/approve", body: { revisionId: "rev-2", force: true } },
+    { url: "/api/admin/change-request-outputs/out-1/reject", body: { reason: "Keep the old size" } },
+  ]);
 });

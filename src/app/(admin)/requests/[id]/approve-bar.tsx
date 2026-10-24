@@ -9,10 +9,17 @@ import { errorOf, plural, sendJson } from "./shared";
 // Approve / Reject for an output whose current draft is in review (ADMIN).
 //
 // Approve is two clicks: the first says what publishing will do (from the
-// draft's impact), the second publishes. The route answers 409 with a
+// draft's impact), the second publishes. Both send the draft that was on
+// screen when the admin clicked (`revisionId`): the route refuses with 409 "A
+// newer draft exists — reload" when another one landed meanwhile, and with a
 // `conflict` when the layout moved since the draft was made — shown with what
 // moved and a "Publish anyway" that sends force — and 422 with the publish
 // gate's details. Reject needs a reason; it goes to the requester.
+//
+// A current draft that is already live (published from the layout's History
+// panel, or an approval that stopped half way) gets "Finish publishing": the
+// same approve call, which then only reruns and records. A draft another
+// publish replaced can only be rejected or revised in the thread.
 
 // The approve route's 200 body (publish.ts ApproveResult, as JSON).
 export type ApproveResult = {
@@ -35,21 +42,38 @@ export type ApproveResult = {
 
 type Conflict = { baseVersion: number; liveVersion: number; versionChanged: boolean; definitionChanged: boolean };
 type Failure = { message: string; details?: string[]; conflict?: Conflict };
+type ApproveResponse = ApproveResult & { error?: string; details?: string[]; conflict?: Conflict };
 
 const REJECT_MAX = 500;
+
+// The two actions every surface of the review screen sends (ApproveBar, the
+// status panels, the stale-claim "Finish publishing").
+export function postApprove(outputId: string, revisionId: string, force: boolean) {
+  return sendJson<ApproveResponse>(`/api/admin/change-request-outputs/${outputId}/approve`, "POST", {
+    revisionId,
+    ...(force ? { force: true } : {}),
+  });
+}
+
+export function postReject(outputId: string, reason: string) {
+  return sendJson<{ error?: string; details?: string[] }>(`/api/admin/change-request-outputs/${outputId}/reject`, "POST", {
+    reason: reason.trim(),
+  });
+}
 
 export function ApproveBar({
   output,
   impact,
-  draftOpen,
+  currentStatus,
   onApproved,
   onChanged,
 }: {
   output: OutputView;
   // The current draft's impact, when known — for the confirm text.
   impact: ImpactSummary | null;
-  // The current revision is still a DRAFT (not replaced by another publish).
-  draftOpen: boolean;
+  // The current revision's status: DRAFT (approvable), PUBLISHED (already
+  // live: finish publishing) or anything else (replaced by another publish).
+  currentStatus: string | null;
   onApproved: (r: ApproveResult) => void;
   onChanged: () => void;
 }) {
@@ -57,20 +81,25 @@ export function ApproveBar({
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [reason, setReason] = useState("");
+  // The draft on screen when "Approve" was clicked: what the confirm step and
+  // "Publish anyway" approve, even if a poll swaps in a newer one meanwhile.
+  const [approving, setApproving] = useState<string | null>(null);
+
+  const draftOpen = currentStatus === "DRAFT";
+  const alreadyLive = currentStatus === "PUBLISHED";
 
   const switchTo = (next: "idle" | "confirm" | "reject") => {
     setMode(next);
     setFailure(null);
+    if (next === "confirm") setApproving(output.currentRevisionId);
   };
 
   const approve = async (force: boolean) => {
+    const revisionId = approving ?? output.currentRevisionId;
+    if (!revisionId) return;
     setBusy(true);
     setFailure(null);
-    const res = await sendJson<ApproveResult & { error?: string; details?: string[]; conflict?: Conflict }>(
-      `/api/admin/change-request-outputs/${output.id}/approve`,
-      "POST",
-      force ? { force: true } : {},
-    );
+    const res = await postApprove(output.id, revisionId, force);
     setBusy(false);
     if (res.ok) {
       onApproved(res.data);
@@ -84,21 +113,27 @@ export function ApproveBar({
   const reject = async () => {
     setBusy(true);
     setFailure(null);
-    const res = await sendJson(`/api/admin/change-request-outputs/${output.id}/reject`, "POST", { reason: reason.trim() });
+    const res = await postReject(output.id, reason);
     setBusy(false);
     if (res.ok) {
       setMode("idle");
       onChanged();
       return;
     }
-    setFailure({ message: errorOf(res.data), details: (res.data as { details?: string[] }).details });
+    setFailure({ message: errorOf(res.data), details: res.data.details });
   };
 
   const pending = impact ? impact.rows.filter((r) => r.changed && r.reviewStatus !== "APPROVED" && !r.inFlight).length : null;
 
   return (
     <section className="sticky bottom-0 z-10 rounded-lg border border-zinc-300 bg-white p-4 shadow-lg">
-      {!draftOpen ? (
+      {alreadyLive ? (
+        <p className="flex items-start gap-2 text-sm text-amber-800">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          This draft is already live (published from the layout&apos;s history, or an approval stopped half way). Finish
+          publishing to rerun the changed documents and mark this output live.
+        </p>
+      ) : !draftOpen && mode !== "reject" ? (
         <p className="flex items-start gap-2 text-sm text-amber-800">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           This draft was replaced by another publish; ask the agent for a new draft in the thread.
@@ -183,7 +218,17 @@ export function ApproveBar({
           </>
         ) : (
           <>
-            {draftOpen && failure?.conflict ? (
+            {alreadyLive ? (
+              <button
+                type="button"
+                onClick={() => approve(false)}
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {busy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden /> : <CircleCheck className="h-4 w-4" aria-hidden />}
+                {busy ? "Finishing…" : "Finish publishing"}
+              </button>
+            ) : draftOpen && failure?.conflict ? (
               <button
                 type="button"
                 onClick={() => approve(true)}
@@ -217,7 +262,8 @@ export function ApproveBar({
             {(mode === "confirm" || failure?.conflict) && (
               <CancelButton disabled={busy} onClick={() => switchTo("idle")} />
             )}
-            {mode === "idle" && !failure?.conflict && (
+            {/* An already-live draft can't be rejected (rejectOutput refuses). */}
+            {mode === "idle" && !failure?.conflict && !alreadyLive && (
               <button
                 type="button"
                 onClick={() => switchTo("reject")}
@@ -264,6 +310,113 @@ export function LayoutLabel({
         </span>
       )}
     </span>
+  );
+}
+
+// Reject for an output with no draft to approve (NEW, FAILED, NEEDS_INFO,
+// NEEDS_CODE, in review with only a question): every open state can be
+// closed. The reason is required and goes to the requester.
+export function RejectControl({ outputId, onChanged }: { outputId: string; onChanged: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+      >
+        <ThumbsDown className="h-4 w-4" aria-hidden />
+        Reject…
+      </button>
+    );
+  }
+
+  const reject = async () => {
+    setBusy(true);
+    setError(null);
+    const res = await postReject(outputId, reason);
+    setBusy(false);
+    if (!res.ok) return setError(errorOf(res.data));
+    setOpen(false);
+    onChanged();
+  };
+
+  return (
+    <div className="basis-full rounded-md border border-zinc-200 bg-white p-3">
+      <label htmlFor={`reject-${outputId}`} className="text-sm font-medium text-zinc-900">
+        Why is this request rejected?
+      </label>
+      <p className="text-xs text-zinc-500">The requester gets this in an email. The layout stays as it is.</p>
+      <textarea
+        id={`reject-${outputId}`}
+        value={reason}
+        onChange={(e) => setReason(e.target.value.slice(0, REJECT_MAX))}
+        rows={3}
+        disabled={busy}
+        className="mt-2 w-full resize-y rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+      />
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={reject}
+          disabled={busy || !reason.trim()}
+          className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+        >
+          {busy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden /> : <ThumbsDown className="h-4 w-4" aria-hidden />}
+          Reject
+        </button>
+        <CancelButton disabled={busy} onClick={() => setOpen(false)} />
+        <span className="ml-auto text-[11px] text-zinc-400">
+          {reason.length}/{REJECT_MAX}
+        </span>
+      </div>
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+// An output left APPROVED by an approval that stopped half way. The server
+// refuses while the approval may still be running (409), so this is safe to
+// offer at once.
+export function FinishPublishingButton({
+  output,
+  onApproved,
+  onChanged,
+}: {
+  output: OutputView;
+  onApproved: (r: ApproveResult) => void;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const revisionId = output.currentRevisionId;
+  if (!revisionId) return null;
+  const finish = async () => {
+    setBusy(true);
+    setError(null);
+    const res = await postApprove(output.id, revisionId, false);
+    setBusy(false);
+    if (!res.ok) return setError(errorOf(res.data));
+    onApproved(res.data);
+    onChanged();
+  };
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-3">
+      <button
+        type="button"
+        onClick={finish}
+        disabled={busy}
+        className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+      >
+        {busy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden /> : <CircleCheck className="h-4 w-4" aria-hidden />}
+        Finish publishing
+      </button>
+      {error && <span className="text-xs text-red-600">{error}</span>}
+    </div>
   );
 }
 
