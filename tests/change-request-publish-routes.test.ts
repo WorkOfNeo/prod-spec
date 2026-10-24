@@ -28,7 +28,7 @@ const asAnon = () => {
 
 let actionThrows: unknown = null;
 const act = (result: Row) =>
-  mock.fn(async (_id: string, _opts: Row) => {
+  mock.fn<(id: string, opts: Row) => Promise<Row>>(async () => {
     if (actionThrows) throw actionThrows;
     return result;
   });

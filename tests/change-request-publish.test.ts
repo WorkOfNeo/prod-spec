@@ -105,7 +105,7 @@ const discardDraft = mock.fn(async (id: string) => {
   if (!rev || rev.status !== "DRAFT") throw new FakeRevisionStateError(`Revision ${id} is not a draft`);
   rev.status = "DISCARDED";
 });
-const computeImpact = mock.fn(async (_input: Row) => {
+const computeImpact = mock.fn<(input: Row) => Promise<ImpactSummary>>(async () => {
   if (impactThrows) throw impactThrows;
   return summaryOf(impactRows);
 });
@@ -117,13 +117,15 @@ const enqueueBulkRun = mock.fn(async (input: { runnable: unknown[] }) => {
   if (enqueueThrows) throw enqueueThrows;
   return { batchId: "batch-1", enqueued: input.runnable.length, skippedNoPo: 0, skippedBelowCutoff: 0, cutoff: null };
 });
-const getCurrentOutputsForStyles = mock.fn(async (_ids: readonly string[]) => currentOutputs);
+const getCurrentOutputsForStyles = mock.fn<(ids: readonly string[]) => Promise<typeof currentOutputs>>(
+  async () => currentOutputs,
+);
 const appendMessage = mock.fn(async (m: Row) => ({ id: "msg-1", ...m }));
 const setOutputStatus = mock.fn(async (id: string, status: string, patch: Row = {}) => {
   if (output && output.id === id) Object.assign(output, patch, { status });
   return { id, requestId: "req-1" };
 });
-const sendRequesterUpdate = mock.fn(async (..._args: unknown[]) => ({ status: "SIMULATED" }));
+const sendRequesterUpdate = mock.fn<(...args: unknown[]) => Promise<Row>>(async () => ({ status: "SIMULATED" }));
 const styleFindMany = mock.fn(async (args: { where: { id: { in: string[] } } }) =>
   args.where.id.in.map((id) => ({ id, prodSpecId: `spec-of-${id}` })),
 );

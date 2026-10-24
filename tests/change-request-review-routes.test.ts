@@ -131,8 +131,8 @@ const SUMMARY = {
     deliveredChanged: 0,
   },
 };
-const impactForRevision = mock.fn(async (_id: string) => ({ ...SUMMARY, durationMs: 5 }));
-const computeImpact = mock.fn(async (_input: Row) => ({ ...SUMMARY, durationMs: 9 }));
+const impactForRevision = mock.fn<(id: string) => Promise<Row>>(async () => ({ ...SUMMARY, durationMs: 5 }));
+const computeImpact = mock.fn<(input: Row) => Promise<Row>>(async () => ({ ...SUMMARY, durationMs: 9 }));
 const pickProofsForRevision = mock.fn(async (input: Row) => [
   { styleId: "style-1", styleLabel: "Style 1", variantKey: "layout:bogus-layout", suffix: null, reason: "changed", note: String(input.focusStyleId) },
 ]);
