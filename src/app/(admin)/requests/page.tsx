@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Plus } from "lucide-react";
 import { getSessionWithRole } from "@/lib/auth-server";
-import { canReview, isAdmin } from "@/lib/roles";
+import { isAdmin } from "@/lib/roles";
 import { formatDate } from "@/lib/utils";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { listChangeRequests } from "@/lib/change-requests/requests";
@@ -18,9 +18,9 @@ export const metadata = { title: "Requests" };
 // /requests — the change-request inbox (design docs/plans/change-requests.md §6).
 //
 // "This print output is wrong", filed with text and screenshots per output.
-// Admins see every request and work them; a REVIEWER files their own and sees
-// only those (the scoping is listChangeRequests', not this page's). The page
-// gates like /checks: canReview, enforced here and again by every endpoint.
+// Admin-only, enforced here and again by every endpoint. (listChangeRequests
+// can still scope a non-admin viewer to their own requests, for when filing is
+// opened to reviewers at the rollout gate.)
 //
 // Behind CHANGE_REQUESTS_ENABLED: with the flag off the page does not exist.
 // =====================================================
@@ -29,7 +29,7 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
   if (!changeRequestsEnabled()) notFound();
   const { session, role } = await getSessionWithRole();
   if (!session) redirect("/login");
-  if (!canReview(role)) redirect("/");
+  if (!isAdmin(role)) redirect("/");
 
   const sp = await searchParams;
   const parsed = RequestStatusSchema.safeParse(sp.status);
@@ -38,7 +38,7 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
 
   const rows = await listChangeRequests({ viewer: { userId: session.user.id, role }, status: status ?? undefined });
   // Learning signals (drafts per request, first-try approval, cost) are an
-  // admin read; reviewers only see their own requests.
+  // admin read.
   const signalRows = admin ? await outputSignals() : [];
   // Dates are formatted here, on the server, so the client never re-formats
   // them in another time zone during hydration.

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getSessionWithRole } from "@/lib/auth-server";
-import { canReview, isAdmin } from "@/lib/roles";
+import { isAdmin } from "@/lib/roles";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { appendMessage, getRequestDetail } from "@/lib/change-requests/store";
 import { startChangeRequestRun, type RunTrigger } from "@/lib/change-requests/agent/job";
@@ -13,11 +13,8 @@ export const runtime = "nodejs";
 //
 //   { outputId?, body }   body 1..5000 characters
 //
-// Who may post:
-//   • ADMIN, always — on the whole request or on one output.
-//   • The REVIEWER who filed the request, only to answer the agent's question:
-//     an output of their own request that is NEEDS_INFO. Everything else in the
-//     thread (comments that make the agent revise a draft) is the admin's.
+// Who may post: ADMIN only (change requests are admin-only for now). The
+// requester branch below stays for when filing opens to reviewers.
 //
 // A message on one output can restart the agent: an admin comment on a draft
 // in review (IN_REVIEW → trigger "comment") or an answer to the agent's
@@ -40,7 +37,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (!changeRequestsEnabled()) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  if (!canReview(role)) return NextResponse.json({ error: "Requires role: ADMIN or REVIEWER" }, { status: 403 });
+  if (!isAdmin(role)) return NextResponse.json({ error: "Requires role: ADMIN" }, { status: 403 });
 
   const { id } = await ctx.params;
   const parsed = BodySchema.safeParse(await req.json().catch(() => null));

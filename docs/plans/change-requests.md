@@ -286,18 +286,18 @@ Blocks are addressed by id (stable after `parseLayoutDef`). Each op is checked; 
 
 ## 6. Routes and pages
 
-API (`export const runtime = "nodejs"`, gate style `getSessionWithRole` + `isAdmin`/`canReview`, all 404 when the flag is off):
-- `GET|POST /api/admin/change-requests` (POST: `canReview`; REVIEWER creates `source: REQUESTER`)
-- `GET /api/admin/change-requests/[id]` (ADMIN, or the REVIEWER who created it)
+API (`export const runtime = "nodejs"`, gate style `getSessionWithRole` + `isAdmin`, all 404 when the flag is off). **Every route and page is ADMIN-only** (decision 4); the requester paths in the code (source REQUESTER, the requester view, requester emails) stay dormant until filing opens to reviewers:
+- `GET|POST /api/admin/change-requests`
+- `GET /api/admin/change-requests/[id]`
 - `POST /api/admin/change-requests/[id]/run` (ADMIN) · `POST /api/admin/change-requests/[id]/messages` (ADMIN; with `outputId` triggers a revision run)
-- `POST /api/admin/change-requests/split` (canReview; pasted text → per-output issues)
+- `POST /api/admin/change-requests/split` (pasted text → per-output issues)
 - `GET /api/admin/change-requests/[id]/attachments/[attachmentId]`
 - `POST /api/admin/change-request-outputs/[id]/approve | rerun-approved | reject` (ADMIN)
 - `GET /api/admin/change-requests/revisions/[revisionId]/proof | impact | diff` (ADMIN)
 - `GET|POST /api/admin/output-layouts/[id]/revisions`, `POST /api/admin/output-layouts/revisions/[revisionId]/publish | restore` (ADMIN)
 - `GET|PATCH /api/admin/agent-memory` (ADMIN)
 
-Pages: `/requests` (inbox + signals), `/requests/new` (form: PO/style search → output picker with thumbnails → one issue per output; paste-and-split; screenshots), `/requests/[id]` (review: tab per output, draft selector, side-by-side + slider proofs, control style, impact table, definition diff, thread with composer and memory cards, approve/reject), `/requests/[id]/build-prompt`, `/settings/agent-memory`. Nav: "Requests" in `NAV` for admins and in the reviewer links, only when the flag is on.
+Pages: `/requests` (inbox + signals), `/requests/new` (form: PO/style search → output picker with thumbnails → one issue per output; paste-and-split; screenshots), `/requests/[id]` (review: tab per output, draft selector, side-by-side + slider proofs, control style, impact table, definition diff, thread with composer and memory cards, approve/reject), `/requests/[id]/build-prompt`, `/settings/agent-memory`. Nav: "Requests" in the left sidebar for admins only, when the flag is on.
 
 ## 7. Verification
 
@@ -328,4 +328,4 @@ Orchestrator-owned: `change-requests/store.ts`, `agent/contract.ts`, the runner 
 1. **Trial gate placement.** The in-app phase is built now behind the flag; the trial gates the **rollout**.
 2. **Official Anthropic SDK** (`@anthropic-ai/sdk@^1.3.0`) for the agent (tool use + vision + streaming). The existing ✨ AI fix stays on raw fetch.
 3. **Feature flag** `CHANGE_REQUESTS_ENABLED`, default off, so the PR can merge before the trial.
-4. **Who submits**: REVIEWERs can create requests and see their own; only ADMIN approves, publishes or reruns. Final say at the rollout gate.
+4. **Who submits**: admins only for now (Niels, 2026-10-24, before the first test): only admins see Requests and every route is ADMIN-only. Opening filing to REVIEWERs later is a gate change; the requester view and emails already exist.

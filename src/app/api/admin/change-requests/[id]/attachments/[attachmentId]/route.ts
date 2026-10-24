@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
-import { canReview, isAdmin } from "@/lib/roles";
+import { isAdmin } from "@/lib/roles";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { orEmpty } from "@/lib/change-requests/db-safe";
 
@@ -18,7 +18,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   if (!changeRequestsEnabled()) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  if (!canReview(role)) return NextResponse.json({ error: "Requires role: ADMIN or REVIEWER" }, { status: 403 });
+  if (!isAdmin(role)) return NextResponse.json({ error: "Requires role: ADMIN" }, { status: 403 });
 
   const { id, attachmentId } = await ctx.params;
   const att = await orEmpty(

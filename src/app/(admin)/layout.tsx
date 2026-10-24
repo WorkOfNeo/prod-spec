@@ -33,8 +33,8 @@ const NAV: Array<{ href?: string; label?: string; divider?: true; flag?: "change
   // list below too.
   { href: "/checks", label: "Checks" },
   // Change requests: "this print output is wrong", worked into a layout draft
-  // an admin approves. Reviewers file their own, so it is in the reviewer list
-  // below too. Behind CHANGE_REQUESTS_ENABLED.
+  // an admin approves. Admin-only (not in the reviewer list below). Behind
+  // CHANGE_REQUESTS_ENABLED.
   { href: "/requests", label: "Requests", flag: "changeRequests" },
   { href: "/combos", label: "New combos" },
   { href: "/jobs", label: "Jobs" },
@@ -145,17 +145,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                 >
                   Checks
                 </Link>
-                {/* Their own change requests ("this output is wrong") — a reviewer
-                    files and follows them; only an admin approves a change. The
-                    pages gate on canReview. Behind CHANGE_REQUESTS_ENABLED. */}
-                {flags.changeRequests && (
-                  <Link
-                    href="/requests"
-                    className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
-                  >
-                    Requests
-                  </Link>
-                )}
                 {/* The bundle's front matter — the all-clients cover block and
                     each client × business area's General information. Reviewers
                     own this prose, so they get the one Settings page that holds

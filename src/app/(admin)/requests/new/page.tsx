@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
-import { canReview } from "@/lib/roles";
+import { isAdmin } from "@/lib/roles";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { MAX_IMAGES_PER_OUTPUT, MAX_IMAGES_TOTAL, MAX_OUTPUTS } from "@/lib/change-requests/requests";
 import { NewRequestForm } from "./new-request-form";
@@ -17,7 +17,7 @@ export const metadata = { title: "New request" };
 // pasted email can be split across the picked outputs. Sending files the
 // request; nothing changes on a print file until an admin approves a change.
 //
-// Admins and reviewers (canReview, like /checks). Behind CHANGE_REQUESTS_ENABLED.
+// Admins only. Behind CHANGE_REQUESTS_ENABLED.
 // The limits come from requests.ts (which the client can't import — it pulls
 // in the database) so the form and the server agree on them.
 // =====================================================
@@ -26,7 +26,7 @@ export default async function NewRequestPage() {
   if (!changeRequestsEnabled()) notFound();
   const { session, role } = await getSessionWithRole();
   if (!session) redirect("/login");
-  if (!canReview(role)) redirect("/");
+  if (!isAdmin(role)) redirect("/");
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">

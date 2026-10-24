@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getSessionWithRole } from "@/lib/auth-server";
-import { canReview } from "@/lib/roles";
+import { isAdmin } from "@/lib/roles";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { MAX_MESSAGE_CHARS, MAX_OUTPUTS } from "@/lib/change-requests/requests";
 import { SplitError, splitRequestByOutput } from "@/lib/change-requests/agent/split";
@@ -14,7 +14,7 @@ export const maxDuration = 60;
 // label }] } → { issues: [{ variantKey | null, label, text }], note? }.
 // Writes nothing — the form fills its textareas and the requester edits them
 // before sending. Same gate as filing a request: flag (404), session (401),
-// canReview (403). Without an API key the text is copied to every output.
+// ADMIN (403). Without an API key the text is copied to every output.
 const SCHEMA = z.object({
   text: z.string().trim().min(1, "Paste the text to split").max(MAX_MESSAGE_CHARS),
   outputs: z
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   if (!changeRequestsEnabled()) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  if (!canReview(role)) return NextResponse.json({ error: "Requires role: ADMIN or REVIEWER" }, { status: 403 });
+  if (!isAdmin(role)) return NextResponse.json({ error: "Requires role: ADMIN" }, { status: 403 });
 
   let body: unknown;
   try {

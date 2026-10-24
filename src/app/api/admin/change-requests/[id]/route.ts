@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionWithRole } from "@/lib/auth-server";
-import { canReview } from "@/lib/roles";
+import { isAdmin } from "@/lib/roles";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { loadRequestView } from "@/lib/change-requests/review-view";
 
@@ -12,8 +12,7 @@ export const runtime = "nodejs";
 // the run log. The /requests/[id] page polls this every few seconds while the
 // agent works, so it is the same view the page rendered first.
 //
-// ADMIN, or the REVIEWER who filed the request — who gets the requester's
-// view (no drafts, impact, run log or cost). 404 for everyone while
+// ADMIN only (change requests are admin-only for now). 404 for everyone while
 // CHANGE_REQUESTS_ENABLED is off.
 // =====================================================
 
@@ -21,7 +20,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   if (!changeRequestsEnabled()) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  if (!canReview(role)) return NextResponse.json({ error: "Requires role: ADMIN or REVIEWER" }, { status: 403 });
+  if (!isAdmin(role)) return NextResponse.json({ error: "Requires role: ADMIN" }, { status: 403 });
 
   const { id } = await ctx.params;
   const result = await loadRequestView(id, { userId: session.user.id, role });

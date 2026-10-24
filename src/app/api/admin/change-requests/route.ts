@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionWithRole } from "@/lib/auth-server";
-import { canReview } from "@/lib/roles";
+import { isAdmin } from "@/lib/roles";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import {
   ChangeRequestInputError,
@@ -25,7 +25,7 @@ export const runtime = "nodejs";
 //                      with source ADMIN, a REVIEWER with source REQUESTER.
 //
 // Gate: the feature flag first (off → 404, the feature does not exist), then
-// session or 401, then canReview or 403. Filing a request changes nothing that
+// session or 401, then ADMIN or 403 (change requests are admin-only). Filing a request changes nothing that
 // prints — an admin approves every change later — so reviewers may file.
 //
 // Limits on POST, both before the body is parsed: a body over
@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
   if (!changeRequestsEnabled()) return notFound();
   const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  if (!canReview(role)) return NextResponse.json({ error: "Requires role: ADMIN or REVIEWER" }, { status: 403 });
+  if (!isAdmin(role)) return NextResponse.json({ error: "Requires role: ADMIN" }, { status: 403 });
 
   const rawStatus = req.nextUrl.searchParams.get("status");
   const status = rawStatus ? RequestStatusSchema.safeParse(rawStatus) : null;
@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
   if (!changeRequestsEnabled()) return notFound();
   const { session, role } = await getSessionWithRole();
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  if (!canReview(role)) return NextResponse.json({ error: "Requires role: ADMIN or REVIEWER" }, { status: 403 });
+  if (!isAdmin(role)) return NextResponse.json({ error: "Requires role: ADMIN" }, { status: 403 });
 
   const declared = Number(req.headers.get("content-length") ?? NaN);
   if (Number.isFinite(declared) && declared > MAX_REQUEST_BODY_BYTES) {

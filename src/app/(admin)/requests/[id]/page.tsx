@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
-import { canReview } from "@/lib/roles";
+import { isAdmin } from "@/lib/roles";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { loadRequestView } from "@/lib/change-requests/review-view";
 import { resumeAwaitingCode } from "@/lib/change-requests/gap";
@@ -21,9 +21,8 @@ export const metadata = { title: "Request" };
 // Approving publishes the layout and reruns exactly the changed documents
 // (publish.ts); nothing prints differently before that.
 //
-// Admins see and act on everything. The REVIEWER who filed the request sees a
-// read-only requester view (review-view.ts decides what's in it) and may only
-// answer a question the agent asked. Anyone else is sent back to the inbox.
+// Admin-only: anyone else is sent home. (review-view.ts still knows a
+// read-only requester view, for when filing opens to reviewers.)
 // Behind CHANGE_REQUESTS_ENABLED: with the flag off the page does not exist.
 // =====================================================
 
@@ -37,7 +36,7 @@ export default async function RequestPage({
   if (!changeRequestsEnabled()) notFound();
   const { session, role } = await getSessionWithRole();
   if (!session) redirect("/login");
-  if (!canReview(role)) redirect("/");
+  if (!isAdmin(role)) redirect("/");
 
   const { id } = await params;
   const sp = await searchParams;
