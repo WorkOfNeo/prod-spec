@@ -32,6 +32,18 @@ const SETTINGS_ITEMS: Array<{ href: string; label: string }> = [
   { href: "/business-areas", label: "Business areas" },
 ];
 
+// Shown only while change requests are switched on (CHANGE_REQUESTS_ENABLED,
+// resolved server-side by the layout and passed in — this is a client
+// component). Placed next to Prompts: both steer the app's AI.
+const AGENT_MEMORY_ITEM = { href: "/settings/agent-memory", label: "Agent memory" };
+
+function withAgentMemory(items: Array<{ href: string; label: string }>) {
+  const at = items.findIndex((i) => i.href === "/settings/system-prompts");
+  const out = [...items];
+  out.splice(at === -1 ? out.length : at + 1, 0, AGENT_MEMORY_ITEM);
+  return out;
+}
+
 function isActive(pathname: string, href: string): boolean {
   // "/settings" is the General landing — exact-match only, otherwise it
   // would light up for every /settings/* sub-page (which have their own
@@ -40,9 +52,10 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function SettingsNav() {
+export function SettingsNav({ changeRequestsEnabled = false }: { changeRequestsEnabled?: boolean }) {
   const pathname = usePathname();
-  const anyActive = SETTINGS_ITEMS.some((i) => isActive(pathname, i.href));
+  const items = changeRequestsEnabled ? withAgentMemory(SETTINGS_ITEMS) : SETTINGS_ITEMS;
+  const anyActive = items.some((i) => isActive(pathname, i.href));
   // Seed expansion from the active route on first mount; the layout
   // persists across client navigations, so the user's manual toggle then
   // sticks as they move around.
@@ -75,7 +88,7 @@ export function SettingsNav() {
 
       {open && (
         <div className="mt-1 ml-3 flex flex-col gap-0.5 border-l border-zinc-200 pl-2">
-          {SETTINGS_ITEMS.map((item) => {
+          {items.map((item) => {
             const active = isActive(pathname, item.href);
             return (
               <Link
