@@ -46,6 +46,25 @@ test("the default covers the rules of design §5.7", () => {
   for (const [re, what] of must) assert.match(p, re, what);
 });
 
+test("not listed on Settings → Prompts while CHANGE_REQUESTS_ENABLED is off, but still registered", () => {
+  const before = process.env.CHANGE_REQUESTS_ENABLED;
+  try {
+    delete process.env.CHANGE_REQUESTS_ENABLED;
+    const off = prompts.listedPromptDefs().map((d) => d.key);
+    assert.ok(!off.includes(CHANGE_REQUEST_AGENT_PROMPT_KEY));
+    assert.ok(off.includes(prompts.REJECTION_FIX_PROMPT_KEY), "other prompts stay listed");
+    // The job still reads it: known key, default content.
+    assert.equal(prompts.isKnownPromptKey(CHANGE_REQUEST_AGENT_PROMPT_KEY), true);
+    assert.equal(prompts.defaultSystemPrompt(CHANGE_REQUEST_AGENT_PROMPT_KEY), DEFAULT_CHANGE_REQUEST_AGENT_PROMPT);
+
+    process.env.CHANGE_REQUESTS_ENABLED = "true";
+    assert.ok(prompts.listedPromptDefs().some((d) => d.key === CHANGE_REQUEST_AGENT_PROMPT_KEY));
+  } finally {
+    if (before === undefined) delete process.env.CHANGE_REQUESTS_ENABLED;
+    else process.env.CHANGE_REQUESTS_ENABLED = before;
+  }
+});
+
 test("buildSystemPrompt joins the base and extra blocks, skipping empty ones", () => {
   assert.equal(buildSystemPrompt("  Base.  ", []), "Base.");
   assert.equal(buildSystemPrompt("Base.", ["", "  ", "Kept notes:\n- one"]), "Base.\n\nKept notes:\n- one");
