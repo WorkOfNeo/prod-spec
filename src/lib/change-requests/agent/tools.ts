@@ -1059,6 +1059,11 @@ const askReviewer = defineTool({
     });
     const status = input.to === "requester" ? "NEEDS_INFO" : "IN_REVIEW";
     await setOutputStatus(ctx.outputId, status);
+    // The requester is told by email; sendRequesterUpdate is fail-soft.
+    if (input.to === "requester") {
+      const { sendRequesterUpdate } = await import("../emails");
+      await sendRequesterUpdate(ctx.requestId, "needs_info", { outputId: ctx.outputId, message: input.question });
+    }
     await note(ctx, "question", `Asked the ${input.to}: ${clip(input.question.replace(/\s+/g, " "), 200)}`, { to: input.to });
     return ok({ ok: true, messageId: message.id, to: input.to, status });
   },
