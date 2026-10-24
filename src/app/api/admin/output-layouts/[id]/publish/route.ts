@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import { requireRole } from "@/lib/auth-server";
 import { validateLayoutForPublish } from "@/lib/output-layouts/publish-validation";
 import { refreshLayoutVariants } from "@/lib/output-layouts/variants";
+import { recordBuilderPublish } from "@/lib/output-layouts/revisions";
+import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 
 export const runtime = "nodejs";
 
@@ -32,6 +34,23 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     data: { status: "PUBLISHED", version: { increment: 1 } },
   });
   await refreshLayoutVariants();
+
+  // Layout history (change requests): record this version so the builder's
+  // History panel can show and restore it. Fail-soft — the layout is already
+  // published; a history row that couldn't be written must never turn that
+  // into an error. Inert while the feature flag is off.
+  if (changeRequestsEnabled()) {
+    try {
+      await recordBuilderPublish({
+        layoutId: updated.id,
+        definition: updated.definition,
+        publishedVersion: updated.version,
+        userId: auth.userId,
+      });
+    } catch (err) {
+      console.warn(`[output-layouts] publish history not recorded for ${updated.id}:`, (err as Error).message);
+    }
+  }
 
   return NextResponse.json({
     layout: { id: updated.id, status: updated.status, version: updated.version },
