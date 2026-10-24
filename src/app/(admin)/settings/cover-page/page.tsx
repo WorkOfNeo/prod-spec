@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
+import { SIGN_IN_AGAIN } from "@/lib/auth-paths";
 import { canReview } from "@/lib/roles";
 import { getCoverPageInfoMd, getTrimsOnCoverEnabled } from "@/lib/settings/app-settings";
 import { loadTrimConceptRows } from "@/lib/trims/catalogue";
@@ -44,7 +45,7 @@ export default async function CoverPageSettingsPage({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const { session, role } = await getSessionWithRole();
-  if (!session) redirect("/login");
+  if (!session) redirect(SIGN_IN_AGAIN);
   if (!canReview(role)) redirect("/dashboard");
 
   const requestedTab = (await searchParams).tab;

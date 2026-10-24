@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
+import { SIGN_IN_AGAIN } from "@/lib/auth-paths";
 import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { NavigationGuardProvider } from "@/components/navigation-guard";
@@ -50,7 +51,7 @@ const NAV: Array<{ href?: string; label?: string; divider?: true; flag?: "change
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const { session, role } = await getSessionWithRole();
-  if (!session) redirect("/login");
+  if (!session) redirect(SIGN_IN_AGAIN);
   const isAdmin = role === "ADMIN";
   // Kill switch for the test-phase review machinery (My tasks + badge).
   const followThrough = reviewFollowThroughEnabled();

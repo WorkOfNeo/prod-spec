@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
+import { SIGN_IN_AGAIN } from "@/lib/auth-paths";
 import { canReview, isAdmin } from "@/lib/roles";
 import {
   getTrimLabelOverrides,
@@ -23,7 +24,7 @@ export const metadata = { title: "Trims · Settings" };
 // own explicit act.
 export default async function TrimsSettingsPage() {
   const { session, role } = await getSessionWithRole();
-  if (!session) redirect("/login");
+  if (!session) redirect(SIGN_IN_AGAIN);
   if (!canReview(role)) redirect("/dashboard");
 
   // Only the three configuration blobs are read here. The survey of live trim

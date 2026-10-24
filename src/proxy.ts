@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
+import { REAUTH_PARAM } from "@/lib/auth-paths";
 
 // Pages reachable WITHOUT a session. Everything else redirects to /login.
 const AUTH_PAGES = new Set(["/login", "/signup", "/forgot-password", "/reset-password"]);
@@ -20,7 +21,12 @@ export function proxy(request: NextRequest) {
   const sessionCookie = getSessionCookie(request);
   const { pathname } = request.nextUrl;
 
-  if (sessionCookie && SIGNED_IN_REDIRECT.has(pathname)) {
+  // A server gate that found the cookie's session dead sends the browser to
+  // /login?reauth=1 (auth-paths.ts). Bouncing that back to /styles would loop
+  // forever, so the form opens instead.
+  const reauth = request.nextUrl.searchParams.has(REAUTH_PARAM);
+
+  if (sessionCookie && SIGNED_IN_REDIRECT.has(pathname) && !reauth) {
     return NextResponse.redirect(new URL("/styles", request.url));
   }
 

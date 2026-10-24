@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
+import { SIGN_IN_AGAIN } from "@/lib/auth-paths";
 import { canReview } from "@/lib/roles";
 import { db } from "@/lib/db";
 import { PoDeliveryPanel } from "./po-delivery-panel";
@@ -20,7 +21,7 @@ export default async function PoDeliveryPage({
   searchParams: Promise<{ supplier?: string }>;
 }) {
   const { session, role } = await getSessionWithRole();
-  if (!session) redirect("/login");
+  if (!session) redirect(SIGN_IN_AGAIN);
   if (!canReview(role)) redirect("/");
 
   const { po } = await params;

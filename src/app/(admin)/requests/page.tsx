@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Plus } from "lucide-react";
 import { getSessionWithRole } from "@/lib/auth-server";
+import { SIGN_IN_AGAIN } from "@/lib/auth-paths";
 import { isAdmin } from "@/lib/roles";
 import { formatDate } from "@/lib/utils";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
@@ -28,7 +29,7 @@ export const metadata = { title: "Requests" };
 export default async function RequestsPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
   if (!changeRequestsEnabled()) notFound();
   const { session, role } = await getSessionWithRole();
-  if (!session) redirect("/login");
+  if (!session) redirect(SIGN_IN_AGAIN);
   if (!isAdmin(role)) redirect("/");
 
   const sp = await searchParams;

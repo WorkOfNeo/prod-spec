@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
+import { SIGN_IN_AGAIN } from "@/lib/auth-paths";
 import { isAdmin } from "@/lib/roles";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { MAX_IMAGES_PER_OUTPUT, MAX_IMAGES_TOTAL, MAX_OUTPUTS } from "@/lib/change-requests/requests";
@@ -25,7 +26,7 @@ export const metadata = { title: "New request" };
 export default async function NewRequestPage() {
   if (!changeRequestsEnabled()) notFound();
   const { session, role } = await getSessionWithRole();
-  if (!session) redirect("/login");
+  if (!session) redirect(SIGN_IN_AGAIN);
   if (!isAdmin(role)) redirect("/");
 
   return (

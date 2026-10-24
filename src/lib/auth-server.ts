@@ -3,6 +3,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { parseSetCookieHeader, toCookieOptions } from "better-auth/cookies";
 import { auth } from "./auth";
+import { SIGN_IN_AGAIN } from "./auth-paths";
 import { db } from "./db";
 import type { UserRole } from "@/generated/prisma/enums";
 
@@ -116,7 +117,7 @@ export async function getServerSession(): Promise<ServerSession> {
 
 export async function requireSession() {
   const session = await getServerSession();
-  if (!session) redirect("/login");
+  if (!session) redirect(SIGN_IN_AGAIN);
   return session;
 }
 
@@ -134,7 +135,7 @@ export async function getSessionWithRole(): Promise<{
 // 403ing so a reviewer following an old link lands somewhere useful.)
 export async function requireAdminPage() {
   const { session, role } = await getSessionWithRole();
-  if (!session) redirect("/login");
+  if (!session) redirect(SIGN_IN_AGAIN);
   if (role !== "ADMIN") redirect("/dashboard");
   return session;
 }
