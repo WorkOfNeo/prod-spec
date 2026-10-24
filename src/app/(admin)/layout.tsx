@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
+import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { NavigationGuardProvider } from "@/components/navigation-guard";
 import { SignOutButton } from "@/components/sign-out-button";
 import { MyTasksLink } from "@/components/sidebar/my-tasks-link";
@@ -104,7 +105,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                   Users
                 </Link>
                 <div className="my-2 border-t border-zinc-100" />
-                <SettingsNav />
+                <SettingsNav changeRequestsEnabled={changeRequestsEnabled()} />
               </>
             ) : (
               <>
