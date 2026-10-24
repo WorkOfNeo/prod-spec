@@ -17,7 +17,7 @@ import {
 import type { OutputView, RequestView } from "@/lib/change-requests/review-view";
 import { useVisiblePoll } from "@/lib/use-visible-poll";
 import { OUTPUT_STATUS_META, StatusPill } from "../status-pill";
-import { ApproveResultView, type ApproveResult } from "./approve-bar";
+import { ApproveResultView, LayoutLabel, type ApproveResult } from "./approve-bar";
 import { PublishedPanel } from "./published-panel";
 import { ReviewBlock } from "./review-block";
 import { RunLog, LiveSteps } from "./run-log";
@@ -163,7 +163,10 @@ function WhatTheyAsked({ view, output }: { view: RequestView; output: OutputView
   ];
   return (
     <section className="rounded-lg border border-zinc-200 bg-white p-4">
-      <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-500">What they asked</h2>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-500">What they asked</h2>
+        {view.admin && <LayoutLabel output={output} />}
+      </div>
       <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-800">{output.text}</p>
       {shots.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">

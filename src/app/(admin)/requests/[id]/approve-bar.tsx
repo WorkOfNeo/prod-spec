@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CircleCheck, LoaderCircle, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-react";
+import { CircleCheck, LayoutTemplate, LoaderCircle, ThumbsDown, ThumbsUp, TriangleAlert } from "lucide-react";
 import type { ImpactRow, ImpactSummary } from "@/lib/change-requests/types";
 import type { OutputView } from "@/lib/change-requests/review-view";
 import { errorOf, plural, sendJson } from "./shared";
@@ -230,8 +230,40 @@ export function ApproveBar({
             )}
           </>
         )}
+        {/* What approving publishes: the admin sees which layout before the click. */}
+        <LayoutLabel output={output} className="sm:ml-auto" />
       </div>
     </section>
+  );
+}
+
+// The layout an output's drafts change — by name and id, so the admin knows
+// exactly what an approval publishes. "Pinned by the agent" when no configured
+// output was picked at filing and a run chose the layout (find_layouts).
+export function LayoutLabel({
+  output,
+  className = "",
+}: {
+  output: Pick<OutputView, "layoutId" | "layoutName" | "layoutPinnedByAgent">;
+  className?: string;
+}) {
+  if (!output.layoutId) return null;
+  return (
+    <span className={`inline-flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-zinc-500 ${className}`}>
+      <LayoutTemplate className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      <span>
+        Layout <span className="font-medium text-zinc-800">{output.layoutName ?? "unnamed"}</span>
+      </span>
+      <code className="break-all rounded bg-zinc-100 px-1 font-mono text-[11px] text-zinc-600">{output.layoutId}</code>
+      {output.layoutPinnedByAgent && (
+        <span
+          title="No configured output was picked when the request was filed; the agent chose this layout."
+          className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200"
+        >
+          pinned by the agent
+        </span>
+      )}
+    </span>
   );
 }
 

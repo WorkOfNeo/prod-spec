@@ -51,6 +51,11 @@ const findManyRequests = spy("changeRequest.findMany", () => [
   },
 ]);
 let attachmentRow: Row | null = null;
+const STYLES = [
+  { id: "style-1", customerId: "cust-1", poNumber: "PO-0000", prodSpecId: "spec-1" },
+  { id: "style-2", customerId: "cust-1", poNumber: "PO-0000", prodSpecId: "spec-1" },
+  { id: "style-elsewhere", customerId: "cust-2", poNumber: "PO-0001", prodSpecId: "spec-1" },
+];
 
 const fakeDb = {
   changeRequest: {
@@ -85,11 +90,25 @@ const fakeDb = {
     findMany: spy("user.findMany", () => [{ id: "reviewer-1", email: "reviewer@example.com" }]),
   },
   style: {
-    findUnique: spy("style.findUnique", (args) =>
-      (args.where as Row).id === "style-1" ? { customerId: "cust-1", poNumber: "PO-0000" } : null,
-    ),
     groupBy: spy("style.groupBy", () => []),
-    findMany: spy("style.findMany", () => []),
+    // The create path's target check asks by id; the search asks by text.
+    findMany: spy("style.findMany", (args) => {
+      const ids = ((args.where as Row | undefined)?.id as { in?: string[] } | undefined)?.in;
+      if (!ids) return [];
+      return STYLES.filter((s) => ids.includes(s.id));
+    }),
+  },
+  prodSpec: {
+    findMany: spy("prodSpec.findMany", () => [
+      {
+        id: "spec-1",
+        outputs: [
+          { variantKey: "layout:bogus-id", widthMm: 50, heightMm: 60, enabled: true },
+          { variantKey: "care-label-02", widthMm: 30, heightMm: 60, enabled: true },
+          { variantKey: "layout:disabled-id", widthMm: 50, heightMm: 60, enabled: false },
+        ],
+      },
+    ]),
   },
   customer: { findMany: spy("customer.findMany", () => []) },
   outputLayout: { findMany: spy("outputLayout.findMany", () => []) },
@@ -309,6 +328,41 @@ test("POST: a bad body or a bad screenshot is a 400 with nothing written", async
   assert.equal(created.requests.length, 0);
   assert.equal(created.outputs.length, 0);
   assert.equal(created.attachments.length, 0);
+});
+
+test("POST: the client can't name the layout, the customer, the order or a foreign style", async () => {
+  const { POST } = await import("../src/app/api/admin/change-requests/route");
+  as("REVIEWER");
+  const res = await POST(
+    json("/api/admin/change-requests", "POST", {
+      ...validBody,
+      customerId: "cust-evil",
+      poNumber: "PO-9999",
+      outputs: [{ ...validBody.outputs[0], layoutId: "someone-elses-layout", styleId: "style-2" }],
+    }),
+  );
+  assert.equal(res.status, 201);
+  assert.equal(created.requests[0].customerId, "cust-1");
+  assert.equal(created.requests[0].poNumber, "PO-0000");
+  assert.deepEqual(
+    created.outputs.map((o) => [o.variantKey, o.layoutId, o.styleId]),
+    [["layout:bogus-id", "bogus-id", "style-2"]],
+  );
+});
+
+test("POST: an output the style doesn't print (or has disabled), or a style of another order, is a 400 with nothing written", async () => {
+  const { POST } = await import("../src/app/api/admin/change-requests/route");
+  as("ADMIN");
+  for (const out of [
+    { ...validBody.outputs[1], variantKey: "layout:someone-elses-layout" },
+    { ...validBody.outputs[1], variantKey: "layout:disabled-id" },
+    { ...validBody.outputs[1], styleId: "style-elsewhere" },
+  ]) {
+    const res = await POST(json("/api/admin/change-requests", "POST", { ...validBody, outputs: [out] }));
+    assert.equal(res.status, 400, JSON.stringify(out));
+  }
+  assert.equal(created.requests.length, 0);
+  assert.equal(created.outputs.length, 0);
 });
 
 // ── Attachments ─────────────────────────────────────────────────────────────

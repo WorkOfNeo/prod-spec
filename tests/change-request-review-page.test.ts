@@ -59,6 +59,8 @@ function output(id: string, status: OutputStatus, over: Partial<OutputView> = {}
     attachments: [{ id: `att-${id}`, fileName: "shot.png", mimeType: "image/png", byteSize: 10 }],
     rejectReason: null,
     publishedLabel: null,
+    layoutName: "Polybag 50x60",
+    layoutPinnedByAgent: false,
     currentRevisionId: null,
     draftCount: 0,
     firstTryApproved: null,
@@ -211,6 +213,8 @@ test("in review with a draft: what they asked, drafts, proofs area, impact, diff
     "Dismiss",
     "Approve Output review",
     "Reject…",
+    "Polybag 50x60",
+    "bogus-layout",
     "Run log · 2 steps · $0.01",
     "Ask for changes to this draft…",
   ]) {
@@ -218,6 +222,22 @@ test("in review with a draft: what they asked, drafts, proofs area, impact, diff
   }
   // Another output's question is not in this tab's thread.
   assert.equal(html.includes("Which size do you mean?"), false);
+});
+
+test("the output's layout shows by name and id in the header and by the approve button; agent pins are flagged", async () => {
+  const view = adminView();
+  const html = await render(view, "review");
+  // Once in the output header, once next to Approve.
+  assert.equal(html.split("Polybag 50x60").length - 1, 2);
+  assert.equal(html.includes("pinned by the agent"), false);
+
+  view.outputs[0] = { ...view.outputs[0], variantKey: null, layoutPinnedByAgent: true };
+  const pinned = await render(view, "review");
+  assert.equal(pinned.split("pinned by the agent").length - 1, 2);
+
+  // The requester never sees layout ids.
+  const requester = await render({ ...view, admin: false }, "review");
+  assert.equal(requester.includes("bogus-layout"), false);
 });
 
 test("each status shows its own next step", async () => {
