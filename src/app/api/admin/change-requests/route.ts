@@ -4,7 +4,10 @@ import { canReview } from "@/lib/roles";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import {
   ChangeRequestInputError,
+  ChangeRequestRateLimitError,
   CreateChangeRequestSchema,
+  MAX_REQUEST_BODY_BYTES,
+  assertCanFileRequest,
   createChangeRequest,
   listChangeRequests,
 } from "@/lib/change-requests/requests";
@@ -24,10 +27,47 @@ export const runtime = "nodejs";
 // Gate: the feature flag first (off → 404, the feature does not exist), then
 // session or 401, then canReview or 403. Filing a request changes nothing that
 // prints — an admin approves every change later — so reviewers may file.
+//
+// Limits on POST, both before the body is parsed: a body over
+// MAX_REQUEST_BODY_BYTES is a 413 (by Content-Length, and counted while
+// reading when none is sent), and a person who filed CREATE_LIMIT_PER_HOUR
+// requests in the last hour gets a 429 — admins included.
 // =====================================================
 
 function notFound() {
   return NextResponse.json({ error: "Not found" }, { status: 404 });
+}
+
+const TOO_LARGE = "The request is too large — attach fewer or smaller screenshots.";
+
+// The body as JSON, never holding more than `limit` bytes: a declared
+// Content-Length over it is refused before reading, and a body without one
+// (chunked) is counted as it streams in.
+async function readJsonCapped(
+  req: NextRequest,
+  limit: number,
+): Promise<{ ok: true; value: unknown } | { ok: false; status: 400 | 413 }> {
+  const declared = Number(req.headers.get("content-length") ?? NaN);
+  if (Number.isFinite(declared) && declared > limit) return { ok: false, status: 413 };
+  if (!req.body) return { ok: false, status: 400 };
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) {
+      await reader.cancel().catch(() => {});
+      return { ok: false, status: 413 };
+    }
+    chunks.push(value);
+  }
+  try {
+    return { ok: true, value: JSON.parse(Buffer.concat(chunks).toString("utf8")) };
+  } catch {
+    return { ok: false, status: 400 };
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -53,13 +93,26 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   if (!canReview(role)) return NextResponse.json({ error: "Requires role: ADMIN or REVIEWER" }, { status: 403 });
 
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  const declared = Number(req.headers.get("content-length") ?? NaN);
+  if (Number.isFinite(declared) && declared > MAX_REQUEST_BODY_BYTES) {
+    return NextResponse.json({ error: TOO_LARGE }, { status: 413 });
   }
-  const parsed = CreateChangeRequestSchema.safeParse(body);
+  try {
+    await assertCanFileRequest(session.user.id);
+  } catch (err) {
+    if (err instanceof ChangeRequestRateLimitError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    throw err;
+  }
+
+  const body = await readJsonCapped(req, MAX_REQUEST_BODY_BYTES);
+  if (!body.ok) {
+    return body.status === 413
+      ? NextResponse.json({ error: TOO_LARGE }, { status: 413 })
+      : NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const parsed = CreateChangeRequestSchema.safeParse(body.value);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
     return NextResponse.json(

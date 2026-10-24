@@ -54,6 +54,16 @@ export const MAX_IMAGES_TOTAL = 12;
 export const MAX_ISSUE_TEXT_CHARS = 20_000;
 export const MAX_MESSAGE_CHARS = 50_000;
 
+// The whole POST body. A dozen resized screenshots fit with room to spare;
+// anything bigger is refused (413) before it is read into memory.
+export const MAX_REQUEST_BODY_BYTES = 60 * 1024 * 1024;
+
+// Requests one person may file per rolling hour — admins included. Filing
+// starts an agent run per output (model cost) and stores screenshots, so a
+// stuck form or a script can't run up either.
+export const CREATE_LIMIT_PER_HOUR = 20;
+export const CREATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+
 // ---------- input ----------
 
 // An id-ish optional string. The form sends "" for "not picked"; that means
@@ -144,7 +154,32 @@ export class ChangeRequestInputError extends Error {
   }
 }
 
+// Too many requests filed in the last hour. Routes answer 429 with the message.
+export class ChangeRequestRateLimitError extends Error {
+  readonly status = 429;
+  constructor(message: string) {
+    super(message);
+    this.name = "ChangeRequestRateLimitError";
+  }
+}
+
 export type Actor = { userId: string; role: UserRole | null };
+
+// Throws ChangeRequestRateLimitError once `userId` filed CREATE_LIMIT_PER_HOUR
+// requests in the rolling hour. Checked before the body is read.
+export async function assertCanFileRequest(userId: string, now = Date.now()): Promise<void> {
+  const recent = await orEmpty(
+    db.changeRequest.count({
+      where: { createdById: userId, createdAt: { gte: new Date(now - CREATE_LIMIT_WINDOW_MS) } },
+    }),
+    0,
+  );
+  if (recent >= CREATE_LIMIT_PER_HOUR) {
+    throw new ChangeRequestRateLimitError(
+      `You have filed ${CREATE_LIMIT_PER_HOUR} requests in the last hour, the most allowed. Try again in a while.`,
+    );
+  }
+}
 
 // ---------- pure helpers ----------
 

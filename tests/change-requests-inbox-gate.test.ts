@@ -57,9 +57,13 @@ const STYLES = [
   { id: "style-elsewhere", customerId: "cust-2", poNumber: "PO-0001", prodSpecId: "spec-1" },
 ];
 
+let filedLastHour = 0;
+const countRequests = spy("changeRequest.count", () => filedLastHour);
+
 const fakeDb = {
   changeRequest: {
     findMany: findManyRequests,
+    count: countRequests,
     create: spy("changeRequest.create", (args) => {
       const row = { id: `cr-${created.requests.length + 1}`, number: 41 + created.requests.length, ...(args.data as Row) };
       created.requests.push(row);
@@ -139,6 +143,8 @@ beforeEach(() => {
   process.env.CHANGE_REQUESTS_ENABLED = "true";
   created = { requests: [], outputs: [], attachments: [], messages: [] };
   dbCalls = [];
+  filedLastHour = 0;
+  countRequests.mock.resetCalls();
   attachmentRow = null;
   findManyRequests.mock.resetCalls();
   sendRequesterUpdate.mock.resetCalls();
@@ -363,6 +369,66 @@ test("POST: an output the style doesn't print (or has disabled), or a style of a
   }
   assert.equal(created.requests.length, 0);
   assert.equal(created.outputs.length, 0);
+});
+
+// ── Limits ──────────────────────────────────────────────────────────────────
+
+test("POST: a body declared over 60 MB is a 413 before anything is read or counted", async () => {
+  const { POST } = await import("../src/app/api/admin/change-requests/route");
+  as("REVIEWER");
+  const req = new NextRequest("http://localhost/api/admin/change-requests", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Content-Length": String(60 * 1024 * 1024 + 1) },
+    body: JSON.stringify(validBody),
+  });
+  const res = await POST(req);
+  assert.equal(res.status, 413);
+  assert.match((await res.json()).error, /too large/);
+  assert.deepEqual(dbCalls, []);
+});
+
+test("POST: a body without a length is counted as it streams and cut off past 60 MB", async () => {
+  const { POST } = await import("../src/app/api/admin/change-requests/route");
+  as("ADMIN");
+  const chunk = new Uint8Array(1024 * 1024).fill(0x20);
+  let sent = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      // Never ends on its own: only the cap stops the read.
+      sent++;
+      controller.enqueue(chunk);
+    },
+  });
+  const req = new NextRequest("http://localhost/api/admin/change-requests", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: stream,
+    duplex: "half",
+  } as ConstructorParameters<typeof NextRequest>[1]);
+  const res = await POST(req);
+  assert.equal(res.status, 413);
+  assert.ok(sent <= 62, `read ${sent} MB`);
+  assert.equal(created.requests.length, 0);
+});
+
+test("POST: 20 requests in the last hour is the limit — the 21st is a 429, admins included", async () => {
+  const { POST } = await import("../src/app/api/admin/change-requests/route");
+  for (const role of ["REVIEWER", "ADMIN"] as const) {
+    as(role);
+    countRequests.mock.resetCalls();
+    filedLastHour = 20;
+    const res = await POST(json("/api/admin/change-requests", "POST", validBody));
+    assert.equal(res.status, 429, role);
+    assert.match((await res.json()).error, /20 requests in the last hour/);
+    const where = (countRequests.mock.calls[0].arguments[0] as { where: Row }).where;
+    assert.equal(where.createdById, `${role.toLowerCase()}-1`);
+    const since = (where.createdAt as { gte: Date }).gte;
+    assert.ok(Math.abs(Date.now() - 60 * 60 * 1000 - since.getTime()) < 5_000, "a rolling hour");
+  }
+  assert.equal(created.requests.length, 0);
+
+  filedLastHour = 19;
+  assert.equal((await POST(json("/api/admin/change-requests", "POST", validBody))).status, 201);
 });
 
 // ── Attachments ─────────────────────────────────────────────────────────────
