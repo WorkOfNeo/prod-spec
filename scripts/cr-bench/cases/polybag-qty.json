@@ -1,0 +1,212 @@
+{
+  "id": "polybag-qty",
+  "title": "Solid polybag sticker: pieces per polybag next to the price",
+  "request": {
+    "message": "Hi,\n\nOn the solid polybag sticker we need the number of pieces in the bag. If more than one piece is packed in the solid polybag (Monday Trims column says e.g. 'Solid polybag- 5 Pcs / …'), print the quantity next to the price; nothing when it is one piece.\n\nThanks!",
+    "outputLabel": "Solid polybag sticker",
+    "text": "If more than one piece is packed in the solid polybag (Monday Trims column says e.g. 'Solid polybag- 5 Pcs / …'), print the quantity next to the price; nothing when it is one piece."
+  },
+  "layout": {
+    "id": "layout-polybag-50x60",
+    "name": "Solid polybag sticker 50×60",
+    "docType": "Polybag sticker",
+    "definition": {
+      "settings": {
+        "repeatBy": "size",
+        "splitBy": "ean"
+      },
+      "pages": [
+        {
+          "id": "p1",
+          "title": "Sticker",
+          "widthMm": 50,
+          "heightMm": 60,
+          "gridCols": 50,
+          "gridRows": 60,
+          "blocks": [
+            {
+              "id": "b-article",
+              "rect": {
+                "col": 2,
+                "row": 2,
+                "colSpan": 46,
+                "rowSpan": 5
+              },
+              "fontPt": 9,
+              "bold": true,
+              "lineHeight": 1.2,
+              "lines": [
+                "ART. NO. {{customerItemNo}}"
+              ]
+            },
+            {
+              "id": "b-size-heading",
+              "rect": {
+                "col": 2,
+                "row": 7,
+                "colSpan": 24,
+                "rowSpan": 3
+              },
+              "fontPt": 5.5,
+              "lineHeight": 1.2,
+              "lines": [
+                "KOKO / STORLEK / SIZE"
+              ]
+            },
+            {
+              "id": "b-size",
+              "rect": {
+                "col": 2,
+                "row": 10,
+                "colSpan": 24,
+                "rowSpan": 7
+              },
+              "fontPt": 16,
+              "bold": true,
+              "lineHeight": 1.1,
+              "lines": [
+                "{{size}}"
+              ]
+            },
+            {
+              "id": "b-available",
+              "rect": {
+                "col": 26,
+                "row": 7,
+                "colSpan": 22,
+                "rowSpan": 6
+              },
+              "fontPt": 5,
+              "lineHeight": 1.2,
+              "lines": [
+                "Saatavana koot:",
+                "Finns i storlekar:"
+              ]
+            },
+            {
+              "id": "b-size-range",
+              "rect": {
+                "col": 26,
+                "row": 13,
+                "colSpan": 22,
+                "rowSpan": 6
+              },
+              "fontPt": 6,
+              "bold": true,
+              "lineHeight": 1.2,
+              "lines": [
+                "{{sizeRange:dash}}"
+              ]
+            },
+            {
+              "id": "b-ean",
+              "rect": {
+                "col": 2,
+                "row": 20,
+                "colSpan": 46,
+                "rowSpan": 20
+              },
+              "fontPt": 8,
+              "align": "center",
+              "lines": [
+                "{{barcode:ean13}}"
+              ]
+            },
+            {
+              "id": "b-price",
+              "rect": {
+                "col": 2,
+                "row": 47,
+                "colSpan": 46,
+                "rowSpan": 12
+              },
+              "fontPt": 24,
+              "bold": true,
+              "align": "center",
+              "valign": "middle",
+              "lineHeight": 1.2,
+              "lines": [
+                "{{price}} €"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "styles": [
+    {
+      "id": "style-5pcs",
+      "label": "Kids tee 5-pack · 5 pcs per solid polybag",
+      "group": "changed",
+      "values": {
+        "customerName": "Sample Retailer",
+        "productGroup": "T-shirt",
+        "price.currency": "",
+        "styleName": "Kids Tee 5-pack",
+        "styleNumber": "STY-20001",
+        "customerItemNo": "880101",
+        "poNumber": "PO-0001",
+        "trimsRaw": "Price sticker, Solid polybag- 5 Pcs / Polybag, Solid polybag sticker, Carton marking",
+        "sizes": "98/104=2000000100012, 110/116=2000000100029, 122/128=2000000100036, 134/140=2000000100043",
+        "price": "12,95"
+      }
+    },
+    {
+      "id": "style-2pcs",
+      "label": "Kids shorts 2-pack · 2 pcs per solid polybag",
+      "group": "changed",
+      "values": {
+        "customerName": "Sample Retailer",
+        "productGroup": "Shorts",
+        "price.currency": "",
+        "styleName": "Kids Shorts 2-pack",
+        "styleNumber": "STY-20002",
+        "customerItemNo": "880102",
+        "poNumber": "PO-0001",
+        "trimsRaw": "Price sticker, Solid Polybag - 2 Pcs/ Polybag, Solid polybag sticker",
+        "sizes": "98/104=2000000200019, 110/116=2000000200026, 122/128=2000000200033",
+        "price": "9,95"
+      }
+    },
+    {
+      "id": "style-1pc",
+      "label": "Kids tee single · 1 pc per polybag",
+      "group": "control",
+      "values": {
+        "customerName": "Sample Retailer",
+        "productGroup": "T-shirt",
+        "price.currency": "",
+        "styleName": "Kids Tee",
+        "styleNumber": "STY-20003",
+        "customerItemNo": "880103",
+        "poNumber": "PO-0002",
+        "trimsRaw": "Price sticker, 1 pc individual polybag for solid, Solid polybag sticker, Carton marking",
+        "sizes": "98/104=2000000300016, 110/116=2000000300023",
+        "price": "4,95"
+      }
+    }
+  ],
+  "expected": {
+    "verdict": "patch",
+    "tokensUsed": [
+      "polybagQty"
+    ],
+    "block": {
+      "page": 0,
+      "rect": {
+        "col": 7,
+        "row": 42,
+        "colSpan": 27,
+        "rowSpan": 4
+      },
+      "tolerance": 12,
+      "lineIncludes": [
+        "polybagQty"
+      ]
+    },
+    "mustNotChangeStyleIds": [
+      "style-1pc"
+    ]
+  }
+}
