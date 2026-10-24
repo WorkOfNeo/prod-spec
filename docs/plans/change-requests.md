@@ -1,6 +1,6 @@
 # Change requests: technical design
 
-Status: **proposed, awaiting Niels's approval** (gate "Approve the design before building").
+Status: **approved 2026-10-24** (gate "Approve the design before building"). Decisions in §9 settled as recommended.
 UX reference: the clickable mockup (private artifact, linked on the Ledger design task).
 This document is also the build brief for every agent working on the feature. Read it whole before touching code.
 
@@ -319,9 +319,9 @@ Integration branch `claude/change-requests`. Each package works in its own workt
 
 Waves start when the previous wave is merged into the integration branch. Packages inside a wave only touch files they own; anything outside their list goes back to the orchestrator.
 
-## 9. Decisions for Niels at the gate
+## 9. Decisions (settled 2026-10-24)
 
-1. **Trial gate placement.** The plan holds the in-app tasks behind the trial. To finish today, build the in-app phase now behind the flag and let the trial gate the **rollout** instead. Recommended.
-2. **Official Anthropic SDK** (`@anthropic-ai/sdk`) for the agent (tool use + vision + streaming), instead of extending the raw-fetch client. The existing ✨ AI fix stays as is. Recommended.
+1. **Trial gate placement.** The in-app phase is built now behind the flag; the trial gates the **rollout**.
+2. **Official Anthropic SDK** (`@anthropic-ai/sdk@^1.3.0`) for the agent (tool use + vision + streaming). The existing ✨ AI fix stays on raw fetch.
 3. **Feature flag** `CHANGE_REQUESTS_ENABLED`, default off, so the PR can merge before the trial.
-4. **Who submits**: REVIEWERs can create requests and see their own; only ADMIN approves. Final say at the rollout gate.
+4. **Who submits**: REVIEWERs can create requests and see their own; only ADMIN approves, publishes or reruns. Final say at the rollout gate.
