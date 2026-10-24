@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { TriangleAlert } from "lucide-react";
 import { requireAdminPage } from "@/lib/auth-server";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { getRequestDetail } from "@/lib/change-requests/store";
@@ -17,6 +18,10 @@ export const metadata = { title: "Build prompt" };
 // the worked cases) and the generated build prompt to paste into a coding
 // agent. Behind CHANGE_REQUESTS_ENABLED (404 when off) and ADMIN only.
 // Without ?output= it shows the request's first output that has a spec.
+//
+// Parts of the prompt come from the request (the requester's words and the
+// agent's reading of them). gap.ts fences them as data, but the page still
+// asks the developer to read the prompt before handing it to a coding agent.
 export default async function BuildPromptPage({
   params,
   searchParams,
@@ -124,6 +129,14 @@ export default async function BuildPromptPage({
               </div>
             </div>
           </section>
+
+          <p
+            role="note"
+            className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+          >
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <span>Read this prompt before pasting it into a coding agent: parts of it come from the request.</span>
+          </p>
 
           <section className="rounded-lg border border-zinc-200 bg-white">
             <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-5 py-3">

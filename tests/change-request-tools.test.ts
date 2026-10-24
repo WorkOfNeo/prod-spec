@@ -899,7 +899,8 @@ test("declare_gap: NEEDS_CODE with the awaited token and the spec, a thread note
   assert.equal(status.status, "NEEDS_CODE");
   assert.equal(status.patch.awaitingToken, "bogusPackQty");
   assert.equal(status.patch.codeSpec.tokenKey, "bogusPackQty");
-  assert.match(status.patch.codeSpec.buildPrompt, /R-0042 \(Solid polybag sticker\) on the layout "Bogus polybag sticker"/);
+  assert.match(status.patch.codeSpec.buildPrompt, /change request R-0042 can print it/);
+  assert.match(status.patch.codeSpec.buildPrompt, /Output: "Solid polybag sticker"\nLayout: "Bogus polybag sticker"/);
 
   const msg = calls.appendMessage[0] as Row;
   assert.equal(msg.authorKind, "AGENT");
@@ -1031,6 +1032,18 @@ test("resumeAwaitingCode: starts only outputs whose awaited token now exists; a 
   assert.deepEqual(started, ["o-ready", "o-ready-2"]);
   const where = (calls["changeRequestOutput.findMany"][0] as { where: unknown }).where;
   assert.deepEqual(where, { status: "NEEDS_CODE", awaitingToken: { not: null } });
+});
+
+test("resumeAwaitingCode: outputIds narrows it to those outputs; an empty list does nothing", async () => {
+  waitingOutputs = [{ id: "o-ready", awaitingToken: "polybagQty" }];
+  const ids = await gap.resumeAwaitingCode(async () => ({ started: true }), { outputIds: ["o-ready", "o-other"] });
+  assert.deepEqual(ids, ["o-ready"]);
+  const where = (calls["changeRequestOutput.findMany"][0] as { where: unknown }).where;
+  assert.deepEqual(where, { status: "NEEDS_CODE", awaitingToken: { not: null }, id: { in: ["o-ready", "o-other"] } });
+
+  const none = await gap.resumeAwaitingCode(async () => assert.fail("must not start"), { outputIds: [] });
+  assert.deepEqual(none, []);
+  assert.equal((calls["changeRequestOutput.findMany"] as unknown[]).length, 1, "no query for an empty list");
 });
 
 test("resumeAwaitingCode: before the tables exist it does nothing", async () => {

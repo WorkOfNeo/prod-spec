@@ -122,20 +122,23 @@ export type RevisionOps = z.infer<typeof RevisionOpsSchema>;
 // whose tokenKey already exists. The key must be a legal token name — the same
 // shape TOKEN_RE in output-layouts/schema.ts matches — because the developer
 // ships exactly that token and resumeAwaitingCode() waits for it by name.
+// Every text field is capped: it all lands in the build prompt a developer
+// pastes into a coding agent (fenced as data there, see gap.ts), so a
+// declaration stays a short spec, never room for a page of instructions.
 export const GapDeclarationSchema = z.object({
   tokenKey: z
     .string()
     .regex(/^[a-zA-Z][a-zA-Z0-9]*$/, "tokenKey must be a token name: a letter, then letters/digits"),
-  label: z.string().min(1),
+  label: z.string().min(1).max(120),
   // Where the value comes from on Monday, with real distributions seen.
   source: z.object({
-    board: z.string(),
-    column: z.string(),
-    examples: z.array(z.object({ value: z.string(), count: z.number().int().min(0) })),
+    board: z.string().max(120),
+    column: z.string().max(120),
+    examples: z.array(z.object({ value: z.string().max(200), count: z.number().int().min(0) })).max(10),
   }),
   // The rule in plain words, plus worked input → output cases.
-  rule: z.string().min(1),
-  cases: z.array(z.object({ input: z.string(), output: z.string() })),
+  rule: z.string().min(1).max(1000),
+  cases: z.array(z.object({ input: z.string().max(200), output: z.string().max(200) })).max(10),
 });
 export type GapDeclaration = z.infer<typeof GapDeclarationSchema>;
 
