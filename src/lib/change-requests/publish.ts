@@ -16,8 +16,15 @@
 //
 //   rerunApprovedDocuments  the explicit SECOND confirmation (rail 3): changed
 //                           documents that were already approved go back to
-//                           review. Delivery to a supplier still only happens
-//                           when someone approves them again.
+//                           review, and with them the changed documents the
+//                           approval HELD because their style has an approved
+//                           document of the output (plus that style's other
+//                           approved documents of the output — a scoped job
+//                           regenerates them all). Runs as
+//                           CHANGE_REQUEST_APPROVED, the only change-request
+//                           trigger the runner lets regenerate approved
+//                           documents. Delivery to a supplier still only
+//                           happens when someone approves them again.
 //
 //   rejectOutput            no change: the output's open drafts are discarded,
 //                           the reason is kept and sent to the requester.
@@ -37,6 +44,14 @@
 // whose sizes are partly approved can't be rerun without rerunning the
 // approved ones. Such a style waits for rerunApprovedDocuments with its
 // approved documents.
+//
+// Approving CLAIMS the output first: one conditional update moves it
+// IN_REVIEW → APPROVED only while the reviewed draft is still its current one,
+// so two approvals (two admins, two processes — the in-process lock only
+// covers one) can't both publish, and a draft that changed under the admin is
+// refused. Any failure before the output is PUBLISHED puts it back IN_REVIEW.
+// A claim left behind by a process that died mid-approval goes stale after
+// APPROVE_CLAIM_STALE_MS and can then be approved again ("Finish publishing").
 //
 // Everything after the publish is fail-soft: the layout is already live, so a
 // failed impact, enqueue, proof or email is recorded in the thread instead of
@@ -65,7 +80,7 @@ import { orEmpty } from "@/lib/change-requests/db-safe";
 import { sendRequesterUpdate } from "@/lib/change-requests/emails";
 import { computeImpact } from "@/lib/change-requests/impact";
 import { renderProof } from "@/lib/change-requests/proofs";
-import { appendMessage, getOutputWithRequest, setOutputStatus } from "@/lib/change-requests/store";
+import { appendMessage, getOutputWithRequest, rollUpRequestStatus, setOutputStatus } from "@/lib/change-requests/store";
 import { requestRef, type ImpactRow, type ImpactSummary, type RevisionStatus } from "@/lib/change-requests/types";
 import {
   OutputNotFoundError,
@@ -77,6 +92,11 @@ import {
 export { OutputNotFoundError, OutputStateError, PublishInputError, REJECT_REASON_MAX };
 
 export const REPLACED_DRAFT_MESSAGE = "This draft was replaced by another publish; ask the agent for a new draft";
+export const NEWER_DRAFT_MESSAGE = "A newer draft exists — reload";
+
+// An APPROVED output older than this was claimed by an approval that never
+// finished (the route's maxDuration is 3 minutes): it may be approved again.
+export const APPROVE_CLAIM_STALE_MS = 10 * 60 * 1000;
 
 // ── Pure: who reruns ─────────────────────────────────────────────────────────
 
@@ -160,6 +180,14 @@ export type ApprovedRerunPlan = {
   runnable: RunnableStyle[];
   // The approved changed documents sent back to review.
   rerunRows: ImpactRow[];
+  // Changed documents, not approved, that the approval held (planScopedRerun
+  // heldByApproved: their style has an approved document of this output).
+  // Their style is rerun now, so they are regenerated with the new layout.
+  heldRows: ImpactRow[];
+  // The other approved documents of the output on a rerun style (unchanged,
+  // or already current): the scoped job regenerates every document of the
+  // output for the style, so these go back to review too.
+  approvedSiblings: ImpactRow[];
   skippedInFlight: ImpactRow[];
   // Approved, but the current document was generated after the publish — it
   // already prints the new layout, so it is not "changed" any more.
@@ -171,8 +199,10 @@ export function docRef(styleId: string, variantKey: string): string {
 }
 
 // The explicit second confirmation: changed documents that are approved,
-// optionally only on the picked styles. `regenerated` holds docRef()s whose
-// current document was generated after the publish.
+// and the changed documents held with them (a style with an approved
+// document of the output), optionally only on the picked styles.
+// `regenerated` holds docRef()s whose current document was generated after
+// the publish (they already print the new layout).
 export function planApprovedRerun(
   rows: readonly ImpactRow[],
   opts: {
@@ -182,19 +212,33 @@ export function planApprovedRerun(
   },
 ): ApprovedRerunPlan {
   const allow = opts.styleIds ? new Set(opts.styleIds) : null;
-  const plan: ApprovedRerunPlan = { runnable: [], rerunRows: [], skippedInFlight: [], alreadyCurrent: [] };
+  const plan: ApprovedRerunPlan = {
+    runnable: [],
+    rerunRows: [],
+    heldRows: [],
+    approvedSiblings: [],
+    skippedInFlight: [],
+    alreadyCurrent: [],
+  };
+  const stillOld = (d: ImpactRow) => !opts.regenerated?.has(docRef(d.styleId, d.variantKey));
   for (const [styleId, docs] of groupByStyle(rows)) {
     if (allow && !allow.has(styleId)) continue;
-    const approved = docs.filter((d) => d.changed && d.reviewStatus === "APPROVED");
-    const stale = approved.filter((d) => !opts.regenerated?.has(docRef(d.styleId, d.variantKey)));
-    plan.alreadyCurrent.push(...approved.filter((d) => !stale.includes(d)));
-    if (stale.length === 0) continue;
+    const approvedDocs = docs.filter((d) => d.reviewStatus === "APPROVED");
+    const approvedChanged = approvedDocs.filter((d) => d.changed);
+    const stale = approvedChanged.filter(stillOld);
+    plan.alreadyCurrent.push(...approvedChanged.filter((d) => !stale.includes(d)));
+    // The same rule that held them at publish (planScopedRerun).
+    const held =
+      approvedDocs.length > 0 ? docs.filter((d) => d.changed && d.reviewStatus !== "APPROVED" && stillOld(d)) : [];
+    if (stale.length + held.length === 0) continue;
     if (docs.some((d) => d.inFlight)) {
-      plan.skippedInFlight.push(...stale);
+      plan.skippedInFlight.push(...stale, ...held);
       continue;
     }
-    plan.runnable.push(runnableFor(styleId, stale, opts.styleProdSpec));
+    plan.runnable.push(runnableFor(styleId, [...stale, ...held], opts.styleProdSpec));
     plan.rerunRows.push(...stale);
+    plan.heldRows.push(...held);
+    plan.approvedSiblings.push(...approvedDocs.filter((d) => !stale.includes(d)));
   }
   return plan;
 }
@@ -285,13 +329,31 @@ export function publishSummaryText(input: {
 export function rerunApprovedSummaryText(input: { plan: ApprovedRerunPlan; rerun: RerunOutcome | null }): string {
   const { plan, rerun } = input;
   const lines: string[] = [];
-  if (plan.rerunRows.length === 0) {
+  const held = plan.heldRows.length;
+  const siblings = plan.approvedSiblings.length;
+  if (plan.rerunRows.length === 0 && held === 0) {
     lines.push("No approved documents needed sending back to review.");
   } else {
-    lines.push(
-      `${plural(plan.rerunRows.length, "approved document")} sent back to review; ` +
-        "delivery happens only when someone approves them again.",
-    );
+    if (plan.rerunRows.length > 0) {
+      lines.push(
+        `${plural(plan.rerunRows.length, "approved document")} sent back to review; ` +
+          "delivery happens only when someone approves them again.",
+      );
+    }
+    if (held > 0) {
+      lines.push(
+        `${plural(held, "held document")} rerun as well; ${held === 1 ? "it was" : "they were"} held at publish because ` +
+          `${held === 1 ? "its style has" : "their styles have"} an approved document of this output.`,
+      );
+    }
+    if (siblings > 0) {
+      lines.push(
+        `${plural(siblings, "other approved document")} of this output on the same ` +
+          `${plan.runnable.length === 1 ? "style" : "styles"} ` +
+          `${siblings === 1 ? "goes" : "go"} back to review too, because a rerun regenerates every document of the output ` +
+          `for the style${plan.rerunRows.length === 0 ? "; delivery happens only when someone approves them again" : ""}.`,
+      );
+    }
     const skipped = skippedByEnqueue(rerun);
     if (skipped) lines.push(skipped);
   }
@@ -387,6 +449,9 @@ async function quietly(what: string, fn: () => Promise<unknown>): Promise<void> 
 
 export type ApproveOptions = {
   userId: string;
+  // The draft the admin reviewed and approves. Refused (409) unless it is
+  // still the output's current draft: a newer one landed meanwhile.
+  revisionId: string;
   // For the rerun batch's "started by"; null when unknown.
   userEmail?: string | null;
   // Publish over a conflict (the live layout moved since the draft was made).
@@ -413,10 +478,41 @@ export type ApproveResult = {
   summary: string;
 };
 
+// Claim the output for this approval: IN_REVIEW (or a stale APPROVED claim)
+// → APPROVED, only while `revisionId` is still its current draft. False when
+// someone else got there first or the draft moved on.
+async function claimForApproval(outputId: string, revisionId: string, now = Date.now()): Promise<boolean> {
+  const claimed = await db.changeRequestOutput.updateMany({
+    where: {
+      id: outputId,
+      currentRevisionId: revisionId,
+      OR: [{ status: "IN_REVIEW" }, { status: "APPROVED", updatedAt: { lt: new Date(now - APPROVE_CLAIM_STALE_MS) } }],
+    },
+    data: { status: "APPROVED" },
+  });
+  return claimed.count > 0;
+}
+
+// Undo the claim after a failure before PUBLISHED; never masks that failure.
+async function releaseApprovalClaim(outputId: string, requestId: string): Promise<void> {
+  await quietly("releasing the approval claim", async () => {
+    await db.changeRequestOutput.updateMany({
+      where: { id: outputId, status: "APPROVED" },
+      data: { status: "IN_REVIEW" },
+    });
+    await rollUpRequestStatus(requestId);
+  });
+}
+
 export async function approveOutput(outputId: string, opts: ApproveOptions): Promise<ApproveResult> {
   return withOutputLock(outputId, async () => {
     const output = await loadOutput(outputId);
-    if (output.status !== "IN_REVIEW") {
+    const staleClaim =
+      output.status === "APPROVED" && Date.now() - output.updatedAt.getTime() > APPROVE_CLAIM_STALE_MS;
+    if (output.status === "APPROVED" && !staleClaim) {
+      throw new OutputStateError("This output is being approved right now; wait a moment and reload", output.status);
+    }
+    if (output.status !== "IN_REVIEW" && !staleClaim) {
       throw new OutputStateError(
         `This output is ${statusWords(output.status)}; only a draft in review can be approved`,
         output.status,
@@ -425,135 +521,172 @@ export async function approveOutput(outputId: string, opts: ApproveOptions): Pro
     if (!output.currentRevisionId) {
       throw new OutputStateError("There is no draft to approve yet", output.status);
     }
+    if (opts.revisionId !== output.currentRevisionId) {
+      throw new OutputStateError(NEWER_DRAFT_MESSAGE, output.status);
+    }
     const revision = await getRevision(output.currentRevisionId);
     if (!revision) throw new OutputStateError("The draft could not be found; ask the agent for a new draft", output.status);
     if (revision.status === ("SUPERSEDED" satisfies RevisionStatus) || revision.status === ("DISCARDED" satisfies RevisionStatus)) {
       throw new OutputStateError(REPLACED_DRAFT_MESSAGE, output.status);
     }
 
-    // ── Publish (or find it already published) ──
-    let published: RevisionRow;
-    let publishedVersion: number;
-    let forced = false;
-    let before: unknown = revision.baseDefinition;
-    if (revision.status === ("PUBLISHED" satisfies RevisionStatus)) {
-      // An earlier approval published it and died, or it was published from
-      // the layout's History panel: finish the bookkeeping.
-      published = revision;
-      publishedVersion =
-        revision.publishedVersion ??
-        (await db.outputLayout.findUnique({ where: { id: revision.layoutId }, select: { version: true } }))?.version ??
-        revision.baseVersion + 1;
-    } else {
-      // Only a forced publish can have something other than the base live
-      // just before it; read it so the impact compares what really changed.
-      const liveBefore = opts.force
-        ? await db.outputLayout.findUnique({ where: { id: revision.layoutId }, select: { definition: true } })
-        : null;
-      const result = await publishRevision(revision.id, { userId: opts.userId, force: opts.force });
-      published = result.revision;
-      publishedVersion = result.publishedVersion;
-      forced = result.overrodeConflict !== null;
-      if (forced && liveBefore) before = liveBefore.definition;
+    // ── Claim: one approval wins, on the draft that was reviewed ──
+    if (!(await claimForApproval(outputId, revision.id))) {
+      throw new OutputStateError(
+        "This output changed while you were approving it (another approval, or a newer draft); reload",
+        output.status,
+      );
     }
+    await rollUpRequestStatus(output.requestId);
 
-    // ── Fresh impact: before → published ──
-    let impact: ImpactSummary | null = null;
-    let impactError: string | null = null;
+    let live = false;
     try {
-      impact = await computeImpact({
-        layoutId: revision.layoutId,
-        proposedDef: parseLayoutDef(published.definition),
-        currentDef: parseLayoutDef(before),
+      return await publishAndRerun(output, revision, opts, () => {
+        live = true;
       });
     } catch (err) {
-      impactError = errorMessage(err);
-      console.error(`[change-requests] impact after publishing revision ${revision.id} failed: ${impactError}`);
+      if (!live) await releaseApprovalClaim(outputId, output.requestId);
+      throw err;
     }
-
-    // ── Scoped rerun ──
-    let plan: ScopedRerunPlan | null = null;
-    let rerun: RerunOutcome | null = null;
-    let rerunError: string | null = null;
-    if (impact) {
-      try {
-        plan = planScopedRerun(impact.rows, await styleProdSpecs(changedStyleIds(impact.rows)));
-        if (plan.runnable.length > 0) {
-          rerun = await enqueueBulkRun({
-            runnable: plan.runnable,
-            label: `${requestRef(output.request.number)} · ${output.label}`,
-            user: { id: opts.userId, email: opts.userEmail ?? null },
-            triggerSource: "CHANGE_REQUEST",
-          });
-        }
-      } catch (err) {
-        rerunError = errorMessage(err);
-        console.error(`[change-requests] rerun after publishing revision ${revision.id} failed: ${rerunError}`);
-        plan ??= planScopedRerun(impact.rows, new Map());
-      }
-    }
-
-    // ── The output is live ──
-    const now = new Date();
-    await setOutputStatus(outputId, "PUBLISHED", {
-      approvedById: opts.userId,
-      approvedAt: now,
-      publishedAt: now,
-      firstTryApproved: output.draftCount === 1,
-      ...(impact ? { impact: impact as unknown as Prisma.InputJsonValue } : {}),
-    });
-
-    const summary = publishSummaryText({ publishedVersion, forced, plan, rerun, impactError, rerunError });
-    const rerunOut: ApproveResult["rerun"] = {
-      enqueued: rerun?.enqueued ?? 0,
-      batchId: rerun?.batchId ?? null,
-      skippedNoPo: rerun?.skippedNoPo ?? 0,
-      skippedBelowCutoff: rerun?.skippedBelowCutoff ?? 0,
-      documents: rerunError ? 0 : (plan?.rerunRows.length ?? 0),
-      skippedInFlight: plan?.skippedInFlight.length ?? 0,
-      error: rerunError,
-    };
-    await quietly("the published note", () =>
-      appendMessage({
-        requestId: output.requestId,
-        outputId,
-        authorKind: "SYSTEM",
-        authorUserId: opts.userId,
-        kind: "status",
-        body: summary,
-        revisionId: revision.id,
-        meta: {
-          event: "published",
-          publishedVersion,
-          forced,
-          rerun: rerunOut,
-          approvedChanged: plan?.approvedChanged.length ?? 0,
-          deliveredChanged: plan?.deliveredChanged.length ?? 0,
-          heldByApproved: plan?.heldByApproved.length ?? 0,
-          impactError,
-        },
-      }),
-    );
-
-    // Same rule as the "received" email: the requester is written to when a
-    // reviewer filed it; an admin filing for themselves knows already.
-    if (output.request.source === "REQUESTER") {
-      const proofs = await liveProofs(revision.id, output.styleId);
-      await sendRequesterUpdate(output.requestId, "live", { outputId, ...proofs });
-    }
-
-    return {
-      revisionId: revision.id,
-      publishedVersion,
-      forced,
-      rerun: rerunOut,
-      approvedChanged: plan?.approvedChanged ?? [],
-      deliveredChanged: plan?.deliveredChanged ?? [],
-      heldByApproved: plan?.heldByApproved ?? [],
-      impactError,
-      summary,
-    };
   });
+}
+
+type ApprovingOutput = Awaited<ReturnType<typeof loadOutput>>;
+
+// The approval proper, once the output is claimed: publish (or find it
+// published), fresh impact, scoped rerun, PUBLISHED, thread note, email.
+// `markLive` is called as soon as the output is PUBLISHED: from then on a
+// failure must not put it back in review.
+async function publishAndRerun(
+  output: ApprovingOutput,
+  revision: RevisionRow,
+  opts: ApproveOptions,
+  markLive: () => void,
+): Promise<ApproveResult> {
+  const outputId = output.id;
+  // ── Publish (or find it already published) ──
+  let published: RevisionRow;
+  let publishedVersion: number;
+  let forced = false;
+  let before: unknown = revision.baseDefinition;
+  if (revision.status === ("PUBLISHED" satisfies RevisionStatus)) {
+    // An earlier approval published it and died, or it was published from
+    // the layout's History panel: finish the bookkeeping.
+    published = revision;
+    publishedVersion =
+      revision.publishedVersion ??
+      (await db.outputLayout.findUnique({ where: { id: revision.layoutId }, select: { version: true } }))?.version ??
+      revision.baseVersion + 1;
+  } else {
+    // Only a forced publish can have something other than the base live
+    // just before it; read it so the impact compares what really changed.
+    const liveBefore = opts.force
+      ? await db.outputLayout.findUnique({ where: { id: revision.layoutId }, select: { definition: true } })
+      : null;
+    const result = await publishRevision(revision.id, { userId: opts.userId, force: opts.force });
+    published = result.revision;
+    publishedVersion = result.publishedVersion;
+    forced = result.overrodeConflict !== null;
+    if (forced && liveBefore) before = liveBefore.definition;
+  }
+
+  // ── Fresh impact: before → published ──
+  let impact: ImpactSummary | null = null;
+  let impactError: string | null = null;
+  try {
+    impact = await computeImpact({
+      layoutId: revision.layoutId,
+      proposedDef: parseLayoutDef(published.definition),
+      currentDef: parseLayoutDef(before),
+    });
+  } catch (err) {
+    impactError = errorMessage(err);
+    console.error(`[change-requests] impact after publishing revision ${revision.id} failed: ${impactError}`);
+  }
+
+  // ── Scoped rerun ──
+  let plan: ScopedRerunPlan | null = null;
+  let rerun: RerunOutcome | null = null;
+  let rerunError: string | null = null;
+  if (impact) {
+    try {
+      plan = planScopedRerun(impact.rows, await styleProdSpecs(changedStyleIds(impact.rows)));
+      if (plan.runnable.length > 0) {
+        rerun = await enqueueBulkRun({
+          runnable: plan.runnable,
+          label: `${requestRef(output.request.number)} · ${output.label}`,
+          user: { id: opts.userId, email: opts.userEmail ?? null },
+          triggerSource: "CHANGE_REQUEST",
+        });
+      }
+    } catch (err) {
+      rerunError = errorMessage(err);
+      console.error(`[change-requests] rerun after publishing revision ${revision.id} failed: ${rerunError}`);
+      plan ??= planScopedRerun(impact.rows, new Map());
+    }
+  }
+
+  // ── The output is live ──
+  const now = new Date();
+  await setOutputStatus(outputId, "PUBLISHED", {
+    approvedById: opts.userId,
+    approvedAt: now,
+    publishedAt: now,
+    firstTryApproved: output.draftCount === 1,
+    ...(impact ? { impact: impact as unknown as Prisma.InputJsonValue } : {}),
+  });
+  markLive();
+
+  const summary = publishSummaryText({ publishedVersion, forced, plan, rerun, impactError, rerunError });
+  const rerunOut: ApproveResult["rerun"] = {
+    enqueued: rerun?.enqueued ?? 0,
+    batchId: rerun?.batchId ?? null,
+    skippedNoPo: rerun?.skippedNoPo ?? 0,
+    skippedBelowCutoff: rerun?.skippedBelowCutoff ?? 0,
+    documents: rerunError ? 0 : (plan?.rerunRows.length ?? 0),
+    skippedInFlight: plan?.skippedInFlight.length ?? 0,
+    error: rerunError,
+  };
+  await quietly("the published note", () =>
+    appendMessage({
+      requestId: output.requestId,
+      outputId,
+      authorKind: "SYSTEM",
+      authorUserId: opts.userId,
+      kind: "status",
+      body: summary,
+      revisionId: revision.id,
+      meta: {
+        event: "published",
+        publishedVersion,
+        forced,
+        rerun: rerunOut,
+        approvedChanged: plan?.approvedChanged.length ?? 0,
+        deliveredChanged: plan?.deliveredChanged.length ?? 0,
+        heldByApproved: plan?.heldByApproved.length ?? 0,
+        impactError,
+      },
+    }),
+  );
+
+  // Same rule as the "received" email: the requester is written to when a
+  // reviewer filed it; an admin filing for themselves knows already.
+  if (output.request.source === "REQUESTER") {
+    const proofs = await liveProofs(revision.id, output.styleId);
+    await sendRequesterUpdate(output.requestId, "live", { outputId, ...proofs });
+  }
+
+  return {
+    revisionId: revision.id,
+    publishedVersion,
+    forced,
+    rerun: rerunOut,
+    approvedChanged: plan?.approvedChanged ?? [],
+    deliveredChanged: plan?.deliveredChanged ?? [],
+    heldByApproved: plan?.heldByApproved ?? [],
+    impactError,
+    summary,
+  };
 }
 
 // ── Rerun approved documents (the second confirmation) ───────────────────────
@@ -566,10 +699,16 @@ export type RerunApprovedOptions = {
 };
 
 export type RerunApprovedResult = RerunOutcome & {
+  // Approved changed documents sent back to review.
   documents: number;
+  // Held documents rerun with them, and the other approved documents of the
+  // output those styles send back too.
+  heldDocuments: number;
+  approvedSiblings: number;
   skippedInFlight: number;
   alreadyCurrent: number;
   rows: ImpactRow[];
+  heldRows: ImpactRow[];
   summary: string;
 };
 
@@ -596,7 +735,12 @@ export async function rerunApprovedDocuments(outputId: string, opts: RerunApprov
     });
 
     // A document regenerated after the publish already prints the new layout.
-    const candidates = impact.rows.filter((r) => r.changed && r.reviewStatus === "APPROVED");
+    // Candidates: changed approved documents, and changed documents on a style
+    // with an approved document of the output (held at publish).
+    const stylesWithApproved = new Set(impact.rows.filter((r) => r.reviewStatus === "APPROVED").map((r) => r.styleId));
+    const candidates = impact.rows.filter(
+      (r) => r.changed && (r.reviewStatus === "APPROVED" || stylesWithApproved.has(r.styleId)),
+    );
     const regenerated = new Set<string>();
     const since = revision.publishedAt ?? output.publishedAt;
     if (since && candidates.length > 0) {
@@ -620,7 +764,9 @@ export async function rerunApprovedDocuments(outputId: string, opts: RerunApprov
         runnable: plan.runnable,
         label: `${requestRef(output.request.number)} · ${output.label} · approved`,
         user: { id: opts.userId, email: opts.userEmail ?? null },
-        triggerSource: "CHANGE_REQUEST",
+        // The one change-request run the runner lets regenerate approved
+        // documents (runKeepsApprovedDocuments).
+        triggerSource: "CHANGE_REQUEST_APPROVED",
       });
     }
 
@@ -640,6 +786,8 @@ export async function rerunApprovedDocuments(outputId: string, opts: RerunApprov
             enqueued: rerun?.enqueued ?? 0,
             batchId: rerun?.batchId ?? null,
             documents: plan.rerunRows.length,
+            heldDocuments: plan.heldRows.length,
+            approvedSiblings: plan.approvedSiblings.length,
             styleIds: plan.runnable.map((r) => r.id),
           },
         }),
@@ -652,9 +800,12 @@ export async function rerunApprovedDocuments(outputId: string, opts: RerunApprov
       skippedNoPo: rerun?.skippedNoPo ?? 0,
       skippedBelowCutoff: rerun?.skippedBelowCutoff ?? 0,
       documents: plan.rerunRows.length,
+      heldDocuments: plan.heldRows.length,
+      approvedSiblings: plan.approvedSiblings.length,
       skippedInFlight: plan.skippedInFlight.length,
       alreadyCurrent: plan.alreadyCurrent.length,
       rows: plan.rerunRows,
+      heldRows: plan.heldRows,
       summary,
     };
   });

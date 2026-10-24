@@ -143,6 +143,7 @@ function build(viewer: ReviewViewer) {
       ["reviewer-1", "reviewer@example.com"],
     ]),
     memories: new Map([["mem-1", { id: "mem-1", state: "PROPOSED", text: "Quantities in bold", scope: "CUSTOMER" }]]),
+    layoutNames: new Map([["bogus-layout", "Polybag 50x60"]]),
     viewer,
     now: 123,
   });
@@ -178,6 +179,27 @@ test("admin view: revisions newest first, attachments split per output, memory c
   assert.equal(view.steps.length, 1);
 });
 
+test("admin view: the output's layout by name; 'pinned by the agent' only when no configured output was picked", () => {
+  const filed = build(admin).outputs[0];
+  assert.equal(filed.layoutName, "Polybag 50x60");
+  assert.equal(filed.layoutPinnedByAgent, false);
+
+  const d = detail();
+  d.outputs[0] = { ...d.outputs[0], variantKey: null };
+  const pinned = buildRequestView({
+    detail: d,
+    revisions,
+    emails: new Map(),
+    memories: new Map(),
+    layoutNames: new Map(),
+    viewer: admin,
+  }).outputs[0];
+  assert.equal(pinned.layoutPinnedByAgent, true);
+  // A layout the name lookup didn't find still shows by id (the UI does).
+  assert.equal(pinned.layoutName, null);
+  assert.equal(pinned.layoutId, "bogus-layout");
+});
+
 test("requester view: no drafts, impact, run log or memory cards; other people are 'Admin'", () => {
   const view = redactForRequester(build(creator));
   assert.equal(view.admin, false);
@@ -186,6 +208,7 @@ test("requester view: no drafts, impact, run log or memory cards; other people a
   assert.deepEqual(out.revisions, []);
   assert.equal(out.currentRevisionId, null);
   assert.equal(out.impact, null);
+  assert.equal(out.layoutName, null);
   assert.equal(out.text, "Show the pack quantity");
   assert.deepEqual(out.attachments.map((a) => a.id), ["att-1"]);
   assert.deepEqual(view.steps, []);

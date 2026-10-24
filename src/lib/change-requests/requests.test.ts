@@ -140,11 +140,100 @@ test("with nothing pasted, the request message is the issues as typed", () => {
   );
 });
 
-test("layoutId comes from the variant key unless given", () => {
+test("layoutId comes only from the variant key", () => {
   assert.equal(m.resolveLayoutId({ variantKey: "layout:abc#m-blue" }), "abc");
-  assert.equal(m.resolveLayoutId({ variantKey: "layout:abc", layoutId: "given" }), "given");
   assert.equal(m.resolveLayoutId({ variantKey: "care-label-02" }), null);
   assert.equal(m.resolveLayoutId({}), null);
+});
+
+test("the schema drops a client-sent layoutId instead of carrying it", () => {
+  const parsed = m.CreateChangeRequestSchema.parse(body({ outputs: [output({ layoutId: "other-layout" })] }));
+  assert.equal("layoutId" in parsed.outputs[0], false);
+});
+
+// ---------- targets ----------
+
+const facts = (): import("./requests").TargetFacts => ({
+  styles: new Map([
+    ["style-1", { id: "style-1", customerId: "cust-1", poNumber: "PO-0000", prodSpecId: "spec-1" }],
+    ["style-2", { id: "style-2", customerId: "cust-1", poNumber: "PO-0000 ", prodSpecId: "spec-1" }],
+    ["style-other-po", { id: "style-other-po", customerId: "cust-1", poNumber: "PO-0001", prodSpecId: "spec-1" }],
+    ["style-other-cust", { id: "style-other-cust", customerId: "cust-2", poNumber: "PO-0000", prodSpecId: "spec-1" }],
+    ["style-no-spec", { id: "style-no-spec", customerId: "cust-1", poNumber: "PO-0000", prodSpecId: null }],
+    ["style-spec-2", { id: "style-spec-2", customerId: "cust-1", poNumber: "PO-0000", prodSpecId: "spec-2" }],
+  ]),
+  enabledBaseKeys: new Map([
+    ["spec-1", new Set(["layout:bogus-id", "care-label-02"])],
+    ["spec-2", new Set(["care-label-02"])],
+  ]),
+});
+const targets = (over: Record<string, unknown>) =>
+  m.resolveRequestTargets({ outputs: [output()], ...over } as never, facts());
+const inputError = (fn: () => unknown, re: RegExp) =>
+  assert.throws(fn, (err: unknown) => err instanceof m.ChangeRequestInputError && err.status === 400 && re.test(err.message));
+
+test("targets: a picked style's customer and PO win over what the client sent", () => {
+  const t = targets({ styleId: "style-1", customerId: "cust-evil", poNumber: "PO-9999" });
+  assert.equal(t.customerId, "cust-1");
+  assert.equal(t.poNumber, "PO-0000");
+  assert.deepEqual(t.outputs, [{ variantKey: "layout:bogus-id", layoutId: "bogus-id", styleId: "style-1" }]);
+});
+
+test("targets: the layout is read off the base key — a split key is stored as its base", () => {
+  const t = targets({ styleId: "style-1", outputs: [output({ variantKey: "layout:bogus-id#m-blue" })] });
+  assert.deepEqual(t.outputs[0], { variantKey: "layout:bogus-id", layoutId: "bogus-id", styleId: "style-1" });
+  const coded = targets({ styleId: "style-1", outputs: [output({ variantKey: "care-label-02" })] });
+  assert.deepEqual(coded.outputs[0], { variantKey: "care-label-02", layoutId: null, styleId: "style-1" });
+});
+
+test("targets: a variantKey the style's ProdSpec doesn't print (or has disabled) is a 400", () => {
+  inputError(() => targets({ styleId: "style-1", outputs: [output({ variantKey: "layout:someone-elses" })] }), /isn't printed/);
+  inputError(() => targets({ styleId: "style-no-spec" }), /isn't printed/);
+  inputError(() => targets({ styleId: "style-spec-2" }), /isn't printed/);
+});
+
+test("targets: a variantKey with no style to check it against is a 400", () => {
+  inputError(() => targets({ poNumber: "PO-0000", customerId: "cust-1" }), /pick the style first/);
+  // No key, no style: a free-text issue is fine.
+  const t = targets({ outputs: [output({ variantKey: undefined })] });
+  assert.deepEqual(t.outputs[0], { variantKey: null, layoutId: null, styleId: null });
+});
+
+test("targets: an output's style must be the request's style or one of the same order", () => {
+  const t = targets({ styleId: "style-1", outputs: [output({ styleId: "style-2" })] });
+  assert.equal(t.outputs[0].styleId, "style-2");
+  inputError(() => targets({ styleId: "style-1", outputs: [output({ styleId: "style-other-po" })] }), /this order's styles/);
+  inputError(() => targets({ styleId: "style-1", outputs: [output({ styleId: "style-other-cust" })] }), /this order's styles/);
+  inputError(() => targets({ styleId: "style-1", outputs: [output({ styleId: "style-gone" })] }), /no longer exists/);
+  // The key is checked on both styles it is tied to.
+  inputError(() => targets({ styleId: "style-1", outputs: [output({ styleId: "style-spec-2" })] }), /isn't printed/);
+});
+
+test("targets: 'all styles in this PO' reads customer + PO from the body and checks the output's style against them", () => {
+  const t = targets({ customerId: "cust-1", poNumber: "PO-0000", outputs: [output({ styleId: "style-1" })] });
+  assert.equal(t.customerId, "cust-1");
+  assert.equal(t.poNumber, "PO-0000");
+  assert.equal(t.outputs[0].styleId, "style-1");
+  inputError(
+    () => targets({ customerId: "cust-2", poNumber: "PO-0000", outputs: [output({ styleId: "style-1" })] }),
+    /this order's styles/,
+  );
+  inputError(
+    () => targets({ customerId: "cust-1", poNumber: "PO-0001", outputs: [output({ styleId: "style-1" })] }),
+    /this order's styles/,
+  );
+});
+
+test("targets: a gone picked style is a 400; two keys with one base are one output picked twice", () => {
+  inputError(() => targets({ styleId: "style-gone" }), /no longer exists/);
+  inputError(
+    () =>
+      targets({
+        styleId: "style-1",
+        outputs: [output({ variantKey: "layout:bogus-id#s" }), output({ variantKey: "layout:bogus-id#m" })],
+      }),
+    /picked once/,
+  );
 });
 
 test("reviewers list only their own requests; admins list all", () => {

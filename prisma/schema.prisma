@@ -1327,6 +1327,13 @@ enum TriggerSource {
   // re-arms the cover with notifySupplier: false so these reruns never ride the
   // supplier digest. See src/lib/change-requests/publish.ts.
   CHANGE_REQUEST
+  // The explicit second confirmation after a change request went live: an
+  // admin sends the changed documents that were already APPROVED back to
+  // review. The only change-request trigger that may regenerate an approved
+  // document (the runner drops approved bases from CHANGE_REQUEST jobs);
+  // otherwise handled exactly like CHANGE_REQUEST (silent cover, never
+  // auto-approved, fresh layouts).
+  CHANGE_REQUEST_APPROVED
 }
 
 model Log {

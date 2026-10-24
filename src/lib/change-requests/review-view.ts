@@ -97,6 +97,11 @@ export type OutputView = {
   rejectReason: string | null;
   publishedLabel: string | null;
   // Admin-only below (empty / null in a requester's view).
+  // The layout a draft of this output changes — what approving publishes.
+  layoutName: string | null;
+  // The layout was pinned by an agent run (find_layouts), not at filing: the
+  // output names no configured output (no variantKey) yet has a layout.
+  layoutPinnedByAgent: boolean;
   currentRevisionId: string | null;
   draftCount: number;
   firstTryApproved: boolean | null;
@@ -267,6 +272,8 @@ export function buildRequestView(input: {
   revisions: readonly RevisionSummaryRow[];
   emails: ReadonlyMap<string, string>;
   memories: ReadonlyMap<string, MemoryRow>;
+  // layoutId → OutputLayout.name.
+  layoutNames?: ReadonlyMap<string, string>;
   viewer: ReviewViewer;
   now?: number;
 }): RequestView {
@@ -329,6 +336,8 @@ export function buildRequestView(input: {
       attachments: detail.attachments.filter((a) => a.outputId === o.id).map(attachment),
       rejectReason: o.rejectReason,
       publishedLabel: o.publishedAt ? formatDate(o.publishedAt) : null,
+      layoutName: o.layoutId ? (input.layoutNames?.get(o.layoutId) ?? null) : null,
+      layoutPinnedByAgent: !o.variantKey && !!o.layoutId,
       currentRevisionId: o.currentRevisionId,
       draftCount: o.draftCount,
       firstTryApproved: o.firstTryApproved,
@@ -375,6 +384,8 @@ export function redactForRequester(view: RequestView): RequestView {
     admin: false,
     outputs: view.outputs.map((o) => ({
       ...o,
+      layoutName: null,
+      layoutPinnedByAgent: false,
       currentRevisionId: null,
       draftCount: 0,
       firstTryApproved: null,
@@ -419,7 +430,11 @@ export async function loadRequestView(id: string, viewer: ReviewViewer): Promise
       ]
     : [];
 
-  const [revisions, users, memories] = await Promise.all([
+  const layoutIds = admin
+    ? [...new Set(detail.outputs.map((o) => o.layoutId).filter((v): v is string => !!v))]
+    : [];
+
+  const [revisions, users, memories, layouts] = await Promise.all([
     admin && outputIds.length > 0
       ? orEmpty(
           db.outputLayoutRevision.findMany({
@@ -452,6 +467,12 @@ export async function loadRequestView(id: string, viewer: ReviewViewer): Promise
           [] as MemoryRow[],
         )
       : Promise.resolve([] as MemoryRow[]),
+    layoutIds.length > 0
+      ? orEmpty(
+          db.outputLayout.findMany({ where: { id: { in: layoutIds } }, select: { id: true, name: true } }),
+          [] as { id: string; name: string }[],
+        )
+      : Promise.resolve([] as { id: string; name: string }[]),
   ]);
 
   const view = buildRequestView({
@@ -459,6 +480,7 @@ export async function loadRequestView(id: string, viewer: ReviewViewer): Promise
     revisions,
     emails: new Map(users.map((u) => [u.id, u.email])),
     memories: new Map(memories.map((m) => [m.id, m])),
+    layoutNames: new Map(layouts.map((l) => [l.id, l.name])),
     viewer,
   });
   return { ok: true, view: admin ? view : redactForRequester(view) };

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Bot,
   CircleCheck,
   CircleHelp,
   Code,
@@ -17,7 +18,13 @@ import {
 import type { OutputView, RequestView } from "@/lib/change-requests/review-view";
 import { useVisiblePoll } from "@/lib/use-visible-poll";
 import { OUTPUT_STATUS_META, StatusPill } from "../status-pill";
-import { ApproveResultView, type ApproveResult } from "./approve-bar";
+import {
+  ApproveResultView,
+  FinishPublishingButton,
+  LayoutLabel,
+  RejectControl,
+  type ApproveResult,
+} from "./approve-bar";
 import { PublishedPanel } from "./published-panel";
 import { ReviewBlock } from "./review-block";
 import { RunLog, LiveSteps } from "./run-log";
@@ -27,6 +34,7 @@ import {
   currentRunSteps,
   errorOf,
   latest,
+  latestAgentWord,
   messagesFor,
   openQuestion,
   sendJson,
@@ -163,7 +171,10 @@ function WhatTheyAsked({ view, output }: { view: RequestView; output: OutputView
   ];
   return (
     <section className="rounded-lg border border-zinc-200 bg-white p-4">
-      <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-500">What they asked</h2>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-500">What they asked</h2>
+        {view.admin && <LayoutLabel output={output} />}
+      </div>
       <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-800">{output.text}</p>
       {shots.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
@@ -230,12 +241,20 @@ function AdminBody({
 }) {
   const messages = messagesFor(view, output.id);
   const question = openQuestion(messages, output.id);
+  // Every open state can be closed (Reject, with a reason) and, where the
+  // agent stopped, started again.
+  const actions = (run?: { label: string; again?: boolean }) => (
+    <div className="mt-3 flex flex-wrap items-start gap-2">
+      {run && <RunButton requestId={view.id} outputId={output.id} label={run.label} again={run.again} onChanged={onChanged} />}
+      <RejectControl outputId={output.id} onChanged={onChanged} />
+    </div>
+  );
 
   switch (output.status) {
     case "NEW":
       return (
         <Panel tone="zinc" icon={<Play className="h-4 w-4" aria-hidden />} title="The agent hasn't started on this output">
-          <RunButton requestId={view.id} outputId={output.id} label="Start the agent" onChanged={onChanged} />
+          {actions({ label: "Start the agent" })}
         </Panel>
       );
     case "WORKING":
@@ -251,21 +270,44 @@ function AdminBody({
       );
     case "IN_REVIEW":
       if (!output.currentRevisionId) {
-        return <QuestionPanel question={question?.body ?? null} waitingFor="you" />;
+        // No draft: the agent either asked something, or finished without
+        // proposing a change and said why (a plain message). Either way the
+        // admin replies in the thread (a new run), runs it again, or closes it.
+        const word = latestAgentWord(messages, output.id);
+        if (word && word.kind === "message") {
+          return (
+            <AgentAnsweredPanel answer={word.body}>
+              {actions({ label: "Run the agent again", again: true })}
+            </AgentAnsweredPanel>
+          );
+        }
+        return (
+          <QuestionPanel question={question?.body ?? null} waitingFor="you">
+            {actions({ label: "Run the agent again", again: true })}
+          </QuestionPanel>
+        );
       }
       return (
         <ReviewBlock output={output} messages={messages} onApproved={onApproved} onChanged={onChanged} />
       );
     case "NEEDS_INFO":
-      return <QuestionPanel question={question?.body ?? null} waitingFor="the requester" />;
+      return (
+        <QuestionPanel question={question?.body ?? null} waitingFor="the requester">
+          {actions()}
+        </QuestionPanel>
+      );
     case "NEEDS_CODE":
-      return <NeedsCodePanel view={view} output={output} />;
+      return (
+        <NeedsCodePanel view={view} output={output}>
+          {actions({ label: "Run the agent again", again: true })}
+        </NeedsCodePanel>
+      );
     case "FAILED": {
       const reason = latest(messages, (m) => m.outputId === output.id && m.authorKind === "SYSTEM");
       return (
         <Panel tone="red" icon={<TriangleAlert className="h-4 w-4" aria-hidden />} title="The agent run failed">
           {reason && <p className="whitespace-pre-wrap text-sm text-zinc-700">{reason.body}</p>}
-          <RunButton requestId={view.id} outputId={output.id} label="Run again" onChanged={onChanged} />
+          {actions({ label: "Run again", again: true })}
         </Panel>
       );
     }
@@ -284,8 +326,12 @@ function AdminBody({
       );
     case "APPROVED":
       return (
-        <Panel tone="green" icon={<CircleCheck className="h-4 w-4" aria-hidden />} title="Approved">
-          <p className="text-sm text-zinc-600">Approved; waiting to be published.</p>
+        <Panel tone="green" icon={<CircleCheck className="h-4 w-4" aria-hidden />} title="Approved — publishing">
+          <p className="text-sm text-zinc-600">
+            An approval is publishing this draft. If this doesn&apos;t change within a few minutes, the approval stopped
+            half way: finish it here.
+          </p>
+          <FinishPublishingButton output={output} onApproved={onApproved} onChanged={onChanged} />
         </Panel>
       );
     default:
@@ -293,7 +339,15 @@ function AdminBody({
   }
 }
 
-function NeedsCodePanel({ view, output }: { view: RequestView; output: OutputView }) {
+function NeedsCodePanel({
+  view,
+  output,
+  children,
+}: {
+  view: RequestView;
+  output: OutputView;
+  children?: React.ReactNode;
+}) {
   const spec = output.codeSpec;
   return (
     <Panel tone="orange" icon={<Code className="h-4 w-4" aria-hidden />} title="This change needs new code first">
@@ -321,11 +375,20 @@ function NeedsCodePanel({ view, output }: { view: RequestView; output: OutputVie
         <ExternalLink className="h-4 w-4" aria-hidden />
         Get build prompt
       </a>
+      {children}
     </Panel>
   );
 }
 
-function QuestionPanel({ question, waitingFor }: { question: string | null; waitingFor: "you" | "the requester" }) {
+function QuestionPanel({
+  question,
+  waitingFor,
+  children,
+}: {
+  question: string | null;
+  waitingFor: "you" | "the requester";
+  children?: React.ReactNode;
+}) {
   return (
     <Panel
       tone={waitingFor === "you" ? "amber" : "violet"}
@@ -344,6 +407,23 @@ function QuestionPanel({ question, waitingFor }: { question: string | null; wait
           ? "Answer in the thread; the agent continues with your answer."
           : "They were emailed the question. Their answer in the thread restarts the agent."}
       </p>
+      {children}
+    </Panel>
+  );
+}
+
+// The agent finished without a draft and explained why ("this already prints",
+// or an answer to a question in the thread).
+function AgentAnsweredPanel({ answer, children }: { answer: string; children?: React.ReactNode }) {
+  return (
+    <Panel tone="amber" icon={<Bot className="h-4 w-4" aria-hidden />} title="The agent answered — no change proposed">
+      <blockquote className="whitespace-pre-wrap rounded-md border-l-4 border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800">
+        {answer}
+      </blockquote>
+      <p className="mt-2 text-xs text-zinc-500">
+        Reply in the thread to start a new run, run the agent again, or close the request with a reason.
+      </p>
+      {children}
     </Panel>
   );
 }
@@ -355,7 +435,7 @@ function RequesterBody({ view, output }: { view: RequestView; output: OutputView
   const text: Record<string, { title: string; body: string }> = {
     NEW: { title: "Received", body: "Waiting to be picked up." },
     WORKING: { title: "Being worked on", body: "A change is being prepared on a copy of the layout." },
-    IN_REVIEW: { title: "With an admin", body: "An admin is reviewing a proposed change. Nothing prints differently until they approve it." },
+    IN_REVIEW: { title: "With an admin", body: "An admin is looking at it. Nothing prints differently until they approve a change." },
     NEEDS_CODE: {
       title: "Needs a small code change first",
       body: "This change needs a new value we can't print yet. It continues by itself once that is live.",
@@ -426,11 +506,14 @@ function RunButton({
   requestId,
   outputId,
   label,
+  again = false,
   onChanged,
 }: {
   requestId: string;
   outputId: string;
   label: string;
+  // A restart (the retry icon) rather than a first start.
+  again?: boolean;
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -449,7 +532,7 @@ function RunButton({
     onChanged();
   };
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-3">
+    <div className="flex flex-wrap items-center gap-3">
       <button
         type="button"
         onClick={run}
@@ -458,7 +541,7 @@ function RunButton({
       >
         {busy ? (
           <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
-        ) : label === "Run again" ? (
+        ) : again ? (
           <RotateCcw className="h-4 w-4" aria-hidden />
         ) : (
           <Play className="h-4 w-4" aria-hidden />

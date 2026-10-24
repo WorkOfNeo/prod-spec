@@ -51,10 +51,19 @@ const findManyRequests = spy("changeRequest.findMany", () => [
   },
 ]);
 let attachmentRow: Row | null = null;
+const STYLES = [
+  { id: "style-1", customerId: "cust-1", poNumber: "PO-0000", prodSpecId: "spec-1" },
+  { id: "style-2", customerId: "cust-1", poNumber: "PO-0000", prodSpecId: "spec-1" },
+  { id: "style-elsewhere", customerId: "cust-2", poNumber: "PO-0001", prodSpecId: "spec-1" },
+];
+
+let filedLastHour = 0;
+const countRequests = spy("changeRequest.count", () => filedLastHour);
 
 const fakeDb = {
   changeRequest: {
     findMany: findManyRequests,
+    count: countRequests,
     create: spy("changeRequest.create", (args) => {
       const row = { id: `cr-${created.requests.length + 1}`, number: 41 + created.requests.length, ...(args.data as Row) };
       created.requests.push(row);
@@ -85,11 +94,25 @@ const fakeDb = {
     findMany: spy("user.findMany", () => [{ id: "reviewer-1", email: "reviewer@example.com" }]),
   },
   style: {
-    findUnique: spy("style.findUnique", (args) =>
-      (args.where as Row).id === "style-1" ? { customerId: "cust-1", poNumber: "PO-0000" } : null,
-    ),
     groupBy: spy("style.groupBy", () => []),
-    findMany: spy("style.findMany", () => []),
+    // The create path's target check asks by id; the search asks by text.
+    findMany: spy("style.findMany", (args) => {
+      const ids = ((args.where as Row | undefined)?.id as { in?: string[] } | undefined)?.in;
+      if (!ids) return [];
+      return STYLES.filter((s) => ids.includes(s.id));
+    }),
+  },
+  prodSpec: {
+    findMany: spy("prodSpec.findMany", () => [
+      {
+        id: "spec-1",
+        outputs: [
+          { variantKey: "layout:bogus-id", widthMm: 50, heightMm: 60, enabled: true },
+          { variantKey: "care-label-02", widthMm: 30, heightMm: 60, enabled: true },
+          { variantKey: "layout:disabled-id", widthMm: 50, heightMm: 60, enabled: false },
+        ],
+      },
+    ]),
   },
   customer: { findMany: spy("customer.findMany", () => []) },
   outputLayout: { findMany: spy("outputLayout.findMany", () => []) },
@@ -120,6 +143,8 @@ beforeEach(() => {
   process.env.CHANGE_REQUESTS_ENABLED = "true";
   created = { requests: [], outputs: [], attachments: [], messages: [] };
   dbCalls = [];
+  filedLastHour = 0;
+  countRequests.mock.resetCalls();
   attachmentRow = null;
   findManyRequests.mock.resetCalls();
   sendRequesterUpdate.mock.resetCalls();
@@ -309,6 +334,101 @@ test("POST: a bad body or a bad screenshot is a 400 with nothing written", async
   assert.equal(created.requests.length, 0);
   assert.equal(created.outputs.length, 0);
   assert.equal(created.attachments.length, 0);
+});
+
+test("POST: the client can't name the layout, the customer, the order or a foreign style", async () => {
+  const { POST } = await import("../src/app/api/admin/change-requests/route");
+  as("REVIEWER");
+  const res = await POST(
+    json("/api/admin/change-requests", "POST", {
+      ...validBody,
+      customerId: "cust-evil",
+      poNumber: "PO-9999",
+      outputs: [{ ...validBody.outputs[0], layoutId: "someone-elses-layout", styleId: "style-2" }],
+    }),
+  );
+  assert.equal(res.status, 201);
+  assert.equal(created.requests[0].customerId, "cust-1");
+  assert.equal(created.requests[0].poNumber, "PO-0000");
+  assert.deepEqual(
+    created.outputs.map((o) => [o.variantKey, o.layoutId, o.styleId]),
+    [["layout:bogus-id", "bogus-id", "style-2"]],
+  );
+});
+
+test("POST: an output the style doesn't print (or has disabled), or a style of another order, is a 400 with nothing written", async () => {
+  const { POST } = await import("../src/app/api/admin/change-requests/route");
+  as("ADMIN");
+  for (const out of [
+    { ...validBody.outputs[1], variantKey: "layout:someone-elses-layout" },
+    { ...validBody.outputs[1], variantKey: "layout:disabled-id" },
+    { ...validBody.outputs[1], styleId: "style-elsewhere" },
+  ]) {
+    const res = await POST(json("/api/admin/change-requests", "POST", { ...validBody, outputs: [out] }));
+    assert.equal(res.status, 400, JSON.stringify(out));
+  }
+  assert.equal(created.requests.length, 0);
+  assert.equal(created.outputs.length, 0);
+});
+
+// ── Limits ──────────────────────────────────────────────────────────────────
+
+test("POST: a body declared over 60 MB is a 413 before anything is read or counted", async () => {
+  const { POST } = await import("../src/app/api/admin/change-requests/route");
+  as("REVIEWER");
+  const req = new NextRequest("http://localhost/api/admin/change-requests", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Content-Length": String(60 * 1024 * 1024 + 1) },
+    body: JSON.stringify(validBody),
+  });
+  const res = await POST(req);
+  assert.equal(res.status, 413);
+  assert.match((await res.json()).error, /too large/);
+  assert.deepEqual(dbCalls, []);
+});
+
+test("POST: a body without a length is counted as it streams and cut off past 60 MB", async () => {
+  const { POST } = await import("../src/app/api/admin/change-requests/route");
+  as("ADMIN");
+  const chunk = new Uint8Array(1024 * 1024).fill(0x20);
+  let sent = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      // Never ends on its own: only the cap stops the read.
+      sent++;
+      controller.enqueue(chunk);
+    },
+  });
+  const req = new NextRequest("http://localhost/api/admin/change-requests", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: stream,
+    duplex: "half",
+  } as ConstructorParameters<typeof NextRequest>[1]);
+  const res = await POST(req);
+  assert.equal(res.status, 413);
+  assert.ok(sent <= 62, `read ${sent} MB`);
+  assert.equal(created.requests.length, 0);
+});
+
+test("POST: 20 requests in the last hour is the limit — the 21st is a 429, admins included", async () => {
+  const { POST } = await import("../src/app/api/admin/change-requests/route");
+  for (const role of ["REVIEWER", "ADMIN"] as const) {
+    as(role);
+    countRequests.mock.resetCalls();
+    filedLastHour = 20;
+    const res = await POST(json("/api/admin/change-requests", "POST", validBody));
+    assert.equal(res.status, 429, role);
+    assert.match((await res.json()).error, /20 requests in the last hour/);
+    const where = (countRequests.mock.calls[0].arguments[0] as { where: Row }).where;
+    assert.equal(where.createdById, `${role.toLowerCase()}-1`);
+    const since = (where.createdAt as { gte: Date }).gte;
+    assert.ok(Math.abs(Date.now() - 60 * 60 * 1000 - since.getTime()) < 5_000, "a rolling hour");
+  }
+  assert.equal(created.requests.length, 0);
+
+  filedLastHour = 19;
+  assert.equal((await POST(json("/api/admin/change-requests", "POST", validBody))).status, 201);
 });
 
 // ── Attachments ─────────────────────────────────────────────────────────────

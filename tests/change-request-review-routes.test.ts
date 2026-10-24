@@ -150,6 +150,8 @@ const revisionFindMany = mock.fn(async () => [
   },
 ]);
 
+const layoutFindMany = mock.fn(async () => [{ id: "bogus-layout", name: "Polybag 50x60" }]);
+
 before(() => {
   mock.module("@/lib/auth-server", { namedExports: { getSessionWithRole } });
   mock.module("@/lib/change-requests/store", {
@@ -166,6 +168,7 @@ before(() => {
           ],
         },
         agentMemory: { findMany: async () => [] },
+        outputLayout: { findMany: layoutFindMany },
         changeRequestOutput: { findUnique: async () => outputRow },
       },
     },
@@ -194,6 +197,7 @@ beforeEach(() => {
   computeImpact.mock.resetCalls();
   pickProofsForRevision.mock.resetCalls();
   revisionFindMany.mock.resetCalls();
+  layoutFindMany.mock.resetCalls();
 });
 afterEach(() => {
   delete process.env.CHANGE_REQUESTS_ENABLED;
@@ -233,7 +237,9 @@ test("detail: the filing REVIEWER may read it — the requester view, no drafts 
   assert.equal(view.ref, "R-0003");
   assert.deepEqual(view.steps, []);
   assert.deepEqual(view.outputs[0].revisions, []);
+  assert.equal(view.outputs[0].layoutName, null);
   assert.equal(revisionFindMany.mock.callCount(), 0, "revisions aren't even read for a requester");
+  assert.equal(layoutFindMany.mock.callCount(), 0, "nor layout names");
 });
 
 test("detail: ADMIN gets the whole view with each output's revisions; unknown → 404", async () => {
@@ -245,6 +251,8 @@ test("detail: ADMIN gets the whole view with each output's revisions; unknown �
   const view = await res.json();
   assert.equal(view.admin, true);
   assert.deepEqual(view.outputs[0].revisions.map((r: Row) => r.id), ["rev-1"]);
+  assert.equal(view.outputs[0].layoutName, "Polybag 50x60");
+  assert.equal(view.outputs[0].layoutPinnedByAgent, false);
   assert.equal(view.steps.length, 1);
   assert.equal(view.requester, "reviewer@example.com");
   assert.equal((await GET(get("nope"), idCtx("nope"))).status, 404);
@@ -307,21 +315,28 @@ test("proofs: the current draft uses the output's stored impact, focused on the 
   assert.equal(args.focusStyleId, "style-1");
 });
 
-test("proofs: an older draft gets impactForRevision; a published one with nothing stored compares base → published", async () => {
+test("proofs: an older draft gets impactForRevision, even with an impact stored for the current one", async () => {
   const { GET } = await import("../src/app/api/admin/change-requests/revisions/[revisionId]/proofs/route");
   as("ADMIN");
   outputRow = { styleId: "style-1", currentRevisionId: "rev-9", impact: SUMMARY };
-  let res = await GET(get("revisions/rev-1/proofs"), revCtx());
+  const res = await GET(get("revisions/rev-1/proofs"), revCtx());
   assert.equal(res.status, 200);
   assert.deepEqual(impactForRevision.mock.calls[0].arguments, ["rev-1"]);
+});
 
-  revision!.status = "PUBLISHED";
-  outputRow = { styleId: "style-1", currentRevisionId: "rev-1", impact: null };
-  res = await GET(get("revisions/rev-1/proofs"), revCtx());
-  assert.equal(res.status, 200);
-  assert.equal(impactForRevision.mock.callCount(), 1);
-  assert.equal(computeImpact.mock.callCount(), 1);
-  assert.equal((computeImpact.mock.calls[0].arguments[0] as Row).layoutId, "bogus-layout");
+test("proofs: the current revision with no impact stored (cleared on a new revision) is computed, never read as one", async () => {
+  const { GET } = await import("../src/app/api/admin/change-requests/revisions/[revisionId]/proofs/route");
+  as("ADMIN");
+  for (const status of ["DRAFT", "PUBLISHED"]) {
+    impactForRevision.mock.resetCalls();
+    revision!.status = status;
+    outputRow = { styleId: "style-1", currentRevisionId: "rev-1", impact: null };
+    const res = await GET(get("revisions/rev-1/proofs"), revCtx());
+    assert.equal(res.status, 200, status);
+    // impactForRevision knows a published revision is base → itself.
+    assert.deepEqual(impactForRevision.mock.calls[0].arguments, ["rev-1"], status);
+  }
+  assert.equal(computeImpact.mock.callCount(), 0);
 });
 
 test("proofs: a typed error answers with its status (too many styles → 422); unknown revision → 404", async () => {

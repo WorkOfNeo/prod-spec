@@ -4,12 +4,11 @@ import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin } from "@/lib/roles";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { orEmpty } from "@/lib/change-requests/db-safe";
-import { computeImpact, impactForRevision } from "@/lib/change-requests/impact";
+import { impactForRevision } from "@/lib/change-requests/impact";
 import { pickProofsForRevision } from "@/lib/change-requests/proofs";
 import { publishErrorResponse } from "@/lib/change-requests/publish-errors";
 import { ImpactSummarySchema, type ImpactSummary } from "@/lib/change-requests/types";
 import { getRevision } from "@/lib/output-layouts/revisions";
-import { parseLayoutDef } from "@/lib/output-layouts/schema";
 
 export const runtime = "nodejs";
 // A draft with no stored impact gets one computed here (two renders per
@@ -23,15 +22,17 @@ export const maxDuration = 120;
 //
 //   { picks: ProofPick[], impactCounts, impact }
 //
-// The impact is the one stored on the change-request output while this
-// revision is its current draft (for a published one: the fresh base-vs-
-// published list the approval stored); any other revision — an older draft
-// picked in the draft selector — gets impactForRevision() against what is
-// live now. A published revision with nothing stored compares what was live
-// before it with itself published (against the live layout it would show no
-// change at all). Each pick's pictures then load from …/proof?styleId=&side=&suffix=.
-// Read-only apart from impactForRevision caching on the current draft. ADMIN
-// only; 404 while CHANGE_REQUESTS_ENABLED is off.
+// The stored impact on the change-request output is trusted only while this
+// revision is its current one AND an impact is stored (a new revision clears
+// it; for a published one it is the fresh base-vs-published list the
+// approval stored). Anything else — an older draft picked in the draft
+// selector, a current draft with nothing stored yet — gets
+// impactForRevision(): a draft against what is live now (cached when it is
+// the current draft), a published revision as what was live before it
+// against itself published. Each pick's pictures then load from
+// …/proof?styleId=&side=&suffix=. Read-only apart from impactForRevision
+// caching on the current draft. ADMIN only; 404 while CHANGE_REQUESTS_ENABLED
+// is off.
 // =====================================================
 
 function storedImpact(raw: unknown): ImpactSummary | null {
@@ -61,15 +62,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ revisionId
     : null;
 
   try {
-    const impact =
-      (output?.currentRevisionId === revision.id ? storedImpact(output.impact) : null) ??
-      (revision.status === "PUBLISHED"
-        ? await computeImpact({
-            layoutId: revision.layoutId,
-            proposedDef: parseLayoutDef(revision.definition),
-            currentDef: parseLayoutDef(revision.baseDefinition),
-          })
-        : await impactForRevision(revision.id));
+    const stored =
+      output && output.currentRevisionId === revision.id && output.impact != null ? storedImpact(output.impact) : null;
+    const impact = stored ?? (await impactForRevision(revision.id));
     const picks = await pickProofsForRevision({ revisionId: revision.id, impact, focusStyleId: output?.styleId ?? null });
     return NextResponse.json(
       { picks, impactCounts: impact.counts, impact },

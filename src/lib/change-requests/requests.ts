@@ -8,6 +8,8 @@ import {
   type DecodedAttachment,
 } from "@/lib/images/decode-data-url";
 import { isLayoutVariantKey, layoutIdFromVariantKey } from "@/lib/output-layouts/variant-keys";
+import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
+import { baseVariantKey } from "@/lib/tickets/orphan";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { outputPageMm } from "@/lib/output-layouts/render-output";
 import { getVariant } from "@/lib/pdf/template-registry";
@@ -52,6 +54,16 @@ export const MAX_IMAGES_TOTAL = 12;
 export const MAX_ISSUE_TEXT_CHARS = 20_000;
 export const MAX_MESSAGE_CHARS = 50_000;
 
+// The whole POST body. A dozen resized screenshots fit with room to spare;
+// anything bigger is refused (413) before it is read into memory.
+export const MAX_REQUEST_BODY_BYTES = 60 * 1024 * 1024;
+
+// Requests one person may file per rolling hour — admins included. Filing
+// starts an agent run per output (model cost) and stores screenshots, so a
+// stuck form or a script can't run up either.
+export const CREATE_LIMIT_PER_HOUR = 20;
+export const CREATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+
 // ---------- input ----------
 
 // An id-ish optional string. The form sends "" for "not picked"; that means
@@ -71,10 +83,12 @@ const AttachmentInputSchema = z.object({
 const OutputInputSchema = z.object({
   label: z.string().trim().min(1, "Every output needs a name").max(200),
   // Base key ("layout:<id>", "care-label-02"); absent when the requester could
-  // not point at a configured output.
+  // not point at a configured output. Checked against the style's ProdSpec on
+  // create (resolveRequestTargets); the output's layout is read off it, never
+  // taken from the client.
   variantKey: optionalRef,
-  layoutId: optionalRef,
   // The style the agent proves this output on; defaults to the request's style.
+  // Must be that style or another style of the same order.
   styleId: optionalRef,
   text: z
     .string()
@@ -94,6 +108,8 @@ export const CreateChangeRequestSchema = z
     // issue was typed straight into the form; the request then stores the
     // issues themselves (composeRequestMessage).
     message: z.string().max(MAX_MESSAGE_CHARS),
+    // Only read for "all styles in this PO" (no style picked). With a style,
+    // the customer and the order are the style's, whatever was sent.
     customerId: optionalRef,
     poNumber: optionalRef,
     // The picked style. Absent with a PO = "all styles in this PO".
@@ -138,7 +154,32 @@ export class ChangeRequestInputError extends Error {
   }
 }
 
+// Too many requests filed in the last hour. Routes answer 429 with the message.
+export class ChangeRequestRateLimitError extends Error {
+  readonly status = 429;
+  constructor(message: string) {
+    super(message);
+    this.name = "ChangeRequestRateLimitError";
+  }
+}
+
 export type Actor = { userId: string; role: UserRole | null };
+
+// Throws ChangeRequestRateLimitError once `userId` filed CREATE_LIMIT_PER_HOUR
+// requests in the rolling hour. Checked before the body is read.
+export async function assertCanFileRequest(userId: string, now = Date.now()): Promise<void> {
+  const recent = await orEmpty(
+    db.changeRequest.count({
+      where: { createdById: userId, createdAt: { gte: new Date(now - CREATE_LIMIT_WINDOW_MS) } },
+    }),
+    0,
+  );
+  if (recent >= CREATE_LIMIT_PER_HOUR) {
+    throw new ChangeRequestRateLimitError(
+      `You have filed ${CREATE_LIMIT_PER_HOUR} requests in the last hour, the most allowed. Try again in a while.`,
+    );
+  }
+}
 
 // ---------- pure helpers ----------
 
@@ -211,9 +252,132 @@ export function composeRequestMessage(outputs: ReadonlyArray<{ label: string; te
   return outputs.map((o) => `${o.label}:\n${o.text.trim()}`).join("\n\n");
 }
 
-// The output's layout: given, or read off a `layout:<id>` key.
-export function resolveLayoutId(output: { variantKey?: string; layoutId?: string }): string | null {
-  return output.layoutId ?? layoutIdFromVariantKey(output.variantKey) ?? null;
+// The output's layout, read off a `layout:<id>` key — and only from there. A
+// layout id from the client would let a request (and the agent's drafts, and
+// in the end a publish) point at a layout the picked output doesn't print.
+export function resolveLayoutId(output: { variantKey?: string | null }): string | null {
+  return layoutIdFromVariantKey(output.variantKey) ?? null;
+}
+
+// ---------- targets: what the request may point at ----------
+
+// What the create path knows about a style the body names.
+export type StyleFacts = {
+  id: string;
+  customerId: string;
+  poNumber: string | null;
+  prodSpecId: string | null;
+};
+
+export type TargetFacts = {
+  // Every style the body names that exists (not deleted), by id.
+  styles: ReadonlyMap<string, StyleFacts>;
+  // prodSpecId → the BASE keys of its enabled outputs.
+  enabledBaseKeys: ReadonlyMap<string, ReadonlySet<string>>;
+};
+
+export type ResolvedTargets = {
+  customerId: string | null;
+  poNumber: string | null;
+  // Index-aligned with input.outputs.
+  outputs: { variantKey: string | null; layoutId: string | null; styleId: string | null }[];
+};
+
+function samePo(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = a?.trim() || null;
+  const y = b?.trim() || null;
+  return x !== null && x === y;
+}
+
+// Everything a request points at, checked against the database instead of
+// taken from the client (PURE; facts come from loadTargetFacts):
+//
+//   • the customer and the order are the picked style's; only "all styles in
+//     this PO" (no style) reads them from the body;
+//   • an output's style is the request's style or another style of the same
+//     order (same customer, same PO);
+//   • an output's variantKey is an ENABLED output of the ProdSpec of every
+//     style it is tied to (the picked one and its own), matched on the base
+//     key and stored as that base key; its layout is read off the key.
+//
+// Throws ChangeRequestInputError (400) with a message the form can show.
+export function resolveRequestTargets(
+  input: Pick<CreateChangeRequestInput, "customerId" | "poNumber" | "styleId" | "outputs">,
+  facts: TargetFacts,
+): ResolvedTargets {
+  let customerId = input.customerId ?? null;
+  let poNumber = input.poNumber?.trim() || null;
+  const picked = input.styleId ? facts.styles.get(input.styleId) : undefined;
+  if (input.styleId) {
+    if (!picked) throw new ChangeRequestInputError("That style no longer exists — search for it again.");
+    customerId = picked.customerId;
+    poNumber = picked.poNumber?.trim() || null;
+  }
+
+  const prints = (style: StyleFacts, base: string) =>
+    style.prodSpecId !== null && (facts.enabledBaseKeys.get(style.prodSpecId)?.has(base) ?? false);
+
+  const seen = new Set<string>();
+  const outputs = input.outputs.map((o) => {
+    const styleId = o.styleId ?? input.styleId ?? null;
+    const own = styleId ? facts.styles.get(styleId) : undefined;
+    if (styleId && !own) throw new ChangeRequestInputError(`${o.label}: that style no longer exists — search for it again.`);
+    if (own && own.id !== input.styleId) {
+      const sameOrder = own.customerId === customerId && samePo(own.poNumber, poNumber);
+      if (!sameOrder) {
+        throw new ChangeRequestInputError(`${o.label}: the style to prove it on must be one of this order's styles.`);
+      }
+    }
+
+    if (!o.variantKey) return { variantKey: null, layoutId: null, styleId };
+    const base = baseVariantKey(o.variantKey);
+    const tied = [picked, own].filter((s, i, all): s is StyleFacts => !!s && all.indexOf(s) === i);
+    if (tied.length === 0) {
+      throw new ChangeRequestInputError(`${o.label}: pick the style first, so the output can be checked.`);
+    }
+    if (!tied.every((s) => prints(s, base))) {
+      throw new ChangeRequestInputError(`${o.label}: that output isn't printed for this style — pick it again.`);
+    }
+    if (seen.has(base)) throw new ChangeRequestInputError("Each output can be picked once");
+    seen.add(base);
+    return { variantKey: base, layoutId: resolveLayoutId({ variantKey: base }), styleId };
+  });
+
+  return { customerId, poNumber, outputs };
+}
+
+// The facts resolveRequestTargets checks against: the named styles (deleted
+// ones count as gone) and the enabled outputs of their ProdSpecs.
+export async function loadTargetFacts(
+  input: Pick<CreateChangeRequestInput, "styleId" | "outputs">,
+): Promise<TargetFacts> {
+  const styleIds = [
+    ...new Set([input.styleId, ...input.outputs.map((o) => o.styleId)].filter((v): v is string => !!v)),
+  ];
+  if (styleIds.length === 0) return { styles: new Map(), enabledBaseKeys: new Map() };
+  const styles = await db.style.findMany({
+    where: { id: { in: styleIds }, deletedAt: null },
+    select: { id: true, customerId: true, poNumber: true, prodSpecId: true },
+  });
+  const specIds = [...new Set(styles.map((s) => s.prodSpecId).filter((v): v is string => !!v))];
+  const specs =
+    specIds.length > 0
+      ? await db.prodSpec.findMany({ where: { id: { in: specIds } }, select: { id: true, outputs: true } })
+      : [];
+  const enabledBaseKeys = new Map<string, Set<string>>();
+  for (const spec of specs) {
+    let outputs: ReturnType<typeof parseProdSpecOutputs> = [];
+    try {
+      outputs = parseProdSpecOutputs(spec.outputs);
+    } catch {
+      // A malformed outputs column prints nothing; nothing can be picked on it.
+    }
+    enabledBaseKeys.set(
+      spec.id,
+      new Set(outputs.filter((o) => o.enabled !== false).map((o) => baseVariantKey(o.variantKey))),
+    );
+  }
+  return { styles: new Map(styles.map((s) => [s.id, s])), enabledBaseKeys };
 }
 
 // ---------- create ----------
@@ -226,19 +390,11 @@ export async function createChangeRequest(
   if (!decoded.ok) throw new ChangeRequestInputError(decoded.error);
   const { perOutput, general } = decoded.attachments;
 
-  // The picked style fills in what the form left out, so the inbox and the
-  // agent always know the customer and the order.
-  let customerId = input.customerId ?? null;
-  let poNumber = input.poNumber ?? null;
-  if (input.styleId && (!customerId || !poNumber)) {
-    const style = await db.style.findUnique({
-      where: { id: input.styleId },
-      select: { customerId: true, poNumber: true },
-    });
-    if (!style) throw new ChangeRequestInputError("That style no longer exists — search for it again.");
-    customerId ??= style.customerId;
-    poNumber ??= style.poNumber?.trim() || null;
-  }
+  // The customer, the order, each output's style, key and layout: checked
+  // against the database, never taken on the client's word (the layout an
+  // output names is what a later approval publishes).
+  const targets = resolveRequestTargets(input, await loadTargetFacts(input));
+  const { customerId, poNumber } = targets;
 
   // A reviewer files for themselves (and sees only their own); an admin may
   // be filing on someone's behalf.
@@ -275,9 +431,9 @@ export async function createChangeRequest(
             requestId: request.id,
             position,
             label: o.label,
-            variantKey: o.variantKey ?? null,
-            layoutId: resolveLayoutId(o),
-            styleId: o.styleId ?? input.styleId ?? null,
+            variantKey: targets.outputs[position].variantKey,
+            layoutId: targets.outputs[position].layoutId,
+            styleId: targets.outputs[position].styleId,
             text: o.text,
             status: newOutputStatus,
           },

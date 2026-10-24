@@ -1,7 +1,7 @@
 // Gates and error mapping of the three admin actions on a change-request
 // output, through the REAL handlers with a mocked session and publish.ts:
 //
-//   POST /api/admin/change-request-outputs/[id]/approve          { force? }
+//   POST /api/admin/change-request-outputs/[id]/approve          { revisionId, force? }
 //   POST /api/admin/change-request-outputs/[id]/reject           { reason }
 //   POST /api/admin/change-request-outputs/[id]/rerun-approved   { styleIds? }
 //
@@ -61,7 +61,11 @@ const post = (action: string, body?: unknown) =>
   });
 
 const ROUTES = {
-  approve: { load: () => import("../src/app/api/admin/change-request-outputs/[id]/approve/route"), fn: approveOutput, body: {} },
+  approve: {
+    load: () => import("../src/app/api/admin/change-request-outputs/[id]/approve/route"),
+    fn: approveOutput,
+    body: { revisionId: "rev-2" },
+  },
   reject: { load: () => import("../src/app/api/admin/change-request-outputs/[id]/reject/route"), fn: rejectOutput, body: { reason: "No" } },
   "rerun-approved": {
     load: () => import("../src/app/api/admin/change-request-outputs/[id]/rerun-approved/route"),
@@ -92,19 +96,43 @@ for (const [name, route] of Object.entries(ROUTES)) {
   });
 }
 
-test("approve: ADMIN approves with the session's id and email; an empty body is a plain approve", async () => {
+test("approve: ADMIN approves the draft they reviewed, with the session's id and email", async () => {
   const { POST } = await ROUTES.approve.load();
   as("ADMIN");
-  let res = await POST(post("approve"), ctx());
+  let res = await POST(post("approve", { revisionId: "rev-2" }), ctx());
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { publishedVersion: 4 });
-  assert.deepEqual(approveOutput.mock.calls[0].arguments, ["out-1", { userId: "admin-1", userEmail: "admin@example.com", force: false }]);
+  assert.deepEqual(approveOutput.mock.calls[0].arguments, [
+    "out-1",
+    { userId: "admin-1", userEmail: "admin@example.com", revisionId: "rev-2", force: false },
+  ]);
 
-  res = await POST(post("approve", { force: true }), ctx());
+  res = await POST(post("approve", { revisionId: "rev-2", force: true }), ctx());
   assert.equal(res.status, 200);
   assert.equal((approveOutput.mock.calls[1].arguments[1] as Row).force, true);
 
-  assert.equal((await POST(post("approve", { force: "yes" }), ctx())).status, 400);
+  assert.equal((await POST(post("approve", { revisionId: "rev-2", force: "yes" }), ctx())).status, 400);
+});
+
+test("approve: without the reviewed draft's id it is a 400 and nothing runs", async () => {
+  const { POST } = await ROUTES.approve.load();
+  as("ADMIN");
+  for (const body of [undefined, {}, { force: true }, { revisionId: "" }, { revisionId: 42 }]) {
+    const res = await POST(post("approve", body), ctx());
+    assert.equal(res.status, 400, JSON.stringify(body));
+    assert.match((await res.json()).error, /which draft/);
+  }
+  assert.equal(approveOutput.mock.callCount(), 0);
+});
+
+test("approve: a newer draft than the one reviewed is a 409 'reload'", async () => {
+  const { POST } = await ROUTES.approve.load();
+  const { OutputStateError } = await import("../src/lib/change-requests/publish-errors");
+  as("ADMIN");
+  actionThrows = new OutputStateError("A newer draft exists — reload");
+  const res = await POST(post("approve", { revisionId: "rev-1" }), ctx());
+  assert.equal(res.status, 409);
+  assert.deepEqual(await res.json(), { error: "A newer draft exists — reload" });
 });
 
 test("approve: a conflict is a 409 that carries what moved; a failing gate a 422 with details; a superseded draft a 409", async () => {
@@ -113,17 +141,17 @@ test("approve: a conflict is a 409 that carries what moved; a failing gate a 422
   as("ADMIN");
   const conflict = { baseVersion: 3, liveVersion: 4, versionChanged: true, definitionChanged: false };
   actionThrows = Object.assign(new Error("Can't publish: the layout was published again"), { httpStatus: 409, conflict });
-  let res = await POST(post("approve"), ctx());
+  let res = await POST(post("approve", ROUTES.approve.body), ctx());
   assert.equal(res.status, 409);
   assert.deepEqual(await res.json(), { error: "Can't publish: the layout was published again", conflict });
 
   actionThrows = Object.assign(new Error("Layout has invalid tokens"), { httpStatus: 422, details: ["Unknown token"] });
-  res = await POST(post("approve"), ctx());
+  res = await POST(post("approve", ROUTES.approve.body), ctx());
   assert.equal(res.status, 422);
   assert.deepEqual(await res.json(), { error: "Layout has invalid tokens", details: ["Unknown token"] });
 
   actionThrows = new OutputStateError("This draft was replaced by another publish; ask the agent for a new draft");
-  res = await POST(post("approve"), ctx());
+  res = await POST(post("approve", ROUTES.approve.body), ctx());
   assert.equal(res.status, 409);
   assert.match((await res.json()).error, /ask the agent for a new draft/);
 });
@@ -132,7 +160,7 @@ test("approve: an untyped failure is not dressed up as a 4xx", async () => {
   const { POST } = await ROUTES.approve.load();
   as("ADMIN");
   actionThrows = new Error("database down");
-  await assert.rejects(POST(post("approve"), ctx()), /database down/);
+  await assert.rejects(POST(post("approve", ROUTES.approve.body), ctx()), /database down/);
 });
 
 test("reject: a reason is required (1..500) — 400 and nothing runs; a good one is passed trimmed", async () => {
