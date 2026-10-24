@@ -30,9 +30,12 @@ const TYPE_LABELS: Record<string, string> = {
   REVIEW_READY: "Review notification (internal)",
   TICKET_FIXED: "Fixed — ready for re-review (internal)",
   SUPPLIER_APPROVAL: "Supplier approval",
+  SUPPLIER_MESSAGE: "Supplier message",
   INVITE: "Signup invitation",
   NEW_COMBO: "New customer × business area combo",
   PASSWORD_RESET: "Password reset link",
+  CHANGE_REQUEST_UPDATE: "Change request update",
+  CHANGE_REQUEST_NEEDS_CODE: "Change request needs code",
 };
 
 function formatBytes(bytes: number): string {

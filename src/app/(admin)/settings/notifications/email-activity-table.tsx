@@ -28,6 +28,10 @@ const TYPE_LABELS: Record<string, string> = {
   SUPPLIER_APPROVAL: "Supplier approval",
   SUPPLIER_MESSAGE: "Supplier message",
   INVITE: "Invite",
+  NEW_COMBO: "New combo",
+  PASSWORD_RESET: "Password reset",
+  CHANGE_REQUEST_UPDATE: "Change request update",
+  CHANGE_REQUEST_NEEDS_CODE: "Change request needs code",
 };
 
 // Activity list for /settings/notifications. The rows are slim (no HTML
