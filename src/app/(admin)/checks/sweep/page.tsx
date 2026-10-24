@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
+import { SIGN_IN_AGAIN } from "@/lib/auth-paths";
 import { canReview } from "@/lib/roles";
 import { SweepPanel } from "./sweep-panel";
 
@@ -29,7 +30,7 @@ export const metadata = { title: "Checks — every PO" };
 
 export default async function ChecksSweepPage() {
   const { session, role } = await getSessionWithRole();
-  if (!session) redirect("/login");
+  if (!session) redirect(SIGN_IN_AGAIN);
   // Hiding a nav link is not access control — the endpoint gates too.
   if (!canReview(role)) redirect("/");
 

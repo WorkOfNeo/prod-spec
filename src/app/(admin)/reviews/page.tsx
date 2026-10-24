@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
+import { SIGN_IN_AGAIN } from "@/lib/auth-paths";
 import { getReviewBoard } from "@/lib/dashboard/review-tasks";
 import { getNeedsInputStyles } from "@/lib/dashboard/needs-input";
 import { getApprovedStyles } from "@/lib/dashboard/approved-styles";
@@ -35,7 +36,7 @@ export default async function ReviewsPage({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const { session, role } = await getSessionWithRole();
-  if (!session) redirect("/login");
+  if (!session) redirect(SIGN_IN_AGAIN);
 
   // In Progress is the default landing tab (the live worklist); the others are
   // reached via ?tab=queue / ?tab=needs-input.

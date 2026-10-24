@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
+import { SIGN_IN_AGAIN } from "@/lib/auth-paths";
 import { isAdmin } from "@/lib/roles";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { loadRequestView } from "@/lib/change-requests/review-view";
@@ -35,30 +36,38 @@ export default async function RequestPage({
 }) {
   if (!changeRequestsEnabled()) notFound();
   const { session, role } = await getSessionWithRole();
-  if (!session) redirect("/login");
+  if (!session) redirect(SIGN_IN_AGAIN);
   if (!isAdmin(role)) redirect("/");
 
   const { id } = await params;
   const sp = await searchParams;
-  const result = await loadRequestView(id, { userId: session.user.id, role });
+  const viewer = { userId: session.user.id, role };
+  let result = await loadRequestView(id, viewer);
   if (!result.ok) {
     if (result.reason === "not_found") notFound();
     redirect("/requests");
   }
-  const view = result.view;
 
   // Design §5.6: opening the request picks up an output that was waiting for
   // a new variable once the deploy that added it is live (the cron sweep does
   // the same every tick). Admins only; fail-soft; starts at most this
-  // request's own outputs and never blocks the page.
-  const waiting = view.admin ? view.outputs.filter((o) => o.status === "NEEDS_CODE").map((o) => o.id) : [];
+  // request's own outputs. When one starts, the view is read again so the page
+  // shows it working — never a redirect back to this URL, which loops whenever
+  // the output lands in NEEDS_CODE again ("too many redirects").
+  const waiting = result.view.admin
+    ? result.view.outputs.filter((o) => o.status === "NEEDS_CODE").map((o) => o.id)
+    : [];
   if (waiting.length > 0) {
     const resumed = await resumeAwaitingCode(
       (outputId) => startChangeRequestRun(outputId, { trigger: "resume", userId: session.user.id }),
       { outputIds: waiting },
     ).catch(() => [] as string[]);
-    if (resumed.length > 0) redirect(`/requests/${id}${sp.output ? `?output=${sp.output}` : ""}`);
+    if (resumed.length > 0) {
+      const reloaded = await loadRequestView(id, viewer).catch(() => null);
+      if (reloaded?.ok) result = reloaded;
+    }
   }
+  const view = result.view;
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">

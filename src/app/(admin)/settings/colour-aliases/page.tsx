@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
+import { SIGN_IN_AGAIN } from "@/lib/auth-paths";
 import { canReview } from "@/lib/roles";
 import { getColourAliases } from "@/lib/settings/app-settings";
 import { ColourAliasEditor } from "./colour-alias-editor";
@@ -14,7 +15,7 @@ export const metadata = { title: "Colour aliases · Settings" };
 // a PDF, arms a queue row or sends anything.
 export default async function ColourAliasesSettingsPage() {
   const { session, role } = await getSessionWithRole();
-  if (!session) redirect("/login");
+  if (!session) redirect(SIGN_IN_AGAIN);
   if (!canReview(role)) redirect("/dashboard");
 
   const groups = await getColourAliases();

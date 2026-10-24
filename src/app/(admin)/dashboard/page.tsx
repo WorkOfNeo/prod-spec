@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
+import { SIGN_IN_AGAIN } from "@/lib/auth-paths";
 import { db } from "@/lib/db";
 import { getReviewWork, timeAgo } from "@/lib/dashboard/review-tasks";
 import { StyleTaskList } from "@/components/style-task-list";
@@ -23,7 +24,7 @@ export default async function DashboardPage() {
   if (!reviewFollowThroughEnabled()) redirect("/styles");
 
   const { session, role } = await getSessionWithRole();
-  if (!session) redirect("/login");
+  if (!session) redirect(SIGN_IN_AGAIN);
   const isAdmin = role === "ADMIN";
 
   const [work, openTickets, notifications] = await Promise.all([
