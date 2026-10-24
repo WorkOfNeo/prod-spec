@@ -9,7 +9,15 @@
 --   TriggerSource.CHANGE_REQUEST        scoped rerun of exactly the documents an
 --                                       approved layout change altered. The
 --                                       runner re-arms the cover silently
---                                       (notifySupplier: false) for these.
+--                                       (notifySupplier: false) for these and
+--                                       never regenerates an approved document.
+--   TriggerSource.CHANGE_REQUEST_APPROVED
+--                                       the explicit second confirmation: the
+--                                       changed documents that were already
+--                                       approved go back to review. Silent
+--                                       cover like CHANGE_REQUEST; the only
+--                                       change-request run allowed to
+--                                       regenerate approved documents.
 --
 -- Additive + idempotent (ADD VALUE IF NOT EXISTS, Postgres 12+); kept in its
 -- own migration, ahead of the tables, so the values commit before any code or
@@ -18,3 +26,4 @@
 ALTER TYPE "EmailType" ADD VALUE IF NOT EXISTS 'CHANGE_REQUEST_UPDATE';
 ALTER TYPE "EmailType" ADD VALUE IF NOT EXISTS 'CHANGE_REQUEST_NEEDS_CODE';
 ALTER TYPE "TriggerSource" ADD VALUE IF NOT EXISTS 'CHANGE_REQUEST';
+ALTER TYPE "TriggerSource" ADD VALUE IF NOT EXISTS 'CHANGE_REQUEST_APPROVED';

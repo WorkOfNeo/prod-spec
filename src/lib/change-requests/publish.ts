@@ -620,7 +620,9 @@ export async function rerunApprovedDocuments(outputId: string, opts: RerunApprov
         runnable: plan.runnable,
         label: `${requestRef(output.request.number)} · ${output.label} · approved`,
         user: { id: opts.userId, email: opts.userEmail ?? null },
-        triggerSource: "CHANGE_REQUEST",
+        // The one change-request run the runner lets regenerate approved
+        // documents (runKeepsApprovedDocuments).
+        triggerSource: "CHANGE_REQUEST_APPROVED",
       });
     }
 

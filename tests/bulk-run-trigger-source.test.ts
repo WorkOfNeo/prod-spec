@@ -75,3 +75,17 @@ test("passes CHANGE_REQUEST through to every created job, scoped as given", asyn
   );
   assert.deepEqual(createdJobs[0]?.variantKeys, ["layout:bogus-id"]);
 });
+
+test("passes CHANGE_REQUEST_APPROVED through for the rerun of approved documents", async () => {
+  const { enqueueBulkRun } = await import("@/lib/queue/bulk-run");
+  await enqueueBulkRun({
+    runnable: RUNNABLE.slice(0, 1),
+    label: "R-0001 approved",
+    user: USER,
+    triggerSource: "CHANGE_REQUEST_APPROVED",
+  });
+  assert.deepEqual(
+    createdJobs.map((j) => j.triggerSource),
+    ["CHANGE_REQUEST_APPROVED"],
+  );
+});

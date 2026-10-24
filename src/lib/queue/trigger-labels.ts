@@ -2,8 +2,9 @@
 // Shared so every surface that shows "why did this run fire" — the per-style
 // History timeline and the per-ProdSpec run list — agrees on the wording and
 // on whether a human asked for the run or the system fired it on its own.
-// Also home to the one delivery rule that is a function of the trigger alone
-// (coverNotifiesSupplier, below). PURE LEAF — no imports.
+// Also home to the rules that are a function of the trigger alone (cover
+// notification, auto-approval, fresh layouts, approved documents in a scoped
+// run — below). PURE LEAF — no imports.
 
 export const TRIGGER_LABELS: Record<string, string> = {
   WEBHOOK: "Monday webhook (fields landed)",
@@ -16,6 +17,7 @@ export const TRIGGER_LABELS: Record<string, string> = {
   CRON_SWEEP: "backlog sweep",
   MANUAL_BULK: "bulk run",
   CHANGE_REQUEST: "change request",
+  CHANGE_REQUEST_APPROVED: "change request (approved documents)",
 };
 
 export type TriggerKind = "automated" | "manual";
@@ -34,6 +36,7 @@ const MANUAL_SOURCES = new Set<string>([
   "TICKET_RERUN",
   "TICKET_FIX",
   "CHANGE_REQUEST",
+  "CHANGE_REQUEST_APPROVED",
 ]);
 
 export function triggerKind(source: string): TriggerKind {
@@ -42,6 +45,16 @@ export function triggerKind(source: string): TriggerKind {
 
 export function triggerLabel(source: string): string {
   return TRIGGER_LABELS[source] ?? source.toLowerCase().replace(/_/g, " ");
+}
+
+// The runs a change request starts: the scoped rerun after an approval
+// (CHANGE_REQUEST) and the explicit second confirmation that sends approved
+// documents back to review (CHANGE_REQUEST_APPROVED). The three guards below
+// treat both alike; they differ only in runKeepsApprovedDocuments.
+const CHANGE_REQUEST_SOURCES = new Set<string>(["CHANGE_REQUEST", "CHANGE_REQUEST_APPROVED"]);
+
+export function isChangeRequestRun(source: string): boolean {
+  return CHANGE_REQUEST_SOURCES.has(source);
 }
 
 // Does the cover this run re-arms ride tonight's supplier digest? The runner
@@ -54,7 +67,7 @@ export function triggerLabel(source: string): string {
 // trigger notifies, exactly as before. Derived from the trigger alone, so it
 // never latches: the next ordinary run re-arms the row to notifying.
 export function coverNotifiesSupplier(source: string): boolean {
-  return source !== "CHANGE_REQUEST";
+  return !isChangeRequestRun(source);
 }
 
 // May this run auto-approve its documents (layout autoApprove / spec "Fully
@@ -63,7 +76,7 @@ export function coverNotifiesSupplier(source: string): boolean {
 // counts as approved — and an auto-approval would also capture it into the
 // supplier-send queue (design §2 rail 3). Every other trigger: unchanged.
 export function runMayAutoApprove(source: string): boolean {
-  return source !== "CHANGE_REQUEST";
+  return !isChangeRequestRun(source);
 }
 
 // Must this run reload published layouts before rendering? A change-request
@@ -71,5 +84,29 @@ export function runMayAutoApprove(source: string): boolean {
 // cache could still hold the previous definition (another process, or a load
 // that started before the publish committed), so it forces a fresh read.
 export function runNeedsFreshLayouts(source: string): boolean {
+  return isChangeRequestRun(source);
+}
+
+// Must this SCOPED run leave approved documents alone? A scoped job otherwise
+// regenerates whatever it names, approved or not (durable approval is only
+// enforced on full runs). The automatic rerun after a change-request approval
+// must never put an approved document back into review — that takes the
+// explicit second confirmation, which runs as CHANGE_REQUEST_APPROVED — so the
+// runner drops every scoped base that has ANY approved document right now,
+// even if an approval landed between the enqueue and the run (design §2
+// rail 3).
+export function runKeepsApprovedDocuments(source: string): boolean {
   return source === "CHANGE_REQUEST";
+}
+
+// The scope a run keeps after runKeepsApprovedDocuments: base keys (no
+// "#suffix") minus every base with an approved document. PURE; order kept.
+export function withoutApprovedBases(
+  scopedBases: readonly string[],
+  approvedBases: ReadonlySet<string>,
+): { keep: string[]; dropped: string[] } {
+  const keep: string[] = [];
+  const dropped: string[] = [];
+  for (const base of new Set(scopedBases)) (approvedBases.has(base) ? dropped : keep).push(base);
+  return { keep, dropped };
 }

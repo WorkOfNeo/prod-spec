@@ -605,7 +605,7 @@ test("reject: refused while the agent works, once live, or when the draft is alr
 
 // ── rerunApprovedDocuments ──────────────────────────────────────────────────
 
-test("rerun approved: only changed APPROVED documents not regenerated since the publish, as CHANGE_REQUEST", async () => {
+test("rerun approved: only changed APPROVED documents not regenerated since the publish, as CHANGE_REQUEST_APPROVED", async () => {
   const { rerunApprovedDocuments } = await import("../src/lib/change-requests/publish");
   const publishedAt = new Date("2026-10-20T10:00:00Z");
   output!.status = "PUBLISHED";
@@ -630,7 +630,8 @@ test("rerun approved: only changed APPROVED documents not regenerated since the 
     currentDef: { parsed: BASE_DEF },
   });
   const enq = enqueueBulkRun.mock.calls[0].arguments[0] as unknown as Row;
-  assert.equal(enq.triggerSource, "CHANGE_REQUEST");
+  // The only change-request trigger the runner lets regenerate approved documents.
+  assert.equal(enq.triggerSource, "CHANGE_REQUEST_APPROVED");
   assert.deepEqual(enq.runnable, [{ id: "style-a", prodSpecId: "spec-of-style-a", variantKeys: [BASE] }]);
   assert.equal(result.documents, 1);
   assert.equal(result.skippedInFlight, 1);

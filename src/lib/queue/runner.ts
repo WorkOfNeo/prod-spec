@@ -31,9 +31,15 @@ import { resolveAndPersistStyleEans } from "@/lib/po/ean-runner";
 import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
 import { enqueueCoverForSupplier } from "@/lib/publish/requeue-cover";
-import { coverNotifiesSupplier, runMayAutoApprove, runNeedsFreshLayouts } from "@/lib/queue/trigger-labels";
+import {
+  coverNotifiesSupplier,
+  runKeepsApprovedDocuments,
+  runMayAutoApprove,
+  runNeedsFreshLayouts,
+  withoutApprovedBases,
+} from "@/lib/queue/trigger-labels";
 import { pushQueuedSupplierUploads } from "@/lib/sharepoint/push-queued-to-supplier";
-import { approvedOutputBaseKeysForStyle } from "@/lib/outputs/current-outputs";
+import { approvedOutputBaseKeysForStyle, getCurrentOutputsForStyle } from "@/lib/outputs/current-outputs";
 import { assembleRequiredPackagingDocs, loadTrimSettings } from "@/lib/outputs/required-packaging";
 import { manifestFingerprint } from "@/lib/trims/manifest";
 import { resolveStyleTrimLabels } from "@/lib/trims/style-trims";
@@ -403,8 +409,40 @@ export async function processJob(jobId: string): Promise<void> {
   // per-document asset keys ("layout:<id>#<size>"); ProdSpec outputs carry the
   // BASE key — match on the base so a per-document rejection re-runs its whole
   // variant.
+  // Scoped bases a change-request rerun dropped for having an approved
+  // document (below) — for the scoped-empty log line.
+  let approvedScopeDrops: string[] = [];
   if (scopedKeys.length > 0) {
-    const want = new Set(scopedKeys.map((k) => k.split("#")[0]));
+    let want = new Set(scopedKeys.map((k) => k.split("#")[0]));
+    // A change-request rerun (CHANGE_REQUEST) never regenerates an approved
+    // document: the approval enqueued only bases with nothing approved, but a
+    // document may have been approved since. ANY approved document holds its
+    // base — a scoped job regenerates every document of the base, so a split
+    // output's approved size would go back to review with its siblings.
+    // approvedBases only holds bases whose documents are ALL approved, so the
+    // current outputs are read for the per-document state. Sending approved
+    // documents back takes the explicit second confirmation, which runs as
+    // CHANGE_REQUEST_APPROVED and is not filtered here (design §2 rail 3).
+    if (runKeepsApprovedDocuments(job.triggerSource)) {
+      const withApproved = new Set(approvedBases);
+      for (const o of await getCurrentOutputsForStyle(job.styleId)) {
+        if (o.reviewStatus === "APPROVED") withApproved.add(o.variantKey.split("#")[0]);
+      }
+      const { keep, dropped } = withoutApprovedBases([...want], withApproved);
+      if (dropped.length > 0) {
+        approvedScopeDrops = dropped;
+        await db.log.create({
+          data: {
+            jobId: job.id,
+            level: "INFO",
+            message:
+              `change-request rerun: skipping ${dropped.length} output(s) that have an approved document — ` +
+              `approved documents go back to review only on an explicit rerun: ${dropped.join(", ")}`,
+          },
+        });
+      }
+      want = new Set(keep);
+    }
     outputs = outputs.filter((o) => want.has(o.variantKey));
   } else {
     // FULL regen (no scope) — durable approval. An output the reviewer already
@@ -416,7 +454,8 @@ export async function processJob(jobId: string): Promise<void> {
     //
     // Scoped re-runs (variantKeys set) never reach here — an EXPLICIT scoped
     // re-run of an approved output SHOULD regenerate it (reviewer intent),
-    // exactly as before. approvedOutputBaseKeysForStyle uses the same
+    // exactly as before (the one exception, a CHANGE_REQUEST rerun, is
+    // filtered in the scoped branch above). approvedOutputBaseKeysForStyle uses the same
     // current-asset selection as the review page, so what we skip lines up with
     // what the reviewer sees as approved.
     if (approvedBases.size > 0) {
@@ -822,8 +861,11 @@ export async function processJob(jobId: string): Promise<void> {
           missingFieldSkips > 0
             ? `no outputs generated — ${missingFieldSkips} output(s) missing required fields; ` +
               `surfaced as "awaiting data" for review (cover refreshed).`
-            : `scoped re-run produced no outputs — ${scopedKeys.join(", ")} no longer maps to a ` +
-              `ready output in "${prodSpec?.name ?? "this spec"}"; nothing regenerated (cover refreshed).`,
+            : approvedScopeDrops.length > 0
+              ? `change-request rerun produced no outputs — ${approvedScopeDrops.join(", ")} ` +
+                `${approvedScopeDrops.length === 1 ? "has" : "have"} an approved document; nothing regenerated (cover refreshed).`
+              : `scoped re-run produced no outputs — ${scopedKeys.join(", ")} no longer maps to a ` +
+                `ready output in "${prodSpec?.name ?? "this spec"}"; nothing regenerated (cover refreshed).`,
       },
     });
   } else if (generated.length === 0 && coverOnly) {

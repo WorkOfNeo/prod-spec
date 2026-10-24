@@ -42,9 +42,10 @@ export type BulkRunResult = {
  * MANUAL_BULK makes the runner suppress the per-style review-email blast (a
  * big run mustn't send hundreds of emails) while still recording in-app review
  * notifications — see src/lib/queue/runner.ts. A change-request approval
- * passes triggerSource CHANGE_REQUEST instead: same lane, but the runner then
- * re-arms each style's cover without the supplier digest email
- * (coverNotifiesSupplier in trigger-labels.ts). The runner re-checks each
+ * passes triggerSource CHANGE_REQUEST instead (CHANGE_REQUEST_APPROVED for the
+ * rerun of approved documents): same lane, but the runner then re-arms each
+ * style's cover without the supplier digest email (coverNotifiesSupplier in
+ * trigger-labels.ts). The runner re-checks each
  * variant's readiness at render time, so a field that regresses between here
  * and render still won't ship an incomplete output.
  *
@@ -62,8 +63,11 @@ export async function enqueueBulkRun(input: {
   // explicitly ticked "include the below-cutoff styles".
   includeBelowCutoff?: boolean;
   // Why the jobs run, stamped on each. Default MANUAL_BULK (the admin bulk
-  // actions); CHANGE_REQUEST for the scoped rerun after an approved change.
-  triggerSource?: "MANUAL_BULK" | "CHANGE_REQUEST";
+  // actions); CHANGE_REQUEST for the scoped rerun after an approved change
+  // (the runner drops any base with an approved document from it);
+  // CHANGE_REQUEST_APPROVED for the explicit second confirmation that sends
+  // approved documents back to review.
+  triggerSource?: "MANUAL_BULK" | "CHANGE_REQUEST" | "CHANGE_REQUEST_APPROVED";
 }): Promise<BulkRunResult> {
   // The PO gate for the bulk lane. This helper creates jobs with createMany and
   // so never reaches enqueueGenerationJob's throw — the check has to happen
