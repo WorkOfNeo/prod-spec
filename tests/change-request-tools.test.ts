@@ -261,6 +261,7 @@ const store = {
 let revisionCounter = 0;
 const revisionsMock = {
   getRevision: async (id: string) => revisions.find((r) => r.id === id) ?? null,
+  definitionsEqual: (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b),
   createDraft: async (input: Row) => {
     record("createDraft", input);
     const row = { id: `rev-new-${++revisionCounter}`, number: 10 + revisionCounter, status: "DRAFT", ...input };
@@ -578,6 +579,8 @@ test("get_layout: with an open draft shows the draft and what it changes (live: 
     status: "DRAFT",
     note: "Bigger colour",
     definition: stickerDef("COLOUR: {{colourName}} / {{colourCode}}"),
+    baseDefinition: stickerDef(),
+    baseVersion: 3,
   });
   output.currentRevisionId = "rev-draft";
   const draft = content(await run("get_layout", { layoutId: LAYOUT_ID }));
@@ -637,7 +640,9 @@ test("propose_patch: ops on the live layout → an AGENT draft on this output, m
   assert.equal(res.isError, undefined, JSON.stringify(res.content));
   const c = content(res);
   assert.equal(c.base, "live");
-  assert.equal(c.applied, 1);
+  assert.equal(c.applied.length, 1);
+  // The new block's id comes back, so the next op can address it.
+  assert.equal(c.applied[0].block.id, "b-add1");
   assert.deepEqual(c.rejected, []);
   assert.equal(c.parentRevisionId, null);
   assert.equal(c.changes.length, 1);
@@ -666,6 +671,8 @@ test("propose_patch: refines this output's open draft (parent = current draft, o
     number: 5,
     status: "DRAFT",
     definition: stickerDef("COLOUR: {{colourName}} / {{colourCode}}"),
+    baseDefinition: stickerDef(),
+    baseVersion: 3,
   });
   output.currentRevisionId = "rev-draft";
   const res = await run("propose_patch", {
@@ -692,6 +699,40 @@ test("propose_patch: refines this output's open draft (parent = current draft, o
   assert.equal(revised.parentId, "rev-draft");
   assert.equal(revised.input.changeRequestOutputId, OUTPUT_ID);
   assert.equal(revised.input.authorKind, "AGENT");
+});
+
+test("propose_patch / get_layout: a draft made before the live layout changed is not built on", async () => {
+  revisions.push({
+    id: "rev-stale",
+    layoutId: LAYOUT_ID,
+    number: 6,
+    status: "DRAFT",
+    note: "Old draft",
+    definition: stickerDef("COLOUR: {{colourName}} / {{colourCode}}"),
+    // The live layout has been edited in the builder since (no version bump).
+    baseDefinition: stickerDef("COLOUR (old): {{colourName}}"),
+    baseVersion: 3,
+  });
+  output.currentRevisionId = "rev-stale";
+
+  const layout = content(await run("get_layout", { layoutId: LAYOUT_ID }));
+  assert.equal(layout.showing, "live");
+  assert.equal(layout.openDraft.stale, true);
+  assert.equal(layout.draftChanges, undefined);
+
+  const res = await run("propose_patch", { layoutId: LAYOUT_ID, ops: [ADD_QTY], note: "Add qty" });
+  assert.equal(res.isError, undefined, JSON.stringify(res.content));
+  const c = content(res);
+  assert.equal(c.base, "live");
+  assert.deepEqual(c.staleDraft, { revisionId: "rev-stale", number: 6 });
+  assert.match(c.notice, /live layout changed after draft #6/);
+  // Still recorded as a revision of that draft, but built on today's layout.
+  const revised = calls.reviseDraft[0] as { parentId: string; input: { definition: { pages: { blocks: { lines: string[] }[] }[] } } };
+  assert.equal(revised.parentId, "rev-stale");
+  const lines = revised.input.definition.pages[0].blocks.flatMap((b) => b.lines);
+  assert.ok(lines.includes("COLOUR: {{colourName}}"));
+  assert.ok(!lines.some((l) => l.includes("colourCode")));
+  assert.ok(lines.includes(QTY_LINE));
 });
 
 test("propose_patch: nothing applied → error with the reasons and no draft", async () => {
@@ -970,19 +1011,24 @@ test("finish: returns the summary for the reviewer", async () => {
 
 // ── resumeAwaitingCode ──────────────────────────────────────────────────────
 
-test("resumeAwaitingCode: starts only outputs whose awaited token now exists; a failing start is skipped", async () => {
+test("resumeAwaitingCode: starts only outputs whose awaited token now exists; a refused or failing start is skipped", async () => {
   waitingOutputs = [
     { id: "o-ready", awaitingToken: "polybagQty" },
     { id: "o-waiting", awaitingToken: "bogusPackQty" },
     { id: "o-fails", awaitingToken: "styleName" },
+    { id: "o-busy", awaitingToken: "sizes" },
+    { id: "o-ready-2", awaitingToken: "style2Name" },
   ];
   const started: string[] = [];
   const ids = await gap.resumeAwaitingCode(async (id) => {
-    if (id === "o-fails") throw new Error("already running");
+    if (id === "o-fails") throw new Error("boom");
+    // The job starter's refusal shape.
+    if (id === "o-busy") return { started: false, reason: "A run is already in progress for this output" };
     started.push(id);
+    return { started: true };
   });
-  assert.deepEqual(ids, ["o-ready"]);
-  assert.deepEqual(started, ["o-ready"]);
+  assert.deepEqual(ids, ["o-ready", "o-ready-2"]);
+  assert.deepEqual(started, ["o-ready", "o-ready-2"]);
   const where = (calls["changeRequestOutput.findMany"][0] as { where: unknown }).where;
   assert.deepEqual(where, { status: "NEEDS_CODE", awaitingToken: { not: null } });
 });

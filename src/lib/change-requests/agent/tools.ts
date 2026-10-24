@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { DEFAULT_COLUMN_MAPPING, parseCustomerConfig } from "@/lib/customers/config";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { applyLayoutOps, describeLayoutChanges, LayoutOpSchema } from "@/lib/output-layouts/ops";
-import { createDraft, getRevision, reviseDraft } from "@/lib/output-layouts/revisions";
+import { createDraft, definitionsEqual, getRevision, reviseDraft } from "@/lib/output-layouts/revisions";
 import { layoutSettings, pageGrid, parseLayoutDef, type LayoutDef } from "@/lib/output-layouts/schema";
 import {
   isLayoutVariantKey,
@@ -132,6 +132,18 @@ async function openDraftOn(output: { currentRevisionId: string | null } | null, 
   const rev = await getRevision(output.currentRevisionId);
   if (!rev || rev.layoutId !== layoutId || rev.status !== ("DRAFT" satisfies RevisionStatus)) return null;
   return rev;
+}
+
+// A draft made before the live layout last changed (a builder autosave or a
+// publish since). Building on it would carry the OLD live content forward, and
+// because a revised draft re-snapshots its base from today's layout, publishing
+// it would silently undo that change — so the tools build on the live layout
+// instead and say so.
+function draftIsStale(
+  draft: { baseDefinition: unknown; baseVersion: number },
+  layout: { definition: unknown; version: number },
+): boolean {
+  return draft.baseVersion !== layout.version || !definitionsEqual(draft.baseDefinition, layout.definition);
 }
 
 // ── get_request ──────────────────────────────────────────────────────────────
@@ -688,15 +700,30 @@ const getLayout = defineTool({
     } catch (err) {
       return fail(`The live definition of "${layout.name}" does not parse: ${errorText(err)}`);
     }
+    const stale = draft ? draftIsStale(draft, layout) : false;
     const draftDef = draft ? parseLayoutDef(draft.definition) : null;
-    const showDraft = draftDef !== null && !input.live;
+    const showDraft = draftDef !== null && !stale && !input.live;
 
     await note(ctx, "read", `Layout "${layout.name}" v${layout.version}${showDraft && draft ? ` (draft #${draft.number})` : ""}`);
     return ok({
       layout: { id: layout.id, name: layout.name, docType: layout.docType, status: layout.status, version: layout.version },
       showing: showDraft ? "draft" : "live",
-      openDraft: draft ? { revisionId: draft.id, number: draft.number, note: draft.note } : null,
-      ...(draftDef ? { draftChanges: describeLayoutChanges(live, draftDef).map((c) => c.summary) } : {}),
+      openDraft: draft
+        ? {
+            revisionId: draft.id,
+            number: draft.number,
+            note: draft.note,
+            ...(stale
+              ? {
+                  stale: true,
+                  notice:
+                    "The live layout changed after this draft was made, so propose_patch builds on the live layout shown here; " +
+                    "include any of the draft's changes you still want.",
+                }
+              : {}),
+          }
+        : null,
+      ...(draftDef && !stale ? { draftChanges: describeLayoutChanges(live, draftDef).map((c) => c.summary) } : {}),
       ...summariseLayoutDef(showDraft && draftDef ? draftDef : live),
     });
   },
@@ -762,7 +789,8 @@ const proposePatch = defineTool({
   name: "propose_patch",
   description:
     "Draft a change to THIS output's layout as a list of edit operations. Nothing prints differently: the result is a new DRAFT revision for a " +
-    "person to review. The ops apply on top of this output's current draft when it has one (so you can refine it), else on the live layout. " +
+    "person to review. The ops apply on top of this output's current draft when it has one (so you can refine it), else on the live layout " +
+    "(also when the live layout changed after that draft; the result says so). " +
     "Ops: add_block, remove_block, set_rect (move/resize, grid cells), set_block_props (fontPt, bold, align, valign, fitWidth, fitHeight, " +
     "lineHeight, invert, border), edit_line / remove_line (quote the current text as oldText), insert_line. page and line are 0-based; blocks are " +
     "addressed by id (get_layout). Each op is checked on its own: rejected ops come back with a reason and the rest still apply; warnings flag " +
@@ -795,7 +823,7 @@ const proposePatch = defineTool({
 
     const layout = await db.outputLayout.findUnique({
       where: { id: input.layoutId },
-      select: { id: true, name: true, definition: true },
+      select: { id: true, name: true, definition: true, version: true },
     });
     if (!layout) return fail(`Layout ${input.layoutId} not found.`);
 
@@ -805,14 +833,28 @@ const proposePatch = defineTool({
     } catch (err) {
       return fail(`The live definition of "${layout.name}" does not parse: ${errorText(err)}`);
     }
+    // Refine this output's open draft — unless the live layout moved on since
+    // it was made; then the ops go onto the live layout (still linked to the
+    // draft as its revision) so nothing done in the builder is undone.
     const parent = await openDraftOn(output, layout.id);
-    const base = parent ? parseLayoutDef(parent.definition) : live;
+    const stale = parent ? draftIsStale(parent, layout) : false;
+    const baseKind = parent && !stale ? "draft" : "live";
+    const base = parent && !stale ? parseLayoutDef(parent.definition) : live;
+    const staleNotice = stale
+      ? {
+          staleDraft: { revisionId: parent?.id, number: parent?.number },
+          notice:
+            `The live layout changed after draft #${parent?.number} was made, so these ops were applied to the live layout. ` +
+            "Include any of that draft's changes you still want.",
+        }
+      : {};
 
     const result = applyLayoutOps(base, input.ops);
     if (result.applied.length === 0) {
       await note(ctx, "draft", `No draft: all ${plural(result.rejected.length, "op")} rejected`);
       return fail("No op could be applied, so no draft was made. Fix the ops below and try again.", {
-        base: parent ? "draft" : "live",
+        base: baseKind,
+        ...staleNotice,
         rejected: result.rejected,
         warnings: result.warnings,
       });
@@ -856,9 +898,12 @@ const proposePatch = defineTool({
       revisionId: revision.id,
       number: revision.number,
       layoutId: layout.id,
-      base: parent ? "draft" : "live",
+      base: baseKind,
+      ...staleNotice,
       parentRevisionId: parent?.id ?? null,
-      applied: result.applied.length,
+      // The applied ops as stored — an added block carries the id it was
+      // given, so a follow-up op can address it.
+      applied: result.applied,
       rejected: result.rejected,
       warnings: result.warnings,
       changes,
