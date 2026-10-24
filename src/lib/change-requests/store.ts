@@ -10,7 +10,7 @@
 // =====================================================
 
 import { db } from "@/lib/db";
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { isMissingTable } from "./db-safe";
 import type {
   AuthorKind,
@@ -39,11 +39,19 @@ export function rollUpStatus(statuses: readonly OutputStatus[]): RequestStatus {
   return "REJECTED";
 }
 
+// Two outputs of one request settling at the same moment (two agent runs, an
+// approval next to a run) would each read the other's OLD status and the
+// slower write would win with a stale summary. So the roll-up locks the
+// request row first: the second one waits, then reads what the first
+// committed.
 export async function rollUpRequestStatus(requestId: string): Promise<RequestStatus> {
-  const outputs = await db.changeRequestOutput.findMany({ where: { requestId }, select: { status: true } });
-  const status = rollUpStatus(outputs.map((o) => o.status as OutputStatus));
-  await db.changeRequest.update({ where: { id: requestId }, data: { status } });
-  return status;
+  return db.$transaction(async (tx) => {
+    await tx.$queryRaw(Prisma.sql`SELECT 1 FROM change_requests WHERE id = ${requestId} FOR UPDATE`);
+    const outputs = await tx.changeRequestOutput.findMany({ where: { requestId }, select: { status: true } });
+    const status = rollUpStatus(outputs.map((o) => o.status as OutputStatus));
+    await tx.changeRequest.update({ where: { id: requestId }, data: { status } });
+    return status;
+  });
 }
 
 // ---------- writes ----------
