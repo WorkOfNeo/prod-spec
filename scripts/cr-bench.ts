@@ -14,9 +14,11 @@
 // default system prompt (prompt.ts, without admin edits or memories), the
 // production first message (job.ts buildFirstMessage) and the production loop
 // (runAgentLoop) with the production client, model, effort and call budget.
-// Only the tools are swapped for fixture-backed ones (bench/fixture-tools.ts),
-// so the agent reads the case's layout and styles and its drafts stay in
-// memory. Then score.ts grades the hand-off against the case's `expected`.
+// The tools are the production definitions (agent/tools.ts: names,
+// descriptions, input schemas) with only their implementations swapped for
+// fixture-backed ones (bench/fixture-tools.ts), so the agent reads the case's
+// layout and styles and its drafts stay in memory. Then score.ts grades the
+// hand-off against the case's `expected`.
 //
 // Proof pictures need Chromium: set PUPPETEER_EXECUTABLE_PATH (or have
 // Puppeteer's own browser installed). Without one, render_proof sends a text
@@ -41,6 +43,7 @@ import {
   fixtureTools,
   loadBenchRuntime,
   outcomeFromState,
+  type FixtureState,
 } from "@/lib/change-requests/bench/fixture-tools";
 import { scoreCase, type BenchOutcome, type BenchScore } from "@/lib/change-requests/bench/score";
 import {
@@ -67,7 +70,7 @@ type CaseRun = {
   finalText?: string;
   error?: string;
   refusalCategory?: string | null;
-  memories: { scope: string; text: string; scopeRef?: string }[];
+  memories: FixtureState["memories"];
 };
 
 type CaseResult = {
@@ -150,7 +153,7 @@ async function main(): Promise<number> {
   for (const loaded of selected) {
     const c = loaded.case;
     console.error(`\n▶ ${c.id} — ${c.title}`);
-    const { tools, state } = fixtureTools(c, { images });
+    const { tools, state } = await fixtureTools(c, { images });
     const ctx: ToolContext = {
       requestId: `bench:${c.id}`,
       outputId: "bench-output",

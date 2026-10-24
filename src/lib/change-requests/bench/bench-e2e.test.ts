@@ -87,7 +87,7 @@ after(() => rmSync(tmp, { recursive: true, force: true }));
 test("polybag-qty: get_layout → propose_patch → proofs + impact → finish scores at least 90", async () => {
   const loaded = loadBenchCase(join(CASES, "polybag-qty.json"));
   const c = loaded.case;
-  const { tools, state } = fixtureTools(c, { images: "off" });
+  const { tools, state } = await fixtureTools(c, { images: "off" });
   const first = await benchFirstMessage(c, loaded.imagePaths);
   const firstText = (first.content[0] as { text: string }).text;
   assert.match(firstText, /This run works on ONE output: "Solid polybag sticker"/);
@@ -119,11 +119,11 @@ test("polybag-qty: get_layout → propose_patch → proofs + impact → finish s
       ]);
     },
     (p) => {
-      assert.match(String(results(p)[0].content), /"draftId":"d1"/);
+      assert.match(String(results(p)[0].content), /"revisionId":"bench-rev-1"/);
       return msg([
-        use("t3", "render_proof", { styleId: "style-5pcs" }),
-        use("t4", "render_proof", { styleId: "style-1pc", side: "after" }),
-        use("t5", "impact_list", {}),
+        use("t3", "render_proof", { revisionId: "bench-rev-1", styleId: "style-5pcs" }),
+        use("t4", "render_proof", { revisionId: "bench-rev-1", styleId: "style-1pc", side: "after" }),
+        use("t5", "impact_list", { revisionId: "bench-rev-1" }),
       ]);
     },
     (p) => {
@@ -131,7 +131,7 @@ test("polybag-qty: get_layout → propose_patch → proofs + impact → finish s
       assert.equal(r.length, 3, "all results of a turn in one message");
       assert.match(String(r[0].content), /5 PCS/);
       assert.doesNotMatch(String(r[1].content), /PCS/);
-      assert.match(String(r[2].content), /"unchanged":\[\{"styleId":"style-1pc"/);
+      assert.match(String(r[2].content), /"unchangedControls":\[\{"styleId":"style-1pc"/);
       return msg([use("t6", "finish", { summary: "The sticker now shows the pieces per polybag above the price when more than one." })]);
     },
   ]);
@@ -174,12 +174,12 @@ test("polybag-qty: get_layout → propose_patch → proofs + impact → finish s
 
 test("polybag-qty-gap: the token is missing, the agent hands over a gap and scores 100", async () => {
   const c = loadBenchCase(join(CASES, "polybag-qty-gap.json")).case;
-  const { tools, state } = fixtureTools(c, { images: "off" });
+  const { tools, state } = await fixtureTools(c, { images: "off" });
   const { client } = fakeClient([
     () => msg([use("t1", "list_tokens", { query: "polybag" })]),
     (p) => {
       assert.match(String(results(p)[0].content), /"count":0/);
-      return msg([use("t2", "find_styles_by_value", { query: "Solid polybag" })]);
+      return msg([use("t2", "find_styles_by_value", { text: "Solid polybag" })]);
     },
     () =>
       msg([

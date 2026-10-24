@@ -9,7 +9,7 @@
   "layout": {
     "id": "layout-price-sticker-40x60",
     "name": "Price sticker 40×60",
-    "docType": "Price sticker",
+    "docType": "STICKER",
     "definition": {
       "settings": {
         "repeatBy": "size",
@@ -129,7 +129,8 @@
         "washSymbols": "wash40, bleach_no, tumble_no, iron_low, dryclean_no",
         "sizes": "23/26=2000000400013, 27/30=2000000400020",
         "price": "6,95",
-        "price.currency": ""
+        "price.currency": "",
+        "outputLanguages": "fi, sv"
       }
     },
     {
@@ -156,7 +157,8 @@
         "washSymbols": "wash_hand, bleach_no, tumble_no, iron_no, dryclean_no",
         "sizes": "36/39=2000000400037, 40/43=2000000400044",
         "price": "9,95",
-        "price.currency": ""
+        "price.currency": "",
+        "outputLanguages": "fi, sv"
       }
     },
     {
@@ -173,7 +175,8 @@
         "colour.name": "White",
         "sizes": "S=2000000500010, M=2000000500027",
         "price": "9,95",
-        "price.currency": ""
+        "price.currency": "",
+        "outputLanguages": "fi, sv"
       }
     }
   ],

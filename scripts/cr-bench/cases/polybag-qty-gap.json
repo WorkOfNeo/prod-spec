@@ -9,7 +9,7 @@
   "layout": {
     "id": "layout-polybag-50x60",
     "name": "Solid polybag sticker 50×60",
-    "docType": "Polybag sticker",
+    "docType": "STICKER",
     "definition": {
       "settings": {
         "repeatBy": "size",
@@ -149,7 +149,8 @@
         "poNumber": "PO-0001",
         "trimsRaw": "Price sticker, Solid polybag- 5 Pcs / Polybag, Solid polybag sticker, Carton marking",
         "sizes": "98/104=2000000100012, 110/116=2000000100029, 122/128=2000000100036, 134/140=2000000100043",
-        "price": "12,95"
+        "price": "12,95",
+        "outputLanguages": "fi, sv"
       }
     },
     {
@@ -166,7 +167,8 @@
         "poNumber": "PO-0001",
         "trimsRaw": "Price sticker, Solid Polybag - 2 Pcs/ Polybag, Solid polybag sticker",
         "sizes": "98/104=2000000200019, 110/116=2000000200026, 122/128=2000000200033",
-        "price": "9,95"
+        "price": "9,95",
+        "outputLanguages": "fi, sv"
       }
     },
     {
@@ -183,7 +185,8 @@
         "poNumber": "PO-0002",
         "trimsRaw": "Price sticker, 1 pc individual polybag for solid, Solid polybag sticker, Carton marking",
         "sizes": "98/104=2000000300016, 110/116=2000000300023",
-        "price": "4,95"
+        "price": "4,95",
+        "outputLanguages": "fi, sv"
       }
     }
   ],

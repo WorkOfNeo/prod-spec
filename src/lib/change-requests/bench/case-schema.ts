@@ -25,7 +25,9 @@
 //   • price — "24,95" or "24.95" ("" removes the price);
 //   • composition:<lang>, productName:<lang>, careInstructions:<lang> —
 //     that language's text ("" removes it);
-//   • washSymbols, certificates — comma-separated lists ("" = none);
+//   • washSymbols, certificates, outputLanguages — comma-separated lists
+//     ("" = none; the first output language is the one list_tokens resolves
+//     per-language variables in, next to "en", as in production);
 //   • sizes — comma-separated labels, each optionally "LABEL=EAN13".
 // Anything else is rejected when the case loads, so a typo can't silently
 // leave a fixture on the sample value.
@@ -74,7 +76,7 @@ const NESTED_TEXT_FIELDS = {
 } as const;
 
 const LANG_FIELDS = ["composition", "productName", "careInstructions"] as const;
-const LIST_FIELDS = ["washSymbols", "certificates"] as const;
+const LIST_FIELDS = ["washSymbols", "certificates", "outputLanguages"] as const;
 const PRICE_CURRENCIES = ["EUR", "DKK", "NOK", "SEK", "GBP"] as const;
 const LANG_RE = /^[a-z]{2}$/;
 const EAN13_RE = /^\d{13}$/;
@@ -96,7 +98,7 @@ export function overrideKeyError(key: string): string | null {
   return (
     `"${key}" is not a style override — use a StyleData text field (${STYLE_TEXT_FIELDS.join(", ")}), ` +
     `colour.name/code, carton.<field>, price, price.currency, composition:<lang>, productName:<lang>, ` +
-    `careInstructions:<lang>, washSymbols, certificates or sizes`
+    `careInstructions:<lang>, washSymbols, certificates, outputLanguages or sizes`
   );
 }
 
@@ -168,6 +170,8 @@ export function applyStyleOverrides(base: StyleData, values: Readonly<Record<str
       s.washSymbols = splitList(value);
     } else if (key === "certificates") {
       s.certificates = splitList(value);
+    } else if (key === "outputLanguages") {
+      s.outputLanguages = splitList(value);
     } else if (key.includes(".")) {
       const [obj, field] = key.split(".") as ["colour" | "carton", string];
       if (obj === "colour") s.colour = { ...(s.colour ?? { name: "", code: "" }), [field]: value };
