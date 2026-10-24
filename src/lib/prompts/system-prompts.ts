@@ -1,4 +1,8 @@
 import { db } from "@/lib/db";
+import {
+  CHANGE_REQUEST_AGENT_PROMPT_KEY,
+  DEFAULT_CHANGE_REQUEST_AGENT_PROMPT,
+} from "@/lib/change-requests/agent/prompt";
 
 // =====================================================
 // Editable AI system prompts.
@@ -86,6 +90,15 @@ export const SYSTEM_PROMPT_DEFS: PromptDef[] = [
     description:
       "Guides the AI that answers a reviewer's free-text question about one style, using only the deterministic evidence bundle the app assembles (readiness, PO scrape, size coverage, lookalike rows, supplier-folder diff, logs). The strict JSON output format is fixed in code and appended automatically — edit the guidance/persona here.",
     default: DEFAULT_STYLE_EXPLAIN_PROMPT,
+  },
+  {
+    // The default text lives next to the agent (change-requests/agent/prompt.ts),
+    // which also appends the kept memory notes at run time.
+    key: CHANGE_REQUEST_AGENT_PROMPT_KEY,
+    name: "Change-request agent",
+    description:
+      "Guides the agent that works a change request: reads the report and screenshots, drafts a layout change on a copy, renders proofs and hands the draft to an admin. The tools it can use (read and draft only), its call budget and the hand-off rules are fixed in code; kept memory notes are appended automatically — edit the guidance here.",
+    default: DEFAULT_CHANGE_REQUEST_AGENT_PROMPT,
   },
 ];
 
