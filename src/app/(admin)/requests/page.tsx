@@ -8,6 +8,8 @@ import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { listChangeRequests } from "@/lib/change-requests/requests";
 import { RequestStatusSchema } from "@/lib/change-requests/types";
 import { RequestsInbox, type InboxRow } from "./requests-inbox";
+import { outputSignals, signalTotals } from "@/lib/change-requests/signals";
+import { SignalsTable } from "@/components/change-requests/signals-table";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Requests" };
@@ -35,6 +37,9 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
   const admin = isAdmin(role);
 
   const rows = await listChangeRequests({ viewer: { userId: session.user.id, role }, status: status ?? undefined });
+  // Learning signals (drafts per request, first-try approval, cost) are an
+  // admin read; reviewers only see their own requests.
+  const signalRows = admin ? await outputSignals() : [];
   // Dates are formatted here, on the server, so the client never re-formats
   // them in another time zone during hydration.
   const view: InboxRow[] = rows.map((r) => ({
@@ -70,6 +75,17 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
       <div className="mt-6">
         <RequestsInbox rows={view} status={status} showRequester={admin} />
       </div>
+      {admin && signalRows.length > 0 && (
+        <section className="mt-10">
+          <h2 className="text-base font-semibold tracking-tight">Learning signals</h2>
+          <p className="mt-1 text-sm text-zinc-500">
+            How often the assistant&apos;s first draft is approved, how many drafts it takes, and what each request cost.
+          </p>
+          <div className="mt-3">
+            <SignalsTable rows={signalRows} totals={signalTotals(signalRows)} />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

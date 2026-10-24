@@ -55,6 +55,7 @@ import {
 import type { ToolContext } from "@/lib/change-requests/agent/contract";
 import { runAgentLoop, type AgentLoopResult } from "@/lib/change-requests/agent/loop";
 import { CHANGE_REQUEST_AGENT_PROMPT_KEY, buildSystemPrompt } from "@/lib/change-requests/agent/prompt";
+import { memoriesForPrompt } from "@/lib/change-requests/memory";
 import { AGENT_TOOLS } from "@/lib/change-requests/agent/tools";
 
 export type RunTrigger = "new" | "comment" | "answer" | "resume";
@@ -86,6 +87,43 @@ export function isRunInProgress(outputId: string): boolean {
 
 // Claim the output and start the job in the background. Refuses an output the
 // agent is already working on. Resolves as soon as the output is WORKING.
+// The kept memory notes that apply to this run (global, this customer, this
+// layout's document type, Monday), as one prompt block. Any failure reads as
+// "no notes": memory improves a run, it must never be the reason one fails.
+async function loadMemoryNotes(customerId: string | null, layoutId: string | null): Promise<string> {
+  try {
+    const docType = layoutId
+      ? (await orEmpty(db.outputLayout.findUnique({ where: { id: layoutId }, select: { docType: true } }), null))?.docType
+      : undefined;
+    const memory = await memoriesForPrompt({ customerId: customerId ?? undefined, docType: docType ?? undefined });
+    return memory.text;
+  } catch (err) {
+    console.warn("[change-requests] memory notes unavailable for this run:", err);
+    return "";
+  }
+}
+
+// Start the agent on every output of a freshly filed request. Called by the
+// create route right after the request is written; each start only claims the
+// output and returns, so filing never waits on the model. Fail-soft per output:
+// a request that could not start shows its outputs as NEW with a "Start" button.
+export async function startRunsForRequest(requestId: string, userId: string | null): Promise<StartRunResult[]> {
+  const outputs = await orEmpty(
+    db.changeRequestOutput.findMany({ where: { requestId, status: "NEW" }, select: { id: true }, orderBy: { position: "asc" } }),
+    [],
+  );
+  const results: StartRunResult[] = [];
+  for (const o of outputs) {
+    try {
+      results.push(await startChangeRequestRun(o.id, { trigger: "new", userId }));
+    } catch (err) {
+      console.warn(`[change-requests] could not start a run for output ${o.id}:`, err);
+      results.push({ started: false, reason: "Could not start the agent" });
+    }
+  }
+  return results;
+}
+
 export async function startChangeRequestRun(outputId: string, opts: RunOptions): Promise<StartRunResult> {
   if (running.has(outputId)) return { started: false, reason: "A run is already in progress for this output" };
   running.add(outputId);
@@ -158,7 +196,14 @@ export async function runChangeRequestJob(outputId: string, opts: RunOptions): P
       currentDraft,
       attachments,
     });
-    const system = buildSystemPrompt(await getSystemPromptContent(CHANGE_REQUEST_AGENT_PROMPT_KEY), []);
+    // Kept memory notes for this customer, this document type and Monday
+    // (design §5.9). Reading them bumps their used count.
+    // Fail-soft: notes that cannot be read never stop a run.
+    const memoryText = await loadMemoryNotes(detail.customerId, outputRow.layoutId);
+    const system = buildSystemPrompt(
+      await getSystemPromptContent(CHANGE_REQUEST_AGENT_PROMPT_KEY),
+      memoryText ? [memoryText] : [],
+    );
 
     const ctx: ToolContext = {
       requestId,

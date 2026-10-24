@@ -9,6 +9,7 @@ import {
   listChangeRequests,
 } from "@/lib/change-requests/requests";
 import { RequestStatusSchema } from "@/lib/change-requests/types";
+import { startRunsForRequest } from "@/lib/change-requests/agent/job";
 
 export const runtime = "nodejs";
 
@@ -69,6 +70,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const created = await createChangeRequest(parsed.data, { userId: session.user.id, role });
+    // The agent starts on every output straight away; each start only claims
+    // the output and returns, so the response never waits on the model.
+    await startRunsForRequest(created.id, session.user.id).catch((err) => {
+      console.warn(`[change-requests] auto-start failed for ${created.id}:`, err);
+    });
     return NextResponse.json(created, { status: 201 });
   } catch (err) {
     if (err instanceof ChangeRequestInputError) {
