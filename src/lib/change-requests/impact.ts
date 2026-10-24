@@ -43,9 +43,9 @@ import {
 // the review screen shows them.
 //
 // Read-only: nothing here writes, except impactForRevision caching the summary
-// on its change-request output. The pure core (normaliseHtml, compareDocs,
-// mapReviewStatus, buildImpactRows, summarise) is exported and tested without
-// a database; computeImpact only orchestrates.
+// on its change-request output. The pure core (normaliseHtml, printedHtml,
+// compareDocs, mapReviewStatus, buildImpactRows, summarise) is exported and
+// tested without a database; computeImpact only orchestrates.
 // =====================================================
 
 // Styles compared at most per call. A layout on more styles than this is
@@ -88,11 +88,38 @@ export function normaliseHtml(html: string): string {
     .replace(/^[ \t\n\f\v]+|[ \t\n\f\v]+$/g, "");
 }
 
+// What PRINTS, for comparing: normaliseHtml, then every block that puts no
+// ink on the sheet removed. The renderer still emits a block whose lines all
+// resolve to nothing for a style (an empty wrapper with a `&nbsp;` line), so a
+// draft that adds `{{if polybagQty != ""}}{{polybagQty}} PCS{{endif}}` would
+// otherwise "change" every style, including the one-piece styles where it
+// prints nothing — and the impact list would point the agent and the reviewer
+// at documents that look identical on paper.
+//
+// A block counts as inkless when every line is empty or whitespace (`&nbsp;`
+// included) AND nothing about the box itself prints: no border (any side) and
+// no inverted background. Blocks are absolutely positioned, so dropping one
+// can't move another. Changes inside a block that does print are untouched —
+// a line that resolves empty there is dropped by the renderer itself, so the
+// block's HTML is what it always was.
+const INKLESS_BLOCK_RE =
+  /<div class="(ol-block\b[^"]*)" style="([^"]*)">((?:<div class="ol-line">(?:&nbsp;|\s)*<\/div>)*)<\/div>/g;
+
+function printsWithoutInk(cls: string, style: string): boolean {
+  return cls.split(/\s+/).includes("ol-binvert") || /(?:^|[;\s])(?:border(?:-[a-z]+)?|background(?:-color)?)\s*:/.test(style);
+}
+
+export function printedHtml(html: string): string {
+  return normaliseHtml(html).replace(INKLESS_BLOCK_RE, (whole, cls: string, style: string) =>
+    printsWithoutInk(cls, style) ? whole : "",
+  );
+}
+
 export type ComparableDoc = Pick<RenderedOutputDoc, "suffix" | "html">;
 export type DocComparison = { suffix: string | null; changed: boolean };
 
 // Pair documents by suffix (null = the output's single document) and compare
-// their normalised HTML. A document present on only one side — the proposal
+// what they print (printedHtml). A document present on only one side — the proposal
 // splits differently, a size gains or loses its own PDF — counts as changed:
 // rerunning would add or drop that file. Order: the current side's documents,
 // then the ones only the proposal has. A repeated suffix keeps its first copy
@@ -103,7 +130,7 @@ export function compareDocs(
 ): DocComparison[] {
   const index = (docs: readonly ComparableDoc[]) => {
     const byKey = new Map<string | null, string>();
-    for (const d of docs) if (!byKey.has(d.suffix)) byKey.set(d.suffix, normaliseHtml(d.html));
+    for (const d of docs) if (!byKey.has(d.suffix)) byKey.set(d.suffix, printedHtml(d.html));
     return byKey;
   };
   const before = index(current);

@@ -267,7 +267,7 @@ function def(lines: string[]): LayoutDef {
   });
 }
 
-async function renderDocs(d: LayoutDef) {
+async function renderDocs(d: LayoutDef, styleData = buildSampleStyleData()) {
   const variant = ro.variantForDefinition(ROW, d);
   assert.ok(variant, "fixture layout must build a variant");
   const target = ro.assembleOutputTarget({
@@ -275,7 +275,7 @@ async function renderDocs(d: LayoutDef) {
     baseKey: variant.key,
     variant,
     output: { variantKey: variant.key, widthMm: 40, heightMm: 30, enabled: true },
-    styleData: buildSampleStyleData(),
+    styleData,
     fieldValues: new Map(),
     infoAreaSizes: new Map(),
     def: d,
@@ -308,4 +308,97 @@ test("real renders: same def → no change; an untaken branch → no change; a v
   const edited = impact.compareDocs(current, spaced);
   assert.equal(edited.length, current.length);
   assert.ok(edited.every((c) => c.changed), "a spacing edit shows on every document");
+});
+
+// ── What prints ──────────────────────────────────────────────────────────────
+
+const block = (inner: string, style = "left: 1.00mm; top: 2.00mm; ", cls = "ol-block ol-rect") =>
+  `<div class="${cls}" style="${style}">${inner}</div>`;
+const line = (text: string) => `<div class="ol-line">${text}</div>`;
+
+test("printedHtml drops blocks that print nothing, keeps every block with ink or a visible box", () => {
+  const page = (...blocks: string[]) => `<div class="ol-page ol-page-0">${blocks.join("")}</div>`;
+  const inked = block(line("5 PCS"));
+  assert.equal(impact.printedHtml(page(inked, block(line("&nbsp;")))), page(inked));
+  assert.equal(impact.printedHtml(page(inked, block(""))), page(inked), "a block with no lines at all");
+  assert.equal(impact.printedHtml(page(inked, block(line("&nbsp;") + line("  ")))), page(inked), "whitespace-only lines");
+  assert.equal(impact.printedHtml(page(block(line("&nbsp;"), "left: 1mm; ", "ol-block ol-rect ol-fit"))), page());
+
+  // Ink, a border on any side, or an inverted box prints.
+  for (const keep of [
+    block(line("A") + line("&nbsp;")),
+    block(line("&nbsp;"), "left: 1mm; border: 0.300mm solid #000000; "),
+    block(line("&nbsp;"), "left: 1mm; border-bottom: 0.300mm solid #000000; "),
+    block(line("&nbsp;"), "left: 1mm; background: #000000; color: #ffffff; ", "ol-block ol-rect ol-binvert"),
+  ]) {
+    assert.equal(impact.printedHtml(page(keep)), page(keep));
+  }
+});
+
+// The polybag quantity, as the change-request bench reproduces it: one new
+// block whose only line is guarded on {{polybagQty}}, which resolves only
+// when more than one piece goes in the bag.
+const QTY_LINE = '{{if polybagQty != ""}}{{polybagQty}} PCS{{endif}}';
+
+function polybagDef(extra?: { lines: string[]; border?: boolean }): LayoutDef {
+  return parseLayoutDef({
+    pages: [
+      {
+        id: "p1",
+        title: "",
+        widthMm: 50,
+        heightMm: 60,
+        gridCols: 50,
+        gridRows: 60,
+        blocks: [
+          { id: "b-size", rect: { col: 2, row: 2, colSpan: 46, rowSpan: 8 }, fontPt: 12, lines: ["{{size}}"] },
+          { id: "b-price", rect: { col: 2, row: 47, colSpan: 46, rowSpan: 12 }, fontPt: 24, lines: ["{{price}}"] },
+          ...(extra
+            ? [
+                {
+                  id: "b-add1",
+                  rect: { col: 7, row: 42, colSpan: 27, rowSpan: 4 },
+                  fontPt: 7,
+                  lines: extra.lines,
+                  ...(extra.border ? { border: { widthMm: 0.3, color: "#000000" } } : {}),
+                },
+              ]
+            : []),
+        ],
+      },
+    ],
+    settings: { repeatBy: "size", splitBy: "ean" },
+  });
+}
+
+function polybagStyle(trimsRaw: string) {
+  return { ...buildSampleStyleData(), trimsRaw };
+}
+
+test("real renders: a block that resolves empty for a style leaves that style unchanged", async () => {
+  const fivePcs = polybagStyle("Price sticker, Solid polybag- 5 Pcs / Polybag");
+  const onePc = polybagStyle("Price sticker, 1 pc individual polybag for solid");
+  const live = polybagDef();
+  const draft = polybagDef({ lines: [QTY_LINE] });
+
+  const five = impact.compareDocs(await renderDocs(live, fivePcs), await renderDocs(draft, fivePcs));
+  assert.ok(five.length > 1);
+  assert.ok(five.every((c) => c.changed), "the 5-piece style now prints 5 PCS on every document");
+
+  const one = impact.compareDocs(await renderDocs(live, onePc), await renderDocs(draft, onePc));
+  assert.ok(one.length > 1);
+  assert.ok(one.every((c) => !c.changed), "the 1-piece style prints exactly what it did");
+  // …although the renderer did emit the (empty) block: only the comparison ignores it.
+  const raw = (await renderDocs(draft, onePc))[0].html;
+  assert.notEqual(impact.normaliseHtml(raw), impact.normaliseHtml((await renderDocs(live, onePc))[0].html));
+});
+
+test("real renders: an empty block with a border still prints, so it is a change", async () => {
+  const onePc = polybagStyle("Price sticker, 1 pc individual polybag for solid");
+  const framed = impact.compareDocs(
+    await renderDocs(polybagDef(), onePc),
+    await renderDocs(polybagDef({ lines: [QTY_LINE], border: true }), onePc),
+  );
+  assert.ok(framed.length > 0);
+  assert.ok(framed.every((c) => c.changed), "the frame prints even where the quantity doesn't");
 });
