@@ -415,9 +415,11 @@ export async function declareGap(ctx: ToolContext, decl: GapDeclaration): Promis
 
 // Outputs waiting for a token that now exists (its deploy is live) are handed
 // to `start` — the job's starter, which claims the output (WORKING) — one at a
-// time. Returns the ids that started. A failing start is logged and skipped
-// so one bad output can't block the others; it stays NEEDS_CODE and is tried
-// again on the next sweep. Safe before the tables exist (P2021 → nothing).
+// time. Returns the ids that started. A start that throws, or answers
+// { started: false } (startChangeRequestRun's "already running" shape), is
+// skipped so one bad output can't block the others; it stays NEEDS_CODE and
+// is tried again on the next sweep. Safe before the tables exist (P2021 →
+// nothing).
 export async function resumeAwaitingCode(start: (outputId: string) => Promise<unknown>): Promise<string[]> {
   const waiting = await orEmpty(
     db.changeRequestOutput.findMany({
@@ -431,7 +433,12 @@ export async function resumeAwaitingCode(start: (outputId: string) => Promise<un
   for (const o of waiting) {
     if (!o.awaitingToken || !tokenExists(o.awaitingToken)) continue;
     try {
-      await start(o.id);
+      const res = await start(o.id);
+      if (res && typeof res === "object" && (res as { started?: unknown }).started === false) {
+        const reason = (res as { reason?: unknown }).reason;
+        console.warn(`[change-requests] resume of output ${o.id} not started: ${typeof reason === "string" ? reason : "refused"}`);
+        continue;
+      }
       started.push(o.id);
     } catch (err) {
       console.warn(`[change-requests] resume of output ${o.id} ({{${o.awaitingToken}}}) failed: ${errorText(err)}`);
