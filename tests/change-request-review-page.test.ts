@@ -166,6 +166,7 @@ function adminView(): RequestView {
       output("rejected", "REJECTED", { rejectReason: "The old size was right" }),
       output("replaced", "IN_REVIEW", { currentRevisionId: "rev-5", revisions: [rev("rev-5", 5, "SUPERSEDED")] }),
       output("half-live", "IN_REVIEW", { currentRevisionId: "rev-6", revisions: [rev("rev-6", 6, "PUBLISHED")] }),
+      output("answered", "IN_REVIEW"),
       output("approving", "APPROVED", { currentRevisionId: "rev-7", revisions: [rev("rev-7", 7, "PUBLISHED")] }),
     ],
     messages: [
@@ -181,6 +182,14 @@ function adminView(): RequestView {
       msg("m3", "question", { authorKind: "AGENT", author: "Assistant", kind: "question", body: "Which size do you mean?" }),
       msg("m4", "info", { authorKind: "AGENT", author: "Assistant", kind: "question", body: "Is it per pack or per carton?" }),
       msg("m5", "failed", { body: "The agent used all 30 of its tool calls without finishing." }),
+      // A run that needed no change: an earlier question, then the agent's plain reply.
+      msg("m6", "answered", { authorKind: "AGENT", author: "Assistant", kind: "question", body: "Which label is it?" }),
+      msg("m7", "answered", {
+        authorKind: "AGENT",
+        author: "Assistant",
+        kind: "message",
+        body: "The quantity already prints under the size on this style; no change needed.",
+      }),
     ],
     steps: [
       step("s1", "review", "run_start", "Run started (new)"),
@@ -301,16 +310,40 @@ test("live: documents the approval held show with why, and the confirm says whic
   );
 });
 
+test("in review without a draft, after a reply with no change: the agent's answer, reply, run again, close", async () => {
+  const view = adminView();
+  const html = await render(view, "answered");
+  for (const text of [
+    "The agent answered — no change proposed",
+    "The quantity already prints under the size on this style; no change needed.",
+    "Reply in the thread to start a new run",
+    "Run the agent again",
+    "Reject…",
+    // The composer is there to reply.
+    "<textarea",
+  ]) {
+    assert.ok(html.includes(text), `missing: ${text}`);
+  }
+  // Not shown as an open question, and nothing to approve.
+  assert.equal(html.includes("The agent has a question"), false);
+  assert.equal(html.includes("Approve Output"), false);
+
+  // While the latest word is still a question, it stays the question panel.
+  const asking = await render(view, "question");
+  assert.ok(asking.includes("The agent has a question"));
+  assert.equal(asking.includes("no change proposed"), false);
+});
+
 test("every open state can be closed: Reject everywhere the agent isn't working; run again where it stopped", async () => {
   const view = adminView();
-  const rejectable = ["new", "failed", "info", "code", "question", "review", "replaced"];
+  const rejectable = ["new", "failed", "info", "code", "question", "answered", "review", "replaced"];
   for (const id of rejectable) {
     assert.ok((await render(view, id)).includes("Reject…"), `${id}: no Reject…`);
   }
   for (const id of ["working", "live", "rejected", "approving"]) {
     assert.equal((await render(view, id)).includes("Reject…"), false, `${id}: Reject… shown`);
   }
-  for (const id of ["code", "question"]) {
+  for (const id of ["code", "question", "answered"]) {
     assert.ok((await render(view, id)).includes("Run the agent again"), `${id}: no run again`);
   }
   for (const id of ["info", "review", "live"]) {

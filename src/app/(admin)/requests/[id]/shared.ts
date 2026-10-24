@@ -69,6 +69,16 @@ export function openQuestion(messages: readonly MessageView[], outputId: string)
   return latest(messages, (m) => m.outputId === outputId && m.kind === "question");
 }
 
+// The agent's last word on this output: its latest question or reply. An
+// output in review with no draft is either waiting on an answer (a question)
+// or the agent finished without proposing a change and said why (a message).
+export function latestAgentWord(messages: readonly MessageView[], outputId: string): MessageView | null {
+  return latest(
+    messages,
+    (m) => m.outputId === outputId && m.authorKind === "AGENT" && (m.kind === "question" || m.kind === "message"),
+  );
+}
+
 export function currentRevision(output: OutputView) {
   return output.revisions.find((r) => r.id === output.currentRevisionId) ?? null;
 }

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Bot,
   CircleCheck,
   CircleHelp,
   Code,
@@ -33,6 +34,7 @@ import {
   currentRunSteps,
   errorOf,
   latest,
+  latestAgentWord,
   messagesFor,
   openQuestion,
   sendJson,
@@ -268,6 +270,17 @@ function AdminBody({
       );
     case "IN_REVIEW":
       if (!output.currentRevisionId) {
+        // No draft: the agent either asked something, or finished without
+        // proposing a change and said why (a plain message). Either way the
+        // admin replies in the thread (a new run), runs it again, or closes it.
+        const word = latestAgentWord(messages, output.id);
+        if (word && word.kind === "message") {
+          return (
+            <AgentAnsweredPanel answer={word.body}>
+              {actions({ label: "Run the agent again", again: true })}
+            </AgentAnsweredPanel>
+          );
+        }
         return (
           <QuestionPanel question={question?.body ?? null} waitingFor="you">
             {actions({ label: "Run the agent again", again: true })}
@@ -399,6 +412,22 @@ function QuestionPanel({
   );
 }
 
+// The agent finished without a draft and explained why ("this already prints",
+// or an answer to a question in the thread).
+function AgentAnsweredPanel({ answer, children }: { answer: string; children?: React.ReactNode }) {
+  return (
+    <Panel tone="amber" icon={<Bot className="h-4 w-4" aria-hidden />} title="The agent answered — no change proposed">
+      <blockquote className="whitespace-pre-wrap rounded-md border-l-4 border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800">
+        {answer}
+      </blockquote>
+      <p className="mt-2 text-xs text-zinc-500">
+        Reply in the thread to start a new run, run the agent again, or close the request with a reason.
+      </p>
+      {children}
+    </Panel>
+  );
+}
+
 // ── Requester: where it stands ───────────────────────────────────────────────
 
 function RequesterBody({ view, output }: { view: RequestView; output: OutputView }) {
@@ -406,7 +435,7 @@ function RequesterBody({ view, output }: { view: RequestView; output: OutputView
   const text: Record<string, { title: string; body: string }> = {
     NEW: { title: "Received", body: "Waiting to be picked up." },
     WORKING: { title: "Being worked on", body: "A change is being prepared on a copy of the layout." },
-    IN_REVIEW: { title: "With an admin", body: "An admin is reviewing a proposed change. Nothing prints differently until they approve it." },
+    IN_REVIEW: { title: "With an admin", body: "An admin is looking at it. Nothing prints differently until they approve a change." },
     NEEDS_CODE: {
       title: "Needs a small code change first",
       body: "This change needs a new value we can't print yet. It continues by itself once that is live.",
