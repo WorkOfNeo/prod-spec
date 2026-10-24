@@ -5,6 +5,7 @@ import { sweepReadyStyleGenerations, describeGenSweep, type GenSweepSummary } fr
 import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin } from "@/lib/roles";
 import { triggerRunner } from "@/lib/queue/trigger";
+import { changeRequestSweep } from "@/lib/change-requests/sweep";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -78,6 +79,8 @@ export async function POST(req: NextRequest) {
       sweptSummary = await sweepReadyStyleGenerations(10);
       sweepEnqueued = sweptSummary.enqueued;
       sweepStyleIds = sweptSummary.styleIds;
+      // Change-request housekeeping (stale agent runs). Fail-soft, flag-gated.
+      await changeRequestSweep();
     }
     summary = await runPendingJobs(limit);
   } finally {
