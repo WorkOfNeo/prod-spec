@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
+import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { NavigationGuardProvider } from "@/components/navigation-guard";
 import { SignOutButton } from "@/components/sign-out-button";
 import { MyTasksLink } from "@/components/sidebar/my-tasks-link";
@@ -17,7 +18,10 @@ import { PresencePing } from "@/components/presence-ping";
 // cover-page editor (the sidebar hides the rest, and every admin-only page also
 // enforces it server-side via requireAdminPage — hiding a link is not access
 // control; /settings/cover-page gates on canReview instead).
-const NAV: Array<{ href?: string; label?: string; divider?: true }> = [
+//
+// An entry with `flag` only shows while that feature flag is on — a flagged-off
+// feature has no nav entry at all (its pages 404 too).
+const NAV: Array<{ href?: string; label?: string; divider?: true; flag?: "changeRequests" }> = [
   { href: "/styles", label: "Styles" },
   // Delivery is keyed on the PURCHASE ORDER, not the style — the only view in
   // which a style with nothing uploaded is visible. It gates on canReview, so
@@ -28,6 +32,10 @@ const NAV: Array<{ href?: string; label?: string; divider?: true }> = [
   // shouldn't be there?". Same gate (canReview), so it appears in the reviewer
   // list below too.
   { href: "/checks", label: "Checks" },
+  // Change requests: "this print output is wrong", worked into a layout draft
+  // an admin approves. Reviewers file their own, so it is in the reviewer list
+  // below too. Behind CHANGE_REQUESTS_ENABLED.
+  { href: "/requests", label: "Requests", flag: "changeRequests" },
   { href: "/combos", label: "New combos" },
   { href: "/jobs", label: "Jobs" },
   { href: "/automation", label: "Automation" },
@@ -46,6 +54,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const isAdmin = role === "ADMIN";
   // Kill switch for the test-phase review machinery (My tasks + badge).
   const followThrough = reviewFollowThroughEnabled();
+  const flags = { changeRequests: changeRequestsEnabled() };
+  const nav = NAV.filter((item) => !item.flag || flags[item.flag]);
 
   return (
     // The guard provider lives at the layout so pages can intercept exits
@@ -84,7 +94,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             )}
             {isAdmin ? (
               <>
-                {NAV.map((item, i) =>
+                {nav.map((item, i) =>
                   item.divider ? (
                     <div key={`div-${i}`} className="my-2 border-t border-zinc-100" />
                   ) : (
@@ -135,6 +145,17 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                 >
                   Checks
                 </Link>
+                {/* Their own change requests ("this output is wrong") — a reviewer
+                    files and follows them; only an admin approves a change. The
+                    pages gate on canReview. Behind CHANGE_REQUESTS_ENABLED. */}
+                {flags.changeRequests && (
+                  <Link
+                    href="/requests"
+                    className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+                  >
+                    Requests
+                  </Link>
+                )}
                 {/* The bundle's front matter — the all-clients cover block and
                     each client × business area's General information. Reviewers
                     own this prose, so they get the one Settings page that holds
