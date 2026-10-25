@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
+import { InlineScript } from "@/components/inline-script";
+import { themeScript } from "@/lib/theme";
 import "./globals.css";
 
 // analyticsOS (page views, clicks, scrolls, forms, errors, Web Vitals). Unset
@@ -40,9 +42,15 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      data-theme="light"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      <head>
+        {/* The saved theme, applied before first paint (src/lib/theme.ts). */}
+        <InlineScript html={themeScript} />
+      </head>
+      <body className="bg-bg text-ink min-h-full flex flex-col text-[14px] leading-normal">
         {children}
         {/* next/script, never a plain <script>: React doesn't run a script tag
             it adds during a client-side navigation. The stub queues aos()

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { SIGN_IN_AGAIN } from "@/lib/auth-paths";
@@ -6,53 +5,14 @@ import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { devDataLoaderEnabled } from "@/lib/dev-data/flags";
 import { NavigationGuardProvider } from "@/components/navigation-guard";
-import { SignOutButton } from "@/components/sign-out-button";
-import { MyTasksLink } from "@/components/sidebar/my-tasks-link";
 import { NotificationBell } from "@/components/sidebar/notification-bell";
-import { SettingsNav } from "@/components/sidebar/settings-nav";
 import { PresencePing } from "@/components/presence-ping";
 import { AnalyticsIdentify } from "@/components/analytics-identify";
+import { AppShell } from "@/components/shell/app-shell";
+import { buildNav, settingsLinks } from "@/components/shell/nav";
 
-// Primary, high-traffic destinations only. Config / admin surfaces
-// (Monday, catalogues, reference data) live under the Settings dropdown
-// rendered after this list — see SettingsNav.
-//
-// ADMIN-only: REVIEWERs are scoped to My tasks, the styles pages and the
-// cover-page editor (the sidebar hides the rest, and every admin-only page also
-// enforces it server-side via requireAdminPage — hiding a link is not access
-// control; /settings/cover-page gates on canReview instead).
-//
-// An entry with `flag` only shows while that feature flag is on — a flagged-off
-// feature has no nav entry at all (its pages 404 too).
-const NAV: Array<{ href?: string; label?: string; divider?: true; flag?: "changeRequests" | "devData" }> = [
-  { href: "/styles", label: "Styles" },
-  // Delivery is keyed on the PURCHASE ORDER, not the style — the only view in
-  // which a style with nothing uploaded is visible. It gates on canReview, so
-  // it also appears in the reviewer list below.
-  { href: "/delivery", label: "Delivery" },
-  // Checks is the mirror of Delivery: Delivery asks "did everything we owe the
-  // supplier arrive?", Checks asks "is anything in that folder wrong or
-  // shouldn't be there?". Same gate (canReview), so it appears in the reviewer
-  // list below too.
-  { href: "/checks", label: "Checks" },
-  // Change requests: "this print output is wrong", worked into a layout draft
-  // an admin approves. Admin-only (not in the reviewer list below). Behind
-  // CHANGE_REQUESTS_ENABLED.
-  { href: "/requests", label: "Requests", flag: "changeRequests" },
-  { href: "/combos", label: "New combos" },
-  { href: "/jobs", label: "Jobs" },
-  { href: "/automation", label: "Automation" },
-  { href: "/admin", label: "Admin" },
-  // Dev data: load production POs into a development environment's own
-  // database. Only where DEV_DATA_LOADER=true — production never shows it.
-  { href: "/dev-data", label: "Dev data", flag: "devData" },
-  { divider: true },
-  { href: "/prod-specs", label: "Prod specs" },
-  { href: "/output-builder", label: "Output builder" },
-  { href: "/po-eans", label: "PO barcodes" },
-  { href: "/customers", label: "Customers" },
-  { href: "/suppliers", label: "Suppliers" },
-];
+// The signed-in frame: sidebar, top bar, and the page. What the sidebar shows
+// per role and feature flag lives in components/shell/nav.ts.
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const { session, role } = await getSessionWithRole();
@@ -60,129 +20,28 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const isAdmin = role === "ADMIN";
   // Kill switch for the test-phase review machinery (My tasks + badge).
   const followThrough = reviewFollowThroughEnabled();
-  const flags = { changeRequests: changeRequestsEnabled(), devData: devDataLoaderEnabled() };
-  const nav = NAV.filter((item) => !item.flag || flags[item.flag]);
+  const groups = buildNav(isAdmin, {
+    followThrough,
+    changeRequests: changeRequestsEnabled(),
+    devData: devDataLoaderEnabled(),
+  });
 
   return (
     // The guard provider lives at the layout so pages can intercept exits
-    // through links they don't own (this sidebar). See navigation-guard.tsx.
+    // through links they don't own (the sidebar). See navigation-guard.tsx.
     <NavigationGuardProvider>
       <PresencePing />
       <AnalyticsIdentify userId={session.user.id} role={role} />
-      <div className="flex min-h-screen bg-zinc-50">
-        <aside data-section="Sidebar" className="w-56 border-r border-zinc-200 bg-white px-4 py-6">
-          <div className="flex items-center justify-between px-2">
-            <Link
-              href={isAdmin || !followThrough ? "/styles" : "/dashboard"}
-              className="text-lg font-semibold tracking-tight"
-            >
-              Prod Spec
-            </Link>
-            {/* The bell is Monday-import status — an admin surface. */}
-            {isAdmin && <NotificationBell />}
-          </div>
-          <nav className="mt-8 flex flex-col gap-1">
-            {/* Badge-carrying client link — kept out of NAV so the static
-                entries stay a plain server-rendered map. */}
-            {followThrough && (
-              <>
-                <MyTasksLink />
-                {/* The review queue — every style awaiting review, grouped per
-                    style. Sits with My tasks so reviewers reach it without the
-                    admin-only nav below. */}
-                <Link
-                  href="/reviews/dashboard"
-                  className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
-                >
-                  Reviews
-                </Link>
-                <div className="my-2 border-t border-zinc-100" />
-              </>
-            )}
-            {isAdmin ? (
-              <>
-                {nav.map((item, i) =>
-                  item.divider ? (
-                    <div key={`div-${i}`} className="my-2 border-t border-zinc-100" />
-                  ) : (
-                    <Link
-                      key={item.href}
-                      href={item.href!}
-                      className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
-                    >
-                      {item.label}
-                    </Link>
-                  ),
-                )}
-                <Link
-                  href="/users"
-                  className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
-                >
-                  Users
-                </Link>
-                <div className="my-2 border-t border-zinc-100" />
-                <SettingsNav changeRequestsEnabled={changeRequestsEnabled()} />
-              </>
-            ) : (
-              <>
-                <Link
-                  href="/styles"
-                  className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
-                >
-                  Styles
-                </Link>
-                {/* Delivery gates on canReview, not admin: "did the supplier
-                    actually get the files?" is a reviewer's question, and the
-                    page is read-only until they press Repair. */}
-                <Link
-                  href="/delivery"
-                  className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
-                >
-                  Delivery
-                </Link>
-                {/* Self-service folder audits — "is anything in the supplier's
-                    folder wrong?". A top-level reviewer destination rather than
-                    a Settings page on purpose: it is a question about an order
-                    being worked on, not configuration, and a check buried two
-                    clicks into an admin menu stops being run. Gates on
-                    canReview, and the page enforces it server-side. */}
-                <Link
-                  href="/checks"
-                  className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
-                >
-                  Checks
-                </Link>
-                {/* The bundle's front matter — the all-clients cover block and
-                    each client × business area's General information. Reviewers
-                    own this prose, so they get the one Settings page that holds
-                    it; the page itself gates on canReview. */}
-                <Link
-                  href="/settings/cover-page"
-                  className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
-                >
-                  Cover page
-                </Link>
-              </>
-            )}
-            {/* Reviewer guides — reference docs, available to everyone signed in
-                (not gated by the review-flow flag or the admin role). */}
-            <div className="my-2 border-t border-zinc-100" />
-            <Link
-              href="/guides"
-              className="rounded-md px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
-            >
-              Guides
-            </Link>
-          </nav>
-          <div className="mt-auto absolute bottom-6 left-4 right-4 w-48">
-            <div className="border-t border-zinc-200 pt-4 text-xs text-zinc-500">
-              <div data-private className="truncate">{session.user.email}</div>
-              <SignOutButton />
-            </div>
-          </div>
-        </aside>
-        <main className="flex-1">{children}</main>
-      </div>
+      <AppShell
+        groups={groups}
+        settings={isAdmin ? settingsLinks(changeRequestsEnabled()) : null}
+        homeHref={isAdmin || !followThrough ? "/styles" : "/dashboard"}
+        user={{ name: session.user.name || session.user.email, email: session.user.email }}
+        // The bell is Monday-import status — an admin surface.
+        bell={isAdmin ? <NotificationBell align="end" /> : null}
+      >
+        {children}
+      </AppShell>
     </NavigationGuardProvider>
   );
 }
