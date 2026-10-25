@@ -27,7 +27,9 @@ export function PageHeader({
 }) {
   return (
     <div data-section="Page header" className={`flex flex-wrap items-start justify-between gap-x-6 gap-y-3 ${className}`}>
-      <div className="min-w-0">
+      {/* Grows from 20rem, so a long description wraps under the title instead
+          of pushing the actions onto their own line. */}
+      <div className="min-w-0 flex-[1_1_20rem]">
         {back ? (
           <Link
             href={back.href}
@@ -43,7 +45,7 @@ export function PageHeader({
         {meta ? <div className="text-muted mt-0.5 text-[13px]">{meta}</div> : null}
         {children}
       </div>
-      {actions ? <div className="flex flex-wrap items-start gap-2">{actions}</div> : null}
+      {actions ? <div className="flex shrink-0 flex-wrap items-start gap-2">{actions}</div> : null}
     </div>
   );
 }

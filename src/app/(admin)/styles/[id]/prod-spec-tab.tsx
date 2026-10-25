@@ -172,7 +172,7 @@ export function ProdSpecTab({
             No runs yet for this style — Re-run to generate.
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-line bg-surface">
+          <div className="overflow-x-auto rounded-xl border border-line bg-surface">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-line text-left text-[11px] text-muted">

@@ -205,7 +205,7 @@ export function ProdSpecsTable({ rows }: { rows: ProdSpecRow[] }) {
         )}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-line bg-surface">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="w-full text-sm">
           <thead className="bg-subtle text-left text-xs text-muted">
             <tr>

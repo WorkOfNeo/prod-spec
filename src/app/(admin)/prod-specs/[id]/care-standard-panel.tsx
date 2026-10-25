@@ -155,7 +155,7 @@ export function CareStandardPanel({
       </div>
 
       {/* 2 — the standard lines + live verdicts */}
-      <div className="overflow-hidden rounded-md border border-line">
+      <div className="overflow-x-auto rounded-md border border-line">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-line bg-subtle text-left">

@@ -508,7 +508,7 @@ export function StylesTable({
         );
       case "po":
         return (
-          <td key={key} className="px-3 py-2 tabular-nums text-muted">
+          <td key={key} className="px-3 py-2 whitespace-nowrap tabular-nums text-muted">
             {s.poNumber ?? "—"}
           </td>
         );

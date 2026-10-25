@@ -24,37 +24,37 @@ import type {
 
 // Pill tone → Tailwind classes (matches EAN_STATUS_META palette in the app).
 const PILL_TONE: Record<ReadinessTone, string> = {
-  green: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  amber: "border-amber-200 bg-amber-50 text-amber-800",
-  red: "border-red-200 bg-red-50 text-red-700",
-  sky: "border-sky-200 bg-sky-50 text-sky-800",
-  zinc: "border-zinc-200 bg-zinc-100 text-zinc-600",
+  green: "border-transparent bg-good-soft text-good",
+  amber: "border-transparent bg-warn-soft text-warn",
+  red: "border-transparent bg-bad-soft text-bad",
+  sky: "border-transparent bg-accent-soft text-accent-text",
+  zinc: "border-transparent bg-subtle text-muted",
 };
 
 const DOT_TONE: Record<ReadinessTone, string> = {
-  green: "bg-emerald-500",
-  amber: "bg-amber-500",
-  red: "bg-red-500",
-  sky: "bg-sky-500",
-  zinc: "bg-zinc-400",
+  green: "bg-good",
+  amber: "bg-warn",
+  red: "bg-bad",
+  sky: "bg-accent",
+  zinc: "bg-faint",
 };
 
 // Progress-bar fill tone.
 const BAR_TONE: Record<ReadinessTone, string> = {
-  green: "bg-emerald-500",
-  amber: "bg-amber-500",
-  red: "bg-red-500",
-  sky: "bg-sky-500",
-  zinc: "bg-zinc-400",
+  green: "bg-good",
+  amber: "bg-warn",
+  red: "bg-bad",
+  sky: "bg-accent",
+  zinc: "bg-faint",
 };
 
 // Step number badge by status (the small numbered circle in the ladder).
 const NUM_STATUS: Record<StepStatus, string> = {
-  ok: "bg-emerald-100 text-emerald-800",
-  waiting: "bg-amber-100 text-amber-800",
-  blocked: "bg-red-100 text-red-800",
-  running: "bg-sky-100 text-sky-800",
-  idle: "bg-zinc-200 text-zinc-500",
+  ok: "bg-good-soft text-good",
+  waiting: "bg-warn-soft text-warn",
+  blocked: "bg-bad-soft text-bad",
+  running: "bg-accent-soft text-accent-text",
+  idle: "bg-subtle text-muted",
 };
 
 // The glyph inside the step badge.
@@ -81,7 +81,7 @@ export function ReadinessPill({
 }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${PILL_TONE[notice.tone]}    ${className}`}
+      className={`inline-flex h-5 items-center gap-1.5 rounded-full border px-2 text-[11px] font-medium whitespace-nowrap ${PILL_TONE[notice.tone]} ${className}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${DOT_TONE[notice.tone]}`} aria-hidden="true" />
       {notice.headline}
@@ -92,10 +92,10 @@ export function ReadinessPill({
 function StepAction({ action, hrefs }: { action: ReadinessAction; hrefs?: ReadinessHrefs }) {
   const base =
     action.kind === "primary"
-      ? "bg-zinc-900 text-white hover:bg-zinc-800 border border-ink"
+      ? "bg-primary text-primary-ink hover:opacity-90 border border-transparent"
       : action.kind === "link"
-        ? "text-sky-700 hover:underline"
-        : "border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50";
+        ? "text-accent-text hover:underline"
+        : "border border-line bg-surface text-ink hover:bg-subtle";
   const padded = action.kind === "link" ? "" : "px-2.5 py-1";
   const cls = `inline-flex items-center gap-1 rounded-md text-[11px] font-medium ${padded} ${base}`;
 

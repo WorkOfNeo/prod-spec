@@ -4024,7 +4024,7 @@ export function LayoutEditor({
               added as an output on that style&apos;s Prod Spec.
             </div>
           ) : (
-            <div className="mt-4 overflow-hidden rounded-lg border border-line">
+            <div className="mt-4 overflow-x-auto rounded-lg border border-line">
               <table className="w-full text-sm">
                 <thead className="bg-subtle text-left text-[11px] text-faint">
                   <tr>
