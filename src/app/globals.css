@@ -1,26 +1,281 @@
 @import "tailwindcss";
+@import "./theme-palette.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@custom-variant mono (&:where([data-theme="mono"], [data-theme="mono"] *));
+
+/* ---------- Theme tokens ----------
+   The look follows analyticsOS: white surfaces set apart by 1px lines, one blue
+   accent, Geist, tabular figures. Three themes switched with data-theme on <html>
+   (set before first paint from the ps-theme cookie, see src/lib/theme.ts).
+   New UI uses these tokens (bg-surface, text-muted, border-line …). Pages that
+   still use Tailwind's palette directly follow the theme through
+   theme-palette.css. */
+
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --ink: #18181b;
+  --muted: #5f5f68;
+  --faint: #6c6c75;
+  --line: #e4e4e7;
+  --grid: #f0f0f2;
+  --subtle: #f4f4f5;
+  --canvas: #f7f7f8;
+  --accent: #2e5be6;
+  --accent-soft: #e9eefd;
+  --accent-text: #2346b8;
+  --accent-ink: #ffffff;
+  --primary: #18181b;
+  --primary-ink: #ffffff;
+  --sidebar: #fafafa;
+  --active: #ededf0;
+  --active-ink: #18181b;
+  --seg: #f0f0f2;
+  --seg-on: #ffffff;
+  --seg-on-ink: #18181b;
+  --seg-line: transparent;
+  --good: #1e7a4c;
+  --good-soft: #e6f4ec;
+  --bad: #b42318;
+  --bad-soft: #fdecea;
+  --warn: #854d0e;
+  --warn-soft: #fef9c3;
+  --shadow-pop: 0 1px 2px rgb(22 24 29 / 0.12);
+  --shadow-lift: 0 8px 24px rgb(22 24 29 / 0.12);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1115;
+  --surface: #171a20;
+  --ink: #ecedef;
+  --muted: #a3a8b3;
+  --faint: #8c92a0;
+  --line: #2a2e37;
+  --grid: #232730;
+  --subtle: #1e222a;
+  --canvas: #121419;
+  --accent: #6e8ff5;
+  --accent-soft: #1e2a4d;
+  --accent-text: #9db3f5;
+  --accent-ink: #0f1115;
+  --primary: #ecedef;
+  --primary-ink: #0f1115;
+  --sidebar: #13161b;
+  --active: #232730;
+  --active-ink: #ecedef;
+  --seg: #1e222a;
+  --seg-on: #2f343e;
+  --seg-on-ink: #ecedef;
+  --seg-line: transparent;
+  --good: #4cc38a;
+  --good-soft: #16301f;
+  --bad: #f07067;
+  --bad-soft: #3a1a18;
+  --warn: #f2c14e;
+  --warn-soft: #332a12;
+  --shadow-pop: none;
+  --shadow-lift: 0 8px 24px rgb(0 0 0 / 0.45);
+}
+
+/* Black & white never relies on colour alone: states carry an icon and a word. */
+[data-theme="mono"] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --ink: #000000;
+  --muted: #3d3d3d;
+  --faint: #555555;
+  --line: #000000;
+  --grid: #e6e6e6;
+  --subtle: #f0f0f0;
+  --canvas: #ffffff;
+  --accent: #000000;
+  --accent-soft: #ebebeb;
+  --accent-text: #000000;
+  --accent-ink: #ffffff;
+  --primary: #000000;
+  --primary-ink: #ffffff;
+  --sidebar: #ffffff;
+  --active: #000000;
+  --active-ink: #ffffff;
+  --seg: #ffffff;
+  --seg-on: #000000;
+  --seg-on-ink: #ffffff;
+  --seg-line: #000000;
+  --good: #000000;
+  --good-soft: #ffffff;
+  --bad: #000000;
+  --bad-soft: #ffffff;
+  --warn: #000000;
+  --warn-soft: #ffffff;
+  --shadow-pop: none;
+  --shadow-lift: 0 0 0 2px #000000;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-grid: var(--grid);
+  --color-subtle: var(--subtle);
+  --color-canvas: var(--canvas);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-text: var(--accent-text);
+  --color-accent-ink: var(--accent-ink);
+  --color-primary: var(--primary);
+  --color-primary-ink: var(--primary-ink);
+  --color-sidebar: var(--sidebar);
+  --color-active: var(--active);
+  --color-active-ink: var(--active-ink);
+  --color-seg: var(--seg);
+  --color-seg-on: var(--seg-on);
+  --color-seg-on-ink: var(--seg-on-ink);
+  --color-seg-line: var(--seg-line);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --shadow-pop: var(--shadow-pop);
+  --shadow-lift: var(--shadow-lift);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ---------- Motion tokens ---------- */
+
+:root {
+  --duration-quick: 150ms;
+  --duration-enter: 210ms;
+  --duration-move: 400ms;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--ink);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* One focus ring for everything the keyboard reaches; low specificity so a
+   component can draw its own. */
+:where(a, button, input, select, textarea, summary, [tabindex], [contenteditable]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- Arriving ---------- */
+
+/* Content that replaces a loading state fades in and lifts the last few pixels. */
+.reveal {
+  animation:
+    var(--duration-enter) ease-out both ps-fade,
+    var(--duration-move) var(--ease-out) both ps-lift;
+}
+/* A stagger's children arrive one after another, 40 ms apart, the ninth and later together. */
+.stagger > * {
+  animation:
+    var(--duration-enter) ease-out both ps-fade,
+    var(--duration-move) var(--ease-out) both ps-lift;
+  animation-delay: calc(var(--i, 8) * 40ms);
+}
+.stagger > :nth-child(1) { --i: 0; }
+.stagger > :nth-child(2) { --i: 1; }
+.stagger > :nth-child(3) { --i: 2; }
+.stagger > :nth-child(4) { --i: 3; }
+.stagger > :nth-child(5) { --i: 4; }
+.stagger > :nth-child(6) { --i: 5; }
+.stagger > :nth-child(7) { --i: 6; }
+.stagger > :nth-child(8) { --i: 7; }
+
+@keyframes ps-fade {
+  from { opacity: 0; }
+}
+@keyframes ps-lift {
+  from { translate: 0 8px; }
+}
+
+/* A loading bone: the shape of what is coming, breathing slowly. */
+.skeleton {
+  background: var(--subtle);
+  border-radius: 6px;
+  animation: ps-breathe 1.6s ease-in-out infinite;
+}
+@keyframes ps-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* ---------- Popovers (components/ui/popover.tsx) ----------
+   A panel on the top layer, under its button: the browser's centred popover box
+   is undone, anchor positioning puts it in place (popover.tsx does where a
+   browser has none). It grows in from the button. */
+.popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  min-width: 12rem;
+  width: max-content;
+  max-width: min(22rem, calc(100vw - 2rem));
+  max-height: min(28rem, calc(100dvh - 2rem));
+  overflow-y: auto;
+  transform-origin: top left;
+  opacity: 0;
+  scale: 0.96;
+  transition:
+    opacity var(--duration-quick) ease-in,
+    scale var(--duration-quick) ease-in,
+    overlay var(--duration-quick) allow-discrete,
+    display var(--duration-quick) allow-discrete;
+}
+.popover:popover-open {
+  opacity: 1;
+  scale: 1;
+  transition-duration: var(--duration-enter);
+  transition-timing-function: var(--ease-out);
+}
+@starting-style {
+  .popover:popover-open {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+@supports (anchor-name: --a) {
+  .popover {
+    top: anchor(bottom);
+    left: anchor(left);
+    min-width: anchor-size(width);
+    margin-top: 6px;
+    position-try-fallbacks: flip-block;
+  }
+  .popover[data-align="end"] {
+    left: auto;
+    right: anchor(right);
+    transform-origin: top right;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .stagger > *,
+  .skeleton {
+    animation: none;
+  }
+  .popover,
+  .popover:popover-open {
+    transition: none;
+  }
 }

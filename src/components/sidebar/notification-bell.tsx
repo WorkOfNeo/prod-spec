@@ -64,7 +64,7 @@ type NotificationsBody = {
 
 const POLL_MS = 60_000;
 
-export function NotificationBell() {
+export function NotificationBell({ align = "side" }: { align?: "side" | "end" } = {}) {
   const [counts, setCounts] = useState<Counts | null>(null);
   const [open, setOpen] = useState(false);
   const [list, setList] = useState<NotificationsBody | null>(null);
@@ -138,7 +138,7 @@ export function NotificationBell() {
         onClick={toggleOpen}
         aria-label={ariaLabel}
         aria-expanded={open}
-        className="relative inline-flex h-8 w-8 items-center justify-center rounded-md text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+        className="relative inline-flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors duration-150 hover:bg-subtle hover:text-ink"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -165,7 +165,10 @@ export function NotificationBell() {
         <div
           role="dialog"
           aria-label="Notifications"
-          className="absolute left-full top-0 z-50 ml-2 w-[340px] overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-xl"
+          className={`absolute z-50 w-[340px] overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-xl ${
+            // "side": beside the button (it used to live in the sidebar); "end": under it, right-aligned (top bar).
+            align === "end" ? "right-0 top-full mt-2" : "left-full top-0 ml-2"
+          }`}
         >
           <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">

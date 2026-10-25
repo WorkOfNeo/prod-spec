@@ -5,7 +5,7 @@
 // sign-in lands there. A no-op when the script isn't loaded (no
 // NEXT_PUBLIC_ANALYTICS_KEY). Renders nothing.
 //
-// Sign-out calls resetUser() — see SignOutButton. What gets sent, and the
+// Sign-out calls resetUser() — see the user menu (components/shell/user-menu.tsx). What gets sent, and the
 // custom events, live in @/lib/analytics.
 
 import { useEffect } from "react";
