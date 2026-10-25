@@ -7,6 +7,7 @@
 // run survives navigating away and back. Rendered only for ADMINs by the table.
 
 import { useEffect, useState } from "react";
+import { track } from "@/lib/analytics";
 
 type Batch = {
   id: string;
@@ -107,7 +108,14 @@ export function BulkRunOutputs({
     );
   }
 
-  async function start(input: { url: string; confirmMsg: string; label: string; nothingMsg: (skipped: number) => string }) {
+  async function start(input: {
+    url: string;
+    // For the bulk_run_started analytics event (label carries the filter text).
+    mode: "generate" | "regenerate";
+    confirmMsg: string;
+    label: string;
+    nothingMsg: (skipped: number) => string;
+  }) {
     if (styleIds.length === 0 || submitting || active) return;
     if (!window.confirm(input.confirmMsg)) return;
     setSubmitting(true);
@@ -138,6 +146,7 @@ export function BulkRunOutputs({
         );
         return;
       }
+      track("bulk_run_started", { mode: input.mode, styles: data.enqueued ?? 0 });
       // Started, but not everything the operator selected: say which ones were
       // left parked and why, rather than silently running a smaller set.
       if ((data.skippedBelowCutoff ?? 0) > 0) {
@@ -160,6 +169,7 @@ export function BulkRunOutputs({
     const n = styleIds.length;
     void start({
       url: "/api/admin/styles/bulk-rerun",
+      mode: "generate",
       label: filterLabel,
       confirmMsg:
         `Generate outputs for ${n} style${n === 1 ? "" : "s"} in the current view?\n\n` +
@@ -176,6 +186,7 @@ export function BulkRunOutputs({
     const n = styleIds.length;
     void start({
       url: "/api/admin/styles/bulk-regen",
+      mode: "regenerate",
       label: `Regenerate · ${filterLabel}`,
       confirmMsg:
         `Regenerate outputs for ${n} style${n === 1 ? "" : "s"} in the current view?\n\n` +

@@ -6,6 +6,7 @@ import { EmailSimulationDialog, type EmailOutcomeView } from "@/components/email
 import { RejectModal } from "./reject-modal";
 import { IgnoreConfirmModal } from "./ignore-confirm-modal";
 import { type PreparedImage } from "@/lib/images/downscale-image";
+import { track, trackSettled } from "@/lib/analytics";
 
 // Per-output decision UI on the review screen. Approve / Reject hit the
 // per-asset endpoints; approving the LAST pending output makes the server
@@ -73,6 +74,8 @@ export function AssetActions({
         setError(body.error ?? `HTTP ${res.status}`);
         return;
       }
+      track("output_approved", { scope: "single", count: 1 });
+      trackSettled(body.settled);
       if (body.publishError) {
         setError(`Approved, but publish failed: ${body.publishError}`);
         router.refresh();
@@ -114,6 +117,8 @@ export function AssetActions({
         setError(body.error ?? `HTTP ${res.status}`);
         return;
       }
+      track("output_rejected", { scope: "single", count: 1, images: attachments.length });
+      trackSettled(body.settled);
       setRejecting(false);
       if (body.settled === "REJECTED") {
         // Last open output rejected — the job settled. Same exit as the
@@ -145,6 +150,8 @@ export function AssetActions({
         setError(body.error ?? `HTTP ${res.status}`);
         return;
       }
+      track("output_ignored", { scope: "single", count: 1 });
+      trackSettled(body.settled);
       setIgnoring(false);
       if (body.publishError) {
         setError(`Ignored, but publish failed: ${body.publishError}`);
@@ -189,6 +196,7 @@ export function AssetActions({
         setError(body.error ?? `HTTP ${res.status}`);
         return;
       }
+      track("supplier_files_pushed", { scope: "output", count: 1 });
       setPushNote({
         text: `Pushed to ${body.folderName ?? "supplier folder"}`,
         url: body.targetFolderUrl ?? null,
