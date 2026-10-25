@@ -1,51 +1,51 @@
 import Link from "next/link";
+import { ExternalLink } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { Pill, type PillTone } from "@/components/ui/pill";
 import type { ApprovedStyleRow } from "@/lib/dashboard/approved-styles";
 
 // The done pile — /reviews "Approved" tab. Read-only list, recent-first, with
-// a delivery chip per style. Success = "in supplier folder" (green); the chip
+// a delivery status per style. Success = "in the supplier's folder", which
 // links straight to the folder. The digest "sent" step isn't surfaced.
 
-const DELIVERY_CHIP: Record<ApprovedStyleRow["delivery"], { label: string; cls: string }> = {
-  uploaded: { label: "in supplier folder", cls: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-  queued: { label: "delivery queued", cls: "border-amber-200 bg-amber-50 text-amber-700" },
-  none: { label: "no delivery", cls: "border-zinc-200 bg-zinc-50 text-zinc-400" },
+const DELIVERY: Record<ApprovedStyleRow["delivery"], { label: string; tone: PillTone }> = {
+  uploaded: { label: "In the supplier's folder", tone: "good" },
+  queued: { label: "Delivery queued", tone: "warn" },
+  none: { label: "No delivery", tone: "neutral" },
 };
 
 export function ApprovedList({ styles, total }: { styles: ApprovedStyleRow[]; total: number }) {
   return (
-    <div className="mt-3">
+    <div>
       {total > styles.length ? (
-        <p className="mb-2 text-xs text-zinc-400">
+        <p className="text-muted mb-2 text-[12px]">
           Showing the {styles.length} most recent of {total.toLocaleString()} approved styles.
         </p>
       ) : null}
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
-            <tr>
-              <th className="px-4 py-2">Style</th>
-              <th className="px-4 py-2">Customer / BA</th>
-              <th className="px-4 py-2">Delivery</th>
-              <th className="px-4 py-2">Approved</th>
+      <div className="border-line bg-surface overflow-x-auto rounded-xl border">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="border-line text-muted border-b text-left text-[12px]">
+              <th className="px-4 py-2 font-medium">Style</th>
+              <th className="px-4 py-2 font-medium">Customer</th>
+              <th className="px-4 py-2 font-medium">Delivery</th>
+              <th className="px-4 py-2 font-medium">Approved</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-line divide-y">
             {styles.map((s) => {
-              const chip = DELIVERY_CHIP[s.delivery];
+              const d = DELIVERY[s.delivery];
               return (
-                <tr key={s.styleId} className="border-t border-zinc-100">
+                <tr key={s.styleId} className="hover:bg-subtle transition-colors duration-150">
                   <td className="px-4 py-2">
-                    <Link href={`/styles/${s.styleId}`} className="font-medium text-zinc-800 underline">
+                    <Link href={`/styles/${s.styleId}`} className="text-ink font-medium hover:underline">
                       {s.name}
                     </Link>
-                    {s.poNumber ? (
-                      <div className="font-mono text-[11px] text-zinc-400">{s.poNumber}</div>
-                    ) : null}
+                    {s.poNumber ? <div className="text-faint font-mono text-[11px]">{s.poNumber}</div> : null}
                   </td>
-                  <td className="px-4 py-2 text-zinc-600">
+                  <td className="text-muted px-4 py-2">
                     {s.customer}
-                    {s.businessArea ? <span className="text-zinc-400"> · {s.businessArea}</span> : null}
+                    {s.businessArea ? <span className="text-faint"> · {s.businessArea}</span> : null}
                   </td>
                   <td className="px-4 py-2">
                     {s.delivery === "uploaded" && s.folderUrl ? (
@@ -54,19 +54,20 @@ export function ApprovedList({ styles, total }: { styles: ApprovedStyleRow[]; to
                         target="_blank"
                         rel="noopener noreferrer"
                         title="Open the supplier's APPROVED LAYOUTS folder"
-                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium hover:brightness-95 ${chip.cls}`}
+                        className="inline-flex hover:opacity-80"
                       >
-                        {chip.label} ↗
+                        <Pill tone={d.tone} dot>
+                          {d.label}
+                          <ExternalLink size={11} aria-hidden="true" />
+                        </Pill>
                       </a>
                     ) : (
-                      <span
-                        className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-medium ${chip.cls}`}
-                      >
-                        {chip.label}
-                      </span>
+                      <Pill tone={d.tone} dot>
+                        {d.label}
+                      </Pill>
                     )}
                   </td>
-                  <td className="px-4 py-2 text-xs text-zinc-500">{formatDate(s.approvedAt)}</td>
+                  <td className="text-muted px-4 py-2 text-[12px] whitespace-nowrap">{formatDate(s.approvedAt)}</td>
                 </tr>
               );
             })}

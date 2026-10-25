@@ -1,13 +1,16 @@
 "use client";
 
 // The dashboard's notification feed — event-shaped, per-user rows
-// (UserNotification), distinct from the derived review sections above it.
+// (UserNotification), distinct from the derived review sections beside it.
 // Rows come pre-shaped from the server page; actions POST and refresh so
 // the server stays the single source of truth.
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { StatusDot, type PillTone } from "@/components/ui/pill";
 
 export type FeedRow = {
   id: string;
@@ -19,10 +22,10 @@ export type FeedRow = {
   unread: boolean;
 };
 
-const DOT: Record<FeedRow["type"], string> = {
-  REVIEW_READY: "bg-blue-500",
-  TICKET_FIXED: "bg-violet-500",
-  GENERIC: "bg-zinc-400",
+const TONE: Record<FeedRow["type"], PillTone> = {
+  REVIEW_READY: "accent",
+  TICKET_FIXED: "good",
+  GENERIC: "neutral",
 };
 
 export function NotificationsFeed({ rows }: { rows: FeedRow[] }) {
@@ -52,47 +55,39 @@ export function NotificationsFeed({ rows }: { rows: FeedRow[] }) {
   const unreadCount = rows.filter((r) => r.unread).length;
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-zinc-800">Notifications</h2>
-        {unreadCount > 0 && (
-          <button
-            type="button"
-            onClick={readAll}
-            disabled={busy !== null}
-            className="text-xs font-medium text-zinc-500 hover:text-zinc-900 hover:underline disabled:opacity-50"
-          >
+    <section data-section="Notifications" className="border-line bg-surface overflow-hidden rounded-xl border">
+      <div className="border-line flex items-center justify-between gap-2 border-b px-4 py-3">
+        <div>
+          <h2 className="text-ink text-[14px] font-semibold">Notifications</h2>
+          <p className="text-muted text-[12px]">What happened to your work</p>
+        </div>
+        {unreadCount > 0 ? (
+          <Button variant="ghost" size="sm" onClick={readAll} disabled={busy !== null}>
             Mark all read
-          </button>
-        )}
+          </Button>
+        ) : null}
       </div>
       {rows.length === 0 ? (
-        <p className="mt-2 text-xs text-zinc-500">
-          Nothing here — review-ready and fixed-rejection notices land in this feed.
+        <p className="text-muted px-4 py-4 text-[12px]">
+          Nothing here. Reviews ready for you and fixed comments land in this feed.
         </p>
       ) : (
-        <ul className="mt-2 divide-y divide-zinc-100">
+        <ul className="divide-line divide-y">
           {rows.map((n) => (
-            <li key={n.id} className="flex items-start gap-3 py-2.5">
-              <span
-                className={`mt-1.5 inline-block h-2 w-2 flex-shrink-0 rounded-full ${DOT[n.type]} ${n.unread ? "" : "opacity-30"}`}
-              />
+            <li key={n.id} className="flex items-start gap-3 px-4 py-2.5">
+              <StatusDot tone={TONE[n.type]} className={`mt-[7px] ${n.unread ? "" : "opacity-30"}`} />
               <div className="min-w-0 flex-1">
                 {n.href ? (
                   <Link
                     href={n.href}
-                    className={`block text-sm hover:underline ${n.unread ? "font-semibold text-zinc-900" : "text-zinc-600"}`}
+                    className={`block text-[13px] hover:underline ${n.unread ? "text-ink font-medium" : "text-muted"}`}
                   >
                     {n.title}
                   </Link>
                 ) : (
-                  <span
-                    className={`block text-sm ${n.unread ? "font-semibold text-zinc-900" : "text-zinc-600"}`}
-                  >
-                    {n.title}
-                  </span>
+                  <span className={`block text-[13px] ${n.unread ? "text-ink font-medium" : "text-muted"}`}>{n.title}</span>
                 )}
-                <span className="mt-0.5 block text-xs text-zinc-500">
+                <span className="text-muted mt-0.5 block text-[12px]">
                   {n.body ? <>{n.body} · </> : null}
                   {n.createdAgo}
                 </span>
@@ -103,14 +98,14 @@ export function NotificationsFeed({ rows }: { rows: FeedRow[] }) {
                 disabled={busy !== null}
                 aria-label="Dismiss notification"
                 title="Dismiss"
-                className="rounded-md px-1.5 text-sm leading-6 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-50"
+                className="text-faint hover:bg-subtle hover:text-ink inline-flex size-6 shrink-0 items-center justify-center rounded-md disabled:opacity-50"
               >
-                ×
+                <X size={13} aria-hidden="true" />
               </button>
             </li>
           ))}
         </ul>
       )}
-    </div>
+    </section>
   );
 }

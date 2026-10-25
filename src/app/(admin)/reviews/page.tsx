@@ -6,10 +6,14 @@ import { getReviewBoard } from "@/lib/dashboard/review-tasks";
 import { getNeedsInputStyles } from "@/lib/dashboard/needs-input";
 import { getApprovedStyles } from "@/lib/dashboard/approved-styles";
 import { StyleTaskList } from "@/components/style-task-list";
-import { ReviewTabs } from "./review-tabs";
 import { ReviewGroupList } from "./review-group-list";
 import { NeedsInputList } from "./needs-input-list";
 import { ApprovedList } from "./approved-list";
+import { loadStyleCommentCounts } from "@/lib/dashboard/style-comment-counts";
+import { PageHeader } from "@/components/ui/page-header";
+import { TabLinks, type TabLink } from "@/components/ui/tabs";
+import { EmptyState } from "@/components/ui/empty-state";
+import { buttonClass } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
@@ -64,83 +68,88 @@ export default async function ReviewsPage({
   // The readiness notice defaults to the REVIEWER lens; admins get the ADMIN
   // ladder (they own PO/scrape/SharePoint steps).
   const readinessRole = role === "ADMIN" ? "ADMIN" : "REVIEWER";
+  // Open comment threads per style, on the tabs that list styles mid-review.
+  const comments = await loadStyleCommentCounts(
+    tab === "in-progress"
+      ? inProgress.map((t) => t.styleId)
+      : tab === "queue"
+        ? groups.flatMap((g) => g.tasks.map((t) => t.styleId))
+        : [],
+  );
+
+  const tabs: TabLink[] = [
+    { key: "in-progress", label: "In progress", href: "/reviews", count: inProgressCount },
+    { key: "queue", label: "Review", href: "/reviews?tab=queue", count: queueCount },
+    { key: "needs-input", label: "Needs input", href: "/reviews?tab=needs-input", count: needsInput.length },
+    // The done pile — progress you can SEE. Last: it's the outcome, not a worklist.
+    { key: "approved", label: "Approved", href: "/reviews?tab=approved", count: approved.total },
+  ];
 
   return (
-    <div className="px-8 py-8">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">Reviews</h1>
-        {/* The numbers behind this board: throughput, step timings, first-pass
-            and turnaround rates, filterable by client / supplier / reviewer.
-            Reviewer-reachable, same as this page. */}
-        <Link
-          href="/reviews/dashboard"
-          className="rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-        >
-          Review dashboard
-        </Link>
-      </div>
-      <p className="text-sm text-zinc-500">
-        {tab === "queue"
-          ? "Styles awaiting their first review, grouped by prod spec — customer and business area. Open a group to review its styles."
-          : tab === "needs-input"
-            ? "Styles that can't generate yet — missing PO, barcodes or Monday fields. Fix the data and they generate and move to Review automatically. Nothing is rendered here."
-            : tab === "approved"
-              ? "Fully approved styles, newest first — and how far delivery got: queued, in the supplier's folder, or sent in a digest."
-              : "Reviews already started — fix, regenerate and approve each style here. Only the latest output is shown."}
-      </p>
-
-      <ReviewTabs
-        active={tab}
-        queueCount={queueCount}
-        inProgressCount={inProgressCount}
-        needsInputCount={needsInput.length}
-        approvedCount={approved.total}
+    <div className="px-6 py-5">
+      <PageHeader
+        title="Reviews"
+        meta={
+          tab === "queue"
+            ? "Styles waiting for their first review, grouped by prod spec: customer and business area."
+            : tab === "needs-input"
+              ? "Styles that can't generate yet: missing PO, barcodes or Monday fields. Once the data is there they generate and move to Review on their own."
+              : tab === "approved"
+                ? "Fully approved styles, newest first, and how far delivery got."
+                : "Reviews already started. Comments go to the rejection log; fixed outputs come back here."
+        }
+        actions={
+          // The numbers behind this board: throughput, step timings, first-pass
+          // and turnaround rates. Reviewer-reachable, same as this page.
+          <Link href="/reviews/dashboard" className={buttonClass("secondary")}>
+            Review dashboard
+          </Link>
+        }
       />
 
-      {tab === "queue" ? (
-        groups.length === 0 ? (
-          <EmptyState
-            title="Nothing waiting for a first review."
-            body="When a job finishes rendering, its style appears here, grouped by prod spec."
-          />
-        ) : (
-          <ReviewGroupList groups={groups} />
-        )
-      ) : tab === "needs-input" ? (
-        needsInput.length === 0 ? (
-          <EmptyState
-            title="Nothing waiting on data."
-            body="Styles missing a PO, barcodes or Monday fields show here so you can fix them before they generate."
-          />
-        ) : (
-          <NeedsInputList styles={needsInput} role={readinessRole} />
-        )
-      ) : tab === "approved" ? (
-        approved.styles.length === 0 ? (
-          <EmptyState
-            title="Nothing fully approved yet."
-            body="Styles land here once every output is approved — with their delivery status toward the supplier."
-          />
-        ) : (
-          <ApprovedList styles={approved.styles} total={approved.total} />
-        )
-      ) : inProgress.length === 0 ? (
-        <EmptyState
-          title="No reviews in progress."
-          body="Start a review from the Review tab and the style moves here until it's approved."
-        />
-      ) : (
-        <StyleTaskList tasks={inProgress} activityPrefix="updated " startedContext />
-      )}
-    </div>
-  );
-}
+      <TabLinks items={tabs} active={tab} label="Reviews" className="mt-4" />
 
-function EmptyState({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="mt-3 rounded-lg border border-zinc-200 bg-white p-8 text-center">
-      <div className="text-sm font-semibold text-zinc-800">{title}</div>
-      <p className="mt-1 text-sm text-zinc-500">{body}</p>
+      <div className="mt-4">
+        {tab === "queue" ? (
+          groups.length === 0 ? (
+            <EmptyState
+              title="Nothing waiting for a first review."
+              body="When a job finishes rendering, its style appears here, grouped by prod spec."
+            />
+          ) : (
+            <ReviewGroupList groups={groups} comments={comments} />
+          )
+        ) : tab === "needs-input" ? (
+          needsInput.length === 0 ? (
+            <EmptyState
+              title="Nothing waiting on data."
+              body="Styles missing a PO, barcodes or Monday fields show here so they can be fixed before they generate."
+            />
+          ) : (
+            <NeedsInputList styles={needsInput} role={readinessRole} />
+          )
+        ) : tab === "approved" ? (
+          approved.styles.length === 0 ? (
+            <EmptyState
+              title="Nothing fully approved yet."
+              body="Styles land here once every output is approved, with their delivery status toward the supplier."
+            />
+          ) : (
+            <ApprovedList styles={approved.styles} total={approved.total} />
+          )
+        ) : inProgress.length === 0 ? (
+          <EmptyState
+            title="No reviews in progress."
+            body="Start a review from the Review tab and the style moves here until it's approved."
+          >
+            <Link href="/reviews?tab=queue" className={buttonClass("secondary", "sm")}>
+              Review queue
+            </Link>
+          </EmptyState>
+        ) : (
+          <StyleTaskList tasks={inProgress} activityPrefix="updated " startedContext comments={comments} />
+        )}
+      </div>
     </div>
   );
 }
