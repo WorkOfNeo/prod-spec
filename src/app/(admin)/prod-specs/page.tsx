@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/ui/page-header";
+import { buttonClass } from "@/components/ui/button";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/utils";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
@@ -57,36 +59,23 @@ export default async function ProdSpecsPage() {
   ]);
 
   return (
-    <div className="px-8 py-8">
-      <div className="mb-6 flex items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Prod specs</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            One per (Customer × Business area). Auto-create on Style ingest, click <strong>+ New</strong>{" "}
-            for a one-off, or use <strong>Suggestions</strong> to step through pairs the ghost data already
-            hints at. Tune outputs, suppliers, and the threshold from each row.
-          </p>
-        </div>
-        <div className="flex flex-shrink-0 gap-2">
-          <Link
-            href="/prod-specs/languages"
-            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-          >
-            Languages
-          </Link>
-          <Link
-            href="/prod-specs/suggestions"
-            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-          >
-            Suggestions
-          </Link>
-          <NewProdSpecButton
-            customers={customers}
-            businessAreas={businessAreas}
-            existingPairs={existingPairs}
-          />
-        </div>
-      </div>
+    <div className="px-6 py-5">
+      <PageHeader
+        title="Prod specs"
+        meta="One per customer and business area. Created on style ingest; New makes a one-off, Suggestions steps through pairs the ghost data hints at."
+        actions={
+          <>
+            <Link href="/prod-specs/languages" className={buttonClass("ghost")}>
+              Languages
+            </Link>
+            <Link href="/prod-specs/suggestions" className={buttonClass("secondary")}>
+              Suggestions
+            </Link>
+            <NewProdSpecButton customers={customers} businessAreas={businessAreas} existingPairs={existingPairs} />
+          </>
+        }
+        className="mb-5"
+      />
 
       <ProdSpecsTable
         rows={prodSpecs.map((ps) => {

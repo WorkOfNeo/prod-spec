@@ -42,7 +42,7 @@ export function CartonPrintsButton(props: CartonPrintsButtonProps) {
         disabled={!props.ready}
         onClick={() => setOpen(true)}
         title={props.ready ? "Customize this output for a manual print" : "Output not ready yet"}
-        className="flex-shrink-0 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex-shrink-0 rounded-md border border-transparent bg-warn-soft px-2.5 py-1 text-xs font-medium text-warn hover:bg-warn-soft disabled:cursor-not-allowed disabled:opacity-50"
       >
         Customize
       </button>
@@ -181,21 +181,21 @@ function CartonPrintsDialog({
       aria-modal="true"
     >
       <div
-        className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl"
+        className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="border-b border-zinc-200 px-5 py-3.5">
-          <h2 className="text-[15px] font-semibold text-zinc-900">Customize output</h2>
-          <p className="mt-0.5 text-xs text-zinc-500">{name}</p>
+        <div className="border-b border-line px-5 py-3.5">
+          <h2 className="text-[15px] font-semibold text-ink">Customize output</h2>
+          <p className="mt-0.5 text-xs text-muted">{name}</p>
         </div>
 
         <div className="space-y-4 overflow-y-auto px-5 py-4">
           {/* Capability picker — only when the layout supports BOTH. */}
           {bothEligible && (
             <div>
-              <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">Include</div>
+              <div className="text-[11px] font-medium text-faint">Include</div>
               <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1.5">
-                <label className="flex items-center gap-1.5 text-xs font-medium text-zinc-700">
+                <label className="flex items-center gap-1.5 text-xs font-medium text-ink">
                   <input
                     type="checkbox"
                     checked={useNumbering}
@@ -204,7 +204,7 @@ function CartonPrintsDialog({
                   />
                   Carton numbering (X of Y)
                 </label>
-                <label className="flex items-center gap-1.5 text-xs font-medium text-zinc-700">
+                <label className="flex items-center gap-1.5 text-xs font-medium text-ink">
                   <input
                     type="checkbox"
                     checked={useMulti}
@@ -219,8 +219,8 @@ function CartonPrintsDialog({
 
           {/* Carton numbering — X of Y. */}
           {numbering && (
-            <div className={bothEligible ? "border-t border-zinc-100 pt-3" : ""}>
-              <label className="text-xs font-medium text-zinc-700">How many cartons?</label>
+            <div className={bothEligible ? "border-t border-line pt-3" : ""}>
+              <label className="text-xs font-medium text-ink">How many cartons?</label>
               <div className="mt-1.5 flex items-center gap-3">
                 <input
                   type="number"
@@ -229,11 +229,11 @@ function CartonPrintsDialog({
                   value={total}
                   autoFocus
                   onChange={(e) => setTotal(Math.floor(Number(e.target.value) || 0))}
-                  className="w-24 rounded-lg border border-zinc-300 px-3 py-2 text-center text-lg font-semibold tabular-nums text-zinc-900 focus:border-zinc-400 focus:outline-none"
+                  className="w-24 rounded-lg border border-line px-3 py-2 text-center text-lg font-semibold tabular-nums text-ink focus:border-accent focus:outline-none"
                 />
-                <div className="text-xs text-zinc-500">
+                <div className="text-xs text-muted">
                   prints{" "}
-                  <span className="font-semibold text-zinc-700">
+                  <span className="font-semibold text-ink">
                     1/{countValid ? total : "…"} → {countValid ? total : "…"}/{countValid ? total : "…"}
                   </span>
                   <br />
@@ -241,7 +241,7 @@ function CartonPrintsDialog({
                 </div>
               </div>
               {!countValid ? (
-                <p className="mt-1 text-[11px] text-red-600">
+                <p className="mt-1 text-[11px] text-bad">
                   Enter a whole number between 1 and {CARTON_MAX}.
                 </p>
               ) : null}
@@ -250,29 +250,29 @@ function CartonPrintsDialog({
 
           {/* Multiple styles — other styles from the same PO. */}
           {multi && (
-            <div className={numbering || bothEligible ? "border-t border-zinc-100 pt-3" : ""}>
+            <div className={numbering || bothEligible ? "border-t border-line pt-3" : ""}>
               <div className="flex items-baseline justify-between">
-                <label className="text-xs font-medium text-zinc-700">
+                <label className="text-xs font-medium text-ink">
                   Other styles on the box{" "}
-                  <span className="font-normal text-zinc-400">(same PO)</span>
+                  <span className="font-normal text-faint">(same PO)</span>
                 </label>
                 {selectedIds.length > 0 && (
-                  <span className="text-[11px] tabular-nums text-zinc-500">
+                  <span className="text-[11px] tabular-nums text-muted">
                     {selectedIds.length + 1} styles
                   </span>
                 )}
               </div>
-              <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
+              <p className="mt-0.5 text-[11px] leading-relaxed text-faint">
                 Tick to fill the{" "}
-                <code className="rounded bg-zinc-100 px-1">{"{{style2}}"}</code>,{" "}
-                <code className="rounded bg-zinc-100 px-1">{"{{style3}}"}</code>… slots. Order = slot
+                <code className="rounded bg-subtle px-1">{"{{style2}}"}</code>,{" "}
+                <code className="rounded bg-subtle px-1">{"{{style3}}"}</code>… slots. Order = slot
                 order.
               </p>
               <div className="mt-2 max-h-44 space-y-1 overflow-y-auto">
                 {!siblingsLoaded ? (
-                  <p className="text-[11px] text-zinc-400">Loading…</p>
+                  <p className="text-[11px] text-faint">Loading…</p>
                 ) : siblings.length === 0 ? (
-                  <p className="text-[11px] text-zinc-400">No other styles on this PO.</p>
+                  <p className="text-[11px] text-faint">No other styles on this PO.</p>
                 ) : (
                   siblings.map((s) => {
                     const slot = selectedIds.indexOf(s.id);
@@ -284,30 +284,30 @@ function CartonPrintsDialog({
                         onClick={() => toggleSibling(s.id)}
                         className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition ${
                           checked
-                            ? "border-indigo-300 bg-indigo-50"
-                            : "border-zinc-200 bg-white hover:bg-zinc-50"
+                            ? "border-transparent bg-accent-soft"
+                            : "border-line bg-surface hover:bg-subtle"
                         }`}
                       >
                         <span
-                          className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border text-[9px] font-bold ${
+                          className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border text-[11px] font-bold ${
                             checked
-                              ? "border-indigo-500 bg-indigo-500 text-white"
-                              : "border-zinc-300 bg-white text-transparent"
+                              ? "border-accent bg-accent text-white"
+                              : "border-line bg-surface text-transparent"
                           }`}
                         >
                           ✓
                         </span>
                         <span className="min-w-0 flex-1 truncate">
-                          <span className="font-semibold text-zinc-800">
+                          <span className="font-semibold text-ink">
                             {s.styleNumber || s.styleName || s.id}
                           </span>
-                          {s.colourName ? <span className="text-zinc-500"> · {s.colourName}</span> : null}
+                          {s.colourName ? <span className="text-muted"> · {s.colourName}</span> : null}
                           {s.styleName && s.styleNumber ? (
-                            <span className="text-zinc-400"> · {s.styleName}</span>
+                            <span className="text-faint"> · {s.styleName}</span>
                           ) : null}
                         </span>
                         {checked && (
-                          <span className="flex-shrink-0 rounded bg-indigo-200 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-800">
+                          <span className="flex-shrink-0 rounded bg-indigo-200 px-1.5 py-0.5 text-[11px] font-bold text-accent-text">
                             {`{{style${slot + 2}}}`}
                           </span>
                         )}
@@ -319,8 +319,8 @@ function CartonPrintsDialog({
             </div>
           )}
 
-          <div className="rounded-lg border border-zinc-200 bg-zinc-50/60 p-3">
-            <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+          <div className="rounded-lg border border-line bg-zinc-50/60 p-3">
+            <div className="mb-1.5 text-[11px] font-medium text-faint">
               {numbering
                 ? `Live preview — carton ${previewNo} of ${Math.max(1, debouncedTotal)}`
                 : "Live preview"}
@@ -335,12 +335,12 @@ function CartonPrintsDialog({
             </div>
           </div>
 
-          <p className="text-[11px] leading-relaxed text-zinc-500">
+          <p className="text-[11px] leading-relaxed text-muted">
             {numbering ? (
               <>
                 One print-ready PDF, {countValid ? total : "N"} pages — each numbered with{" "}
-                <code className="rounded bg-zinc-100 px-1">{"{{cartonNo}}"}</code>/
-                <code className="rounded bg-zinc-100 px-1">{"{{cartonTotal}}"}</code>.{" "}
+                <code className="rounded bg-subtle px-1">{"{{cartonNo}}"}</code>/
+                <code className="rounded bg-subtle px-1">{"{{cartonTotal}}"}</code>.{" "}
               </>
             ) : multi ? (
               <>One print-ready page with the selected styles on the box. </>
@@ -351,16 +351,16 @@ function CartonPrintsDialog({
           </p>
 
           {error ? (
-            <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
+            <p className="rounded-md bg-bad-soft px-3 py-2 text-xs text-bad">{error}</p>
           ) : null}
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-zinc-200 bg-zinc-50 px-5 py-3">
+        <div className="flex items-center justify-end gap-2 border-t border-line bg-subtle px-5 py-3">
           <button
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             Cancel
           </button>
@@ -368,7 +368,7 @@ function CartonPrintsDialog({
             type="button"
             onClick={generate}
             disabled={!countValid || busy}
-            className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? "Generating…" : "Generate & download"}
           </button>

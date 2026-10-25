@@ -25,9 +25,9 @@ export function OutputThumbnail({
     return (
       <div
         title={failed ? "Preview unavailable" : "Not generated yet — no PDF to preview"}
-        className="flex h-16 w-14 flex-shrink-0 items-center justify-center rounded border border-dashed border-zinc-200 bg-zinc-50"
+        className="flex h-16 w-14 flex-shrink-0 items-center justify-center rounded border border-dashed border-line bg-subtle"
       >
-        <span className="text-[9px] font-medium uppercase tracking-wide text-zinc-300">pdf</span>
+        <span className="text-[11px] font-medium text-faint">pdf</span>
       </div>
     );
   }
@@ -56,9 +56,9 @@ export function OutputThumbnail({
         title={`${name}${generatedAt ? ` · generated ${generatedAt}` : ""} — click to open PDF`}
         onMouseEnter={onEnter}
         onMouseLeave={() => setZoom(null)}
-        className={`block h-16 w-14 flex-shrink-0 overflow-hidden rounded border bg-white p-0.5 transition ${
-          zoom ? "border-zinc-400 shadow-sm" : "border-zinc-200"
-        } ${loaded ? "" : "animate-pulse bg-zinc-100"}`}
+        className={`block h-16 w-14 flex-shrink-0 overflow-hidden rounded border bg-surface p-0.5 transition ${
+          zoom ? "border-zinc-400 shadow-sm" : "border-line"
+        }    ${loaded ? "" : "animate-pulse bg-subtle"}`}
       >
         {/* Plain <img>: the source is a dynamic, auth-gated API route — not a
             static asset next/image could optimise. */}
@@ -79,7 +79,7 @@ export function OutputThumbnail({
           className="pointer-events-none fixed z-50"
           style={{ left: zoom.x, top: zoom.y }}
         >
-          <div className="rounded-lg border border-zinc-300 bg-white p-2 shadow-2xl">
+          <div className="rounded-xl border border-line bg-surface p-2 shadow-2xl">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={thumbSrc}
@@ -87,9 +87,9 @@ export function OutputThumbnail({
               className="max-h-[420px] max-w-[560px] rounded object-contain"
             />
             <div className="mt-1.5 flex items-baseline justify-between gap-4 px-0.5">
-              <span className="truncate text-[11px] font-medium text-zinc-700">{name}</span>
+              <span className="truncate text-[11px] font-medium text-ink">{name}</span>
               {generatedAt && (
-                <span className="flex-shrink-0 text-[10px] text-zinc-400">
+                <span className="flex-shrink-0 text-[11px] text-faint">
                   generated {generatedAt}
                 </span>
               )}

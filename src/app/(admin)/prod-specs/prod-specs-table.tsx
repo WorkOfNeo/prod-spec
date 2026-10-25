@@ -167,16 +167,16 @@ export function ProdSpecsTable({ rows }: { rows: ProdSpecRow[] }) {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search by name, customer, or business area…"
-            className="w-full rounded-md border border-zinc-300 bg-white py-2 pl-9 pr-3 text-sm placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+            className="w-full rounded-md border border-line bg-surface py-2 pl-9 pr-3 text-sm placeholder:text-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
-        <span className="text-xs tabular-nums text-zinc-500">
+        <span className="text-xs tabular-nums text-muted">
           {filtered.length} of {rows.length}
         </span>
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-zinc-400">Filter by</span>
+        <span className="text-xs font-medium text-faint">Filter by</span>
         <FacetFilter
           label="Customer"
           options={customerOptions}
@@ -198,45 +198,45 @@ export function ProdSpecsTable({ rows }: { rows: ProdSpecRow[] }) {
           <button
             type="button"
             onClick={clearFilters}
-            className="ml-1 text-xs text-zinc-500 underline hover:text-zinc-700"
+            className="ml-1 text-xs text-muted underline hover:text-ink"
           >
             Clear
           </button>
         )}
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="overflow-hidden rounded-xl border border-line bg-surface">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="bg-subtle text-left text-xs text-muted">
             <tr>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Customer</th>
-              <th className="px-4 py-3">Business area</th>
+              <th className="px-3 py-2">Name</th>
+              <th className="px-3 py-2">Customer</th>
+              <th className="px-3 py-2">Business area</th>
               <th
-                className="px-4 py-3"
+                className="px-3 py-2"
                 title="Whether the General information A4 page has any content."
               >
                 General info
               </th>
-              <th className="px-4 py-3">Outputs</th>
-              <th className="px-4 py-3">Suppliers</th>
-              <th className="px-4 py-3">Styles</th>
+              <th className="px-3 py-2">Outputs</th>
+              <th className="px-3 py-2">Suppliers</th>
+              <th className="px-3 py-2">Styles</th>
               <th
-                className="px-4 py-3"
+                className="px-3 py-2"
                 title="Generation jobs tied to this prod spec (analytics)."
               >
                 Jobs
               </th>
-              <th className="px-4 py-3">Threshold</th>
-              <th className="px-4 py-3">Active</th>
-              <th className="px-4 py-3">Fully approved</th>
-              <th className="px-4 py-3">Updated</th>
+              <th className="px-3 py-2">Threshold</th>
+              <th className="px-3 py-2">Active</th>
+              <th className="px-3 py-2">Fully approved</th>
+              <th className="px-3 py-2">Updated</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={11} className="px-4 py-12 text-center text-zinc-500">
+                <td colSpan={11} className="px-4 py-12 text-center text-muted">
                   {rows.length === 0
                     ? "No prod specs yet. They auto-create when the first Style ingests with a known customer × business area pair."
                     : "No prod specs match the current search or filters."}
@@ -246,34 +246,34 @@ export function ProdSpecsTable({ rows }: { rows: ProdSpecRow[] }) {
               filtered.map((ps) => (
                 <tr
                   key={ps.id}
-                  className={`border-t border-zinc-100 hover:bg-zinc-50 ${
+                  className={`border-t border-line hover:bg-subtle ${
                     ps.active ? "" : "opacity-50"
                   }`}
                 >
-                  <td className="px-4 py-3 font-medium">
+                  <td className="px-3 py-2 font-medium">
                     <Link href={`/prod-specs/${ps.id}`} className="hover:underline">
                       {ps.name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-zinc-600">
+                  <td className="px-3 py-2 text-muted">
                     <span className="flex items-center gap-1.5">
                       {ps.customerName}
                       {ps.customerDeliversOwn && <SkipSupplierDeliveryBadge variant="chip" />}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-zinc-600">{ps.businessAreaName}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2 text-muted">{ps.businessAreaName}</td>
+                  <td className="px-3 py-2">
                     {ps.hasGeneralInfo ? (
-                      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                      <span className="inline-flex rounded-full bg-good-soft px-2 py-0.5 text-[11px] font-medium text-good">
                         Yes
                       </span>
                     ) : (
-                      <span className="text-zinc-400">—</span>
+                      <span className="text-faint">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2">
                     {ps.outputs.length === 0 ? (
-                      <span className="text-zinc-400">—</span>
+                      <span className="text-faint">—</span>
                     ) : (
                       <div className="flex flex-wrap gap-1">
                         {ps.outputs.map((o) => (
@@ -282,8 +282,8 @@ export function ProdSpecsTable({ rows }: { rows: ProdSpecRow[] }) {
                             title={o.enabled ? o.name : `${o.name} (disabled)`}
                             className={`inline-flex rounded-full px-2 py-0.5 text-[11px] ${
                               o.enabled
-                                ? "bg-zinc-100 text-zinc-700"
-                                : "bg-zinc-50 text-zinc-400 line-through"
+                                ? "bg-subtle text-ink"
+                                : "bg-subtle text-faint line-through"
                             }`}
                           >
                             {o.name}
@@ -292,27 +292,27 @@ export function ProdSpecsTable({ rows }: { rows: ProdSpecRow[] }) {
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-3 tabular-nums text-zinc-600">
+                  <td className="px-3 py-2 tabular-nums text-muted">
                     {ps.supplierCount}
                   </td>
-                  <td className="px-4 py-3 tabular-nums text-zinc-600">{ps.styleCount}</td>
-                  <td className="px-4 py-3 tabular-nums text-zinc-600">{ps.jobCount}</td>
-                  <td className="px-4 py-3 tabular-nums text-zinc-600">
+                  <td className="px-3 py-2 tabular-nums text-muted">{ps.styleCount}</td>
+                  <td className="px-3 py-2 tabular-nums text-muted">{ps.jobCount}</td>
+                  <td className="px-3 py-2 tabular-nums text-muted">
                     {ps.autoGenerateThresholdPct}%
                   </td>
-                  <td className="px-4 py-3 text-zinc-600">
+                  <td className="px-3 py-2 text-muted">
                     {ps.active ? "yes" : "no"}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2">
                     {ps.fullyApproved ? (
-                      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                      <span className="inline-flex rounded-full bg-good-soft px-2 py-0.5 text-[11px] font-medium text-good">
                         Approved
                       </span>
                     ) : (
-                      <span className="text-zinc-400">—</span>
+                      <span className="text-faint">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-xs text-zinc-500">{ps.updatedAt}</td>
+                  <td className="px-3 py-2 text-xs text-muted">{ps.updatedAt}</td>
                 </tr>
               ))
             )}
@@ -365,7 +365,7 @@ function SearchIcon() {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"
+      className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-faint"
       aria-hidden="true"
     >
       <circle cx="11" cy="11" r="8" />

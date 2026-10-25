@@ -39,10 +39,10 @@ export function SupplierFolderFileCount({ styleId }: { styleId: string }) {
     };
   }, [styleId]);
 
-  if (loading) return <span className="text-xs text-zinc-400">Counting files…</span>;
+  if (loading) return <span className="text-xs text-faint">Counting files…</span>;
   if (err)
     return (
-      <span className="text-xs text-zinc-400" title={err}>
+      <span className="text-xs text-faint" title={err}>
         Files: —
       </span>
     );
@@ -56,8 +56,8 @@ export function SupplierFolderFileCount({ styleId }: { styleId: string }) {
       <span
         className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
           empty
-            ? "border-amber-200 bg-amber-50 text-amber-800"
-            : "border-emerald-200 bg-emerald-50 text-emerald-800"
+            ? "border-transparent bg-warn-soft text-warn"
+            : "border-transparent bg-good-soft text-good"
         }`}
       >
         📁 {n} file{n === 1 ? "" : "s"}
@@ -87,7 +87,7 @@ export function SupplierFolderFileCount({ styleId }: { styleId: string }) {
 
   if (data.status === "missing") {
     return (
-      <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+      <span className="inline-flex items-center rounded-full border border-transparent bg-warn-soft px-2.5 py-0.5 text-xs font-medium text-warn">
         No PO folder found
       </span>
     );

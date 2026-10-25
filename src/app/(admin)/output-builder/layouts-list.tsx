@@ -6,6 +6,9 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { BLANK_BA_VALUES } from "@/lib/import/heuristics";
 import { DocTypesButton } from "./doc-types-dialog";
 import type { ManagedDocType, ExclusionFieldOption } from "./doc-types-manager";
+import { Plus } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { Button } from "@/components/ui/button";
 
 // Collapse blank / "–" business-area names (live DB carries literal "–"
 // areas) into one selectable "(blank)" bucket. Plain ASCII sentinel.
@@ -56,7 +59,7 @@ function HoverPopover({ trigger, children }: { trigger: ReactNode; children: Rea
       <span className="cursor-default underline decoration-dotted decoration-zinc-300 underline-offset-2">
         {trigger}
       </span>
-      <div className="invisible absolute left-0 top-full z-20 mt-1 max-h-72 w-72 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-3 opacity-0 shadow-lg transition group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100">
+      <div className="invisible absolute left-0 top-full z-20 mt-1 max-h-72 w-72 overflow-y-auto rounded-xl border border-line bg-surface p-3 opacity-0 shadow-lg transition group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100">
         {children}
       </div>
     </div>
@@ -162,7 +165,7 @@ function LayoutThumb({
   if (!page) {
     return (
       <div
-        className="flex items-center justify-center rounded border border-dashed border-zinc-200 text-xs text-zinc-300"
+        className="flex items-center justify-center rounded border border-dashed border-line text-xs text-faint"
         style={{ width: THUMB_PX, height: THUMB_PX }}
         title="No page to preview"
       >
@@ -195,7 +198,7 @@ function LayoutThumb({
     <div ref={boxRef} className="relative" onMouseEnter={open} onMouseLeave={() => setPos(null)}>
       <Link href={`/output-builder/${id}`} aria-label={`Open ${name}`} className="block">
         <div
-          className="overflow-hidden rounded border border-zinc-200 bg-white shadow-sm"
+          className="overflow-hidden rounded border border-line bg-surface shadow-sm"
           style={{ width: wPx * small, height: hPx * small }}
         >
           {/* pointer-events off: an iframe swallows the mouse, which would eat
@@ -212,16 +215,16 @@ function LayoutThumb({
               style={{ width: wPx, height: hPx, transform: `scale(${small})`, transformOrigin: "top left" }}
             />
           ) : (
-            <div className="h-full w-full bg-zinc-50" />
+            <div className="h-full w-full bg-subtle" />
           )}
         </div>
       </Link>
       {pos && near ? (
         <div
-          className="pointer-events-none fixed z-50 rounded-lg border border-zinc-200 bg-white p-2 shadow-xl"
+          className="pointer-events-none fixed z-50 rounded-xl border border-line bg-surface p-2 shadow-xl"
           style={{ left: pos.left, top: pos.top }}
         >
-          <div className="overflow-hidden bg-white" style={{ width: bigW, height: bigH }}>
+          <div className="overflow-hidden bg-surface" style={{ width: bigW, height: bigH }}>
             <iframe
               src={src}
               title={`${name} — page 1, enlarged`}
@@ -232,7 +235,7 @@ function LayoutThumb({
               style={{ width: wPx, height: hPx, transform: `scale(${big})`, transformOrigin: "top left" }}
             />
           </div>
-          <div className="mt-1.5 text-center text-[10px] text-zinc-400">
+          <div className="mt-1.5 text-center text-[11px] text-faint">
             {page.widthMm} × {page.heightMm} mm · page 1 · sample data
           </div>
         </div>
@@ -509,48 +512,42 @@ export function LayoutsList({
   }
 
   return (
-    <div className="px-8 py-8">
-      <div className="flex items-baseline justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Output builder</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Build simple prints as configuration — corner-anchored text and barcodes with{" "}
-            <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-xs">{"{{variables}}"}</code>. Published
-            layouts appear in the Prod Spec output picker; they only generate once linked there.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <DocTypesButton
-            initialTypes={docTypes}
-            fields={exclusionFields}
-            defaultOpen={openDocTypes}
-          />
-          <button
-            type="button"
-            onClick={createLayout}
-            disabled={busy !== null}
-            className="rounded-md bg-zinc-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
-          >
-            {busy === "new" ? "Creating…" : "New layout"}
-          </button>
-        </div>
-      </div>
+    <div className="px-6 py-5">
+      <PageHeader
+        title="Output builder"
+        meta={
+          <>
+            Prints built as configuration: corner-anchored text and barcodes with{" "}
+            <code className="bg-subtle rounded px-1 py-0.5 font-mono text-[12px]">{"{{variables}}"}</code>. Published layouts
+            appear in the prod spec output picker and generate once linked there.
+          </>
+        }
+        actions={
+          <>
+            <DocTypesButton initialTypes={docTypes} fields={exclusionFields} defaultOpen={openDocTypes} />
+            <Button variant="primary" onClick={createLayout} disabled={busy !== null}>
+              <Plus size={14} aria-hidden="true" />
+              {busy === "new" ? "Creating…" : "New layout"}
+            </Button>
+          </>
+        }
+      />
 
       {tabs}
 
-      {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="mt-4 text-sm text-bad">{error}</p> : null}
 
-      <div className="mt-6 flex flex-wrap items-center gap-x-8 gap-y-3 rounded-lg border border-zinc-200 bg-white px-5 py-3.5">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Logos</div>
+      <div className="mt-6 flex flex-wrap items-center gap-x-8 gap-y-3 rounded-xl border border-line bg-surface px-5 py-3.5">
+        <div className="text-[11px] font-semibold text-faint">Logos</div>
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-zinc-600">Contrast</span>
+          <span className="text-muted">Contrast</span>
           {contrastLogoFound ? (
-            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+            <span className="rounded-full border border-transparent bg-good-soft px-2 py-0.5 text-xs font-medium text-good">
               found · {"{{logo:contrast}}"}
             </span>
           ) : (
             <span
-              className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700"
+              className="rounded-full border border-transparent bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn"
               title="Commit the logo file to the repo — no code change needed"
             >
               add <code className="font-mono">public/logos/contrast.svg</code> to the repo
@@ -558,30 +555,30 @@ export function LayoutsList({
           )}
         </div>
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-zinc-600">Contrast (address)</span>
+          <span className="text-muted">Contrast (address)</span>
           {contrastAddressLogoFound ? (
-            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+            <span className="rounded-full border border-transparent bg-good-soft px-2 py-0.5 text-xs font-medium text-good">
               found · {"{{logo:contrastAddress}}"}
             </span>
           ) : (
             <span
-              className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700"
+              className="rounded-full border border-transparent bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn"
               title="Commit the logo file to the repo — no code change needed"
             >
               add <code className="font-mono">public/logos/contrast-address.svg</code> to the repo
             </span>
           )}
         </div>
-        <div className="text-xs text-zinc-500">
-          <span className="text-zinc-600">{"{{logo:custom}}"}</span> is now uploaded per layout — open a
+        <div className="text-xs text-muted">
+          <span className="text-muted">{"{{logo:custom}}"}</span> is now uploaded per layout — open a
           layout and use it where the token appears.
         </div>
       </div>
 
       {layouts.length === 0 ? (
-        <div className="mt-10 rounded-lg border border-dashed border-zinc-300 bg-white px-8 py-16 text-center">
-          <p className="text-sm font-medium text-zinc-700">No layouts yet</p>
-          <p className="mt-1 text-sm text-zinc-500">
+        <div className="mt-10 rounded-lg border border-dashed border-line bg-surface px-8 py-16 text-center">
+          <p className="text-sm font-medium text-ink">No layouts yet</p>
+          <p className="mt-1 text-sm text-muted">
             Start with “New layout”, set the physical size, drop text into the corners and watch it render on a real
             style.
           </p>
@@ -594,13 +591,13 @@ export function LayoutsList({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search layouts — name, customer, prod spec, style…"
-              className="w-full max-w-md flex-1 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"
+              className="w-full max-w-md flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-faint focus:border-accent focus:outline-none"
               spellCheck={false}
             />
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
               title="Filter by document type"
             >
               <option value="all">All types</option>
@@ -613,7 +610,7 @@ export function LayoutsList({
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
               title="Filter by status"
             >
               <option value="all">All statuses</option>
@@ -623,7 +620,7 @@ export function LayoutsList({
             <select
               value={autoApproveFilter}
               onChange={(e) => setAutoApproveFilter(e.target.value as typeof autoApproveFilter)}
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
               title="Filter by auto-approve"
             >
               <option value="all">Auto-approve: any</option>
@@ -633,7 +630,7 @@ export function LayoutsList({
             <select
               value={usageFilter}
               onChange={(e) => setUsageFilter(e.target.value as typeof usageFilter)}
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
               title="Filter by whether the layout is used as an enabled output in a prod spec"
             >
               <option value="all">In a prod spec: any</option>
@@ -643,7 +640,7 @@ export function LayoutsList({
             <select
               value={customerFilter}
               onChange={(e) => setCustomerFilter(e.target.value)}
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none disabled:opacity-50"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
               title="Filter by the customer of the prod specs using this layout"
               disabled={customerOptions.length === 0}
             >
@@ -657,7 +654,7 @@ export function LayoutsList({
             <select
               value={baFilter}
               onChange={(e) => setBaFilter(e.target.value)}
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 focus:border-zinc-400 focus:outline-none disabled:opacity-50"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
               title="Filter by the business area of the prod specs using this layout"
               disabled={baOptions.length === 0}
             >
@@ -680,24 +677,24 @@ export function LayoutsList({
                   setCustomerFilter("all");
                   setBaFilter("all");
                 }}
-                className="text-xs text-zinc-400 hover:text-zinc-700"
+                className="text-xs text-faint hover:text-ink"
               >
                 Clear
               </button>
             ) : null}
-            <span className="ml-auto text-xs text-zinc-400">
+            <span className="ml-auto text-xs text-faint">
               {visibleLayouts.length} of {layouts.length}
             </span>
           </div>
 
           {selected.size > 0 ? (
-            <div className="mt-4 flex items-center justify-between rounded-lg border border-zinc-300 bg-white px-4 py-2.5 shadow-sm">
-              <span className="text-sm font-medium text-zinc-700">{selected.size} selected</span>
+            <div className="mt-4 flex items-center justify-between rounded-xl border border-line bg-surface px-4 py-2.5 shadow-sm">
+              <span className="text-sm font-medium text-ink">{selected.size} selected</span>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setSelected(new Set())}
-                  className="rounded-md px-2.5 py-1 text-xs font-medium text-zinc-500 hover:text-zinc-800"
+                  className="rounded-md px-2.5 py-1 text-xs font-medium text-muted hover:text-ink"
                 >
                   Clear
                 </button>
@@ -705,7 +702,7 @@ export function LayoutsList({
                   type="button"
                   onClick={() => setConfirmRows(layouts.filter((l) => selected.has(l.id)))}
                   disabled={busy !== null}
-                  className="rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
+                  className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-bad transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Delete selected
                 </button>
@@ -713,15 +710,15 @@ export function LayoutsList({
             </div>
           ) : null}
           {visibleLayouts.length === 0 ? (
-            <div className="mt-4 rounded-lg border border-dashed border-zinc-300 bg-white px-8 py-12 text-center text-sm text-zinc-500">
+            <div className="mt-4 rounded-lg border border-dashed border-line bg-surface px-8 py-12 text-center text-sm text-muted">
               No layouts match the current filters.
             </div>
           ) : (
-        <div className="mt-4 rounded-lg border border-zinc-200 bg-white">
+        <div className="mt-4 rounded-xl border border-line bg-surface">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-zinc-200 text-left text-xs uppercase tracking-wide text-zinc-500">
-                <th className="w-10 rounded-tl-lg bg-zinc-50 px-4 py-3">
+              <tr className="border-b border-line text-left text-xs text-muted">
+                <th className="w-10 rounded-tl-lg bg-subtle px-3 py-2">
                   <input
                     type="checkbox"
                     aria-label="Select all layouts"
@@ -730,35 +727,35 @@ export function LayoutsList({
                       if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected;
                     }}
                     onChange={toggleAllVisible}
-                    className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                    className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
                   />
                 </th>
-                <th className="bg-zinc-50 px-3 py-3 font-medium">Preview</th>
-                <th className="bg-zinc-50 px-4 py-3 font-medium">Layout</th>
-                <th className="bg-zinc-50 px-4 py-3 font-medium">Type</th>
-                <th className="bg-zinc-50 px-4 py-3 font-medium">Pages</th>
-                <th className="bg-zinc-50 px-4 py-3 font-medium">Generations</th>
-                <th className="bg-zinc-50 px-4 py-3 font-medium">Prod specs</th>
-                <th className="bg-zinc-50 px-4 py-3 font-medium">Styles</th>
-                <th className="bg-zinc-50 px-4 py-3 font-medium">Updated</th>
-                <th className="rounded-tr-lg bg-zinc-50 px-4 py-3" />
+                <th className="bg-subtle px-3 py-3 font-medium">Preview</th>
+                <th className="bg-subtle px-3 py-2 font-medium">Layout</th>
+                <th className="bg-subtle px-3 py-2 font-medium">Type</th>
+                <th className="bg-subtle px-3 py-2 font-medium">Pages</th>
+                <th className="bg-subtle px-3 py-2 font-medium">Generations</th>
+                <th className="bg-subtle px-3 py-2 font-medium">Prod specs</th>
+                <th className="bg-subtle px-3 py-2 font-medium">Styles</th>
+                <th className="bg-subtle px-3 py-2 font-medium">Updated</th>
+                <th className="rounded-tr-lg bg-subtle px-3 py-2" />
               </tr>
             </thead>
             <tbody>
               {visibleLayouts.map((l) => (
                 <tr
                   key={l.id}
-                  className={`border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50/60 ${
-                    selected.has(l.id) ? "bg-zinc-50" : ""
+                  className={`border-b border-line last:border-b-0 hover:bg-zinc-50/60 ${
+                    selected.has(l.id) ? "bg-subtle" : ""
                   }`}
                 >
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2">
                     <input
                       type="checkbox"
                       aria-label={`Select ${l.name}`}
                       checked={selected.has(l.id)}
                       onChange={() => toggleOne(l.id)}
-                      className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                      className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
                     />
                   </td>
                   <td className="px-3 py-3">
@@ -769,20 +766,20 @@ export function LayoutsList({
                       version={Date.parse(l.updatedAt)}
                     />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
                       <span
                         className={`inline-block h-2 w-2 shrink-0 rounded-full ${
-                          l.status === "PUBLISHED" ? "bg-emerald-500" : "bg-zinc-300"
+                          l.status === "PUBLISHED" ? "bg-good" : "bg-zinc-300"
                         }`}
                         title={l.status === "PUBLISHED" ? `Published · v${l.version}` : "Draft"}
                       />
-                      <Link href={`/output-builder/${l.id}`} className="text-sm font-medium text-zinc-900 hover:underline">
+                      <Link href={`/output-builder/${l.id}`} className="text-sm font-medium text-ink hover:underline">
                         {l.name}
                       </Link>
                       {l.autoApprove ? (
                         <span
-                          className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700"
+                          className="shrink-0 rounded-full border border-transparent bg-good-soft px-1.5 py-0.5 text-[11px] font-medium text-good"
                           title="Outputs skip the manual review queue (a person still sends to the supplier)"
                         >
                           Auto-approve
@@ -790,83 +787,83 @@ export function LayoutsList({
                       ) : null}
                       {l.ruleSummaries.length > 0 ? (
                         <span
-                          className="shrink-0 rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700"
+                          className="shrink-0 rounded-full border border-transparent bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-accent-text"
                           title={`Only generated for some styles — ${l.ruleSummaries.join(" · ")}`}
                         >
                           {l.ruleSummaries.length} rule{l.ruleSummaries.length === 1 ? "" : "s"}
                         </span>
                       ) : null}
                     </div>
-                    <div className="ml-4 mt-0.5 font-mono text-xs text-zinc-400">layout:{l.id.slice(0, 10)}…</div>
+                    <div className="ml-4 mt-0.5 font-mono text-xs text-faint">layout:{l.id.slice(0, 10)}…</div>
                   </td>
-                  <td className="px-4 py-3">
-                    <span className="inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600">
+                  <td className="px-3 py-2">
+                    <span className="inline-flex rounded-full bg-subtle px-2 py-0.5 text-xs font-medium text-muted">
                       {l.docTypeLabel}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm text-zinc-600">
-                    {l.defInvalid ? <span className="text-amber-600">invalid</span> : l.pageCount}
+                  <td className="px-3 py-2 text-sm text-muted">
+                    {l.defInvalid ? <span className="text-warn">invalid</span> : l.pageCount}
                   </td>
-                  <td className="px-4 py-3 text-sm text-zinc-600">
+                  <td className="px-3 py-2 text-sm text-muted">
                     {l.generationCount === 0 ? (
-                      <span className="text-zinc-400">—</span>
+                      <span className="text-faint">—</span>
                     ) : (
                       <>
-                        <span className="font-medium tabular-nums text-zinc-800">{l.generationCount}</span>
+                        <span className="font-medium tabular-nums text-ink">{l.generationCount}</span>
                         {l.lastGeneratedAt ? (
-                          <div className="mt-0.5 text-xs text-zinc-400">
+                          <div className="mt-0.5 text-xs text-faint">
                             last {new Date(l.lastGeneratedAt).toLocaleDateString()}
                           </div>
                         ) : null}
                       </>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm text-zinc-600">
+                  <td className="px-3 py-2 text-sm text-muted">
                     {l.prodSpecs.length === 0 ? (
-                      <span className="text-zinc-400">—</span>
+                      <span className="text-faint">—</span>
                     ) : (
                       <HoverPopover trigger={`${l.prodSpecs.length} prod spec${l.prodSpecs.length === 1 ? "" : "s"}`}>
                         <ul className="space-y-1.5 text-xs">
                           {l.prodSpecs.map((s) => (
                             <li key={s.id}>
-                              <Link href={`/prod-specs/${s.id}`} className="font-medium text-zinc-800 hover:underline">
+                              <Link href={`/prod-specs/${s.id}`} className="font-medium text-ink hover:underline">
                                 {s.name}
                               </Link>
-                              <div className="text-zinc-500">{s.customerName}</div>
+                              <div className="text-muted">{s.customerName}</div>
                             </li>
                           ))}
                         </ul>
                       </HoverPopover>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm text-zinc-600">
+                  <td className="px-3 py-2 text-sm text-muted">
                     {l.styleCount === 0 ? (
-                      <span className="text-zinc-400">—</span>
+                      <span className="text-faint">—</span>
                     ) : (
                       <HoverPopover trigger={`${l.styleCount} style${l.styleCount === 1 ? "" : "s"}`}>
                         <ul className="space-y-1 text-xs">
                           {l.styles.map((s) => (
                             <li key={s.id}>
-                              <Link href={`/styles/${s.id}`} className="text-zinc-700 hover:underline">
+                              <Link href={`/styles/${s.id}`} className="text-ink hover:underline">
                                 {s.name}
                               </Link>
                             </li>
                           ))}
                           {l.styleCount > l.styles.length ? (
-                            <li className="pt-0.5 text-zinc-400">+{l.styleCount - l.styles.length} more</li>
+                            <li className="pt-0.5 text-faint">+{l.styleCount - l.styles.length} more</li>
                           ) : null}
                         </ul>
                       </HoverPopover>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm text-zinc-500">{new Date(l.updatedAt).toLocaleDateString()}</td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-3 py-2 text-sm text-muted">{new Date(l.updatedAt).toLocaleDateString()}</td>
+                  <td className="px-3 py-2 text-right">
                     <div className="flex justify-end gap-2">
                       <button
                         type="button"
                         onClick={() => duplicateLayout(l.id)}
                         disabled={busy !== null}
-                        className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+                        className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Duplicate
                       </button>
@@ -874,7 +871,7 @@ export function LayoutsList({
                         type="button"
                         onClick={() => setConfirmRows([l])}
                         disabled={busy !== null}
-                        className="rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-400 hover:border-red-200 hover:text-red-600 disabled:opacity-60"
+                        className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Delete
                       </button>
@@ -891,7 +888,7 @@ export function LayoutsList({
 
       {confirmRows ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(15_17_21/0.30)] p-4"
           role="dialog"
           aria-modal="true"
           onClick={() => {
@@ -899,54 +896,54 @@ export function LayoutsList({
           }}
         >
           <div
-            className="w-full max-w-md rounded-lg border border-zinc-200 bg-white shadow-xl"
+            className="w-full max-w-md rounded-xl border border-line bg-surface shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="border-b border-zinc-100 px-5 py-4">
-              <h2 className="text-sm font-semibold text-zinc-900">
+            <div className="border-b border-line px-5 py-4">
+              <h2 className="text-sm font-semibold text-ink">
                 {confirmRows.length === 1 ? `Delete “${confirmRows[0].name}”?` : `Delete ${confirmRows.length} layouts?`}
               </h2>
             </div>
-            <div className="space-y-3 px-5 py-4 text-sm text-zinc-600">
+            <div className="space-y-3 px-5 py-4 text-sm text-muted">
               {confirmRows.length > 1 ? (
-                <ul className="max-h-32 space-y-0.5 overflow-y-auto rounded-md border border-zinc-100 bg-zinc-50 px-3 py-2 text-xs">
+                <ul className="max-h-32 space-y-0.5 overflow-y-auto rounded-md border border-line bg-subtle px-3 py-2 text-xs">
                   {confirmRows.map((r) => (
                     <li key={r.id} className="truncate">
                       {r.name}
-                      {r.status === "PUBLISHED" ? <span className="text-emerald-600"> · published</span> : null}
+                      {r.status === "PUBLISHED" ? <span className="text-good"> · published</span> : null}
                     </li>
                   ))}
                 </ul>
               ) : null}
               {affectedSpecs.length > 0 ? (
-                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                <div className="rounded-md border border-transparent bg-warn-soft px-3 py-2 text-warn">
                   <p className="font-medium">
                     Removes the output from {affectedSpecs.length} prod spec{affectedSpecs.length === 1 ? "" : "s"}:
                   </p>
                   <ul className="mt-1 space-y-0.5">
                     {affectedSpecs.slice(0, 8).map((s) => (
                       <li key={s.id} className="truncate">
-                        {s.name} <span className="text-amber-600">· {s.customerName}</span>
+                        {s.name} <span className="text-warn">· {s.customerName}</span>
                       </li>
                     ))}
                     {affectedSpecs.length > 8 ? (
-                      <li className="text-amber-600">+{affectedSpecs.length - 8} more</li>
+                      <li className="text-warn">+{affectedSpecs.length - 8} more</li>
                     ) : null}
                   </ul>
                 </div>
               ) : (
-                <p className="text-zinc-500">Not linked to any prod spec.</p>
+                <p className="text-muted">Not linked to any prod spec.</p>
               )}
-              <p className="text-xs text-zinc-400">
+              <p className="text-xs text-faint">
                 Already-generated PDFs are kept — only the prod-spec link is removed.
               </p>
             </div>
-            <div className="flex justify-end gap-2 border-t border-zinc-100 px-5 py-3">
+            <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
               <button
                 type="button"
                 onClick={() => setConfirmRows(null)}
                 disabled={deleting}
-                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -954,7 +951,7 @@ export function LayoutsList({
                 type="button"
                 onClick={deleteConfirmed}
                 disabled={deleting}
-                className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+                className="rounded-md bg-bad px-3 py-1.5 text-sm font-medium text-white hover:bg-bad disabled:opacity-60"
               >
                 {deleting ? "Deleting…" : confirmRows.length === 1 ? "Delete" : `Delete ${confirmRows.length}`}
               </button>

@@ -71,10 +71,10 @@ export function SavedDataPanel({
     .filter((x): x is string => x !== null);
 
   return (
-    <section className="mt-10 rounded-lg border border-zinc-200 bg-white">
-      <header className="border-b border-zinc-100 px-5 py-3">
-        <h2 className="text-sm font-semibold text-zinc-700">Saved data</h2>
-        <p className="text-xs text-zinc-500">
+    <section className="mt-10 rounded-xl border border-line bg-surface">
+      <header className="border-b border-line px-5 py-3">
+        <h2 className="text-sm font-semibold text-ink">Saved data</h2>
+        <p className="text-xs text-muted">
           Snapshot of what the PDF renderers will see for this Style. Empty values are why a
           field shows blank on the printed label — fix at the source (Monday column, ProdSpec
           mapping, or Pre-Order enrichment).
@@ -82,7 +82,7 @@ export function SavedDataPanel({
       </header>
 
       {/* Identity + status */}
-      <div className="grid grid-cols-2 gap-x-6 gap-y-2 border-b border-zinc-100 px-5 py-4 text-xs sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-2 border-b border-line px-5 py-4 text-xs sm:grid-cols-3">
         <Pair label="Style name" value={style.name} />
         <Pair label="Status" value={style.status.toLowerCase().replace(/_/g, " ")} />
         <Pair
@@ -115,7 +115,7 @@ export function SavedDataPanel({
       {/* Mapped fields */}
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
-          <thead className="bg-zinc-50 text-left uppercase tracking-wide text-zinc-500">
+          <thead className="bg-subtle text-left text-muted">
             <tr>
               <th className="px-5 py-2">Field</th>
               <th className="px-5 py-2">Monday column id</th>
@@ -129,21 +129,21 @@ export function SavedDataPanel({
               const empty = value === null || value === "";
               const columnMissing = columnId && !allIds.has(columnId);
               return (
-                <tr key={key} className="border-t border-zinc-100">
-                  <td className="px-5 py-1.5 font-medium text-zinc-800">{label}</td>
-                  <td className="px-5 py-1.5 font-mono text-zinc-500">
+                <tr key={key} className="border-t border-line">
+                  <td className="px-5 py-1.5 font-medium text-ink">{label}</td>
+                  <td className="px-5 py-1.5 font-mono text-muted">
                     {columnId ? (
                       <span title={columnMissing ? "Column id not present in rawData" : undefined}>
                         {columnId}
                         {columnMissing && (
-                          <span className="ml-1 text-amber-600">· not in rawData</span>
+                          <span className="ml-1 text-warn">· not in rawData</span>
                         )}
                       </span>
                     ) : (
-                      <span className="text-zinc-400">— (unmapped)</span>
+                      <span className="text-faint">— (unmapped)</span>
                     )}
                   </td>
-                  <td className={`px-5 py-1.5 ${empty ? "text-amber-700" : "text-zinc-900"}`}>
+                  <td className={`px-5 py-1.5 ${empty ? "text-warn" : "text-ink"}`}>
                     {empty ? "(empty)" : value}
                   </td>
                 </tr>
@@ -153,7 +153,7 @@ export function SavedDataPanel({
         </table>
       </div>
 
-      <footer className="border-t border-zinc-100 bg-zinc-50 px-5 py-2 text-[11px] text-zinc-500">
+      <footer className="border-t border-line bg-subtle px-5 py-2 text-[11px] text-muted">
         <strong>{columnValues.length}</strong> total columns in rawData. Mapping defaults from
         <code className="ml-1 font-mono">DEFAULT_COLUMN_MAPPING</code> merged with this
         customer&apos;s overrides — edit at{" "}
@@ -181,10 +181,10 @@ function Pair({
 }) {
   return (
     <div>
-      <div className="text-zinc-500">{label}</div>
+      <div className="text-muted">{label}</div>
       <div
-        className={`mt-0.5 ${mono ? "font-mono" : ""} ${
-          warn ? "text-amber-700" : "text-zinc-900"
+        className={`mt-0.5 ${mono ? "font-mono" : ""}    ${
+          warn ? "text-warn" : "text-ink"
         }`}
         title={warn ? warnHint : undefined}
       >

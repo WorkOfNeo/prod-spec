@@ -162,27 +162,27 @@ export function NewProdSpecButton({
             ? "Need at least one Customer and one Business Area to create a ProdSpec"
             : "Create one or more ProdSpecs"
         }
-        className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+        className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
       >
         + New prod spec
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(15_17_21/0.40)] px-4">
+          <div className="w-full max-w-md rounded-lg bg-surface p-6 shadow-2xl">
             <div className="mb-4 flex items-start justify-between">
               <h2 className="text-lg font-semibold">New prod spec</h2>
               <button
                 type="button"
                 onClick={close}
                 disabled={busy}
-                className="text-xs text-zinc-500 underline disabled:opacity-50"
+                className="text-xs text-muted underline disabled:opacity-50"
               >
                 close
               </button>
             </div>
 
-            <label htmlFor="ps-customer" className="block text-xs font-medium text-zinc-700">
+            <label htmlFor="ps-customer" className="block text-xs font-medium text-ink">
               Customer *
               <div className="mt-1">
                 <Combobox
@@ -202,7 +202,7 @@ export function NewProdSpecButton({
               </div>
             </label>
 
-            <label className="mt-4 block text-xs font-medium text-zinc-700">
+            <label className="mt-4 block text-xs font-medium text-ink">
               Business area{businessAreaIds.length > 1 ? "s" : ""} *
               <div className="mt-1">
                 <Combobox
@@ -217,26 +217,26 @@ export function NewProdSpecButton({
                   disabled={!customerId}
                 />
               </div>
-              <span className="mt-1 block font-normal text-zinc-500">
+              <span className="mt-1 block font-normal text-muted">
                 Pick multiple to create one ProdSpec per pair in a single click. Already-linked
                 combos appear greyed.
               </span>
             </label>
 
             {doneSummary && (
-              <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              <p className="mt-3 rounded-md border border-transparent bg-good-soft px-3 py-2 text-xs text-good">
                 {doneSummary}
               </p>
             )}
 
-            {err && <p className="mt-3 text-xs text-red-600">{err}</p>}
+            {err && <p className="mt-3 text-xs text-bad">{err}</p>}
 
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
                 onClick={close}
                 disabled={busy}
-                className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink hover:bg-subtle disabled:opacity-50"
               >
                 {doneSummary ? "Done" : "Cancel"}
               </button>
@@ -244,7 +244,7 @@ export function NewProdSpecButton({
                 type="button"
                 onClick={save}
                 disabled={busy || !canSubmit}
-                className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy
                   ? "Creating…"

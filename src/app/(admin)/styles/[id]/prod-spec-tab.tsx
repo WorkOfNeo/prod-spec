@@ -96,7 +96,7 @@ export function ProdSpecTab({
       {/* Resolved ProdSpec — collapsed to a button; full detail lives in the
           popup so it no longer dominates the tab. */}
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-zinc-700">Resolved Prod Spec</h2>
+        <h2 className="mb-2 text-sm font-semibold text-ink">Resolved Prod Spec</h2>
         {prodSpec ? (
           <ResolvedProdSpecButton
             prodSpecId={prodSpec.id}
@@ -130,7 +130,7 @@ export function ProdSpecTab({
 
       {supplierShare ? (
         <section>
-          <h2 className="mb-2 text-sm font-semibold text-zinc-700">Supplier link</h2>
+          <h2 className="mb-2 text-sm font-semibold text-ink">Supplier link</h2>
           <SupplierLinkCard share={supplierShare} />
         </section>
       ) : null}
@@ -142,22 +142,22 @@ export function ProdSpecTab({
       <section>
         <div className="mb-2 flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-700">Prod Spec runs</h2>
-            <p className="text-xs text-zinc-500">
+            <h2 className="text-sm font-semibold text-ink">Prod Spec runs</h2>
+            <p className="text-xs text-muted">
               Newest first. Open the files themselves in the Review tab.
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
             <Link
               href={`/styles/${styleId}?tab=review`}
-              className="text-xs font-medium text-zinc-700 underline hover:text-zinc-900"
+              className="text-xs font-medium text-ink underline hover:text-ink"
             >
               Open files →
             </Link>
             {jobs.length > 0 && jobs[0].assets.length > 0 && (
               <a
                 href={`/api/admin/jobs/${jobs[0].id}/download-zip`}
-                className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
+                className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 title="Download every PDF of the latest run as one zip, under their print file names"
               >
                 <DownloadIcon />
@@ -168,14 +168,14 @@ export function ProdSpecTab({
         </div>
 
         {jobs.length === 0 ? (
-          <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500">
+          <div className="rounded-xl border border-line bg-surface p-8 text-center text-sm text-muted">
             No runs yet for this style — Re-run to generate.
           </div>
         ) : (
-          <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+          <div className="overflow-hidden rounded-xl border border-line bg-surface">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-200 text-left text-[11px] uppercase tracking-wide text-zinc-500">
+                <tr className="border-b border-line text-left text-[11px] text-muted">
                   <th className="px-4 py-2 font-semibold">When</th>
                   <th className="px-4 py-2 font-semibold">Run</th>
                   <th className="px-4 py-2 font-semibold">Trigger</th>
@@ -193,19 +193,19 @@ export function ProdSpecTab({
                     (a) => a.reviewStatus !== "PENDING_REVIEW",
                   ).length;
                   return (
-                    <tr key={job.id} className="border-b border-zinc-100 last:border-b-0">
-                      <td className="px-4 py-2.5 text-zinc-700">{formatDate(job.createdAt)}</td>
-                      <td className="px-4 py-2.5 font-mono text-xs text-zinc-500">
+                    <tr key={job.id} className="border-b border-line last:border-b-0">
+                      <td className="px-4 py-2.5 text-ink">{formatDate(job.createdAt)}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-muted">
                         {job.id.slice(-8)}
                       </td>
-                      <td className="px-4 py-2.5 text-xs text-zinc-500">
+                      <td className="px-4 py-2.5 text-xs text-muted">
                         {job.triggerSource.toLowerCase().replace(/_/g, " ")}
                       </td>
                       <td className="px-4 py-2.5">
                         <RunStatusPill status={job.status} />
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-zinc-700">{total}</td>
-                      <td className="px-4 py-2.5 text-xs text-zinc-500">
+                      <td className="px-4 py-2.5 text-right tabular-nums text-ink">{total}</td>
+                      <td className="px-4 py-2.5 text-xs text-muted">
                         {total === 0 ? "—" : `${decided}/${total} decided`}
                       </td>
                       <td className="px-4 py-2.5">
@@ -222,7 +222,7 @@ export function ProdSpecTab({
                             <UserAvatar name={job.claimedByName} />
                           </span>
                         ) : (
-                          <span className="text-xs text-zinc-400">—</span>
+                          <span className="text-xs text-faint">—</span>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right">
@@ -230,7 +230,7 @@ export function ProdSpecTab({
                           {total > 0 && (
                             <a
                               href={`/api/admin/jobs/${job.id}/download-zip`}
-                              className="inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-900"
+                              className="inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-ink"
                               title="Download this run's PDFs as one zip, under their print file names"
                             >
                               <DownloadIcon />
@@ -240,7 +240,7 @@ export function ProdSpecTab({
                           {job.status === "AWAITING_REVIEW" ? (
                             <Link
                               href={`/styles/${styleId}/review`}
-                              className="inline-block rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-800"
+                              className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Review
                             </Link>
@@ -294,7 +294,7 @@ function RunStatusPill({ status }: { status: string }) {
             : "border-zinc-200 bg-zinc-100 text-zinc-700";
   return (
     <span
-      className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium ${tone}`}
+      className={`inline-block rounded-full border px-2 py-0.5 text-[11px] font-medium ${tone}`}
     >
       {label}
     </span>
@@ -324,7 +324,7 @@ function NoProdSpecBlock({
   const fkMissing = !businessAreaId;
 
   return (
-    <div className="rounded-lg border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">
+    <div className="rounded-lg border border-transparent bg-warn-soft p-5 text-sm text-warn">
       <p className="font-medium">No Prod Spec resolved for this style.</p>
 
       <p className="mt-1 text-xs">
@@ -334,7 +334,7 @@ function NoProdSpecBlock({
           <>
             {" "}
             (Style has business-area text{" "}
-            <code className="rounded bg-amber-100 px-1 py-0.5 font-mono text-[11px]">
+            <code className="rounded bg-warn-soft px-1 py-0.5 font-mono text-[11px]">
               {businessAreaText}
             </code>
             {fkMissing && " but no linked BusinessArea row"})

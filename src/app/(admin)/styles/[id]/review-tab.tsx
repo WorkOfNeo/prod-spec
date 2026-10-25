@@ -89,14 +89,14 @@ export function ReviewTab({
       <section>
         <div className="mb-2 flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-700">Files — current outputs</h2>
-            <p className="text-xs text-zinc-500">
+            <h2 className="text-sm font-semibold text-ink">Files — current outputs</h2>
+            <p className="text-xs text-muted">
               {currentItems.length > 0
                 ? `${currentItems.length} output${currentItems.length === 1 ? "" : "s"} · latest document per output across all runs`
                 : "No run yet — Re-run to generate."}
             </p>
             {latestJob?.claimedByName ? (
-              <span data-private className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-zinc-600">
+              <span data-private className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-muted">
                 <UserAvatar name={latestJob.claimedByName} />
                 <span>
                   <b>{latestJob.claimedByName}</b> owns this review
@@ -108,7 +108,7 @@ export function ReviewTab({
           {latestJob?.status === "AWAITING_REVIEW" ? (
             <Link
               href={`/styles/${styleId}/review`}
-              className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Review &amp; decide
             </Link>
@@ -116,7 +116,7 @@ export function ReviewTab({
         </div>
 
         {currentItems.length === 0 ? (
-          <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500">
+          <div className="rounded-xl border border-line bg-surface p-8 text-center text-sm text-muted">
             Nothing generated yet for this style.
           </div>
         ) : (
@@ -158,7 +158,7 @@ export function ReviewTab({
           and this tab, like the Prod Spec tab it moved off, is open to the
           same roles. */}
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-zinc-700">Manually supplied packaging</h2>
+        <h2 className="mb-2 text-sm font-semibold text-ink">Manually supplied packaging</h2>
         <ManualTrimsPanel styleId={styleId} />
       </section>
 
@@ -167,33 +167,33 @@ export function ReviewTab({
           each run in full. Collapsed so the page doesn't grow unbounded. */}
       {sortedJobs.length > 0 && (
         <section>
-          <details className="group rounded-lg border border-zinc-200 bg-white">
-            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
+          <details className="group rounded-xl border border-line bg-surface">
+            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-ink hover:bg-subtle">
               <span className="inline-flex items-center gap-2">
                 <ChevronIcon />
                 All runs ({sortedJobs.length})
               </span>
-              <span className="ml-2 text-xs font-normal text-zinc-500">
+              <span className="ml-2 text-xs font-normal text-muted">
                 Every generation is kept in full — open to browse.
               </span>
             </summary>
-            <div className="border-t border-zinc-100 px-4 py-4">
+            <div className="border-t border-line px-4 py-4">
               <div className="flex flex-col gap-6">
                 {sortedJobs.map((job) => (
                   <div key={job.id}>
-                    <div className="mb-2 flex items-baseline justify-between gap-3 text-xs text-zinc-500">
+                    <div className="mb-2 flex items-baseline justify-between gap-3 text-xs text-muted">
                       <span className="inline-flex items-center gap-2">
                         <span className="font-mono">job {job.id.slice(-8)}</span> ·{" "}
                         {formatDate(job.createdAt)} ·{" "}
                         {job.triggerSource.toLowerCase().replace(/_/g, " ")}
                         {job.claimedByName ? <UserAvatar name={job.claimedByName} size="xs" /> : null}
                       </span>
-                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-700">
+                      <span className="rounded-full bg-subtle px-2 py-0.5 text-[11px] font-medium text-ink">
                         {job.status.toLowerCase().replace(/_/g, " ")}
                       </span>
                     </div>
                     {job.assets.length === 0 ? (
-                      <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-4 py-3 text-xs text-zinc-500">
+                      <div className="rounded-lg border border-line bg-subtle px-4 py-3 text-xs text-muted">
                         No assets generated.
                       </div>
                     ) : (
@@ -238,7 +238,7 @@ function ChevronIcon() {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="h-3.5 w-3.5 text-zinc-500 transition-transform group-open:rotate-90"
+      className="h-3.5 w-3.5 text-muted transition-transform group-open:rotate-90"
       aria-hidden="true"
     >
       <polyline points="9 18 15 12 9 6" />

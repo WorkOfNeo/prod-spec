@@ -288,13 +288,13 @@ export function RerunStylesPanel({
   const justFinished = batch != null && batch.finishedAt != null && !dismissed;
 
   return (
-    <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+    <div className="mt-4 rounded-md border border-line bg-subtle p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-zinc-800">Run styles</p>
-          <p className="mt-0.5 text-xs text-zinc-500">
+          <p className="text-sm font-medium text-ink">Run styles</p>
+          <p className="mt-0.5 text-xs text-muted">
             Every style on this prod spec. Run one, or run all — every output that isn&apos;t{" "}
-            <span className="font-medium text-zinc-700">approved</span> regenerates (new/missing,
+            <span className="font-medium text-ink">approved</span> regenerates (new/missing,
             rejected, and awaiting review); approved work is left alone.
           </p>
         </div>
@@ -310,7 +310,7 @@ export function RerunStylesPanel({
             Boolean(runAllDisabledReason)
           }
           title={runAllDisabledReason ?? "Run every style with outputs to regenerate on this prod spec"}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+          className="shrink-0 inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <RunAllIcon />
           {submittingAll ? "Starting…" : `Run all${list ? ` (${runAllCount})` : ""}`}
@@ -319,15 +319,15 @@ export function RerunStylesPanel({
 
       {/* Summary counts + filter. */}
       {list && list.totalStyles > 0 && (
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
-          <span className="text-zinc-600">{list.totalStyles} styles</span>
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+          <span className="text-muted">{list.totalStyles} styles</span>
           <span>· {list.generatedStyles} generated</span>
           <span className="inline-flex items-center gap-1">
-            · <Dot className="bg-zinc-900" /> {runAllCount} to run
+            · <Dot className="bg-primary" /> {runAllCount} to run
           </span>
           {list.toRerunBelowCutoff > 0 && (
             <label
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-800"
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-transparent bg-warn-soft px-1.5 py-0.5 text-warn"
               title={`Styles on a PO below ${list.generationCutoff} are parked backlog — the automatic sweep never runs them either. Their own Run button always works.`}
             >
               <input
@@ -345,7 +345,7 @@ export function RerunStylesPanel({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter by name / PO…"
-              className="w-44 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs"
+              className="w-44 rounded-md border border-line bg-surface px-2 py-1 text-xs"
             />
           </div>
         </div>
@@ -353,44 +353,44 @@ export function RerunStylesPanel({
 
       {/* "Run all" progress. */}
       {activeRun && batch && (
-        <div className="mt-3 rounded-md border border-zinc-200 bg-white px-3 py-2.5">
+        <div className="mt-3 rounded-md border border-line bg-surface px-3 py-2.5">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2 text-sm text-zinc-700">
+            <div className="flex min-w-0 items-center gap-2 text-sm text-ink">
               <Spinner />
               <span className="font-medium">Running all styles</span>
-              <span className="tabular-nums text-zinc-500">
+              <span className="tabular-nums text-muted">
                 {batch.done}/{batch.total}
               </span>
               {batch.failed > 0 && (
-                <span className="tabular-nums text-red-600">· {batch.failed} failed</span>
+                <span className="tabular-nums text-bad">· {batch.failed} failed</span>
               )}
             </div>
             {batch.createdByEmail && (
-              <span data-private className="shrink-0 text-xs text-zinc-400">started by {batch.createdByEmail}</span>
+              <span data-private className="shrink-0 text-xs text-faint">started by {batch.createdByEmail}</span>
             )}
           </div>
-          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-subtle">
             <div
-              className="h-full rounded-full bg-zinc-900 transition-[width] duration-500"
+              className="h-full rounded-full bg-primary transition-[width] duration-500"
               style={{
                 width: `${batch.total > 0 ? Math.min(100, Math.round((batch.done / batch.total) * 100)) : 0}%`,
               }}
             />
           </div>
-          <p className="mt-1.5 text-[11px] text-zinc-400">
+          <p className="mt-1.5 text-[11px] text-faint">
             Rendering in the background — safe to leave this page; progress resumes when you return.
           </p>
         </div>
       )}
 
       {error && (
-        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-800">
+        <p className="mt-2 rounded-md border border-transparent bg-warn-soft px-2.5 py-1 text-xs text-warn">
           {error}
         </p>
       )}
 
       {justFinished && batch && (
-        <div className="mt-2 inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">
+        <div className="mt-2 inline-flex items-center gap-2 rounded-md border border-transparent bg-good-soft px-2.5 py-1 text-xs font-medium text-good">
           <span>
             ✓ Run complete · {batch.done}/{batch.total}
             {batch.failed > 0 ? ` · ${batch.failed} failed` : ""}
@@ -399,7 +399,7 @@ export function RerunStylesPanel({
             type="button"
             onClick={() => setDismissed(true)}
             aria-label="Dismiss"
-            className="text-emerald-600 hover:text-emerald-900"
+            className="text-good hover:text-good"
           >
             ✕
           </button>
@@ -407,8 +407,8 @@ export function RerunStylesPanel({
       )}
 
       {/* The styles table. */}
-      <div className="mt-3 overflow-hidden rounded-md border border-zinc-200 bg-white">
-        <div className="flex items-center gap-3 border-b border-zinc-200 bg-zinc-50 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+      <div className="mt-3 overflow-hidden rounded-md border border-line bg-surface">
+        <div className="flex items-center gap-3 border-b border-line bg-subtle px-3 py-1.5 text-[11px] font-semibold text-faint">
           <span className="min-w-0 flex-1">Style</span>
           <span className="hidden w-44 shrink-0 sm:block">Last run</span>
           <span className="w-28 shrink-0">To run</span>
@@ -416,19 +416,19 @@ export function RerunStylesPanel({
         </div>
 
         {listLoading ? (
-          <div className="flex items-center gap-2 px-3 py-6 text-xs text-zinc-500">
+          <div className="flex items-center gap-2 px-3 py-6 text-xs text-muted">
             <Spinner /> Loading styles…
           </div>
         ) : unsaved ? (
-          <div className="px-3 py-6 text-xs text-zinc-500">
+          <div className="px-3 py-6 text-xs text-muted">
             Save your output changes to load the list…
           </div>
         ) : filtered.length === 0 ? (
-          <div className="px-3 py-6 text-xs text-zinc-500">
+          <div className="px-3 py-6 text-xs text-muted">
             {totalRows === 0 ? "No styles on this prod spec yet." : "No styles match your filter."}
           </div>
         ) : (
-          <ul className="max-h-[32rem] divide-y divide-zinc-100 overflow-auto">
+          <ul className="max-h-[32rem] divide-y divide-line overflow-auto">
             {filtered.map((r) => (
               <StyleRow
                 key={r.id}
@@ -476,16 +476,16 @@ function StyleRow({
         <div className="min-w-0 flex-1">
           <Link
             href={`/styles/${row.id}`}
-            className="block truncate text-sm font-medium text-zinc-800 hover:underline"
+            className="block truncate text-sm font-medium text-ink hover:underline"
             title={row.name}
           >
             {row.name}
           </Link>
-          <div className="truncate text-[11px] text-zinc-400">
+          <div className="truncate text-[11px] text-faint">
             {row.poNumber ? `PO ${row.poNumber}` : "no PO"} · {statusLabel(row.status)}
             {row.belowCutoff && (
               <span
-                className="ml-1.5 rounded bg-amber-50 px-1 text-[10px] font-medium text-amber-700"
+                className="ml-1.5 rounded bg-warn-soft px-1 text-[11px] font-medium text-warn"
                 title="Below the generation PO cutoff — parked backlog. Left out of “Run all” unless you tick include; this row’s own Run button still works."
               >
                 parked
@@ -498,7 +498,7 @@ function StyleRow({
           {row.lastRun ? (
             <div className="flex flex-col gap-0.5">
               <span
-                className="text-xs text-zinc-600"
+                className="text-xs text-muted"
                 title={new Date(row.lastRun.at).toLocaleString()}
               >
                 {timeAgo(row.lastRun.at)}
@@ -506,7 +506,7 @@ function StyleRow({
               <KindBadge kind={row.lastRun.kind} source={row.lastRun.triggerSource} />
             </div>
           ) : (
-            <span className="text-xs text-zinc-400">Never run</span>
+            <span className="text-xs text-faint">Never run</span>
           )}
         </div>
 
@@ -520,13 +520,13 @@ function StyleRow({
             onClick={onRun}
             disabled={!canRun}
             title={runTitle}
-            className="inline-flex items-center justify-center gap-1 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex items-center justify-center gap-1 rounded-md border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-40"
           >
             {running ? <Spinner className="h-3.5 w-3.5" /> : "Run"}
           </button>
         </div>
       </div>
-      {error && <p className="mt-1 text-[11px] text-red-600">{error}</p>}
+      {error && <p className="mt-1 text-[11px] text-bad">{error}</p>}
     </li>
   );
 }
@@ -534,18 +534,18 @@ function StyleRow({
 function ToRunCell({ row }: { row: StyleRunRow }) {
   if (row.inFlight) {
     return (
-      <span className="inline-flex items-center gap-1 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600">
+      <span className="inline-flex items-center gap-1 rounded bg-subtle px-1.5 py-0.5 text-[11px] font-medium text-muted">
         <Spinner className="h-3 w-3" /> running
       </span>
     );
   }
   if (row.variantKeys.length === 0) {
     return row.readyCount > 0 ? (
-      <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700">
-        <Dot className="bg-emerald-500" /> up to date
+      <span className="inline-flex items-center gap-1 text-[11px] text-good">
+        <Dot className="bg-good" /> up to date
       </span>
     ) : (
-      <span className="inline-flex items-center gap-1 text-[11px] text-zinc-400">
+      <span className="inline-flex items-center gap-1 text-[11px] text-faint">
         <Dot className="bg-zinc-300" /> awaiting data
       </span>
     );
@@ -553,18 +553,18 @@ function ToRunCell({ row }: { row: StyleRunRow }) {
   return (
     <span className="flex flex-wrap items-center gap-1">
       {row.missing > 0 && (
-        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+        <span className="rounded bg-warn-soft px-1.5 py-0.5 text-[11px] font-medium text-warn">
           {row.missing} new
         </span>
       )}
       {row.rejected > 0 && (
-        <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
+        <span className="rounded bg-bad-soft px-1.5 py-0.5 text-[11px] font-medium text-bad">
           {row.rejected} rejected
         </span>
       )}
       {row.changed > 0 && (
         <span
-          className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700"
+          className="rounded bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-accent-text"
           title="Output config edited since this awaiting-review PDF rendered"
         >
           {row.changed} changed
@@ -572,7 +572,7 @@ function ToRunCell({ row }: { row: StyleRunRow }) {
       )}
       {row.pending > 0 && (
         <span
-          className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600"
+          className="rounded bg-subtle px-1.5 py-0.5 text-[11px] font-medium text-muted"
           title="Awaiting review — re-runs with everything not yet approved"
         >
           {row.pending} awaiting
@@ -589,7 +589,7 @@ function KindBadge({ kind, source }: { kind: "automated" | "manual"; source: str
       : "border-sky-200 bg-sky-50 text-sky-700";
   return (
     <span
-      className={`inline-flex w-fit items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
+      className={`inline-flex w-fit items-center rounded border px-1.5 py-0.5 text-[11px] font-medium ${cls}`}
       title={triggerLabelClient(source)}
     >
       {kind === "manual" ? "Manual" : "Automated"}
@@ -640,7 +640,7 @@ function Dot({ className }: { className: string }) {
 function Spinner({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg
-      className={`shrink-0 animate-spin text-zinc-500 ${className}`}
+      className={`shrink-0 animate-spin text-muted ${className}`}
       viewBox="0 0 24 24"
       fill="none"
       aria-hidden="true"

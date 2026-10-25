@@ -390,7 +390,7 @@ function ReportView(props: {
       {props.outcome ? <OutcomeBox applied={props.outcome} /> : null}
 
       {totalFlagged > 0 ? (
-        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+        <div className="sticky top-12 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
           <span className="text-amber-900">
             {props.selectedCount} of {totalFlagged} flagged file{totalFlagged === 1 ? "" : "s"} selected.
           </span>

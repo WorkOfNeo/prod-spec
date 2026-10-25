@@ -1313,9 +1313,9 @@ function FieldGrid({
         {rows.map((r, i) => (
           <div
             key={r.key}
-            className={`border-line flex gap-3 border-t px-4 py-2.5 ${i < 2 ? "sm:border-t-0" : ""} ${
+            className={`border-line flex gap-3 border-t px-4 py-2.5 ${i < 2 ? "sm:border-t-0" : ""}    ${
               i === 0 ? "border-t-0" : ""
-            } ${i % 2 === 0 ? "sm:border-r" : ""} ${r.highlight ? "bg-warn-soft" : ""}`}
+            }    ${i % 2 === 0 ? "sm:border-r" : ""}    ${r.highlight ? "bg-warn-soft" : ""}`}
           >
             <dt className="text-muted w-40 flex-shrink-0 text-[12px] leading-5">{r.label}</dt>
             <dd className={`flex-1 text-[13px] break-words ${r.empty ? "text-faint" : "text-ink"}`}>{r.value}</dd>

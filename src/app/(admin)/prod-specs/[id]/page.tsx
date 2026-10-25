@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   parseBundlePageSettings,
   parseProdSpecColumnMapping,
@@ -107,19 +107,12 @@ export default async function ProdSpecDetailPage({
     safeParse(() => parseProdSpecRequiredFields(prodSpec.requiredFields), []).length > 0;
 
   return (
-    <div className="px-8 py-8">
-      <Link href="/prod-specs" className="text-xs text-zinc-500 underline">
-        ← All prod specs
-      </Link>
-      <div className="mt-2 flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{prodSpec.name}</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            {prodSpec.customer.name} · {prodSpec.businessArea.name} · updated{" "}
-            {formatDate(prodSpec.updatedAt)}
-          </p>
-        </div>
-      </div>
+    <div className="px-6 py-5">
+      <PageHeader
+        back={{ href: "/prod-specs", label: "Prod specs" }}
+        title={prodSpec.name}
+        meta={`${prodSpec.customer.name} · ${prodSpec.businessArea.name} · updated ${formatDate(prodSpec.updatedAt)}`}
+      />
 
       <ProdSpecEditor
         prodSpecId={prodSpec.id}

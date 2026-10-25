@@ -91,7 +91,7 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
   const previewKey = `${p.infoAreaSizeId ?? "custom"}-${p.widthMm}x${p.heightMm}`;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-sm">
       {/* Header — the toggle and the Run button are siblings (not nested
           buttons), so running an output never toggles the row. */}
       <div className="flex items-center gap-3 px-4 py-2.5">
@@ -105,16 +105,16 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           <span
             aria-hidden="true"
             className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${
-              p.excluded ? "bg-amber-400" : p.ready ? "bg-emerald-500" : "bg-zinc-300"
+              p.excluded ? "bg-amber-400" : p.ready ? "bg-good" : "bg-zinc-300"
             }`}
           />
-          <span className="truncate text-sm font-semibold text-zinc-900" title={p.name}>
+          <span className="truncate text-sm font-semibold text-ink" title={p.name}>
             {p.name}
           </span>
           {p.excluded && (
             <span
               title={p.exclusionReason ?? "Skipped by a document-type keyword rule"}
-              className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700"
+              className="shrink-0 rounded-full border border-transparent bg-warn-soft px-2 py-0.5 text-[11px] font-semibold text-warn"
             >
               Excluded
             </span>
@@ -122,7 +122,7 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           {p.reviewStatus === "APPROVED" && (
             <span
               title="This output was approved in review"
-              className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"
+              className="shrink-0 rounded-full border border-transparent bg-good-soft px-2 py-0.5 text-[11px] font-semibold text-good"
             >
               ✓ Approved
             </span>
@@ -130,7 +130,7 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           {p.reviewStatus === "REJECTED" && (
             <span
               title="This output was rejected in review"
-              className="shrink-0 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700"
+              className="shrink-0 rounded-full border border-transparent bg-bad-soft px-2 py-0.5 text-[11px] font-semibold text-bad"
             >
               ✗ Rejected
             </span>
@@ -140,7 +140,7 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           {p.cartonNumbering && (
             <span
               title="Carton numbering — print a numbered set (X of Y) from the Customize action"
-              className="shrink-0 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700"
+              className="shrink-0 rounded border border-transparent bg-warn-soft px-1.5 py-0.5 text-[11px] font-bold text-warn"
             >
               X of Y
             </span>
@@ -148,18 +148,18 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           {p.multipleStyles && (
             <span
               title="Multiple styles — place other styles from the same PO on the box ({{style2}}…), a manual one-off"
-              className="shrink-0 rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-700"
+              className="shrink-0 rounded border border-transparent bg-accent-soft px-1.5 py-0.5 text-[11px] font-bold text-accent-text"
             >
               Multi-style
             </span>
           )}
           {!open && p.missing.length > 0 && (
-            <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+            <span className="shrink-0 rounded-full border border-transparent bg-warn-soft px-2 py-0.5 text-[11px] font-medium text-warn">
               {p.missing.length} missing
             </span>
           )}
         </button>
-        <span className="hidden flex-shrink-0 text-[11px] tabular-nums text-zinc-400 sm:inline">
+        <span className="hidden flex-shrink-0 text-[11px] tabular-nums text-faint sm:inline">
           {sizeLabel ? `${sizeLabel} · ` : ""}
           {fmtMm(p.widthMm)} × {fmtMm(p.heightMm)} mm
         </span>
@@ -167,7 +167,7 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           // Skipped by a doc-type rule — running it would generate nothing, so
           // offer no Run/Carton actions (for anyone), just a muted note (reason
           // is on the badge + in the chips below).
-          <span className="flex-shrink-0 text-[11px] font-medium text-amber-600">Won’t generate</span>
+          <span className="flex-shrink-0 text-[11px] font-medium text-warn">Won’t generate</span>
         ) : p.isAdmin ? (
           // ADMIN-only generation actions (the API is ADMIN-gated) — REVIEWERs
           // see the card without Run/Carton.
@@ -195,18 +195,18 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
       </div>
 
       {open && (
-        <div className="border-t border-zinc-100">
+        <div className="border-t border-line">
           {hasChips && (
             <div className="flex flex-wrap gap-1.5 px-4 pt-3">
               {p.excluded && p.exclusionReason ? (
-                <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                <span className="rounded-full border border-transparent bg-warn-soft px-2 py-0.5 text-[11px] font-medium text-warn">
                   {p.exclusionReason}
                 </span>
               ) : null}
               {p.missing.map((label) => (
                 <span
                   key={`m-${label}`}
-                  className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                  className="rounded-full border border-transparent bg-warn-soft px-2 py-0.5 text-[11px] font-medium text-warn"
                 >
                   missing: {label}
                 </span>
@@ -215,7 +215,7 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
                 <span
                   key={`p-${pin.label}`}
                   title={`Pinned in the ProdSpec editor — always "${pin.value}"`}
-                  className="rounded-full border border-zinc-300 bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-700"
+                  className="rounded-full border border-line bg-subtle px-2 py-0.5 text-[11px] font-medium text-ink"
                 >
                   📌 {pin.label} = {pin.value}
                 </span>
@@ -223,7 +223,7 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
               {p.notes.map((note) => (
                 <span
                   key={`n-${note}`}
-                  className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-800"
+                  className="rounded-full border border-transparent bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent-text"
                 >
                   {note}
                 </span>
@@ -232,7 +232,7 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           )}
 
           {showSizeControl && (
-            <div className="border-b border-zinc-100 px-4 py-3">
+            <div className="border-b border-line px-4 py-3">
               <InfoAreaSizeControl
                 prodSpecId={p.prodSpecId!}
                 variantKey={p.variantKey}
@@ -245,8 +245,8 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
             </div>
           )}
 
-          <div className="bg-zinc-100 p-4">
-            <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+          <div className="bg-subtle p-4">
+            <div className="mb-1.5 text-[11px] font-medium text-faint">
               Live preview · current data
             </div>
             <LazyOutputPreview
@@ -257,7 +257,7 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
             />
           </div>
 
-          <div className="flex items-center justify-between gap-3 border-t border-zinc-100 px-4 py-2">
+          <div className="flex items-center justify-between gap-3 border-t border-line px-4 py-2">
             <div className="flex min-w-0 items-center gap-3">
               <OutputThumbnail
                 thumbSrc={p.thumbSrc}
@@ -265,12 +265,12 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
                 name={p.name}
                 generatedAt={p.generatedAt}
               />
-              <div className="min-w-0 text-[11px] leading-tight text-zinc-500">
-                <div className="font-medium uppercase tracking-wide text-zinc-400">Last generated</div>
+              <div className="min-w-0 text-[11px] leading-tight text-muted">
+                <div className="font-medium text-faint">Last generated</div>
                 <div className="truncate">{p.generatedAt ?? "never"}</div>
               </div>
             </div>
-            <span className="flex-shrink-0 text-[11px] tabular-nums text-zinc-400">
+            <span className="flex-shrink-0 text-[11px] tabular-nums text-faint">
               {fmtMm(p.widthMm)} × {fmtMm(p.heightMm)} mm
             </span>
           </div>
@@ -363,7 +363,7 @@ function InfoAreaSizeControl({
 
   return (
     <div>
-      <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+      <div className="text-[11px] font-medium text-faint">
         Info area size
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
@@ -371,7 +371,7 @@ function InfoAreaSizeControl({
           value={selectValue}
           disabled={busy}
           onChange={(e) => onSelect(e.target.value)}
-          className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-700 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         >
           {sizes.map((s) => (
             <option key={s.id} value={`size:${s.id}`}>
@@ -394,35 +394,35 @@ function InfoAreaSizeControl({
               value={customW}
               disabled={busy}
               onChange={(e) => setCustomW(e.target.value)}
-              className="w-16 rounded-md border border-zinc-300 px-2 py-1.5 text-sm tabular-nums"
+              className="w-16 rounded-md border border-line px-2 py-1.5 text-sm tabular-nums"
               aria-label="Custom width (mm)"
             />
-            <span className="text-xs text-zinc-400">×</span>
+            <span className="text-xs text-faint">×</span>
             <input
               type="text"
               inputMode="decimal"
               value={customH}
               disabled={busy}
               onChange={(e) => setCustomH(e.target.value)}
-              className="w-16 rounded-md border border-zinc-300 px-2 py-1.5 text-sm tabular-nums"
+              className="w-16 rounded-md border border-line px-2 py-1.5 text-sm tabular-nums"
               aria-label="Custom height (mm)"
             />
-            <span className="text-xs text-zinc-400">mm</span>
+            <span className="text-xs text-faint">mm</span>
             <button
               type="button"
               disabled={busy || !customValid || (!customDirty && currentSizeId === null)}
               onClick={() => void patch({ infoAreaSizeId: null, widthMm: cw, heightMm: ch })}
-              className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+              className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? "Saving…" : "Apply"}
             </button>
           </div>
         )}
       </div>
-      <p className="mt-1.5 text-[11px] text-zinc-500">
+      <p className="mt-1.5 text-[11px] text-muted">
         Sets the printed size for this info-area output. Applies wherever this Prod Spec prints it.
       </p>
-      {err && <p className="mt-1 text-[11px] text-red-600">{err}</p>}
+      {err && <p className="mt-1 text-[11px] text-bad">{err}</p>}
     </div>
   );
 }
@@ -437,7 +437,7 @@ function ChevronIcon({ open }: { open: boolean }) {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={`h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform ${open ? "rotate-90" : ""}`}
+      className={`h-3.5 w-3.5 shrink-0 text-faint transition-transform ${open ? "rotate-90" : ""}`}
       aria-hidden="true"
     >
       <polyline points="9 18 15 12 9 6" />

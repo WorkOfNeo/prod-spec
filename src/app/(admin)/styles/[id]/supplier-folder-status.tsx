@@ -58,21 +58,21 @@ export function SupplierFolderStatus({
     <section className={className}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <h2 className="text-sm font-semibold text-zinc-700">Supplier folder</h2>
+          <h2 className="text-sm font-semibold text-ink">Supplier folder</h2>
           {/* Live file count for the PO folder — fetched lazily (Graph). Only
               worth asking once there's a supplier folder link and a PO. */}
           {ready && hasPo && <SupplierFolderFileCount styleId={styleId} />}
         </div>
-        <span className="text-xs text-zinc-400">
+        <span className="text-xs text-faint">
           Where approved outputs are pushed — resolved through the Monday chain.
         </span>
       </div>
       <div
         className={`mt-2 overflow-hidden rounded-lg border ${
-          ready ? "border-emerald-200 bg-emerald-50/40" : "border-amber-200 bg-amber-50/50"
+          ready ? "border-transparent bg-emerald-50/40" : "border-transparent bg-amber-50/50"
         }`}
       >
-        <ol className="divide-y divide-zinc-100">
+        <ol className="divide-y divide-line">
           <ChainStep
             ok={hasSupplier}
             label="Supplier linked"
@@ -89,7 +89,7 @@ export function SupplierFolderStatus({
                   href={folderUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="underline hover:text-zinc-950"
+                  className="underline hover:text-ink"
                 >
                   Open folder ↗
                 </a>
@@ -101,7 +101,7 @@ export function SupplierFolderStatus({
         </ol>
         <div
           className={`border-t px-4 py-2.5 text-xs ${
-            ready ? "border-emerald-100 text-emerald-800" : "border-amber-100 text-amber-800"
+            ready ? "border-transparent text-good" : "border-transparent text-warn"
           }`}
         >
           {ready ? (
@@ -154,9 +154,9 @@ function PoFolderState({ styleId, delivery }: { styleId: string; delivery: PoFol
   return (
     <div className={`mt-2 rounded-lg border px-4 py-2.5 text-xs ${tone}`}>
       <div className="mb-1 flex items-center justify-between">
-        <span className="font-medium text-zinc-700">SharePoint delivery</span>
+        <span className="font-medium text-ink">SharePoint delivery</span>
         {folderUrl ? (
-          <a href={folderUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-zinc-950">
+          <a href={folderUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-ink">
             Open PO folder ↗
           </a>
         ) : null}
@@ -205,17 +205,17 @@ function ChainStep({
     <li className="flex items-center gap-3 px-4 py-2.5">
       <span
         className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
-          ok ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+          ok ? "bg-good-soft text-good" : "bg-warn-soft text-warn"
         }`}
         aria-hidden
       >
         {ok ? "✓" : "!"}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium text-zinc-800">{label}</div>
-        <div className="text-[11px] text-zinc-400">{source}</div>
+        <div className="text-sm font-medium text-ink">{label}</div>
+        <div className="text-[11px] text-faint">{source}</div>
       </div>
-      <div className={`text-right text-sm ${ok ? "text-zinc-800" : "text-amber-700"}`}>{value}</div>
+      <div className={`text-right text-sm ${ok ? "text-ink" : "text-warn"}`}>{value}</div>
     </li>
   );
 }

@@ -94,7 +94,7 @@ export function ReviewActions({
           type="button"
           onClick={() => setRejecting(true)}
           disabled={pending !== null}
-          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         >
           {pending === "reject" ? "Rejecting…" : "Reject all…"}
         </button>
@@ -107,17 +107,17 @@ export function ReviewActions({
               ? "Approve every pending output, upload to SharePoint and email the supplier"
               : "SharePoint not configured — publishes with email attachments only"
           }
-          className="rounded-md bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {pending === "approve" ? "Approving…" : "Approve all & publish"}
         </button>
       </div>
       {!sharepointConfigured ? (
-        <span className="text-[11px] text-zinc-400">
+        <span className="text-[11px] text-faint">
           SharePoint not configured — supplier gets the PDFs as attachments only.
         </span>
       ) : null}
-      {error && <span className="text-xs text-red-600">{error}</span>}
+      {error && <span className="text-xs text-bad">{error}</span>}
 
       {rejecting ? (
         <RejectModal
@@ -155,42 +155,42 @@ function ApprovedPanel({
   onViewEmail: (() => void) | null;
 }) {
   return (
-    <div className="w-full max-w-md rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm">
-      <div className="font-semibold text-emerald-800">✓ Approved &amp; published</div>
-      <div className="mt-2 text-zinc-700">
+    <div className="w-full max-w-md rounded-lg border border-transparent bg-good-soft p-4 text-sm">
+      <div className="font-semibold text-good">✓ Approved &amp; published</div>
+      <div className="mt-2 text-ink">
         {result.sent ? "Supplier email sent:" : "Supplier email — staged, NOT sent:"}
       </div>
-      <ul className="mt-1 space-y-0.5 text-xs text-zinc-700">
+      <ul className="mt-1 space-y-0.5 text-xs text-ink">
         <li>
-          <span className="text-zinc-500">To:</span>{" "}
-          {result.to ?? <span className="text-amber-700">— no recipient resolved</span>}
+          <span className="text-muted">To:</span>{" "}
+          {result.to ?? <span className="text-warn">— no recipient resolved</span>}
         </li>
         <li>
-          <span className="text-zinc-500">CC:</span> {result.cc ?? "—"}
+          <span className="text-muted">CC:</span> {result.cc ?? "—"}
         </li>
         <li>
-          <span className="text-zinc-500">Attachments:</span> {result.attachments} PDF
+          <span className="text-muted">Attachments:</span> {result.attachments} PDF
           {result.attachments === 1 ? "" : "s"}
         </li>
         {result.folderUrl && (
           <li>
-            <span className="text-zinc-500">SharePoint folder:</span>{" "}
+            <span className="text-muted">SharePoint folder:</span>{" "}
             <a
               href={result.folderUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-emerald-700 underline"
+              className="text-good underline"
             >
               open
             </a>
           </li>
         )}
       </ul>
-      {result.note && <p className="mt-2 text-xs text-zinc-500">{result.note}</p>}
+      {result.note && <p className="mt-2 text-xs text-muted">{result.note}</p>}
       <div className="mt-3 flex items-center gap-2">
         <a
           href={`/styles/${styleId}`}
-          className="inline-block rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
+          className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Back to style
         </a>
@@ -198,7 +198,7 @@ function ApprovedPanel({
           <button
             type="button"
             onClick={onViewEmail}
-            className="rounded-md border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             View email
           </button>

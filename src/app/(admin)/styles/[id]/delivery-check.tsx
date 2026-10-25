@@ -102,11 +102,11 @@ export function DeliveryCheck({ styleId, canFixTemplate }: { styleId: string; ca
   const lost = data?.collisions.reduce((n, c) => n + c.lost, 0) ?? 0;
 
   return (
-    <div className="mt-2 rounded-lg border border-zinc-200 bg-white px-4 py-3">
+    <div className="mt-2 rounded-xl border border-line bg-surface px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <span className="text-sm font-medium text-zinc-700">Delivery check</span>
-          <p className="mt-0.5 text-[11px] text-zinc-400">
+          <span className="text-sm font-medium text-ink">Delivery check</span>
+          <p className="mt-0.5 text-[11px] text-faint">
             Counts every approved PDF against the files actually in the supplier folder.
           </p>
         </div>
@@ -115,7 +115,7 @@ export function DeliveryCheck({ styleId, canFixTemplate }: { styleId: string; ca
             type="button"
             onClick={() => call("GET")}
             disabled={busy != null}
-            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+            className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink hover:bg-subtle disabled:opacity-50"
           >
             {busy === "check" ? "Checking…" : "Re-check uploads"}
           </button>
@@ -127,7 +127,7 @@ export function DeliveryCheck({ styleId, canFixTemplate }: { styleId: string; ca
               type="button"
               onClick={() => call("POST")}
               disabled={busy != null}
-              className="rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+              className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy === "repair" ? "Repairing…" : "Repair & upload"}
             </button>
@@ -135,8 +135,8 @@ export function DeliveryCheck({ styleId, canFixTemplate }: { styleId: string; ca
         </div>
       </div>
 
-      {err ? <p className="mt-2 text-xs text-rose-700">⚠ {err}</p> : null}
-      {note ? <p className="mt-2 text-xs text-emerald-700">✓ {note}</p> : null}
+      {err ? <p className="mt-2 text-xs text-bad">⚠ {err}</p> : null}
+      {note ? <p className="mt-2 text-xs text-good">✓ {note}</p> : null}
 
       {a ? (
         <div className="mt-3 space-y-2 text-xs">
@@ -144,10 +144,10 @@ export function DeliveryCheck({ styleId, canFixTemplate }: { styleId: string; ca
           <div
             className={`rounded-md border px-3 py-2 ${
               a.status === "ok"
-                ? "border-emerald-200 bg-emerald-50/60 text-emerald-800"
+                ? "border-transparent bg-emerald-50/60 text-good"
                 : a.status === "gaps"
-                  ? "border-amber-200 bg-amber-50/60 text-amber-900"
-                  : "border-zinc-200 bg-zinc-50 text-zinc-600"
+                  ? "border-transparent bg-amber-50/60 text-warn"
+                  : "border-line bg-subtle text-muted"
             }`}
           >
             {a.expectedDocs > 0 ? (
@@ -164,7 +164,7 @@ export function DeliveryCheck({ styleId, canFixTemplate }: { styleId: string; ca
                 href={a.folderUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-1 inline-block underline hover:text-zinc-950"
+                className="mt-1 inline-block underline hover:text-ink"
               >
                 Open “{a.folderName}” ↗
               </a>
@@ -173,7 +173,7 @@ export function DeliveryCheck({ styleId, canFixTemplate }: { styleId: string; ca
 
           {/* Collisions — the case no retry can fix. */}
           {data!.collisions.map((c) => (
-            <div key={c.spName} className="rounded-md border border-rose-200 bg-rose-50/60 px-3 py-2 text-rose-900">
+            <div key={c.spName} className="rounded-md border border-transparent bg-rose-50/60 px-3 py-2 text-bad">
               <div className="font-medium">
                 ⚠ {c.lost} document(s) can never be delivered
                 {c.layoutName ? <> — {c.layoutName}</> : null}
@@ -194,7 +194,7 @@ export function DeliveryCheck({ styleId, canFixTemplate }: { styleId: string; ca
                     type="button"
                     onClick={() => applyTemplateFix(c.layoutId!)}
                     disabled={busy != null}
-                    className="rounded-md bg-rose-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-rose-800 disabled:opacity-50"
+                    className="rounded-md bg-bad px-2.5 py-1 text-xs font-medium text-white hover:bg-bad disabled:opacity-50"
                   >
                     {busy === "template" ? "Applying…" : `Add ${c.suggestion.map((t) => `{{${t}}}`).join(" + ")} & re-upload`}
                   </button>
@@ -233,7 +233,7 @@ export function DeliveryCheck({ styleId, canFixTemplate }: { styleId: string; ca
                   <code>{n}</code>
                 </li>
               ))}
-              <li className="mt-1 list-none text-[11px] text-zinc-500">
+              <li className="mt-1 list-none text-[11px] text-muted">
                 Probably files from an earlier name. Nothing is deleted automatically — remove them in SharePoint if
                 they’re outdated.
               </li>
@@ -257,7 +257,7 @@ function Detail({
   return (
     <details
       className={`rounded-md border px-3 py-2 ${
-        tone === "amber" ? "border-amber-200 bg-amber-50/50 text-amber-900" : "border-zinc-200 bg-zinc-50 text-zinc-600"
+        tone === "amber" ? "border-transparent bg-amber-50/50 text-warn" : "border-line bg-subtle text-muted"
       }`}
     >
       <summary className="cursor-pointer font-medium">{title}</summary>

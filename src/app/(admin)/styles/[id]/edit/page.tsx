@@ -68,12 +68,12 @@ export default async function EditStylePage({ params }: { params: Promise<{ id: 
   const initial = formStateFromStyle(style, customers, washSymbols);
 
   return (
-    <div className="px-8 py-8">
-      <Link href={`/styles/${id}`} className="text-xs text-zinc-500 underline">
+    <div className="px-6 py-5">
+      <Link href={`/styles/${id}`} className="text-xs text-muted underline">
         ← Back to style
       </Link>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight">Edit · {style.name}</h1>
-      <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+      <h1 className="mt-2 text-[18px] font-semibold tracking-[-0.01em]">Edit · {style.name}</h1>
+      <p className="mt-1 max-w-2xl text-sm text-muted">
         Saving regenerates all PDFs and lands on the review page. Toggle on the review screen if you
         want to approve afterwards.
       </p>

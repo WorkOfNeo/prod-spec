@@ -23,7 +23,7 @@ export function PageSettingsFields({
   return (
     <div className="flex flex-col gap-3">
       <div>
-        <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+        <div className="text-[11px] font-semibold text-faint">
           Margins · mm from page edge
         </div>
         <div className="mt-1.5 grid grid-cols-4 gap-2">
@@ -52,8 +52,8 @@ export function PageSettingsFields({
           onChange={(n) => set("lineHeight", n)}
         />
       </div>
-      <div className="flex items-center justify-between rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
-        <span className="text-xs font-medium text-zinc-700">Footer line</span>
+      <div className="flex items-center justify-between rounded-md border border-line bg-subtle px-3 py-2">
+        <span className="text-xs font-medium text-ink">Footer line</span>
         <Toggle
           checked={value.showFooter}
           onChange={(next) => set("showFooter", next)}
@@ -83,7 +83,7 @@ function Num({
   onChange: (n: number) => void;
 }) {
   return (
-    <label className="block text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+    <label className="block text-[11px] font-medium text-muted">
       {label}
       <input
         type="number"
@@ -95,9 +95,9 @@ function Num({
           const n = Number(e.target.value);
           if (Number.isFinite(n)) onChange(Math.min(max, Math.max(min, n)));
         }}
-        className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums normal-case"
+        className="mt-1 w-full rounded-md border border-line bg-surface px-2 py-1.5 text-sm tabular-nums normal-case"
       />
-      {hint && <span className="mt-0.5 block font-normal normal-case tracking-normal text-zinc-400">{hint}</span>}
+      {hint && <span className="mt-0.5 block font-normal normal-case tracking-normal text-faint">{hint}</span>}
     </label>
   );
 }

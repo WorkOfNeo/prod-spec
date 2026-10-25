@@ -81,7 +81,7 @@ export function ReadinessPill({
 }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${PILL_TONE[notice.tone]} ${className}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${PILL_TONE[notice.tone]}    ${className}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${DOT_TONE[notice.tone]}`} aria-hidden="true" />
       {notice.headline}
@@ -92,7 +92,7 @@ export function ReadinessPill({
 function StepAction({ action, hrefs }: { action: ReadinessAction; hrefs?: ReadinessHrefs }) {
   const base =
     action.kind === "primary"
-      ? "bg-zinc-900 text-white hover:bg-zinc-800 border border-zinc-900"
+      ? "bg-zinc-900 text-white hover:bg-zinc-800 border border-ink"
       : action.kind === "link"
         ? "text-sky-700 hover:underline"
         : "border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50";
@@ -118,7 +118,7 @@ function FieldChips({ fields }: { fields: { field: string; label: string }[] }) 
       {fields.map((f) => (
         <span
           key={f.field}
-          className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800"
+          className="rounded-md border border-transparent bg-warn-soft px-1.5 py-0.5 text-[11px] text-warn"
         >
           {f.label}
         </span>
@@ -145,7 +145,7 @@ function Step({
       : (leadingNum ?? stepGlyph(step));
 
   return (
-    <li className="flex gap-3 border-b border-zinc-100 px-4 py-3 last:border-b-0">
+    <li className="flex gap-3 border-b border-line px-4 py-3 last:border-b-0">
       <span
         className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${NUM_STATUS[step.status]}`}
         aria-hidden="true"
@@ -153,16 +153,16 @@ function Step({
         {badge}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-semibold text-zinc-800">{step.title}</div>
-        <div className="mt-0.5 text-[12px] text-zinc-500">{step.detail}</div>
+        <div className="text-[13px] font-semibold text-ink">{step.title}</div>
+        <div className="mt-0.5 text-[12px] text-muted">{step.detail}</div>
 
         {/* Per-output field breakdown (field-waiting step). */}
         {step.outputs && step.outputs.length > 0 ? (
           <div className="mt-2 space-y-2">
             {step.outputs.map((o) => (
               <div key={o.name}>
-                <div className="text-[12px] font-medium text-zinc-700">{o.name}</div>
-                {o.note ? <div className="text-[12px] text-amber-700">{o.note}</div> : null}
+                <div className="text-[12px] font-medium text-ink">{o.name}</div>
+                {o.note ? <div className="text-[12px] text-warn">{o.note}</div> : null}
                 <FieldChips fields={o.fields} />
               </div>
             ))}
@@ -219,10 +219,10 @@ export function OutputReadinessNotice({
 
   const titleBlock = (
     <>
-      {title ? <div className="text-[15px] font-bold text-zinc-900">{title}</div> : null}
-      {subtitle ? <div className="text-xs text-zinc-500">{subtitle}</div> : null}
+      {title ? <div className="text-[15px] font-bold text-ink">{title}</div> : null}
+      {subtitle ? <div className="text-xs text-muted">{subtitle}</div> : null}
       {notice.total > 0 ? (
-        <div className="mt-0.5 text-xs text-zinc-500 tabular-nums">
+        <div className="mt-0.5 text-xs text-muted tabular-nums">
           {notice.ready} of {notice.total} ready
         </div>
       ) : null}
@@ -231,7 +231,7 @@ export function OutputReadinessNotice({
 
   const bar =
     notice.total > 0 ? (
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-100">
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-subtle">
         <span
           className={`block h-full rounded-full ${BAR_TONE[notice.tone]}`}
           style={{ width: `${pct}%` }}
@@ -242,7 +242,7 @@ export function OutputReadinessNotice({
   const body = (
     <>
       {showReviewerBanner ? (
-        <div className="border-b border-amber-100 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">
+        <div className="border-b border-transparent bg-warn-soft px-4 py-3 text-[12px] text-warn">
           <strong>Don&apos;t approve as final yet.</strong>{" "}
           {hasWaiting
             ? "Some outputs can't generate because required fields are blank on Monday. Add them on Monday and they generate automatically — then they appear here for review. "
@@ -262,7 +262,7 @@ export function OutputReadinessNotice({
   if (collapsible) {
     return (
       <details
-        className={`group overflow-hidden rounded-xl border border-zinc-200 bg-white ${className}`}
+        className={`group overflow-hidden rounded-xl border border-line bg-surface ${className}`}
         {...(defaultOpen ? { open: true } : {})}
       >
         <summary className="cursor-pointer list-none px-4 py-4 marker:hidden [&::-webkit-details-marker]:hidden">
@@ -276,7 +276,7 @@ export function OutputReadinessNotice({
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                className="mt-1 h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform group-open:rotate-90"
+                className="mt-1 h-3.5 w-3.5 shrink-0 text-faint transition-transform group-open:rotate-90"
                 aria-hidden="true"
               >
                 <polyline points="9 18 15 12 9 6" />
@@ -287,14 +287,14 @@ export function OutputReadinessNotice({
           </div>
           {bar}
         </summary>
-        <div className="border-t border-zinc-100">{body}</div>
+        <div className="border-t border-line">{body}</div>
       </details>
     );
   }
 
   return (
-    <div className={`overflow-hidden rounded-xl border border-zinc-200 bg-white ${className}`}>
-      <div className="border-b border-zinc-100 px-4 py-4">
+    <div className={`overflow-hidden rounded-xl border border-line bg-surface ${className}`}>
+      <div className="border-b border-line px-4 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">{titleBlock}</div>
           <ReadinessPill notice={notice} />

@@ -31,13 +31,13 @@ function RowsTable({ group }: { group: CollisionGroup }) {
   // the operator is here to answer.
   const varies = (t: "size" | "colourName" | "ean13") => group.varyingTokens.includes(t);
   const cell = (t: "size" | "colourName" | "ean13", value: string) => (
-    <td className={varies(t) ? "px-3 py-1.5 font-medium text-zinc-900" : "px-3 py-1.5 text-zinc-400"}>
+    <td className={varies(t) ? "px-3 py-1.5 font-medium text-ink" : "px-3 py-1.5 text-faint"}>
       {value || "—"}
     </td>
   );
   return (
     <table className="mt-2 w-full text-left text-xs">
-      <thead className="text-zinc-500">
+      <thead className="text-muted">
         <tr>
           <th className="px-3 py-1 font-medium">Document</th>
           <th className="px-3 py-1 font-medium">{"{{size}}"}</th>
@@ -45,10 +45,10 @@ function RowsTable({ group }: { group: CollisionGroup }) {
           <th className="px-3 py-1 font-medium">{"{{ean13}}"}</th>
         </tr>
       </thead>
-      <tbody className="divide-y divide-zinc-100">
+      <tbody className="divide-y divide-line">
         {group.rows.map((r) => (
           <tr key={r.suffix}>
-            <td className="px-3 py-1.5 font-mono text-zinc-600">{r.suffix}</td>
+            <td className="px-3 py-1.5 font-mono text-muted">{r.suffix}</td>
             {cell("size", r.size)}
             {cell("colourName", r.colourName)}
             {cell("ean13", r.ean13)}
@@ -62,7 +62,7 @@ function RowsTable({ group }: { group: CollisionGroup }) {
 function AnalysisBlock({ analysis }: { analysis: StyleAnalysis }) {
   if (analysis.collisions.length === 0) {
     return (
-      <p className="mt-2 text-xs text-emerald-700">
+      <p className="mt-2 text-xs text-good">
         Re-checked against the current template — all {analysis.rows.length} documents resolve to unique names.
         Regenerate this style to replace the old files.
       </p>
@@ -71,9 +71,9 @@ function AnalysisBlock({ analysis }: { analysis: StyleAnalysis }) {
   return (
     <div className="mt-2 space-y-3">
       {analysis.collisions.map((g) => (
-        <div key={g.fileName} className="rounded-md border border-zinc-200 bg-white p-2">
-          <p className="font-mono text-xs text-zinc-800">
-            {g.fileName} <span className="text-red-600">×{g.rows.length}</span>
+        <div key={g.fileName} className="rounded-md border border-line bg-surface p-2">
+          <p className="font-mono text-xs text-ink">
+            {g.fileName} <span className="text-bad">×{g.rows.length}</span>
           </p>
           <RowsTable group={g} />
         </div>
@@ -102,28 +102,28 @@ function LayoutCard({ summary }: { summary: LayoutCollisionSummary }) {
   }
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white">
+    <div className="rounded-xl border border-line bg-surface">
       <div className="flex items-start justify-between gap-4 px-5 py-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Link
               href={`/output-builder/${summary.layoutId}`}
-              className="truncate text-sm font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2"
+              className="truncate text-sm font-medium text-ink underline decoration-zinc-300 underline-offset-2"
             >
               {summary.layoutName}
             </Link>
             <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${v.chip}`}>{v.label}</span>
           </div>
-          <p className="mt-1 font-mono text-xs text-zinc-500">{summary.expression || "(no custom file name)"}</p>
-          <p className="mt-1.5 text-xs text-zinc-600">
-            <span className="font-semibold text-zinc-900">{summary.filesLost}</span> file
+          <p className="mt-1 font-mono text-xs text-muted">{summary.expression || "(no custom file name)"}</p>
+          <p className="mt-1.5 text-xs text-muted">
+            <span className="font-semibold text-ink">{summary.filesLost}</span> file
             {summary.filesLost === 1 ? "" : "s"} overwritten across{" "}
-            <span className="font-semibold text-zinc-900">{summary.stylesAffected}</span> style
+            <span className="font-semibold text-ink">{summary.stylesAffected}</span> style
             {summary.stylesAffected === 1 ? "" : "s"}
           </p>
           {summary.fix ? (
             <p
-              className={`mt-1.5 text-xs ${summary.verdict === "broken" ? "text-red-700" : "text-amber-800"}`}
+              className={`mt-1.5 text-xs ${summary.verdict === "broken" ? "text-bad" : "text-warn"}`}
             >
               → {summary.fix}
             </p>
@@ -132,17 +132,17 @@ function LayoutCard({ summary }: { summary: LayoutCollisionSummary }) {
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="shrink-0 rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+          className="shrink-0 rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink hover:bg-subtle"
         >
           {open ? "Hide styles" : `Show styles (${summary.samples.length})`}
         </button>
       </div>
 
       {open ? (
-        <div className="space-y-2 border-t border-zinc-100 bg-zinc-50/60 px-5 py-4">
+        <div className="space-y-2 border-t border-line bg-zinc-50/60 px-5 py-4">
           {summary.sampleAnalysis && summary.sampleAnalysis.collisions.length > 0 ? (
             <div className="mb-3">
-              <p className="text-xs font-medium text-zinc-700">
+              <p className="text-xs font-medium text-ink">
                 Why these are indistinguishable — greyed columns are identical on every document:
               </p>
               <AnalysisBlock analysis={summary.sampleAnalysis} />
@@ -152,29 +152,29 @@ function LayoutCard({ summary }: { summary: LayoutCollisionSummary }) {
           {summary.samples.map((s) => {
             const a = perStyle[s.styleId];
             return (
-              <div key={`${s.styleId}-${s.fileName}`} className="rounded-md border border-zinc-200 bg-white px-3 py-2">
+              <div key={`${s.styleId}-${s.fileName}`} className="rounded-md border border-line bg-surface px-3 py-2">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <Link
                       href={`/styles/${s.styleId}/review`}
-                      className="text-xs font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2"
+                      className="text-xs font-medium text-ink underline decoration-zinc-300 underline-offset-2"
                     >
                       {s.styleName}
                     </Link>
-                    <span className="ml-2 font-mono text-xs text-zinc-500">{s.fileName}</span>
-                    <span className="ml-2 text-xs text-red-600">×{s.docCount}</span>
+                    <span className="ml-2 font-mono text-xs text-muted">{s.fileName}</span>
+                    <span className="ml-2 text-xs text-bad">×{s.docCount}</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => recheck(s.styleId)}
                     disabled={checking === s.styleId}
-                    className="shrink-0 rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                    className="shrink-0 rounded border border-line px-2 py-1 text-xs text-ink hover:bg-subtle disabled:opacity-50"
                   >
                     {checking === s.styleId ? "Checking…" : "Re-check"}
                   </button>
                 </div>
                 {a === "none" ? (
-                  <p className="mt-1.5 text-xs text-zinc-500">
+                  <p className="mt-1.5 text-xs text-muted">
                     This layout no longer splits per EAN, or has no custom file name — nothing to check.
                   </p>
                 ) : a ? (
@@ -184,7 +184,7 @@ function LayoutCard({ summary }: { summary: LayoutCollisionSummary }) {
             );
           })}
           {summary.stylesAffected > summary.samples.length ? (
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-muted">
               + {summary.stylesAffected - summary.samples.length} more style
               {summary.stylesAffected - summary.samples.length === 1 ? "" : "s"} affected
             </p>
@@ -201,9 +201,9 @@ export function FileNamesTab({ summaries }: { summaries: LayoutCollisionSummary[
 
   if (summaries.length === 0) {
     return (
-      <div className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 px-5 py-4">
-        <p className="text-sm font-medium text-emerald-800">No file-name collisions</p>
-        <p className="mt-1 text-sm text-emerald-700">
+      <div className="mt-6 rounded-lg border border-transparent bg-good-soft px-5 py-4">
+        <p className="text-sm font-medium text-good">No file-name collisions</p>
+        <p className="mt-1 text-sm text-good">
           Every split layout resolves each of its documents to a unique file name.
         </p>
       </div>
@@ -212,8 +212,8 @@ export function FileNamesTab({ summaries }: { summaries: LayoutCollisionSummary[
 
   return (
     <div className="mt-6 space-y-6">
-      <div className="max-w-3xl rounded-lg border border-zinc-200 bg-zinc-50 px-5 py-4">
-        <p className="text-sm text-zinc-700">
+      <div className="max-w-3xl rounded-lg border border-line bg-subtle px-5 py-4">
+        <p className="text-sm text-ink">
           A layout set to <strong>split per EAN</strong> emits one PDF per repetition row, but the file name is
           resolved against each row separately. When the name contains no token that actually <em>differs</em>{" "}
           between rows, every document gets the same name — and because the supplier push uploads by name, only
@@ -223,8 +223,8 @@ export function FileNamesTab({ summaries }: { summaries: LayoutCollisionSummary[
 
       {broken.length > 0 ? (
         <section>
-          <h2 className="text-sm font-semibold text-zinc-900">Still colliding — edit the template</h2>
-          <p className="mt-0.5 text-xs text-zinc-500">
+          <h2 className="text-sm font-semibold text-ink">Still colliding — edit the template</h2>
+          <p className="mt-0.5 text-xs text-muted">
             Today&apos;s file name still resolves to duplicates. Regenerating first would just lose the same files
             again.
           </p>
@@ -238,8 +238,8 @@ export function FileNamesTab({ summaries }: { summaries: LayoutCollisionSummary[
 
       {stale.length > 0 ? (
         <section>
-          <h2 className="text-sm font-semibold text-zinc-900">Template already fixed — regenerate</h2>
-          <p className="mt-0.5 text-xs text-zinc-500">
+          <h2 className="text-sm font-semibold text-ink">Template already fixed — regenerate</h2>
+          <p className="mt-0.5 text-xs text-muted">
             The current file name is unique. These styles were generated under the old one, so the supplier folder
             is still short until they re-run.
           </p>

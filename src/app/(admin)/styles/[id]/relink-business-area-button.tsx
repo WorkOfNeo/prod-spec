@@ -41,11 +41,11 @@ export function RelinkBusinessAreaButton({
         type="button"
         onClick={relink}
         disabled={busy}
-        className="rounded-md bg-amber-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-50"
+        className="rounded-md bg-warn px-3 py-1.5 text-xs font-medium text-white hover:bg-warn disabled:opacity-50"
       >
         {busy ? "Linking…" : `Link to "${candidate.name}" Business Area`}
       </button>
-      {err && <span className="text-xs text-red-700">{err}</span>}
+      {err && <span className="text-xs text-bad">{err}</span>}
     </div>
   );
 }

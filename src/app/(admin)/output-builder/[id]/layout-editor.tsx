@@ -64,6 +64,7 @@ import { OutputRulesEditor, type RuleFieldOption } from "@/components/output-rul
 import { TokenAutocomplete, buildTokenSuggestions } from "@/components/token-autocomplete";
 import type { LayoutHistoryData } from "@/lib/output-layouts/revision-history";
 import { LayoutHistory, OpenDraftNotice } from "./layout-history-panel";
+import { ChevronLeft } from "lucide-react";
 
 // =====================================================
 // Output Builder editor — one layout, three panes:
@@ -1407,23 +1408,24 @@ export function LayoutEditor({
   });
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-surface">
       {/* ---------- header ---------- */}
-      <div className="sticky top-0 z-20 border-b border-zinc-200 bg-white/95 px-8 py-3 backdrop-blur">
+      <div className="sticky top-12 z-20 border-b border-line bg-surface/95 px-6 py-3 backdrop-blur">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <Link href="/output-builder" className="text-sm text-zinc-400 hover:text-zinc-700">
-            ← Output builder
+          <Link href="/output-builder" className="text-muted hover:text-ink inline-flex items-center gap-0.5 text-[12px]">
+            <ChevronLeft size={14} aria-hidden="true" />
+            Output builder
           </Link>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-80 rounded-md border border-transparent px-2 py-1 text-base font-semibold tracking-tight hover:border-zinc-200 focus:border-zinc-300 focus:outline-none"
+            className="w-80 rounded-md border border-transparent px-2 py-1 text-base font-semibold tracking-tight hover:border-line focus:border-line focus:outline-none"
           />
           <select
             value={docType}
             onChange={(e) => setDocType(e.target.value)}
-            className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-600"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
             title="Asset doc type — grouping in pickers and on JobAssets"
           >
             {docTypes.map((d) => (
@@ -1437,33 +1439,33 @@ export function LayoutEditor({
           </select>
           <Link
             href="/output-builder?docTypes=1"
-            className="text-[11px] text-zinc-400 underline-offset-2 hover:text-zinc-600 hover:underline"
+            className="text-[11px] text-faint underline-offset-2 hover:text-muted hover:underline"
             title="Add or rename document types, set keyword exclusion rules"
           >
             Manage types
           </Link>
           <label
-            className="flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-600"
+            className="flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-xs text-muted"
             title="Info area: this layout's print size becomes switchable per style (admin size or custom) on the Style page — see Settings → Info area sizes"
           >
             <input
               type="checkbox"
               checked={isInfoArea}
               onChange={(e) => setIsInfoArea(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+              className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
             />
             Info area
           </label>
           {status === "PUBLISHED" ? (
-            <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
+            <span className="inline-flex rounded-full border border-transparent bg-good-soft px-2.5 py-0.5 text-xs font-medium text-good">
               Published · v{version} — edits go live on save
             </span>
           ) : (
-            <span className="inline-flex rounded-full border border-zinc-200 px-2.5 py-0.5 text-xs font-medium text-zinc-500">
+            <span className="inline-flex rounded-full border border-line px-2.5 py-0.5 text-xs font-medium text-muted">
               Draft
             </span>
           )}
-          <span className="text-xs text-zinc-400">
+          <span className="text-xs text-faint">
             {saveState === "saving"
               ? "Saving…"
               : saveState === "dirty"
@@ -1480,7 +1482,7 @@ export function LayoutEditor({
               onClick={() => setGuideOpen(true)}
               aria-label="Output Builder guide"
               title="Output Builder guide — what every control does and how to use it"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-sm font-semibold text-zinc-500 hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-800"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-line bg-surface text-sm font-semibold text-muted hover:border-zinc-400 hover:bg-subtle hover:text-ink"
             >
               ?
             </button>
@@ -1488,7 +1490,7 @@ export function LayoutEditor({
               type="button"
               onClick={saveNow}
               disabled={saveState === "saved" || saveState === "saving"}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
               title="Save now (autosave runs 1.2s after the last change)"
             >
               {saveState === "saving" ? "Saving…" : "Save"}
@@ -1497,7 +1499,7 @@ export function LayoutEditor({
               type="button"
               onClick={openPdf}
               disabled={pdfBusy}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
             >
               {pdfBusy ? "Rendering…" : "Open PDF"}
             </button>
@@ -1507,7 +1509,7 @@ export function LayoutEditor({
                 type="button"
                 onClick={publish}
                 disabled={publishing}
-                className="rounded-md bg-zinc-900 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {publishing ? "Publishing…" : "Publish"}
               </button>
@@ -1515,7 +1517,7 @@ export function LayoutEditor({
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}
-              className="ml-1 border-l border-zinc-200 pl-3 text-sm font-medium text-zinc-400 hover:text-red-600"
+              className="ml-1 border-l border-line pl-3 text-sm font-medium text-faint hover:text-bad"
               title="Delete this layout"
             >
               Delete
@@ -1523,7 +1525,7 @@ export function LayoutEditor({
           </div>
         </div>
         {publishErrors.length > 0 ? (
-          <ul className="mt-2 space-y-0.5 text-xs text-red-600">
+          <ul className="mt-2 space-y-0.5 text-xs text-bad">
             {publishErrors.map((e, i) => (
               <li key={i}>· {e}</li>
             ))}
@@ -1531,9 +1533,9 @@ export function LayoutEditor({
         ) : null}
         {history?.openDraft ? <OpenDraftNotice draft={history.openDraft} /> : null}
         {status === "PUBLISHED" ? (
-          <p className="mt-1.5 text-xs text-zinc-400">
+          <p className="mt-1.5 text-xs text-faint">
             Available in the Prod Spec output picker as{" "}
-            <code className="rounded bg-zinc-100 px-1 font-mono">layout:{layout.id}</code> — it only generates for
+            <code className="rounded bg-subtle px-1 font-mono">layout:{layout.id}</code> — it only generates for
             styles once added to a Prod Spec there.
           </p>
         ) : null}
@@ -1541,7 +1543,7 @@ export function LayoutEditor({
 
       {confirmDelete ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(15_17_21/0.30)] p-4"
           role="dialog"
           aria-modal="true"
           onClick={() => {
@@ -1549,43 +1551,43 @@ export function LayoutEditor({
           }}
         >
           <div
-            className="w-full max-w-md rounded-lg border border-zinc-200 bg-white shadow-xl"
+            className="w-full max-w-md rounded-xl border border-line bg-surface shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="border-b border-zinc-100 px-5 py-4">
-              <h2 className="text-sm font-semibold text-zinc-900">Delete “{name}”?</h2>
+            <div className="border-b border-line px-5 py-4">
+              <h2 className="text-sm font-semibold text-ink">Delete “{name}”?</h2>
             </div>
-            <div className="space-y-3 px-5 py-4 text-sm text-zinc-600">
+            <div className="space-y-3 px-5 py-4 text-sm text-muted">
               {prodSpecs.length > 0 ? (
-                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                <div className="rounded-md border border-transparent bg-warn-soft px-3 py-2 text-warn">
                   <p className="font-medium">
                     Removes the output from {prodSpecs.length} prod spec{prodSpecs.length === 1 ? "" : "s"}:
                   </p>
                   <ul className="mt-1 space-y-0.5">
                     {prodSpecs.slice(0, 8).map((s) => (
                       <li key={s.id} className="truncate">
-                        {s.name} <span className="text-amber-600">· {s.customerName}</span>
+                        {s.name} <span className="text-warn">· {s.customerName}</span>
                       </li>
                     ))}
                     {prodSpecs.length > 8 ? (
-                      <li className="text-amber-600">+{prodSpecs.length - 8} more</li>
+                      <li className="text-warn">+{prodSpecs.length - 8} more</li>
                     ) : null}
                   </ul>
                 </div>
               ) : (
-                <p className="text-zinc-500">Not linked to any prod spec.</p>
+                <p className="text-muted">Not linked to any prod spec.</p>
               )}
-              <p className="text-xs text-zinc-400">
+              <p className="text-xs text-faint">
                 Already-generated PDFs are kept — only the prod-spec link is removed.
               </p>
-              {deleteError ? <p className="text-xs text-red-600">{deleteError}</p> : null}
+              {deleteError ? <p className="text-xs text-bad">{deleteError}</p> : null}
             </div>
-            <div className="flex justify-end gap-2 border-t border-zinc-100 px-5 py-3">
+            <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
               <button
                 type="button"
                 onClick={() => setConfirmDelete(false)}
                 disabled={deleting}
-                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -1593,7 +1595,7 @@ export function LayoutEditor({
                 type="button"
                 onClick={deleteLayout}
                 disabled={deleting}
-                className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+                className="rounded-md bg-bad px-3 py-1.5 text-sm font-medium text-white hover:bg-bad disabled:opacity-60"
               >
                 {deleting ? "Deleting…" : "Delete"}
               </button>
@@ -1605,18 +1607,18 @@ export function LayoutEditor({
       {/* ---------- guide drawer ---------- */}
       {guideOpen ? (
         <div
-          className="fixed inset-0 z-50 flex justify-end bg-black/30"
+          className="fixed inset-0 z-50 flex justify-end bg-[rgb(15_17_21/0.30)]"
           role="dialog"
           aria-modal="true"
           aria-label="Output Builder guide"
           onClick={() => setGuideOpen(false)}
         >
           <div
-            className="flex h-full w-full max-w-[46rem] flex-col bg-white shadow-2xl"
+            className="flex h-full w-full max-w-[46rem] flex-col bg-surface shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center gap-3 border-b border-zinc-200 px-5 py-3">
-              <div className="text-sm font-semibold tracking-tight text-zinc-900">
+            <div className="flex items-center gap-3 border-b border-line px-5 py-3">
+              <div className="text-sm font-semibold tracking-tight text-ink">
                 Output Builder — guide
               </div>
               <div className="ml-auto flex items-center gap-2">
@@ -1624,7 +1626,7 @@ export function LayoutEditor({
                   href="/guides/output-builder"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+                  className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                   title="Open the full guide page (with PDF download) in a new tab"
                 >
                   Pop out ↗
@@ -1633,7 +1635,7 @@ export function LayoutEditor({
                   type="button"
                   onClick={() => setGuideOpen(false)}
                   aria-label="Close guide"
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-faint hover:bg-subtle hover:text-ink"
                 >
                   ✕
                 </button>
@@ -1654,21 +1656,21 @@ export function LayoutEditor({
           through updateBlock, so closing it discards nothing. */}
       {contentExpanded && selBlock ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(15_17_21/0.30)] p-4"
           role="dialog"
           aria-modal="true"
           aria-label="Content editor"
           onClick={() => setExpandedFor(null)}
         >
           <div
-            className="flex h-full max-h-[88vh] w-full max-w-[64rem] flex-col rounded-lg border border-zinc-200 bg-white shadow-2xl"
+            className="flex h-full max-h-[88vh] w-full max-w-[64rem] flex-col rounded-xl border border-line bg-surface shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex flex-wrap items-center gap-3 border-b border-zinc-200 px-5 py-3">
-              <div className="text-sm font-semibold tracking-tight text-zinc-900">
+            <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
+              <div className="text-sm font-semibold tracking-tight text-ink">
                 Content — one line per printed row
               </div>
-              <span className="truncate font-mono text-[11px] text-zinc-400">
+              <span className="truncate font-mono text-[11px] text-faint">
                 {blockSummary(selBlock).text || "empty block"}
               </span>
               <div className="ml-auto flex items-center gap-2">
@@ -1676,7 +1678,7 @@ export function LayoutEditor({
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => wrapSelection("**")}
-                  className="rounded border border-zinc-200 px-2 py-1 text-xs font-bold text-zinc-600 hover:bg-zinc-50"
+                  className="rounded border border-line px-2 py-1 text-xs font-bold text-muted hover:bg-subtle"
                   title="Bold — wraps the selection in ** **"
                 >
                   B
@@ -1685,7 +1687,7 @@ export function LayoutEditor({
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => wrapSelection("_")}
-                  className="rounded border border-zinc-200 px-2 py-1 text-xs italic text-zinc-600 hover:bg-zinc-50"
+                  className="rounded border border-line px-2 py-1 text-xs italic text-muted hover:bg-subtle"
                   title="Italic — wraps the selection in _ _"
                 >
                   I
@@ -1694,15 +1696,15 @@ export function LayoutEditor({
                   type="button"
                   onClick={() => setExpandedFor(null)}
                   aria-label="Close the expanded editor"
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-faint hover:bg-subtle hover:text-ink"
                 >
                   ✕
                 </button>
               </div>
             </div>
 
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-px overflow-auto bg-zinc-200 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-              <div className="flex min-h-0 flex-col gap-1 bg-white p-4">
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-px overflow-auto bg-subtle lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+              <div className="flex min-h-0 flex-col gap-1 bg-surface p-4">
                 <TokenAutocomplete
                   ref={expandedTaRef}
                   value={selBlock.lines.join("\n")}
@@ -1712,24 +1714,24 @@ export function LayoutEditor({
                   valuesFrom={testStyle?.name}
                   rows={18}
                   spellCheck={false}
-                  className="h-[52vh] min-h-64 w-full resize-y rounded-md border border-zinc-200 px-3 py-2 font-mono text-sm leading-relaxed"
+                  className="h-[52vh] min-h-64 w-full resize-y rounded-md border border-line px-3 py-2 font-mono text-sm leading-relaxed"
                 />
-                <p className="text-[11px] text-zinc-400">
-                  Type <code className="rounded bg-zinc-100 px-1">{"{{"}</code> for variable autofill · **bold** and
-                  _italic_ render in the print · <kbd className="rounded border border-zinc-200 px-1">esc</kbd> closes.
+                <p className="text-[11px] text-faint">
+                  Type <code className="rounded bg-subtle px-1">{"{{"}</code> for variable autofill · **bold** and
+                  _italic_ render in the print · <kbd className="rounded border border-line px-1">esc</kbd> closes.
                   Edits save exactly as they do in the panel.
                 </p>
               </div>
 
-              <div className="flex min-h-0 flex-col gap-2 overflow-auto bg-white p-4">
+              <div className="flex min-h-0 flex-col gap-2 overflow-auto bg-surface p-4">
                 <div className="flex items-baseline justify-between gap-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                  <div className="text-[11px] font-semibold text-faint">
                     Print preview{previewSample ? " · sample data" : testStyle ? ` · ${testStyle.name}` : ""}
                   </div>
                   {unresolved.length > 0 ? (
-                    <span className="text-[11px] text-amber-700">{unresolved.length} unresolved</span>
+                    <span className="text-[11px] text-warn">{unresolved.length} unresolved</span>
                   ) : previewHtml ? (
-                    <span className="text-[11px] text-emerald-700">all resolved</span>
+                    <span className="text-[11px] text-good">all resolved</span>
                   ) : null}
                 </div>
                 {previewHtml ? (
@@ -1740,10 +1742,10 @@ export function LayoutEditor({
                     cornerRadiusMm={page.cornerRadiusMm}
                   />
                 ) : (
-                  <p className="py-10 text-center text-xs text-zinc-400">Rendering…</p>
+                  <p className="py-10 text-center text-xs text-faint">Rendering…</p>
                 )}
                 {unresolved.length > 0 ? (
-                  <p className="font-mono text-[11px] leading-relaxed text-amber-700">{unresolved.join(" ")}</p>
+                  <p className="font-mono text-[11px] leading-relaxed text-warn">{unresolved.join(" ")}</p>
                 ) : null}
               </div>
             </div>
@@ -1752,7 +1754,7 @@ export function LayoutEditor({
       ) : null}
 
       {/* ---------- tabs ---------- */}
-      <div className="flex items-center gap-6 border-b border-zinc-200 px-8">
+      <div className="flex items-center gap-6 border-b border-line px-8">
         {([
           ["customizer", "Customizer"],
           ["reviews", "Reviews"],
@@ -1764,20 +1766,20 @@ export function LayoutEditor({
             onClick={() => setTab(key)}
             className={`-mb-px border-b-2 px-1 py-2.5 text-sm font-medium transition-colors ${
               tab === key
-                ? "border-zinc-900 text-zinc-900"
-                : "border-transparent text-zinc-400 hover:text-zinc-700"
+                ? "border-ink text-ink"
+                : "border-transparent text-faint hover:text-ink"
             }`}
           >
             {label}
             {key === "reviews" && stats.pendingReview > 0 ? (
-              <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-px text-[11px] font-semibold text-amber-700">
+              <span className="ml-1.5 rounded-full bg-warn-soft px-1.5 py-px text-[11px] font-semibold text-warn">
                 {stats.pendingReview}
               </span>
             ) : null}
             {/* This output doesn't generate for every style — say so where the
                 operator looks first, not only inside the tab. */}
             {key === "settings" && settings.rules.length > 0 ? (
-              <span className="ml-1.5 rounded-full bg-emerald-100 px-1.5 py-px text-[11px] font-semibold text-emerald-700">
+              <span className="ml-1.5 rounded-full bg-good-soft px-1.5 py-px text-[11px] font-semibold text-good">
                 {settings.rules.length} rule{settings.rules.length === 1 ? "" : "s"}
               </span>
             ) : null}
@@ -1788,12 +1790,12 @@ export function LayoutEditor({
       {/* ===== Customizer tab — canvas lives here, always ===== */}
       <div className={tab === "customizer" ? undefined : "hidden"}>
       {/* ---------- test data ---------- */}
-      <div className="flex flex-wrap items-center gap-3 border-b border-zinc-100 px-8 py-2.5">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Test data</span>
+      <div className="flex flex-wrap items-center gap-3 border-b border-line px-8 py-2.5">
+        <span className="text-[11px] font-semibold text-faint">Test data</span>
         <select
           value={customerId ?? ""}
           onChange={(e) => setCustomerId(e.target.value || null)}
-          className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-sm text-zinc-700"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         >
           <option value="">Customer…</option>
           {customers.map((c) => (
@@ -1805,7 +1807,7 @@ export function LayoutEditor({
         <select
           value={businessAreaId ?? ""}
           onChange={(e) => setBusinessAreaId(e.target.value || null)}
-          className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-sm text-zinc-700"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         >
           <option value="">Business area…</option>
           {businessAreas.map((b) => (
@@ -1828,7 +1830,7 @@ export function LayoutEditor({
                 onFocus={() => setSearchOpen(true)}
                 onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)}
                 placeholder="Search style / PO…"
-                className="w-44 rounded-md border border-zinc-200 bg-white py-1 pl-2 pr-6 text-sm text-zinc-700 placeholder:text-zinc-300"
+                className="w-44 rounded-md border border-line bg-surface py-1 pl-2 pr-6 text-sm text-ink placeholder:text-faint"
               />
               {styleQuery ? (
                 <button
@@ -1838,14 +1840,14 @@ export function LayoutEditor({
                     setStyleQuery("");
                     setSearchOpen(false);
                   }}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-zinc-300 hover:text-zinc-600"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-faint hover:text-muted"
                   title="Clear search"
                 >
                   ✕
                 </button>
               ) : null}
               {searchOpen && styleQuery.trim() && styles.length > 0 ? (
-                <div className="absolute left-0 top-full z-30 mt-1 w-80 overflow-hidden rounded-md border border-zinc-200 bg-white shadow-md">
+                <div className="absolute left-0 top-full z-30 mt-1 w-80 overflow-hidden rounded-md border border-line bg-surface shadow-md">
                   {styles.slice(0, 10).map((s, i) => (
                     <button
                       key={s.id}
@@ -1855,18 +1857,18 @@ export function LayoutEditor({
                         setStyleIdx(i);
                         setSearchOpen(false);
                       }}
-                      className={`flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-zinc-50 ${
-                        i === styleIdx ? "bg-zinc-50" : ""
+                      className={`flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-subtle ${
+                        i === styleIdx ? "bg-subtle" : ""
                       }`}
                     >
-                      <span className="truncate font-medium text-zinc-800">{s.name}</span>
+                      <span className="truncate font-medium text-ink">{s.name}</span>
                       <span className="flex shrink-0 items-center gap-2">
-                        {s.poNumber ? <span className="font-mono text-[11px] text-zinc-400">{s.poNumber}</span> : null}
+                        {s.poNumber ? <span className="font-mono text-[11px] text-faint">{s.poNumber}</span> : null}
                         <span
                           className={`rounded-full px-1.5 py-px text-[11px] font-medium ${
                             s.total > 0 && s.missing.length === 0
-                              ? "bg-emerald-50 text-emerald-700"
-                              : "bg-amber-50 text-amber-700"
+                              ? "bg-good-soft text-good"
+                              : "bg-warn-soft text-warn"
                           }`}
                         >
                           {s.filled}/{s.total}
@@ -1878,29 +1880,29 @@ export function LayoutEditor({
               ) : null}
             </div>
             {stylesLoading ? (
-              <span className="text-xs text-zinc-400">{styleQuery.trim() ? "Searching…" : "Finding fullest styles…"}</span>
+              <span className="text-xs text-faint">{styleQuery.trim() ? "Searching…" : "Finding fullest styles…"}</span>
             ) : styles.length === 0 ? (
-              <span className="text-xs text-zinc-400">
+              <span className="text-xs text-faint">
                 {styleQuery.trim() ? `No styles match “${styleQuery.trim()}”` : "No styles for this pair"}
               </span>
             ) : (
               <>
-                <div className="flex items-center gap-1 rounded-md border border-zinc-200 px-1 py-0.5">
+                <div className="flex items-center gap-1 rounded-md border border-line px-1 py-0.5">
                   <button
                     type="button"
                     onClick={() => setStyleIdx((i) => (i + styles.length - 1) % styles.length)}
-                    className="rounded px-1.5 py-0.5 text-xs text-zinc-500 hover:bg-zinc-100"
+                    className="rounded px-1.5 py-0.5 text-xs text-muted hover:bg-subtle"
                     title="Previous style"
                   >
                     ◀
                   </button>
-                  <span className="max-w-64 truncate px-1 text-sm font-medium text-zinc-800" title={testStyle?.name}>
+                  <span className="max-w-64 truncate px-1 text-sm font-medium text-ink" title={testStyle?.name}>
                     {testStyle?.name}
                   </span>
                   <button
                     type="button"
                     onClick={() => setStyleIdx((i) => (i + 1) % styles.length)}
-                    className="rounded px-1.5 py-0.5 text-xs text-zinc-500 hover:bg-zinc-100"
+                    className="rounded px-1.5 py-0.5 text-xs text-muted hover:bg-subtle"
                     title="Next style"
                   >
                     ▶
@@ -1908,21 +1910,21 @@ export function LayoutEditor({
                 </div>
                 {testStyle ? (
                   testStyle.total === 0 ? (
-                    <span className="text-xs text-zinc-400">no variables yet</span>
+                    <span className="text-xs text-faint">no variables yet</span>
                   ) : testStyle.missing.length === 0 ? (
-                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                    <span className="rounded-full border border-transparent bg-good-soft px-2 py-0.5 text-xs font-medium text-good">
                       {testStyle.filled}/{testStyle.total} fields
                     </span>
                   ) : (
                     <span
-                      className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700"
+                      className="rounded-full border border-transparent bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn"
                       title={`Missing: ${testStyle.missing.join(", ")}`}
                     >
                       {testStyle.filled}/{testStyle.total} fields · missing {testStyle.missing.join(", ")}
                     </span>
                   )
                 ) : null}
-                <span className="text-xs text-zinc-300">
+                <span className="text-xs text-faint">
                   {styleIdx + 1} of {styles.length}
                   {styleQuery.trim() ? ` match${styles.length === 1 ? "" : "es"}` : ""}, fullest first
                 </span>
@@ -1930,7 +1932,7 @@ export function LayoutEditor({
             )}
           </>
         ) : (
-          <span className="text-xs text-zinc-400">Pick a customer and business area to preview with real styles</span>
+          <span className="text-xs text-faint">Pick a customer and business area to preview with real styles</span>
         )}
       </div>
 
@@ -1938,7 +1940,7 @@ export function LayoutEditor({
       <div className="grid grid-cols-1 gap-8 px-8 py-6 lg:grid-cols-[12.5rem_minmax(0,1fr)_19rem]">
         {/* ----- left: pages ----- */}
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Pages</div>
+          <div className="text-[11px] font-semibold text-faint">Pages</div>
           <div className="mt-2 flex flex-col gap-1.5">
             {def.pages.map((p, i) => (
               <div
@@ -1957,18 +1959,18 @@ export function LayoutEditor({
                   }
                 }}
                 className={`group relative cursor-pointer rounded-md border px-3 py-2 text-left ${
-                  i === pageIdx ? "border-zinc-900 bg-white" : "border-zinc-200 bg-white hover:border-zinc-300"
+                  i === pageIdx ? "border-ink bg-surface" : "border-line bg-surface hover:border-line"
                 }`}
               >
-                <div className="pr-4 text-sm font-medium text-zinc-800">
+                <div className="pr-4 text-sm font-medium text-ink">
                   {i + 1} · {p.title || "Untitled"}
                 </div>
-                <div className="font-mono text-[11px] text-zinc-400">
+                <div className="font-mono text-[11px] text-faint">
                   {p.widthMm} × {p.heightMm} mm
                 </div>
                 {p.omitWhenEmpty ? (
                   <div
-                    className="text-[10px] font-medium text-amber-600"
+                    className="text-[11px] font-medium text-warn"
                     title="This page is left out of the PDF when nothing on it resolves for the style"
                   >
                     skips when empty
@@ -1981,7 +1983,7 @@ export function LayoutEditor({
                       e.stopPropagation();
                       removePage(i);
                     }}
-                    className="absolute right-1.5 top-1.5 hidden h-4 w-4 items-center justify-center rounded-full text-[10px] leading-none text-zinc-300 hover:bg-red-50 hover:text-red-600 group-hover:flex"
+                    className="absolute right-1.5 top-1.5 hidden h-4 w-4 items-center justify-center rounded-full text-[11px] leading-none text-faint hover:bg-bad-soft hover:text-bad group-hover:flex"
                     title={`Delete page "${p.title || "Untitled"}"`}
                   >
                     ✕
@@ -1992,26 +1994,26 @@ export function LayoutEditor({
             <button
               type="button"
               onClick={addPage}
-              className="rounded-md border border-dashed border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:border-zinc-400 hover:text-zinc-600"
+              className="rounded-md border border-dashed border-line px-3 py-1.5 text-xs font-medium text-faint hover:border-zinc-400 hover:text-muted"
             >
               + Add page
             </button>
           </div>
 
-          <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Page settings</div>
+          <div className="mt-6 text-[11px] font-semibold text-faint">Page settings</div>
           <div className="mt-2 space-y-3">
             <div>
-              <label className="text-xs text-zinc-500">Title</label>
+              <label className="text-xs text-muted">Title</label>
               <input
                 type="text"
                 value={page.title}
                 onChange={(e) => updatePage({ title: e.target.value })}
-                className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm"
+                className="mt-1 w-full rounded-md border border-line px-2.5 py-1.5 text-sm"
               />
             </div>
             <div className="flex gap-2">
               <div className="flex-1">
-                <label className="text-xs text-zinc-500">Width mm</label>
+                <label className="text-xs text-muted">Width mm</label>
                 <input
                   type="number"
                   min={5}
@@ -2021,11 +2023,11 @@ export function LayoutEditor({
                     const v = Number(e.target.value);
                     if (Number.isFinite(v) && v >= 5 && v <= 1000) updatePage({ widthMm: v });
                   }}
-                  className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm tabular-nums"
+                  className="mt-1 w-full rounded-md border border-line px-2.5 py-1.5 text-sm tabular-nums"
                 />
               </div>
               <div className="flex-1">
-                <label className="text-xs text-zinc-500">Height mm</label>
+                <label className="text-xs text-muted">Height mm</label>
                 <input
                   type="number"
                   min={5}
@@ -2035,13 +2037,13 @@ export function LayoutEditor({
                     const v = Number(e.target.value);
                     if (Number.isFinite(v) && v >= 5 && v <= 1000) updatePage({ heightMm: v });
                   }}
-                  className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm tabular-nums"
+                  className="mt-1 w-full rounded-md border border-line px-2.5 py-1.5 text-sm tabular-nums"
                 />
               </div>
             </div>
             <div>
               <div className="flex items-center justify-between">
-                <label className="text-xs text-zinc-500">Margins mm</label>
+                <label className="text-xs text-muted">Margins mm</label>
                 <button
                   type="button"
                   onClick={() => {
@@ -2053,10 +2055,10 @@ export function LayoutEditor({
                       setMarginsLinked(true);
                     }
                   }}
-                  className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${
+                  className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${
                     marginsLinked
-                      ? "border-zinc-900 bg-zinc-900 text-white"
-                      : "border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300"
+                      ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                      : "border-line bg-surface text-muted hover:border-line"
                   }`}
                   title={marginsLinked ? "Linked — one value for all sides. Click to edit each side." : "Per side. Click to link all sides."}
                 >
@@ -2075,7 +2077,7 @@ export function LayoutEditor({
                     if (Number.isFinite(v) && v >= 0 && v <= 50)
                       updatePage({ margins: { topMm: v, rightMm: v, bottomMm: v, leftMm: v } });
                   }}
-                  className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm tabular-nums"
+                  className="mt-1 w-full rounded-md border border-line px-2.5 py-1.5 text-sm tabular-nums"
                 />
               ) : (
                 <div className="mt-1 grid grid-cols-2 gap-1.5">
@@ -2088,7 +2090,7 @@ export function LayoutEditor({
                     ] as const
                   ).map(([k, label]) => (
                     <div key={k}>
-                      <label className="text-[10px] text-zinc-400">{label}</label>
+                      <label className="text-[11px] text-faint">{label}</label>
                       <input
                         type="number"
                         min={0}
@@ -2105,24 +2107,24 @@ export function LayoutEditor({
                               },
                             });
                         }}
-                        className="w-full rounded-md border border-zinc-200 px-2 py-1 text-sm tabular-nums"
+                        className="w-full rounded-md border border-line px-2 py-1 text-sm tabular-nums"
                       />
                     </div>
                   ))}
                 </div>
               )}
-              <p className="mt-0.5 text-[10px] text-zinc-400">The grid (and all blocks) inset from the page edges.</p>
+              <p className="mt-0.5 text-[11px] text-faint">The grid (and all blocks) inset from the page edges.</p>
             </div>
             <div>
-              <label className="text-xs text-zinc-500">Orientation</label>
-              <div className="mt-1 flex overflow-hidden rounded-md border border-zinc-200">
+              <label className="text-xs text-muted">Orientation</label>
+              <div className="mt-1 flex overflow-hidden rounded-md border border-line">
                 {(["portrait", "landscape"] as const).map((o) => (
                   <button
                     key={o}
                     type="button"
                     onClick={() => setOrientation(o)}
                     className={`flex-1 px-2 py-1 text-xs font-medium capitalize ${
-                      orientation === o ? "bg-zinc-900 text-white" : "bg-white text-zinc-500 hover:bg-zinc-50"
+                      orientation === o ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50" : "bg-surface text-muted hover:bg-subtle"
                     }`}
                   >
                     {o}
@@ -2136,16 +2138,16 @@ export function LayoutEditor({
                 PDF instead. Opt-in per page: a deliberately blank page (a
                 plain back side) must keep printing as authored. */}
             <div>
-              <label className="flex items-center gap-2 text-sm text-zinc-700">
+              <label className="flex items-center gap-2 text-sm text-ink">
                 <input
                   type="checkbox"
                   checked={!!page?.omitWhenEmpty}
                   onChange={(e) => updatePage({ omitWhenEmpty: e.target.checked })}
-                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                  className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
                 />
                 Skip page when empty
               </label>
-              <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-400">
+              <p className="mt-0.5 text-[11px] leading-relaxed text-faint">
                 Leaves this page out of the printed PDF when nothing on it resolves for the style — a
                 page whose only content is <span className="font-mono">{"{{cert:oekotex}}"}</span>{" "}
                 disappears on styles without OEKO-TEX instead of printing blank. Borders and guides
@@ -2156,38 +2158,38 @@ export function LayoutEditor({
               <button
                 type="button"
                 onClick={() => removePage(pageIdx)}
-                className="text-xs text-zinc-400 hover:text-red-600"
+                className="text-xs text-faint hover:text-bad"
               >
                 Remove this page
               </button>
             ) : null}
           </div>
 
-          <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Grid</div>
+          <div className="mt-6 text-[11px] font-semibold text-faint">Grid</div>
           <div className="mt-2 space-y-2">
             <div className="flex items-end gap-2">
               <div className="flex-1">
-                <label className="text-xs text-zinc-500">Cell size (mm)</label>
+                <label className="text-xs text-muted">Cell size (mm)</label>
                 <input
                   type="text"
                   inputMode="decimal"
                   value={gridCellMm}
                   onChange={(e) => setGridCellMm(e.target.value)}
-                  className="mt-1 w-full rounded-md border border-zinc-200 px-2 py-1.5 text-sm tabular-nums"
+                  className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm tabular-nums"
                   placeholder={String(DEFAULT_GRID_CELL_MM)}
                 />
               </div>
               <button
                 type="button"
                 onClick={regenerateGrid}
-                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                 title="Recompute cols × rows from this cell size and remap existing blocks"
               >
                 Regenerate
               </button>
             </div>
-            <p className="text-[10px] leading-relaxed text-zinc-400">
-              Current grid <span className="font-mono text-zinc-500">{grid.cols} × {grid.rows}</span>
+            <p className="text-[11px] leading-relaxed text-faint">
+              Current grid <span className="font-mono text-muted">{grid.cols} × {grid.rows}</span>
               {page ? (
                 <>
                   {" "}
@@ -2198,21 +2200,21 @@ export function LayoutEditor({
             </p>
           </div>
 
-          <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Print guides</div>
+          <div className="mt-6 text-[11px] font-semibold text-faint">Print guides</div>
           <div className="mt-2 space-y-3">
             <div>
               <div className="flex items-center justify-between">
-                <label className="text-xs text-zinc-500">Sewing lines</label>
+                <label className="text-xs text-muted">Sewing lines</label>
                 <button
                   type="button"
                   onClick={addSewingLine}
-                  className="text-xs font-medium text-zinc-700 hover:text-zinc-900"
+                  className="text-xs font-medium text-ink hover:text-ink"
                 >
                   + Add
                 </button>
               </div>
               {sewingLines.length === 0 ? (
-                <p className="mt-1 text-[10px] text-zinc-400">
+                <p className="mt-1 text-[11px] text-faint">
                   A solid rule a fixed distance from the top or bottom edge (the seam allowance).
                 </p>
               ) : (
@@ -2225,7 +2227,7 @@ export function LayoutEditor({
                       <select
                         value={s.edge}
                         onChange={(e) => updateSewingLine(i, { edge: e.target.value as SewingLine["edge"] })}
-                        className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700"
+                        className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <option value="top">From top</option>
                         <option value="bottom">From bottom</option>
@@ -2238,14 +2240,14 @@ export function LayoutEditor({
                           const v = parseMm(e.target.value);
                           if (Number.isFinite(v) && v >= 0 && v <= 1000) updateSewingLine(i, { offsetMm: v });
                         }}
-                        className="w-16 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                        className="w-16 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
                         aria-label="Offset from edge (mm)"
                       />
-                      <span className="text-[10px] text-zinc-400">mm</span>
+                      <span className="text-[11px] text-faint">mm</span>
                       <button
                         type="button"
                         onClick={() => removeSewingLine(i)}
-                        className="ml-auto text-zinc-300 hover:text-red-600"
+                        className="ml-auto text-faint hover:text-bad"
                         aria-label="Remove sewing line"
                         title="Remove"
                       >
@@ -2257,29 +2259,29 @@ export function LayoutEditor({
               )}
             </div>
             <div>
-              <label className="text-xs text-zinc-500">Folding line</label>
+              <label className="text-xs text-muted">Folding line</label>
               <select
                 value={page?.foldLine ?? "none"}
                 onChange={(e) => setFoldLine(e.target.value as FoldLine)}
-                className="mt-1 w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-sm text-zinc-700"
+                className="mt-1 w-full inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <option value="none">Off</option>
                 <option value="horizontal">Horizontal — across centre</option>
                 <option value="vertical">Vertical — down centre</option>
               </select>
-              <p className="mt-0.5 text-[10px] text-zinc-400">A dashed rule through the page centre.</p>
+              <p className="mt-0.5 text-[11px] text-faint">A dashed rule through the page centre.</p>
             </div>
 
             {/* Page border — a frame around the WHOLE page, so a design
                 doesn't need an empty full-page block just to get an
                 outline. Decorative only: no tokens, no grid cells. */}
             <div>
-              <label className="flex items-center gap-2 text-sm text-zinc-700">
+              <label className="flex items-center gap-2 text-sm text-ink">
                 <input
                   type="checkbox"
                   checked={!!pageBorder}
                   onChange={(e) => togglePageBorder(e.target.checked)}
-                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                  className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
                 />
                 Page border
               </label>
@@ -2293,10 +2295,10 @@ export function LayoutEditor({
                       const v = parseMm(e.target.value);
                       if (Number.isFinite(v) && v >= 0.1 && v <= 5) updatePageBorder({ widthMm: v });
                     }}
-                    className="w-14 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                    className="w-14 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
                     aria-label="Border thickness (mm)"
                   />
-                  <span className="text-[10px] text-zinc-400">thick</span>
+                  <span className="text-[11px] text-faint">thick</span>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -2305,20 +2307,20 @@ export function LayoutEditor({
                       const v = parseMm(e.target.value);
                       if (Number.isFinite(v) && v >= 0 && v <= 50) updatePageBorder({ insetMm: v });
                     }}
-                    className="w-14 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                    className="w-14 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
                     aria-label="Inset from page edge (mm)"
                   />
-                  <span className="text-[10px] text-zinc-400">inset</span>
+                  <span className="text-[11px] text-faint">inset</span>
                   <input
                     type="color"
                     value={pageBorder.color}
                     onChange={(e) => updatePageBorder({ color: e.target.value })}
-                    className="ml-auto h-6 w-8 cursor-pointer rounded border border-zinc-200 bg-white p-0.5"
+                    className="ml-auto h-6 w-8 cursor-pointer rounded border border-line bg-surface p-0.5"
                     aria-label="Border colour"
                   />
                 </div>
               ) : (
-                <p className="mt-0.5 text-[10px] text-zinc-400">
+                <p className="mt-0.5 text-[11px] text-faint">
                   Frames the whole page — thickness, inset from the edge and colour, in mm.
                 </p>
               )}
@@ -2337,7 +2339,7 @@ export function LayoutEditor({
                 border curves with it. 0 = square, as every page was. */}
             <div>
               <div className="flex items-center justify-between gap-2">
-                <label className="text-xs text-zinc-500">Rounded corners</label>
+                <label className="text-xs text-muted">Rounded corners</label>
                 <div className="flex items-center gap-1.5">
                   <input
                     key={`corner-${page.id}`}
@@ -2349,13 +2351,13 @@ export function LayoutEditor({
                       if (Number.isFinite(v) && v >= 0 && v <= 50)
                         updatePage({ cornerRadiusMm: v > 0 ? v : undefined });
                     }}
-                    className="w-16 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                    className="w-16 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
                     aria-label="Corner radius (mm)"
                   />
-                  <span className="text-[10px] text-zinc-400">mm radius</span>
+                  <span className="text-[11px] text-faint">mm radius</span>
                 </div>
               </div>
-              <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-400">
+              <p className="mt-0.5 text-[11px] leading-relaxed text-faint">
                 The corner radius of the cut. 0 = square. Content is clipped to the rounded shape, so a
                 block that runs into a corner prints the same curve the cutter makes — and the page border
                 curves with it.
@@ -2365,16 +2367,16 @@ export function LayoutEditor({
                   Only offered where there IS a radius. */}
               {(page.cornerRadiusMm ?? 0) > 0 ? (
                 <>
-                  <label className="mt-1.5 flex items-center gap-2 text-sm text-zinc-700">
+                  <label className="mt-1.5 flex items-center gap-2 text-sm text-ink">
                     <input
                       type="checkbox"
                       checked={page.cutLine !== false}
                       onChange={(e) => updatePage({ cutLine: e.target.checked })}
-                      className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                      className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
                     />
                     Show cut line
                   </label>
-                  <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-400">
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-faint">
                     Traces the die in red dashes so the curve is visible in print — the printed sheet is a
                     rectangle, so without it a rounded page comes out square. Turn it off when the artwork
                     already shows the curve (full-bleed colour, or a page border flush to the edge).
@@ -2388,12 +2390,12 @@ export function LayoutEditor({
                 edge. Drawn as a dashed circle on the canvas and in the
                 true render so content can be kept clear of the punch. */}
             <div>
-              <label className="flex items-center gap-2 text-sm text-zinc-700">
+              <label className="flex items-center gap-2 text-sm text-ink">
                 <input
                   type="checkbox"
                   checked={!!centerHole}
                   onChange={(e) => toggleCenterHole(e.target.checked)}
-                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                  className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
                 />
                 Centre hole
               </label>
@@ -2411,14 +2413,14 @@ export function LayoutEditor({
                         const v = parseMm(e.target.value);
                         if (Number.isFinite(v) && v >= 0.5 && v <= 100) updateCenterHole({ diameterMm: v });
                       }}
-                      className="w-14 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                      className="w-14 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
                       aria-label="Hole diameter (mm)"
                     />
-                    <span className="text-[10px] text-zinc-400">Ø mm</span>
+                    <span className="text-[11px] text-faint">Ø mm</span>
                     <select
                       value={centerHole.edge}
                       onChange={(e) => updateCenterHole({ edge: e.target.value as CenterHole["edge"] })}
-                      className="ml-auto rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700"
+                      className="ml-auto rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink"
                     >
                       <option value="top">From top</option>
                       <option value="bottom">From bottom</option>
@@ -2432,19 +2434,19 @@ export function LayoutEditor({
                         const v = parseMm(e.target.value);
                         if (Number.isFinite(v) && v >= 0 && v <= 1000) updateCenterHole({ offsetMm: v });
                       }}
-                      className="w-14 rounded-md border border-zinc-200 px-2 py-1 text-xs tabular-nums"
+                      className="w-14 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
                       aria-label="Distance from the edge to the hole centre (mm)"
                     />
-                    <span className="text-[10px] text-zinc-400">mm</span>
+                    <span className="text-[11px] text-faint">mm</span>
                   </div>
-                  <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
-                    Measured to the hole&rsquo;s <b className="font-medium text-zinc-500">centre</b> —{" "}
+                  <p className="mt-1 text-[11px] leading-relaxed text-faint">
+                    Measured to the hole&rsquo;s <b className="font-medium text-muted">centre</b> —{" "}
                     {mmText(Math.max(0, centerHole.offsetMm - centerHole.diameterMm / 2))} mm of clear
                     stock between the {centerHole.edge} edge and the punch.
                   </p>
                 </>
               ) : (
-                <p className="mt-0.5 text-[10px] text-zinc-400">
+                <p className="mt-0.5 text-[11px] text-faint">
                   A punched hang hole, centred across the page — diameter in mm and the distance from the
                   top or bottom edge. Printed as a dashed guide, like the sewing and fold lines.
                 </p>
@@ -2452,14 +2454,14 @@ export function LayoutEditor({
             </div>
           </div>
 
-          <div className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Settings</div>
+          <div className="mt-6 text-[11px] font-semibold text-faint">Settings</div>
           <div className="mt-2 space-y-3">
             <div>
-              <label className="text-xs text-zinc-500">Repeat output</label>
+              <label className="text-xs text-muted">Repeat output</label>
               <select
                 value={settings.repeatBy}
                 onChange={(e) => updateSettings({ repeatBy: e.target.value as LayoutSettings["repeatBy"] })}
-                className="mt-1 w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-sm text-zinc-700"
+                className="mt-1 w-full inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <option value="none">Don&apos;t repeat</option>
                 <option value="size">Per size</option>
@@ -2469,10 +2471,10 @@ export function LayoutEditor({
                 <option value="cartonEanSizeOnly">Per carton EAN (size only)</option>
               </select>
               {settings.repeatBy !== "none" ? (
-                <p className="mt-1.5 break-words font-mono text-[10px] leading-relaxed text-zinc-400">
+                <p className="mt-1.5 break-words font-mono text-[11px] leading-relaxed text-faint">
                   {repeatValues.length > 0 ? (
                     <>
-                      <span className="font-sans font-medium text-zinc-500">
+                      <span className="font-sans font-medium text-muted">
                         {repeatValues.length} repetition{repeatValues.length === 1 ? "" : "s"}:{" "}
                       </span>
                       {repeatValues.join(", ")}
@@ -2485,17 +2487,17 @@ export function LayoutEditor({
             </div>
             {settings.repeatBy !== "none" || settings.splitByComposition ? (
               <div>
-                <label className="text-xs text-zinc-500">Output files</label>
+                <label className="text-xs text-muted">Output files</label>
                 <select
                   value={settings.splitBy}
                   onChange={(e) => updateSettings({ splitBy: e.target.value as LayoutSettings["splitBy"] })}
-                  className="mt-1 w-full rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-sm text-zinc-700"
+                  className="mt-1 w-full inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <option value="ean">One PDF per EAN</option>
                   <option value="none">One single PDF (all repetitions inside)</option>
                 </select>
                 {repeatValues.length > 0 ? (
-                  <p className="mt-1 text-[10px] text-zinc-400">
+                  <p className="mt-1 text-[11px] text-faint">
                     {settings.splitBy === "ean"
                       ? `→ ${repeatValues.length} file${repeatValues.length === 1 ? "" : "s"}, each containing only its own EAN`
                       : `→ 1 file containing all ${repeatValues.length} repetition${repeatValues.length === 1 ? "" : "s"}`}
@@ -2509,16 +2511,16 @@ export function LayoutEditor({
                 style whose composition is colour-keyed, so turning it on can
                 never change a single-composition style's output. */}
             <div>
-              <label className="flex items-center gap-2 text-sm text-zinc-700">
+              <label className="flex items-center gap-2 text-sm text-ink">
                 <input
                   type="checkbox"
                   checked={settings.splitByComposition}
                   onChange={(e) => updateSettings({ splitByComposition: e.target.checked })}
-                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                  className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
                 />
                 Split per composition
               </label>
-              <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-400">
+              <p className="mt-0.5 text-[11px] leading-relaxed text-faint">
                 For packs that carry two qualities — &ldquo;Pink: 95% Cotton 5% Elastane, Grey melange: 57%
                 Cotton&hellip;&rdquo;. Each colour gets its own document printing only its own fibres, so each
                 is approved separately. Only fires when every part is labelled with a colour the style
@@ -2533,20 +2535,20 @@ export function LayoutEditor({
               </p>
             </div>
             <div>
-              <label className="text-xs text-zinc-500">Output file name</label>
+              <label className="text-xs text-muted">Output file name</label>
               <input
                 type="text"
                 value={settings.fileName}
                 onChange={(e) => updateSettings({ fileName: e.target.value })}
                 placeholder="{{styleNumber}}-{{size}}-sticker"
-                className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 font-mono text-xs"
+                className="mt-1 w-full rounded-md border border-line px-2.5 py-1.5 font-mono text-xs"
                 spellCheck={false}
               />
-              <p className="mt-1 text-[10px] text-zinc-400">
+              <p className="mt-1 text-[11px] text-faint">
                 {settings.fileName ? (
                   resolvedFileName ? (
                     <>
-                      → <span className="font-mono text-emerald-700">{resolvedFileName}</span>
+                      → <span className="font-mono text-good">{resolvedFileName}</span>
                     </>
                   ) : (
                     "Resolving…"
@@ -2561,14 +2563,14 @@ export function LayoutEditor({
               {/* Preset library — shared across layouts (AppSetting), grown
                   by whoever needs a new convention. Clicking one pastes its
                   pattern into the field above; nothing is applied silently. */}
-              <div className="mt-2 rounded-md border border-zinc-100 bg-zinc-50/70 p-2">
+              <div className="mt-2 rounded-md border border-line bg-zinc-50/70 p-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">Presets</span>
+                  <span className="text-[11px] font-medium text-faint">Presets</span>
                   <button
                     type="button"
                     onClick={saveFileNamePreset}
                     disabled={presetBusy || !settings.fileName.trim()}
-                    className="text-[11px] font-medium text-zinc-700 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-300"
+                    className="text-[11px] font-medium text-ink hover:text-ink disabled:cursor-not-allowed disabled:text-faint"
                     title={
                       settings.fileName.trim()
                         ? "Save the current file name as a reusable preset"
@@ -2579,7 +2581,7 @@ export function LayoutEditor({
                   </button>
                 </div>
                 {fileNamePresets.length === 0 ? (
-                  <p className="mt-1 text-[10px] text-zinc-400">
+                  <p className="mt-1 text-[11px] text-faint">
                     No presets yet — type a file name and save it to reuse it on other layouts.
                   </p>
                 ) : (
@@ -2593,19 +2595,19 @@ export function LayoutEditor({
                             onClick={() => updateSettings({ fileName: p.pattern })}
                             className={`min-w-0 flex-1 rounded border px-1.5 py-1 text-left ${
                               active
-                                ? "border-zinc-300 bg-white"
-                                : "border-transparent hover:border-zinc-200 hover:bg-white"
+                                ? "border-line bg-surface"
+                                : "border-transparent hover:border-line hover:bg-surface"
                             }`}
                             title={p.pattern}
                           >
-                            <span className="block truncate text-[11px] text-zinc-700">{p.label}</span>
-                            <span className="block truncate font-mono text-[10px] text-zinc-400">{p.pattern}</span>
+                            <span className="block truncate text-[11px] text-ink">{p.label}</span>
+                            <span className="block truncate font-mono text-[11px] text-faint">{p.pattern}</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => deleteFileNamePreset(p)}
                             disabled={presetBusy}
-                            className="text-zinc-300 hover:text-red-600 disabled:hover:text-zinc-300"
+                            className="text-faint hover:text-bad disabled:hover:text-faint"
                             aria-label={`Remove preset ${p.label}`}
                             title="Remove preset"
                           >
@@ -2623,23 +2625,23 @@ export function LayoutEditor({
                 generation is untouched. Surfaces the {{cartonNo}} /
                 {{cartonTotal}} tokens and the Style-page "Carton numbers…"
                 action. */}
-            <div className="border-t border-zinc-100 pt-3">
-              <label className="flex items-center gap-2 text-sm text-zinc-700">
+            <div className="border-t border-line pt-3">
+              <label className="flex items-center gap-2 text-sm text-ink">
                 <input
                   type="checkbox"
                   checked={settings.cartonNumbering}
                   onChange={(e) => updateSettings({ cartonNumbering: e.target.checked })}
-                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                  className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
                 />
                 Carton numbering (X/Y)
               </label>
-              <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
+              <p className="mt-1 text-[11px] leading-relaxed text-faint">
                 Lets operators print a numbered set (1/N … N/N) from the Style page. Place{" "}
-                <code className="rounded bg-zinc-100 px-1">{"{{cartonNo}}"}</code> /{" "}
-                <code className="rounded bg-zinc-100 px-1">{"{{cartonTotal}}"}</code> on the label.
+                <code className="rounded bg-subtle px-1">{"{{cartonNo}}"}</code> /{" "}
+                <code className="rounded bg-subtle px-1">{"{{cartonTotal}}"}</code> on the label.
               </p>
               {settings.cartonNumbering && !usesCartonTokens ? (
-                <p className="mt-1.5 rounded-md bg-amber-50 px-2 py-1 text-[10px] leading-relaxed text-amber-700">
+                <p className="mt-1.5 rounded-md bg-warn-soft px-2 py-1 text-[11px] leading-relaxed text-warn">
                   ⚠ This layout doesn’t use {"{{cartonNo}}"}/{"{{cartonTotal}}"} yet — numbered prints
                   would show no number.
                 </p>
@@ -2650,23 +2652,23 @@ export function LayoutEditor({
                 carton numbering. Eligibility only; standard generation stays
                 single-style. Surfaces the {{style2}}… slots + {{multipleStyles}}
                 and lets the Style-page carton dialog pick same-PO siblings. */}
-            <div className="border-t border-zinc-100 pt-3">
-              <label className="flex items-center gap-2 text-sm text-zinc-700">
+            <div className="border-t border-line pt-3">
+              <label className="flex items-center gap-2 text-sm text-ink">
                 <input
                   type="checkbox"
                   checked={settings.multipleStyles}
                   onChange={(e) => updateSettings({ multipleStyles: e.target.checked })}
-                  className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                  className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
                 />
                 Multiple styles on the box
               </label>
-              <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
+              <p className="mt-1 text-[11px] leading-relaxed text-faint">
                 Lets operators place OTHER styles from the same PO on the box (a manual one-off).
                 Branch with{" "}
-                <code className="rounded bg-zinc-100 px-1">{"{{if multipleStyles == true}}"}</code>{" "}
+                <code className="rounded bg-subtle px-1">{"{{if multipleStyles == true}}"}</code>{" "}
                 and place{" "}
-                <code className="rounded bg-zinc-100 px-1">{"{{style2}}"}</code> /{" "}
-                <code className="rounded bg-zinc-100 px-1">{"{{style2Number}}"}</code> slots.
+                <code className="rounded bg-subtle px-1">{"{{style2}}"}</code> /{" "}
+                <code className="rounded bg-subtle px-1">{"{{style2Number}}"}</code> slots.
               </p>
             </div>
 
@@ -2674,9 +2676,9 @@ export function LayoutEditor({
                 {{logo:custom}}. Uploaded per layout (not global); printed at
                 a % of its block width, height auto. */}
             {usesCustomLogo ? (
-              <div className="border-t border-zinc-100 pt-3">
-                <div className="text-sm text-zinc-700">
-                  Custom logo <span className="font-mono text-[11px] text-zinc-400">{"{{logo:custom}}"}</span>
+              <div className="border-t border-line pt-3">
+                <div className="text-sm text-ink">
+                  Custom logo <span className="font-mono text-[11px] text-faint">{"{{logo:custom}}"}</span>
                 </div>
                 <div className="mt-2 flex items-center gap-2">
                   {customLogo ? (
@@ -2684,13 +2686,13 @@ export function LayoutEditor({
                     <img
                       src={customLogo}
                       alt="Custom logo"
-                      className="h-8 w-auto max-w-[7rem] rounded border border-zinc-200 bg-white object-contain p-0.5"
+                      className="h-8 w-auto max-w-[7rem] rounded border border-line bg-surface object-contain p-0.5"
                     />
                   ) : (
-                    <span className="text-[11px] text-zinc-400">none uploaded</span>
+                    <span className="text-[11px] text-faint">none uploaded</span>
                   )}
                   <label
-                    className={`cursor-pointer rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 ${
+                    className={`cursor-pointer rounded-md border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink hover:bg-subtle ${
                       logoBusy ? "opacity-50" : ""
                     }`}
                   >
@@ -2712,18 +2714,18 @@ export function LayoutEditor({
                       type="button"
                       onClick={() => void removeCustomLogo()}
                       disabled={logoBusy}
-                      className="text-xs text-zinc-400 hover:text-red-600 disabled:opacity-50"
+                      className="text-xs text-faint hover:text-bad disabled:opacity-50"
                     >
                       Remove
                     </button>
                   ) : null}
                 </div>
-                {logoError ? <p className="mt-1 text-[10px] text-red-600">{logoError}</p> : null}
+                {logoError ? <p className="mt-1 text-[11px] text-bad">{logoError}</p> : null}
 
                 <div className="mt-3">
                   <div className="flex items-baseline justify-between">
-                    <label className="text-xs text-zinc-500">Logo width</label>
-                    <span className="font-mono text-[11px] text-zinc-400">{settings.customLogoWidthPct}%</span>
+                    <label className="text-xs text-muted">Logo width</label>
+                    <span className="font-mono text-[11px] text-faint">{settings.customLogoWidthPct}%</span>
                   </div>
                   <input
                     type="range"
@@ -2734,7 +2736,7 @@ export function LayoutEditor({
                     onChange={(e) => updateSettings({ customLogoWidthPct: Number(e.target.value) })}
                     className="mt-1 w-full accent-zinc-900"
                   />
-                  <p className="mt-0.5 text-[10px] text-zinc-400">% of the block&rsquo;s width — height scales to keep the aspect ratio.</p>
+                  <p className="mt-0.5 text-[11px] text-faint">% of the block&rsquo;s width — height scales to keep the aspect ratio.</p>
                 </div>
               </div>
             ) : null}
@@ -2744,18 +2746,18 @@ export function LayoutEditor({
         {/* ----- center: canvas + preview ----- */}
         <div className="min-w-0">
           <div className="flex items-baseline justify-between">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Canvas</div>
-            <div className="font-mono text-[11px] text-zinc-400">
+            <div className="text-[11px] font-semibold text-faint">Canvas</div>
+            <div className="font-mono text-[11px] text-faint">
               {page.widthMm} × {page.heightMm} mm · {orientation} · grid {grid.cols} × {grid.rows}
             </div>
           </div>
-          <div className="mt-2 flex justify-center rounded-lg border border-zinc-200 bg-zinc-50/60 px-6 py-10">
+          <div className="mt-2 flex justify-center rounded-lg border border-line bg-zinc-50/60 px-6 py-10">
             <div
               ref={canvasRef}
               onPointerDown={onCanvasPointerDown}
               onPointerMove={onCanvasPointerMove}
               onPointerUp={onCanvasPointerUp}
-              className="relative touch-none border border-zinc-300 bg-white shadow-sm"
+              className="relative touch-none border border-line bg-surface shadow-sm"
               style={{
                 width: page.widthMm * scale,
                 height: page.heightMm * scale,
@@ -2894,7 +2896,7 @@ export function LayoutEditor({
               ) : null}
               {ghost ? (
                 <div
-                  className="pointer-events-none absolute rounded-sm border border-zinc-900/50 bg-zinc-900/5"
+                  className="pointer-events-none absolute rounded-sm border border-ink/50 bg-zinc-900/5"
                   style={{
                     left: gridGeom(page, scale).left + (ghost.col / grid.cols) * gridGeom(page, scale).width,
                     top: gridGeom(page, scale).top + (ghost.row / grid.rows) * gridGeom(page, scale).height,
@@ -2905,27 +2907,27 @@ export function LayoutEditor({
               ) : null}
             </div>
           </div>
-          <p className="mt-2 text-center text-xs text-zinc-400">
-            <b className="font-medium text-zinc-500">Drag on the grid</b> to draw a block exactly where you want it ·
+          <p className="mt-2 text-center text-xs text-faint">
+            <b className="font-medium text-muted">Drag on the grid</b> to draw a block exactly where you want it ·
             click a block to edit · Del removes the selected block
           </p>
 
           {/* true render preview */}
           <div className="mt-8">
             <div className="flex items-baseline justify-between">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              <div className="text-[11px] font-semibold text-faint">
                 Print preview — true render{previewSample ? " · sample data" : testStyle ? ` · ${testStyle.name}` : ""}
               </div>
               {unresolved.length > 0 ? (
-                <span className="text-xs text-amber-700">
+                <span className="text-xs text-warn">
                   {unresolved.length} unresolved: {unresolved.join(" ")}
                 </span>
               ) : previewHtml ? (
-                <span className="text-xs text-emerald-700">all variables resolved</span>
+                <span className="text-xs text-good">all variables resolved</span>
               ) : null}
             </div>
             {settings.cartonNumbering ? (
-              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2 text-xs text-amber-800">
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-transparent bg-amber-50/60 px-3 py-2 text-xs text-warn">
                 <span className="font-medium">Preview as carton</span>
                 <input
                   type="number"
@@ -2935,7 +2937,7 @@ export function LayoutEditor({
                   onChange={(e) =>
                     setCartonPreviewNo(Math.min(cartonPreviewTotal, Math.max(1, Number(e.target.value) || 1)))
                   }
-                  className="w-16 rounded border border-amber-300 bg-white px-2 py-1 text-center tabular-nums text-amber-900"
+                  className="w-16 rounded border border-transparent bg-surface px-2 py-1 text-center tabular-nums text-warn"
                 />
                 <span>of</span>
                 <input
@@ -2947,12 +2949,12 @@ export function LayoutEditor({
                     setCartonPreviewTotal(total);
                     if (cartonPreviewNo > total) setCartonPreviewNo(total);
                   }}
-                  className="w-20 rounded border border-amber-300 bg-white px-2 py-1 text-center tabular-nums text-amber-900"
+                  className="w-20 rounded border border-transparent bg-surface px-2 py-1 text-center tabular-nums text-warn"
                 />
                 <span className="text-amber-700/80">— injects the running number into the preview.</span>
               </div>
             ) : null}
-            <div className="mt-2 rounded-lg border border-zinc-200 bg-zinc-50/60 p-6">
+            <div className="mt-2 rounded-lg border border-line bg-zinc-50/60 p-6">
               {previewHtml ? (
                 <div className="mx-auto" style={{ maxWidth: Math.max(page.widthMm * 3.78, 280) }}>
                   <PreviewFrame
@@ -2963,10 +2965,10 @@ export function LayoutEditor({
                   />
                 </div>
               ) : (
-                <p className="py-10 text-center text-xs text-zinc-400">Rendering…</p>
+                <p className="py-10 text-center text-xs text-faint">Rendering…</p>
               )}
             </div>
-            <p className="mt-2 text-xs text-zinc-400">
+            <p className="mt-2 text-xs text-faint">
               Rendered by the same code that generates the production PDF — empty variables show as amber chips here
               and never print.
             </p>
@@ -2979,21 +2981,21 @@ export function LayoutEditor({
               (far easier than hunting a tiny block on the canvas); hover to
               flash that block's position with a blue locator ring; the row
               ✕ deletes it. Stays in sync with the canvas selection. */}
-          <div className="rounded-lg border border-zinc-200 p-4">
+          <div className="rounded-lg border border-line p-4">
             <div className="flex items-baseline justify-between">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Blocks</div>
+              <div className="text-[11px] font-semibold text-faint">Blocks</div>
               <div className="flex items-baseline gap-2">
                 {page.blocks.length > 1 ? (
                   <button
                     type="button"
                     onClick={selectAllOnPage}
-                    className="text-[11px] font-medium text-zinc-400 hover:text-zinc-900"
+                    className="text-[11px] font-medium text-faint hover:text-ink"
                     title="Select every block on this page, so one panel edit formats them all"
                   >
                     Select all
                   </button>
                 ) : null}
-                <span className="text-[11px] tabular-nums text-zinc-400">{page.blocks.length}</span>
+                <span className="text-[11px] tabular-nums text-faint">{page.blocks.length}</span>
               </div>
             </div>
             {/* Paste sits here, not in the Block panel, because it acts on
@@ -3003,16 +3005,16 @@ export function LayoutEditor({
               <button
                 type="button"
                 onClick={pasteBlocks}
-                className="mt-2 w-full truncate rounded-md border border-dashed border-zinc-300 px-2 py-1.5 text-left text-[11px] text-zinc-600 hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-900"
+                className="mt-2 w-full truncate rounded-md border border-dashed border-line px-2 py-1.5 text-left text-[11px] text-muted hover:border-zinc-400 hover:bg-subtle hover:text-ink"
                 title={`Paste onto this page, rescaled from a ${blockClip.grid.cols}×${blockClip.grid.rows} grid to this page's ${grid.cols}×${grid.rows}`}
               >
                 Paste {blockClip.blocks.length} block{blockClip.blocks.length === 1 ? "" : "s"} from “
                 {blockClip.layoutName}”
               </button>
             ) : null}
-            {clipNote ? <p className="mt-1.5 text-[10px] text-zinc-500">{clipNote}</p> : null}
+            {clipNote ? <p className="mt-1.5 text-[11px] text-muted">{clipNote}</p> : null}
             {page.blocks.length === 0 ? (
-              <p className="mt-2 text-xs text-zinc-400">No blocks yet — drag on the grid to draw one.</p>
+              <p className="mt-2 text-xs text-faint">No blocks yet — drag on the grid to draw one.</p>
             ) : (
               <ul className="mt-2 max-h-64 space-y-0.5 overflow-y-auto pr-0.5">
                 {orderedBlocks.map((b) => {
@@ -3040,27 +3042,27 @@ export function LayoutEditor({
                         onBlur={() => setHoverBlock((h) => (h === id ? null : h))}
                         className={`group flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 ${
                           isSel
-                            ? "border-zinc-900 bg-zinc-50"
+                            ? "border-ink bg-subtle"
                             : isCoSel
-                              ? "border-dashed border-zinc-400 bg-zinc-50"
-                              : "border-transparent hover:border-zinc-200 hover:bg-zinc-50"
+                              ? "border-dashed border-zinc-400 bg-subtle"
+                              : "border-transparent hover:border-line hover:bg-subtle"
                         }`}
                       >
                         {kind ? (
-                          <span className="shrink-0 rounded bg-zinc-100 px-1 py-px text-[9px] font-medium uppercase tracking-wide text-zinc-500">
+                          <span className="shrink-0 rounded bg-subtle px-1 py-px text-[11px] font-medium text-muted">
                             {kind}
                           </span>
                         ) : null}
-                        <span className={`min-w-0 flex-1 truncate text-xs ${isSel ? "text-zinc-900" : "text-zinc-600"}`}>
+                        <span className={`min-w-0 flex-1 truncate text-xs ${isSel ? "text-ink" : "text-muted"}`}>
                           {text}
                         </span>
                         {extra > 0 ? (
-                          <span className="shrink-0 text-[10px] text-zinc-300" title={`${extra + 1} lines`}>
+                          <span className="shrink-0 text-[11px] text-faint" title={`${extra + 1} lines`}>
                             +{extra}
                           </span>
                         ) : null}
                         {b.rect ? (
-                          <span className="shrink-0 font-mono text-[10px] text-zinc-300 group-hover:hidden">
+                          <span className="shrink-0 font-mono text-[11px] text-faint group-hover:hidden">
                             R{b.rect.row + 1}·C{b.rect.col + 1}
                           </span>
                         ) : null}
@@ -3070,7 +3072,7 @@ export function LayoutEditor({
                             e.stopPropagation();
                             removeBlock(id);
                           }}
-                          className="hidden h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] leading-none text-zinc-300 hover:bg-red-50 hover:text-red-600 group-hover:flex"
+                          className="hidden h-4 w-4 shrink-0 items-center justify-center rounded-full text-[11px] leading-none text-faint hover:bg-bad-soft hover:text-bad group-hover:flex"
                           title="Delete this block"
                           aria-label="Delete block"
                         >
@@ -3084,16 +3086,16 @@ export function LayoutEditor({
             )}
           </div>
 
-          <div className="rounded-lg border border-zinc-200 p-4">
+          <div className="rounded-lg border border-line p-4">
             <div className="flex items-baseline justify-between">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+              <div className="text-[11px] font-semibold text-faint">
                 {selIds.length > 1 ? `Block · ${selIds.length} selected` : "Block"}
               </div>
               {selBlock ? (
                 <button
                   type="button"
                   onClick={() => removeBlock(blockId(selBlock))}
-                  className="text-[11px] font-medium text-zinc-400 hover:text-red-600"
+                  className="text-[11px] font-medium text-faint hover:text-bad"
                   title="Delete this block (or press Del with it selected)"
                 >
                   Delete
@@ -3101,7 +3103,7 @@ export function LayoutEditor({
               ) : null}
             </div>
             {!selBlock ? (
-              <p className="mt-2 text-xs text-zinc-400">
+              <p className="mt-2 text-xs text-faint">
                 Select a block on the canvas, or drag on the grid to draw a new one. Shift-click to
                 add more blocks to the selection and format them together.
               </p>
@@ -3150,7 +3152,7 @@ export function LayoutEditor({
                   </PanelButton>
                 </div>
                 {selIds.length > 1 ? (
-                  <p className="rounded-md bg-zinc-50 px-2 py-1.5 text-[10px] leading-relaxed text-zinc-500">
+                  <p className="rounded-md bg-subtle px-2 py-1.5 text-[11px] leading-relaxed text-muted">
                     Font, alignment, border, fit and invert apply to all {selIds.length} selected
                     blocks. Position and text stay on this one. Shift-click a block again to drop it.
                   </p>
@@ -3187,14 +3189,14 @@ export function LayoutEditor({
                         onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, rowSpan: v } })}
                       />
                     </div>
-                    <div className="font-mono text-[11px] text-zinc-400">
+                    <div className="font-mono text-[11px] text-faint">
                       ≈ {((page.widthMm * selBlock.rect.colSpan) / grid.cols).toFixed(1)} ×{" "}
                       {((page.heightMm * selBlock.rect.rowSpan) / grid.rows).toFixed(1)} mm
                     </div>
                     <div className="flex items-center gap-3">
                       <div>
-                        <label className="text-xs text-zinc-500">Align</label>
-                        <div className="mt-1 flex overflow-hidden rounded-md border border-zinc-200">
+                        <label className="text-xs text-muted">Align</label>
+                        <div className="mt-1 flex overflow-hidden rounded-md border border-line">
                           {(["left", "center", "right"] as const).map((a) => (
                             <button
                               key={a}
@@ -3202,8 +3204,8 @@ export function LayoutEditor({
                               onClick={() => updateAppearance({ align: a })}
                               className={`px-2 py-1 text-[11px] font-medium capitalize ${
                                 (selBlock.align ?? "left") === a
-                                  ? "bg-zinc-900 text-white"
-                                  : "bg-white text-zinc-500 hover:bg-zinc-50"
+                                  ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                                  : "bg-surface text-muted hover:bg-subtle"
                               }`}
                             >
                               {a}
@@ -3212,8 +3214,8 @@ export function LayoutEditor({
                         </div>
                       </div>
                       <div>
-                        <label className="text-xs text-zinc-500">Vertical</label>
-                        <div className="mt-1 flex overflow-hidden rounded-md border border-zinc-200">
+                        <label className="text-xs text-muted">Vertical</label>
+                        <div className="mt-1 flex overflow-hidden rounded-md border border-line">
                           {(["top", "middle", "bottom"] as const).map((v) => (
                             <button
                               key={v}
@@ -3221,8 +3223,8 @@ export function LayoutEditor({
                               onClick={() => updateAppearance({ valign: v })}
                               className={`px-2 py-1 text-[11px] font-medium capitalize ${
                                 (selBlock.valign ?? "top") === v
-                                  ? "bg-zinc-900 text-white"
-                                  : "bg-white text-zinc-500 hover:bg-zinc-50"
+                                  ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                                  : "bg-surface text-muted hover:bg-subtle"
                               }`}
                             >
                               {v}
@@ -3236,7 +3238,7 @@ export function LayoutEditor({
 
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <label className="text-xs text-zinc-500">Font size</label>
+                    <label className="text-xs text-muted">Font size</label>
                     <NumberStepper
                       value={selBlock.fontPt}
                       min={1}
@@ -3246,11 +3248,11 @@ export function LayoutEditor({
                       onChange={(v) => updateAppearance({ fontPt: v })}
                     />
                   </div>
-                  <p className="mt-0.5 text-[10px] text-zinc-400">Barcodes and wash symbols scale with the font size.</p>
+                  <p className="mt-0.5 text-[11px] text-faint">Barcodes and wash symbols scale with the font size.</p>
                 </div>
 
                 <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-1.5 text-xs text-zinc-600">
+                  <label className="flex items-center gap-1.5 text-xs text-muted">
                     <input
                       type="checkbox"
                       checked={selBlock.bold}
@@ -3259,12 +3261,12 @@ export function LayoutEditor({
                     />
                     Bold
                   </label>
-                  <label className="flex items-center gap-1.5 text-xs text-zinc-600">
+                  <label className="flex items-center gap-1.5 text-xs text-muted">
                     Line height
                     <select
                       value={selBlock.lineHeight}
                       onChange={(e) => updateAppearance({ lineHeight: Number(e.target.value) })}
-                      className="rounded border border-zinc-200 px-1 py-0.5 text-xs"
+                      className="rounded border border-line px-1 py-0.5 text-xs"
                     >
                       {[1.2, 1.3, 1.4, 1.5, 1.6, 1.8].map((lh) => (
                         <option key={lh} value={lh}>
@@ -3276,7 +3278,7 @@ export function LayoutEditor({
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-1.5 text-xs text-zinc-600">
+                  <label className="flex items-center gap-1.5 text-xs text-muted">
                     Border
                     <select
                       value={selBlock.border?.widthMm ?? 0}
@@ -3304,7 +3306,7 @@ export function LayoutEditor({
                               : undefined,
                         }));
                       }}
-                      className="rounded border border-zinc-200 px-1 py-0.5 text-xs"
+                      className="rounded border border-line px-1 py-0.5 text-xs"
                     >
                       <option value={0}>None</option>
                       {[0.2, 0.3, 0.5, 0.75, 1, 1.5, 2].map((w) => (
@@ -3315,14 +3317,14 @@ export function LayoutEditor({
                     </select>
                   </label>
                   {selBlock.border ? (
-                    <label className="flex items-center gap-1.5 text-xs text-zinc-600">
+                    <label className="flex items-center gap-1.5 text-xs text-muted">
                       <input
                         type="color"
                         value={selBlock.border.color}
                         onChange={(e) =>
                           updateBorderField({ color: e.target.value })
                         }
-                        className="h-6 w-8 cursor-pointer rounded border border-zinc-200 bg-white p-0.5"
+                        className="h-6 w-8 cursor-pointer rounded border border-line bg-surface p-0.5"
                         title="Border colour"
                       />
                       <input
@@ -3334,7 +3336,7 @@ export function LayoutEditor({
                             updateBorderField({ color: v });
                           }
                         }}
-                        className="w-20 rounded border border-zinc-200 px-1.5 py-0.5 font-mono text-[11px]"
+                        className="w-20 rounded border border-line px-1.5 py-0.5 font-mono text-[11px]"
                         spellCheck={false}
                       />
                     </label>
@@ -3349,7 +3351,7 @@ export function LayoutEditor({
                   />
                 ) : null}
                 {selBlock.border ? (
-                  <div className="text-xs text-zinc-600">
+                  <div className="text-xs text-muted">
                     <div className="flex items-center justify-between">
                       <span>Padding mm</span>
                       <button
@@ -3362,10 +3364,10 @@ export function LayoutEditor({
                             setPadLinked(true);
                           }
                         }}
-                        className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${
+                        className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${
                           padLinked
-                            ? "border-zinc-900 bg-zinc-900 text-white"
-                            : "border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300"
+                            ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                            : "border-line bg-surface text-muted hover:border-line"
                         }`}
                         title={
                           padLinked
@@ -3387,7 +3389,7 @@ export function LayoutEditor({
                           const v = Number(e.target.value);
                           if (Number.isFinite(v) && v >= 0 && v <= 20) updateBorderPad(v);
                         }}
-                        className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm tabular-nums"
+                        className="mt-1 w-full rounded-md border border-line px-2.5 py-1.5 text-sm tabular-nums"
                         title="Inner padding between the border and the text"
                       />
                     ) : (
@@ -3401,7 +3403,7 @@ export function LayoutEditor({
                           ] as const
                         ).map(([k, label]) => (
                           <div key={k}>
-                            <label className="text-[10px] text-zinc-400">{label}</label>
+                            <label className="text-[11px] text-faint">{label}</label>
                             <input
                               type="number"
                               min={0}
@@ -3412,7 +3414,7 @@ export function LayoutEditor({
                                 const v = Number(e.target.value);
                                 if (Number.isFinite(v) && v >= 0 && v <= 20) updateBorderPad(v, [k]);
                               }}
-                              className="w-full rounded-md border border-zinc-200 px-2 py-1 text-sm tabular-nums"
+                              className="w-full rounded-md border border-line px-2 py-1 text-sm tabular-nums"
                             />
                           </div>
                         ))}
@@ -3425,12 +3427,12 @@ export function LayoutEditor({
                     historic black/white, so nothing already published
                     changes. */}
                 <div>
-                  <label className="flex items-center gap-2 text-xs text-zinc-600">
+                  <label className="flex items-center gap-2 text-xs text-muted">
                     <input
                       type="checkbox"
                       checked={selBlock.invert ?? false}
                       onChange={(e) => updateAppearance({ invert: e.target.checked })}
-                      className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                      className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
                     />
                     Invert block (solid background, contrasting text)
                   </label>
@@ -3457,34 +3459,34 @@ export function LayoutEditor({
                     </div>
                   ) : null}
                 </div>
-                <label className="flex items-center gap-2 text-xs text-zinc-600">
+                <label className="flex items-center gap-2 text-xs text-muted">
                   <input
                     type="checkbox"
                     checked={selBlock.fitWidth ?? false}
                     onChange={(e) => updateAppearance({ fitWidth: e.target.checked })}
-                    className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                    className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
                   />
                   Fit width (one line, auto-scale to fill)
                 </label>
-                <label className="flex items-center gap-2 text-xs text-zinc-600">
+                <label className="flex items-center gap-2 text-xs text-muted">
                   <input
                     type="checkbox"
                     checked={selBlock.fitHeight ?? false}
                     onChange={(e) => updateAppearance({ fitHeight: e.target.checked })}
-                    className="h-3.5 w-3.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-400"
+                    className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
                   />
                   Shrink text to fit cell (no overflow onto other blocks)
                 </label>
 
                 <div>
                   <div className="flex items-center justify-between">
-                    <label className="text-xs text-zinc-500">Content — one line per printed row</label>
+                    <label className="text-xs text-muted">Content — one line per printed row</label>
                     <div className="flex gap-1">
                       <button
                         type="button"
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => wrapSelection("**")}
-                        className="rounded border border-zinc-200 px-1.5 py-0.5 text-[11px] font-bold text-zinc-600 hover:bg-zinc-50"
+                        className="rounded border border-line px-1.5 py-0.5 text-[11px] font-bold text-muted hover:bg-subtle"
                         title="Bold — wraps the selection in ** **"
                       >
                         B
@@ -3493,7 +3495,7 @@ export function LayoutEditor({
                         type="button"
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => wrapSelection("_")}
-                        className="rounded border border-zinc-200 px-1.5 py-0.5 text-[11px] italic text-zinc-600 hover:bg-zinc-50"
+                        className="rounded border border-line px-1.5 py-0.5 text-[11px] italic text-muted hover:bg-subtle"
                         title="Italic — wraps the selection in _ _"
                       >
                         I
@@ -3502,7 +3504,7 @@ export function LayoutEditor({
                         type="button"
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => setExpandedFor(sel)}
-                        className="rounded border border-zinc-200 px-1.5 py-0.5 text-[11px] text-zinc-600 hover:bg-zinc-50"
+                        className="rounded border border-line px-1.5 py-0.5 text-[11px] text-muted hover:bg-subtle"
                         title="Expand — edit this content full width with the print preview beside it"
                       >
                         ⤢
@@ -3518,10 +3520,10 @@ export function LayoutEditor({
                     valuesFrom={testStyle?.name}
                     rows={6}
                     spellCheck={false}
-                    className="mt-1 w-full rounded-md border border-zinc-200 px-2.5 py-2 font-mono text-xs leading-relaxed"
+                    className="mt-1 w-full rounded-md border border-line px-2.5 py-2 font-mono text-xs leading-relaxed"
                   />
-                  <p className="mt-0.5 text-[10px] text-zinc-400">
-                    Type <code className="rounded bg-zinc-100 px-1">{"{{"}</code> for variable autofill · **bold** and
+                  <p className="mt-0.5 text-[11px] text-faint">
+                    Type <code className="rounded bg-subtle px-1">{"{{"}</code> for variable autofill · **bold** and
                     _italic_ render in the print; the preview below shows the result. <b>⤢</b> opens the same content
                     full width.
                   </p>
@@ -3530,10 +3532,10 @@ export function LayoutEditor({
             )}
           </div>
 
-          <div className="rounded-lg border border-zinc-200 p-4">
+          <div className="rounded-lg border border-line p-4">
             <div className="flex items-baseline justify-between">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Variables</div>
-              <label className="flex items-center gap-1.5 text-[11px] text-zinc-500" title="Resolve every variable against the selected test style">
+              <div className="text-[11px] font-semibold text-faint">Variables</div>
+              <label className="flex items-center gap-1.5 text-[11px] text-muted" title="Resolve every variable against the selected test style">
                 <input
                   type="checkbox"
                   checked={showValues}
@@ -3543,13 +3545,13 @@ export function LayoutEditor({
                 Show values
               </label>
             </div>
-            <p className="mt-1 text-[11px] text-zinc-400">
+            <p className="mt-1 text-[11px] text-faint">
               {selBlock ? "Click to insert at the cursor." : "Select a block first."}
               {showValues && testStyle ? ` Values from ${testStyle.name}.` : ""}
             </p>
             {(["Style", "Order & carton"] as const).map((group) => (
               <div key={group} className="mt-3">
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">{group}</div>
+                <div className="text-[11px] font-semibold text-faint">{group}</div>
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   {LAYOUT_TOKENS.filter((t) => t.group === group).flatMap((t) => {
                     // A multi-number carton qty offers bare + :solid/:assort
@@ -3586,11 +3588,11 @@ export function LayoutEditor({
             ))}
             <div className="mt-3">
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">Per language</span>
+                <span className="text-[11px] font-semibold text-faint">Per language</span>
                 <select
                   value={langSel}
                   onChange={(e) => setLangSel(e.target.value)}
-                  className="rounded border border-zinc-200 px-1 py-0.5 text-[11px] text-zinc-600"
+                  className="rounded border border-line px-1 py-0.5 text-[11px] text-muted"
                 >
                   {languages.map((l) => (
                     <option key={l.code} value={l.code}>
@@ -3614,13 +3616,13 @@ export function LayoutEditor({
             </div>
             <div className="mt-3">
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">
+                <span className="text-[11px] font-semibold text-faint">
                   Sibling styles
                 </span>
                 <select
                   value={siblingSlot}
                   onChange={(e) => setSiblingSlot(Number(e.target.value))}
-                  className="rounded border border-zinc-200 px-1 py-0.5 text-[11px] text-zinc-600"
+                  className="rounded border border-line px-1 py-0.5 text-[11px] text-muted"
                   title="Which carton slot these chips fill — other styles from the same PO"
                 >
                   {Array.from({ length: MAX_SIBLING_SLOTS - 1 }, (_, i) => i + 2).map((n) => (
@@ -3630,14 +3632,14 @@ export function LayoutEditor({
                   ))}
                 </select>
               </div>
-              <p className="mt-1 text-[11px] text-zinc-400">
+              <p className="mt-1 text-[11px] text-faint">
                 Other styles from the same PO, filled on a manual print. Turn on{" "}
                 <b>Multiple styles</b> in Settings, then branch:{" "}
-                <code className="rounded bg-zinc-100 px-1 text-[10px]">
+                <code className="rounded bg-subtle px-1 text-[11px]">
                   {"{{if multipleStyles == true}}{{style2}}{{else}}{{style}}{{endif}}"}
                 </code>{" "}
-                (<code className="rounded bg-zinc-100 px-1 text-[10px]">==</code>, not{" "}
-                <code className="rounded bg-zinc-100 px-1 text-[10px]">===</code>).
+                (<code className="rounded bg-subtle px-1 text-[11px]">==</code>, not{" "}
+                <code className="rounded bg-subtle px-1 text-[11px]">===</code>).
               </p>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 <TokenChip
@@ -3669,12 +3671,12 @@ export function LayoutEditor({
               </div>
             </div>
             <div className="mt-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">Calculated</div>
-              <p className="mt-1 text-[11px] text-zinc-400">
-                Arithmetic over field values: <code className="rounded bg-zinc-100 px-1 text-[10px]">+ − × ÷</code>,{" "}
-                <code className="rounded bg-zinc-100 px-1 text-[10px]">sum/count/min/max(field)</code> across the
+              <div className="text-[11px] font-semibold text-faint">Calculated</div>
+              <p className="mt-1 text-[11px] text-faint">
+                Arithmetic over field values: <code className="rounded bg-subtle px-1 text-[11px]">+ − × ÷</code>,{" "}
+                <code className="rounded bg-subtle px-1 text-[11px]">sum/count/min/max(field)</code> across the
                 styles on the carton (base + picked siblings — an empty slot counts as 0), and{" "}
-                <code className="rounded bg-zinc-100 px-1 text-[10px]">round(…, decimals)</code>.
+                <code className="rounded bg-subtle px-1 text-[11px]">round(…, decimals)</code>.
               </p>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 <TokenChip
@@ -3698,7 +3700,7 @@ export function LayoutEditor({
               </div>
             </div>
             <div className="mt-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">Graphics</div>
+              <div className="text-[11px] font-semibold text-faint">Graphics</div>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 <TokenChip
                   token="{{barcode:cartonEan}}"
@@ -3762,24 +3764,24 @@ export function LayoutEditor({
             </div>
             <div className="mt-3">
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">Images</span>
+                <span className="text-[11px] font-semibold text-faint">Images</span>
                 <a
                   href="/settings/images"
                   target="_blank"
                   rel="noreferrer"
-                  className="text-[10px] text-zinc-400 underline hover:text-zinc-700"
+                  className="text-[11px] text-faint underline hover:text-ink"
                 >
                   Manage library →
                 </a>
               </div>
-              <p className="mt-1 text-[11px] text-zinc-400">
+              <p className="mt-1 text-[11px] text-faint">
                 Shared pictures — place as many as you need on one output. Add a width to size one:{" "}
-                <code className="rounded bg-zinc-100 px-1 text-[10px]">{"{{image:slug:40}}"}</code>{" "}
+                <code className="rounded bg-subtle px-1 text-[11px]">{"{{image:slug:40}}"}</code>{" "}
                 prints it at 40% of its block&apos;s width. Without a width it matches the block&apos;s
                 font size.
               </p>
               {libraryImages.length === 0 ? (
-                <p className="mt-1.5 text-[11px] text-amber-700">
+                <p className="mt-1.5 text-[11px] text-warn">
                   The library is empty —{" "}
                   <a href="/settings/images" target="_blank" rel="noreferrer" className="underline">
                     upload a picture
@@ -3795,13 +3797,13 @@ export function LayoutEditor({
                       disabled={!selBlock}
                       onClick={() => insertToken(`{{image:${img.slug}}}`)}
                       title={`${img.name} — inserts {{image:${img.slug}}}. Add a width % to size it, e.g. {{image:${img.slug}:40}}`}
-                      className="flex items-center gap-1.5 rounded border border-zinc-200 bg-white px-1.5 py-1 text-[11px] text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+                      className="flex items-center gap-1.5 rounded border border-line bg-surface px-1.5 py-1 text-[11px] text-ink hover:bg-subtle disabled:opacity-40"
                     >
                       {img.dataUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={img.dataUrl} alt="" className="h-4 w-4 object-contain" />
                       ) : (
-                        <span className="text-amber-600" title="No artwork uploaded yet">
+                        <span className="text-warn" title="No artwork uploaded yet">
                           ⚠
                         </span>
                       )}
@@ -3812,7 +3814,7 @@ export function LayoutEditor({
               )}
             </div>
             <div className="mt-3">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-300">Logic</div>
+              <div className="text-[11px] font-semibold text-faint">Logic</div>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 <TokenChip
                   token="{{if …}} {{else}} {{endif}}"
@@ -3835,7 +3837,7 @@ export function LayoutEditor({
                   onClick={() => insertToken("{{if certificates includes FSC}}FSC certified{{endif}}")}
                 />
               </div>
-              <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
+              <p className="mt-1 text-[11px] leading-relaxed text-faint">
                 One condition per line, no nesting. ==/!= compare the whole value; contains/!contains test for
                 a word anywhere in it; includes/!includes check a comma-separated list. The {"{{cert:…}}"} marks
                 already print only on styles that declare the certificate, so no wrapper is needed for them.
@@ -3843,14 +3845,14 @@ export function LayoutEditor({
             </div>
           </div>
 
-          <div className="rounded-lg border border-zinc-200 p-4">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Edit as JSON</div>
-            <p className="mt-1 text-[11px] text-zinc-400">
+          <div className="rounded-lg border border-line p-4">
+            <div className="text-[11px] font-semibold text-faint">Edit as JSON</div>
+            <p className="mt-1 text-[11px] text-faint">
               The whole layout is one JSON document — page sizes, margins, blocks, repeat and file-name settings.
             </p>
             <div className="mt-3">
               {!jsonOpen ? (
-                <button type="button" onClick={openJsonPanel} className="text-xs font-medium text-zinc-500 hover:text-zinc-800">
+                <button type="button" onClick={openJsonPanel} className="text-xs font-medium text-muted hover:text-ink">
                   Edit JSON directly →
                 </button>
               ) : (
@@ -3860,24 +3862,24 @@ export function LayoutEditor({
                     onChange={(e) => setJsonText(e.target.value)}
                     rows={16}
                     spellCheck={false}
-                    className="w-full rounded-md border border-zinc-200 px-2.5 py-2 font-mono text-[10px] leading-relaxed"
+                    className="w-full rounded-md border border-line px-2.5 py-2 font-mono text-[11px] leading-relaxed"
                   />
                   <div className="mt-1.5 flex items-center gap-2">
                     <button
                       type="button"
                       onClick={applyJson}
-                      className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                      className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Apply JSON
                     </button>
                     <button
                       type="button"
                       onClick={() => setJsonOpen(false)}
-                      className="text-xs text-zinc-400 hover:text-zinc-700"
+                      className="text-xs text-faint hover:text-ink"
                     >
                       Close
                     </button>
-                    {jsonError ? <span className="text-[11px] text-red-600">{jsonError}</span> : null}
+                    {jsonError ? <span className="text-[11px] text-bad">{jsonError}</span> : null}
                   </div>
                 </>
               )}
@@ -3892,9 +3894,9 @@ export function LayoutEditor({
       {tab === "settings" ? (
         <div className="mx-auto max-w-2xl space-y-6 px-8 py-8">
           {/* Generation activity — "how many times it has been generated" */}
-          <section className="rounded-lg border border-zinc-200 bg-white p-5">
-            <h2 className="text-sm font-semibold text-zinc-800">Generation activity</h2>
-            <p className="mt-1 text-xs text-zinc-500">
+          <section className="rounded-xl border border-line bg-surface p-5">
+            <h2 className="text-sm font-semibold text-ink">Generation activity</h2>
+            <p className="mt-1 text-xs text-muted">
               Every PDF this output has produced, across all styles and runs.
             </p>
             <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -3904,13 +3906,13 @@ export function LayoutEditor({
                 ["Pending review", stats.pendingReview, "text-amber-700"],
                 ["Rejected", stats.rejected, "text-red-700"],
               ] as const).map(([label, value, color]) => (
-                <div key={label} className="rounded-md border border-zinc-100 bg-zinc-50/60 px-3 py-2">
-                  <dt className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">{label}</dt>
+                <div key={label} className="rounded-md border border-line bg-zinc-50/60 px-3 py-2">
+                  <dt className="text-[11px] font-medium text-faint">{label}</dt>
                   <dd className={`mt-0.5 text-xl font-semibold tabular-nums ${color}`}>{value}</dd>
                 </div>
               ))}
             </dl>
-            <p className="mt-3 text-xs text-zinc-400">
+            <p className="mt-3 text-xs text-faint">
               {stats.distinctStyles} style{stats.distinctStyles === 1 ? "" : "s"} ·{" "}
               {stats.lastGeneratedAt
                 ? `last generated ${new Date(stats.lastGeneratedAt).toLocaleString()}`
@@ -3921,17 +3923,17 @@ export function LayoutEditor({
           {/* Generation rules — WHICH styles get this output. The per-output
               twin of the doc-type rules in the "Document types" popup, sharing
               their editor; saved with the layout by the normal autosave. */}
-          <section className="rounded-lg border border-zinc-200 bg-white p-5">
-            <h2 className="text-sm font-semibold text-zinc-800">Generation rules</h2>
-            <p className="mt-1 mb-3 text-sm leading-relaxed text-zinc-500">
+          <section className="rounded-xl border border-line bg-surface p-5">
+            <h2 className="text-sm font-semibold text-ink">Generation rules</h2>
+            <p className="mt-1 mb-3 text-sm leading-relaxed text-muted">
               Which styles this output is generated for. Without a rule it generates for every
               style whose Prod Spec declares it. Add{" "}
-              <span className="font-medium text-zinc-700">Generate when</span> to narrow it to
+              <span className="font-medium text-ink">Generate when</span> to narrow it to
               matching styles only — a barcode sticker that exists just for shoes is{" "}
-              <span className="whitespace-nowrap font-medium text-zinc-700">
+              <span className="whitespace-nowrap font-medium text-ink">
                 Generate when · Product group · contains · shoes
               </span>{" "}
-              — or <span className="font-medium text-zinc-700">Don’t generate when</span> to carve
+              — or <span className="font-medium text-ink">Don’t generate when</span> to carve
               out exceptions. The runner, the style page and the review all read the same rule, so a
               skipped output shows its reason instead of sitting there as missing work.
             </p>
@@ -3941,7 +3943,7 @@ export function LayoutEditor({
               fields={ruleFields}
               onChange={(rules) => updateSettings({ rules })}
               footer={
-                <span className="text-[11px] text-zinc-400">
+                <span className="text-[11px] text-faint">
                   Saved with the layout — no separate save.
                 </span>
               }
@@ -3949,16 +3951,16 @@ export function LayoutEditor({
           </section>
 
           {/* Auto-approve — skip review queue, keep manual send */}
-          <section className="rounded-lg border border-zinc-200 bg-white p-5">
+          <section className="rounded-xl border border-line bg-surface p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-sm font-semibold text-zinc-800">Auto-approve outputs</h2>
-                <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+                <h2 className="text-sm font-semibold text-ink">Auto-approve outputs</h2>
+                <p className="mt-1 text-sm leading-relaxed text-muted">
                   Skip the manual per-asset review queue — an asset from this output is
-                  marked <span className="font-medium text-zinc-700">approved</span> the
+                  marked <span className="font-medium text-ink">approved</span> the
                   moment it generates. Two guards stay in place: a print-unsafe document
                   (missing artwork or EAN) always falls back to manual review, and a
-                  person still presses <span className="font-medium text-zinc-700">“Approve
+                  person still presses <span className="font-medium text-ink">“Approve
                   all &amp; publish”</span> on the style to send it to the supplier.
                 </p>
               </div>
@@ -3968,19 +3970,19 @@ export function LayoutEditor({
                 aria-checked={autoApprove}
                 onClick={() => setAutoApprove((v) => !v)}
                 className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-                  autoApprove ? "bg-emerald-500" : "bg-zinc-300"
+                  autoApprove ? "bg-good" : "bg-zinc-300"
                 }`}
                 title="Toggle auto-approve (autosaves)"
               >
                 <span
-                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                  className={`inline-block h-5 w-5 transform rounded-full bg-surface shadow transition-transform ${
                     autoApprove ? "translate-x-5" : "translate-x-0.5"
                   }`}
                 />
               </button>
             </div>
             {autoApprove ? (
-              <p className="mt-3 rounded-md bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+              <p className="mt-3 rounded-md bg-good-soft px-3 py-2 text-xs text-good">
                 On — new generations of this output skip review. Auto-approved assets show
                 a system reviewer (no person) in the activity log.
               </p>
@@ -3990,15 +3992,15 @@ export function LayoutEditor({
           {/* Output mechanics (repeat / split / file name / carton numbering /
               custom logo) live in the Customizer's left rail, beside the canvas
               and grid they affect — kept there when main reworked that panel. */}
-          <section className="rounded-lg border border-zinc-200 bg-white p-5">
-            <h2 className="text-sm font-semibold text-zinc-800">Output settings</h2>
-            <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+          <section className="rounded-xl border border-line bg-surface p-5">
+            <h2 className="text-sm font-semibold text-ink">Output settings</h2>
+            <p className="mt-1 text-sm leading-relaxed text-muted">
               Repeat &amp; split, output file name, carton numbering and the custom
               logo are edited in the{" "}
               <button
                 type="button"
                 onClick={() => setTab("customizer")}
-                className="font-medium text-zinc-700 underline underline-offset-2 hover:text-zinc-900"
+                className="font-medium text-ink underline underline-offset-2 hover:text-ink"
               >
                 Customizer
               </button>{" "}
@@ -4010,21 +4012,21 @@ export function LayoutEditor({
 
       {/* ===== Reviews tab ===== */}
       {tab === "reviews" ? (
-        <div className="px-8 py-8">
-          <h2 className="text-sm font-semibold text-zinc-800">Recent generations</h2>
-          <p className="mt-1 text-xs text-zinc-500">
+        <div className="px-6 py-5">
+          <h2 className="text-sm font-semibold text-ink">Recent generations</h2>
+          <p className="mt-1 text-xs text-muted">
             The {recentAssets.length} most recent PDFs this output produced. Open the
             style&apos;s review screen to approve or reject.
           </p>
           {recentAssets.length === 0 ? (
-            <div className="mt-6 rounded-lg border border-dashed border-zinc-200 px-6 py-10 text-center text-sm text-zinc-400">
+            <div className="mt-6 rounded-lg border border-dashed border-line px-6 py-10 text-center text-sm text-faint">
               This output hasn&apos;t been generated yet. It generates for a style once it&apos;s
               added as an output on that style&apos;s Prod Spec.
             </div>
           ) : (
-            <div className="mt-4 overflow-hidden rounded-lg border border-zinc-200">
+            <div className="mt-4 overflow-hidden rounded-lg border border-line">
               <table className="w-full text-sm">
-                <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wide text-zinc-400">
+                <thead className="bg-subtle text-left text-[11px] text-faint">
                   <tr>
                     <th className="px-4 py-2 font-medium">Style</th>
                     <th className="px-4 py-2 font-medium">File</th>
@@ -4033,18 +4035,18 @@ export function LayoutEditor({
                     <th className="px-4 py-2"></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-100">
+                <tbody className="divide-y divide-line">
                   {recentAssets.map((a) => (
                     <tr key={a.id} className="hover:bg-zinc-50/60">
                       <td className="px-4 py-2">
-                        <Link href={`/styles/${a.styleId}/review`} className="font-medium text-zinc-800 hover:underline">
+                        <Link href={`/styles/${a.styleId}/review`} className="font-medium text-ink hover:underline">
                           {a.styleName}
                         </Link>
                       </td>
-                      <td className="px-4 py-2 font-mono text-[11px] text-zinc-500">
+                      <td className="px-4 py-2 font-mono text-[11px] text-muted">
                         {a.displayName ?? a.fileName}
                         {a.placeholderCount > 0 ? (
-                          <span className="ml-1.5 rounded bg-amber-50 px-1 py-px text-[10px] font-medium text-amber-700">
+                          <span className="ml-1.5 rounded bg-warn-soft px-1 py-px text-[11px] font-medium text-warn">
                             {a.placeholderCount} placeholder
                           </span>
                         ) : null}
@@ -4053,22 +4055,22 @@ export function LayoutEditor({
                         <span
                           className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
                             a.reviewStatus === "APPROVED"
-                              ? "bg-emerald-50 text-emerald-700"
+                              ? "bg-good-soft text-good"
                               : a.reviewStatus === "REJECTED"
-                                ? "bg-red-50 text-red-700"
-                                : "bg-amber-50 text-amber-700"
+                                ? "bg-bad-soft text-bad"
+                                : "bg-warn-soft text-warn"
                           }`}
                         >
                           {a.reviewStatus === "PENDING_REVIEW" ? "Pending" : a.reviewStatus === "APPROVED" ? "Approved" : "Rejected"}
                         </span>
                       </td>
-                      <td className="px-4 py-2 text-xs text-zinc-500">{new Date(a.createdAt).toLocaleString()}</td>
+                      <td className="px-4 py-2 text-xs text-muted">{new Date(a.createdAt).toLocaleString()}</td>
                       <td className="px-4 py-2 text-right">
                         <a
                           href={`/api/admin/job-assets/${a.id}/download`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-xs text-zinc-500 hover:text-zinc-800 hover:underline"
+                          className="text-xs text-muted hover:text-ink hover:underline"
                         >
                           Open PDF
                         </a>
@@ -4111,7 +4113,7 @@ function PanelButton({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 hover:border-zinc-300 hover:text-zinc-900 disabled:cursor-not-allowed disabled:border-zinc-100 disabled:text-zinc-300 disabled:hover:border-zinc-100 disabled:hover:text-zinc-300"
+      className="rounded border border-line bg-surface px-1.5 py-0.5 text-[11px] font-medium text-muted hover:border-line hover:text-ink disabled:cursor-not-allowed disabled:border-line disabled:text-faint disabled:hover:border-line disabled:hover:text-faint"
     >
       {children}
     </button>
@@ -4145,11 +4147,11 @@ function NumberStepper({
     else setText(String(value));
   };
   return (
-    <div className="inline-flex items-stretch overflow-hidden rounded-md border border-zinc-200 bg-white">
+    <div className="inline-flex items-stretch overflow-hidden rounded-md border border-line bg-surface">
       <button
         type="button"
         onClick={() => onChange(clamp(round(value - step)))}
-        className="px-2 text-zinc-500 hover:bg-zinc-50"
+        className="px-2 text-muted hover:bg-subtle"
         aria-label="Decrease"
       >
         −
@@ -4163,18 +4165,18 @@ function NumberStepper({
         onKeyDown={(e) => {
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
         }}
-        className="w-12 border-x border-zinc-200 px-1 py-1 text-center text-sm tabular-nums focus:outline-none"
+        className="w-12 border-x border-line px-1 py-1 text-center text-sm tabular-nums focus:outline-none"
         aria-label="Value"
       />
       <button
         type="button"
         onClick={() => onChange(clamp(round(value + step)))}
-        className="px-2 text-zinc-500 hover:bg-zinc-50"
+        className="px-2 text-muted hover:bg-subtle"
         aria-label="Increase"
       >
         +
       </button>
-      {suffix ? <span className="flex items-center px-1.5 text-[10px] text-zinc-400">{suffix}</span> : null}
+      {suffix ? <span className="flex items-center px-1.5 text-[11px] text-faint">{suffix}</span> : null}
     </div>
   );
 }
@@ -4194,7 +4196,7 @@ function RectStepper({
 }) {
   return (
     <div>
-      <label className="text-xs text-zinc-500">{label}</label>
+      <label className="text-xs text-muted">{label}</label>
       <input
         type="number"
         min={min}
@@ -4204,7 +4206,7 @@ function RectStepper({
           const v = Number(e.target.value);
           if (Number.isInteger(v) && v >= min && v <= max) onChange(v);
         }}
-        className="mt-1 w-full rounded-md border border-zinc-200 px-2 py-1 text-sm tabular-nums"
+        className="mt-1 w-full rounded-md border border-line px-2 py-1 text-sm tabular-nums"
       />
     </div>
   );
@@ -4277,9 +4279,9 @@ function CanvasBlock({
   // Selected wins the ring; otherwise a list-hover paints a blue locator.
   // Either state raises z-index so the block isn't hidden behind neighbours.
   const ringCls = selected
-    ? "z-10 ring-2 ring-zinc-900/80 ring-offset-1"
+    ? "z-10 ring-2 ring-accent/80 ring-offset-1"
     : coSelected
-      ? "z-10 ring-2 ring-zinc-900/30 ring-offset-1"
+      ? "z-10 ring-2 ring-accent/30 ring-offset-1"
       : highlighted
         ? "z-10 ring-2 ring-sky-500 ring-offset-1"
         : "hover:ring-1 hover:ring-zinc-300";
@@ -4289,7 +4291,7 @@ function CanvasBlock({
     <div
       data-block
       onClick={(e) => onSelect(e.shiftKey || e.metaKey || e.ctrlKey)}
-      className={`absolute cursor-pointer rounded-sm px-1 py-0.5 ${ringCls} ${bgCls}`}
+      className={`absolute cursor-pointer rounded-sm px-1 py-0.5 ${ringCls}    ${bgCls}`}
       style={positionStyle}
     >
       {selected ? (
@@ -4299,7 +4301,7 @@ function CanvasBlock({
             e.stopPropagation();
             onRemove();
           }}
-          className="absolute z-10 flex h-4 w-4 items-center justify-center rounded-full border border-zinc-300 bg-white text-[9px] leading-none text-zinc-500 shadow-sm hover:border-red-300 hover:bg-red-50 hover:text-red-600"
+          className="absolute z-10 flex h-4 w-4 items-center justify-center rounded-full border border-line bg-surface text-[11px] leading-none text-muted shadow-sm hover:border-bad hover:bg-bad-soft hover:text-bad"
           style={badgePos}
           title="Delete block (Del)"
         >
@@ -4426,20 +4428,20 @@ function BorderSidePicker({
   ] as const;
   const onCount = SIDES.filter(([k]) => sides[k]).length;
   return (
-    <div className="text-xs text-zinc-600">
+    <div className="text-xs text-muted">
       <div className="flex items-center justify-between">
         <span>Sides</span>
         {onCount < 4 ? (
           <button
             type="button"
             onClick={() => onChange({ top: true, right: true, bottom: true, left: true })}
-            className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 hover:border-zinc-300"
+            className="rounded border border-line bg-surface px-1.5 py-0.5 text-[11px] font-medium text-muted hover:border-line"
           >
             all round
           </button>
         ) : null}
       </div>
-      <div className="mt-1 flex overflow-hidden rounded-md border border-zinc-200">
+      <div className="mt-1 flex overflow-hidden rounded-md border border-line">
         {SIDES.map(([k, label]) => {
           const on = sides[k];
           const last = on && onCount === 1;
@@ -4450,8 +4452,8 @@ function BorderSidePicker({
               disabled={last}
               onClick={() => onChange({ ...sides, [k]: !on })}
               className={`flex-1 px-2 py-1 text-[11px] font-medium ${
-                on ? "bg-zinc-900 text-white" : "bg-white text-zinc-400 hover:bg-zinc-50"
-              } ${last ? "cursor-not-allowed opacity-80" : ""}`}
+                on ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50" : "bg-surface text-faint hover:bg-subtle"
+              }    ${last ? "cursor-not-allowed opacity-80" : ""}`}
               title={last ? "A border needs at least one side — remove the border instead." : `${label} edge`}
             >
               {label}
@@ -4495,9 +4497,9 @@ function HexColorField({
   return (
     <div>
       <div className="flex items-baseline justify-between gap-1">
-        <label className="text-[10px] text-zinc-400">{label}</label>
+        <label className="text-[11px] text-faint">{label}</label>
         {isDefault ? (
-          <span className="text-[9px] text-zinc-300" title={`Default — prints ${fallback}`}>
+          <span className="text-[11px] text-faint" title={`Default — prints ${fallback}`}>
             default
           </span>
         ) : (
@@ -4507,7 +4509,7 @@ function HexColorField({
               setText(fallback);
               onReset();
             }}
-            className="text-[9px] text-zinc-400 hover:text-zinc-700"
+            className="text-[11px] text-faint hover:text-ink"
             title={`Back to the default ${fallback}`}
           >
             reset
@@ -4519,7 +4521,7 @@ function HexColorField({
           type="color"
           value={expandHex(value)}
           onChange={(e) => commit(e.target.value)}
-          className="h-6 w-7 shrink-0 cursor-pointer rounded border border-zinc-200 bg-white p-0.5"
+          className="h-6 w-7 shrink-0 cursor-pointer rounded border border-line bg-surface p-0.5"
           aria-label={`${label} colour`}
         />
         <input
@@ -4528,7 +4530,7 @@ function HexColorField({
           onChange={(e) => commit(e.target.value)}
           spellCheck={false}
           placeholder={fallback}
-          className="w-full min-w-0 rounded-md border border-zinc-200 px-1.5 py-1 font-mono text-[11px] tabular-nums"
+          className="w-full min-w-0 rounded-md border border-line px-1.5 py-1 font-mono text-[11px] tabular-nums"
           aria-label={`${label} hex value`}
         />
       </div>
@@ -4556,14 +4558,14 @@ function TokenChip({
       title={title}
       disabled={disabled}
       onClick={onClick}
-      className="flex max-w-full flex-col items-start rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-left font-mono text-[11px] text-zinc-600 hover:border-zinc-300 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+      className="flex max-w-full flex-col items-start rounded border border-line bg-subtle px-1.5 py-0.5 text-left font-mono text-[11px] text-muted hover:border-line hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-40"
     >
       <span>{token}</span>
       {value !== undefined ? (
         value ? (
-          <span className="max-w-44 truncate font-sans text-[10px] text-emerald-700">{value}</span>
+          <span className="max-w-44 truncate font-sans text-[11px] text-good">{value}</span>
         ) : (
-          <span className="font-sans text-[10px] text-amber-600">—</span>
+          <span className="font-sans text-[11px] text-warn">—</span>
         )
       ) : null}
     </button>

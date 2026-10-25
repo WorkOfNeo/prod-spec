@@ -27,9 +27,9 @@ export default async function OutputLayoutEditorPage(props: { params: Promise<{ 
   const { role } = await getSessionWithRole();
   if (role !== "ADMIN") {
     return (
-      <div className="px-8 py-8">
-        <h1 className="text-xl font-semibold tracking-tight">Output builder</h1>
-        <p className="mt-3 text-sm text-zinc-500">The Output Builder is admin-only.</p>
+      <div className="px-6 py-5">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Output builder</h1>
+        <p className="mt-3 text-sm text-muted">The Output Builder is admin-only.</p>
       </div>
     );
   }

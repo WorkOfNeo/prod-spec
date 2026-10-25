@@ -61,12 +61,12 @@ export default async function NewManualStylePage() {
   }));
 
   return (
-    <div className="px-8 py-8">
-      <Link href="/styles" className="text-xs text-zinc-500 underline">
+    <div className="px-6 py-5">
+      <Link href="/styles" className="text-xs text-muted underline">
         ← Back to styles
       </Link>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight">New manual style</h1>
-      <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+      <h1 className="mt-2 text-[18px] font-semibold tracking-[-0.01em]">New manual style</h1>
+      <p className="mt-1 max-w-2xl text-sm text-muted">
         Fill in the fields to render the ProdSpec PDFs without Monday integration. Use the
         sample-data button for a known-good starter, then iterate. Saved styles persist in the
         database and can be re-rendered or edited via the style detail page.

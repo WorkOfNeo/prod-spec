@@ -114,7 +114,7 @@ export function TestPanel({
   if (styles.length === 0) {
     return (
       <Section title="Test generation">
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        <div className="rounded-md border border-transparent bg-warn-soft p-3 text-sm text-warn">
           No styles are linked to this prod spec yet. Styles link automatically on Monday
           ingest (matched by Customer × Business area) — once one lands, pick it here to
           generate test PDFs.
@@ -126,7 +126,7 @@ export function TestPanel({
   return (
     <div className="flex flex-col gap-4">
       <Section title="Test generation">
-        <p className="mb-3 text-xs text-zinc-500">
+        <p className="mb-3 text-xs text-muted">
           A dry run of the generator. Pick a real style, and we render the{" "}
           <strong>cover page</strong>
           {hasGeneralInfo ? ", the general information document," : ""} plus{" "}
@@ -140,7 +140,7 @@ export function TestPanel({
 
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[18rem] flex-1">
-            <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+            <label className="mb-1 block text-[11px] font-medium text-muted">
               Style to test
             </label>
             <Combobox
@@ -149,7 +149,7 @@ export function TestPanel({
                 value: s.id,
                 label: s.name,
                 hint: (
-                  <span className="text-[11px] text-zinc-400">
+                  <span className="text-[11px] text-faint">
                     {s.poNumber ? `PO ${s.poNumber} · ` : ""}
                     {s.completionPct}%
                   </span>
@@ -165,7 +165,7 @@ export function TestPanel({
             type="button"
             onClick={() => void generate()}
             disabled={generating || !styleId}
-            className="inline-flex shrink-0 items-center gap-2 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="shrink-0 inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {generating ? (
               <>
@@ -180,23 +180,23 @@ export function TestPanel({
           </button>
         </div>
         {generating && (
-          <p className="mt-2 text-[11px] text-zinc-400">
+          <p className="mt-2 text-[11px] text-faint">
             Rendering each PDF through the real pipeline — this can take a few seconds.
           </p>
         )}
       </Section>
 
       {phase.kind === "error" && (
-        <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+        <div className="rounded-md border border-transparent bg-bad-soft p-3 text-sm text-bad">
           <span className="font-medium">Test generation failed.</span> {phase.message}
         </div>
       )}
 
       {phase.kind === "done" && (
         <>
-          <div className="rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 text-xs text-zinc-600">
+          <div className="rounded-md border border-line bg-subtle px-4 py-3 text-xs text-muted">
             Test bundle for{" "}
-            <strong className="text-zinc-800">{phase.style.name}</strong> ·{" "}
+            <strong className="text-ink">{phase.style.name}</strong> ·{" "}
             {phase.style.styleNumber}
             {phase.style.poNumber ? ` · PO ${phase.style.poNumber}` : ""} —{" "}
             {phase.docs.length} document{phase.docs.length === 1 ? "" : "s"}. These are
@@ -204,7 +204,7 @@ export function TestPanel({
           </div>
 
           {phase.warnings.length > 0 && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            <div className="rounded-md border border-transparent bg-warn-soft p-3 text-xs text-warn">
               <ul className="list-disc space-y-1 pl-4">
                 {phase.warnings.map((w, i) => (
                   <li key={i}>{w}</li>
@@ -226,20 +226,20 @@ export function TestPanel({
 
 function DocCard({ doc }: { doc: RenderedDoc }) {
   return (
-    <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-zinc-100 px-4 py-2.5">
+    <section className="overflow-hidden rounded-xl border border-line bg-surface">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line px-4 py-2.5">
         {(doc.kind === "cover" || doc.kind === "general-info") && (
-          <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white">
+          <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-medium text-white">
             {doc.kind === "cover" ? "Cover" : "Info"}
           </span>
         )}
-        <span className="text-sm font-medium text-zinc-800">{doc.name}</span>
-        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] tabular-nums text-zinc-600">
+        <span className="text-sm font-medium text-ink">{doc.name}</span>
+        <span className="rounded-full bg-subtle px-2 py-0.5 text-[11px] tabular-nums text-muted">
           {fmtMm(doc.widthMm)} × {fmtMm(doc.heightMm)} mm
         </span>
         {doc.staticPdf && (
           <span
-            className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-700"
+            className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent-text"
             title="Committed artwork — shipped verbatim, the app does not redraw it"
           >
             Static artwork
@@ -247,7 +247,7 @@ function DocCard({ doc }: { doc: RenderedDoc }) {
         )}
         {doc.placeholderCount > 0 && (
           <span
-            className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800"
+            className="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-medium text-warn"
             title="Missing-data placeholders in the artwork — these block approval on a real run"
           >
             {doc.placeholderCount} placeholder{doc.placeholderCount === 1 ? "" : "s"}
@@ -260,14 +260,14 @@ function DocCard({ doc }: { doc: RenderedDoc }) {
                 href={doc.blobUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs font-medium text-zinc-600 hover:text-zinc-900 hover:underline"
+                className="text-xs font-medium text-muted hover:text-ink hover:underline"
               >
                 Open
               </a>
               <a
                 href={doc.blobUrl}
                 download={doc.fileName ?? "document.pdf"}
-                className="text-xs font-medium text-zinc-600 hover:text-zinc-900 hover:underline"
+                className="text-xs font-medium text-muted hover:text-ink hover:underline"
               >
                 Download
               </a>
@@ -276,13 +276,13 @@ function DocCard({ doc }: { doc: RenderedDoc }) {
         </div>
       </div>
       {doc.error ? (
-        <div className="m-4 rounded-md border border-red-300 bg-red-50 p-3 text-xs text-red-700">
+        <div className="m-4 rounded-md border border-transparent bg-bad-soft p-3 text-xs text-bad">
           <span className="font-medium">Failed to render this document.</span> {doc.error}
         </div>
       ) : doc.blobUrl ? (
         <iframe
           src={doc.blobUrl}
-          className="block h-[640px] w-full bg-zinc-100"
+          className="block h-[640px] w-full bg-subtle"
           title={doc.name}
         />
       ) : null}
@@ -304,8 +304,8 @@ function fmtMm(n: number): string {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white p-5">
-      <h2 className="mb-3 text-sm font-semibold text-zinc-700">{title}</h2>
+    <section className="rounded-xl border border-line bg-surface p-5">
+      <h2 className="mb-3 text-sm font-semibold text-ink">{title}</h2>
       {children}
     </section>
   );

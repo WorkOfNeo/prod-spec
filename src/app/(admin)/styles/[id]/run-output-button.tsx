@@ -62,7 +62,7 @@ export function RunOutputButton({
 
   return (
     <div className="flex items-center gap-2">
-      {error && <span className="text-xs text-red-600">{error}</span>}
+      {error && <span className="text-xs text-bad">{error}</span>}
       <button
         type="button"
         onClick={onClick}
@@ -74,8 +74,8 @@ export function RunOutputButton({
         }
         className={`rounded-md border px-3 py-1 text-xs font-medium ${
           ready
-            ? "border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50"
-            : "cursor-not-allowed border-zinc-200 bg-zinc-50 text-zinc-300"
+            ? "border-line bg-surface text-ink hover:bg-subtle"
+            : "cursor-not-allowed border-line bg-subtle text-faint"
         } disabled:opacity-60`}
       >
         {pending ? "Running…" : label}

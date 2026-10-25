@@ -92,7 +92,7 @@ export function ApproveStylesPanel({
 
   if (styles.length === 0) {
     return (
-      <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-3 text-xs text-zinc-500">
+      <div className="rounded-md border border-line bg-subtle px-3 py-3 text-xs text-muted">
         No styles on this prod spec yet.
       </div>
     );
@@ -130,11 +130,11 @@ export function ApproveStylesPanel({
   const runningAll = busy === "all";
 
   return (
-    <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
+    <div className="rounded-md border border-line bg-subtle p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-zinc-800">Styles & approval</p>
-          <p className="mt-0.5 text-xs text-zinc-500">
+          <p className="text-sm font-medium text-ink">Styles & approval</p>
+          <p className="mt-0.5 text-xs text-muted">
             All live styles on this prod spec, grouped by supplier, with each style&apos;s
             outputs ready for approval. Approving runs the same publish path as the review
             screen — outputs cascade to approved, upload to SharePoint and the supplier&apos;s
@@ -150,7 +150,7 @@ export function ApproveStylesPanel({
               ? "No style is awaiting approval right now"
               : "Approve every style awaiting approval on this prod spec"
           }
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+          className="shrink-0 inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {runningAll && <Spinner />}
           {runningAll ? "Approving…" : `Approve all (${approvableCount})`}
@@ -164,9 +164,9 @@ export function ApproveStylesPanel({
           return (
             <div key={groupKey}>
               <div className="flex items-center justify-between gap-3 px-0.5 pb-1">
-                <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                <p className="truncate text-[11px] font-semibold text-muted">
                   {g.supplier ?? "No supplier linked"}
-                  <span className="ml-2 font-normal normal-case tracking-normal text-zinc-400">
+                  <span className="ml-2 font-normal normal-case tracking-normal text-faint">
                     {g.rows.length} style{g.rows.length === 1 ? "" : "s"} · {g.readyOutputs}{" "}
                     output{g.readyOutputs === 1 ? "" : "s"} ready
                   </span>
@@ -177,14 +177,14 @@ export function ApproveStylesPanel({
                     onClick={() => void approve(g.approvableIds, groupKey)}
                     disabled={busy != null}
                     title={`Approve the ${g.approvableIds.length} style(s) awaiting approval for this supplier`}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-700 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-0.5 text-[11px] font-medium text-ink hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {groupBusy && <Spinner />}
                     {groupBusy ? "Approving…" : `Approve ${g.approvableIds.length}`}
                   </button>
                 )}
               </div>
-              <ul className="divide-y divide-zinc-100 overflow-hidden rounded-md border border-zinc-200 bg-white">
+              <ul className="divide-y divide-line overflow-hidden rounded-md border border-line bg-surface">
                 {g.rows.map((s) => {
                   const rowBusy = busy === s.id;
                   return (
@@ -192,11 +192,11 @@ export function ApproveStylesPanel({
                       <div className="min-w-0">
                         <Link
                           href={`/styles/${s.id}/review`}
-                          className="truncate text-xs font-medium text-zinc-800 hover:underline"
+                          className="truncate text-xs font-medium text-ink hover:underline"
                         >
                           {s.name}
                         </Link>
-                        <p className="mt-0.5 text-[11px] text-zinc-500">
+                        <p className="mt-0.5 text-[11px] text-muted">
                           {s.poNumber ? `PO ${s.poNumber}` : "No PO"}
                           {countsLine(s)}
                         </p>
@@ -205,8 +205,8 @@ export function ApproveStylesPanel({
                         <span
                           className={
                             s.toApprove > 0
-                              ? "text-xs font-semibold text-amber-600"
-                              : "text-xs text-zinc-400"
+                              ? "text-xs font-semibold text-warn"
+                              : "text-xs text-faint"
                           }
                         >
                           {s.toApprove} ready
@@ -222,7 +222,7 @@ export function ApproveStylesPanel({
                                 ? "Latest run isn't awaiting review — decide these outputs from the review page"
                                 : "Nothing awaiting approval"
                           }
-                          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="shrink-0 inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {rowBusy && <Spinner />}
                           {rowBusy ? "Approving…" : "Approve"}
@@ -238,26 +238,26 @@ export function ApproveStylesPanel({
       </div>
 
       {totalCount > styles.length && (
-        <p className="mt-2 text-[11px] text-zinc-400">
+        <p className="mt-2 text-[11px] text-faint">
           Showing the {styles.length} most recently updated of {totalCount} styles.
         </p>
       )}
 
       {error && (
-        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-800">
+        <p className="mt-2 rounded-md border border-transparent bg-warn-soft px-2.5 py-1 text-xs text-warn">
           {error}
         </p>
       )}
 
       {summary && (
-        <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs text-emerald-900">
+        <div className="mt-2 rounded-md border border-transparent bg-good-soft px-2.5 py-2 text-xs text-good">
           <p className="font-medium">
             ✓ {summary.approved} approved
             {summary.blocked > 0 ? ` · ${summary.blocked} blocked` : ""}
             {summary.skipped > 0 ? ` · ${summary.skipped} skipped` : ""}
           </p>
           {(summary.blocked > 0 || summary.skipped > 0) && (
-            <ul className="mt-1 space-y-0.5 text-emerald-800">
+            <ul className="mt-1 space-y-0.5 text-good">
               {summary.results
                 .filter((r) => r.status !== "approved")
                 .map((r) => (

@@ -44,26 +44,26 @@ export function ScrapePanel({
   const total = stored ? Math.max(stored.sectionCount, sections.length) : sections.length;
 
   return (
-    <div className="mt-3 overflow-hidden rounded-md border border-zinc-200 bg-white">
-      <div className="border-b border-zinc-100 px-3 py-2 text-xs font-medium text-zinc-700">
+    <div className="mt-3 overflow-hidden rounded-md border border-line bg-surface">
+      <div className="border-b border-line px-3 py-2 text-xs font-medium text-ink">
         PO scrape — {total} section{total === 1 ? "" : "s"} found
         {selected.length > 0 ? (
-          <span className="font-normal text-zinc-500"> · green = used for this style</span>
+          <span className="font-normal text-muted"> · green = used for this style</span>
         ) : (
-          <span className="font-normal text-rose-600"> · none matched this style</span>
+          <span className="font-normal text-bad"> · none matched this style</span>
         )}
       </div>
       {stored && <StoredHeader stored={stored} shown={sections.length} total={total} />}
-      <div className="divide-y divide-zinc-100">
+      <div className="divide-y divide-line">
         {ordered.map((s, i) => (
           <SectionRow key={i} s={s} />
         ))}
       </div>
-      <div className="border-t border-zinc-100 px-3 py-2 text-[11px] leading-relaxed text-zinc-500">
+      <div className="border-t border-line px-3 py-2 text-[11px] leading-relaxed text-muted">
         {selected.length > 0 ? (
           <>
             Only the green {selected.length === 1 ? "section feeds" : "sections feed"}{" "}
-            <span className="font-medium text-zinc-600">EAN-13 (per size)</span>. The rest are shown
+            <span className="font-medium text-muted">EAN-13 (per size)</span>. The rest are shown
             for verification only — no other section&apos;s barcodes were stored on this style.
           </>
         ) : (
@@ -89,7 +89,7 @@ function StoredHeader({
   total: number;
 }) {
   return (
-    <div className="border-b border-zinc-100 bg-zinc-50 px-3 py-1.5 text-[11px] leading-relaxed text-zinc-500">
+    <div className="border-b border-line bg-subtle px-3 py-1.5 text-[11px] leading-relaxed text-muted">
       Stored scrape
       {stored.scrapedAt && (
         <>
@@ -99,7 +99,7 @@ function StoredHeader({
               the two can legitimately disagree. Suppress rather than force UTC
               — every other date on this page is local, and a UTC-only oddball
               here would be read as the wrong time. */}
-          <time dateTime={stored.scrapedAt} className="font-medium text-zinc-600" suppressHydrationWarning>
+          <time dateTime={stored.scrapedAt} className="font-medium text-muted" suppressHydrationWarning>
             {formatDate(stored.scrapedAt)}
           </time>
         </>
@@ -112,22 +112,22 @@ function StoredHeader({
               href={stored.poFileWebUrl}
               target="_blank"
               rel="noreferrer"
-              className="font-medium text-blue-600 underline"
+              className="font-medium text-accent-text underline"
             >
               {stored.poFileName} ↗
             </a>
           ) : (
-            <span className="font-medium text-zinc-600">{stored.poFileName}</span>
+            <span className="font-medium text-muted">{stored.poFileName}</span>
           )}
         </>
       )}
       {stored.truncated && (
-        <span className="text-amber-700">
+        <span className="text-warn">
           {" · "}
           showing {shown} of {total} sections (stored dump is capped)
         </span>
       )}
-      <span className="text-zinc-400"> · re-resolve for a fresh read</span>
+      <span className="text-faint"> · re-resolve for a fresh read</span>
     </div>
   );
 }
@@ -137,10 +137,10 @@ function SectionRow({ s }: { s: PoSection }) {
 
   if (s.selected) {
     return (
-      <div className="bg-emerald-50 px-3 py-2">
+      <div className="bg-good-soft px-3 py-2">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-medium text-emerald-900">{title}</span>
-          <span className="shrink-0 rounded bg-white px-1.5 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">
+          <span className="text-sm font-medium text-good">{title}</span>
+          <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[11px] font-medium text-good ring-1 ring-inset ring-emerald-200">
             → EAN-13 (per size)
           </span>
         </div>
@@ -152,14 +152,14 @@ function SectionRow({ s }: { s: PoSection }) {
               // "*X" scope. Show them dimmed so the exclusion is auditable.
               v.used ? (
                 <li key={i} className="flex justify-between gap-3 text-xs tabular-nums">
-                  <span className="text-zinc-600">{v.label}</span>
-                  <span className="font-medium text-zinc-800">{v.ean13}</span>
+                  <span className="text-muted">{v.label}</span>
+                  <span className="font-medium text-ink">{v.ean13}</span>
                 </li>
               ) : (
-                <li key={i} className="flex justify-between gap-3 text-xs tabular-nums text-zinc-400">
+                <li key={i} className="flex justify-between gap-3 text-xs tabular-nums text-faint">
                   <span>
                     {v.label}
-                    <span className="ml-1.5 rounded bg-zinc-100 px-1 py-px text-[10px] text-zinc-500">
+                    <span className="ml-1.5 rounded bg-subtle px-1 py-px text-[11px] text-muted">
                       other colourway — not used
                     </span>
                   </span>
@@ -169,11 +169,11 @@ function SectionRow({ s }: { s: PoSection }) {
             )}
           </ul>
         ) : (
-          <p className="mt-1 text-xs text-zinc-500">No per-size barcodes in this section.</p>
+          <p className="mt-1 text-xs text-muted">No per-size barcodes in this section.</p>
         )}
         {s.cartonEan && (
-          <div className="mt-1 text-[11px] tabular-nums text-zinc-500">
-            carton <span className="font-medium text-zinc-700">{s.cartonEan}</span>
+          <div className="mt-1 text-[11px] tabular-nums text-muted">
+            carton <span className="font-medium text-ink">{s.cartonEan}</span>
           </div>
         )}
       </div>
@@ -182,9 +182,9 @@ function SectionRow({ s }: { s: PoSection }) {
 
   const sample = s.variants[0]?.ean13 ?? (s.cartonEan ? `carton ${s.cartonEan}` : null);
   return (
-    <div className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs text-zinc-500">
+    <div className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs text-muted">
       <span>{title}</span>
-      <span className="tabular-nums text-zinc-400">
+      <span className="tabular-nums text-faint">
         {s.variants.length} size{s.variants.length === 1 ? "" : "s"}
         {sample ? ` · ${sample}` : ""}
       </span>

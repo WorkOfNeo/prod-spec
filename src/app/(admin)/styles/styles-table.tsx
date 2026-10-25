@@ -475,9 +475,9 @@ export function StylesTable({
     if (RESOLVED_FIELD_COLUMN_KEYS.has(key)) {
       const v = s.resolved[key]?.trim();
       return (
-        <td key={key} className="px-3 py-2 text-zinc-600">
+        <td key={key} className="px-3 py-2 text-muted">
           <span className="block max-w-[240px] truncate" title={v || undefined}>
-            {v || <span className="text-zinc-300">—</span>}
+            {v || <span className="text-faint">—</span>}
           </span>
         </td>
       );
@@ -508,13 +508,13 @@ export function StylesTable({
         );
       case "po":
         return (
-          <td key={key} className="px-3 py-2 tabular-nums text-zinc-600">
+          <td key={key} className="px-3 py-2 tabular-nums text-muted">
             {s.poNumber ?? "—"}
           </td>
         );
       case "customer":
         return (
-          <td key={key} className="px-3 py-2 text-zinc-600">
+          <td key={key} className="px-3 py-2 text-muted">
             <span className="flex items-center gap-1.5">
               {s.customerName}
               {s.customerDeliversOwn && <SkipSupplierDeliveryBadge variant="chip" />}
@@ -523,13 +523,13 @@ export function StylesTable({
         );
       case "businessArea":
         return (
-          <td key={key} className="px-3 py-2 text-zinc-600">
+          <td key={key} className="px-3 py-2 text-muted">
             {s.businessArea ?? "—"}
           </td>
         );
       case "group":
         return (
-          <td key={key} className="px-3 py-2 text-xs text-zinc-500">
+          <td key={key} className="px-3 py-2 text-xs text-muted">
             {s.groupTitle ?? "—"}
           </td>
         );
@@ -545,9 +545,9 @@ export function StylesTable({
                   : "No Prod Spec linked — can't generate yet"
               }
             >
-              <div className="relative h-2 w-24 overflow-hidden rounded-full bg-zinc-100">
+              <div className="relative h-2 w-24 overflow-hidden rounded-full bg-subtle">
                 <div
-                  className={`h-full ${ready ? "bg-emerald-500" : "bg-zinc-900"}`}
+                  className={`h-full ${ready ? "bg-good" : "bg-primary"}`}
                   style={{ width: `${s.completionPct}%` }}
                 />
                 {s.threshold != null && s.threshold < 100 && (
@@ -558,7 +558,7 @@ export function StylesTable({
                 )}
               </div>
               <span
-                className={`text-xs tabular-nums ${ready ? "text-emerald-600" : "text-zinc-600"}`}
+                className={`text-xs tabular-nums ${ready ? "text-good" : "text-muted"}`}
               >
                 {s.completionPct}%
               </span>
@@ -573,13 +573,13 @@ export function StylesTable({
               <span
                 title={`${s.requiredFilled} of ${s.requiredTotal} required fields have a value`}
                 className={`text-sm font-semibold tabular-nums ${
-                  s.requiredFilled === s.requiredTotal ? "text-emerald-600" : "text-amber-600"
+                  s.requiredFilled === s.requiredTotal ? "text-good" : "text-warn"
                 }`}
               >
                 {s.requiredFilled}/{s.requiredTotal}
               </span>
             ) : (
-              <span className="text-zinc-300">—</span>
+              <span className="text-faint">—</span>
             )}
           </td>
         );
@@ -603,7 +603,7 @@ export function StylesTable({
         );
       case "lastSynced":
         return (
-          <td key={key} className="px-3 py-2 text-zinc-500">
+          <td key={key} className="px-3 py-2 text-muted">
             {s.lastSyncedAt}
           </td>
         );
@@ -611,28 +611,28 @@ export function StylesTable({
       // ── Identity & links ──────────────────────────────────────────────
       case "supplier":
         return (
-          <td key={key} className="px-3 py-2 text-zinc-600">
+          <td key={key} className="px-3 py-2 text-muted">
             {s.supplierName ? (
               <span className="block max-w-[220px] truncate" title={s.supplierName}>
                 {s.supplierName}
                 {s.supplierCountry ? (
-                  <span className="text-zinc-400"> · {s.supplierCountry}</span>
+                  <span className="text-faint"> · {s.supplierCountry}</span>
                 ) : null}
               </span>
             ) : (
-              <span className="text-zinc-300">—</span>
+              <span className="text-faint">—</span>
             )}
           </td>
         );
       case "prodSpec":
         return (
-          <td key={key} className="px-3 py-2 text-zinc-600">
+          <td key={key} className="px-3 py-2 text-muted">
             {s.prodSpecName ? (
               s.prodSpecId ? (
                 <Link
                   href={`/prod-specs/${s.prodSpecId}`}
                   title={s.prodSpecName}
-                  className="block max-w-[200px] truncate underline hover:text-zinc-900"
+                  className="block max-w-[200px] truncate underline hover:text-ink"
                 >
                   {s.prodSpecName}
                 </Link>
@@ -640,21 +640,21 @@ export function StylesTable({
                 <span className="block max-w-[200px] truncate">{s.prodSpecName}</span>
               )
             ) : (
-              <span className="text-zinc-300">—</span>
+              <span className="text-faint">—</span>
             )}
           </td>
         );
       case "cartonEan":
         return (
-          <td key={key} className="px-3 py-2 tabular-nums text-zinc-600">
-            {s.cartonEan ?? <span className="text-zinc-300">—</span>}
+          <td key={key} className="px-3 py-2 tabular-nums text-muted">
+            {s.cartonEan ?? <span className="text-faint">—</span>}
           </td>
         );
       case "poFile":
         return (
-          <td key={key} className="px-3 py-2 text-zinc-500">
+          <td key={key} className="px-3 py-2 text-muted">
             <span className="block max-w-[220px] truncate" title={s.poFileName ?? undefined}>
-              {s.poFileName ?? <span className="text-zinc-300">—</span>}
+              {s.poFileName ?? <span className="text-faint">—</span>}
             </span>
           </td>
         );
@@ -666,43 +666,43 @@ export function StylesTable({
                 href={s.styleFolderUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-zinc-600 underline hover:text-zinc-900"
+                className="text-muted underline hover:text-ink"
               >
                 Open ↗
               </a>
             ) : (
-              <span className="text-zinc-300">—</span>
+              <span className="text-faint">—</span>
             )}
           </td>
         );
       case "monday": {
         const url = mondayItemUrl(s.mondayBoardId, s.mondayItemId);
         return (
-          <td key={key} className="px-3 py-2 text-zinc-500">
+          <td key={key} className="px-3 py-2 text-muted">
             {url ? (
               <a
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="underline hover:text-zinc-900"
+                className="underline hover:text-ink"
               >
                 {s.mondayItemId}
               </a>
             ) : (
-              s.mondayItemId ?? <span className="text-zinc-300">—</span>
+              s.mondayItemId ?? <span className="text-faint">—</span>
             )}
           </td>
         );
       }
       case "created":
         return (
-          <td key={key} className="px-3 py-2 text-zinc-500">
+          <td key={key} className="px-3 py-2 text-muted">
             {s.createdAt}
           </td>
         );
       case "updated":
         return (
-          <td key={key} className="px-3 py-2 text-zinc-500">
+          <td key={key} className="px-3 py-2 text-muted">
             {s.updatedAt}
           </td>
         );
@@ -718,12 +718,12 @@ export function StylesTable({
         return (
           <td key={key} className="px-3 py-2">
             {s.folderConnected ? (
-              <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+              <span className="inline-flex rounded-full bg-good-soft px-2 py-0.5 text-xs font-medium text-good">
                 ✓ Connected
               </span>
             ) : (
               <span
-                className="inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-500"
+                className="inline-flex rounded-full bg-subtle px-2 py-0.5 text-xs font-medium text-muted"
                 title="No “Supplier Folder” link on the Suppliers board"
               >
                 Not linked
@@ -739,12 +739,12 @@ export function StylesTable({
                 href={s.supplierFolderUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-zinc-600 underline hover:text-zinc-900"
+                className="text-muted underline hover:text-ink"
               >
                 Open ↗
               </a>
             ) : (
-              <span className="text-zinc-300">—</span>
+              <span className="text-faint">—</span>
             )}
           </td>
         );
@@ -754,7 +754,7 @@ export function StylesTable({
             {s.customerDeliversOwn ? (
               <SkipSupplierDeliveryBadge variant="chip" />
             ) : (
-              <span className="text-zinc-300">—</span>
+              <span className="text-faint">—</span>
             )}
           </td>
         );
@@ -767,13 +767,13 @@ export function StylesTable({
               <span
                 title={`${s.review.approved} of ${s.review.total} outputs approved · ${s.review.generated} generated`}
                 className={`text-sm font-semibold tabular-nums ${
-                  s.review.fullyApproved ? "text-emerald-600" : "text-zinc-600"
+                  s.review.fullyApproved ? "text-good" : "text-muted"
                 }`}
               >
                 {s.review.approved}/{s.review.total}
               </span>
             ) : (
-              <span className="text-zinc-300">—</span>
+              <span className="text-faint">—</span>
             )}
           </td>
         );
@@ -781,23 +781,23 @@ export function StylesTable({
         return (
           <td key={key} className="px-3 py-2">
             {s.review && s.review.total > 0 && s.review.fullyApproved ? (
-              <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+              <span className="inline-flex rounded-full bg-good-soft px-2 py-0.5 text-xs font-medium text-good">
                 ✓ Fully approved
               </span>
             ) : (
-              <span className="text-zinc-300">—</span>
+              <span className="text-faint">—</span>
             )}
           </td>
         );
       case "reviewer":
         return (
-          <td key={key} className="px-3 py-2 text-zinc-600">
+          <td key={key} className="px-3 py-2 text-muted">
             {s.reviewerName ? (
               <span data-private className="block max-w-[180px] truncate" title={`Review claimed by ${s.reviewerName}`}>
                 {s.reviewerName}
               </span>
             ) : (
-              <span className="text-zinc-300" title="Nobody has claimed this review yet">
+              <span className="text-faint" title="Nobody has claimed this review yet">
                 —
               </span>
             )}
@@ -809,12 +809,12 @@ export function StylesTable({
             {s.review && s.review.awaiting > 0 ? (
               <span
                 title={`${s.review.awaiting} output${s.review.awaiting === 1 ? "" : "s"} still to decide`}
-                className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium tabular-nums text-amber-700"
+                className="inline-flex rounded-full bg-warn-soft px-2 py-0.5 text-xs font-medium tabular-nums text-warn"
               >
                 {s.review.awaiting}
               </span>
             ) : (
-              <span className="text-zinc-300">—</span>
+              <span className="text-faint">—</span>
             )}
           </td>
         );
@@ -822,7 +822,7 @@ export function StylesTable({
       default:
         // Any registry key without an explicit cell still renders an (empty)
         // <td> so the row's column count matches the header.
-        return <td key={key} className="px-3 py-2 text-zinc-300">—</td>;
+        return <td key={key} className="px-3 py-2 text-faint">—</td>;
     }
   }
 
@@ -857,7 +857,7 @@ export function StylesTable({
           />
           Show archived
           {archivedCount > 0 && (
-            <span className="tabular-nums text-zinc-400">({archivedCount})</span>
+            <span className="tabular-nums text-faint">({archivedCount})</span>
           )}
         </label>
         <span className="text-muted text-[12px] tabular-nums">
@@ -939,7 +939,7 @@ export function StylesTable({
           <button
             type="button"
             onClick={() => setAttrFilters({})}
-            className="ml-1 text-xs text-zinc-500 underline hover:text-zinc-700"
+            className="ml-1 text-xs text-muted underline hover:text-ink"
           >
             Clear
           </button>
@@ -948,12 +948,12 @@ export function StylesTable({
             click that brings them back — a silent gate is how "my style
             vanished" tickets get written. */}
         {missingPoCount > 0 && !revealMissingPo && (
-          <span className="text-xs text-zinc-400">
+          <span className="text-xs text-faint">
             <span className="tabular-nums">{missingPoCount}</span> hidden — no PO number yet.{" "}
             <button
               type="button"
               onClick={() => setAttrFilters((p) => ({ ...p, po: "no" }))}
-              className="underline hover:text-zinc-600"
+              className="underline hover:text-muted"
             >
               Show them
             </button>
@@ -977,7 +977,7 @@ export function StylesTable({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="px-4 py-12 text-center text-zinc-500">
+                <td colSpan={columns.length} className="px-4 py-12 text-center text-muted">
                   {rows.length === 0 ? (
                     "No styles yet. Run a Fill (or trigger a Monday webhook) to ingest."
                   ) : (
@@ -990,7 +990,7 @@ export function StylesTable({
                             setQ("");
                             clearAllFacets();
                           }}
-                          className="text-xs text-zinc-600 underline hover:text-zinc-900"
+                          className="text-xs text-muted underline hover:text-ink"
                         >
                           Clear search &amp; filters
                         </button>
@@ -1011,7 +1011,7 @@ export function StylesTable({
       </div>
       {hasMore && (
         <div ref={sentinel} className="flex items-center justify-center gap-3 py-4">
-          <span className="text-xs tabular-nums text-zinc-500">
+          <span className="text-xs tabular-nums text-muted">
             Showing {shownRows.length} of {filtered.length}
           </span>
           <button
@@ -1041,14 +1041,14 @@ function UploadCell({
   if (deliversOwn) {
     return (
       <span
-        className="text-xs text-zinc-400"
+        className="text-xs text-faint"
         title="Customer delivers their own goods — nothing is pushed to a supplier folder"
       >
         delivers own
       </span>
     );
   }
-  if (!upload || upload.total === 0) return <span className="text-zinc-300">—</span>;
+  if (!upload || upload.total === 0) return <span className="text-faint">—</span>;
   const { uploaded, total, noFolder, ambiguous, failed, pending } = upload;
   const pill = (cls: string, text: string, title: string) => (
     <span className={`inline-flex h-5 items-center rounded-full px-2 text-[11px] font-medium whitespace-nowrap ${cls}`} title={title}>
@@ -1088,7 +1088,7 @@ function EanCell({
   onResolve: () => void;
 }) {
   if (result === "loading") {
-    return <span className="text-xs text-blue-600">resolving…</span>;
+    return <span className="text-xs text-accent-text">resolving…</span>;
   }
   // A fresh manual resolve (result) overrides the stored badge in-place.
   const status = result ? result.status : stored;
@@ -1112,7 +1112,7 @@ function EanCell({
         type="button"
         onClick={onResolve}
         title="Scrape this PO's PDF now and read out the per-size EANs"
-        className="shrink-0 rounded-md border border-zinc-300 bg-white px-1.5 py-0.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50"
+        className="shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 text-[11px] font-medium text-muted hover:bg-subtle"
       >
         {showBadge ? "↻" : "Resolve"}
       </button>
@@ -1171,7 +1171,7 @@ function SearchIcon() {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"
+      className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-faint"
       aria-hidden="true"
     >
       <circle cx="11" cy="11" r="8" />

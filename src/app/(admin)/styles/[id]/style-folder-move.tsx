@@ -67,8 +67,8 @@ export function StyleFolderMoveButton({
         title="Move this style's delivered files into its own “<style> - <colour>” folder inside APPROVED LAYOUTS"
         className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${
           disabled
-            ? "cursor-not-allowed border-zinc-200 text-zinc-400"
-            : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
+            ? "cursor-not-allowed border-line text-faint"
+            : "border-line bg-surface text-ink hover:bg-subtle"
         }`}
       >
         Move to style folder
@@ -168,14 +168,14 @@ function StyleFolderMoveDialog({
       aria-label="Move to style folder"
     >
       <div
-        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl"
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-5 py-3">
+        <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-3">
           <div className="min-w-0">
-            <h2 className="text-[15px] font-semibold text-zinc-900">Move to style folder</h2>
+            <h2 className="text-[15px] font-semibold text-ink">Move to style folder</h2>
             {shown ? (
-              <p className="mt-0.5 break-all text-xs text-zinc-500">
+              <p className="mt-0.5 break-all text-xs text-muted">
                 {shown.folderUrl ? (
                   <a href={shown.folderUrl} target="_blank" rel="noopener noreferrer" className="underline">
                     {shown.folderPath} ↗
@@ -190,26 +190,26 @@ function StyleFolderMoveDialog({
             type="button"
             onClick={onClose}
             disabled={applying}
-            className="shrink-0 rounded-md border border-zinc-300 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-400"
+            className="shrink-0 rounded-md border border-line bg-surface px-2 py-0.5 text-[11px] font-medium text-ink hover:bg-subtle disabled:cursor-not-allowed disabled:text-faint"
           >
             Close
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3 text-xs text-zinc-700">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3 text-xs text-ink">
           {loading ? (
-            <p className="text-zinc-500">Working out which files are this style&apos;s…</p>
+            <p className="text-muted">Working out which files are this style&apos;s…</p>
           ) : error && !shown ? (
-            <p className="text-amber-800">⚠ {error}</p>
+            <p className="text-warn">⚠ {error}</p>
           ) : shown ? (
             <>
-              <p className="text-zinc-600">
+              <p className="text-muted">
                 {result
                   ? "Done. Each file's outcome is below."
                   : "Nothing has changed yet. This is what “Move files” will do:"}
               </p>
               {shown.previousSubfolderName ? (
-                <p className="mt-1.5 text-zinc-600">
+                <p className="mt-1.5 text-muted">
                   The style currently delivers into “{shown.previousSubfolderName}”. Its files move to the new name
                   {result
                     ? shown.previousFolderRemoved
@@ -219,23 +219,23 @@ function StyleFolderMoveDialog({
                 </p>
               ) : null}
               {shown.items.length === 0 ? (
-                <p className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-zinc-600">
+                <p className="mt-3 rounded-md border border-line bg-subtle px-3 py-2 text-muted">
                   No files of this style are outside its folder — nothing to move.
                   {result ? "" : " Moving still creates the folder, so this style's next uploads land there."}
                 </p>
               ) : (
-                <ul className="mt-3 divide-y divide-zinc-100 rounded-md border border-zinc-200">
+                <ul className="mt-3 divide-y divide-line rounded-md border border-line">
                   {shown.items.map((i) => {
                     return (
                       <li key={i.itemId} className="flex items-start gap-2 px-3 py-1.5">
                         <span
-                          className={`mt-px shrink-0 rounded-full border px-1.5 py-px text-[10px] font-medium ${ACTION_TONE[i.action]}`}
+                          className={`mt-px shrink-0 rounded-full border px-1.5 py-px text-[11px] font-medium ${ACTION_TONE[i.action]}`}
                         >
                           {ACTION_LABEL[i.action]}
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="break-all text-zinc-800">{i.fileName}</span>
-                          <span className="block text-[11px] text-zinc-500">
+                          <span className="break-all text-ink">{i.fileName}</span>
+                          <span className="block text-[11px] text-muted">
                             from {i.from}
                             {i.sharedWith.length > 0 ? ` · name also used by ${i.sharedWith.map((s) => `“${s}”`).join(", ")}` : ""}
                             {i.reason ? ` · ${i.reason}` : ""}
@@ -245,9 +245,9 @@ function StyleFolderMoveDialog({
                           </span>
                           {result && i.action !== "left" ? (
                             i.done ? (
-                              <span className="block text-[11px] text-emerald-700">✓ done</span>
+                              <span className="block text-[11px] text-good">✓ done</span>
                             ) : (
-                              <span className="block text-[11px] text-red-600">✗ {i.error ?? "not done"}</span>
+                              <span className="block text-[11px] text-bad">✗ {i.error ?? "not done"}</span>
                             )
                           ) : null}
                         </span>
@@ -256,14 +256,14 @@ function StyleFolderMoveDialog({
                   })}
                 </ul>
               )}
-              {error ? <p className="mt-2 text-red-600">{error}</p> : null}
+              {error ? <p className="mt-2 text-bad">{error}</p> : null}
             </>
           ) : null}
         </div>
 
         {!result && plan ? (
-          <div className="flex items-center justify-end gap-2 border-t border-zinc-200 px-5 py-3">
-            <span className="mr-auto text-[11px] text-zinc-500">
+          <div className="flex items-center justify-end gap-2 border-t border-line px-5 py-3">
+            <span className="mr-auto text-[11px] text-muted">
               Files no style can claim, and other styles&apos; files, are never touched.
             </span>
             <button
@@ -272,8 +272,8 @@ function StyleFolderMoveDialog({
               disabled={applying}
               className={`rounded-md border px-3 py-1 text-xs font-medium ${
                 applying
-                  ? "cursor-not-allowed border-zinc-200 text-zinc-400"
-                  : "border-sky-300 bg-sky-600 text-white hover:bg-sky-700"
+                  ? "cursor-not-allowed border-line text-faint"
+                  : "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               }`}
             >
               {applying ? "Moving…" : actionable > 0 ? `Move files (${actionable})` : "Create folder"}

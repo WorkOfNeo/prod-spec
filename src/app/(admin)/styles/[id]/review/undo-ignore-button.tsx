@@ -44,11 +44,11 @@ export function UndoIgnoreButton({
         onClick={undo}
         disabled={busy}
         title="Stop ignoring this output for this style"
-        className="rounded-md border border-zinc-300 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+        className="rounded-md border border-line bg-surface px-2 py-0.5 text-[11px] font-medium text-muted hover:bg-subtle disabled:opacity-50"
       >
         {busy ? "Undoing…" : "Undo ignore"}
       </button>
-      {err ? <span className="text-[11px] text-red-600">{err}</span> : null}
+      {err ? <span className="text-[11px] text-bad">{err}</span> : null}
     </span>
   );
 }

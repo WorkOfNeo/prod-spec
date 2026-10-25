@@ -835,7 +835,7 @@ function StyleBlock({
   return (
     <section className="border-line border-b">
       <div
-        className={`border-line bg-sidebar sticky top-0 z-10 flex items-center gap-2 border-b px-4 py-2 ${
+        className={`border-line bg-sidebar sticky top-12 z-10 flex xl:top-0 items-center gap-2 border-b px-4 py-2 ${
           anySelected ? "shadow-[inset_3px_0_0_var(--accent)]" : ""
         }`}
       >
