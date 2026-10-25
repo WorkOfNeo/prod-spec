@@ -74,7 +74,7 @@ export function AssetActions({
         setError(body.error ?? `HTTP ${res.status}`);
         return;
       }
-      track("output_approved", { scope: "single", count: 1 });
+      track("output_approved", { scope: "single" });
       trackSettled(body.settled);
       if (body.publishError) {
         setError(`Approved, but publish failed: ${body.publishError}`);
@@ -117,7 +117,7 @@ export function AssetActions({
         setError(body.error ?? `HTTP ${res.status}`);
         return;
       }
-      track("output_rejected", { scope: "single", count: 1, images: attachments.length });
+      track("output_rejected", { scope: "single", images: attachments.length });
       trackSettled(body.settled);
       setRejecting(false);
       if (body.settled === "REJECTED") {
@@ -150,7 +150,7 @@ export function AssetActions({
         setError(body.error ?? `HTTP ${res.status}`);
         return;
       }
-      track("output_ignored", { scope: "single", count: 1 });
+      track("output_ignored", { scope: "single" });
       trackSettled(body.settled);
       setIgnoring(false);
       if (body.publishError) {
@@ -196,7 +196,7 @@ export function AssetActions({
         setError(body.error ?? `HTTP ${res.status}`);
         return;
       }
-      track("supplier_files_pushed", { scope: "output", count: 1 });
+      track("supplier_files_pushed", { scope: "output" });
       setPushNote({
         text: `Pushed to ${body.folderName ?? "supplier folder"}`,
         url: body.targetFolderUrl ?? null,
