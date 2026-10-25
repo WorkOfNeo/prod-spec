@@ -190,14 +190,14 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
 
       {/* Item 2 — filters. A plain GET form: no client JS, bookmarkable, and
           every card on the page reads the same scope. */}
-      <form method="GET" className="mt-6 rounded-lg border border-line bg-subtle px-4 py-3">
+      <form method="GET" className="border-line bg-surface mt-5 rounded-xl border px-4 py-3">
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Client</span>
+            <span className="text-muted text-[12px]">Client</span>
             <select
               name="customer"
               defaultValue={sp.customer ?? ""}
-              className="min-w-48 rounded border border-line bg-surface px-2 py-1.5 text-sm"
+              className="border-line bg-surface text-ink h-8 w-44 rounded-md border px-2 text-[13px]"
             >
               <option value="">All clients</option>
               {options.customers.map((c) => (
@@ -208,11 +208,11 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Supplier</span>
+            <span className="text-muted text-[12px]">Supplier</span>
             <select
               name="supplier"
               defaultValue={sp.supplier ?? ""}
-              className="min-w-48 rounded border border-line bg-surface px-2 py-1.5 text-sm"
+              className="border-line bg-surface text-ink h-8 w-44 rounded-md border px-2 text-[13px]"
             >
               <option value="">All suppliers</option>
               {options.suppliers.map((s) => (
@@ -223,11 +223,11 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Person reviewing</span>
+            <span className="text-muted text-[12px]">Person reviewing</span>
             <select
               name="reviewer"
               defaultValue={sp.reviewer ?? ""}
-              className="min-w-40 rounded border border-line bg-surface px-2 py-1.5 text-sm"
+              className="border-line bg-surface text-ink h-8 w-44 rounded-md border px-2 text-[13px]"
             >
               <option value="">Everyone</option>
               {options.reviewers.map((r) => (
@@ -238,21 +238,21 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Decisions from</span>
+            <span className="text-muted text-[12px]">Decisions from</span>
             <input
               type="date"
               name="from"
               defaultValue={sp.from ?? ""}
-              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">to</span>
+            <span className="text-muted text-[12px]">to</span>
             <input
               type="date"
               name="to"
               defaultValue={sp.to ?? ""}
-              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
             />
           </label>
           <button
@@ -325,7 +325,7 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
           {data.firstPass.map((w) => (
             <div key={w.label} className="rounded-xl border border-line bg-surface px-4 py-3">
               <div className="flex items-baseline justify-between">
-                <span className="text-xs font-medium text-muted">
+                <span className="text-muted text-[12px]">
                   {w.label}
                 </span>
                 <span className="text-sm font-semibold text-ink">

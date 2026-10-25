@@ -20,7 +20,7 @@ export default async function ColourAliasesSettingsPage() {
 
   const groups = await getColourAliases();
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    <div className="max-w-3xl px-6 py-5">
       <h1 className="text-lg font-semibold text-ink">Colour aliases</h1>
       <p className="mt-1 text-[13px] leading-relaxed text-muted">
         A pack that ships two qualities states both compositions in one field —{" "}

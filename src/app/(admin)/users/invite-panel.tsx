@@ -89,7 +89,7 @@ export function InvitePanel({ disabled }: { disabled?: boolean }) {
           value={role}
           disabled={disabled || pending}
           onChange={(e) => setRole(e.target.value)}
-          className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-7 rounded-md border border-line bg-surface px-2 text-[12px] text-ink outline-none focus:border-accent disabled:opacity-50"
         >
           <option value="REVIEWER">REVIEWER</option>
           <option value="ADMIN">ADMIN</option>

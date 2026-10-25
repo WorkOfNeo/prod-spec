@@ -327,7 +327,7 @@ function AreaDialog({
                   <select
                     value={mergeTargetId}
                     onChange={(e) => setMergeTargetId(e.target.value)}
-                    className="flex-1 inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex-1 h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
                     disabled={busy}
                   >
                     <option value="">— pick canonical BA —</option>

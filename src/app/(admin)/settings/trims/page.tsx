@@ -38,7 +38,7 @@ export default async function TrimsSettingsPage() {
     loadTrimConceptRows(),
   ]);
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="max-w-6xl px-6 py-5">
       <h1 className="text-lg font-semibold text-ink">Trims</h1>
       <p className="mt-1 max-w-3xl text-[13px] leading-relaxed text-muted">
         Every style carries a <strong>Trims</strong> list on Monday — the buyer&rsquo;s list of what

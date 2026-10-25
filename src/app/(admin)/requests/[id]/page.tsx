@@ -70,7 +70,7 @@ export default async function RequestPage({
   const view = result.view;
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="max-w-7xl px-6 py-5">
       <Link href="/requests" className="text-sm text-muted hover:text-ink">
         ← Requests
       </Link>

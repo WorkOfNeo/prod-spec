@@ -597,7 +597,7 @@ export function LayoutsList({
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
-              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
               title="Filter by document type"
             >
               <option value="all">All types</option>
@@ -610,7 +610,7 @@ export function LayoutsList({
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
               title="Filter by status"
             >
               <option value="all">All statuses</option>
@@ -620,7 +620,7 @@ export function LayoutsList({
             <select
               value={autoApproveFilter}
               onChange={(e) => setAutoApproveFilter(e.target.value as typeof autoApproveFilter)}
-              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
               title="Filter by auto-approve"
             >
               <option value="all">Auto-approve: any</option>
@@ -630,7 +630,7 @@ export function LayoutsList({
             <select
               value={usageFilter}
               onChange={(e) => setUsageFilter(e.target.value as typeof usageFilter)}
-              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
               title="Filter by whether the layout is used as an enabled output in a prod spec"
             >
               <option value="all">In a prod spec: any</option>
@@ -640,7 +640,7 @@ export function LayoutsList({
             <select
               value={customerFilter}
               onChange={(e) => setCustomerFilter(e.target.value)}
-              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
               title="Filter by the customer of the prod specs using this layout"
               disabled={customerOptions.length === 0}
             >
@@ -654,7 +654,7 @@ export function LayoutsList({
             <select
               value={baFilter}
               onChange={(e) => setBaFilter(e.target.value)}
-              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
               title="Filter by the business area of the prod specs using this layout"
               disabled={baOptions.length === 0}
             >

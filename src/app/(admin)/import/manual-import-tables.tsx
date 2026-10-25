@@ -388,7 +388,7 @@ function DisambiguationTable({ items }: { items: GhostItemImportCandidate[] }) {
                   <select
                     value={pick}
                     onChange={(e) => setPick(it.ghostItemId, e.target.value)}
-                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                    className="h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
                   >
                     <option value="">— pick customer —</option>
                     {candidates.map((c) => (
@@ -450,7 +450,7 @@ function FilterSelect({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+        className="h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
       >
         <option value={FILTER_ANY}>Any</option>
         {options.map((o) => (

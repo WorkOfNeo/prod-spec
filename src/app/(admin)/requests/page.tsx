@@ -55,7 +55,7 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
   }));
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="max-w-6xl px-6 py-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Requests</h1>

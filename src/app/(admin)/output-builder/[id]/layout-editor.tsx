@@ -1425,7 +1425,7 @@ export function LayoutEditor({
           <select
             value={docType}
             onChange={(e) => setDocType(e.target.value)}
-            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-7 rounded-md border border-line bg-surface px-2 text-[12px] text-ink outline-none focus:border-accent disabled:opacity-50"
             title="Asset doc type — grouping in pickers and on JobAssets"
           >
             {docTypes.map((d) => (
@@ -1795,7 +1795,7 @@ export function LayoutEditor({
         <select
           value={customerId ?? ""}
           onChange={(e) => setCustomerId(e.target.value || null)}
-          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
         >
           <option value="">Customer…</option>
           {customers.map((c) => (
@@ -1807,7 +1807,7 @@ export function LayoutEditor({
         <select
           value={businessAreaId ?? ""}
           onChange={(e) => setBusinessAreaId(e.target.value || null)}
-          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
         >
           <option value="">Business area…</option>
           {businessAreas.map((b) => (
@@ -2227,7 +2227,7 @@ export function LayoutEditor({
                       <select
                         value={s.edge}
                         onChange={(e) => updateSewingLine(i, { edge: e.target.value as SewingLine["edge"] })}
-                        className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                        className="h-7 rounded-md border border-line bg-surface px-2 text-[12px] text-ink outline-none focus:border-accent disabled:opacity-50"
                       >
                         <option value="top">From top</option>
                         <option value="bottom">From bottom</option>
@@ -2263,7 +2263,7 @@ export function LayoutEditor({
               <select
                 value={page?.foldLine ?? "none"}
                 onChange={(e) => setFoldLine(e.target.value as FoldLine)}
-                className="mt-1 w-full inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-1 w-full h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
               >
                 <option value="none">Off</option>
                 <option value="horizontal">Horizontal — across centre</option>
@@ -2461,7 +2461,7 @@ export function LayoutEditor({
               <select
                 value={settings.repeatBy}
                 onChange={(e) => updateSettings({ repeatBy: e.target.value as LayoutSettings["repeatBy"] })}
-                className="mt-1 w-full inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-1 w-full h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
               >
                 <option value="none">Don&apos;t repeat</option>
                 <option value="size">Per size</option>
@@ -2491,7 +2491,7 @@ export function LayoutEditor({
                 <select
                   value={settings.splitBy}
                   onChange={(e) => updateSettings({ splitBy: e.target.value as LayoutSettings["splitBy"] })}
-                  className="mt-1 w-full inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-1 w-full h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
                 >
                   <option value="ean">One PDF per EAN</option>
                   <option value="none">One single PDF (all repetitions inside)</option>

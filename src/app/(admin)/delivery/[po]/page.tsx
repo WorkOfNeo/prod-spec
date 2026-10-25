@@ -82,7 +82,7 @@ export default async function PoDeliveryPage({
 
 function Shell({ poNumber, children }: { poNumber: string; children: React.ReactNode }) {
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
+    <div className="max-w-5xl px-6 py-5">
       <Link href="/delivery" className="text-sm text-muted underline hover:text-ink">
         ← All purchase orders
       </Link>
