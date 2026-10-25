@@ -10,6 +10,7 @@ import { MyTasksLink } from "@/components/sidebar/my-tasks-link";
 import { NotificationBell } from "@/components/sidebar/notification-bell";
 import { SettingsNav } from "@/components/sidebar/settings-nav";
 import { PresencePing } from "@/components/presence-ping";
+import { AnalyticsIdentify } from "@/components/analytics-identify";
 
 // Primary, high-traffic destinations only. Config / admin surfaces
 // (Monday, catalogues, reference data) live under the Settings dropdown
@@ -63,8 +64,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     // through links they don't own (this sidebar). See navigation-guard.tsx.
     <NavigationGuardProvider>
       <PresencePing />
+      <AnalyticsIdentify userId={session.user.id} role={role} />
       <div className="flex min-h-screen bg-zinc-50">
-        <aside className="w-56 border-r border-zinc-200 bg-white px-4 py-6">
+        <aside data-section="Sidebar" className="w-56 border-r border-zinc-200 bg-white px-4 py-6">
           <div className="flex items-center justify-between px-2">
             <Link
               href={isAdmin || !followThrough ? "/styles" : "/dashboard"}
@@ -170,7 +172,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           </nav>
           <div className="mt-auto absolute bottom-6 left-4 right-4 w-48">
             <div className="border-t border-zinc-200 pt-4 text-xs text-zinc-500">
-              <div className="truncate">{session.user.email}</div>
+              <div data-private className="truncate">{session.user.email}</div>
               <SignOutButton />
             </div>
           </div>

@@ -171,7 +171,7 @@ export default async function StatisticsPage({
                 <tbody className="divide-y divide-zinc-100">
                   {stats.reviewers.map((r) => (
                     <tr key={r.userId} className="hover:bg-zinc-50">
-                      <td className="px-4 py-2.5">
+                      <td data-private className="px-4 py-2.5">
                         <div className="font-medium text-zinc-900">{r.name ?? r.email ?? "—"}</div>
                         {r.name && r.email && (
                           <div className="text-xs text-zinc-400">{r.email}</div>

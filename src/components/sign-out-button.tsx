@@ -10,6 +10,9 @@ export function SignOutButton() {
       type="button"
       onClick={async () => {
         await authClient.signOut();
+        // Forget the analyticsOS user so the next person on this browser
+        // starts as a new visitor (see AnalyticsIdentify).
+        window.aos?.("reset");
         router.push("/login");
         router.refresh();
       }}

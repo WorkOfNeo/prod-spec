@@ -101,7 +101,7 @@ export default async function ReviewActivityPage() {
                   </td>
                   <td className="px-4 py-2 text-zinc-600">{r.customerName}</td>
                   <td className="px-4 py-2 text-zinc-600">{r.businessArea ?? "—"}</td>
-                  <td className="px-4 py-2 text-zinc-700">{r.reviewerName ?? "—"}</td>
+                  <td data-private className="px-4 py-2 text-zinc-700">{r.reviewerName ?? "—"}</td>
                   <td className="px-4 py-2 text-xs text-zinc-600">{STAMP.format(r.startedAt)}</td>
                   <td className="px-4 py-2 text-xs text-zinc-600">{endLabel(r)}</td>
                   <td className="px-4 py-2 text-xs tabular-nums text-zinc-700">

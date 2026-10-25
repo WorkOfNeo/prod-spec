@@ -188,7 +188,7 @@ export async function HistoryTab({ styleId }: { styleId: string }) {
       {events.length === 0 ? (
         <p className="text-sm text-zinc-500">Nothing recorded for this style yet.</p>
       ) : (
-        <ol className="relative border-l border-zinc-200 pl-6">
+        <ol data-private className="relative border-l border-zinc-200 pl-6">
           {events.map((e, i) => (
             <li key={i} className="relative pb-5">
               <span

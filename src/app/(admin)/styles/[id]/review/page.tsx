@@ -339,7 +339,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
         />
       ) : null}
       <Link href={`/styles/${id}`} className="text-xs text-zinc-500 underline">← Back to style</Link>
-      <div className="mt-2 flex items-end justify-between gap-4">
+      <div data-section="Review header" className="mt-2 flex items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Review · {style.name}</h1>
           <p className="text-sm text-zinc-500">
@@ -399,7 +399,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
       </div>
 
       {/* Generated outputs, grouped per document type. */}
-      <div className="mt-6 flex flex-col gap-3">
+      <div data-section="Outputs" className="mt-6 flex flex-col gap-3">
         {groups.map((group) => {
           const gApproved = group.items.filter((o) => o.reviewStatus === "APPROVED").length;
           const gRejected = group.items.filter((o) => o.reviewStatus === "REJECTED").length;
@@ -706,6 +706,7 @@ function OutputReviewCard({
   return (
     <div
       id={outputAnchor(o.variantKey)}
+      data-section="Output card"
       className="flex flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white scroll-mt-4"
     >
       {/* Header — identity only: status dot + name + file + capability chips,

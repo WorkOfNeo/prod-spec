@@ -97,7 +97,7 @@ export function ReviewClaim({
   return (
     <>
       {claimedByName !== null ? (
-        <span className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 py-0.5 pl-1 pr-2.5 text-[11px] font-semibold text-amber-800">
+        <span data-private className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 py-0.5 pl-1 pr-2.5 text-[11px] font-semibold text-amber-800">
           <UserAvatar name={claimedByName} size="xs" />
           In review · {claimedByMe ? "you" : claimedByName}
           {claimedAtIso ? <> · {timeAgo(new Date(claimedAtIso))}</> : null}

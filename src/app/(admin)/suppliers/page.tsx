@@ -79,7 +79,7 @@ export default async function SuppliersPage() {
                 >
                   <td className="px-4 py-3 font-medium">{s.name}</td>
                   <td className="px-4 py-3 text-zinc-600">{s.purchaser ?? "—"}</td>
-                  <td className="px-4 py-3 text-xs text-zinc-600">
+                  <td data-private className="px-4 py-3 text-xs text-zinc-600">
                     {s.email ? <div>{s.email}</div> : <span className="text-zinc-400">—</span>}
                     {s.contactEmail && (
                       <div className="text-zinc-400">
@@ -88,7 +88,7 @@ export default async function SuppliersPage() {
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-xs text-zinc-600">
+                  <td data-private className="px-4 py-3 text-xs text-zinc-600">
                     {(contactsBySupplier.get(s.id) ?? []).length === 0 ? (
                       <span className="text-zinc-400">—</span>
                     ) : (

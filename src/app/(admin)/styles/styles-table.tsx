@@ -792,7 +792,7 @@ export function StylesTable({
         return (
           <td key={key} className="px-4 py-3 text-zinc-600">
             {s.reviewerName ? (
-              <span className="block max-w-[180px] truncate" title={`Review claimed by ${s.reviewerName}`}>
+              <span data-private className="block max-w-[180px] truncate" title={`Review claimed by ${s.reviewerName}`}>
                 {s.reviewerName}
               </span>
             ) : (
@@ -837,7 +837,7 @@ export function StylesTable({
           .
         </div>
       )}
-      <div className="mb-3 flex items-center gap-3">
+      <div data-section="Search" className="mb-3 flex items-center gap-3">
         <div className="relative flex-1">
           <SearchIcon />
           <input
@@ -865,7 +865,7 @@ export function StylesTable({
         {canConfigureColumns && <ColumnsPopover visible={visible} onChange={setVisible} />}
       </div>
 
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+      <div data-section="Filters" className="mb-3 flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium text-zinc-400">Filter by</span>
         <FacetFilter
           label={FACET_LABELS.customer}
@@ -924,7 +924,7 @@ export function StylesTable({
         )}
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div data-section="Attribute filters" className="mb-4 flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium text-zinc-400">Attributes</span>
         {ATTR_FILTERS.map((a) => (
           <FilterChip
@@ -962,7 +962,7 @@ export function StylesTable({
 
       {isAdmin && <BulkRunOutputs styleIds={filteredIds} filterLabel={filterLabel} />}
 
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div data-section="Styles table" className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
             <tr>

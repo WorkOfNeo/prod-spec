@@ -56,6 +56,7 @@ function Message({ m, admin, onChanged }: { m: MessageView; admin: boolean; onCh
   const agent = m.authorKind === "AGENT";
   return (
     <div
+      data-private
       className={`rounded-md px-3 py-2 text-sm ${
         question
           ? "border border-amber-300 bg-amber-50 text-amber-950"

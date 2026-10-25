@@ -98,8 +98,8 @@ export function UsersTable({ users, currentUserId }: { users: UserRow[]; current
         <tbody>
           {users.map((u) => (
             <tr key={u.id} className="border-t border-zinc-100">
-              <td className="px-4 py-3">{u.name}</td>
-              <td className="px-4 py-3 text-zinc-600">{u.email}</td>
+              <td data-private className="px-4 py-3">{u.name}</td>
+              <td data-private className="px-4 py-3 text-zinc-600">{u.email}</td>
               <td className="px-4 py-3">
                 <select
                   value={u.role}
@@ -144,7 +144,7 @@ export function UsersTable({ users, currentUserId }: { users: UserRow[]; current
 
       {resetLink && (
         <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 bg-emerald-50 px-4 py-2">
-          <span className="text-xs font-semibold text-emerald-700">
+          <span data-private className="text-xs font-semibold text-emerald-700">
             Reset link for {resetLink.email} →
           </span>
           <code className="min-w-0 flex-1 truncate rounded border border-zinc-200 bg-white px-2 py-1 font-mono text-[11px] text-zinc-600">

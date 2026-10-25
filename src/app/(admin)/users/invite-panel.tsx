@@ -106,7 +106,7 @@ export function InvitePanel({ disabled }: { disabled?: boolean }) {
 
       {created && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-emerald-300 bg-emerald-50 px-3 py-2">
-          <span className="text-xs font-semibold text-emerald-700">
+          <span data-private className="text-xs font-semibold text-emerald-700">
             Invite for {created.email} ready →
           </span>
           <code className="min-w-0 flex-1 truncate rounded border border-zinc-200 bg-white px-2 py-1 font-mono text-[11px] text-zinc-600">

@@ -211,6 +211,7 @@ export function ProdSpecTab({
                       <td className="px-4 py-2.5">
                         {job.claimedByName ? (
                           <span
+                            data-private
                             className="inline-flex items-center"
                             title={
                               job.claimedAtLabel
