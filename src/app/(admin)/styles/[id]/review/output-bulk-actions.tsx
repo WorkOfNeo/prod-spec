@@ -5,6 +5,7 @@ import { useState } from "react";
 import { RejectModal } from "./reject-modal";
 import { IgnoreConfirmModal } from "./ignore-confirm-modal";
 import { track, trackSettled, type AnalyticsEvent } from "@/lib/analytics";
+import { buttonClass } from "@/components/ui/button";
 
 // Per-output bulk shortcuts. Unlike the old job-level buttons, these act on
 // the STYLE's current to-review outputs — which can span multiple generation
@@ -139,7 +140,7 @@ export function OutputBulkActions({
           type="button"
           onClick={() => setRejecting(true)}
           disabled={pending !== null || nothingToReject}
-          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 disabled:opacity-50"
+          className={buttonClass("ghost")}
         >
           {pending === "reject"
             ? "Rejecting…"
@@ -150,7 +151,7 @@ export function OutputBulkActions({
           onClick={() => setIgnoring(true)}
           disabled={pending !== null || ignoreAssetIds.length === 0}
           title="Ignore every pending output for this style — skipped in generation, SharePoint and the nightly email"
-          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+          className={buttonClass("ghost")}
         >
           {pending === "ignore"
             ? "Ignoring…"
@@ -161,7 +162,7 @@ export function OutputBulkActions({
           onClick={approveAll}
           disabled={pending !== null || nothingToApprove}
           title="Approve every pending output that isn't blocked by a placeholder"
-          className="rounded-md bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          className={buttonClass("secondary")}
         >
           {pending === "approve"
             ? "Approving…"
@@ -169,12 +170,12 @@ export function OutputBulkActions({
         </button>
       </div>
       {blockedCount > 0 ? (
-        <span className="text-[11px] text-amber-700">
+        <span className="text-warn text-[11px]">
           {blockedCount} output{blockedCount === 1 ? "" : "s"} blocked by placeholders — fix &amp; re-run.
         </span>
       ) : null}
-      {progress ? <span className="text-[11px] text-zinc-500">{progress}</span> : null}
-      {error ? <span className="text-xs text-red-600">{error}</span> : null}
+      {progress ? <span className="text-muted text-[11px]">{progress}</span> : null}
+      {error ? <span className="text-bad text-[12px]">{error}</span> : null}
 
       {rejecting ? (
         <RejectModal

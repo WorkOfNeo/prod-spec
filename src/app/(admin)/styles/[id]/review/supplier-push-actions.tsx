@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { track } from "@/lib/analytics";
+import { buttonClass } from "@/components/ui/button";
 
 // Admin-only "Push all approved" control on the review screen header. Sends
 // every approved, print-safe output for the style into the supplier's
@@ -59,24 +60,24 @@ export function SupplierPushActions({
         onClick={pushAll}
         disabled={pending}
         title="Create the supplier's SharePoint subfolder and upload every approved output"
-        className="rounded-md border border-sky-300 bg-sky-50 px-4 py-1.5 text-sm font-medium text-sky-700 hover:bg-sky-100 disabled:opacity-50"
+        className={buttonClass("secondary")}
       >
-        {pending ? "Pushing…" : `⬆ Push all approved (${pushableCount})`}
+        {pending ? "Pushing…" : `Push ${pushableCount} approved to supplier`}
       </button>
       {note ? (
-        <span className="text-right text-xs text-sky-700">
+        <span className="text-ink text-right text-[12px]">
           {note}
           {folderUrl ? (
             <>
               {" · "}
-              <a href={folderUrl} target="_blank" rel="noopener noreferrer" className="underline">
+              <a href={folderUrl} target="_blank" rel="noopener noreferrer" className="text-accent-text underline">
                 open folder
               </a>
             </>
           ) : null}
         </span>
       ) : null}
-      {error ? <span className="max-w-72 text-right text-xs text-red-600">{error}</span> : null}
+      {error ? <span className="text-bad max-w-72 text-right text-[12px]">{error}</span> : null}
     </div>
   );
 }

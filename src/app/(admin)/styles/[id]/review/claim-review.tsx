@@ -16,6 +16,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { UserAvatar } from "@/components/user-avatar";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogTitle } from "@/components/ui/dialog";
 import { timeAgo } from "@/lib/time";
 
 const CLAIM_PROMPT_DELAY_MS = 10_000;
@@ -97,54 +99,36 @@ export function ReviewClaim({
   return (
     <>
       {claimedByName !== null ? (
-        <span data-private className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 py-0.5 pl-1 pr-2.5 text-[11px] font-semibold text-amber-800">
+        <span
+          data-private
+          className="border-line bg-surface text-ink mt-2 inline-flex h-6 items-center gap-1.5 rounded-full border pr-2.5 pl-1 text-[12px]"
+        >
           <UserAvatar name={claimedByName} size="xs" />
-          In review · {claimedByMe ? "you" : claimedByName}
-          {claimedAtIso ? <> · {timeAgo(new Date(claimedAtIso))}</> : null}
+          <span>
+            In review by <span className="font-medium">{claimedByMe ? "you" : claimedByName}</span>
+          </span>
+          {claimedAtIso ? <span className="text-muted">· {timeAgo(new Date(claimedAtIso))}</span> : null}
         </span>
       ) : null}
 
       {prompt && unclaimed ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setPrompt(false)}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div
-            className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-sm font-semibold text-zinc-900">Start reviewing this prod spec?</h3>
-            <p className="mt-0.5 text-xs text-zinc-500">{styleContext}</p>
-            <p className="mt-3 text-sm text-zinc-700">
-              Pressing yes marks this review as <b>in review by you</b> — it stays on your{" "}
-              <b>My tasks</b>{" "}
-              until every document is approved or rejected, so a half-finished check
-              can&rsquo;t be forgotten.
-            </p>
-            {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setPrompt(false)}
-                disabled={busy}
-                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 disabled:opacity-50"
-              >
-                Not yet
-              </button>
-              <button
-                type="button"
-                autoFocus
-                onClick={claim}
-                disabled={busy}
-                className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
-              >
-                {busy ? "Starting…" : "Yes — start review"}
-              </button>
-            </div>
+        <Dialog onClose={() => setPrompt(false)} locked={busy} label="Start reviewing" className="max-w-md">
+          <DialogTitle title="Start reviewing this prod spec?" context={styleContext} />
+          <p className="text-ink mt-3 text-[13px] leading-relaxed">
+            Pressing yes marks this review as <b>in review by you</b>. It stays on your <b>My tasks</b>{" "}
+            until every document is approved or rejected, so a half-finished check can&rsquo;t be
+            forgotten.
+          </p>
+          {error ? <p className="text-bad mt-2 text-[12px]">{error}</p> : null}
+          <div className="mt-4 flex justify-end gap-2">
+            <Button onClick={() => setPrompt(false)} disabled={busy}>
+              Not yet
+            </Button>
+            <Button variant="primary" autoFocus onClick={claim} disabled={busy}>
+              {busy ? "Starting…" : "Yes, start review"}
+            </Button>
           </div>
-        </div>
+        </Dialog>
       ) : null}
     </>
   );
