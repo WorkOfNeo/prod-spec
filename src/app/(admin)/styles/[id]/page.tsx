@@ -15,7 +15,7 @@ import { getAutoGenerateEnabled } from "@/lib/settings/app-settings";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { shareUrl } from "@/lib/supplier-share/share";
 import { findMissingDetailFields } from "@/lib/styles/detail-fields";
-import { computeReadiness, type Readiness, type ReadinessTone } from "@/lib/styles/readiness";
+import { computeReadiness, type Readiness } from "@/lib/styles/readiness";
 import { computeEffectiveStatus, type EffectiveStatus } from "@/lib/styles/effective-status";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import { styleReadinessNotice } from "@/lib/styles/readiness-notice";
@@ -23,19 +23,24 @@ import { OutputReadinessNotice, type ReadinessHrefs } from "@/components/output-
 import { mondayItemUrl } from "@/lib/monday/url";
 import { loadDocTypeExclusionRules, loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
-import { getCurrentOutputsForStyle } from "@/lib/outputs/current-outputs";
+import { getCurrentOutputsForStyle, rollupOutputSlots, outputAnchor } from "@/lib/outputs/current-outputs";
 import { RerunButton } from "./rerun-button";
-import { Pencil } from "lucide-react";
-import { PageHeader } from "@/components/ui/page-header";
+import { AlertTriangle, Check, ChevronRight, CircleCheck, CircleDashed, CircleX, ExternalLink, Pencil, X } from "lucide-react";
 import { TabLinks, type TabLink } from "@/components/ui/tabs";
-import { Section } from "@/components/ui/section";
 import { Pill, StatusDot, type PillTone } from "@/components/ui/pill";
 import { buttonClass } from "@/components/ui/button";
 import { StyleOutputCard, type StyleOutputCardProps } from "./style-output-card";
 import { OutputsAccordion } from "./outputs-accordion";
 import { ProdSpecTab } from "./prod-spec-tab";
 import { ReviewTab } from "./review-tab";
-import { HistoryTab } from "./history-tab";
+import { HistoryTab, type HistoryFilter } from "./history-tab";
+import { PipelineStrip, type PipelineStep } from "./pipeline-strip";
+import { ResolvedFieldsCard, type ResolvedFieldRow } from "./resolved-fields-card";
+import type { GalleryItem } from "./review-gallery";
+import { splitTicketComment } from "@/lib/tickets/thread";
+import { triggerLabel } from "@/lib/queue/trigger-labels";
+import { docTypeLabel } from "@/lib/pdf/doc-types";
+import { timeAgo } from "@/lib/time";
 import { EanPanel } from "./ean-panel";
 import { PoPreview } from "./po-preview";
 import { type EanView, toEanSize } from "@/lib/po/ean-view";
@@ -137,13 +142,6 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   return { title: style?.name ?? "Style" };
 }
 
-const READINESS_TONE: Record<ReadinessTone, PillTone> = {
-  ready: "good",
-  paused: "accent",
-  incomplete: "warn",
-  blocked: "warn",
-};
-
 // The /styles status pill colours, in the theme's tones.
 const STATUS_TONE: Record<EffectiveStatus["tone"], PillTone> = {
   zinc: "neutral",
@@ -153,34 +151,6 @@ const STATUS_TONE: Record<EffectiveStatus["tone"], PillTone> = {
   purple: "accent",
   red: "bad",
 };
-
-// Completion bar with a threshold marker. The fill turns green once the
-// style clears its threshold; the tick shows where the threshold sits.
-function CompletionBar({
-  pct,
-  threshold,
-  ready,
-}: {
-  pct: number;
-  threshold: number | null;
-  ready: boolean;
-}) {
-  return (
-    <div className="bg-subtle relative h-1.5 w-full overflow-hidden rounded-full">
-      <div
-        className={`h-full rounded-full ${ready ? "bg-good" : "bg-primary"}`}
-        style={{ width: `${pct}%` }}
-      />
-      {threshold != null && threshold < 100 && (
-        <div
-          className="bg-faint absolute top-0 h-full w-0.5"
-          style={{ left: `${threshold}%` }}
-          title={`Threshold ${threshold}%`}
-        />
-      )}
-    </div>
-  );
-}
 
 // Data notes for an output card — currently the delivery-term switch:
 // outputs whose order number branches on FOB/DDP get a chip naming the
@@ -221,10 +191,12 @@ export default async function StyleDetail({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; hist?: string }>;
 }) {
   const { id } = await params;
-  const tabParam = (await searchParams).tab;
+  const sp = await searchParams;
+  const tabParam = sp.tab;
+  const historyFilter: HistoryFilter = sp.hist === "decisions" ? "decisions" : sp.hist === "automation" ? "automation" : "all";
   const tab: TabKey =
     tabParam === "prod-spec"
       ? "prod-spec"
@@ -257,6 +229,7 @@ export default async function StyleDetail({
     useStyleBoardColour,
     currentOutputs,
     relatedRows,
+    openTickets,
   ] = await Promise.all([
     getSessionWithRole(),
     loadStyle(id),
@@ -291,7 +264,7 @@ export default async function StyleDetail({
     // for the "Supplier folder" panel (found + link / no PO folder / ambiguous).
     db.supplierSendQueueItem.findMany({
       where: { styleId: id },
-      select: { sharePointStatus: true, sharePointFolderUrl: true, sharePointFolderMatches: true },
+      select: { variantKey: true, sharePointStatus: true, sharePointFolderUrl: true, sharePointFolderMatches: true },
     }),
     getAutoGenerateEnabled(),
     // Doc-type keyword exclusion rules + per-style operator ignores → mark
@@ -314,6 +287,12 @@ export default async function StyleDetail({
     // The lookalike-rows card's data — loaded here, not by the card itself
     // (see loadRelatedRowsCardProps for why).
     loadRelatedRowsCardProps(id),
+    // Open rejection-log threads — the "Open" / "Fixed, check again" chips on
+    // the outputs table and the comment counts in the Review gallery.
+    db.rejectionTicket.findMany({
+      where: { styleId: id, status: { not: "RESOLVED" } },
+      select: { variantKey: true, status: true, comment: true },
+    }),
     // Output Builder layouts resolve as variants in the readiness walks below.
     ensureLayoutVariantsLoaded(),
   ]);
@@ -797,35 +776,171 @@ export default async function StyleDetail({
       };
     });
 
+  // ── What the page shows ─────────────────────────────────────────────────
   // Outputs waiting for a decision — the count on the Review button and tab.
   const pendingCount = currentFiles.filter((f) => f.asset.reviewStatus === "PENDING_REVIEW").length;
+  const rollup = rollupOutputSlots(currentOutputs);
+  const typeLabel = (docType: string) => docTypeLabel(docType, exclusionLabels);
+  const businessAreaName = style.businessAreaRef?.name ?? style.businessArea ?? null;
+  const meta = [style.customer.name, businessAreaName, style.poNumber ? `PO ${style.poNumber}` : null, style.supplier?.name ?? null]
+    .filter(Boolean)
+    .join(" · ");
+
+  // Open comment threads per output (the newest per key wins).
+  const ticketByKey = new Map<string, { status: "OPEN" | "IN_PROGRESS" | "FIXED"; comments: number }>();
+  for (const t of openTickets) {
+    if (!t.variantKey || ticketByKey.has(t.variantKey)) continue;
+    ticketByKey.set(t.variantKey, {
+      status: t.status as "OPEN" | "IN_PROGRESS" | "FIXED",
+      comments: splitTicketComment(t.comment).length,
+    });
+  }
+  const ticketFor = (variantKey: string) =>
+    ticketByKey.get(variantKey) ?? ticketByKey.get(variantKey.split("#")[0]) ?? null;
+
+  // Where each output stands toward the supplier's folder (queue rows are per output).
+  const queueByKey = new Map(sendQueueRows.map((r) => [r.variantKey, r.sharePointStatus]));
+  const queueStatusFor = (variantKey: string) =>
+    queueByKey.get(variantKey) ?? queueByKey.get(variantKey.split("#")[0]) ?? null;
+
+  const latestGeneratedAt = currentOutputs.reduce<Date | null>(
+    (latest, o) => (o.generatedAt && (!latest || o.generatedAt > latest) ? o.generatedAt : latest),
+    null,
+  );
+  const claimed = reviewJobs.find((j) => j.status === "AWAITING_REVIEW" && j.claimedByName);
+
+  // ── The pipeline strip ──
+  const resolvedEans = ["RESOLVED", "RESOLVED_FROM_MONDAY"].includes(style.eanStatus);
+  const steps: PipelineStep[] = [
+    {
+      key: "monday",
+      label: "Monday",
+      detail: style.lastSyncedAt ? `Synced ${timeAgo(style.lastSyncedAt)}` : "Not synced yet",
+      state: style.lastSyncedAt ? "done" : "todo",
+    },
+    !style.poNumber
+      ? { key: "po", label: "PO & barcodes", detail: "No PO number yet", state: "warn" }
+      : resolvedEans
+        ? { key: "po", label: "PO & barcodes", detail: `${style.eans.length} sizes · PO ${style.poNumber}`, state: "done" }
+        : style.eanStatus === "PENDING" || style.eanStatus === "RESOLVING" || style.eanStatus === "NONE"
+          ? { key: "po", label: "PO & barcodes", detail: "Waiting for the PO scrape", state: "current" }
+          : {
+              key: "po",
+              label: "PO & barcodes",
+              detail:
+                style.eanStatus === "PO_NOT_FOUND"
+                  ? "PO not found in SharePoint"
+                  : style.eanStatus === "STYLE_NOT_IN_PO"
+                    ? "Style not found in the PO"
+                    : style.eanStatus === "PO_FOUND_NO_EANS"
+                      ? "PO has no EANs"
+                      : "Couldn't read the PO",
+              state: "bad",
+            },
+    style.prodSpec
+      ? {
+          key: "spec",
+          label: "Prod spec",
+          detail: style.prodSpec.active ? style.prodSpec.name : `${style.prodSpec.name} · inactive`,
+          state: style.prodSpec.active && enabledOutputs.length > 0 ? "done" : "warn",
+        }
+      : { key: "spec", label: "Prod spec", detail: "None resolved", state: "bad" },
+    missingDetail.length === 0
+      ? { key: "fields", label: "Fields", detail: requiredKeys.length > 0 ? "All filled" : "None needed", state: "done" }
+      : {
+          key: "fields",
+          label: "Fields",
+          detail: `${missingDetail.length} missing · ${missingDetail.map((m) => m.label).join(", ")}`,
+          state: "warn",
+        },
+    rollup.generating > 0
+      ? { key: "generated", label: "Generated", detail: "Generating…", state: "current" }
+      : rollup.generated > 0
+        ? {
+            key: "generated",
+            label: "Generated",
+            detail: `${rollup.generated} output${rollup.generated === 1 ? "" : "s"}${latestGeneratedAt ? ` · ${shortDate(latestGeneratedAt)}` : ""}`,
+            state: "done",
+          }
+        : { key: "generated", label: "Generated", detail: "Not yet", state: "todo" },
+    rollup.generated === 0
+      ? { key: "review", label: "Review", detail: "Not yet", state: "todo" }
+      : pendingCount > 0
+        ? { key: "review", label: "Review", detail: `${pendingCount} pending`, state: "current" }
+        : rollup.rejected > 0
+          ? { key: "review", label: "Review", detail: `${rollup.rejected} with changes requested`, state: "warn" }
+          : { key: "review", label: "Review", detail: "All decided", state: "done" },
+    customerConfig.skipSupplierDelivery
+      ? { key: "folder", label: "Supplier folder", detail: "Customer delivers itself", state: "done" }
+      : !supplierDelivery
+        ? { key: "folder", label: "Supplier folder", detail: "Nothing approved yet", state: "todo" }
+        : supplierDelivery.noFolder > 0
+          ? { key: "folder", label: "Supplier folder", detail: "PO folder missing", state: "bad" }
+          : supplierDelivery.ambiguous > 0
+            ? { key: "folder", label: "Supplier folder", detail: "Several PO folders match", state: "bad" }
+            : {
+                key: "folder",
+                label: "Supplier folder",
+                detail: `${supplierDelivery.uploaded} of ${supplierDelivery.total} delivered`,
+                state: supplierDelivery.uploaded === supplierDelivery.total ? "done" : "current",
+              },
+  ];
+
   const tabs: TabLink[] = TABS.map((t) => ({
     key: t.key,
     label: t.label,
     href: `/styles/${style.id}?tab=${t.key}`,
     count: t.key === "review" && pendingCount > 0 ? pendingCount : undefined,
   }));
-  const businessAreaName = style.businessAreaRef?.name ?? style.businessArea ?? null;
+
+  // ── Review tab: the gallery ──
+  const outputByKey = new Map(currentOutputs.map((o) => [o.variantKey, o]));
+  const gallery: GalleryItem[] = currentFiles.map((f) => {
+    const key = f.asset.variantKey ?? f.asset.id;
+    const o = outputByKey.get(key);
+    const t = ticketFor(key);
+    return {
+      key,
+      anchor: outputAnchor(key),
+      thumbSrc: `/api/admin/jobs/${f.jobId}/thumbnail?variantKey=${encodeURIComponent(key)}&v=${f.asset.id}.${o?.assetVersion ?? 0}`,
+      typeLabel: typeLabel(f.asset.docType),
+      name: f.asset.displayName ?? typeLabel(f.asset.docType),
+      fileName: f.asset.fileName,
+      status: f.asset.reviewStatus,
+      ticket: t?.status ?? null,
+      blocked: (o?.placeholderCount ?? 0) > 0,
+      reviewer: f.asset.reviewerEmail,
+      dateLabel: f.asset.reviewedAt ? shortDate(new Date(f.asset.reviewedAt)) : o?.generatedAt ? `generated ${shortDate(o.generatedAt)}` : null,
+      comments: t?.comments ?? 0,
+    };
+  });
+  const gallerySummary = [
+    "The latest document per output, across all runs",
+    rollup.approved > 0 ? `${rollup.approved} approved` : null,
+    rollup.rejected > 0 ? `${rollup.rejected} with changes requested` : null,
+    pendingCount > 0 ? `${pendingCount} pending` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
-    <div className="px-6 py-5">
+    <div className="pb-10">
       <LogStyleView styleId={id} surface="STYLE" />
-      <PageHeader
-        // Back to the list the reviewer came from — their PO search + filters,
-        // or this style's own PO as the fallback. See back-to-styles.tsx.
-        backSlot={<BackToStyles poNumber={style.poNumber} />}
-        title={style.name}
-        meta={
-          <>
-            {style.customer.name}
-            {businessAreaName ? ` · ${businessAreaName}` : ""}
-            {style.poNumber ? ` · PO ${style.poNumber}` : ""}
-            {style.supplier ? ` · ${style.supplier.name}` : ""}
-            <span className="text-faint"> · Monday {style.mondayItemId}</span>
-          </>
-        }
-        actions={
-          <>
+      <div className="px-6 pt-4">
+        <div data-section="Page header" className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex min-w-0 flex-[1_1_20rem] items-baseline gap-2">
+            {/* Back to the list the reviewer came from — their PO search +
+                filters, or this style's own PO. See back-to-styles.tsx. */}
+            <BackToStyles poNumber={style.poNumber} variant="crumb" />
+            <span aria-hidden="true" className="text-faint">
+              /
+            </span>
+            <h1 className="text-ink truncate text-[18px] font-semibold tracking-[-0.01em]">{style.name}</h1>
+            <span className="text-muted hidden min-w-0 truncate text-[13px] md:inline" title={meta}>
+              {meta}
+            </span>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             {isAdmin && (
               <Link href={`/styles/${style.id}/edit`} className={buttonClass("secondary")}>
                 <Pencil size={13} aria-hidden="true" />
@@ -840,56 +955,31 @@ export default async function StyleDetail({
                 pendingLabel={currentFiles.length > 0 ? "Re-running…" : "Generating…"}
               />
             )}
-            {latestJob?.status === "AWAITING_REVIEW" && (
-              <Link href={`/styles/${style.id}/review`} className={buttonClass("primary")}>
+            {currentFiles.length > 0 && (
+              <Link href={`/styles/${style.id}/review`} className={buttonClass(pendingCount > 0 ? "primary" : "secondary")}>
                 Review
                 {pendingCount > 0 ? <span className="tabular-nums opacity-70">{pendingCount}</span> : null}
               </Link>
             )}
-          </>
-        }
-      />
-
-      <div className="mt-4 flex flex-col gap-3">
-        {/* Orientation before diagnosis: Monday duplicates a style row per PO
-            under the same name, so the first question is "am I on the right
-            row?", not "is this row ready?". Renders nothing at all when this
-            style has no lookalikes, which is the norm. */}
-        {relatedRows && <RelatedRowsCard {...relatedRows} />}
-
-        {/* Above the tabs, side by side: the pipeline readiness notice (a
-            collapsible accordion) on the left, the Supplier folder / SharePoint
-            delivery on the right — both stay visible on every tab. */}
-        <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
-          <OutputReadinessNotice
-            notice={readinessNotice}
-            role={isAdmin ? "ADMIN" : "REVIEWER"}
-            hrefs={readinessHrefs}
-            collapsible
-          />
-          <SupplierFolderStatus
-            styleId={style.id}
-            supplierName={style.supplier?.name ?? null}
-            folderUrl={style.supplier?.sharepointUrl ?? null}
-            poNumber={style.poNumber}
-            delivery={supplierDelivery}
-            canFixTemplate={isAdmin}
-            className=""
-          />
+          </div>
         </div>
-
-        {/* Answers "did the files actually land, and is what's in the folder
-            still what we think it is?" — the half the recurring verify sweep
-            can't cover. Full width but ONE line: the counts float here and the
-            filenames live in its dialog. */}
-        <FolderReconcilePanel styleId={style.id} poNumber={style.poNumber} />
-
-        {customerConfig.skipSupplierDelivery && <SkipSupplierDeliveryBadge />}
+        <p className="text-muted mt-0.5 text-[13px] md:hidden">{meta}</p>
       </div>
 
-      <TabLinks items={tabs} active={tab} label="Style" className="mt-5" />
+      <TabLinks items={tabs} active={tab} label="Style" className="mt-2 px-6" />
 
-      <div className="mt-5">
+      <div className="flex flex-col gap-4 px-6 pt-4">
+        {/* Orientation before diagnosis: Monday duplicates a style row per PO
+            under the same name, so the first question is "am I on the right
+            row?". Renders nothing when this style has no lookalikes. */}
+        {relatedRows && <RelatedRowsCard {...relatedRows} className="" />}
+
+        <PipelineStrip steps={steps}>
+          <OutputReadinessNotice notice={readinessNotice} role={isAdmin ? "ADMIN" : "REVIEWER"} hrefs={readinessHrefs} />
+        </PipelineStrip>
+
+        {customerConfig.skipSupplierDelivery && <SkipSupplierDeliveryBadge />}
+
         {tab === "details" && (
           <DetailsTab
             style={style}
@@ -903,6 +993,57 @@ export default async function StyleDetail({
             requiredFields={prodSpecReadiness}
             outputCards={outputCards}
             careDerived={careDerived}
+            rollup={rollup}
+            pendingCount={pendingCount}
+            outputRows={currentOutputs.map((o) => {
+              const t = ticketFor(o.variantKey);
+              return {
+                key: o.variantKey,
+                name: o.name,
+                fileName: o.fileName,
+                typeLabel: typeLabel(o.docType),
+                state: o.state,
+                ignored: o.ignored,
+                missing: o.missing.map((m) => m.label),
+                exclusionReason: o.exclusionReason,
+                ticket: t?.status ?? null,
+                lastRun: o.generatedAt ? shortDate(o.generatedAt) : null,
+                href: o.jobAssetId ? `/styles/${style.id}/review#${outputAnchor(o.variantKey)}` : null,
+              };
+            })}
+            folder={{
+              supplierName: style.supplier?.name ?? null,
+              path: [
+                style.supplier?.name ?? "No supplier",
+                style.poNumber ? `${style.poNumber} - ${style.customer.name} - ${style.supplier?.name ?? "?"}` : "No PO",
+                "APPROVED LAYOUTS",
+              ].join(" / "),
+              delivered: supplierDelivery ? { uploaded: supplierDelivery.uploaded, total: supplierDelivery.total } : null,
+              openHref: supplierDelivery?.folderUrl ?? style.supplier?.sharepointUrl ?? null,
+              ready: Boolean(style.supplier && style.supplier.sharepointUrl),
+              problem: Boolean(supplierDelivery && (supplierDelivery.noFolder > 0 || supplierDelivery.ambiguous > 0)),
+              files: currentOutputs
+                .filter((o) => o.jobAssetId != null)
+                .map((o) => ({
+                  key: o.variantKey,
+                  fileName: o.fileName ?? o.name,
+                  state: folderFileState(o.reviewStatus, queueStatusFor(o.variantKey)),
+                })),
+            }}
+            folderRoute={
+              <SupplierFolderStatus
+                styleId={style.id}
+                supplierName={style.supplier?.name ?? null}
+                folderUrl={style.supplier?.sharepointUrl ?? null}
+                poNumber={style.poNumber}
+                delivery={supplierDelivery}
+                canFixTemplate={isAdmin}
+                className=""
+                showHeader={false}
+              />
+            }
+            folderCheck={<FolderReconcilePanel styleId={style.id} poNumber={style.poNumber} className="" />}
+            lastSyncedLabel={style.lastSyncedAt ? timeAgo(style.lastSyncedAt) : "never"}
           />
         )}
 
@@ -911,13 +1052,15 @@ export default async function StyleDetail({
             styleId={style.id}
             prodSpec={style.prodSpec}
             customerId={style.customerId}
+            customerName={style.customer.name}
             businessAreaId={style.businessAreaId}
-            businessAreaLabel={style.businessAreaRef?.name ?? style.businessArea ?? null}
+            businessAreaLabel={businessAreaName}
             businessAreaText={style.businessArea ?? null}
             candidateBusinessArea={candidateBusinessArea}
             supplier={style.supplier}
             poNumber={style.poNumber}
             styleStatus={style.status}
+            enabledOutputCount={enabledOutputs.length}
             requiredReadiness={prodSpecReadiness}
             outputsFilesPreview={outputsFilesPreview}
             supplierShare={
@@ -936,10 +1079,93 @@ export default async function StyleDetail({
           />
         )}
 
-        {tab === "review" && <ReviewTab styleId={style.id} current={currentFiles} jobs={reviewJobs} />}
-        {tab === "history" && <HistoryTab styleId={style.id} />}
+        {tab === "review" && (
+          <ReviewTab
+            styleId={style.id}
+            gallery={gallery}
+            owner={claimed ? { name: claimed.claimedByName as string, since: claimed.claimedAtLabel } : null}
+            summary={gallerySummary}
+            jobs={reviewJobs}
+          />
+        )}
+        {tab === "history" && <HistoryTab styleId={style.id} filter={historyFilter} />}
       </div>
     </div>
+  );
+}
+
+// "24 Oct 14:02" — compact dates for tables and the pipeline.
+const SHORT_DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+function shortDate(d: Date): string {
+  return SHORT_DATE.format(d);
+}
+
+// A file's place on the way to the supplier's folder, for the folder card.
+type FolderFileState = "in-folder" | "queued" | "failed" | "no-folder" | "waiting" | "rejected";
+function folderFileState(
+  reviewStatus: "PENDING_REVIEW" | "APPROVED" | "REJECTED" | null,
+  queueStatus: string | null,
+): FolderFileState {
+  if (queueStatus === "UPLOADED") return "in-folder";
+  if (reviewStatus === "REJECTED") return "rejected";
+  if (reviewStatus !== "APPROVED") return "waiting";
+  if (queueStatus === "FAILED") return "failed";
+  if (queueStatus === "NO_FOLDER" || queueStatus === "AMBIGUOUS") return "no-folder";
+  return "queued";
+}
+
+const FOLDER_FILE: Record<FolderFileState, { label: string; tone: PillTone; icon: "check" | "x" | "dot" | "warn" }> = {
+  "in-folder": { label: "In folder", tone: "good", icon: "check" },
+  queued: { label: "Approved, queued", tone: "accent", icon: "dot" },
+  failed: { label: "Upload failed", tone: "bad", icon: "x" },
+  "no-folder": { label: "No PO folder", tone: "bad", icon: "warn" },
+  waiting: { label: "Waits for approval", tone: "neutral", icon: "dot" },
+  rejected: { label: "Changes requested", tone: "bad", icon: "x" },
+};
+
+// One output's state in the Outputs table — the decision, plus what's open on it.
+type OutputRow = {
+  key: string;
+  name: string;
+  fileName: string | null;
+  typeLabel: string;
+  state: string;
+  ignored: boolean;
+  missing: string[];
+  exclusionReason: string | null;
+  ticket: "OPEN" | "IN_PROGRESS" | "FIXED" | null;
+  lastRun: string | null;
+  href: string | null;
+};
+
+function OutputStatePills({ row }: { row: OutputRow }) {
+  const main: { tone: PillTone; label: string } =
+    row.state === "APPROVED"
+      ? { tone: "good", label: "Approved" }
+      : row.state === "REJECTED"
+        ? { tone: "bad", label: "Changes requested" }
+        : row.state === "BLOCKED"
+          ? { tone: "warn", label: "Blocked" }
+          : row.state === "TO_REVIEW"
+            ? { tone: "neutral", label: "Pending" }
+            : row.state === "AWAITING_DATA"
+              ? { tone: "warn", label: "Missing data" }
+              : row.state === "GENERATING"
+                ? { tone: "accent", label: "Generating" }
+                : row.state === "READY_TO_GENERATE"
+                  ? { tone: "neutral", label: "Queued" }
+                  : { tone: "neutral", label: row.ignored ? "Ignored" : "Excluded" };
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      <Pill tone={main.tone} dot>
+        {main.label}
+      </Pill>
+      {row.ticket === "FIXED" ? (
+        <Pill tone="good">Fixed, re-review</Pill>
+      ) : row.ticket ? (
+        <Pill tone="warn">{row.ticket === "IN_PROGRESS" ? "Being fixed" : "Open"}</Pill>
+      ) : null}
+    </span>
   );
 }
 
@@ -955,6 +1181,13 @@ function DetailsTab({
   requiredFields,
   outputCards,
   careDerived,
+  rollup,
+  pendingCount,
+  outputRows,
+  folder,
+  folderRoute,
+  folderCheck,
+  lastSyncedLabel,
 }: {
   // useStyleBoardColour is omitted from the page query (guarded read instead —
   // see the findUnique above), so drop it from the prop type to match.
@@ -967,6 +1200,7 @@ function DetailsTab({
       assets: Array<unknown>;
       reviewActions: Array<{ user: { email: string } }>;
     }>;
+    prodSpec: { name: string } | null;
   };
   missing: Array<{ id: string; label: string }>;
   resolvedFields: ResolvedSpecField[];
@@ -981,8 +1215,22 @@ function DetailsTab({
     symbols: Array<{ name: string; resolved: boolean; token: string }>;
     lines: Array<{ text: string; visible: boolean; reason: string }>;
   };
+  rollup: ReturnType<typeof rollupOutputSlots>;
+  pendingCount: number;
+  outputRows: OutputRow[];
+  folder: {
+    supplierName: string | null;
+    path: string;
+    delivered: { uploaded: number; total: number } | null;
+    openHref: string | null;
+    ready: boolean;
+    problem: boolean;
+    files: Array<{ key: string; fileName: string; state: FolderFileState }>;
+  };
+  folderRoute: ReactNode;
+  folderCheck: ReactNode;
+  lastSyncedLabel: string;
 }) {
-  const tone = READINESS_TONE[readiness.tone];
   const requiredSet = new Set(requiredFieldKeys);
   // Colour per resolved EAN (read off the PO variant label) so the per-size
   // EAN-13 lines under Resolved fields can name the colourway — duplicate
@@ -996,332 +1244,420 @@ function DetailsTab({
   // Output fields the enabled outputs need but that are empty — the real
   // "can it generate" gate, distinct from the required-columns completion %.
   const missingOutput = requiredFields.fields.filter((f) => !f.ok).map((f) => f.label);
-  const outputComplete = requiredFields.total > 0 && missingOutput.length === 0;
-  // The per-output missing fields now live in the collapsed Outputs accordion
-  // below, so drop the "Waiting on: …" tail from the banner — keep just the
-  // lead sentence so the same list isn't shown in two places.
-  const bannerDetail = readiness.detail.split(/\s*Waiting on:/)[0].trim();
+  const heldBack = outputCards.filter((o) => !o.ready && !o.excluded).length;
   // Deduped fields blocking any not-ready (non-excluded) output — surfaced in
   // the collapsed accordion header so blockers are visible without expanding.
   const blockingFieldLabels = Array.from(
     new Set(outputCards.filter((o) => !o.ready && !o.excluded).flatMap((o) => o.missing)),
   );
-  return (
-    <div className="flex flex-col gap-6">
-      {/* Where this style stands: can it generate, and if not, why. */}
-      <div className="border-line bg-surface flex items-start gap-3 rounded-xl border px-4 py-3">
-        <StatusDot tone={tone} className="mt-1.5" />
-        <div className="min-w-0">
-          <div className="text-ink text-[13px] font-semibold">{readiness.title}</div>
-          <div className="text-muted mt-0.5 text-[13px]">{bannerDetail}</div>
-        </div>
-      </div>
+  const notGenerated = outputRows.filter((r) => r.state === "AWAITING_DATA").length;
+  const pending = rollup.toReview + rollup.blocked;
+  const notYet = Math.max(0, rollup.total - rollup.approved - rollup.rejected - pending);
 
-      <section className="stagger grid grid-cols-1 gap-3 md:grid-cols-3">
-        {/* 1 — Required COLUMNS: progress toward the auto-generate threshold
-            (measured against the customer's required columns). A separate
-            check from the output fields in card 2. */}
-        <div className="border-line bg-surface rounded-xl border px-4 py-3">
-          <div className="text-muted text-[12px]">Required columns</div>
-          <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-ink text-[24px] leading-8 font-semibold tabular-nums">{style.completionPct}%</span>
-            <span className="text-faint text-[12px]">filled · auto-runs at {readiness.threshold}%</span>
-          </div>
-          <div className="mt-2">
-            <CompletionBar
-              pct={style.completionPct}
-              threshold={readiness.hasProdSpec ? readiness.threshold : null}
-              ready={readiness.hasProdSpec && readiness.meetsThreshold}
-            />
-          </div>
-          {missing.length > 0 ? (
-            <div className="mt-3">
-              <div className="text-muted text-[12px]">Missing columns</div>
-              <ul className="text-ink mt-1 space-y-0.5 text-[12px]">
-                {missing.slice(0, 8).map((m) => (
-                  <li key={m.id}>{m.label}</li>
-                ))}
-                {missing.length > 8 && <li className="text-faint">and {missing.length - 8} more</li>}
-              </ul>
+  const fieldRows: ResolvedFieldRow[] = resolvedFields.map((f) => {
+    const isRequired = requiredSet.has(f.field);
+    const isMissing = isRequired && !f.value.trim();
+    return {
+      key: f.field,
+      label: f.label,
+      text: f.value,
+      required: isRequired,
+      missing: isMissing,
+      value: (
+        <>
+          {f.field === "ean13" && f.value.includes("=") ? (
+            // Per-size EAN map ("S=570…,M=570…") — one line per size instead
+            // of an unreadable comma run, with the colourway when known.
+            <div className="space-y-0.5 font-mono text-[12px]">
+              {f.value.split(",").map((pair, j) => {
+                const [size, ean] = pair.split("=");
+                const color = eanColor.get(ean?.trim() ?? "");
+                return (
+                  <div key={`${pair}-${j}`}>
+                    <span className="text-muted inline-block w-12">{size?.trim()}</span>
+                    <span>{ean?.trim()}</span>
+                    {color && <span className="text-faint ml-2">{color}</span>}
+                  </div>
+                );
+              })}
             </div>
           ) : (
-            <div className="text-muted mt-3 text-[12px]">All required columns filled.</div>
+            f.value || (isMissing ? "Missing" : "—")
           )}
-        </div>
-
-        {/* 2 — Required OUTPUT FIELDS: what the enabled outputs actually need to
-            render. This is the real "can it generate" gate, and the reason the
-            banner can read "Not ready" even when columns are 100%. */}
-        <div className="border-line bg-surface rounded-xl border px-4 py-3">
-          <div className="text-muted text-[12px]">Output fields</div>
-          {requiredFields.total > 0 ? (
-            <>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span
-                  className={`text-[24px] leading-8 font-semibold tabular-nums ${
-                    outputComplete ? "text-good" : "text-warn"
-                  }`}
-                >
-                  {requiredFields.filled}/{requiredFields.total}
-                </span>
-                <span className="text-faint text-[12px]">the fields this style&rsquo;s outputs need</span>
-              </div>
-              {missingOutput.length > 0 ? (
-                <div className="mt-3">
-                  <div className="text-muted text-[12px]">Missing, holds back generation</div>
-                  <ul className="text-warn mt-1 space-y-0.5 text-[12px]">
-                    {missingOutput.map((l) => (
-                      <li key={l}>{l}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <div className="text-good mt-3 text-[12px]">All output fields present.</div>
-              )}
-            </>
-          ) : (
-            <div className="text-muted mt-2 text-[13px]">This style&rsquo;s outputs need no detail fields.</div>
-          )}
-        </div>
-
-        {/* 3 — Workflow status + last sync. Same computed pill as the
-            /styles list (effective-status.ts) so the two never disagree —
-            NOT the stored Style.status, which completion re-evaluation
-            used to reset. */}
-        <div className="border-line bg-surface rounded-xl border px-4 py-3">
-          <div className="text-muted text-[12px]">Status</div>
-          <div className="mt-2">
-            <Pill tone={STATUS_TONE[statusView.tone]} dot>
-              {statusView.label}
+          {f.fallback && (
+            <Pill tone="accent" className="ml-1.5 align-middle" title={`No mapped value — falling back to the ${f.fallback}`}>
+              via {f.fallback}
             </Pill>
+          )}
+        </>
+      ),
+    };
+  });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <section className="stagger grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {/* Required COLUMNS: progress toward the auto-generate threshold
+            (measured against the customer's required columns). */}
+        <div className="border-line bg-surface rounded-xl border px-4 py-3">
+          <div className="text-ink text-[13px] font-medium">Required columns</div>
+          <div className="text-ink mt-1 text-[24px] leading-8 font-semibold tabular-nums">{style.completionPct}%</div>
+          <div className="text-muted text-[12px]">
+            {missing.length > 0 ? `${missing.length} missing` : "All filled"} · auto-runs at {readiness.threshold}%
           </div>
-          <div className="text-muted mt-2 text-[12px]">{statusView.hint}</div>
-          <div className="text-faint mt-2 text-[12px]">Last synced {formatDate(style.lastSyncedAt)}</div>
+          <div className="bg-subtle relative mt-3 h-1.5 rounded-full" title={missing.map((m) => m.label).join(", ") || undefined}>
+            <div
+              className={`h-full rounded-full ${readiness.hasProdSpec && readiness.meetsThreshold ? "bg-accent" : "bg-warn"}`}
+              style={{ width: `${style.completionPct}%` }}
+            />
+            {readiness.hasProdSpec && readiness.threshold < 100 ? (
+              <span
+                className="bg-ink absolute -top-1 h-3.5 w-0.5 rounded-full"
+                style={{ left: `${readiness.threshold}%` }}
+                title={`Auto-runs at ${readiness.threshold}%`}
+              />
+            ) : null}
+          </div>
+        </div>
+
+        {/* Required OUTPUT FIELDS: what the enabled outputs need to render —
+            the real "can it generate" gate. */}
+        <div className="border-line bg-surface rounded-xl border px-4 py-3">
+          <div className="text-ink text-[13px] font-medium">Output fields</div>
+          <div className="text-ink mt-1 text-[24px] leading-8 font-semibold tabular-nums">
+            {requiredFields.total > 0 ? `${requiredFields.filled}/${requiredFields.total}` : "—"}
+          </div>
+          <div className={`text-[12px] ${missingOutput.length > 0 ? "text-warn" : "text-muted"}`}>
+            {requiredFields.total === 0
+              ? "This style's outputs need no detail fields."
+              : missingOutput.length > 0
+                ? `${missingOutput.join(", ")} ${missingOutput.length === 1 ? "is" : "are"} missing and hold${missingOutput.length === 1 ? "s" : ""} back ${heldBack} output${heldBack === 1 ? "" : "s"}`
+                : "Every field the outputs need is there."}
+          </div>
+        </div>
+
+        {/* Outputs approved, as one bar: approved / changes requested / pending / not generated. */}
+        <div className="border-line bg-surface rounded-xl border px-4 py-3">
+          <div className="text-ink text-[13px] font-medium">Outputs approved</div>
+          <div className="text-ink mt-1 text-[24px] leading-8 font-semibold tabular-nums">
+            {rollup.approved}/{rollup.total}
+          </div>
+          <div className="bg-subtle mt-2 flex h-1.5 gap-0.5 overflow-hidden rounded-full" aria-hidden="true">
+            {rollup.approved > 0 ? <span className="bg-good" style={{ flex: rollup.approved }} /> : null}
+            {rollup.rejected > 0 ? <span className="bg-bad" style={{ flex: rollup.rejected }} /> : null}
+            {pending > 0 ? <span className="bg-faint" style={{ flex: pending }} /> : null}
+            {notYet > 0 ? <span style={{ flex: notYet }} /> : null}
+          </div>
+          <div className="text-muted mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[12px]">
+            <span className="inline-flex items-center gap-1">
+              <StatusDot tone="good" className="size-1.5 rounded-sm" /> Approved {rollup.approved}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <StatusDot tone="bad" className="size-1.5 rounded-sm" /> Rejected {rollup.rejected}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <StatusDot tone="neutral" className="size-1.5 rounded-sm" /> Pending {pending}
+            </span>
+          </div>
+        </div>
+
+        {/* Workflow status — the same computed pill as the /styles list
+            (effective-status.ts) so the two never disagree. */}
+        <div className="border-line bg-surface rounded-xl border px-4 py-3">
+          <div className="text-ink text-[13px] font-medium">Status</div>
+          <div className="mt-2">
+            <Pill tone={STATUS_TONE[statusView.tone]}>{statusView.label}</Pill>
+          </div>
+          <div className="text-muted mt-2 text-[12px]">{pendingCount > 0 ? `${pendingCount} output${pendingCount === 1 ? "" : "s"} wait for a decision` : statusView.hint}</div>
+          <div className="text-muted text-[12px]">Last synced from Monday {lastSyncedLabel}</div>
         </div>
       </section>
 
-      {outputCards.length > 0 && (
-        // Collapsed by default (accordion). The header carries the missing
-        // fields so blockers show at a glance; each row's live preview only
-        // fetches once its card is expanded.
-        <OutputsAccordion
-          readyCount={outputCards.filter((o) => o.ready).length}
-          total={outputCards.length}
-          missingFieldLabels={blockingFieldLabels}
-        >
-          {outputCards.map((card) => (
-            <StyleOutputCard key={card.variantKey} {...card} />
-          ))}
-        </OutputsAccordion>
-      )}
-
-      {careDerived.lines.length > 0 && (
-        <Section
-          title="Care instructions"
-          desc="Derived from the standard at /settings/care-labels, filtered by this row's wash-care symbols."
-        >
-          <div className="border-line bg-surface rounded-xl border p-4">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-muted text-[12px]">Symbols on the row</span>
-              {careDerived.symbols.length === 0 && (
-                <span className="text-faint text-[12px]">none, so only &ldquo;always&rdquo; lines print</span>
-              )}
-              {careDerived.symbols.map((s) => (
-                <Pill
-                  key={s.token}
-                  tone={s.resolved ? "neutral" : "warn"}
-                  title={
-                    s.resolved
-                      ? s.name
-                      : `Unknown token "${s.token}" — not in the symbol catalogue (no artwork, no care-line suppression). Map it at /settings/washcare-symbols.`
-                  }
-                >
-                  {s.name}
-                </Pill>
-              ))}
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="flex min-w-0 flex-col gap-4">
+          {/* Every declared output: what it is, where it stands, when it last ran. */}
+          <section data-section="Outputs" className="border-line bg-surface overflow-hidden rounded-xl border">
+            <div className="border-line flex flex-wrap items-start justify-between gap-3 border-b px-4 py-3">
+              <div>
+                <h2 className="text-ink text-[14px] font-semibold">Outputs</h2>
+                <p className="text-muted text-[12px]">
+                  {rollup.generated} generated{style.prodSpec ? ` from ${style.prodSpec.name}` : ""}
+                  {notGenerated > 0 ? ` · ${notGenerated} can't generate yet` : ""}
+                </p>
+              </div>
+              {rollup.generated > 0 ? (
+                <Link href={`/styles/${style.id}/review`} className={buttonClass("secondary", "sm")}>
+                  Open review
+                </Link>
+              ) : null}
             </div>
-            <ul className="mt-3 space-y-1">
-              {careDerived.lines.map((line) => (
-                <li
-                  key={line.text}
-                  className={`flex items-baseline gap-2 text-[12px] ${line.visible ? "text-ink" : "text-faint"}`}
-                >
-                  <StatusDot tone={line.visible ? "good" : "neutral"} className="size-1.5" />
-                  <span className={line.visible ? "" : "line-through"}>{line.text}</span>
-                  <span className="text-faint text-[11px]">· {line.reason}</span>
-                </li>
+            {outputRows.length === 0 ? (
+              <p className="text-muted px-4 py-8 text-center text-[13px]">This style&rsquo;s prod spec has no outputs yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="border-line text-muted border-b text-left text-[12px]">
+                      <th className="px-4 py-2 font-medium">Output</th>
+                      <th className="px-3 py-2 font-medium">Type</th>
+                      <th className="px-3 py-2 font-medium">State</th>
+                      <th className="px-4 py-2 text-right font-medium">Last run</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-line divide-y">
+                    {outputRows.map((r) => (
+                      <tr key={r.key} className={r.href ? "hover:bg-subtle transition-colors duration-150" : ""}>
+                        <td className="max-w-[22rem] px-4 py-2.5">
+                          {r.href ? (
+                            <Link href={r.href} className="text-ink block truncate font-medium hover:underline" title={r.name}>
+                              {r.name}
+                            </Link>
+                          ) : (
+                            <span className="text-ink block truncate font-medium" title={r.name}>
+                              {r.name}
+                            </span>
+                          )}
+                          <span className="text-muted block truncate font-mono text-[11px]" title={r.fileName ?? undefined}>
+                            {r.state === "AWAITING_DATA" && r.missing.length > 0
+                              ? `Needs ${r.missing.join(", ")}`
+                              : r.state === "EXCLUDED" && r.exclusionReason
+                                ? r.exclusionReason
+                                : r.fileName ?? "—"}
+                          </span>
+                        </td>
+                        <td className="text-muted px-3 py-2.5 whitespace-nowrap">{r.typeLabel}</td>
+                        <td className="px-3 py-2.5">
+                          <OutputStatePills row={r} />
+                        </td>
+                        <td className="text-muted px-4 py-2.5 text-right whitespace-nowrap tabular-nums">{r.lastRun ?? "Not generated"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          {outputCards.length > 0 && (
+            // The per-output tools: live preview, pins, Run, carton prints,
+            // info-area size. Folded; each row's preview only loads when opened.
+            <OutputsAccordion
+              readyCount={outputCards.filter((o) => o.ready).length}
+              total={outputCards.length}
+              missingFieldLabels={blockingFieldLabels}
+            >
+              {outputCards.map((card) => (
+                <StyleOutputCard key={card.variantKey} {...card} />
               ))}
-            </ul>
-          </div>
-        </Section>
-      )}
+            </OutputsAccordion>
+          )}
 
-      <Section title="Record and links" desc="Linked records and source identity: the supplier, prod spec, Monday source and so on.">
-        <FieldGrid
-          rows={recordFields.map((f) => {
-            const external = f.href?.startsWith("http");
-            return {
-              key: f.label,
-              label: f.label,
-              empty: !f.value,
-              value: f.value ? (
-                f.href ? (
-                  <a
-                    href={f.href}
-                    className="text-accent-text hover:underline"
-                    {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-                  >
-                    {f.value}
-                  </a>
-                ) : (
-                  f.value
-                )
-              ) : (
-                "—"
-              ),
-            };
-          })}
-        />
-      </Section>
+          <ResolvedFieldsCard rows={fieldRows} description="What the PDFs print, resolved from the column mapping" />
 
-      <Section
-        title="Resolved fields"
-        desc={
-          <>
-            What the PDFs render, resolved from the column mapping.
-            {requiredFields.total > 0 ? " Required fields are marked." : ""}
-          </>
-        }
-      >
-        <FieldGrid
-          rows={resolvedFields.map((f) => {
-            const isRequired = requiredSet.has(f.field);
-            const isMissing = isRequired && !f.value.trim();
-            return {
-              key: f.field,
-              label: (
-                <span className="flex items-center gap-1.5">
-                  {f.label}
-                  {isRequired && (
-                    <span title="Required: needed by one of this style's outputs" className={isMissing ? "text-warn" : "text-faint"}>
-                      required
-                    </span>
-                  )}
-                </span>
-              ),
-              highlight: isMissing,
-              empty: !f.value && !isMissing,
-              value: (
-                <>
-                  {f.field === "ean13" && f.value.includes("=") ? (
-                    // Per-size EAN map ("S=570…,M=570…") — one line per size
-                    // instead of an unreadable comma run. Duplicate sizes
-                    // (multi-colourway POs) keep their own lines, with the
-                    // colourway named when the resolved PO rows know it.
-                    <div className="space-y-0.5 font-mono text-[12px]">
-                      {f.value.split(",").map((pair, j) => {
-                        const [size, ean] = pair.split("=");
-                        const color = eanColor.get(ean?.trim() ?? "");
-                        return (
-                          <div key={`${pair}-${j}`}>
-                            <span className="text-muted inline-block w-14">{size?.trim()}</span>
-                            <span>{ean?.trim()}</span>
-                            {color && <span className="text-faint ml-2">{color}</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <span className={isMissing ? "text-warn" : ""}>{f.value || (isMissing ? "missing" : "—")}</span>
-                  )}
-                  {f.fallback && (
-                    <Pill tone="accent" className="ml-1.5 align-middle" title={`No mapped value — falling back to the ${f.fallback}`}>
-                      via {f.fallback}
-                    </Pill>
-                  )}
-                </>
-              ),
-            };
-          })}
-        />
-      </Section>
+          <section data-section="EAN barcodes" className="border-line bg-surface overflow-hidden rounded-xl border">
+            <div className="border-line border-b px-4 py-3">
+              <h2 className="text-ink text-[14px] font-semibold">EAN barcodes</h2>
+              <p className="text-muted text-[12px]">
+                Read from {eanView.poFileName ?? "the PO PDF"}, per size, in size order
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 p-4">
+              {style.poNumber && <PoPreview styleId={style.id} poNumber={style.poNumber} status={style.eanStatus} />}
+              <EanPanel styleId={style.id} hasPo={Boolean(style.poNumber)} initial={eanView} />
+            </div>
+          </section>
 
-      <Section title="EAN barcodes" desc="Read from the PO PDF, per size, in size order.">
-        {style.poNumber && (
-          <div className="mb-3">
-            <PoPreview styleId={style.id} poNumber={style.poNumber} status={style.eanStatus} />
-          </div>
-        )}
-        <EanPanel styleId={style.id} hasPo={Boolean(style.poNumber)} initial={eanView} />
-      </Section>
-
-      {/* Last on the page on purpose: everything above already states the
-          facts, so this is for the question those panels didn't happen to
-          answer — the one that would otherwise have become a Slack message. */}
-      <AskStylePanel styleId={style.id} />
-
-      <Section title="Jobs" count={style.jobs.length}>
-        <div className="border-line bg-surface overflow-x-auto rounded-xl border">
-          <table className="w-full text-[13px]">
-            <thead className="border-line text-muted border-b text-left text-[12px]">
-              <tr>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Trigger</th>
-                <th className="px-3 py-2 font-medium">Assets</th>
-                <th className="px-3 py-2 font-medium">Reviewer</th>
-                <th className="px-3 py-2 font-medium">Created</th>
-              </tr>
-            </thead>
-            <tbody className="divide-line divide-y">
-              {style.jobs.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="text-muted px-3 py-8 text-center">
-                    No jobs yet.
-                  </td>
-                </tr>
-              ) : (
-                style.jobs.map((j) => (
-                  <tr key={j.id}>
-                    <td className="text-ink px-3 py-2">{j.status}</td>
-                    <td className="text-muted px-3 py-2">{j.triggerSource}</td>
-                    <td className="px-3 py-2 tabular-nums">{j.assets.length}</td>
-                    <td className="text-muted px-3 py-2" data-private>
-                      {j.reviewActions[0]?.user.email ?? "—"}
-                    </td>
-                    <td className="text-muted px-3 py-2 whitespace-nowrap">{formatDate(j.createdAt)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+          {/* For the question the panels above didn't happen to answer — the
+              one that would otherwise have become a Slack message. */}
+          <AskStylePanel styleId={style.id} className="" />
         </div>
-      </Section>
+
+        <div className="flex min-w-0 flex-col gap-4">
+          {/* What the supplier has: each file's way into their folder. */}
+          <section data-section="Supplier folder" className="border-line bg-surface overflow-hidden rounded-xl border">
+            <div className="border-line border-b px-4 py-3">
+              <h2 className="text-ink text-[14px] font-semibold">Supplier folder</h2>
+              <p className="text-muted font-mono text-[11px] break-words" data-private>
+                {folder.path}
+              </p>
+              <div className="mt-2">
+                {folder.delivered ? (
+                  <Pill tone={folder.delivered.uploaded === folder.delivered.total ? "good" : "neutral"}>
+                    {folder.delivered.uploaded} of {folder.delivered.total} delivered
+                  </Pill>
+                ) : (
+                  <Pill tone={folder.ready ? "neutral" : "warn"}>{folder.ready ? "Nothing approved yet" : "Delivery not set up"}</Pill>
+                )}
+              </div>
+            </div>
+            {folder.files.length > 0 ? (
+              <ul className="divide-line divide-y">
+                {folder.files.map((f) => {
+                  const st = FOLDER_FILE[f.state];
+                  return (
+                    <li key={f.key} className="flex items-center gap-2 px-4 py-2">
+                      <FolderIcon icon={st.icon} tone={st.tone} />
+                      <span className="text-ink min-w-0 flex-1 truncate font-mono text-[12px]" title={f.fileName}>
+                        {f.fileName}
+                      </span>
+                      <span className="text-muted shrink-0 text-[12px]">{st.label}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+            <div className="border-line flex flex-col gap-3 border-t px-4 py-3">
+              {folderCheck}
+              <div className="flex flex-wrap items-center gap-2">
+                {folder.openHref ? (
+                  <a href={folder.openHref} target="_blank" rel="noopener noreferrer" className={buttonClass("ghost", "sm")}>
+                    Open in SharePoint
+                    <ExternalLink size={12} aria-hidden="true" />
+                  </a>
+                ) : null}
+              </div>
+              {/* How a push finds the folder: supplier on the Pre-Order board →
+                  its folder link on the Suppliers board. Open when it's broken. */}
+              <details className="group" {...(!folder.ready || folder.problem ? { open: true } : {})}>
+                <summary className="text-muted hover:text-ink flex cursor-pointer list-none items-center gap-1 text-[12px] [&::-webkit-details-marker]:hidden">
+                  <ChevronRight size={13} aria-hidden="true" className="transition-transform group-open:rotate-90" />
+                  Delivery route
+                </summary>
+                <div className="mt-2">{folderRoute}</div>
+              </details>
+            </div>
+          </section>
+
+          <section data-section="Record and links" className="border-line bg-surface overflow-hidden rounded-xl border">
+            <div className="border-line border-b px-4 py-3">
+              <h2 className="text-ink text-[14px] font-semibold">Record &amp; links</h2>
+              <p className="text-muted text-[12px]">The linked records and where this row comes from</p>
+            </div>
+            <dl className="divide-line divide-y text-[13px]">
+              {recordFields.map((f) => {
+                const external = f.href?.startsWith("http");
+                return (
+                  <div key={f.label} className="flex gap-3 px-4 py-2">
+                    <dt className="text-muted w-32 shrink-0 text-[12px] leading-5">{f.label}</dt>
+                    <dd className={`min-w-0 flex-1 break-words ${f.value ? "text-ink" : "text-faint"}`}>
+                      {f.value ? (
+                        f.href ? (
+                          <a
+                            href={f.href}
+                            className="text-accent-text hover:underline"
+                            {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                          >
+                            {f.value}
+                          </a>
+                        ) : (
+                          f.value
+                        )
+                      ) : (
+                        "—"
+                      )}
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </section>
+
+          {careDerived.lines.length > 0 && (
+            <section data-section="Care instructions" className="border-line bg-surface overflow-hidden rounded-xl border">
+              <div className="border-line border-b px-4 py-3">
+                <h2 className="text-ink text-[14px] font-semibold">Care instructions</h2>
+                <p className="text-muted text-[12px]">The care-label catalogue, filtered by this row&rsquo;s wash-care symbols</p>
+              </div>
+              <div className="px-4 py-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {careDerived.symbols.length === 0 ? (
+                    <span className="text-faint text-[12px]">No symbols on the row, so only &ldquo;always&rdquo; lines print</span>
+                  ) : null}
+                  {careDerived.symbols.map((s) => (
+                    <Pill
+                      key={s.token}
+                      tone={s.resolved ? "neutral" : "warn"}
+                      title={
+                        s.resolved
+                          ? s.name
+                          : `Unknown token "${s.token}" — not in the symbol catalogue (no artwork, no care-line suppression). Map it at /settings/washcare-symbols.`
+                      }
+                    >
+                      {s.resolved ? s.name : `Unknown ${s.name}`}
+                    </Pill>
+                  ))}
+                </div>
+                <ul className="mt-3 flex flex-col gap-1">
+                  {careDerived.lines.map((line) => (
+                    <li key={line.text} className="flex items-baseline gap-2 text-[12px]">
+                      {line.visible ? (
+                        <Check size={12} aria-hidden="true" className="text-good shrink-0 translate-y-0.5" />
+                      ) : (
+                        <X size={12} aria-hidden="true" className="text-faint shrink-0 translate-y-0.5" />
+                      )}
+                      <span className={line.visible ? "text-ink" : "text-faint"}>{line.text}</span>
+                      <span className="text-faint ml-auto shrink-0 pl-2 text-right text-[11px]">{line.reason}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
+          )}
+
+          <section data-section="Runs" className="border-line bg-surface overflow-hidden rounded-xl border">
+            <div className="border-line flex items-start justify-between gap-3 border-b px-4 py-3">
+              <div>
+                <h2 className="text-ink text-[14px] font-semibold">Runs</h2>
+                <p className="text-muted text-[12px]">Every generation is kept</p>
+              </div>
+              <Link href={`/styles/${style.id}?tab=prod-spec`} className={buttonClass("ghost", "sm")}>
+                All runs
+              </Link>
+            </div>
+            {style.jobs.length === 0 ? (
+              <p className="text-muted px-4 py-6 text-center text-[13px]">No runs yet.</p>
+            ) : (
+              <ul className="divide-line divide-y">
+                {style.jobs.slice(0, 4).map((j) => (
+                  <li key={j.id} className="flex items-center gap-3 px-4 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-ink truncate text-[13px] font-medium">{triggerLabel(j.triggerSource)}</div>
+                      <div className="text-muted text-[12px]">
+                        {shortDate(j.createdAt)} · {j.assets.length} file{j.assets.length === 1 ? "" : "s"}
+                      </div>
+                    </div>
+                    <RunPill status={j.status} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+      </div>
     </div>
   );
 }
 
-// A two-column list of label → value pairs in a card (Record and links,
-// Resolved fields). `highlight` marks a required field that's empty.
-function FieldGrid({
-  rows,
-}: {
-  rows: Array<{ key: string; label: ReactNode; value: ReactNode; empty?: boolean; highlight?: boolean }>;
-}) {
-  return (
-    <div className="border-line bg-surface overflow-hidden rounded-xl border">
-      <dl className="grid grid-cols-1 sm:grid-cols-2">
-        {rows.map((r, i) => (
-          <div
-            key={r.key}
-            className={`border-line flex gap-3 border-t px-4 py-2.5 ${i < 2 ? "sm:border-t-0" : ""}    ${
-              i === 0 ? "border-t-0" : ""
-            }    ${i % 2 === 0 ? "sm:border-r" : ""}    ${r.highlight ? "bg-warn-soft" : ""}`}
-          >
-            <dt className="text-muted w-40 flex-shrink-0 text-[12px] leading-5">{r.label}</dt>
-            <dd className={`flex-1 text-[13px] break-words ${r.empty ? "text-faint" : "text-ink"}`}>{r.value}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  );
+function RunPill({ status }: { status: string }) {
+  const tone: PillTone =
+    status === "APPROVED"
+      ? "good"
+      : status === "REJECTED" || status === "FAILED"
+        ? "bad"
+        : status === "AWAITING_REVIEW"
+          ? "accent"
+          : status === "RUNNING" || status === "QUEUED"
+            ? "accent"
+            : "neutral";
+  const label =
+    status === "AWAITING_REVIEW" ? "Awaiting review" : status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, " ");
+  return <Pill tone={tone}>{label}</Pill>;
+}
+
+function FolderIcon({ icon, tone }: { icon: "check" | "x" | "dot" | "warn"; tone: PillTone }) {
+  const color = tone === "good" ? "text-good" : tone === "bad" ? "text-bad" : tone === "accent" ? "text-accent-text" : "text-faint";
+  if (icon === "check") return <CircleCheck size={14} aria-hidden="true" className={`shrink-0 ${color}`} />;
+  if (icon === "x") return <CircleX size={14} aria-hidden="true" className={`shrink-0 ${color}`} />;
+  if (icon === "warn") return <AlertTriangle size={14} aria-hidden="true" className={`shrink-0 ${color}`} />;
+  return <CircleDashed size={14} aria-hidden="true" className={`shrink-0 ${color}`} />;
 }

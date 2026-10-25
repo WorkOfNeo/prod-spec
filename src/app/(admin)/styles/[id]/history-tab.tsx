@@ -13,6 +13,8 @@ type Tone = "ok" | "info" | "warn" | "error";
 
 type TimelineEvent = {
   at: Date;
+  // A person's call (approve / reject) vs. something the pipeline did.
+  kind?: "decision" | "automation";
   title: string;
   detail?: string | null;
   href?: string | null;
@@ -20,13 +22,15 @@ type TimelineEvent = {
 };
 
 const DOT: Record<Tone, string> = {
-  ok: "bg-emerald-500",
-  info: "bg-zinc-300",
-  warn: "bg-amber-400",
-  error: "bg-red-500",
+  ok: "bg-good",
+  info: "bg-faint",
+  warn: "bg-warn",
+  error: "bg-bad",
 };
 
-export async function HistoryTab({ styleId }: { styleId: string }) {
+export type HistoryFilter = "all" | "decisions" | "automation";
+
+export async function HistoryTab({ styleId, filter = "all" }: { styleId: string; filter?: HistoryFilter }) {
   const [style, jobs, reviewActions, queueItems, emails] = await Promise.all([
     db.style.findUnique({
       where: { id: styleId },
@@ -132,6 +136,7 @@ export async function HistoryTab({ styleId }: { styleId: string }) {
   for (const a of reviewActions) {
     events.push({
       at: a.createdAt,
+      kind: "decision",
       title: `Output ${a.action === "APPROVED" ? "approved" : "rejected"} by ${a.user.email}`,
       detail: a.reason,
       tone: a.action === "APPROVED" ? "ok" : "warn",
@@ -182,33 +187,66 @@ export async function HistoryTab({ styleId }: { styleId: string }) {
   }
 
   events.sort((a, b) => b.at.getTime() - a.at.getTime());
+  const shown = events.filter((e) =>
+    filter === "all" ? true : filter === "decisions" ? e.kind === "decision" : e.kind !== "decision",
+  );
+  const filters: Array<[HistoryFilter, string]> = [
+    ["all", "All"],
+    ["decisions", "Decisions"],
+    ["automation", "Automation"],
+  ];
 
   return (
-    <div className="mt-6 max-w-3xl">
-      {events.length === 0 ? (
-        <p className="text-sm text-muted">Nothing recorded for this style yet.</p>
+    <section data-section="History" className="border-line bg-surface overflow-hidden rounded-xl border">
+      <div className="border-line flex flex-wrap items-start justify-between gap-3 border-b px-4 py-3">
+        <div>
+          <h2 className="text-ink text-[14px] font-semibold">History</h2>
+          <p className="text-muted text-[12px]">Sync, PO and EANs, runs, decisions, supplier uploads and digests, newest first</p>
+        </div>
+        <nav aria-label="Show" className="bg-seg inline-flex rounded-lg p-0.5">
+          {filters.map(([key, label]) => (
+            <Link
+              key={key}
+              href={`/styles/${styleId}?tab=history${key === "all" ? "" : `&hist=${key}`}`}
+              scroll={false}
+              aria-current={filter === key ? "page" : undefined}
+              className={`inline-flex h-7 items-center rounded-md px-2.5 text-[12px] transition-colors duration-150 ${
+                filter === key ? "bg-seg-on text-seg-on-ink font-medium shadow-[var(--shadow-pop)]" : "text-muted hover:text-ink"
+              }`}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+      </div>
+      {shown.length === 0 ? (
+        <p className="text-muted px-4 py-8 text-center text-[13px]">Nothing recorded here yet.</p>
       ) : (
-        <ol data-private className="relative border-l border-line pl-6">
-          {events.map((e, i) => (
-            <li key={i} className="relative pb-5">
-              <span
-                className={`absolute -left-[1.85rem] top-1.5 h-3 w-3 rounded-full border-2 border-white ${DOT[e.tone]}`}
-              />
-              <div className="text-xs tabular-nums text-faint">{formatDate(e.at)}</div>
-              <div className="text-sm font-medium text-ink">
-                {e.href ? (
-                  <Link href={e.href} className="hover:underline" target={e.href.startsWith("http") ? "_blank" : undefined}>
-                    {e.title}
-                  </Link>
-                ) : (
-                  e.title
-                )}
+        <ol data-private className="flex flex-col px-4 py-3">
+          {shown.map((e, i) => (
+            <li key={i} className="relative flex gap-3 pb-4 last:pb-0">
+              {/* The rail: a dot per event, a line to the next. */}
+              <span aria-hidden="true" className="relative flex w-3 shrink-0 justify-center">
+                <span className={`relative z-10 mt-1.5 size-2.5 rounded-full ring-4 ring-[var(--surface)] ${DOT[e.tone]}`} />
+                {i < shown.length - 1 ? <span className="bg-line absolute top-3 bottom-[-0.5rem] w-px" /> : null}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-ink text-[13px] font-medium">
+                  {e.href ? (
+                    <Link href={e.href} className="hover:underline" target={e.href.startsWith("http") ? "_blank" : undefined}>
+                      {e.title}
+                    </Link>
+                  ) : (
+                    e.title
+                  )}
+                </div>
+                {e.detail ? <div className="text-muted mt-0.5 text-[12px]">{e.detail}</div> : null}
+                <div className="text-faint mt-0.5 text-[11px] tabular-nums">{formatDate(e.at)}</div>
               </div>
-              {e.detail ? <div className="mt-0.5 text-xs text-muted">{e.detail}</div> : null}
             </li>
           ))}
         </ol>
       )}
-    </div>
+    </section>
   );
 }

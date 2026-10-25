@@ -1,7 +1,6 @@
-import Link from "next/link";
 import { DeliveredCard } from "./delivered-card";
-import { groupByDocType, DocTypeAccordion } from "./doc-type-groups";
 import { ManualTrimsPanel } from "./manual-trims-panel";
+import { ReviewGallery, type GalleryItem } from "./review-gallery";
 import { UserAvatar } from "@/components/user-avatar";
 import { docTypeLabel } from "@/lib/pdf/doc-types";
 import { formatDate } from "@/lib/utils";
@@ -64,91 +63,28 @@ const FILE_GRID = "grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-
 
 export function ReviewTab({
   styleId,
-  current,
+  gallery,
+  owner,
+  summary,
   jobs,
 }: {
   styleId: string;
-  current: ReviewTabCurrentFile[];
+  // The current outputs as gallery cards (built by the page: thumbnails,
+  // decisions, open comment threads).
+  gallery: GalleryItem[];
+  owner: { name: string; since: string | null } | null;
+  summary: string;
   jobs: ReviewTabJob[];
 }) {
-  // Current documents sorted by fileName — the runner's 00-cover / 01-general-
-  // information prefixes are designed to open every bundle listing. Flattened
-  // to carry the doc's own jobId (cross-run set), then grouped by doc type.
-  const currentItems = [...current]
-    .sort((a, b) => a.asset.fileName.localeCompare(b.asset.fileName))
-    .map((c) => ({ jobId: c.jobId, ...c.asset }));
   // The full run history, newest first — every generation is kept.
   const sortedJobs = jobs.map((j) => ({
     ...j,
     assets: [...j.assets].sort((a, b) => a.fileName.localeCompare(b.fileName)),
   }));
-  const latestJob = sortedJobs[0] ?? null;
 
   return (
-    <div className="mt-6 flex flex-col gap-8">
-      <section>
-        <div className="mb-2 flex items-end justify-between gap-4">
-          <div>
-            <h2 className="text-sm font-semibold text-ink">Files — current outputs</h2>
-            <p className="text-xs text-muted">
-              {currentItems.length > 0
-                ? `${currentItems.length} output${currentItems.length === 1 ? "" : "s"} · latest document per output across all runs`
-                : "No run yet — Re-run to generate."}
-            </p>
-            {latestJob?.claimedByName ? (
-              <span data-private className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-muted">
-                <UserAvatar name={latestJob.claimedByName} />
-                <span>
-                  <b>{latestJob.claimedByName}</b> owns this review
-                  {latestJob.claimedAtLabel ? <> · since {latestJob.claimedAtLabel}</> : null}
-                </span>
-              </span>
-            ) : null}
-          </div>
-          {latestJob?.status === "AWAITING_REVIEW" ? (
-            <Link
-              href={`/styles/${styleId}/review`}
-              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Review &amp; decide
-            </Link>
-          ) : null}
-        </div>
-
-        {currentItems.length === 0 ? (
-          <div className="rounded-xl border border-line bg-surface p-8 text-center text-sm text-muted">
-            Nothing generated yet for this style.
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {groupByDocType(currentItems).map((group) => (
-              <DocTypeAccordion key={group.docType} label={group.label} count={group.items.length}>
-                <div className={FILE_GRID}>
-                  {group.items.map((item) => (
-                    <DeliveredCard
-                      key={item.id}
-                      jobId={item.jobId}
-                      styleId={styleId}
-                      carton={item.carton ?? null}
-                      asset={{
-                        id: item.id,
-                        docType: item.docType,
-                        variantKey: item.variantKey,
-                        displayName: item.displayName ?? docTypeLabel(item.docType),
-                        fileName: item.fileName,
-                        reviewStatus: item.reviewStatus,
-                        rejectReason: item.rejectReason,
-                        reviewedAt: item.reviewedAt,
-                        reviewerEmail: item.reviewerEmail,
-                      }}
-                    />
-                  ))}
-                </div>
-              </DocTypeAccordion>
-            ))}
-          </div>
-        )}
-      </section>
+    <div className="flex flex-col gap-6">
+      <ReviewGallery styleId={styleId} items={gallery} owner={owner} summary={summary} />
 
       {/* The other half of "what the supplier gets": the grid above is what
           this app generated, this is what a person had to supply by hand.
@@ -158,7 +94,8 @@ export function ReviewTab({
           and this tab, like the Prod Spec tab it moved off, is open to the
           same roles. */}
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-ink">Manually supplied packaging</h2>
+        <h2 className="text-ink text-[14px] font-semibold">Manually supplied packaging</h2>
+        <p className="text-muted mb-2 text-[12px]">Packaging the buyer named on the order that this app doesn&rsquo;t generate.</p>
         <ManualTrimsPanel styleId={styleId} />
       </section>
 
