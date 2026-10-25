@@ -17,6 +17,7 @@
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
 import { STYLES_FILTER_KEY, stylesBackHref, stylesBackLabel } from "@/lib/styles/back-link";
+import { ChevronLeft } from "lucide-react";
 
 // Nothing writes the key while a style page is open (the table lives on another
 // route), so there is nothing to subscribe to — the unsubscribe is a no-op.
@@ -37,10 +38,11 @@ export function BackToStyles({ poNumber }: { poNumber: string | null }) {
   return (
     <Link
       href={stylesBackHref(stashed, poNumber)}
-      className="text-xs text-zinc-500 underline"
+      className="text-muted hover:text-ink -ml-1 inline-flex items-center gap-0.5 rounded px-1 text-[12px]"
       title="Back to the styles list you came from"
     >
-      ← {stylesBackLabel(stashed, poNumber)}
+      <ChevronLeft size={14} aria-hidden="true" />
+      {stylesBackLabel(stashed, poNumber)}
     </Link>
   );
 }

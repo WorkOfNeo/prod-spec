@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 // Done-group PO cutoff control. Paste a PO ("C-PO63144" or bare digits)
 // and save: Done-group styles whose PO parses ABOVE it join the main list.
@@ -34,18 +36,21 @@ export function DonePoCutoffSetting({ initialCutoff }: { initialCutoff: number |
     }
   }
 
+  // Folded to one line under the list header: it's a setting, not part of the
+  // list, and most visits never touch it.
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-64 flex-1">
-          <h2 className="text-sm font-semibold text-zinc-900">Show Done-group styles above PO</h2>
-          <p className="mt-1 text-sm text-zinc-500">
-            Done orders are normally hidden here. Paste a PO number to also show Done-group styles
-            whose PO is <em>above</em> it — e.g. to review a backfill. Clear and save to hide them
-            again.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <details className="group text-[12px]">
+      <summary className="text-muted hover:text-ink inline-flex cursor-pointer list-none items-center gap-1.5 [&::-webkit-details-marker]:hidden">
+        <ChevronRight size={13} aria-hidden="true" className="transition-transform group-open:rotate-90" />
+        Done-group styles:{" "}
+        <span className="text-ink">{applied !== null ? `shown above C-PO${applied}` : "hidden"}</span>
+      </summary>
+      <div className="border-line bg-surface mt-2 max-w-2xl rounded-xl border p-4">
+        <p className="text-muted text-[13px]">
+          Done orders are normally hidden here. Paste a PO number to also show Done-group styles whose PO is{" "}
+          <em>above</em> it, for example to review a backfill. Clear and save to hide them again.
+        </p>
+        <div className="mt-3 flex items-center gap-2">
           <input
             type="text"
             value={value}
@@ -54,27 +59,15 @@ export function DonePoCutoffSetting({ initialCutoff }: { initialCutoff: number |
               if (e.key === "Enter") void save();
             }}
             placeholder="C-PO63144"
-            className="w-40 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none"
+            aria-label="Show Done-group styles above this PO"
+            className="border-line bg-surface text-ink placeholder:text-faint focus:border-accent h-8 w-40 rounded-md border px-3 text-[13px] outline-none"
           />
-          <button
-            type="button"
-            onClick={() => void save()}
-            disabled={saving}
-            className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-40"
-          >
+          <Button variant="primary" onClick={() => void save()} disabled={saving}>
             {saving ? "Saving…" : "Save"}
-          </button>
+          </Button>
+          {error ? <span className="text-bad">{error}</span> : null}
         </div>
       </div>
-      <div className="mt-2 text-xs text-zinc-400">
-        {error ? (
-          <span className="text-red-600">{error}</span>
-        ) : applied !== null ? (
-          <>Done-group styles with PO above C-PO{applied} are shown in the list below.</>
-        ) : (
-          <>All Done-group styles are hidden (default).</>
-        )}
-      </div>
-    </div>
+    </details>
   );
 }

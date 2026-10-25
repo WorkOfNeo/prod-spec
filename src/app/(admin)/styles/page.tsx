@@ -11,6 +11,9 @@ import { loadStyleListRows } from "@/lib/styles/list-rows";
 import { loadStyleIdsWithPdfs } from "@/lib/styles/table-rollups";
 import { StylesTable } from "./styles-table";
 import { DonePoCutoffSetting } from "./done-po-cutoff-setting";
+import { Plus } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { buttonClass } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
@@ -65,36 +68,31 @@ export default async function StylesPage() {
   const listedCount = rows.filter((r) => !r.missingPo).length;
 
   return (
-    <div className="px-8 py-8">
-      <div className="mb-6 flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Styles</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            {listedCount} {listedCount === 1 ? "style" : "styles"} on file, newest PO
-            first. Search across name, customer, business area, PO# and status, or pick
-            values in the Customer / Business Area / Group / Status / Reviewer / EAN
-            dropdowns and press Apply.
-          </p>
+    <div className="px-6 py-5">
+      <PageHeader
+        title="Styles"
+        meta={`${listedCount} ${listedCount === 1 ? "style" : "styles"} on file, newest PO first. Search, or pick values in the filters and press Apply.`}
+        actions={
+          <Link href="/styles/new" className={buttonClass("secondary")}>
+            <Plus size={14} aria-hidden="true" />
+            New manual style
+          </Link>
+        }
+      >
+        <div className="mt-2">
+          <DonePoCutoffSetting initialCutoff={doneCutoff} />
         </div>
-        <Link
-          href="/styles/new"
-          className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
-        >
-          + New manual style
-        </Link>
-      </div>
+      </PageHeader>
 
-      <div className="mb-6">
-        <DonePoCutoffSetting initialCutoff={doneCutoff} />
+      <div className="mt-5">
+        <StylesTable
+          autoGenerateEnabled={autoGenerateEnabled}
+          visibleColumns={visibleColumns}
+          canConfigureColumns={role === "ADMIN"}
+          isAdmin={role === "ADMIN"}
+          rows={rows}
+        />
       </div>
-
-      <StylesTable
-        autoGenerateEnabled={autoGenerateEnabled}
-        visibleColumns={visibleColumns}
-        canConfigureColumns={role === "ADMIN"}
-        isAdmin={role === "ADMIN"}
-        rows={rows}
-      />
     </div>
   );
 }
