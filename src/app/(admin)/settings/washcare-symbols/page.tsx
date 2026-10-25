@@ -74,14 +74,14 @@ export default async function WashSymbolsPage() {
   const knownLanguages = languages;
 
   return (
-    <div className="px-8 py-8">
-      <Link href="/settings" className="text-xs text-zinc-500 underline">
+    <div className="px-6 py-5">
+      <Link href="/settings" className="text-xs text-muted underline">
         ← Back to settings
       </Link>
       <div className="mt-2 mb-6 flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Wash-care symbols</h1>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+          <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Wash-care symbols</h1>
+          <p className="mt-1 max-w-2xl text-sm text-muted">
             Global catalogue used by the Washcare template. Each symbol has a stable{" "}
             <code className="font-mono">code</code>, a display name, an SVG file, and an optional{" "}
             <code className="font-mono">mondayValue</code> for linking to whatever string

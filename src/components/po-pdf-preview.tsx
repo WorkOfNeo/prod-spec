@@ -90,34 +90,34 @@ export function PoPdfModal({
   return (
     // Popup: click the backdrop or Close (or press Escape) to dismiss.
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(15_17_21/0.50)] p-6"
       onClick={onClose}
     >
       <div
-        className="flex h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white shadow-xl"
+        className="flex h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-surface shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2">
-          <div className="font-medium text-zinc-700">
+        <div className="flex items-center justify-between border-b border-line px-4 py-2">
+          <div className="font-medium text-ink">
             PO {poNumber}
-            {note && <span className="ml-2 text-xs font-medium text-red-600">{note}</span>}
+            {note && <span className="ml-2 text-xs font-medium text-bad">{note}</span>}
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             Close ✕
           </button>
         </div>
-        <div className="relative flex-1 bg-zinc-100">
+        <div className="relative flex-1 bg-subtle">
           {loading && (
-            <div className="absolute inset-0 flex items-center justify-center text-zinc-500">
+            <div className="absolute inset-0 flex items-center justify-center text-muted">
               Loading PO PDF…
             </div>
           )}
           {error && (
-            <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-red-600">
+            <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-bad">
               Couldn&rsquo;t load PO PDF: {error}
             </div>
           )}
@@ -150,7 +150,7 @@ export function PoPdfLink({
         title="Preview PO PDF"
         className={
           className ??
-          "tabular-nums text-blue-600 underline decoration-blue-300 underline-offset-2 hover:text-blue-700"
+          "tabular-nums text-accent-text underline decoration-blue-300 underline-offset-2 hover:text-accent-text"
         }
       >
         {poNumber}

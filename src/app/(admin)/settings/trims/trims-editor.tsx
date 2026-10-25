@@ -49,7 +49,7 @@ const SOURCE_STYLES: Record<string, string> = {
 function Badge({ children, tone = "rule" }: { children: React.ReactNode; tone?: string }) {
   return (
     <span
-      className={`inline-block rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+      className={`inline-block rounded border px-1.5 py-0.5 text-[11px] font-medium ${
         SOURCE_STYLES[tone] ?? SOURCE_STYLES.rule
       }`}
     >
@@ -230,7 +230,7 @@ export function TrimsEditor({
 
   return (
     <div className="mt-6">
-      <div className="flex flex-wrap items-center gap-1 border-b border-zinc-200">
+      <div className="flex items-center gap-5 overflow-x-auto border-b border-line">
         {(
           [
             ["labels", `Trim values${needsWork.length ? ` · ${needsWork.length} to check` : ""}`],
@@ -243,23 +243,23 @@ export function TrimsEditor({
             key={value}
             type="button"
             onClick={() => setTab(value)}
-            className={`-mb-px border-b-2 px-3 py-2 text-[13px] font-medium ${
+            className={`-mb-px inline-flex h-9 shrink-0 items-center gap-1.5 border-b-2 text-[13px] transition-colors duration-150 ${
               tab === value
-                ? "border-zinc-900 text-zinc-900"
-                : "border-transparent text-zinc-500 hover:text-zinc-800"
+                ? "border-ink text-ink"
+                : "border-transparent text-muted hover:text-ink"
             }`}
           >
             {label}
           </button>
         ))}
         <div className="ml-auto flex items-center gap-3 pb-2">
-          {error && <span className="text-[12px] text-red-600">{error}</span>}
-          {saved && !error && <span className="text-[12px] text-emerald-600">Saved</span>}
+          {error && <span className="text-[12px] text-bad">{error}</span>}
+          {saved && !error && <span className="text-[12px] text-good">Saved</span>}
           <button
             type="button"
             onClick={save}
             disabled={!dirty || saving}
-            className="rounded-md bg-zinc-900 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
+            className="rounded-md bg-primary px-3 py-1.5 text-[13px] font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
           >
             {saving ? "Saving…" : dirty ? "Save changes" : "Saved"}
           </button>
@@ -267,19 +267,19 @@ export function TrimsEditor({
       </div>
 
       {censusState === "loading" && (
-        <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-[13px] text-zinc-500">
+        <div className="mt-4 rounded-md border border-line bg-subtle px-3 py-2 text-[13px] text-muted">
           Reading every style&rsquo;s Trims column…
         </div>
       )}
       {censusState === "failed" && (
-        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-900">
+        <div className="mt-4 rounded-md border border-transparent bg-warn-soft px-3 py-2 text-[13px] text-warn">
           The survey of live trim values could not be built, so counts and suggestions are missing.
           The rules below still apply and can still be edited.
         </div>
       )}
 
       {(tab === "labels" || tab === "layouts") && census && (
-        <label className="mt-4 flex items-center gap-2 text-[13px] text-zinc-600">
+        <label className="mt-4 flex items-center gap-2 text-[13px] text-muted">
           <input
             type="checkbox"
             checked={onlyNeedsWork}
@@ -294,23 +294,23 @@ export function TrimsEditor({
         <div className="mt-4">
           {/* Before/after, stated plainly. A shorter list with no explanation
               reads as data loss; the numbers are what make it read as a wash. */}
-          <div className="rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3">
-            <p className="text-[13px] text-zinc-700">
-              <strong className="text-zinc-900">
+          <div className="rounded-md border border-line bg-subtle px-4 py-3">
+            <p className="text-[13px] text-ink">
+              <strong className="text-ink">
                 {census.scope.distinctLabelsBefore.toLocaleString()}
               </strong>{" "}
               distinct values across the whole book →{" "}
-              <strong className="text-zinc-900">
+              <strong className="text-ink">
                 {census.scope.distinctLabelsAfter.toLocaleString()}
               </strong>{" "}
               once scoped to the generation cutoff
               {census.scope.cutoff !== null && <> (PO {census.scope.cutoff} and above)</>}.{" "}
-              <strong className="text-zinc-900">
+              <strong className="text-ink">
                 {census.scope.distinctLabelsDropped.toLocaleString()}
               </strong>{" "}
               values live only on orders we will never print, and are no longer asked about.
             </p>
-            <p className="mt-2 text-[12px] text-zinc-500">
+            <p className="mt-2 text-[12px] text-muted">
               {census.scope.stylesInScope.toLocaleString()} styles in scope ·{" "}
               {census.scope.stylesBelowCutoff.toLocaleString()} parked below the cutoff ·{" "}
               {census.scope.stylesWithoutPo.toLocaleString()} with no PO number at all.
@@ -325,7 +325,7 @@ export function TrimsEditor({
             </p>
           </div>
 
-          <p className="mt-4 max-w-3xl text-[13px] text-zinc-500">
+          <p className="mt-4 max-w-3xl text-[13px] text-muted">
             {census.totals.distinctLabels} distinct values across{" "}
             {census.totals.stylesWithTrims.toLocaleString()} styles, each matched onto one or more{" "}
             <strong>packaging rows</strong>. A value marked <em>suggested</em> is following the
@@ -335,11 +335,11 @@ export function TrimsEditor({
             <em>no row yet</em> is still printed, as something supplied separately, so a supplier
             never loses a line while it waits to be mapped.
           </p>
-          <p className="mt-2 max-w-3xl text-[13px] text-zinc-500">
+          <p className="mt-2 max-w-3xl text-[13px] text-muted">
             Nothing here matches the right row?{" "}
             <a
               href="/settings/cover-page?tab=packaging"
-              className="font-medium text-zinc-700 underline underline-offset-2"
+              className="font-medium text-ink underline underline-offset-2"
             >
               Add a row on Cover page › Packaging rows
             </a>
@@ -348,9 +348,9 @@ export function TrimsEditor({
           </p>
 
           {acceptable.length > 0 && (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white px-4 py-3">
-              <p className="max-w-2xl text-[13px] text-zinc-600">
-                <strong className="text-zinc-800">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-surface px-4 py-3">
+              <p className="max-w-2xl text-[13px] text-muted">
+                <strong className="text-ink">
                   {acceptable.length} value{acceptable.length === 1 ? "" : "s"} still follow the
                   keyword suggestion.
                 </strong>{" "}
@@ -361,7 +361,7 @@ export function TrimsEditor({
               <button
                 type="button"
                 onClick={acceptAllSuggestions}
-                className="shrink-0 rounded-md border border-zinc-300 px-3 py-1.5 text-[13px] font-medium text-zinc-700 hover:bg-zinc-50"
+                className="shrink-0 rounded-md border border-line px-3 py-1.5 text-[13px] font-medium text-ink hover:bg-subtle"
               >
                 Accept all {acceptable.length}
               </button>
@@ -369,10 +369,10 @@ export function TrimsEditor({
           )}
 
           {canPurge && (
-            <div className="mt-4 rounded-md border border-zinc-200 bg-white px-4 py-3">
+            <div className="mt-4 rounded-md border border-line bg-surface px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="max-w-2xl text-[13px] text-zinc-600">
-                  <strong className="text-zinc-800">Start the vocabulary over.</strong> Decisions
+                <p className="max-w-2xl text-[13px] text-muted">
+                  <strong className="text-ink">Start the vocabulary over.</strong> Decisions
                   made before the list was scoped may settle words that no live order uses. Dropping
                   them re-opens every value for mapping; the keyword rules and layout pins are left
                   alone.
@@ -381,23 +381,23 @@ export function TrimsEditor({
                   type="button"
                   onClick={openPurge}
                   disabled={purgeState !== "idle"}
-                  className="shrink-0 rounded-md border border-red-300 px-3 py-1.5 text-[13px] font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  className="shrink-0 rounded-md border border-transparent px-3 py-1.5 text-[13px] font-medium text-bad hover:bg-bad-soft disabled:opacity-50"
                 >
                   {purgeState === "loading" ? "Checking…" : "Review stored decisions…"}
                 </button>
               </div>
-              {purgeError && <p className="mt-2 text-[12px] text-red-600">{purgeError}</p>}
+              {purgeError && <p className="mt-2 text-[12px] text-bad">{purgeError}</p>}
 
               {purge && (
-                <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-3">
+                <div className="mt-3 rounded-md border border-transparent bg-bad-soft px-3 py-3">
                   {purge.total === 0 ? (
-                    <p className="text-[13px] text-zinc-700">
+                    <p className="text-[13px] text-ink">
                       Nothing is stored — every value already follows the rules. There is nothing to
                       drop.
                     </p>
                   ) : (
                     <>
-                      <p className="text-[13px] text-red-900">
+                      <p className="text-[13px] text-bad">
                         <strong>{purge.total}</strong> stored decision
                         {purge.total === 1 ? "" : "s"} would be dropped,{" "}
                         <strong>{purge.outOfScopeOnly}</strong> of which no in-scope style uses any
@@ -405,7 +405,7 @@ export function TrimsEditor({
                       </p>
                       <table className="mt-3 w-full border-collapse text-[13px]">
                         <thead>
-                          <tr className="border-b border-red-200 text-left text-[11px] uppercase tracking-wide text-red-800">
+                          <tr className="border-b border-transparent text-left text-[11px] text-bad">
                             <th className="py-1.5 pr-3 font-medium">Value</th>
                             <th className="w-44 py-1.5 pr-3 font-medium">Decided as</th>
                             <th className="w-24 py-1.5 pr-3 text-right font-medium">In scope</th>
@@ -414,17 +414,17 @@ export function TrimsEditor({
                         </thead>
                         <tbody>
                           {purge.entries.map((e) => (
-                            <tr key={e.normalized} className="border-b border-red-100">
-                              <td className="py-1.5 pr-3 text-zinc-800">{e.normalized}</td>
-                              <td className="py-1.5 pr-3 text-zinc-600">
+                            <tr key={e.normalized} className="border-b border-transparent">
+                              <td className="py-1.5 pr-3 text-ink">{e.normalized}</td>
+                              <td className="py-1.5 pr-3 text-muted">
                                 {e.concepts.length === 0
                                   ? "not packaging"
                                   : e.concepts.map((c) => conceptLabel.get(c) ?? c).join(" + ")}
                               </td>
-                              <td className="py-1.5 pr-3 text-right tabular-nums text-zinc-700">
+                              <td className="py-1.5 pr-3 text-right tabular-nums text-ink">
                                 {e.stylesInScope.toLocaleString()}
                               </td>
-                              <td className="py-1.5 text-right tabular-nums text-zinc-400">
+                              <td className="py-1.5 text-right tabular-nums text-faint">
                                 {e.stylesOutOfScope.toLocaleString()}
                               </td>
                             </tr>
@@ -437,7 +437,7 @@ export function TrimsEditor({
                     <button
                       type="button"
                       onClick={() => setPurge(null)}
-                      className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-700 hover:bg-zinc-50"
+                      className="rounded-md border border-line bg-surface px-3 py-1.5 text-[13px] font-medium text-ink hover:bg-subtle"
                     >
                       Cancel
                     </button>
@@ -446,7 +446,7 @@ export function TrimsEditor({
                         type="button"
                         onClick={runPurge}
                         disabled={purgeState === "running"}
-                        className="rounded-md bg-red-600 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                        className="rounded-md bg-bad px-3 py-1.5 text-[13px] font-medium text-white hover:bg-bad disabled:opacity-50"
                       >
                         {purgeState === "running"
                           ? "Dropping…"
@@ -459,13 +459,13 @@ export function TrimsEditor({
             </div>
           )}
           {shownLabels.length === 0 ? (
-            <p className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] text-emerald-800">
+            <p className="mt-4 rounded-md border border-transparent bg-good-soft px-3 py-2 text-[13px] text-good">
               Nothing needs a decision — every trim value in the book resolves cleanly.
             </p>
           ) : (
             <table className="mt-3 w-full border-collapse text-[13px]">
               <thead>
-                <tr className="border-b border-zinc-200 text-left text-[11px] uppercase tracking-wide text-zinc-500">
+                <tr className="border-b border-line text-left text-[11px] text-muted">
                   <th className="py-2 pr-3 font-medium">Monday value</th>
                   <th className="w-20 py-2 pr-3 text-right font-medium">Styles</th>
                   <th className="w-48 py-2 pr-3 font-medium">Resolves to</th>
@@ -474,16 +474,16 @@ export function TrimsEditor({
               </thead>
               <tbody>
                 {shownLabels.map((l) => (
-                  <tr key={l.normalized} className="border-b border-zinc-100 align-top">
+                  <tr key={l.normalized} className="border-b border-line align-top">
                     <td className="py-2 pr-3">
-                      <span className="font-medium text-zinc-800">{l.label}</span>
+                      <span className="font-medium text-ink">{l.label}</span>
                       {l.ambiguous && (
                         <span className="ml-2">
                           <Badge tone="none">check</Badge>
                         </span>
                       )}
                     </td>
-                    <td className="py-2 pr-3 text-right tabular-nums text-zinc-500">{l.styles}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-muted">{l.styles}</td>
                     <td className="py-2 pr-3">
                       {(() => {
                         const rows = decidedRows(l);
@@ -496,7 +496,7 @@ export function TrimsEditor({
                           );
                         }
                         return (
-                          <span className="text-zinc-700">
+                          <span className="text-ink">
                             {rows.map((c) => conceptLabel.get(c) ?? c).join(" + ")}{" "}
                             <Badge tone={decided ? "override" : "rule"}>
                               {decided ? "decided" : "suggested"}
@@ -514,7 +514,7 @@ export function TrimsEditor({
                         {decidedRows(l).map((c) => (
                           <span
                             key={c}
-                            className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[12px] text-zinc-700"
+                            className="inline-flex items-center gap-1 rounded border border-line bg-subtle px-1.5 py-0.5 text-[12px] text-ink"
                           >
                             {conceptLabel.get(c) ?? c}
                             <button
@@ -525,7 +525,7 @@ export function TrimsEditor({
                                   decidedRows(l).filter((x) => x !== c),
                                 )
                               }
-                              className="text-zinc-400 hover:text-red-600"
+                              className="text-faint hover:text-bad"
                               aria-label={`Remove ${conceptLabel.get(c) ?? c}`}
                             >
                               ×
@@ -541,7 +541,7 @@ export function TrimsEditor({
                               setLabelRows(l.normalized, [...current, e.target.value]);
                             }
                           }}
-                          className="rounded border border-zinc-300 px-2 py-1 text-[12px]"
+                          className="rounded border border-line px-2 py-1 text-[12px]"
                         >
                           <option value="">Add a row…</option>
                           {offerableConcepts
@@ -559,7 +559,7 @@ export function TrimsEditor({
                           <button
                             type="button"
                             onClick={() => setLabelRows(l.normalized, l.suggested)}
-                            className="text-zinc-600 underline underline-offset-2 hover:text-zinc-900"
+                            className="text-muted underline underline-offset-2 hover:text-ink"
                           >
                             Accept suggestion
                           </button>
@@ -567,7 +567,7 @@ export function TrimsEditor({
                         <button
                           type="button"
                           onClick={() => setLabelRows(l.normalized, [])}
-                          className="text-zinc-500 underline underline-offset-2 hover:text-zinc-800"
+                          className="text-muted underline underline-offset-2 hover:text-ink"
                         >
                           Not packaging
                         </button>
@@ -575,7 +575,7 @@ export function TrimsEditor({
                           <button
                             type="button"
                             onClick={() => clearLabelDecision(l.normalized)}
-                            className="text-zinc-400 underline underline-offset-2 hover:text-zinc-700"
+                            className="text-faint underline underline-offset-2 hover:text-ink"
                           >
                             Undecide
                           </button>
@@ -593,7 +593,7 @@ export function TrimsEditor({
       {/* ---- Rules ---- */}
       {tab === "rules" && (
         <div className="mt-4">
-          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-900">
+          <div className="rounded-md border border-transparent bg-warn-soft px-3 py-2 text-[13px] text-warn">
             <strong>Order matters — the first rule that matches wins.</strong> The colour-sticker
             rule sits above the carton-marking rule because &ldquo;Carton marking- Color
             sticker&rdquo; is a colour sticker, and it is on over a thousand styles. Sorting this
@@ -603,9 +603,9 @@ export function TrimsEditor({
             {rules.map((rule, i) => (
               <div
                 key={`${rule.concept}-${i}`}
-                className="flex flex-wrap items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2"
+                className="flex flex-wrap items-center gap-2 rounded-md border border-line bg-surface px-3 py-2"
               >
-                <span className="w-6 text-right text-[11px] tabular-nums text-zinc-400">{i + 1}</span>
+                <span className="w-6 text-right text-[11px] tabular-nums text-faint">{i + 1}</span>
                 <select
                   value={rule.concept}
                   onChange={(e) =>
@@ -613,7 +613,7 @@ export function TrimsEditor({
                       prev.map((r, j) => (j === i ? { ...r, concept: e.target.value } : r)),
                     )
                   }
-                  className="rounded border border-zinc-300 px-2 py-1 text-[13px]"
+                  className="rounded border border-line px-2 py-1 text-[13px]"
                 >
                   {concepts.map((c) => (
                     <option key={c.value} value={c.value}>
@@ -633,7 +633,7 @@ export function TrimsEditor({
                     )
                   }
                   placeholder="keywords, comma separated"
-                  className="min-w-[16rem] flex-1 rounded border border-zinc-300 px-2 py-1 font-mono text-[12px]"
+                  className="min-w-[16rem] flex-1 rounded border border-line px-2 py-1 font-mono text-[12px]"
                 />
                 <div className="flex items-center gap-1">
                   <button
@@ -646,7 +646,7 @@ export function TrimsEditor({
                         return next;
                       })
                     }
-                    className="rounded border border-zinc-300 px-1.5 py-0.5 text-[12px] text-zinc-600 disabled:opacity-30"
+                    className="rounded border border-line px-1.5 py-0.5 text-[12px] text-muted disabled:opacity-30"
                     aria-label="Move up"
                   >
                     ↑
@@ -661,7 +661,7 @@ export function TrimsEditor({
                         return next;
                       })
                     }
-                    className="rounded border border-zinc-300 px-1.5 py-0.5 text-[12px] text-zinc-600 disabled:opacity-30"
+                    className="rounded border border-line px-1.5 py-0.5 text-[12px] text-muted disabled:opacity-30"
                     aria-label="Move down"
                   >
                     ↓
@@ -669,7 +669,7 @@ export function TrimsEditor({
                   <button
                     type="button"
                     onClick={() => setRules((prev) => prev.filter((_, j) => j !== i))}
-                    className="rounded border border-zinc-300 px-1.5 py-0.5 text-[12px] text-red-600"
+                    className="rounded border border-line px-1.5 py-0.5 text-[12px] text-bad"
                   >
                     Remove
                   </button>
@@ -682,7 +682,7 @@ export function TrimsEditor({
             onClick={() =>
               setRules((prev) => [...prev, { concept: concepts[0]?.value ?? "", keywords: [] }])
             }
-            className="mt-3 rounded-md border border-zinc-300 px-3 py-1.5 text-[13px] font-medium text-zinc-700 hover:bg-zinc-50"
+            className="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] font-medium text-ink hover:bg-subtle"
           >
             Add rule
           </button>
@@ -692,19 +692,19 @@ export function TrimsEditor({
       {/* ---- Layouts ---- */}
       {tab === "layouts" && census && (
         <div className="mt-4">
-          <p className="max-w-3xl text-[13px] text-zinc-500">
+          <p className="max-w-3xl text-[13px] text-muted">
             A layout is classified by the last part of its name — &ldquo;Coop DK - Private Label -{" "}
             <strong>Care Label</strong>&rdquo;. Set one explicitly only when that name cannot be
             read, or when the document answers no trim at all.
           </p>
           {shownLayouts.length === 0 ? (
-            <p className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] text-emerald-800">
+            <p className="mt-4 rounded-md border border-transparent bg-good-soft px-3 py-2 text-[13px] text-good">
               Every layout classifies from its name.
             </p>
           ) : (
             <table className="mt-3 w-full border-collapse text-[13px]">
               <thead>
-                <tr className="border-b border-zinc-200 text-left text-[11px] uppercase tracking-wide text-zinc-500">
+                <tr className="border-b border-line text-left text-[11px] text-muted">
                   <th className="py-2 pr-3 font-medium">Layout</th>
                   <th className="w-28 py-2 pr-3 font-medium">Status</th>
                   <th className="w-44 py-2 pr-3 font-medium">Answers</th>
@@ -713,12 +713,12 @@ export function TrimsEditor({
               </thead>
               <tbody>
                 {shownLayouts.map((l) => (
-                  <tr key={l.variantKey} className="border-b border-zinc-100 align-top">
-                    <td className="py-2 pr-3 font-medium text-zinc-800">{l.name}</td>
-                    <td className="py-2 pr-3 text-zinc-500">{l.status}</td>
+                  <tr key={l.variantKey} className="border-b border-line align-top">
+                    <td className="py-2 pr-3 font-medium text-ink">{l.name}</td>
+                    <td className="py-2 pr-3 text-muted">{l.status}</td>
                     <td className="py-2 pr-3">
                       {l.concept ? (
-                        <span className="text-zinc-700">
+                        <span className="text-ink">
                           {conceptLabel.get(l.concept) ?? l.concept} <Badge tone={l.source}>{l.source}</Badge>
                         </span>
                       ) : (
@@ -741,7 +741,7 @@ export function TrimsEditor({
                             return next;
                           })
                         }
-                        className="w-full rounded border border-zinc-300 px-2 py-1 text-[13px]"
+                        className="w-full rounded border border-line px-2 py-1 text-[13px]"
                       >
                         <option value="__auto__">Auto (from the name)</option>
                         <option value="__none__">Answers no trim</option>
@@ -763,16 +763,16 @@ export function TrimsEditor({
       {/* ---- Coverage ---- */}
       {tab === "coverage" && census && (
         <div className="mt-4 space-y-6">
-          <div className="rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3">
-            <p className="text-[13px] text-zinc-700">
-              <strong className="text-zinc-900">
+          <div className="rounded-md border border-line bg-subtle px-4 py-3">
+            <p className="text-[13px] text-ink">
+              <strong className="text-ink">
                 {census.coverage.stylesWithArtworkGap.toLocaleString()}
               </strong>{" "}
               of {census.coverage.stylesConsidered.toLocaleString()} styles want an artwork trim that
               none of their declared outputs produces. Those lines now appear on the cover as
               supplied separately, rather than not appearing at all.
             </p>
-            <p className="mt-2 text-[12px] text-zinc-500">
+            <p className="mt-2 text-[12px] text-muted">
               Counts ignore per-style output switches and doc-type rules, so treat them as the shape
               of the problem rather than an exact figure. The per-style truth is on the Cover page
               screen&rsquo;s before/after preview.
@@ -781,24 +781,24 @@ export function TrimsEditor({
 
           <div className="grid gap-6 md:grid-cols-2">
             <div>
-              <h3 className="text-[13px] font-semibold text-zinc-800">
+              <h3 className="text-[13px] font-semibold text-ink">
                 Monday asks, nothing declared answers
               </h3>
-              <p className="mt-1 text-[12px] text-zinc-500">
+              <p className="mt-1 text-[12px] text-muted">
                 An <strong>artwork</strong> row here is a candidate for a layout we don&rsquo;t have,
                 or an output missing from that ProdSpec.
               </p>
               <table className="mt-2 w-full text-[13px]">
                 <tbody>
                   {census.coverage.gapByConcept.slice(0, 14).map((g) => (
-                    <tr key={g.concept} className="border-b border-zinc-100">
-                      <td className="py-1.5 text-zinc-700">
+                    <tr key={g.concept} className="border-b border-line">
+                      <td className="py-1.5 text-ink">
                         {conceptLabel.get(g.concept) ?? g.concept}
                         {!g.artwork && (
-                          <span className="ml-2 text-[11px] text-zinc-400">no artwork</span>
+                          <span className="ml-2 text-[11px] text-faint">no artwork</span>
                         )}
                       </td>
-                      <td className="w-20 py-1.5 text-right tabular-nums text-zinc-600">
+                      <td className="w-20 py-1.5 text-right tabular-nums text-muted">
                         {g.styles.toLocaleString()}
                       </td>
                     </tr>
@@ -808,21 +808,21 @@ export function TrimsEditor({
             </div>
 
             <div>
-              <h3 className="text-[13px] font-semibold text-zinc-800">
+              <h3 className="text-[13px] font-semibold text-ink">
                 We deliver it, Monday never mentions it
               </h3>
-              <p className="mt-1 text-[12px] text-zinc-500">
+              <p className="mt-1 text-[12px] text-muted">
                 The reverse gap — where the Trims column itself is incomplete. These still print;
                 the cover is the union of both lists.
               </p>
               <table className="mt-2 w-full text-[13px]">
                 <tbody>
                   {census.coverage.extraByConcept.slice(0, 14).map((g) => (
-                    <tr key={g.concept} className="border-b border-zinc-100">
-                      <td className="py-1.5 text-zinc-700">
+                    <tr key={g.concept} className="border-b border-line">
+                      <td className="py-1.5 text-ink">
                         {conceptLabel.get(g.concept) ?? g.concept}
                       </td>
-                      <td className="w-20 py-1.5 text-right tabular-nums text-zinc-600">
+                      <td className="w-20 py-1.5 text-right tabular-nums text-muted">
                         {g.styles.toLocaleString()}
                       </td>
                     </tr>

@@ -24,11 +24,11 @@ export function Thread({ view, output, onChanged }: { view: RequestView; output:
   const canPost = view.admin || output.status === "NEEDS_INFO";
 
   return (
-    <section className="flex max-h-[80vh] flex-col rounded-lg border border-zinc-200 bg-white">
-      <h2 className="border-b border-zinc-100 px-4 py-3 text-sm font-semibold text-zinc-900">Thread</h2>
+    <section className="flex max-h-[80vh] flex-col rounded-xl border border-line bg-surface">
+      <h2 className="border-b border-line px-4 py-3 text-sm font-semibold text-ink">Thread</h2>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
         {messages.length === 0 ? (
-          <p className="text-sm text-zinc-500">Nothing here yet.</p>
+          <p className="text-sm text-muted">Nothing here yet.</p>
         ) : (
           messages.map((m) => <Message key={m.id} m={m} admin={view.admin} onChanged={onChanged} />)
         )}
@@ -43,11 +43,11 @@ function Message({ m, admin, onChanged }: { m: MessageView; admin: boolean; onCh
   if (m.kind === "memory_suggestion") return <MemorySuggestion m={m} admin={admin} onChanged={onChanged} />;
   if (m.authorKind === "SYSTEM") {
     return (
-      <div className="flex gap-2 text-xs text-zinc-500">
+      <div className="flex gap-2 text-xs text-muted">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
         <div>
           <p className="whitespace-pre-wrap">{m.body}</p>
-          <p className="mt-0.5 text-[10px] text-zinc-400">{m.createdLabel}</p>
+          <p className="mt-0.5 text-[11px] text-faint">{m.createdLabel}</p>
         </div>
       </div>
     );
@@ -59,19 +59,19 @@ function Message({ m, admin, onChanged }: { m: MessageView; admin: boolean; onCh
       data-private
       className={`rounded-md px-3 py-2 text-sm ${
         question
-          ? "border border-amber-300 bg-amber-50 text-amber-950"
+          ? "border border-transparent bg-warn-soft text-warn"
           : agent
-            ? "border border-zinc-200 bg-white text-zinc-800"
-            : "ml-6 bg-zinc-100 text-zinc-800"
+            ? "border border-line bg-surface text-ink"
+            : "ml-6 bg-subtle text-ink"
       }`}
     >
-      <div className="mb-1 flex items-center gap-1.5 text-[11px] text-zinc-500">
+      <div className="mb-1 flex items-center gap-1.5 text-[11px] text-muted">
         {question ? (
-          <CircleHelp className="h-3.5 w-3.5 text-amber-600" aria-hidden />
+          <CircleHelp className="h-3.5 w-3.5 text-warn" aria-hidden />
         ) : agent ? (
           <Bot className="h-3.5 w-3.5" aria-hidden />
         ) : null}
-        <span className="font-medium text-zinc-700">{question ? `${m.author} asks` : m.author}</span>
+        <span className="font-medium text-ink">{question ? `${m.author} asks` : m.author}</span>
         <span>· {m.createdLabel}</span>
       </div>
       <p className="whitespace-pre-wrap">{m.body}</p>
@@ -97,21 +97,21 @@ function MemorySuggestion({ m, admin, onChanged }: { m: MessageView; admin: bool
 
   const state = memory?.state ?? null;
   return (
-    <div className="rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-sm">
-      <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-violet-700">
+    <div className="rounded-md border border-transparent bg-accent-soft px-3 py-2 text-sm">
+      <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-accent-text">
         <Brain className="h-3.5 w-3.5" aria-hidden />
         Remember for next time?
       </div>
-      <p className="whitespace-pre-wrap text-violet-950">{memory?.text ?? m.body}</p>
+      <p className="whitespace-pre-wrap text-accent-text">{memory?.text ?? m.body}</p>
       {!memory ? (
-        <p className="mt-1 text-[11px] text-violet-600">This note can&apos;t be found any more.</p>
+        <p className="mt-1 text-[11px] text-accent-text">This note can&apos;t be found any more.</p>
       ) : state === "PROPOSED" && admin ? (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => decide("KEPT")}
             disabled={busy}
-            className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2 py-1 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Check className="h-3.5 w-3.5" aria-hidden />}
             Keep
@@ -120,15 +120,15 @@ function MemorySuggestion({ m, admin, onChanged }: { m: MessageView; admin: bool
             type="button"
             onClick={() => decide("DISMISSED")}
             disabled={busy}
-            className="inline-flex items-center gap-1 rounded-md border border-violet-200 bg-white px-2 py-1 text-xs font-medium text-violet-700 hover:bg-violet-100 disabled:opacity-50"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             <X className="h-3.5 w-3.5" aria-hidden />
             Dismiss
           </button>
-          {error && <span className="text-[11px] text-red-600">{error}</span>}
+          {error && <span className="text-[11px] text-bad">{error}</span>}
         </div>
       ) : (
-        <p className="mt-1 text-[11px] text-violet-600">
+        <p className="mt-1 text-[11px] text-accent-text">
           {state === "KEPT"
             ? "Kept — the agent reads this on its next runs."
             : state === "DISMISSED"
@@ -188,7 +188,7 @@ function Composer({ view, output, onChanged }: { view: RequestView; output: Outp
   };
 
   return (
-    <div className="border-t border-zinc-100 p-3">
+    <div className="border-t border-line p-3">
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value.slice(0, 5000))}
@@ -201,15 +201,15 @@ function Composer({ view, output, onChanged }: { view: RequestView; output: Outp
         rows={3}
         disabled={busy}
         placeholder={placeholder}
-        className="w-full resize-y rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+        className="w-full resize-y rounded-md border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
       />
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[11px] text-zinc-500">{error ? <span className="text-red-600">{error}</span> : (note ?? hint)}</span>
+        <span className="text-[11px] text-muted">{error ? <span className="text-bad">{error}</span> : (note ?? hint)}</span>
         <button
           type="button"
           onClick={send}
           disabled={busy || !body.trim()}
-          className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden /> : <Send className="h-4 w-4" aria-hidden />}
           Send

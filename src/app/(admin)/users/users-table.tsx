@@ -84,52 +84,52 @@ export function UsersTable({ users, currentUserId }: { users: UserRow[]; current
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+    <div className="overflow-x-auto rounded-xl border border-line bg-surface">
       <table className="w-full text-sm">
-        <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+        <thead className="bg-subtle text-left text-xs text-muted">
           <tr>
-            <th className="px-4 py-3">Name</th>
-            <th className="px-4 py-3">Email</th>
-            <th className="px-4 py-3">Role</th>
-            <th className="px-4 py-3">Joined</th>
-            <th className="px-4 py-3"></th>
+            <th className="px-3 py-2">Name</th>
+            <th className="px-3 py-2">Email</th>
+            <th className="px-3 py-2">Role</th>
+            <th className="px-3 py-2">Joined</th>
+            <th className="px-3 py-2"></th>
           </tr>
         </thead>
         <tbody>
           {users.map((u) => (
-            <tr key={u.id} className="border-t border-zinc-100">
-              <td data-private className="px-4 py-3">{u.name}</td>
-              <td data-private className="px-4 py-3 text-zinc-600">{u.email}</td>
-              <td className="px-4 py-3">
+            <tr key={u.id} className="border-t border-line">
+              <td data-private className="px-3 py-2">{u.name}</td>
+              <td data-private className="px-3 py-2 text-muted">{u.email}</td>
+              <td className="px-3 py-2">
                 <select
                   value={u.role}
                   disabled={busyId === u.id}
                   onChange={(e) => setRole(u.id, e.target.value)}
-                  className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-50"
+                  className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <option value="ADMIN">ADMIN</option>
                   <option value="REVIEWER">REVIEWER</option>
                 </select>
               </td>
-              <td className="px-4 py-3 text-zinc-500">{u.joinedLabel}</td>
-              <td className="px-4 py-3">
+              <td className="px-3 py-2 text-muted">{u.joinedLabel}</td>
+              <td className="px-3 py-2">
                 <div className="flex items-center justify-end gap-3">
                   <button
                     type="button"
                     disabled={busyId === u.id}
                     onClick={() => sendReset(u.id, u.email)}
-                    className="text-xs text-zinc-600 underline hover:text-zinc-900 disabled:opacity-50"
+                    className="text-xs text-muted underline hover:text-ink disabled:opacity-50"
                   >
                     Send reset link
                   </button>
                   {u.id === currentUserId ? (
-                    <span className="text-xs text-zinc-400">you</span>
+                    <span className="text-xs text-faint">you</span>
                   ) : (
                     <button
                       type="button"
                       disabled={busyId === u.id}
                       onClick={() => remove(u.id, u.email)}
-                      className="text-xs text-red-600 underline hover:text-red-800 disabled:opacity-50"
+                      className="text-xs text-bad underline hover:text-bad disabled:opacity-50"
                     >
                       Remove
                     </button>
@@ -140,20 +140,20 @@ export function UsersTable({ users, currentUserId }: { users: UserRow[]; current
           ))}
         </tbody>
       </table>
-      {error && <p className="border-t border-zinc-100 px-4 py-2 text-xs text-red-600">{error}</p>}
+      {error && <p className="border-t border-line px-4 py-2 text-xs text-bad">{error}</p>}
 
       {resetLink && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 bg-emerald-50 px-4 py-2">
-          <span data-private className="text-xs font-semibold text-emerald-700">
+        <div className="flex flex-wrap items-center gap-2 border-t border-line bg-good-soft px-4 py-2">
+          <span data-private className="text-xs font-semibold text-good">
             Reset link for {resetLink.email} →
           </span>
-          <code className="min-w-0 flex-1 truncate rounded border border-zinc-200 bg-white px-2 py-1 font-mono text-[11px] text-zinc-600">
+          <code className="min-w-0 flex-1 truncate rounded border border-line bg-surface px-2 py-1 font-mono text-[11px] text-muted">
             {resetLink.link}
           </code>
           <button
             type="button"
             onClick={copyLink}
-            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-50"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             {copied ? "Copied ✓" : "Copy link"}
           </button>

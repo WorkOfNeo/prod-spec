@@ -102,24 +102,24 @@ export default async function CoverPageSettingsPage({
   ];
 
   return (
-    <div className="px-8 py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Cover page</h1>
-      <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+    <div className="px-6 py-5">
+      <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Cover page</h1>
+      <p className="mt-1 max-w-2xl text-sm text-muted">
         The text every bundle carries in front of the layouts. The{" "}
         <strong>cover page</strong> block is the same for every client;{" "}
         <strong>General information</strong> is written per client and business area and prints
         after the cover sheet.
       </p>
 
-      <div className="mt-6 flex gap-1 border-b border-zinc-200">
+      <div className="mt-6 flex gap-5 overflow-x-auto border-b border-line">
         {TABS.map((t) => (
           <Link
             key={t.key}
             href={t.key === "cover" ? "/settings/cover-page" : `/settings/cover-page?tab=${t.key}`}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm ${
+            className={`-mb-px inline-flex h-9 shrink-0 items-center gap-1.5 border-b-2 text-[13px] transition-colors duration-150 ${
               tab === t.key
-                ? "border-zinc-900 font-medium text-zinc-900"
-                : "border-transparent text-zinc-500 hover:text-zinc-800"
+                ? "border-ink font-medium text-ink"
+                : "border-transparent text-muted hover:text-ink"
             }`}
           >
             {t.label}
@@ -129,7 +129,7 @@ export default async function CoverPageSettingsPage({
 
       {tab === "cover" ? (
         <>
-          <p className="mt-6 max-w-2xl text-sm text-zinc-500">
+          <p className="mt-6 max-w-2xl text-sm text-muted">
             This block prints on the <strong>cover sheet of every bundle</strong>, just below the
             required-packaging list. It&apos;s the same on every cover — use it for company-wide
             notes, contact lines, or standing instructions the supplier should always see.

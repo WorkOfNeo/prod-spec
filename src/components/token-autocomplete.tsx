@@ -630,7 +630,7 @@ export const TokenAutocomplete = forwardRef<HTMLTextAreaElement, Props>(
 
         {open && pos ? (
           <div
-            className="fixed z-50 grid overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-xl"
+            className="fixed z-50 grid overflow-hidden rounded-xl border border-line bg-surface shadow-xl"
             style={{
               left: pos.left,
               top: pos.top,
@@ -642,8 +642,8 @@ export const TokenAutocomplete = forwardRef<HTMLTextAreaElement, Props>(
             onMouseDown={(e) => e.preventDefault()}
           >
             {items.length === 0 ? (
-              <div className="px-3 py-2.5 text-xs text-zinc-400" style={{ gridColumn: "1 / -1" }}>
-                No variables match <span className="font-mono text-zinc-500">{query}</span>
+              <div className="px-3 py-2.5 text-xs text-faint" style={{ gridColumn: "1 / -1" }}>
+                No variables match <span className="font-mono text-muted">{query}</span>
               </div>
             ) : (
               <>
@@ -651,13 +651,13 @@ export const TokenAutocomplete = forwardRef<HTMLTextAreaElement, Props>(
                   ref={listRef}
                   role="listbox"
                   aria-label="Variables"
-                  className={`overflow-y-auto pb-1 ${pos.narrow ? "" : "border-r border-zinc-100"}`}
+                  className={`overflow-y-auto pb-1 ${pos.narrow ? "" : "border-r border-line"}`}
                   style={{ maxHeight: LIST_MAX_H }}
                 >
                   {items.map((it, i) => (
                     <Fragment key={`${it.insert}-${i}`}>
                       {i === 0 || items[i - 1].group !== it.group ? (
-                        <div className="sticky top-0 z-10 border-b border-zinc-100 bg-zinc-50 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider text-zinc-400">
+                        <div className="sticky top-0 z-10 border-b border-line bg-subtle px-2.5 py-1 text-[11px] font-semibold text-faint">
                           {it.group}
                         </div>
                       ) : null}
@@ -669,15 +669,15 @@ export const TokenAutocomplete = forwardRef<HTMLTextAreaElement, Props>(
                         onMouseEnter={() => setActive(i)}
                         onClick={() => apply(it)}
                         className={`flex w-full flex-col gap-px px-2.5 py-1.5 text-left ${
-                          i === activeIdx ? "bg-zinc-100" : "hover:bg-zinc-50"
+                          i === activeIdx ? "bg-subtle" : "hover:bg-subtle"
                         }`}
                       >
                         {/* The token wraps rather than truncating — the whole
                             point is being able to read which argument this is. */}
-                        <span className="block break-all font-mono text-[12px] leading-snug text-zinc-800">
+                        <span className="block break-all font-mono text-[12px] leading-snug text-ink">
                           <Highlighted text={it.insert} positions={it.positions} />
                         </span>
-                        <span className="line-clamp-2 block text-[11px] leading-snug text-zinc-400">
+                        <span className="line-clamp-2 block text-[11px] leading-snug text-faint">
                           {it.label}
                         </span>
                       </button>
@@ -687,42 +687,42 @@ export const TokenAutocomplete = forwardRef<HTMLTextAreaElement, Props>(
 
                 {/* Detail pane — the highlighted token, in full. */}
                 <div
-                  className={`flex flex-col overflow-y-auto ${pos.narrow ? "border-t border-zinc-100" : ""}`}
+                  className={`flex flex-col overflow-y-auto ${pos.narrow ? "border-t border-line" : ""}`}
                   style={{ maxHeight: LIST_MAX_H }}
                 >
                   {activeItem ? (
                     <div className="flex flex-col gap-2.5 px-3 py-2.5">
-                      <div className="break-all font-mono text-[12.5px] leading-snug text-zinc-900">
+                      <div className="break-all font-mono text-[12.5px] leading-snug text-ink">
                         {activeItem.insert}
                       </div>
                       <div>
-                        <div className="text-[9px] font-semibold uppercase tracking-wider text-zinc-400">
+                        <div className="text-[11px] font-semibold text-faint">
                           {activeItem.group}
                         </div>
-                        <p className="mt-0.5 text-[11.5px] leading-snug text-zinc-600">{activeItem.label}</p>
+                        <p className="mt-0.5 text-[11.5px] leading-snug text-muted">{activeItem.label}</p>
                       </div>
                       {activeValue !== undefined && activeValue !== "" ? (
-                        <div className="rounded bg-emerald-50 px-2 py-1.5">
-                          <div className="text-[9px] font-semibold uppercase tracking-wider text-emerald-700">
+                        <div className="rounded bg-good-soft px-2 py-1.5">
+                          <div className="text-[11px] font-semibold text-good">
                             Resolves to{valuesFrom ? ` · ${valuesFrom}` : ""}
                           </div>
-                          <div className="mt-0.5 break-words font-mono text-[11.5px] leading-snug text-zinc-800">
+                          <div className="mt-0.5 break-words font-mono text-[11.5px] leading-snug text-ink">
                             {activeValue}
                           </div>
                         </div>
                       ) : activeItem.hint ? (
-                        <div className="rounded bg-zinc-50 px-2 py-1.5">
-                          <div className="text-[9px] font-semibold uppercase tracking-wider text-zinc-400">
+                        <div className="rounded bg-subtle px-2 py-1.5">
+                          <div className="text-[11px] font-semibold text-faint">
                             Example
                           </div>
-                          <div className="mt-0.5 break-words font-mono text-[11.5px] leading-snug text-zinc-600">
+                          <div className="mt-0.5 break-words font-mono text-[11.5px] leading-snug text-muted">
                             {activeItem.hint}
                           </div>
                         </div>
                       ) : null}
                       {variants.length > 0 ? (
                         <div>
-                          <div className="text-[9px] font-semibold uppercase tracking-wider text-zinc-400">
+                          <div className="text-[11px] font-semibold text-faint">
                             Same field, other arguments
                           </div>
                           <div className="mt-1 flex flex-wrap gap-1">
@@ -732,7 +732,7 @@ export const TokenAutocomplete = forwardRef<HTMLTextAreaElement, Props>(
                                 type="button"
                                 title={v.label}
                                 onClick={() => apply(v)}
-                                className="rounded border border-zinc-200 px-1.5 py-0.5 font-mono text-[10px] text-zinc-600 hover:border-zinc-400 hover:text-zinc-900"
+                                className="rounded border border-line px-1.5 py-0.5 font-mono text-[11px] text-muted hover:border-zinc-400 hover:text-ink"
                               >
                                 {v.insert.replace(/^\{\{|\}\}$/g, "")}
                               </button>
@@ -747,7 +747,7 @@ export const TokenAutocomplete = forwardRef<HTMLTextAreaElement, Props>(
             )}
 
             <div
-              className="flex items-center justify-between gap-2 border-t border-zinc-100 bg-zinc-50/70 px-2.5 py-1 text-[10px] text-zinc-400"
+              className="flex items-center justify-between gap-2 border-t border-line bg-zinc-50/70 px-2.5 py-1 text-[11px] text-faint"
               style={{ gridColumn: "1 / -1" }}
             >
               <span>
@@ -771,7 +771,7 @@ export const TokenAutocomplete = forwardRef<HTMLTextAreaElement, Props>(
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="mx-px inline-block rounded border border-zinc-200 bg-white px-1 font-sans text-[9px] text-zinc-500">
+    <kbd className="mx-px inline-block rounded border border-line bg-surface px-1 font-sans text-[11px] text-muted">
       {children}
     </kbd>
   );
@@ -792,7 +792,7 @@ function Highlighted({ text, positions }: { text: string; positions: number[] })
     <>
       {runs.map((r, i) =>
         r.on ? (
-          <span key={i} className="font-semibold text-zinc-950">
+          <span key={i} className="font-semibold text-ink">
             {r.text}
           </span>
         ) : (

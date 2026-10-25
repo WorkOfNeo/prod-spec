@@ -29,14 +29,14 @@ export function ManualImportTables({
   return (
     <>
       <section className="mb-10">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
+        <h2 className="mb-3 text-sm font-semibold text-muted">
           Manual import — Ready ({importable.length})
         </h2>
         <ReadyTable items={importable} />
       </section>
 
       <section className="mb-10">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
+        <h2 className="mb-3 text-sm font-semibold text-muted">
           Manual import — Needs disambiguation ({ambiguous.length})
         </h2>
         <DisambiguationTable items={ambiguous} />
@@ -144,7 +144,7 @@ function ReadyTable({ items }: { items: GhostItemImportCandidate[] }) {
 
   if (items.length === 0) {
     return (
-      <div className="rounded-lg border border-zinc-200 bg-white px-4 py-8 text-center text-sm text-zinc-500">
+      <div className="rounded-xl border border-line bg-surface px-4 py-8 text-center text-sm text-muted">
         Nothing ready to import. Items appear here once their (customer × business area) pair
         has a ProdSpec.
       </div>
@@ -152,19 +152,19 @@ function ReadyTable({ items }: { items: GhostItemImportCandidate[] }) {
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+    <div className="overflow-hidden rounded-xl border border-line bg-surface">
       {toast && (
         <div
           className={`border-b px-4 py-2 text-sm ${
             toast.kind === "ok"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-red-200 bg-red-50 text-red-700"
+              ? "border-transparent bg-good-soft text-good"
+              : "border-transparent bg-bad-soft text-bad"
           }`}
         >
           {toast.message}
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-100 bg-zinc-50 px-4 py-3 text-sm">
+      <div className="flex flex-wrap items-center gap-2 border-b border-line bg-subtle px-4 py-3 text-sm">
         <FilterSelect
           label="Customer"
           value={filter.customerId}
@@ -183,15 +183,15 @@ function ReadyTable({ items }: { items: GhostItemImportCandidate[] }) {
           onChange={(v) => setFilter((f) => ({ ...f, board: v }))}
           options={boardOptions}
         />
-        <span className="ml-auto text-xs tabular-nums text-zinc-500">
+        <span className="ml-auto text-xs tabular-nums text-muted">
           Showing {filtered.length} of {items.length}
         </span>
       </div>
 
       <table className="w-full text-sm">
-        <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+        <thead className="bg-subtle text-left text-xs text-muted">
           <tr>
-            <th className="w-10 px-4 py-3">
+            <th className="w-10 px-3 py-2">
               <input
                 type="checkbox"
                 checked={allVisibleSelected}
@@ -199,17 +199,17 @@ function ReadyTable({ items }: { items: GhostItemImportCandidate[] }) {
                 aria-label="Toggle all visible"
               />
             </th>
-            <th className="px-4 py-3">Item</th>
-            <th className="px-4 py-3">Customer</th>
-            <th className="px-4 py-3">Business area</th>
-            <th className="px-4 py-3">Board</th>
-            <th className="px-4 py-3">PO#</th>
+            <th className="px-3 py-2">Item</th>
+            <th className="px-3 py-2">Customer</th>
+            <th className="px-3 py-2">Business area</th>
+            <th className="px-3 py-2">Board</th>
+            <th className="px-3 py-2">PO#</th>
           </tr>
         </thead>
         <tbody>
           {filtered.length === 0 ? (
             <tr>
-              <td colSpan={6} className="px-4 py-8 text-center text-sm text-zinc-500">
+              <td colSpan={6} className="px-4 py-8 text-center text-sm text-muted">
                 No matches for the current filters.
               </td>
             </tr>
@@ -222,8 +222,8 @@ function ReadyTable({ items }: { items: GhostItemImportCandidate[] }) {
               const baName =
                 it.baResolution.kind === "resolved" ? it.baResolution.baName : "—";
               return (
-                <tr key={it.ghostItemId} className="border-t border-zinc-100 hover:bg-zinc-50">
-                  <td className="px-4 py-3">
+                <tr key={it.ghostItemId} className="border-t border-line hover:bg-subtle">
+                  <td className="px-3 py-2">
                     <input
                       type="checkbox"
                       checked={selected.has(it.ghostItemId)}
@@ -231,11 +231,11 @@ function ReadyTable({ items }: { items: GhostItemImportCandidate[] }) {
                       aria-label={`Select ${it.itemName}`}
                     />
                   </td>
-                  <td className="px-4 py-3 font-medium">{it.itemName}</td>
-                  <td className="px-4 py-3 text-zinc-600">{customerName}</td>
-                  <td className="px-4 py-3 text-zinc-600">{baName}</td>
-                  <td className="px-4 py-3 text-xs text-zinc-500">{it.boardLabel}</td>
-                  <td className="px-4 py-3 text-xs text-zinc-500">{it.poNumber ?? "—"}</td>
+                  <td className="px-3 py-2 font-medium">{it.itemName}</td>
+                  <td className="px-3 py-2 text-muted">{customerName}</td>
+                  <td className="px-3 py-2 text-muted">{baName}</td>
+                  <td className="px-3 py-2 text-xs text-muted">{it.boardLabel}</td>
+                  <td className="px-3 py-2 text-xs text-muted">{it.poNumber ?? "—"}</td>
                 </tr>
               );
             })
@@ -243,13 +243,13 @@ function ReadyTable({ items }: { items: GhostItemImportCandidate[] }) {
         </tbody>
       </table>
 
-      <div className="flex items-center justify-between border-t border-zinc-100 bg-zinc-50 px-4 py-3 text-sm">
-        <span className="text-zinc-600">{selected.size} selected</span>
+      <div className="flex items-center justify-between border-t border-line bg-subtle px-4 py-3 text-sm">
+        <span className="text-muted">{selected.size} selected</span>
         <button
           type="button"
           onClick={importSelected}
           disabled={busy || selected.size === 0}
-          className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busy ? "Importing…" : `Import ${selected.size} selected`}
         </button>
@@ -332,7 +332,7 @@ function DisambiguationTable({ items }: { items: GhostItemImportCandidate[] }) {
 
   if (items.length === 0) {
     return (
-      <div className="rounded-lg border border-zinc-200 bg-white px-4 py-8 text-center text-sm text-zinc-500">
+      <div className="rounded-xl border border-line bg-surface px-4 py-8 text-center text-sm text-muted">
         No ambiguous items. When a ghost item&apos;s name token matches several customers (e.g.
         JYSK A/S and JYSK SE), it surfaces here for the operator to pick the right one.
       </div>
@@ -340,27 +340,27 @@ function DisambiguationTable({ items }: { items: GhostItemImportCandidate[] }) {
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+    <div className="overflow-hidden rounded-xl border border-line bg-surface">
       {toast && (
         <div
           className={`border-b px-4 py-2 text-sm ${
             toast.kind === "ok"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-red-200 bg-red-50 text-red-700"
+              ? "border-transparent bg-good-soft text-good"
+              : "border-transparent bg-bad-soft text-bad"
           }`}
         >
           {toast.message}
         </div>
       )}
       <table className="w-full text-sm">
-        <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+        <thead className="bg-subtle text-left text-xs text-muted">
           <tr>
-            <th className="w-10 px-4 py-3"></th>
-            <th className="px-4 py-3">Item</th>
-            <th className="px-4 py-3">Customer (pick one)</th>
-            <th className="px-4 py-3">Business area</th>
-            <th className="px-4 py-3">Board</th>
-            <th className="px-4 py-3">PO#</th>
+            <th className="w-10 px-3 py-2"></th>
+            <th className="px-3 py-2">Item</th>
+            <th className="px-3 py-2">Customer (pick one)</th>
+            <th className="px-3 py-2">Business area</th>
+            <th className="px-3 py-2">Board</th>
+            <th className="px-3 py-2">PO#</th>
           </tr>
         </thead>
         <tbody>
@@ -374,8 +374,8 @@ function DisambiguationTable({ items }: { items: GhostItemImportCandidate[] }) {
             const pick = picks.get(it.ghostItemId) ?? "";
             const isSelected = selected.has(it.ghostItemId);
             return (
-              <tr key={it.ghostItemId} className="border-t border-zinc-100 hover:bg-zinc-50">
-                <td className="px-4 py-3">
+              <tr key={it.ghostItemId} className="border-t border-line hover:bg-subtle">
+                <td className="px-3 py-2">
                   <input
                     type="checkbox"
                     checked={isSelected}
@@ -383,12 +383,12 @@ function DisambiguationTable({ items }: { items: GhostItemImportCandidate[] }) {
                     aria-label={`Select ${it.itemName}`}
                   />
                 </td>
-                <td className="px-4 py-3 font-medium">{it.itemName}</td>
-                <td className="px-4 py-3">
+                <td className="px-3 py-2 font-medium">{it.itemName}</td>
+                <td className="px-3 py-2">
                   <select
                     value={pick}
                     onChange={(e) => setPick(it.ghostItemId, e.target.value)}
-                    className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm"
+                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <option value="">— pick customer —</option>
                     {candidates.map((c) => (
@@ -398,24 +398,24 @@ function DisambiguationTable({ items }: { items: GhostItemImportCandidate[] }) {
                     ))}
                   </select>
                 </td>
-                <td className="px-4 py-3 text-zinc-600">{baName}</td>
-                <td className="px-4 py-3 text-xs text-zinc-500">{it.boardLabel}</td>
-                <td className="px-4 py-3 text-xs text-zinc-500">{it.poNumber ?? "—"}</td>
+                <td className="px-3 py-2 text-muted">{baName}</td>
+                <td className="px-3 py-2 text-xs text-muted">{it.boardLabel}</td>
+                <td className="px-3 py-2 text-xs text-muted">{it.poNumber ?? "—"}</td>
               </tr>
             );
           })}
         </tbody>
       </table>
 
-      <div className="flex items-center justify-between border-t border-zinc-100 bg-zinc-50 px-4 py-3 text-sm">
-        <span className="text-zinc-600">
+      <div className="flex items-center justify-between border-t border-line bg-subtle px-4 py-3 text-sm">
+        <span className="text-muted">
           {selected.size} selected · {importable.length} with customer picked
         </span>
         <button
           type="button"
           onClick={importSelected}
           disabled={busy || importable.length === 0}
-          className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           title={
             importable.length === 0
               ? "Pick a customer on each selected row before importing"
@@ -445,12 +445,12 @@ function FilterSelect({
   options: Array<{ id: string; name: string }>;
 }) {
   return (
-    <label className="flex items-center gap-2 text-xs text-zinc-600">
-      <span className="uppercase tracking-wide">{label}</span>
+    <label className="flex items-center gap-2 text-xs text-muted">
+      <span className="">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm"
+        className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
       >
         <option value={FILTER_ANY}>Any</option>
         {options.map((o) => (

@@ -299,19 +299,19 @@ export function NewRequestForm({ limits }: { limits: Limits }) {
         {/* 1 — order */}
         <Step number={1} title="Which order?">
           {scope ? (
-            <div className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
+            <div className="flex items-center justify-between gap-3 rounded-md border border-line bg-subtle px-3 py-2">
               <div className="min-w-0 text-sm">
                 {scope.kind === "style" ? (
                   <>
-                    <span className="font-medium text-zinc-900">{scope.name}</span>
-                    <span className="text-zinc-500">
+                    <span className="font-medium text-ink">{scope.name}</span>
+                    <span className="text-muted">
                       {scope.poNumber ? ` · ${scope.poNumber}` : ""} · {scope.customerName}
                     </span>
                   </>
                 ) : (
                   <>
-                    <span className="font-medium text-zinc-900">All styles in {scope.poNumber}</span>
-                    <span className="text-zinc-500">
+                    <span className="font-medium text-ink">All styles in {scope.poNumber}</span>
+                    <span className="text-muted">
                       {" "}
                       · {scope.customerName} · {scope.styleCount} style{scope.styleCount === 1 ? "" : "s"}
                     </span>
@@ -322,7 +322,7 @@ export function NewRequestForm({ limits }: { limits: Limits }) {
                 type="button"
                 onClick={clearScope}
                 disabled={sending}
-                className="shrink-0 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                className="shrink-0 inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Change
               </button>
@@ -330,20 +330,20 @@ export function NewRequestForm({ limits }: { limits: Limits }) {
           ) : (
             <div>
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-zinc-400" aria-hidden />
+                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-faint" aria-hidden />
                 <input
                   autoFocus
                   type="search"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="PO number, style name or Monday item id"
-                  className="w-full rounded-md border border-zinc-300 py-2 pl-9 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                  className="w-full rounded-md border border-line py-2 pl-9 pr-9 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
                 />
                 {searching && (
-                  <LoaderCircle className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-zinc-400" aria-hidden />
+                  <LoaderCircle className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-faint" aria-hidden />
                 )}
               </div>
-              {searchError && <p className="mt-2 text-xs text-red-600">{searchError}</p>}
+              {searchError && <p className="mt-2 text-xs text-bad">{searchError}</p>}
               {results && <SearchResults results={results} onPick={chooseScope} />}
             </div>
           )}
@@ -356,20 +356,20 @@ export function NewRequestForm({ limits }: { limits: Limits }) {
             title="Which outputs are wrong?"
             aside={
               outputs && outputs.length > 0 ? (
-                <span className="text-xs text-zinc-500">
+                <span className="text-xs text-muted">
                   {picked.length}/{limits.maxOutputs} picked
                 </span>
               ) : null
             }
           >
             {outputsError ? (
-              <p className="text-sm text-red-600">{outputsError}</p>
+              <p className="text-sm text-bad">{outputsError}</p>
             ) : !outputs ? (
-              <p className="flex items-center gap-2 text-sm text-zinc-500">
+              <p className="flex items-center gap-2 text-sm text-muted">
                 <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden /> Loading outputs…
               </p>
             ) : outputs.length === 0 ? (
-              <p className="text-sm text-zinc-500">
+              <p className="text-sm text-muted">
                 This style has no outputs configured on its prod spec, so there is nothing to pick.
               </p>
             ) : (
@@ -396,11 +396,11 @@ export function NewRequestForm({ limits }: { limits: Limits }) {
         {/* 3 — issues */}
         {pickedOutputs.length > 0 && (
           <Step number={3} title="What should change?">
-            <div className="rounded-md border border-dashed border-zinc-300 bg-zinc-50/60 p-3">
-              <label htmlFor="cr-email" className="text-xs font-medium text-zinc-700">
+            <div className="rounded-md border border-dashed border-line bg-zinc-50/60 p-3">
+              <label htmlFor="cr-email" className="text-xs font-medium text-ink">
                 Paste an email
               </label>
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-muted">
                 Got the request by email? Paste it here and split it across the picked outputs. You can edit every
                 part afterwards. It is kept with the request as written.
               </p>
@@ -411,14 +411,14 @@ export function NewRequestForm({ limits }: { limits: Limits }) {
                 rows={4}
                 placeholder="Paste the email text…"
                 disabled={sending}
-                className="mt-2 w-full resize-y rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                className="mt-2 w-full resize-y rounded-md border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
               />
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={split}
                   disabled={splitting || sending || !email.trim()}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                  className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {splitting ? (
                     <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -427,11 +427,11 @@ export function NewRequestForm({ limits }: { limits: Limits }) {
                   )}
                   Split by output
                 </button>
-                {splitNote && <span className="text-xs text-amber-700">{splitNote}</span>}
-                {splitError && <span className="text-xs text-red-600">{splitError}</span>}
+                {splitNote && <span className="text-xs text-warn">{splitNote}</span>}
+                {splitError && <span className="text-xs text-bad">{splitError}</span>}
               </div>
               {unmatched && (
-                <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                <div className="mt-2 rounded-md border border-transparent bg-warn-soft p-2 text-xs text-warn">
                   <div className="font-medium">Not about a picked output — pick another output or copy it in:</div>
                   <p className="mt-1 whitespace-pre-wrap">{unmatched}</p>
                 </div>
@@ -455,20 +455,20 @@ export function NewRequestForm({ limits }: { limits: Limits }) {
                 />
               ))}
             </div>
-            <p className="mt-2 text-xs text-zinc-400">
+            <p className="mt-2 text-xs text-faint">
               {totalImages}/{limits.maxImagesTotal} screenshots on this request
             </p>
           </Step>
         )}
 
         {/* Send */}
-        <div className="rounded-lg border border-zinc-200 bg-white p-4">
+        <div className="rounded-xl border border-line bg-surface p-4">
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={send}
               disabled={Boolean(blocker) || sending}
-              className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {sending ? (
                 <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
@@ -477,21 +477,21 @@ export function NewRequestForm({ limits }: { limits: Limits }) {
               )}
               {sending ? "Sending…" : "Send request"}
             </button>
-            {blocker && !sending && <span className="text-xs text-zinc-500">{blocker}</span>}
-            {sendError && <span className="text-xs text-red-600">{sendError}</span>}
+            {blocker && !sending && <span className="text-xs text-muted">{blocker}</span>}
+            {sendError && <span className="text-xs text-bad">{sendError}</span>}
           </div>
-          <p className="mt-2 text-xs text-zinc-500">Nothing changes on a print file until an admin approves it.</p>
+          <p className="mt-2 text-xs text-muted">Nothing changes on a print file until an admin approves it.</p>
         </div>
       </div>
 
       {/* Hints */}
       <aside className="lg:sticky lg:top-8 lg:w-72 lg:shrink-0">
-        <div className="rounded-lg border border-zinc-200 bg-white p-4">
-          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900">
-            <Lightbulb className="h-4 w-4 text-amber-500" aria-hidden />
+        <div className="rounded-xl border border-line bg-surface p-4">
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+            <Lightbulb className="h-4 w-4 text-warn" aria-hidden />
             Get it right first time
           </h2>
-          <ul className="mt-3 space-y-3 text-sm text-zinc-600">
+          <ul className="mt-3 space-y-3 text-sm text-muted">
             {HINTS.map((h) => (
               <li key={h} className="flex gap-2">
                 <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-300" aria-hidden />
@@ -517,10 +517,10 @@ function Step({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white p-4">
+    <section className="rounded-xl border border-line bg-surface p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-zinc-900 text-[11px] font-semibold text-white">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-white">
             {number}
           </span>
           {title}
@@ -534,22 +534,22 @@ function Step({
 
 function SearchResults({ results, onPick }: { results: OrderSearchResult; onPick: (scope: Scope) => void }) {
   if (results.pos.length === 0 && results.styles.length === 0) {
-    return <p className="mt-3 text-sm text-zinc-500">No active order or style matches.</p>;
+    return <p className="mt-3 text-sm text-muted">No active order or style matches.</p>;
   }
   return (
     <div className="mt-3 space-y-4">
       {results.pos.length > 0 && (
         <div>
-          <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">Purchase orders</div>
-          <ul className="mt-1 divide-y divide-zinc-100 rounded-md border border-zinc-200">
+          <div className="text-xs font-medium text-muted">Purchase orders</div>
+          <ul className="mt-1 divide-y divide-line rounded-md border border-line">
             {results.pos.map((po) => (
               <li
                 key={`${po.poNumber}-${po.customerId}`}
                 className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
               >
                 <div className="min-w-0">
-                  <span className="font-medium text-zinc-900">{po.poNumber}</span>
-                  <span className="text-zinc-500">
+                  <span className="font-medium text-ink">{po.poNumber}</span>
+                  <span className="text-muted">
                     {" "}
                     · {po.customerName} · {po.styleCount} style{po.styleCount === 1 ? "" : "s"}
                   </span>
@@ -568,7 +568,7 @@ function SearchResults({ results, onPick }: { results: OrderSearchResult; onPick
                       styleCount: po.styleCount,
                     })
                   }
-                  className="shrink-0 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                  className="shrink-0 inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   All styles in this PO
                 </button>
@@ -579,8 +579,8 @@ function SearchResults({ results, onPick }: { results: OrderSearchResult; onPick
       )}
       {results.styles.length > 0 && (
         <div>
-          <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">Styles</div>
-          <ul className="mt-1 divide-y divide-zinc-100 rounded-md border border-zinc-200">
+          <div className="text-xs font-medium text-muted">Styles</div>
+          <ul className="mt-1 divide-y divide-line rounded-md border border-line">
             {results.styles.map((s) => (
               <li key={s.id}>
                 <button
@@ -595,15 +595,15 @@ function SearchResults({ results, onPick }: { results: OrderSearchResult; onPick
                       customerName: s.customerName,
                     })
                   }
-                  className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-zinc-50"
+                  className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-subtle"
                 >
                   <span className="min-w-0 truncate">
-                    <span className="font-medium text-zinc-900">{s.name}</span>
-                    <span className="text-zinc-500">
+                    <span className="font-medium text-ink">{s.name}</span>
+                    <span className="text-muted">
                       {s.poNumber ? ` · ${s.poNumber}` : ""} · {s.customerName}
                     </span>
                   </span>
-                  <span className="shrink-0 font-mono text-[11px] text-zinc-400">#{s.mondayItemId}</span>
+                  <span className="shrink-0 font-mono text-[11px] text-faint">#{s.mondayItemId}</span>
                 </button>
               </li>
             ))}
@@ -639,8 +639,8 @@ function OutputCard({
       onClick={onToggle}
       disabled={disabled}
       aria-pressed={picked}
-      className={`group relative flex flex-col overflow-hidden rounded-lg border bg-white text-left transition ${
-        picked ? "border-zinc-900 ring-2 ring-zinc-900" : "border-zinc-200 hover:border-zinc-400"
+      className={`group relative flex flex-col overflow-hidden rounded-lg border bg-surface text-left transition ${
+        picked ? "border-ink ring-2 ring-accent" : "border-line hover:border-zinc-400"
       } disabled:cursor-not-allowed disabled:opacity-50`}
     >
       <div className="flex items-start justify-center overflow-hidden bg-zinc-100/70 p-2" style={{ height: THUMB_PX + 16 }}>
@@ -648,18 +648,18 @@ function OutputCard({
           <LazyOutputPreview src={src} widthMm={output.widthMm} heightMm={output.heightMm} />
         </div>
       </div>
-      <div className="flex items-start justify-between gap-2 border-t border-zinc-100 px-2.5 py-2">
+      <div className="flex items-start justify-between gap-2 border-t border-line px-2.5 py-2">
         <div className="min-w-0">
-          <div className="truncate text-xs font-medium text-zinc-900" title={output.label}>
+          <div className="truncate text-xs font-medium text-ink" title={output.label}>
             {output.label}
           </div>
-          <div className="text-[11px] text-zinc-500">
+          <div className="text-[11px] text-muted">
             {Math.round(output.widthMm)}×{Math.round(output.heightMm)} mm
           </div>
         </div>
         <span
           className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-            picked ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-300 bg-white"
+            picked ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50" : "border-line bg-surface"
           }`}
           aria-hidden
         >
@@ -766,19 +766,19 @@ function IssueCard({
         if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false);
       }}
       onDrop={onDrop}
-      className={`rounded-lg border bg-white p-3 transition ${
-        dragOver ? "border-red-300 ring-2 ring-red-300" : "border-zinc-200"
+      className={`rounded-lg border bg-surface p-3 transition ${
+        dragOver ? "border-transparent ring-2 ring-red-300" : "border-line"
       }`}
     >
       <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0 text-sm font-medium text-zinc-900">{output.label}</div>
+        <div className="min-w-0 text-sm font-medium text-ink">{output.label}</div>
         <button
           type="button"
           onClick={onRemove}
           disabled={disabled}
           title="Remove this output"
           aria-label={`Remove ${output.label}`}
-          className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-50"
+          className="rounded p-1 text-faint hover:bg-subtle hover:text-ink disabled:opacity-50"
         >
           <X className="h-4 w-4" />
         </button>
@@ -789,14 +789,14 @@ function IssueCard({
         disabled={disabled}
         rows={4}
         placeholder="What is wrong, and how should it look? Write the rule, not only the example."
-        className="mt-2 w-full resize-y rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+        className="mt-2 w-full resize-y rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
       />
       {issue.images.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
           {issue.images.map((img, i) => (
             <div
               key={`${img.fileName}-${i}`}
-              className="relative h-16 w-16 overflow-hidden rounded-md border border-zinc-200 bg-zinc-50"
+              className="relative h-16 w-16 overflow-hidden rounded-md border border-line bg-subtle"
             >
               {/* eslint-disable-next-line @next/next/no-img-element -- local data URL preview */}
               <img src={img.dataUrl} alt={img.fileName} className="h-full w-full object-cover" />
@@ -805,7 +805,7 @@ function IssueCard({
                 onClick={() => onRemoveImage(i)}
                 disabled={disabled}
                 aria-label={`Remove ${img.fileName}`}
-                className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 disabled:opacity-50"
+                className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[rgb(15_17_21/0.60)] text-white hover:bg-[rgb(15_17_21/0.80)] disabled:opacity-50"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -815,19 +815,19 @@ function IssueCard({
       )}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <label
-          className={`inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 ${
-            disabled || full ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-zinc-50"
+          className={`inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50 ${
+            disabled || full ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-subtle"
           }`}
         >
           <input type="file" accept={ACCEPT} multiple className="hidden" onChange={onPick} disabled={disabled || full} />
           <ImagePlus className="h-3.5 w-3.5" aria-hidden />
           Add screenshot{issue.images.length > 0 ? `s · ${issue.images.length}/${perOutputMax}` : ""}
         </label>
-        <span className="text-xs text-zinc-400">
+        <span className="text-xs text-faint">
           {busy > 0 ? "Preparing…" : dragOver ? "Drop to attach" : full ? "" : "or drag & drop, or paste"}
         </span>
       </div>
-      {fileError && <p className="mt-1 text-xs text-amber-600">{fileError}</p>}
+      {fileError && <p className="mt-1 text-xs text-warn">{fileError}</p>}
     </div>
   );
 }

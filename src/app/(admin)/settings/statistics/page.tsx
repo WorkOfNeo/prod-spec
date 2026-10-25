@@ -61,16 +61,16 @@ export default async function StatisticsPage({
   const stats = await getReviewStats({ days: window });
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-6 py-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Review statistics</h1>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+          <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Review statistics</h1>
+          <p className="mt-1 max-w-2xl text-sm text-muted">
             How long each output takes from generated to reviewed, and how each reviewer is doing.
             Counted per output (document), decided = approved or rejected.
           </p>
         </div>
-        <nav className="flex shrink-0 gap-1 rounded-lg border border-zinc-200 bg-zinc-50 p-1">
+        <nav className="flex shrink-0 gap-1 rounded-lg border border-line bg-subtle p-1">
           {WINDOWS.map((w) => {
             const active = w.value === window;
             const href = `/settings/statistics?days=${w.value}`;
@@ -80,8 +80,8 @@ export default async function StatisticsPage({
                 href={href}
                 className={`rounded-md px-3 py-1 text-sm transition ${
                   active
-                    ? "bg-white font-medium text-zinc-900 shadow-sm"
-                    : "text-zinc-500 hover:text-zinc-900"
+                    ? "bg-surface font-medium text-ink shadow-sm"
+                    : "text-muted hover:text-ink"
                 }`}
               >
                 {w.label}
@@ -92,9 +92,9 @@ export default async function StatisticsPage({
       </div>
 
       {stats.totalOutputs === 0 ? (
-        <div className="mt-10 rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-6 py-16 text-center">
-          <p className="text-sm font-medium text-zinc-700">No outputs reviewed in this window.</p>
-          <p className="mt-1 text-sm text-zinc-500">
+        <div className="mt-10 rounded-xl border border-dashed border-line bg-subtle px-6 py-16 text-center">
+          <p className="text-sm font-medium text-ink">No outputs reviewed in this window.</p>
+          <p className="mt-1 text-sm text-muted">
             Once outputs are approved or rejected, their timing and outcomes show up here.
           </p>
         </div>
@@ -131,19 +131,19 @@ export default async function StatisticsPage({
 
           {/* Rework load */}
           {stats.rework && (stats.rework.openTickets > 0 || stats.rework.reopened > 0) && (
-            <p className="mt-4 text-sm text-zinc-500">
+            <p className="mt-4 text-sm text-muted">
               Current rework load:{" "}
-              <span className="font-medium text-zinc-700">{stats.rework.openTickets}</span> open
+              <span className="font-medium text-ink">{stats.rework.openTickets}</span> open
               rejection ticket(s)
               {stats.rework.reopened > 0 && (
                 <>
                   {" · "}
-                  <span className="font-medium text-amber-700">{stats.rework.reopened}</span> came
+                  <span className="font-medium text-warn">{stats.rework.reopened}</span> came
                   back after a fix
                 </>
               )}
               {" · "}
-              <Link href="/settings/rejection-log" className="text-blue-700 hover:underline">
+              <Link href="/settings/rejection-log" className="text-accent-text hover:underline">
                 open rejection log →
               </Link>
             </p>
@@ -151,13 +151,13 @@ export default async function StatisticsPage({
 
           {/* Per-reviewer */}
           <section className="mt-10">
-            <h2 className="text-sm font-semibold text-zinc-900">By reviewer</h2>
-            <p className="mt-0.5 text-xs text-zinc-500">
+            <h2 className="text-sm font-semibold text-ink">By reviewer</h2>
+            <p className="mt-0.5 text-xs text-muted">
               Each output a reviewer decided counts once; time is generated → decided.
             </p>
-            <div className="mt-3 overflow-hidden rounded-xl border border-zinc-200">
+            <div className="mt-3 overflow-x-auto rounded-xl border border-line">
               <table className="w-full text-sm">
-                <thead className="bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500">
+                <thead className="bg-subtle text-xs text-muted">
                   <tr>
                     <th className="px-4 py-2.5 text-left font-semibold">Reviewer</th>
                     <th className="px-4 py-2.5 text-right font-semibold">Outputs</th>
@@ -168,27 +168,27 @@ export default async function StatisticsPage({
                     <th className="px-4 py-2.5 text-right font-semibold">Avg time</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-100">
+                <tbody className="divide-y divide-line">
                   {stats.reviewers.map((r) => (
-                    <tr key={r.userId} className="hover:bg-zinc-50">
+                    <tr key={r.userId} className="hover:bg-subtle">
                       <td data-private className="px-4 py-2.5">
-                        <div className="font-medium text-zinc-900">{r.name ?? r.email ?? "—"}</div>
+                        <div className="font-medium text-ink">{r.name ?? r.email ?? "—"}</div>
                         {r.name && r.email && (
-                          <div className="text-xs text-zinc-400">{r.email}</div>
+                          <div className="text-xs text-faint">{r.email}</div>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{r.outputsReviewed}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-emerald-700">
+                      <td className="px-4 py-2.5 text-right tabular-nums text-good">
                         {r.approved}
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-red-700">
+                      <td className="px-4 py-2.5 text-right tabular-nums text-bad">
                         {r.rejected}
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{pct(r.approvalRate)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">
                         {formatDuration(r.medianDurationMs)}
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-zinc-500">
+                      <td className="px-4 py-2.5 text-right tabular-nums text-muted">
                         {formatDuration(r.avgDurationMs)}
                       </td>
                     </tr>
@@ -200,10 +200,10 @@ export default async function StatisticsPage({
 
           {/* Recent decided outputs */}
           <section className="mt-10">
-            <h2 className="text-sm font-semibold text-zinc-900">Recent reviewed outputs</h2>
-            <div className="mt-3 overflow-hidden rounded-xl border border-zinc-200">
+            <h2 className="text-sm font-semibold text-ink">Recent reviewed outputs</h2>
+            <div className="mt-3 overflow-x-auto rounded-xl border border-line">
               <table className="w-full text-sm">
-                <thead className="bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500">
+                <thead className="bg-subtle text-xs text-muted">
                   <tr>
                     <th className="px-4 py-2.5 text-left font-semibold">Style</th>
                     <th className="px-4 py-2.5 text-left font-semibold">Output</th>
@@ -214,7 +214,7 @@ export default async function StatisticsPage({
                     <th className="px-4 py-2.5 text-right font-semibold">Outcome</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-100">
+                <tbody className="divide-y divide-line">
                   {stats.recent.map((r, i) => (
                     <RecentRow key={`${r.styleId}-${r.outputName}-${i}`} r={r} />
                   ))}
@@ -222,7 +222,7 @@ export default async function StatisticsPage({
               </table>
             </div>
             {stats.capped && (
-              <p className="mt-2 text-xs text-zinc-400">
+              <p className="mt-2 text-xs text-faint">
                 Showing the most recent 1,000 reviewed outputs in this window — older rows are omitted
                 from the totals.
               </p>
@@ -248,36 +248,36 @@ function StatCard({
   return (
     <div
       className={`rounded-xl border p-4 ${
-        accent ? "border-blue-200 bg-blue-50/50" : "border-zinc-200 bg-white"
+        accent ? "border-transparent bg-blue-50/50" : "border-line bg-surface"
       }`}
     >
-      <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</div>
-      <div className="mt-1.5 text-2xl font-semibold tracking-tight text-zinc-900">{value}</div>
-      {hint && <div className="mt-1 text-xs text-zinc-400">{hint}</div>}
+      <div className="text-xs font-medium text-muted">{label}</div>
+      <div className="mt-1.5 text-[18px] font-semibold tracking-[-0.01em] text-ink">{value}</div>
+      {hint && <div className="mt-1 text-xs text-faint">{hint}</div>}
     </div>
   );
 }
 
 function RecentRow({ r }: { r: CompletedOutput }) {
   return (
-    <tr className="hover:bg-zinc-50">
+    <tr className="hover:bg-subtle">
       <td className="px-4 py-2.5">
-        <div className="font-medium text-zinc-900">{r.styleName}</div>
-        <div className="text-xs text-zinc-400">{r.customerName}</div>
+        <div className="font-medium text-ink">{r.styleName}</div>
+        <div className="text-xs text-faint">{r.customerName}</div>
       </td>
-      <td className="px-4 py-2.5 text-zinc-600">{r.outputName}</td>
-      <td className="px-4 py-2.5 text-zinc-600">{reviewerLabel(r)}</td>
-      <td className="px-4 py-2.5 text-zinc-500">{fmtWhen(r.openedAt)}</td>
-      <td className="px-4 py-2.5 text-zinc-500">{fmtWhen(r.finishedAt)}</td>
-      <td className="px-4 py-2.5 text-right font-medium tabular-nums text-zinc-900">
+      <td className="px-4 py-2.5 text-muted">{r.outputName}</td>
+      <td className="px-4 py-2.5 text-muted">{reviewerLabel(r)}</td>
+      <td className="px-4 py-2.5 text-muted">{fmtWhen(r.openedAt)}</td>
+      <td className="px-4 py-2.5 text-muted">{fmtWhen(r.finishedAt)}</td>
+      <td className="px-4 py-2.5 text-right font-medium tabular-nums text-ink">
         {formatDuration(r.durationMs)}
       </td>
       <td className="px-4 py-2.5 text-right">
         <span
           className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
             r.outcome === "APPROVED"
-              ? "bg-emerald-50 text-emerald-700"
-              : "bg-red-50 text-red-700"
+              ? "bg-good-soft text-good"
+              : "bg-bad-soft text-bad"
           }`}
         >
           {r.outcome === "APPROVED" ? "Approved" : "Rejected"}

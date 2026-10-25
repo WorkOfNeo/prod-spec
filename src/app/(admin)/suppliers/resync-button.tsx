@@ -26,12 +26,12 @@ export function ResyncSupplierButton({ supplierId }: { supplierId: string }) {
 
   return (
     <div className="flex items-center justify-end gap-2">
-      {err && <span className="text-xs text-red-600">{err}</span>}
+      {err && <span className="text-xs text-bad">{err}</span>}
       <button
         type="button"
         onClick={onClick}
         disabled={pending}
-        className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+        className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink hover:bg-subtle disabled:opacity-50"
       >
         {pending ? "…" : "Re-sync"}
       </button>

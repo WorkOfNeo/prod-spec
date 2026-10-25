@@ -22,10 +22,10 @@ export default async function TranslationsPage() {
   ]);
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-6 py-5">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Translations</h1>
-        <p className="mt-1 max-w-3xl text-sm text-zinc-500">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Translations</h1>
+        <p className="mt-1 max-w-3xl text-sm text-muted">
           The canonical English→multilingual dictionary, synced from Monday board{" "}
           <code className="font-mono">{MONDAY_BOARDS.translations}</code>. Wash-care phrases,
           care-label text, and &ldquo;Made in&hellip;&rdquo; lines all resolve through here at render

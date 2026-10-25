@@ -37,20 +37,20 @@ export function SupplierSendSetting({ initialEnabled }: { initialEnabled: boolea
   return (
     <div
       className={`rounded-lg border p-5 ${
-        enabled ? "border-emerald-300 bg-emerald-50/40" : "border-amber-300 bg-amber-50/40"
+        enabled ? "border-transparent bg-emerald-50/40" : "border-transparent bg-amber-50/40"
       }`}
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold text-zinc-900">Automatic supplier sending</h2>
-          <p className="mt-1 text-sm text-zinc-600">
+          <h2 className="text-sm font-semibold text-ink">Automatic supplier sending</h2>
+          <p className="mt-1 text-sm text-muted">
             When <strong>on</strong>, approved outputs are pushed to the supplier&rsquo;s SharePoint
             folder as soon as they&rsquo;re approved, and the midnight job emails each supplier one
             digest of everything waiting for them. When <strong>off</strong> (the default), the
             queue below still fills so you can see exactly what would be sent &mdash; but{" "}
             <strong>nothing is pushed and no email is sent</strong>.
           </p>
-          {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
+          {error ? <p className="mt-2 text-xs text-bad">{error}</p> : null}
         </div>
         <Toggle
           checked={enabled}
@@ -60,7 +60,7 @@ export function SupplierSendSetting({ initialEnabled }: { initialEnabled: boolea
           ariaLabel="Automatic supplier sending"
         />
       </div>
-      <div className="mt-3 text-xs text-zinc-500">
+      <div className="mt-3 text-xs text-muted">
         {saving
           ? "Saving…"
           : enabled
@@ -122,15 +122,15 @@ export function SupplierSendCutoff({
       : null;
 
   return (
-    <div className="rounded-lg border border-zinc-200 p-5">
-      <h2 className="text-sm font-semibold text-zinc-900">Deliver from PO</h2>
-      <p className="mt-1 text-sm text-zinc-600">
+    <div className="rounded-lg border border-line p-5">
+      <h2 className="text-sm font-semibold text-ink">Deliver from PO</h2>
+      <p className="mt-1 text-sm text-muted">
         Orders below this PO number are <strong>never</strong> delivered to a supplier — not queued,
         not uploaded to a supplier folder, not emailed in the nightly digest. It applies to every
         path, including cover pages (which otherwise ship regardless of approval) and the backfill
         that reconciles pre-existing approvals into the queue.
       </p>
-      <p className="mt-1 text-xs text-zinc-500">
+      <p className="mt-1 text-xs text-muted">
         A style with no readable PO number is treated as below the cutoff. To deliver an older order
         anyway, lower the cutoff or use the per-style push button on the style page.
       </p>
@@ -141,13 +141,13 @@ export function SupplierSendCutoff({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={generation != null ? `${generation} (generation cutoff)` : "e.g. 63144"}
-          className="w-44 rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm tabular-nums"
+          className="w-44 rounded-md border border-line px-2.5 py-1.5 text-sm tabular-nums"
         />
         <button
           type="button"
           disabled={saving || value.trim() === "" || !Number.isFinite(Number(value)) || Number(value) <= 0}
           onClick={() => save(Number(value))}
-          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         >
           Save
         </button>
@@ -155,12 +155,12 @@ export function SupplierSendCutoff({
           type="button"
           disabled={saving}
           onClick={() => save(null)}
-          className="rounded-md px-2 py-1.5 text-xs text-zinc-500 underline disabled:opacity-50"
+          className="rounded-md px-2 py-1.5 text-xs text-muted underline disabled:opacity-50"
         >
           Clear
         </button>
       </div>
-      <div className="mt-2 text-xs text-zinc-500">{saving ? "Saving…" : (msg ?? followingHint)}</div>
+      <div className="mt-2 text-xs text-muted">{saving ? "Saving…" : (msg ?? followingHint)}</div>
     </div>
   );
 }
@@ -199,11 +199,11 @@ export function StyleSubfolderCutoff({ initial }: { initial: number | null }) {
   }
 
   return (
-    <div className="mt-3 border-t border-zinc-200 pt-3">
-      <div className="text-sm font-medium text-zinc-800">One folder per style, from PO</div>
-      <p className="mt-0.5 text-xs text-zinc-500">
+    <div className="mt-3 border-t border-line pt-3">
+      <div className="text-sm font-medium text-ink">One folder per style, from PO</div>
+      <p className="mt-0.5 text-xs text-muted">
         From this PO number on, each style/colourway delivers into its own folder inside APPROVED LAYOUTS
-        (<span className="font-mono text-[11px] text-zinc-600">APPROVED LAYOUTS → AB10001 - Navy</span>).
+        (<span className="font-mono text-[11px] text-muted">APPROVED LAYOUTS → AB10001 - Navy</span>).
         Earlier orders keep the flat folder and nothing already delivered is moved — to tidy one style up,
         use <strong>Move to style folder</strong> in the Supplier folder check on its page. Leave empty to
         keep the flat layout everywhere.
@@ -215,13 +215,13 @@ export function StyleSubfolderCutoff({ initial }: { initial: number | null }) {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="e.g. 63144"
-          className="w-44 rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm tabular-nums"
+          className="w-44 rounded-md border border-line bg-surface px-2.5 py-1.5 text-sm tabular-nums"
         />
         <button
           type="button"
           disabled={saving || value.trim() === "" || !Number.isFinite(Number(value)) || Number(value) <= 0}
           onClick={() => save(Number(value))}
-          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         >
           Save
         </button>
@@ -229,12 +229,12 @@ export function StyleSubfolderCutoff({ initial }: { initial: number | null }) {
           type="button"
           disabled={saving}
           onClick={() => save(null)}
-          className="rounded-md px-2 py-1.5 text-xs text-zinc-500 underline disabled:opacity-50"
+          className="rounded-md px-2 py-1.5 text-xs text-muted underline disabled:opacity-50"
         >
           Clear
         </button>
       </div>
-      <div className="mt-2 text-xs text-zinc-500">
+      <div className="mt-2 text-xs text-muted">
         {saving
           ? "Saving…"
           : (msg ?? (initial === null ? "Off — every PO delivers flat into APPROVED LAYOUTS." : `On from PO ${initial}.`))}

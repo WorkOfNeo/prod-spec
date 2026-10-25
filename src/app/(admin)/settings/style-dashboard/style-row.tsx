@@ -52,11 +52,11 @@ function RollupChips({ row, green }: { row: StyleDashboardRow; green?: boolean }
             {c.n} {c.label}
           </span>
         ))}
-      <span className={green ? "text-emerald-200" : "text-zinc-400"}>·</span>
-      <span className={green ? "font-medium text-white" : "text-emerald-700"}>
+      <span className={green ? "text-emerald-200" : "text-faint"}>·</span>
+      <span className={green ? "font-medium text-white" : "text-good"}>
         {r.uploadedSlots}/{r.generatedSlots} uploaded
       </span>
-      <span className={green ? "font-medium text-white" : "text-emerald-700"}>
+      <span className={green ? "font-medium text-white" : "text-good"}>
         {r.sentSlots}/{r.generatedSlots} sent
       </span>
     </span>
@@ -66,7 +66,7 @@ function RollupChips({ row, green }: { row: StyleDashboardRow; green?: boolean }
 function UploadedPill({ o }: { o: StyleOutputDetailRow }) {
   if (o.uploaded) {
     return (
-      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+      <span className="rounded-full border border-transparent bg-good-soft px-2 py-0.5 text-[11px] font-semibold text-good">
         uploaded
       </span>
     );
@@ -75,8 +75,8 @@ function UploadedPill({ o }: { o: StyleOutputDetailRow }) {
   const failed = s === "FAILED" || s === "AMBIGUOUS" || s === "NO_FOLDER";
   return (
     <span
-      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
-        failed ? "border-red-200 bg-red-50 text-red-700" : "border-zinc-200 bg-zinc-50 text-zinc-500"
+      className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+        failed ? "border-transparent bg-bad-soft text-bad" : "border-line bg-subtle text-muted"
       }`}
       title={o.sharePointStatus ?? "not uploaded"}
     >
@@ -87,11 +87,11 @@ function UploadedPill({ o }: { o: StyleOutputDetailRow }) {
 
 function EmailPill({ o }: { o: StyleOutputDetailRow }) {
   return o.emailed ? (
-    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+    <span className="rounded-full border border-transparent bg-good-soft px-2 py-0.5 text-[11px] font-semibold text-good">
       sent
     </span>
   ) : (
-    <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-semibold text-zinc-500">
+    <span className="rounded-full border border-line bg-subtle px-2 py-0.5 text-[11px] font-semibold text-muted">
       not sent
     </span>
   );
@@ -126,13 +126,13 @@ export function StyleRow({ row }: { row: StyleDashboardRow }) {
   return (
     <details
       className={`group rounded-lg border ${
-        green ? "border-emerald-600 bg-emerald-600" : "border-zinc-200 bg-white"
+        green ? "border-good bg-good" : "border-line bg-surface"
       }`}
       onToggle={(e) => loadIfNeeded((e.currentTarget as HTMLDetailsElement).open)}
     >
       <summary
         className={`flex cursor-pointer list-none items-center gap-3 rounded-t-lg px-3 py-2 [&::-webkit-details-marker]:hidden ${
-          green ? "hover:bg-emerald-700" : "hover:bg-zinc-50"
+          green ? "hover:bg-good" : "hover:bg-subtle"
         }`}
       >
         <svg
@@ -143,7 +143,7 @@ export function StyleRow({ row }: { row: StyleDashboardRow }) {
           strokeLinecap="round"
           strokeLinejoin="round"
           className={`h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90 ${
-            green ? "text-emerald-200" : "text-zinc-400"
+            green ? "text-emerald-200" : "text-faint"
           }`}
           aria-hidden="true"
         >
@@ -151,24 +151,24 @@ export function StyleRow({ row }: { row: StyleDashboardRow }) {
         </svg>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2">
-            <span className={`font-medium ${green ? "text-white" : "text-zinc-900"}`}>{row.name}</span>
+            <span className={`font-medium ${green ? "text-white" : "text-ink"}`}>{row.name}</span>
             {row.businessArea && (
-              <span className={`text-xs ${green ? "text-emerald-100" : "text-zinc-500"}`}>
+              <span className={`text-xs ${green ? "text-emerald-100" : "text-muted"}`}>
                 {row.businessArea}
               </span>
             )}
             {green && (
-              <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+              <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[11px] font-semibold text-white">
                 delivered
               </span>
             )}
             {row.hasInflight && !green && (
-              <span className="rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+              <span className="rounded-full border border-transparent bg-accent-soft px-1.5 py-0.5 text-[11px] font-semibold text-accent-text">
                 generating
               </span>
             )}
           </div>
-          <div className={`truncate text-xs ${green ? "text-emerald-100" : "text-zinc-500"}`}>
+          <div className={`truncate text-xs ${green ? "text-emerald-100" : "text-muted"}`}>
             {row.customer ?? "—"}
             {row.poNumber ? ` · PO ${row.poNumber}` : ""}
             {row.supplier ? ` · ${row.supplier}` : ""}
@@ -183,7 +183,7 @@ export function StyleRow({ row }: { row: StyleDashboardRow }) {
           SharePoint links keep their contrast. */}
       <div
         className={`border-t px-3 py-2 ${
-          green ? "rounded-b-lg border-emerald-500 bg-white" : "border-zinc-100"
+          green ? "rounded-b-lg border-good bg-surface" : "border-line"
         }`}
       >
         {/* Rollup is always shown on small screens where the summary hides it. */}
@@ -191,21 +191,21 @@ export function StyleRow({ row }: { row: StyleDashboardRow }) {
           <RollupChips row={row} />
         </div>
 
-        {loading && <p className="py-3 text-xs text-zinc-500">Loading outputs…</p>}
-        {error && <p className="py-3 text-xs text-red-600">{error}</p>}
+        {loading && <p className="py-3 text-xs text-muted">Loading outputs…</p>}
+        {error && <p className="py-3 text-xs text-bad">{error}</p>}
         {outputs != null && outputs.length === 0 && (
-          <p className="py-3 text-xs text-zinc-500">No outputs.</p>
+          <p className="py-3 text-xs text-muted">No outputs.</p>
         )}
         {outputs != null && outputs.length > 0 && (
-          <ul className="divide-y divide-zinc-100">
+          <ul className="divide-y divide-line">
             {outputs.map((o) => {
               const chip = STATE_CHIP[o.state];
               return (
                 <li key={o.variantKey} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-xs">
-                  <span className="min-w-0 flex-1 truncate text-zinc-700" title={o.fileName ?? undefined}>
+                  <span className="min-w-0 flex-1 truncate text-ink" title={o.fileName ?? undefined}>
                     {o.name}
                   </span>
-                  <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${chip.cls}`}>
+                  <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${chip.cls}`}>
                     {chip.label}
                   </span>
                   <span className="shrink-0">
@@ -220,7 +220,7 @@ export function StyleRow({ row }: { row: StyleDashboardRow }) {
                         href={o.sharePointUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-blue-700 hover:underline"
+                        className="text-accent-text hover:underline"
                       >
                         File
                       </a>
@@ -230,18 +230,18 @@ export function StyleRow({ row }: { row: StyleDashboardRow }) {
                         href={o.sharePointFolderUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-blue-700 hover:underline"
+                        className="text-accent-text hover:underline"
                       >
                         Folder
                       </a>
                     ) : null}
                     {!o.sharePointUrl && !o.sharePointFolderUrl && (
-                      <span className="text-zinc-300" aria-hidden="true">
+                      <span className="text-faint" aria-hidden="true">
                         —
                       </span>
                     )}
                   </span>
-                  <span className="w-28 shrink-0 text-right tabular-nums text-zinc-400">
+                  <span className="w-28 shrink-0 text-right tabular-nums text-faint">
                     {fmtDate(o.generatedAt)}
                   </span>
                 </li>
@@ -251,10 +251,10 @@ export function StyleRow({ row }: { row: StyleDashboardRow }) {
         )}
 
         <div className="mt-2 flex gap-3 text-xs">
-          <Link href={`/styles/${row.styleId}`} className="text-blue-700 hover:underline">
+          <Link href={`/styles/${row.styleId}`} className="text-accent-text hover:underline">
             Open style →
           </Link>
-          <Link href={`/styles/${row.styleId}/review`} className="text-blue-700 hover:underline">
+          <Link href={`/styles/${row.styleId}/review`} className="text-accent-text hover:underline">
             Review →
           </Link>
         </div>

@@ -150,10 +150,10 @@ export function SweepPanel() {
       ) : null}
 
       {/* ── Run control + progress ───────────────────────────────────── */}
-      <div className="rounded-lg border border-zinc-200 p-4">
+      <div className="rounded-lg border border-line p-4">
         {!sweep ? (
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-zinc-600">
+            <p className="text-sm text-muted">
               No sweep has been run yet. It works through every purchase order at or above the
               supplier-send cutoff, one folder at a time, and takes roughly an hour.
             </p>
@@ -161,7 +161,7 @@ export function SweepPanel() {
               type="button"
               onClick={() => setConfirming(true)}
               disabled={busy}
-              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Start the sweep
             </button>
@@ -181,7 +181,7 @@ export function SweepPanel() {
                           ? "Stopped"
                           : "Stopped early"}
                 </p>
-                <p className="mt-0.5 text-xs text-zinc-500">
+                <p className="mt-0.5 text-xs text-muted">
                   {done} of {sweep.totalPos} purchase orders
                   {sweep.minPo != null ? ` at or above PO ${sweep.minPo}` : ""} · started{" "}
                   {new Date(sweep.startedAt).toLocaleString()}
@@ -194,7 +194,7 @@ export function SweepPanel() {
                     type="button"
                     onClick={() => void post("cancel")}
                     disabled={busy}
-                    className="rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:opacity-40"
+                    className="rounded-md border border-line px-3 py-2 text-sm disabled:opacity-40"
                   >
                     Stop
                   </button>
@@ -203,7 +203,7 @@ export function SweepPanel() {
                     type="button"
                     onClick={() => (sweep.status === "RUNNING" ? void post("start") : setConfirming(true))}
                     disabled={busy}
-                    className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {sweep.status === "RUNNING" ? "Resume" : "Start a new sweep"}
                   </button>
@@ -211,8 +211,8 @@ export function SweepPanel() {
               </div>
             </div>
 
-            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
-              <div className="h-full bg-zinc-900 transition-all" style={{ width: `${pct}%` }} />
+            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-subtle">
+              <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
             </div>
 
             <div className="mt-3 grid gap-3 sm:grid-cols-4">
@@ -241,7 +241,7 @@ export function SweepPanel() {
       {confirming ? (
         <Box tone="mute">
           <p className="font-medium">Start a sweep of every purchase order?</p>
-          <p className="mt-1 text-sm text-zinc-600">
+          <p className="mt-1 text-sm text-muted">
             It reads every PO folder in SharePoint, one at a time, for about an hour. It is read-only —
             nothing is renamed or removed by the sweep itself. You can leave the page; it keeps going,
             and it survives a deploy.
@@ -251,14 +251,14 @@ export function SweepPanel() {
               type="button"
               onClick={() => void post("start")}
               disabled={busy}
-              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? "Starting…" : "Start"}
             </button>
             <button
               type="button"
               onClick={() => setConfirming(false)}
-              className="rounded-md border border-zinc-300 px-4 py-2 text-sm"
+              className="rounded-md border border-line px-4 py-2 text-sm"
             >
               Cancel
             </button>
@@ -270,13 +270,13 @@ export function SweepPanel() {
       {sweep ? (
         <div>
           <h2 className="text-lg font-semibold">What is wrong, across every folder</h2>
-          <p className="mt-1 text-sm text-zinc-500">
+          <p className="mt-1 text-sm text-muted">
             Grouped by the fault rather than by the folder — the same verdicts each PO&apos;s own check
             would show. Open a group to see the files and the order each one is in.
           </p>
 
           {groups.length === 0 ? (
-            <p className="mt-4 text-sm text-zinc-500">
+            <p className="mt-4 text-sm text-muted">
               {sweep.checkedPos === 0
                 ? "Nothing checked yet."
                 : "✓ Nothing flagged in any folder checked so far."}
@@ -284,32 +284,32 @@ export function SweepPanel() {
           ) : (
             <div className="mt-4 space-y-2">
               {groups.map((g) => (
-                <div key={g.kind} className="rounded-lg border border-zinc-200">
+                <div key={g.kind} className="rounded-lg border border-line">
                   <button
                     type="button"
                     onClick={() => setKind(kind === g.kind ? null : g.kind)}
-                    className="flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 text-left hover:bg-zinc-50"
+                    className="flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 text-left hover:bg-subtle"
                   >
                     <div>
                       <p className="text-sm font-medium">
                         <SeverityDot severity={g.severity} /> {g.title}
                       </p>
-                      <p className="mt-0.5 max-w-3xl text-xs text-zinc-500">{g.blurb}</p>
+                      <p className="mt-0.5 max-w-3xl text-xs text-muted">{g.blurb}</p>
                     </div>
-                    <div className="whitespace-nowrap text-sm text-zinc-600">
+                    <div className="whitespace-nowrap text-sm text-muted">
                       {g.files} file{g.files === 1 ? "" : "s"} · {g.pos} PO{g.pos === 1 ? "" : "s"}
                     </div>
                   </button>
 
                   {kind === g.kind ? (
-                    <div className="border-t border-zinc-200 px-4 py-3">
-                      <p className="text-xs text-zinc-500">
+                    <div className="border-t border-line px-4 py-3">
+                      <p className="text-xs text-muted">
                         Repairs happen on the PO&apos;s own check, which re-reads the folder live and
                         refuses anything that has changed since this scan.
                       </p>
                       <div className="mt-3 overflow-x-auto">
                         <table className="w-full min-w-[46rem] text-sm">
-                          <thead className="text-left text-xs uppercase tracking-wide text-zinc-500">
+                          <thead className="text-left text-xs text-muted">
                             <tr>
                               <th className="py-1 pr-3">Purchase order</th>
                               <th className="py-1 pr-3">File</th>
@@ -319,31 +319,31 @@ export function SweepPanel() {
                           </thead>
                           <tbody>
                             {files.map((f, i) => (
-                              <tr key={`${f.supplierId}:${f.poNumber}:${f.fileName}:${i}`} className="border-t border-zinc-100 align-top">
+                              <tr key={`${f.supplierId}:${f.poNumber}:${f.fileName}:${i}`} className="border-t border-line align-top">
                                 <td className="py-2 pr-3 whitespace-nowrap">
                                   <span className="font-medium">{f.poNumber}</span>
                                   {f.supplierName ? (
-                                    <span className="block text-xs text-zinc-500">{f.supplierName}</span>
+                                    <span className="block text-xs text-muted">{f.supplierName}</span>
                                   ) : null}
                                 </td>
                                 <td className="py-2 pr-3">
                                   <span className="break-all font-mono text-xs">{f.fileName}</span>
                                   {f.renameTo ? (
-                                    <span className="block break-all text-xs text-zinc-500">
+                                    <span className="block break-all text-xs text-muted">
                                       → {f.renameTo}
                                     </span>
                                   ) : null}
                                 </td>
-                                <td className="py-2 pr-3 text-xs text-zinc-600">
+                                <td className="py-2 pr-3 text-xs text-muted">
                                   {f.verdict}
                                   {f.location !== "approved-layouts" ? (
-                                    <span className="block text-zinc-400">In the PO folder, not APPROVED LAYOUTS — reported only.</span>
+                                    <span className="block text-faint">In the PO folder, not APPROVED LAYOUTS — reported only.</span>
                                   ) : null}
                                 </td>
                                 <td className="py-2 whitespace-nowrap">
                                   <Link
                                     href={`/checks?po=${encodeURIComponent(f.poNumber)}&supplier=${encodeURIComponent(f.supplierId)}`}
-                                    className="text-xs font-medium text-zinc-900 underline"
+                                    className="text-xs font-medium text-ink underline"
                                   >
                                     Check this PO
                                   </Link>
@@ -353,7 +353,7 @@ export function SweepPanel() {
                           </tbody>
                         </table>
                         {files.length === 0 ? (
-                          <p className="py-2 text-xs text-zinc-500">Loading…</p>
+                          <p className="py-2 text-xs text-muted">Loading…</p>
                         ) : null}
                       </div>
                     </div>
@@ -369,13 +369,13 @@ export function SweepPanel() {
       {problems.length > 0 ? (
         <div>
           <h2 className="text-lg font-semibold">Folders the sweep could not read</h2>
-          <p className="mt-1 max-w-3xl text-sm text-zinc-500">
+          <p className="mt-1 max-w-3xl text-sm text-muted">
             These are NOT clean folders. A permission gap, a throttle or an ambiguous PO folder means the
             sweep has no evidence about them either way.
           </p>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[40rem] text-sm">
-              <thead className="text-left text-xs uppercase tracking-wide text-zinc-500">
+              <thead className="text-left text-xs text-muted">
                 <tr>
                   <th className="py-1 pr-3">Purchase order</th>
                   <th className="py-1 pr-3">State</th>
@@ -384,7 +384,7 @@ export function SweepPanel() {
               </thead>
               <tbody>
                 {problems.map((p) => (
-                  <tr key={`${p.supplierId}:${p.poNumber}`} className="border-t border-zinc-100 align-top">
+                  <tr key={`${p.supplierId}:${p.poNumber}`} className="border-t border-line align-top">
                     <td className="py-2 pr-3 whitespace-nowrap">
                       <Link
                         href={`/checks?po=${encodeURIComponent(p.poNumber)}&supplier=${encodeURIComponent(p.supplierId)}`}
@@ -392,10 +392,10 @@ export function SweepPanel() {
                       >
                         {p.poNumber}
                       </Link>
-                      {p.supplierName ? <span className="block text-xs text-zinc-500">{p.supplierName}</span> : null}
+                      {p.supplierName ? <span className="block text-xs text-muted">{p.supplierName}</span> : null}
                     </td>
                     <td className="py-2 pr-3 whitespace-nowrap text-xs">{p.state}</td>
-                    <td className="py-2 text-xs text-zinc-600">{p.error ?? p.message ?? "—"}</td>
+                    <td className="py-2 text-xs text-muted">{p.error ?? p.message ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -425,10 +425,10 @@ function Stat({
 }) {
   const cls = tone === "warn" ? "text-amber-700" : tone === "ok" ? "text-emerald-700" : "text-zinc-900";
   return (
-    <div className="rounded-md border border-zinc-200 px-3 py-2">
-      <div className="text-xs uppercase tracking-wide text-zinc-500">{label}</div>
+    <div className="rounded-md border border-line px-3 py-2">
+      <div className="text-xs text-muted">{label}</div>
       <div className={`text-lg font-semibold ${cls}`}>{value}</div>
-      {hint ? <div className="text-xs text-zinc-400">{hint}</div> : null}
+      {hint ? <div className="text-xs text-faint">{hint}</div> : null}
     </div>
   );
 }
@@ -446,5 +446,5 @@ function Box({
     tone === "warn"
       ? "border-amber-300 bg-amber-50 text-amber-900"
       : "border-zinc-200 bg-zinc-50 text-zinc-700";
-  return <div className={`rounded-lg border px-4 py-3 text-sm ${cls} ${className}`}>{children}</div>;
+  return <div className={`rounded-lg border px-4 py-3 text-sm ${cls}  ${className}`}>{children}</div>;
 }

@@ -41,7 +41,7 @@ export const OUTPUT_STATUS_META: Record<OutputStatus, { label: string; tone: Ton
 export function StatusPill({ label, tone, className = "" }: { label: string; tone: Tone; className?: string }) {
   return (
     <span
-      className={`inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${TONE[tone]} ${className}`}
+      className={`inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${TONE[tone]}  ${className}`}
     >
       {label}
     </span>

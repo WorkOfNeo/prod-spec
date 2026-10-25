@@ -31,11 +31,11 @@ export default async function NewRequestPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
-      <Link href="/requests" className="text-sm text-zinc-500 hover:text-zinc-900">
+      <Link href="/requests" className="text-sm text-muted hover:text-ink">
         ← Requests
       </Link>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight">New request</h1>
-      <p className="mt-1 max-w-3xl text-sm text-zinc-500">
+      <h1 className="mt-2 text-[18px] font-semibold tracking-[-0.01em]">New request</h1>
+      <p className="mt-1 max-w-3xl text-sm text-muted">
         Tell us which print output is wrong and how it should look. One issue per output — the assistant
         drafts each change on a copy for an admin to approve.
       </p>

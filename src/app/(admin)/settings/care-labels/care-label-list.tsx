@@ -93,7 +93,7 @@ export function CareLabelList({
           type="button"
           onClick={() => setCreating(true)}
           disabled={busy}
-          className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           + New care label
         </button>
@@ -101,19 +101,19 @@ export function CareLabelList({
           type="button"
           onClick={seed}
           disabled={busy}
-          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         >
           Seed standard set
         </button>
-        <span className="text-xs text-zinc-500">
+        <span className="text-xs text-muted">
           {initialLabels.length} line{initialLabels.length === 1 ? "" : "s"}
         </span>
-        {err && <span className="text-xs text-red-600">{err}</span>}
+        {err && <span className="text-xs text-bad">{err}</span>}
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="bg-subtle text-left text-xs text-muted">
             <tr>
               <th className="w-10 px-4 py-2">#</th>
               <th className="px-4 py-2">English line</th>
@@ -125,15 +125,15 @@ export function CareLabelList({
           <tbody>
             {initialLabels.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-12 text-center text-zinc-500">
+                <td colSpan={5} className="px-4 py-12 text-center text-muted">
                   No care labels yet. Click <strong>Seed standard set</strong> for the shipped lines,
                   or <strong>+ New care label</strong> to add your own.
                 </td>
               </tr>
             ) : (
               initialLabels.map((l) => (
-                <tr key={l.id} className="border-t border-zinc-100 align-top">
-                  <td className="px-4 py-2 text-xs text-zinc-400">{l.sortOrder}</td>
+                <tr key={l.id} className="border-t border-line align-top">
+                  <td className="px-4 py-2 text-xs text-faint">{l.sortOrder}</td>
                   <td className="px-4 py-2 font-medium">{l.sourceText}</td>
                   <td className="px-4 py-2">
                     <VisibilitySummary label={l} nameByCode={nameByCode} />
@@ -141,7 +141,7 @@ export function CareLabelList({
                   <td className="px-4 py-2">
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs ${
-                        l.active ? "bg-emerald-100 text-emerald-800" : "bg-zinc-100 text-zinc-600"
+                        l.active ? "bg-good-soft text-good" : "bg-subtle text-muted"
                       }`}
                     >
                       {l.active ? "active" : "disabled"}
@@ -151,7 +151,7 @@ export function CareLabelList({
                     <button
                       type="button"
                       onClick={() => setEditing(l)}
-                      className="text-xs text-zinc-700 underline"
+                      className="text-xs text-ink underline"
                     >
                       Edit
                     </button>
@@ -235,7 +235,7 @@ function CareLabelPreview({
       symbols.map((s) => ({
         value: s.code,
         label: s.name,
-        hint: <span className="font-mono text-[10px] text-zinc-400">{s.code}</span>,
+        hint: <span className="font-mono text-[11px] text-faint">{s.code}</span>,
       })),
     [symbols],
   );
@@ -256,18 +256,18 @@ function CareLabelPreview({
   return (
     <section className="mt-10">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-zinc-700">Preview &amp; test</h2>
+        <h2 className="text-sm font-semibold text-ink">Preview &amp; test</h2>
         {present.length > 0 && (
           <button
             type="button"
             onClick={() => setPicks(Array(SLOTS).fill(""))}
-            className="text-xs text-zinc-500 underline"
+            className="text-xs text-muted underline"
           >
             Clear
           </button>
         )}
       </div>
-      <p className="mt-1 max-w-3xl text-xs text-zinc-500">
+      <p className="mt-1 max-w-3xl text-xs text-muted">
         Pick the wash-care symbols a style carries and watch which care labels survive your
         show/hide rules — the exact logic the renderer uses. Text shown is the English source;
         per-language text resolves from the dictionary at print time.
@@ -278,7 +278,7 @@ function CareLabelPreview({
           // Slots are positional and fixed in count; index key is fine.
           // eslint-disable-next-line react/no-array-index-key
           <div key={i}>
-            <div className="mb-1 text-[11px] font-medium text-zinc-600">Symbol {i + 1}</div>
+            <div className="mb-1 text-[11px] font-medium text-muted">Symbol {i + 1}</div>
             <Combobox
               mode="single"
               options={symbolOptions}
@@ -291,18 +291,18 @@ function CareLabelPreview({
         ))}
       </div>
 
-      <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-4">
-        <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+      <div className="mt-4 rounded-xl border border-line bg-surface p-4">
+        <div className="text-[11px] font-medium text-faint">
           Printed care line (EN)
         </div>
-        <div className="mt-1 text-sm text-zinc-800">
-          {visibleLine || <span className="text-zinc-400">— nothing visible —</span>}
+        <div className="mt-1 text-sm text-ink">
+          {visibleLine || <span className="text-faint">— nothing visible —</span>}
         </div>
       </div>
 
-      <div className="mt-3 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="mt-3 overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="bg-subtle text-left text-xs text-muted">
             <tr>
               <th className="px-4 py-2">Care label</th>
               <th className="px-4 py-2">Shown?</th>
@@ -312,7 +312,7 @@ function CareLabelPreview({
           <tbody>
             {evaluated.length === 0 ? (
               <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-zinc-500">
+                <td colSpan={3} className="px-4 py-6 text-center text-muted">
                   No active care labels to preview.
                 </td>
               </tr>
@@ -320,11 +320,11 @@ function CareLabelPreview({
               evaluated.map(({ label, visible, reason, matchedCodes }) => (
                 <tr
                   key={label.id}
-                  className={`border-t border-zinc-100 ${visible ? "" : "bg-zinc-50/60"}`}
+                  className={`border-t border-line ${visible ? "" : "bg-zinc-50/60"}`}
                 >
                   <td
                     className={`px-4 py-2 ${
-                      visible ? "text-zinc-800" : "text-zinc-400 line-through"
+                      visible ? "text-ink" : "text-faint line-through"
                     }`}
                   >
                     {label.sourceText}
@@ -332,13 +332,13 @@ function CareLabelPreview({
                   <td className="px-4 py-2">
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs ${
-                        visible ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                        visible ? "bg-good-soft text-good" : "bg-bad-soft text-bad"
                       }`}
                     >
                       {visible ? "shown" : "hidden"}
                     </span>
                   </td>
-                  <td className="px-4 py-2 text-xs text-zinc-500">
+                  <td className="px-4 py-2 text-xs text-muted">
                     {reason === "always" && "always shown"}
                     {reason === "action-prohibited" &&
                       `removed by ${names(matchedCodes)} (${
@@ -370,25 +370,25 @@ function VisibilitySummary({
     codes.map((c) => nameByCode.get(c) ?? c).join(", ");
   const hasManual = label.showIfSymbols.length > 0 || label.hideIfSymbols.length > 0;
   if (!label.action && !hasManual) {
-    return <span className="text-xs text-zinc-400">Always shown</span>;
+    return <span className="text-xs text-faint">Always shown</span>;
   }
   return (
     <div className="space-y-0.5 text-xs">
       {label.action && (
-        <div className="text-zinc-700">
+        <div className="text-ink">
           Action:{" "}
           <span className="font-medium">{LAUNDERING_ACTION_LABELS[label.action]}</span>
-          <span className="text-zinc-400"> · removed by its prohibition</span>
+          <span className="text-faint"> · removed by its prohibition</span>
         </div>
       )}
       {label.showIfSymbols.length > 0 && (
-        <div className="text-emerald-700">
-          Show if: <span className="text-zinc-600">{names(label.showIfSymbols)}</span>
+        <div className="text-good">
+          Show if: <span className="text-muted">{names(label.showIfSymbols)}</span>
         </div>
       )}
       {label.hideIfSymbols.length > 0 && (
-        <div className="text-rose-700">
-          Hide if: <span className="text-zinc-600">{names(label.hideIfSymbols)}</span>
+        <div className="text-bad">
+          Hide if: <span className="text-muted">{names(label.hideIfSymbols)}</span>
         </div>
       )}
     </div>
@@ -529,48 +529,48 @@ function CareLabelDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-6">
-      <div className="my-8 w-full max-w-2xl rounded-lg bg-white p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[rgb(15_17_21/0.40)] p-6">
+      <div className="my-8 w-full max-w-2xl rounded-lg bg-surface p-6 shadow-2xl">
         <div className="mb-4 flex items-start justify-between">
           <h2 className="text-lg font-semibold">{title}</h2>
-          <button type="button" onClick={onClose} className="text-xs text-zinc-500 underline">
+          <button type="button" onClick={onClose} className="text-xs text-muted underline">
             close
           </button>
         </div>
 
         <div className="grid grid-cols-[1fr_auto] gap-4">
-          <label className="text-xs font-medium text-zinc-700">
+          <label className="text-xs font-medium text-ink">
             English line
             <input
               type="text"
               value={sourceText}
               onChange={(e) => setSourceText(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm"
               placeholder="wash and iron inside out"
             />
-            <span className="mt-1 block font-normal text-zinc-500">
+            <span className="mt-1 block font-normal text-muted">
               Also the key into the Translations dictionary for per-language text.
             </span>
           </label>
-          <label className="text-xs font-medium text-zinc-700">
+          <label className="text-xs font-medium text-ink">
             Order
             <input
               type="number"
               value={sortOrder}
               onChange={(e) => setSortOrder(e.target.value)}
-              className="mt-1 w-20 rounded-md border border-zinc-300 px-3 py-2 text-sm"
+              className="mt-1 w-20 rounded-md border border-line px-3 py-2 text-sm"
               placeholder="auto"
             />
           </label>
         </div>
 
         <div className="mt-5">
-          <label className="text-xs font-medium text-zinc-700">
+          <label className="text-xs font-medium text-ink">
             Action
             <select
               value={action}
               onChange={(e) => setAction(e.target.value as LaunderingAction | "")}
-              className="mt-1 block w-full rounded-md border border-zinc-300 px-3 py-2 text-sm sm:w-72"
+              className="mt-1 block w-full rounded-md border border-line px-3 py-2 text-sm sm:w-72"
             >
               <option value="">— none (always shown) —</option>
               {LAUNDERING_ACTIONS.map((a) => (
@@ -579,7 +579,7 @@ function CareLabelDialog({
                 </option>
               ))}
             </select>
-            <span className="mt-1 block font-normal text-zinc-500">
+            <span className="mt-1 block font-normal text-muted">
               When set, this line is removed if the style carries a &ldquo;Do not …&rdquo; symbol of
               the same action. Split combined lines (e.g. wash + iron) into one line per action so
               only the conflicting part drops.
@@ -587,11 +587,11 @@ function CareLabelDialog({
           </label>
         </div>
 
-        <details className="mt-5 rounded-md border border-zinc-200 bg-zinc-50/40 p-3">
-          <summary className="cursor-pointer text-xs font-semibold text-zinc-700">
+        <details className="mt-5 rounded-md border border-line bg-zinc-50/40 p-3">
+          <summary className="cursor-pointer text-xs font-semibold text-ink">
             Advanced override — show / hide by specific symbols
           </summary>
-          <p className="mt-1 text-[11px] text-zinc-500">
+          <p className="mt-1 text-[11px] text-muted">
             Optional manual rules layered on top of the action above, matched against specific
             symbol codes. A hide (manual or action) always wins.
           </p>
@@ -623,7 +623,7 @@ function CareLabelDialog({
 
         {mode === "edit" && <TranslationsPanel lookup={lookup} languages={languages} />}
 
-        {err && <p className="mt-3 text-xs text-red-600">{err}</p>}
+        {err && <p className="mt-3 text-xs text-bad">{err}</p>}
 
         <div className="mt-5 flex items-center justify-between">
           <div>
@@ -632,7 +632,7 @@ function CareLabelDialog({
                 type="button"
                 onClick={destroy}
                 disabled={busy}
-                className="text-xs text-red-700 underline disabled:opacity-50"
+                className="text-xs text-bad underline disabled:opacity-50"
               >
                 Delete permanently
               </button>
@@ -642,7 +642,7 @@ function CareLabelDialog({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink hover:bg-subtle"
             >
               Cancel
             </button>
@@ -650,7 +650,7 @@ function CareLabelDialog({
               type="button"
               onClick={save}
               disabled={busy || !sourceText.trim()}
-              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? "Saving…" : "Save"}
             </button>
@@ -678,23 +678,23 @@ function SymbolPicker({
 }) {
   const ring = accent === "emerald" ? "text-emerald-700" : "text-rose-700";
   return (
-    <div className="rounded-md border border-zinc-200 bg-zinc-50/40 p-3">
+    <div className="rounded-md border border-line bg-zinc-50/40 p-3">
       <div className={`text-xs font-semibold ${ring}`}>{title}</div>
-      <p className="mb-2 mt-0.5 text-[11px] text-zinc-500">{hint}</p>
+      <p className="mb-2 mt-0.5 text-[11px] text-muted">{hint}</p>
       {symbols.length === 0 ? (
-        <p className="text-xs text-zinc-500">No wash-care symbols defined yet.</p>
+        <p className="text-xs text-muted">No wash-care symbols defined yet.</p>
       ) : (
         <div className="max-h-56 overflow-y-auto pr-1">
           {symbols.map((s) => (
-            <label key={s.code} className="flex items-center gap-2 py-0.5 text-xs text-zinc-700">
+            <label key={s.code} className="flex items-center gap-2 py-0.5 text-xs text-ink">
               <input
                 type="checkbox"
                 checked={selected.includes(s.code)}
                 onChange={() => onToggle(s.code)}
-                className="h-3.5 w-3.5 rounded border-zinc-300"
+                className="h-3.5 w-3.5 rounded border-line"
               />
               <span className="flex-1 truncate">{s.name}</span>
-              <span className="font-mono text-[10px] text-zinc-400">{s.code}</span>
+              <span className="font-mono text-[11px] text-faint">{s.code}</span>
             </label>
           ))}
         </div>
@@ -715,19 +715,19 @@ function TranslationsPanel({
   languages: LanguageInfo[];
 }) {
   return (
-    <div className="mt-5 rounded-md border border-zinc-200 bg-zinc-50/40 p-3">
+    <div className="mt-5 rounded-md border border-line bg-zinc-50/40 p-3">
       <div className="flex items-center justify-between">
-        <div className="text-xs font-semibold text-zinc-700">Translations</div>
+        <div className="text-xs font-semibold text-ink">Translations</div>
         {lookup.status === "loading" && (
-          <span className="text-[11px] text-zinc-400">Loading…</span>
+          <span className="text-[11px] text-faint">Loading…</span>
         )}
       </div>
 
       {lookup.status === "error" && (
-        <p className="mt-1 text-[11px] text-red-600">Couldn&rsquo;t load translations — try again.</p>
+        <p className="mt-1 text-[11px] text-bad">Couldn&rsquo;t load translations — try again.</p>
       )}
       {lookup.status === "none" && (
-        <p className="mt-1 text-[11px] text-zinc-500">
+        <p className="mt-1 text-[11px] text-muted">
           No dictionary entry for this line yet. Add the phrase on the{" "}
           <Link href="/translations" className="underline">
             Translations
@@ -767,23 +767,23 @@ function TranslationsGrid({
 
   return (
     <>
-      <p className="mt-1 text-[11px] text-zinc-500">
+      <p className="mt-1 text-[11px] text-muted">
         {lookup.sourceText}
         {orderedCodes.length > 0 && ` · ${orderedCodes.length} languages`}
       </p>
       {orderedCodes.length === 0 ? (
-        <p className="mt-2 text-[11px] text-zinc-500">
+        <p className="mt-2 text-[11px] text-muted">
           Matched the dictionary, but no non-English translations are filled in yet.
         </p>
       ) : (
         <div className="mt-2 grid max-h-72 grid-cols-1 gap-1.5 overflow-y-auto sm:grid-cols-2">
           {orderedCodes.map((code) => (
-            <div key={code} className="rounded-md border border-zinc-100 bg-white px-3 py-2">
-              <div className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+            <div key={code} className="rounded-md border border-line bg-surface px-3 py-2">
+              <div className="text-[11px] font-medium text-faint">
                 {nameByCode.get(code) ?? code}{" "}
                 <span className="font-mono normal-case">{code}</span>
               </div>
-              <div className="text-sm text-zinc-800">{lookup.translations[code] || "—"}</div>
+              <div className="text-sm text-ink">{lookup.translations[code] || "—"}</div>
             </div>
           ))}
         </div>

@@ -75,9 +75,9 @@ export function DevDataPanel() {
   }
 
   if (loadError) {
-    return <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{loadError}</div>;
+    return <div className="mt-6 rounded-lg border border-transparent bg-bad-soft p-4 text-sm text-bad">{loadError}</div>;
   }
-  if (!data) return <div className="mt-6 text-sm text-zinc-500">Loading…</div>;
+  if (!data) return <div className="mt-6 text-sm text-muted">Loading…</div>;
 
   const pickable = data.recent.filter((p) => !p.loaded);
 
@@ -86,7 +86,7 @@ export function DevDataPanel() {
       {message ? (
         <div
           className={`rounded-lg border px-4 py-3 text-sm ${
-            message.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"
+            message.ok ? "border-transparent bg-good-soft text-good" : "border-transparent bg-bad-soft text-bad"
           }`}
         >
           {message.text}
@@ -96,26 +96,26 @@ export function DevDataPanel() {
       <section>
         <div className="mb-2 flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-700">Loaded here ({data.pos.length})</h2>
-            <p className="text-xs text-zinc-500">Reference data (users, customers, prod specs, layouts, settings) last synced {when(data.referenceSyncedAt)}.</p>
+            <h2 className="text-sm font-semibold text-ink">Loaded here ({data.pos.length})</h2>
+            <p className="text-xs text-muted">Reference data (users, customers, prod specs, layouts, settings) last synced {when(data.referenceSyncedAt)}.</p>
           </div>
           <button
             type="button"
             disabled={busy !== null || data.pos.length === 0}
             onClick={() => act("sync", { action: "sync" })}
-            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy === "sync" ? "Syncing…" : "Sync now"}
           </button>
         </div>
         {data.pos.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-500">
+          <div className="rounded-lg border border-dashed border-line bg-surface p-6 text-center text-sm text-muted">
             Nothing loaded yet. Pick POs below.
           </div>
         ) : (
-          <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+          <div className="overflow-x-auto rounded-xl border border-line bg-surface">
             <table className="w-full text-sm">
-              <thead className="bg-zinc-50 text-left text-xs text-zinc-500">
+              <thead className="bg-subtle text-left text-xs text-muted">
                 <tr>
                   <th className="px-4 py-2 font-medium">PO</th>
                   <th className="px-4 py-2 font-medium">Styles</th>
@@ -127,13 +127,13 @@ export function DevDataPanel() {
               </thead>
               <tbody>
                 {data.pos.map((p) => (
-                  <tr key={p.poNumber} className="border-t border-zinc-100 align-top">
+                  <tr key={p.poNumber} className="border-t border-line align-top">
                     <td className="px-4 py-2 font-mono text-xs">{p.poNumber}</td>
                     <td className="px-4 py-2 tabular-nums">{p.styleCount}</td>
-                    <td className="px-4 py-2 text-zinc-500">{when(p.loadedAt)}</td>
-                    <td className="px-4 py-2 text-zinc-500">
+                    <td className="px-4 py-2 text-muted">{when(p.loadedAt)}</td>
+                    <td className="px-4 py-2 text-muted">
                       {when(p.lastSyncedAt)}
-                      {p.lastError ? <div className="mt-1 text-xs text-red-700">{p.lastError}</div> : null}
+                      {p.lastError ? <div className="mt-1 text-xs text-bad">{p.lastError}</div> : null}
                     </td>
                     <td className="px-4 py-2">
                       <input
@@ -153,7 +153,7 @@ export function DevDataPanel() {
                             void act("remove", { action: "remove", po: p.poNumber });
                           }
                         }}
-                        className="text-xs text-zinc-500 underline hover:text-red-700 disabled:opacity-50"
+                        className="text-xs text-muted underline hover:text-bad disabled:opacity-50"
                       >
                         Remove
                       </button>
@@ -169,8 +169,8 @@ export function DevDataPanel() {
       <section>
         <div className="mb-2 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-700">Recent POs in production</h2>
-            <p className="text-xs text-zinc-500">Newest first, by when their latest style came in.</p>
+            <h2 className="text-sm font-semibold text-ink">Recent POs in production</h2>
+            <p className="text-xs text-muted">Newest first, by when their latest style came in.</p>
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -178,21 +178,21 @@ export function DevDataPanel() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Find a PO number"
               aria-label="Find a PO number"
-              className="w-56 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm"
+              className="w-56 rounded-md border border-line bg-surface px-3 py-1.5 text-sm"
             />
             <button
               type="button"
               disabled={busy !== null || selected.size === 0}
               onClick={() => act("load", { action: "load", pos: [...selected] }).then(() => setSelected(new Set()))}
-              className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy === "load" ? "Loading…" : `Load selected${selected.size ? ` (${selected.size})` : ""}`}
             </button>
           </div>
         </div>
-        <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+        <div className="overflow-x-auto rounded-xl border border-line bg-surface">
           <table className="w-full text-sm">
-            <thead className="bg-zinc-50 text-left text-xs text-zinc-500">
+            <thead className="bg-subtle text-left text-xs text-muted">
               <tr>
                 <th className="w-10 px-4 py-2">
                   <input
@@ -212,7 +212,7 @@ export function DevDataPanel() {
             <tbody>
               {data.recent.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
+                  <td colSpan={6} className="px-4 py-8 text-center text-muted">
                     No PO matches.
                   </td>
                 </tr>
@@ -220,12 +220,12 @@ export function DevDataPanel() {
                 data.recent.map((p) => (
                   <tr
                     key={p.poNumber}
-                    className={`border-t border-zinc-100 ${p.loaded ? "text-zinc-400" : "cursor-pointer hover:bg-zinc-50"}`}
+                    className={`border-t border-line ${p.loaded ? "text-faint" : "cursor-pointer hover:bg-subtle"}`}
                     onClick={() => !p.loaded && toggle(p.poNumber)}
                   >
                     <td className="px-4 py-2">
                       {p.loaded ? (
-                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">Loaded</span>
+                        <span className="rounded-full bg-good-soft px-2 py-0.5 text-[11px] font-medium text-good">Loaded</span>
                       ) : (
                         <input
                           type="checkbox"
@@ -239,8 +239,8 @@ export function DevDataPanel() {
                     <td className="px-4 py-2 font-mono text-xs">{p.poNumber}</td>
                     <td className="px-4 py-2 tabular-nums">{p.styleCount}</td>
                     <td className="px-4 py-2">{p.customers.join(", ")}</td>
-                    <td className="px-4 py-2 text-zinc-500">{p.suppliers.join(", ") || "—"}</td>
-                    <td className="px-4 py-2 text-zinc-500">{when(p.lastSeenAt)}</td>
+                    <td className="px-4 py-2 text-muted">{p.suppliers.join(", ") || "—"}</td>
+                    <td className="px-4 py-2 text-muted">{when(p.lastSeenAt)}</td>
                   </tr>
                 ))
               )}

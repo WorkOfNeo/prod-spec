@@ -55,13 +55,13 @@ export function ColourAliasEditor({ initialGroups }: { initialGroups: string[][]
               value={row}
               onChange={(e) => setRows(rows.map((r, j) => (j === i ? e.target.value : r)))}
               placeholder="LGM, Grey melange, Light grey melange"
-              className="min-w-0 flex-1 rounded-md border border-zinc-200 px-2.5 py-1.5 text-sm"
+              className="min-w-0 flex-1 rounded-md border border-line px-2.5 py-1.5 text-sm"
               spellCheck={false}
             />
             <button
               type="button"
               onClick={() => setRows(rows.length > 1 ? rows.filter((_, j) => j !== i) : [""])}
-              className="px-1 text-zinc-300 hover:text-red-600"
+              className="px-1 text-faint hover:text-bad"
               aria-label="Remove this group"
               title="Remove this group"
             >
@@ -75,7 +75,7 @@ export function ColourAliasEditor({ initialGroups }: { initialGroups: string[][]
         <button
           type="button"
           onClick={() => setRows([...rows, ""])}
-          className="text-[13px] font-medium text-zinc-700 hover:text-zinc-900"
+          className="text-[13px] font-medium text-ink hover:text-ink"
         >
           + Add a colour
         </button>
@@ -83,14 +83,14 @@ export function ColourAliasEditor({ initialGroups }: { initialGroups: string[][]
           type="button"
           onClick={save}
           disabled={busy}
-          className="rounded-md bg-zinc-900 px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-50"
+          className="rounded-md bg-primary px-3 py-1.5 text-[13px] font-medium text-white disabled:opacity-50"
         >
           {busy ? "Saving…" : "Save"}
         </button>
-        {note ? <span className="text-[12px] text-zinc-500">{note}</span> : null}
+        {note ? <span className="text-[12px] text-muted">{note}</span> : null}
       </div>
 
-      <p className="mt-3 text-[12px] leading-relaxed text-zinc-400">
+      <p className="mt-3 text-[12px] leading-relaxed text-faint">
         One colour per row, spellings separated by commas. Case and punctuation are ignored when
         matching, so &ldquo;grey melange&rdquo; and &ldquo;Grey Melange&rdquo; are already the same —
         a group is only needed for genuinely different words. Changes reach rendering within a few

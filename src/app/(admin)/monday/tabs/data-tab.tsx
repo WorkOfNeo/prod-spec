@@ -100,7 +100,7 @@ export function DataTab({
     <div className="flex flex-col gap-6">
       {/* Sub-tab nav — picks the dataset. */}
       <nav className="overflow-x-auto">
-        <ul className="flex min-w-max gap-1 rounded-md bg-zinc-100 p-1">
+        <ul className="flex min-w-max gap-1 rounded-md bg-subtle p-1">
           {datasets.map((d) => (
             <li key={d.key}>
               <Link
@@ -108,8 +108,8 @@ export function DataTab({
                 scroll={false}
                 className={`inline-block rounded px-3 py-1.5 text-xs font-medium transition ${
                   activeDataset === d.key
-                    ? "bg-white text-zinc-900 shadow-sm"
-                    : "text-zinc-600 hover:text-zinc-900"
+                    ? "bg-surface text-ink shadow-sm"
+                    : "text-muted hover:text-ink"
                 }`}
               >
                 {d.label}
@@ -154,7 +154,7 @@ function BoardView({
 }) {
   if (!board) {
     return (
-      <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-8 text-center text-sm text-zinc-500">
+      <div className="rounded-lg border border-dashed border-line bg-surface p-8 text-center text-sm text-muted">
         <p>This board hasn&apos;t been sunk yet.</p>
         <p className="mt-1">
           Run a sink from the{" "}
@@ -176,27 +176,27 @@ function BoardView({
 
   return (
     <div className="flex flex-col gap-6">
-      <section className="rounded-lg border border-zinc-200 bg-white p-4">
+      <section className="rounded-xl border border-line bg-surface p-4">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-base font-semibold">
               {board.label ?? board.name}{" "}
-              <span className="ml-1 font-mono text-xs font-normal text-zinc-500">
+              <span className="ml-1 font-mono text-xs font-normal text-muted">
                 {board.mondayBoardId}
               </span>
             </h2>
-            <p className="mt-0.5 text-sm text-zinc-500">
+            <p className="mt-0.5 text-sm text-muted">
               {board.totalItems} items · {board.columns.length} columns ·{" "}
               {dropdownColumns.length} dropdown/status cols · synced{" "}
               {formatDate(board.lastSyncedAt)}
             </p>
             {board.description && (
-              <p className="mt-1 text-xs text-zinc-500">{board.description}</p>
+              <p className="mt-1 text-xs text-muted">{board.description}</p>
             )}
           </div>
           <Link
             href={`/monday?tab=inspector&boardId=${board.mondayBoardId}`}
-            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             Open in inspector →
           </Link>
@@ -204,8 +204,8 @@ function BoardView({
       </section>
 
       {/* Sub-sub-tab nav — Info / Dropdowns / Data rows. */}
-      <nav className="border-b border-zinc-200">
-        <ul className="flex gap-1">
+      <nav className="border-b border-line">
+        <ul className="flex gap-5 overflow-x-auto">
           {BOARD_VIEWS.map((v) => {
             const count =
               v.key === "info"
@@ -218,14 +218,14 @@ function BoardView({
                 <Link
                   href={`/monday?tab=data&dataset=${datasetKey}&view=${v.key}`}
                   scroll={false}
-                  className={`inline-block border-b-2 px-4 py-2 text-sm font-medium transition ${
+                  className={`-mb-px inline-flex h-9 shrink-0 items-center gap-1.5 border-b-2 text-[13px] transition-colors duration-150 ${
                     activeView === v.key
-                      ? "border-zinc-900 text-zinc-900"
-                      : "border-transparent text-zinc-500 hover:text-zinc-700"
+                      ? "border-ink text-ink"
+                      : "border-transparent text-muted hover:text-ink"
                   }`}
                 >
                   {v.label}{" "}
-                  <span className="ml-1 text-xs text-zinc-400 tabular-nums">{count}</span>
+                  <span className="ml-1 text-xs text-faint tabular-nums">{count}</span>
                 </Link>
               </li>
             );
@@ -244,7 +244,7 @@ function BoardView({
         />
       )}
 
-      <div className="text-right font-mono text-[10px] text-zinc-400">
+      <div className="text-right font-mono text-[11px] text-faint">
         dataset={datasetKey} · view={activeView}
       </div>
     </div>
@@ -264,7 +264,7 @@ function InfoView({
 }) {
   return (
     <div className="flex flex-col gap-6">
-      <section className="grid grid-cols-2 gap-4 rounded-lg border border-zinc-200 bg-white p-4 md:grid-cols-4">
+      <section className="grid grid-cols-2 gap-4 rounded-xl border border-line bg-surface p-4 md:grid-cols-4">
         <Stat label="Items" value={board.totalItems} />
         <Stat label="Columns" value={board.columns.length} />
         <Stat
@@ -277,17 +277,17 @@ function InfoView({
         />
       </section>
 
-      <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
-        <header className="border-b border-zinc-100 bg-zinc-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+      <section className="overflow-hidden rounded-xl border border-line bg-surface">
+        <header className="border-b border-line bg-subtle px-4 py-2 text-xs font-medium text-muted">
           Other columns ({otherColumns.length})
         </header>
         {otherColumns.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-zinc-500">
+          <p className="px-4 py-8 text-center text-sm text-muted">
             All columns on this board are dropdown / status types.
           </p>
         ) : (
           <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase tracking-wide text-zinc-500">
+            <thead className="text-left text-xs text-muted">
               <tr>
                 <th className="px-4 py-2">Column ID</th>
                 <th className="px-4 py-2">Title</th>
@@ -297,11 +297,11 @@ function InfoView({
             </thead>
             <tbody>
               {otherColumns.map((c) => (
-                <tr key={c.id} className="border-t border-zinc-100">
+                <tr key={c.id} className="border-t border-line">
                   <td className="px-4 py-2 font-mono text-xs">{c.mondayColumnId}</td>
                   <td className="px-4 py-2">{c.title}</td>
-                  <td className="px-4 py-2 font-mono text-xs text-zinc-600">{c.type}</td>
-                  <td className="px-4 py-2 text-xs text-zinc-500">{c.description ?? "—"}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-muted">{c.type}</td>
+                  <td className="px-4 py-2 text-xs text-muted">{c.description ?? "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -319,7 +319,7 @@ function InfoView({
 function BoardDropdownsView({ dropdownColumns }: { dropdownColumns: BoardColumn[] }) {
   if (dropdownColumns.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-8 text-center text-sm text-zinc-500">
+      <div className="rounded-lg border border-dashed border-line bg-surface p-8 text-center text-sm text-muted">
         This board has no dropdown or status columns.
       </div>
     );
@@ -367,7 +367,7 @@ function DataRowsView({
 }) {
   if (items.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-8 text-center text-sm text-zinc-500">
+      <div className="rounded-lg border border-dashed border-line bg-surface p-8 text-center text-sm text-muted">
         No items synced yet. Run a sink from the{" "}
         <Link href="/monday?tab=sync" className="underline">
           Sync tab
@@ -384,16 +384,16 @@ function DataRowsView({
   const cappedOut = items.length < total && limit >= ROW_PAGE_MAX;
 
   return (
-    <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
-      <header className="border-b border-zinc-100 bg-zinc-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+    <section className="overflow-hidden rounded-xl border border-line bg-surface">
+      <header className="border-b border-line bg-subtle px-4 py-2 text-xs font-medium text-muted">
         Items{" "}
-        <span className="ml-2 normal-case text-zinc-400">
+        <span className="ml-2 normal-case text-faint">
           (showing {items.length} of {total})
         </span>
       </header>
       <div className="max-h-[70vh] overflow-y-auto">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-white text-left text-xs uppercase tracking-wide text-zinc-500 shadow-[inset_0_-1px_0_rgb(244,244,245)]">
+          <thead className="sticky top-0 bg-surface text-left text-xs text-muted shadow-[inset_0_-1px_0_rgb(244,244,245)]">
             <tr>
               <th className="px-4 py-2">Monday id</th>
               <th className="px-4 py-2">Name</th>
@@ -404,36 +404,36 @@ function DataRowsView({
           </thead>
           <tbody>
             {items.map((i) => (
-              <tr key={i.id} className="border-t border-zinc-100 align-top">
+              <tr key={i.id} className="border-t border-line align-top">
                 <td className="px-4 py-2 font-mono text-xs">{i.mondayItemId}</td>
                 <td className="px-4 py-2">{i.name}</td>
-                <td className="px-4 py-2 text-xs text-zinc-500">{i.groupTitle ?? "—"}</td>
+                <td className="px-4 py-2 text-xs text-muted">{i.groupTitle ?? "—"}</td>
                 <td className="px-4 py-2 text-xs">
                   <details>
-                    <summary className="cursor-pointer text-zinc-600">view</summary>
-                    <pre className="mt-1 max-w-xl overflow-x-auto rounded bg-zinc-50 p-2 font-mono text-[10px] leading-tight">
+                    <summary className="cursor-pointer text-muted">view</summary>
+                    <pre className="mt-1 max-w-xl overflow-x-auto rounded bg-subtle p-2 font-mono text-[11px] leading-tight">
                       {JSON.stringify(i.columnValues, null, 2)}
                     </pre>
                   </details>
                 </td>
-                <td className="px-4 py-2 text-xs text-zinc-500">{formatDate(i.lastSyncedAt)}</td>
+                <td className="px-4 py-2 text-xs text-muted">{formatDate(i.lastSyncedAt)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       {(hasMore || cappedOut) && (
-        <footer className="flex items-center justify-center gap-3 border-t border-zinc-100 bg-zinc-50 px-4 py-3">
+        <footer className="flex items-center justify-center gap-3 border-t border-line bg-subtle px-4 py-3">
           {hasMore ? (
             <Link
               href={`/monday?tab=data&dataset=${datasetKey}&view=rows&rows=${nextLimit}`}
               scroll={false}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+              className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
             >
               Load more ({Math.min(ROW_PAGE_STEP, total - items.length)} more)
             </Link>
           ) : (
-            <span className="text-xs text-zinc-400">
+            <span className="text-xs text-faint">
               Showing the first {ROW_PAGE_MAX} — refine in Monday to see the rest.
             </span>
           )}
@@ -451,7 +451,7 @@ function DataRowsView({
 function FlatDropdownsView({ rows }: { rows: DropdownRow[] }) {
   if (rows.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-8 text-center text-sm text-zinc-500">
+      <div className="rounded-lg border border-dashed border-line bg-surface p-8 text-center text-sm text-muted">
         <p>No dropdown / status options synced yet.</p>
         <p className="mt-1">
           Run a sink from the{" "}
@@ -490,7 +490,7 @@ function Stat({
 }) {
   return (
     <div>
-      <div className="text-xs text-zinc-500">{label}</div>
+      <div className="text-xs text-muted">{label}</div>
       <div className="text-lg font-semibold tabular-nums">
         {textValue ?? value?.toLocaleString("en-GB") ?? "—"}
       </div>

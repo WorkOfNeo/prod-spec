@@ -139,7 +139,7 @@ export function StyleDashboardClient({
             resetWindow();
           }}
           placeholder="Search style, PO, customer, supplier, output…"
-          className="w-64 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400"
+          className="w-64 rounded-md border border-line bg-surface px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400"
         />
         {FACETS.map((f) => (
           <FacetFilter
@@ -161,20 +161,20 @@ export function StyleDashboardClient({
               setSelected({});
               resetWindow();
             }}
-            className="rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             Clear
           </button>
         )}
-        <span className="ml-auto text-xs tabular-nums text-zinc-500">
+        <span className="ml-auto text-xs tabular-nums text-muted">
           {filtered.length.toLocaleString()} of {rows.length.toLocaleString()} styles
         </span>
       </div>
 
       {/* Style list */}
       {filtered.length === 0 ? (
-        <div className="mt-6 rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-6 py-16 text-center">
-          <p className="text-sm font-medium text-zinc-700">
+        <div className="mt-6 rounded-xl border border-dashed border-line bg-subtle px-6 py-16 text-center">
+          <p className="text-sm font-medium text-ink">
             {rows.length === 0 ? "No styles have generated outputs yet." : "No styles match these filters."}
           </p>
         </div>
@@ -188,7 +188,7 @@ export function StyleDashboardClient({
               <button
                 type="button"
                 onClick={() => setVisibleCount((v) => Math.min(v + RENDER_STEP, filtered.length))}
-                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+                className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Show {Math.min(RENDER_STEP, filtered.length - visibleCount)} more
               </button>

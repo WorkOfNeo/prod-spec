@@ -58,8 +58,8 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
     <div className="mx-auto max-w-6xl px-6 py-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Requests</h1>
-          <p className="mt-1 max-w-3xl text-sm text-zinc-500">
+          <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Requests</h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted">
             {admin
               ? "Reports that a print output is wrong, one issue per output. The assistant drafts each change on a copy; nothing prints differently until you approve it."
               : "Your reports that a print output is wrong. An admin approves every change before anything prints differently."}
@@ -67,7 +67,7 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
         </div>
         <Link
           href="/requests/new"
-          className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+          className="whitespace-nowrap inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Plus className="h-4 w-4" aria-hidden />
           New request
@@ -79,7 +79,7 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
       {admin && signalRows.length > 0 && (
         <section className="mt-10">
           <h2 className="text-base font-semibold tracking-tight">Learning signals</h2>
-          <p className="mt-1 text-sm text-zinc-500">
+          <p className="mt-1 text-sm text-muted">
             How often the assistant&apos;s first draft is approved, how many drafts it takes, and what each request cost.
           </p>
           <div className="mt-3">

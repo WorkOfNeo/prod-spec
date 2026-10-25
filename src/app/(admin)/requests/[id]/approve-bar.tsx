@@ -126,21 +126,21 @@ export function ApproveBar({
   const pending = impact ? impact.rows.filter((r) => r.changed && r.reviewStatus !== "APPROVED" && !r.inFlight).length : null;
 
   return (
-    <section className="sticky bottom-0 z-10 rounded-lg border border-zinc-300 bg-white p-4 shadow-lg">
+    <section className="sticky bottom-0 z-10 rounded-xl border border-line bg-surface p-4 shadow-lg">
       {alreadyLive ? (
-        <p className="flex items-start gap-2 text-sm text-amber-800">
+        <p className="flex items-start gap-2 text-sm text-warn">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           This draft is already live (published from the layout&apos;s history, or an approval stopped half way). Finish
           publishing to rerun the changed documents and mark this output live.
         </p>
       ) : !draftOpen && mode !== "reject" ? (
-        <p className="flex items-start gap-2 text-sm text-amber-800">
+        <p className="flex items-start gap-2 text-sm text-warn">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           This draft was replaced by another publish; ask the agent for a new draft in the thread.
         </p>
       ) : mode === "confirm" ? (
-        <div className="space-y-2 text-sm text-zinc-700">
-          <p className="font-medium text-zinc-900">Publish “{output.label}”?</p>
+        <div className="space-y-2 text-sm text-ink">
+          <p className="font-medium text-ink">Publish “{output.label}”?</p>
           <ul className="list-disc space-y-0.5 pl-5">
             <li>The draft becomes the live layout (a new version).</li>
             {pending !== null && (
@@ -160,26 +160,26 @@ export function ApproveBar({
         </div>
       ) : mode === "reject" ? (
         <div>
-          <label htmlFor={`reject-${output.id}`} className="text-sm font-medium text-zinc-900">
+          <label htmlFor={`reject-${output.id}`} className="text-sm font-medium text-ink">
             Why is this change rejected?
           </label>
-          <p className="text-xs text-zinc-500">The requester gets this in an email. The layout stays as it is.</p>
+          <p className="text-xs text-muted">The requester gets this in an email. The layout stays as it is.</p>
           <textarea
             id={`reject-${output.id}`}
             value={reason}
             onChange={(e) => setReason(e.target.value.slice(0, REJECT_MAX))}
             rows={3}
             disabled={busy}
-            className="mt-2 w-full resize-y rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+            className="mt-2 w-full resize-y rounded-md border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
           />
-          <p className="text-right text-[11px] text-zinc-400">
+          <p className="text-right text-[11px] text-faint">
             {reason.length}/{REJECT_MAX}
           </p>
         </div>
       ) : null}
 
       {failure && (
-        <div className="mt-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <div className="mt-2 rounded-md border border-transparent bg-bad-soft p-3 text-sm text-bad">
           <p>{failure.message}</p>
           {failure.conflict && (
             <ul className="mt-1 list-disc pl-5 text-xs">
@@ -209,7 +209,7 @@ export function ApproveBar({
               type="button"
               onClick={reject}
               disabled={busy || !reason.trim()}
-              className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-md bg-bad px-3 py-2 text-sm font-medium text-white hover:bg-bad disabled:opacity-50"
             >
               {busy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden /> : <ThumbsDown className="h-4 w-4" aria-hidden />}
               Reject
@@ -223,7 +223,7 @@ export function ApproveBar({
                 type="button"
                 onClick={() => approve(false)}
                 disabled={busy}
-                className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden /> : <CircleCheck className="h-4 w-4" aria-hidden />}
                 {busy ? "Finishing…" : "Finish publishing"}
@@ -233,7 +233,7 @@ export function ApproveBar({
                 type="button"
                 onClick={() => approve(true)}
                 disabled={busy}
-                className="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-md bg-warn px-3 py-2 text-sm font-medium text-white hover:bg-warn disabled:opacity-50"
               >
                 {busy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden /> : <TriangleAlert className="h-4 w-4" aria-hidden />}
                 Publish anyway
@@ -243,7 +243,7 @@ export function ApproveBar({
                 type="button"
                 onClick={() => approve(false)}
                 disabled={busy}
-                className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden /> : <ThumbsUp className="h-4 w-4" aria-hidden />}
                 {busy ? "Publishing…" : "Approve and publish"}
@@ -253,7 +253,7 @@ export function ApproveBar({
                 type="button"
                 onClick={() => switchTo("confirm")}
                 disabled={busy}
-                className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <ThumbsUp className="h-4 w-4" aria-hidden />
                 Approve {output.label}
@@ -268,7 +268,7 @@ export function ApproveBar({
                 type="button"
                 onClick={() => switchTo("reject")}
                 disabled={busy}
-                className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <ThumbsDown className="h-4 w-4" aria-hidden />
                 Reject…
@@ -295,16 +295,16 @@ export function LayoutLabel({
 }) {
   if (!output.layoutId) return null;
   return (
-    <span className={`inline-flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-zinc-500 ${className}`}>
+    <span className={`inline-flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted ${className}`}>
       <LayoutTemplate className="h-3.5 w-3.5 shrink-0" aria-hidden />
       <span>
-        Layout <span className="font-medium text-zinc-800">{output.layoutName ?? "unnamed"}</span>
+        Layout <span className="font-medium text-ink">{output.layoutName ?? "unnamed"}</span>
       </span>
-      <code className="break-all rounded bg-zinc-100 px-1 font-mono text-[11px] text-zinc-600">{output.layoutId}</code>
+      <code className="break-all rounded bg-subtle px-1 font-mono text-[11px] text-muted">{output.layoutId}</code>
       {output.layoutPinnedByAgent && (
         <span
           title="No configured output was picked when the request was filed; the agent chose this layout."
-          className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200"
+          className="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-medium text-warn ring-1 ring-inset ring-amber-200"
         >
           pinned by the agent
         </span>
@@ -327,7 +327,7 @@ export function RejectControl({ outputId, onChanged }: { outputId: string; onCha
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+        className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
       >
         <ThumbsDown className="h-4 w-4" aria-hidden />
         Reject…
@@ -346,35 +346,35 @@ export function RejectControl({ outputId, onChanged }: { outputId: string; onCha
   };
 
   return (
-    <div className="basis-full rounded-md border border-zinc-200 bg-white p-3">
-      <label htmlFor={`reject-${outputId}`} className="text-sm font-medium text-zinc-900">
+    <div className="basis-full rounded-md border border-line bg-surface p-3">
+      <label htmlFor={`reject-${outputId}`} className="text-sm font-medium text-ink">
         Why is this request rejected?
       </label>
-      <p className="text-xs text-zinc-500">The requester gets this in an email. The layout stays as it is.</p>
+      <p className="text-xs text-muted">The requester gets this in an email. The layout stays as it is.</p>
       <textarea
         id={`reject-${outputId}`}
         value={reason}
         onChange={(e) => setReason(e.target.value.slice(0, REJECT_MAX))}
         rows={3}
         disabled={busy}
-        className="mt-2 w-full resize-y rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+        className="mt-2 w-full resize-y rounded-md border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
       />
       <div className="mt-1 flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={reject}
           disabled={busy || !reason.trim()}
-          className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-md bg-bad px-3 py-1.5 text-sm font-medium text-white hover:bg-bad disabled:opacity-50"
         >
           {busy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden /> : <ThumbsDown className="h-4 w-4" aria-hidden />}
           Reject
         </button>
         <CancelButton disabled={busy} onClick={() => setOpen(false)} />
-        <span className="ml-auto text-[11px] text-zinc-400">
+        <span className="ml-auto text-[11px] text-faint">
           {reason.length}/{REJECT_MAX}
         </span>
       </div>
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-1 text-xs text-bad">{error}</p>}
     </div>
   );
 }
@@ -410,12 +410,12 @@ export function FinishPublishingButton({
         type="button"
         onClick={finish}
         disabled={busy}
-        className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+        className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden /> : <CircleCheck className="h-4 w-4" aria-hidden />}
         Finish publishing
       </button>
-      {error && <span className="text-xs text-red-600">{error}</span>}
+      {error && <span className="text-xs text-bad">{error}</span>}
     </div>
   );
 }
@@ -426,7 +426,7 @@ function CancelButton({ disabled, onClick }: { disabled: boolean; onClick: () =>
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="rounded-md px-3 py-2 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+      className="rounded-md px-3 py-2 text-sm text-muted hover:bg-subtle disabled:opacity-50"
     >
       Cancel
     </button>
@@ -436,7 +436,7 @@ function CancelButton({ disabled, onClick }: { disabled: boolean; onClick: () =>
 // What an approval just did, shown above the "live" panel.
 export function ApproveResultView({ result }: { result: ApproveResult }) {
   return (
-    <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
+    <section className="rounded-lg border border-transparent bg-good-soft p-4 text-sm text-good">
       <h2 className="flex items-center gap-2 font-semibold">
         <CircleCheck className="h-4 w-4" aria-hidden />
         Published as version {result.publishedVersion}
@@ -447,7 +447,7 @@ export function ApproveResultView({ result }: { result: ApproveResult }) {
         <Stat label="Approved, changed" value={result.approvedChanged.length} />
         <Stat label="Already delivered" value={result.deliveredChanged.length} />
       </dl>
-      <p className="mt-2 text-emerald-900">{result.summary}</p>
+      <p className="mt-2 text-good">{result.summary}</p>
     </section>
   );
 }
@@ -455,7 +455,7 @@ export function ApproveResultView({ result }: { result: ApproveResult }) {
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-md bg-white/70 px-2 py-1.5">
-      <dt className="text-[11px] uppercase tracking-wide text-emerald-700">{label}</dt>
+      <dt className="text-[11px] text-good">{label}</dt>
       <dd className="text-lg font-semibold tabular-nums">{value.toLocaleString("en")}</dd>
     </div>
   );

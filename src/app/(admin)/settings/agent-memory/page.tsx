@@ -51,13 +51,13 @@ export default async function AgentMemoryPage() {
   }));
 
   return (
-    <div className="px-8 py-8">
-      <Link href="/settings" className="text-xs text-zinc-500 underline">
+    <div className="px-6 py-5">
+      <Link href="/settings" className="text-xs text-muted underline">
         ← Back to settings
       </Link>
       <div className="mt-2 mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Agent memory</h1>
-        <p className="mt-1 max-w-3xl text-sm text-zinc-500">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Agent memory</h1>
+        <p className="mt-1 max-w-3xl text-sm text-muted">
           Corrections you make in a review can become notes the agent reads next time. You can read,
           edit and delete every note. The agent only suggests a note; it reads it once you keep it.
         </p>

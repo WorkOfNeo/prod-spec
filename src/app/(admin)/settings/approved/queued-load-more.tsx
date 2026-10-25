@@ -44,7 +44,7 @@ export function QueuedLoadMore({ href, remaining }: { href: string; remaining: n
           router.push(href, { scroll: false });
         }}
         disabled={loading}
-        className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+        className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
       >
         {loading ? "Loading…" : `Load ${remaining.toLocaleString()} more`}
       </button>

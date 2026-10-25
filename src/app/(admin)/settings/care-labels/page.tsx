@@ -26,13 +26,13 @@ export default async function CareLabelsPage() {
   ]);
 
   return (
-    <div className="px-8 py-8">
-      <Link href="/settings" className="text-xs text-zinc-500 underline">
+    <div className="px-6 py-5">
+      <Link href="/settings" className="text-xs text-muted underline">
         ← Back to settings
       </Link>
       <div className="mt-2 mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Care labels</h1>
-        <p className="mt-1 max-w-3xl text-sm text-zinc-500">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Care labels</h1>
+        <p className="mt-1 max-w-3xl text-sm text-muted">
           The care-instruction lines printed on Care Label 02. Add as many as you need — print order
           follows the order below. Tag each line with a laundering <strong>action</strong> and it is
           automatically removed when the style carries a matching &ldquo;Do not …&rdquo; symbol (a

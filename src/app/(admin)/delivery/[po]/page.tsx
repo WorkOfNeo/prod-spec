@@ -41,7 +41,7 @@ export default async function PoDeliveryPage({
   if (suppliers.length === 0) {
     return (
       <Shell poNumber={poNumber}>
-        <p className="text-sm text-zinc-600">
+        <p className="text-sm text-muted">
           No live style on this PO has a supplier, so there is no folder to check.
         </p>
       </Shell>
@@ -54,7 +54,7 @@ export default async function PoDeliveryPage({
   if (!supplierId) {
     return (
       <Shell poNumber={poNumber}>
-        <p className="text-sm text-zinc-600">
+        <p className="text-sm text-muted">
           This PO number appears under {suppliers.length} suppliers, and each has its own folder. Pick one:
         </p>
         <ul className="mt-3 space-y-1 text-sm">
@@ -62,7 +62,7 @@ export default async function PoDeliveryPage({
             <li key={s.supplierId}>
               <Link
                 href={`/delivery/${encodeURIComponent(poNumber)}?supplier=${s.supplierId}`}
-                className="underline hover:text-zinc-950"
+                className="underline hover:text-ink"
               >
                 {s.supplier?.name ?? s.supplierId}
               </Link>
@@ -83,11 +83,11 @@ export default async function PoDeliveryPage({
 function Shell({ poNumber, children }: { poNumber: string; children: React.ReactNode }) {
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
-      <Link href="/delivery" className="text-sm text-zinc-500 underline hover:text-zinc-800">
+      <Link href="/delivery" className="text-sm text-muted underline hover:text-ink">
         ← All purchase orders
       </Link>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight">{poNumber}</h1>
-      <p className="mt-1 text-sm text-zinc-500">
+      <h1 className="mt-2 text-[18px] font-semibold tracking-[-0.01em]">{poNumber}</h1>
+      <p className="mt-1 text-sm text-muted">
         Every approved document for this PO, checked against the supplier&apos;s APPROVED LAYOUTS folder.
       </p>
       <div className="mt-6">{children}</div>

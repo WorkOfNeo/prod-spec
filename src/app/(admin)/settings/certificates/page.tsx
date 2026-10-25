@@ -15,13 +15,13 @@ export default async function CertificatesPage() {
   });
 
   return (
-    <div className="px-8 py-8">
-      <Link href="/settings" className="text-xs text-zinc-500 underline">
+    <div className="px-6 py-5">
+      <Link href="/settings" className="text-xs text-muted underline">
         ← Back to settings
       </Link>
       <div className="mt-2 mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Certificates</h1>
-        <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Certificates</h1>
+        <p className="mt-1 max-w-2xl text-sm text-muted">
           Logos rendered on Care Label 02 (page 4). A style declares its certificates in the Monday{" "}
           <code className="font-mono">__certificates__1</code> column (comma-separated, e.g.{" "}
           <code className="font-mono">FSC, OEKOTEX</code>); the renderer matches those names against

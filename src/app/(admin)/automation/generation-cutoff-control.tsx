@@ -43,25 +43,25 @@ export function GenerationCutoffControl({
   }
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4">
+    <div className="rounded-xl border border-line bg-surface p-4">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold text-zinc-900">Generate from PO</h2>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+          <h2 className="text-sm font-semibold text-ink">Generate from PO</h2>
+          <p className="mt-1 max-w-2xl text-sm text-muted">
             The generation sweep auto-generates ready outputs (even one at a time, each sent to
             review) for styles whose PO is <strong>at or above</strong> this number. Styles with no
             PO still generate. Paste a PO (e.g. <code>C-PO63144</code>) — everything from that PO
             onward is in scope. Empty ={" "}
             <em>follow the scrape cutoff{effectiveCutoff !== null ? ` (C-PO${effectiveCutoff})` : ""}</em>.
           </p>
-          <p className="mt-1 text-xs text-zinc-400">
+          <p className="mt-1 text-xs text-faint">
             {explicitCutoff !== null
               ? `Generating from C-PO${explicitCutoff} onward.`
               : effectiveCutoff !== null
                 ? `Following the scrape cutoff — generating from C-PO${effectiveCutoff} onward.`
                 : "No cutoff — generating the whole ready backlog."}
           </p>
-          {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
+          {error ? <p className="mt-2 text-xs text-bad">{error}</p> : null}
         </div>
         <div className="flex items-center gap-2">
           <input
@@ -72,13 +72,13 @@ export function GenerationCutoffControl({
               if (e.key === "Enter") void save();
             }}
             placeholder="C-PO63144"
-            className="w-40 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none"
+            className="w-40 rounded-md border border-line bg-surface px-3 py-2 text-sm placeholder:text-faint focus:border-accent focus:outline-none"
           />
           <button
             type="button"
             onClick={save}
             disabled={saving}
-            className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-40"
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save"}
           </button>

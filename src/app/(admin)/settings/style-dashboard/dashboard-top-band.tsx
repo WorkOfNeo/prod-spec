@@ -123,11 +123,11 @@ export function DashboardTopBand({
   return (
     <div className="mt-6 grid gap-4 lg:grid-cols-3">
       {/* Throughput */}
-      <div className="rounded-xl border border-zinc-200 bg-white p-4">
-        <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">Throughput</div>
+      <div className="rounded-xl border border-line bg-surface p-4">
+        <div className="text-xs font-medium text-muted">Throughput</div>
         <table className="mt-3 w-full text-sm">
           <thead>
-            <tr className="text-xs text-zinc-400">
+            <tr className="text-xs text-faint">
               <th className="pb-1 text-left font-medium" />
               {WINDOWS.map((w) => (
                 <th key={w} className="pb-1 text-right font-medium tabular-nums">
@@ -138,41 +138,41 @@ export function DashboardTopBand({
           </thead>
           <tbody>
             <tr>
-              <td className="py-1 text-zinc-600">Generated</td>
+              <td className="py-1 text-muted">Generated</td>
               {WINDOWS.map((w) => (
-                <td key={w} className="py-1 text-right font-semibold tabular-nums text-zinc-900">
+                <td key={w} className="py-1 text-right font-semibold tabular-nums text-ink">
                   {throughput[w].generated.toLocaleString()}
                 </td>
               ))}
             </tr>
             <tr>
-              <td className="py-1 text-zinc-600">Sent to supplier</td>
+              <td className="py-1 text-muted">Sent to supplier</td>
               {WINDOWS.map((w) => (
-                <td key={w} className="py-1 text-right font-semibold tabular-nums text-zinc-900">
+                <td key={w} className="py-1 text-right font-semibold tabular-nums text-ink">
                   {throughput[w].sent.toLocaleString()}
                 </td>
               ))}
             </tr>
           </tbody>
         </table>
-        <div className="mt-2 text-[11px] text-zinc-400">
+        <div className="mt-2 text-[11px] text-faint">
           Generated = documents rendered · Sent = outputs emailed to the supplier.
         </div>
       </div>
 
       {/* Live queue + Run All */}
-      <div className="rounded-xl border border-zinc-200 bg-white p-4 lg:col-span-2">
+      <div className="rounded-xl border border-line bg-surface p-4 lg:col-span-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+          <div className="text-xs font-medium text-muted">
             Generation queue
           </div>
           <div className="flex items-center gap-3">
-            {runMsg && <span className="text-xs text-zinc-500">{runMsg}</span>}
+            {runMsg && <span className="text-xs text-muted">{runMsg}</span>}
             <button
               type="button"
               onClick={runAll}
               disabled={running}
-              className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+              className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               title="Sweep ready-but-ungenerated outputs into the queue, then drain it (keeps approved outputs)."
             >
               {running ? "Running…" : "Run all (unclog)"}
@@ -181,18 +181,18 @@ export function DashboardTopBand({
         </div>
 
         <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <span className="text-2xl font-semibold tracking-tight tabular-nums text-zinc-900">
+          <span className="text-[18px] font-semibold tracking-[-0.01em] tabular-nums text-ink">
             {queue.running}
           </span>
-          <span className="text-sm text-zinc-500">generating</span>
-          <span className="text-2xl font-semibold tracking-tight tabular-nums text-zinc-900">
+          <span className="text-sm text-muted">generating</span>
+          <span className="text-[18px] font-semibold tracking-[-0.01em] tabular-nums text-ink">
             {queue.queued}
           </span>
-          <span className="text-sm text-zinc-500">queued</span>
+          <span className="text-sm text-muted">queued</span>
           {queue.oldestWaitSeconds != null && inFlight > 0 && (
-            <span className="ml-auto text-xs text-zinc-500">
+            <span className="ml-auto text-xs text-muted">
               oldest wait{" "}
-              <span className={queue.oldestWaitSeconds > 900 ? "font-semibold text-amber-700" : "text-zinc-700"}>
+              <span className={queue.oldestWaitSeconds > 900 ? "font-semibold text-warn" : "text-ink"}>
                 {formatAge(queue.oldestWaitSeconds)}
               </span>
             </span>
@@ -200,7 +200,7 @@ export function DashboardTopBand({
         </div>
 
         {inFlight === 0 ? (
-          <div className="mt-3 rounded-lg border border-dashed border-zinc-200 bg-zinc-50 px-3 py-4 text-center text-sm text-zinc-500">
+          <div className="mt-3 rounded-lg border border-dashed border-line bg-subtle px-3 py-4 text-center text-sm text-muted">
             Nothing generating right now.
           </div>
         ) : (
@@ -210,28 +210,28 @@ export function DashboardTopBand({
               return (
                 <li
                   key={it.jobId}
-                  className="flex items-center justify-between gap-3 rounded-md border border-zinc-100 px-2.5 py-1.5 text-xs"
+                  className="flex items-center justify-between gap-3 rounded-md border border-line px-2.5 py-1.5 text-xs"
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     <span
                       className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
-                        it.status === "RUNNING" ? "bg-blue-500" : "bg-amber-400"
+                        it.status === "RUNNING" ? "bg-accent" : "bg-amber-400"
                       }`}
                       aria-hidden="true"
                     />
-                    <Link href={`/styles/${it.styleId}`} className="truncate font-medium text-zinc-800 hover:underline">
+                    <Link href={`/styles/${it.styleId}`} className="truncate font-medium text-ink hover:underline">
                       {it.styleName}
                     </Link>
-                    {it.poNumber && <span className="shrink-0 text-zinc-400">PO {it.poNumber}</span>}
-                    <span className="shrink-0 text-zinc-400">
+                    {it.poNumber && <span className="shrink-0 text-faint">PO {it.poNumber}</span>}
+                    <span className="shrink-0 text-faint">
                       {it.outputCount == null ? "all outputs" : `${it.outputCount} output${it.outputCount === 1 ? "" : "s"}`}
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-2 tabular-nums">
-                    <span className={it.status === "RUNNING" ? "text-blue-700" : "text-amber-700"}>
+                    <span className={it.status === "RUNNING" ? "text-accent-text" : "text-warn"}>
                       {it.status === "RUNNING" ? "generating" : "queued"}
                     </span>
-                    <span className="text-zinc-500">{formatAge(age)}</span>
+                    <span className="text-muted">{formatAge(age)}</span>
                   </span>
                 </li>
               );

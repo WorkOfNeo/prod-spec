@@ -148,13 +148,13 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
   const scopeNoun = scopeLabel ?? "this prod spec";
 
   return (
-    <div className="mt-10 rounded-lg border border-zinc-200 bg-white p-5">
+    <div className="mt-10 rounded-xl border border-line bg-surface p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold text-zinc-800">
+          <h2 className="text-sm font-semibold text-ink">
             {scoped ? "Apply to existing bundles" : "Regenerate cover pages"}
           </h2>
-          <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-zinc-500">
+          <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-muted">
             {scoped ? (
               <>
                 Your edit already applies to everything generated from now on. This rebuilds the
@@ -182,18 +182,18 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
           <button
             type="button"
             onClick={prepare}
-            className="shrink-0 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+            className="shrink-0 inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {scoped ? "Apply to existing bundles" : "Regenerate all cover pages"}
           </button>
         )}
         {phase === "preparing" && (
-          <span className="shrink-0 py-2 text-sm text-zinc-400">Counting styles…</span>
+          <span className="shrink-0 py-2 text-sm text-faint">Counting styles…</span>
         )}
       </div>
 
       {phase === "error" && (
-        <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="mt-4 rounded-md border border-transparent bg-bad-soft px-3 py-2 text-sm text-bad">
           {error}
           <button type="button" onClick={() => setPhase("idle")} className="ml-3 underline">
             Try again
@@ -202,12 +202,12 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
       )}
 
       {phase === "confirm" && prepared && (
-        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-4">
-          <p className="text-sm text-amber-900">
+        <div className="mt-4 rounded-md border border-transparent bg-warn-soft p-4">
+          <p className="text-sm text-warn">
             This will rebuild <strong>{prepared.total}</strong> cover page
             {prepared.total === 1 ? "" : "s"}.
           </p>
-          <label className="mt-3 flex items-start gap-2 text-[13px] text-amber-900">
+          <label className="mt-3 flex items-start gap-2 text-[13px] text-warn">
             <input
               type="checkbox"
               checked={onlyPending}
@@ -222,7 +222,7 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
               every cover — including anything about how an all-approved cover reads.
             </span>
           </label>
-          <label className="mt-3 flex items-start gap-2 text-[13px] text-amber-900">
+          <label className="mt-3 flex items-start gap-2 text-[13px] text-warn">
             <input
               type="checkbox"
               checked={deliver}
@@ -237,7 +237,7 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
               file is replaced in silence. Uncheck to only refresh the covers in-app.
             </span>
           </label>
-          <label className="mt-3 flex items-start gap-2 text-[13px] text-amber-900">
+          <label className="mt-3 flex items-start gap-2 text-[13px] text-warn">
             <input
               type="checkbox"
               checked={onlyChanged}
@@ -254,14 +254,14 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
             <button
               type="button"
               onClick={run}
-              className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Start
             </button>
             <button
               type="button"
               onClick={() => setPhase("idle")}
-              className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink hover:bg-subtle"
             >
               Cancel
             </button>
@@ -271,52 +271,52 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
 
       {(phase === "running" || phase === "done") && (
         <div className="mt-4">
-          <div className="flex items-center justify-between text-xs text-zinc-500">
+          <div className="flex items-center justify-between text-xs text-muted">
             <span>
               {phase === "running" ? "Regenerating…" : "Done"} · {totals.processed}/{total}
             </span>
             {phase === "running" && (
-              <button type="button" onClick={stop} className="text-zinc-600 underline">
+              <button type="button" onClick={stop} className="text-muted underline">
                 Stop
               </button>
             )}
           </div>
-          <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+          <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-subtle">
             <div
-              className={`h-full rounded-full transition-all ${phase === "done" ? "bg-emerald-500" : "bg-zinc-800"}`}
+              className={`h-full rounded-full transition-all ${phase === "done" ? "bg-good" : "bg-primary"}`}
               style={{ width: `${pct}%` }}
             />
           </div>
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-zinc-600">
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-muted">
             <span>
-              Refreshed <strong className="text-zinc-900">{totals.refreshed}</strong>
+              Refreshed <strong className="text-ink">{totals.refreshed}</strong>
             </span>
             {deliver && (
               <span>
-                Queued for suppliers <strong className="text-zinc-900">{totals.requeued}</strong>
+                Queued for suppliers <strong className="text-ink">{totals.requeued}</strong>
                 {" · no email"}
               </span>
             )}
             {deliver && (totals.pushed > 0 || totals.pushErrors > 0) && (
               <span>
-                Pushed to SharePoint <strong className="text-zinc-900">{totals.pushed}</strong>
+                Pushed to SharePoint <strong className="text-ink">{totals.pushed}</strong>
                 {totals.pushErrors > 0 ? ` · ${totals.pushErrors} failed` : ""}
               </span>
             )}
             {totals.skippedUnchanged > 0 && (
               <span>
                 Skipped (already current){" "}
-                <strong className="text-zinc-900">{totals.skippedUnchanged}</strong>
+                <strong className="text-ink">{totals.skippedUnchanged}</strong>
               </span>
             )}
             {totals.skippedApproved > 0 && (
               <span>
-                Skipped (all approved) <strong className="text-zinc-900">{totals.skippedApproved}</strong>
+                Skipped (all approved) <strong className="text-ink">{totals.skippedApproved}</strong>
               </span>
             )}
             {totals.noCover > 0 && <span>No cover yet {totals.noCover}</span>}
             {totals.errors > 0 && (
-              <span className="text-red-600">Errors {totals.errors}</span>
+              <span className="text-bad">Errors {totals.errors}</span>
             )}
           </div>
           {phase === "done" && (
@@ -327,7 +327,7 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
                 setPrepared(null);
                 setTotals(ZERO);
               }}
-              className="mt-4 rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              className="mt-4 rounded-md border border-line px-3 py-2 text-sm font-medium text-ink hover:bg-subtle"
             >
               Close
             </button>
@@ -336,7 +336,7 @@ export function CoverRegenPanel({ prodSpecId, scopeLabel }: Props = {}) {
       )}
 
       {phase === "done" && prepared?.total === 0 && (
-        <p className="mt-4 text-sm text-zinc-500">
+        <p className="mt-4 text-sm text-muted">
           {scoped
             ? `No style under ${scopeNoun} has a generated cover yet — nothing to update. New bundles will carry your edit.`
             : "No styles have a generated cover yet — nothing to regenerate."}

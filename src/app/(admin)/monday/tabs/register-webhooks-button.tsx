@@ -70,12 +70,12 @@ export function RegisterWebhooksButton() {
         type="button"
         onClick={register}
         disabled={pending}
-        className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+        className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {pending ? "Registering…" : "Register / refresh webhooks"}
       </button>
-      {msg ? <span className="max-w-xs text-right text-xs text-emerald-600">{msg}</span> : null}
-      {error ? <span className="max-w-xs text-right text-xs text-red-600">{error}</span> : null}
+      {msg ? <span className="max-w-xs text-right text-xs text-good">{msg}</span> : null}
+      {error ? <span className="max-w-xs text-right text-xs text-bad">{error}</span> : null}
     </div>
   );
 }

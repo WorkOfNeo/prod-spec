@@ -15,13 +15,13 @@ export default async function QrCodesPage() {
   });
 
   return (
-    <div className="px-8 py-8">
-      <Link href="/settings" className="text-xs text-zinc-500 underline">
+    <div className="px-6 py-5">
+      <Link href="/settings" className="text-xs text-muted underline">
         ← Back to settings
       </Link>
       <div className="mt-2 mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">QR codes</h1>
-        <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">QR codes</h1>
+        <p className="mt-1 max-w-2xl text-sm text-muted">
           Uploaded QR images, rendered on Care Label 02 (page 4). These are plain images — nothing
           is generated here. Link one to a style from the style&apos;s edit page; the linked QR
           prints as-is.

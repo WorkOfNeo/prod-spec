@@ -36,7 +36,7 @@ export function GeneralInfoEditor({ prodSpecs }: { prodSpecs: ProdSpecOption[] }
 
   if (prodSpecs.length === 0) {
     return (
-      <p className="mt-6 text-sm text-zinc-500">
+      <p className="mt-6 text-sm text-muted">
         No prod specs exist yet — General information is written per client and business area, so
         there&apos;s nothing to edit until the first one is created.
       </p>
@@ -46,14 +46,14 @@ export function GeneralInfoEditor({ prodSpecs }: { prodSpecs: ProdSpecOption[] }
   return (
     <div className="mt-6">
       <div className="flex flex-wrap items-center gap-3">
-        <label htmlFor="gi-prod-spec" className="text-sm font-medium text-zinc-700">
+        <label htmlFor="gi-prod-spec" className="text-sm font-medium text-ink">
           Client &amp; business area
         </label>
         <select
           id="gi-prod-spec"
           value={selectedId}
           onChange={(e) => setSelectedId(e.target.value)}
-          className="min-w-[22rem] rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
+          className="min-w-[22rem] rounded-md border border-line bg-surface px-3 py-2 text-sm"
         >
           {prodSpecs.map((p) => (
             <option key={p.id} value={p.id}>
@@ -178,16 +178,16 @@ function SpecGeneralInfo({ prodSpec }: { prodSpec: ProdSpecOption }) {
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-zinc-700">Content</span>
+            <span className="text-sm font-medium text-ink">Content</span>
             <span
-              className={`text-xs ${saveState === "error" ? "text-red-600" : "text-zinc-400"}`}
+              className={`text-xs ${saveState === "error" ? "text-bad" : "text-faint"}`}
               role="status"
             >
               {status}
             </span>
           </div>
           {markdown === null ? (
-            <div className="h-64 animate-pulse rounded-md border border-zinc-200 bg-zinc-50" />
+            <div className="h-64 animate-pulse rounded-md border border-line bg-subtle" />
           ) : (
             <MarkdownEditor
               value={markdown}
@@ -205,8 +205,8 @@ function SpecGeneralInfo({ prodSpec }: { prodSpec: ProdSpecOption }) {
               new wording. The behaviour is unchanged; only the silence is. The
               two panels below are the sentence's second half — one style
               (every order carrying its number), or the whole client. */}
-          <p className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-[12px] leading-relaxed text-zinc-600">
-            <strong className="font-medium text-zinc-800">
+          <p className="rounded-md border border-line bg-subtle px-3 py-2 text-[12px] leading-relaxed text-muted">
+            <strong className="font-medium text-ink">
               Saving applies to bundles generated from now on.
             </strong>{" "}
             Bundles that already exist — including any already delivered to a supplier — keep the
@@ -215,7 +215,7 @@ function SpecGeneralInfo({ prodSpec }: { prodSpec: ProdSpecOption }) {
             its number, or <em>Apply to existing bundles</em> for every style under this client and
             business area.
           </p>
-          <p className="text-[11px] text-zinc-400">
+          <p className="text-[11px] text-faint">
             These pages print inside the cover PDF, after the cover sheet — one set per client and
             business area. Type <code className="font-mono">#</code> + space for a heading,{" "}
             <code className="font-mono">-</code> + space for a list; tables and images insert from
@@ -224,8 +224,8 @@ function SpecGeneralInfo({ prodSpec }: { prodSpec: ProdSpecOption }) {
         </div>
 
         <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium text-zinc-700">General information preview</span>
-          <div className="rounded-md bg-zinc-100 p-3">
+          <span className="text-sm font-medium text-ink">General information preview</span>
+          <div className="rounded-md bg-subtle p-3">
             <LazyOutputPreview
               src={`/api/admin/prod-specs/${prodSpec.id}/general-info-preview`}
               widthMm={210}

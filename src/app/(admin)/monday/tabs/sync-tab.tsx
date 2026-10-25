@@ -278,7 +278,7 @@ export function SyncTab({
         <div className="mb-2 flex items-end justify-between">
           <div>
             <h2 className="text-base font-semibold">Sync</h2>
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted">
               Raw API snapshot — pulls each board&apos;s columns, items, and dropdown options into the
               ghost tables. Idempotent; safe to re-run. Source for the{" "}
               <a href="/monday?tab=data" className="underline">
@@ -291,7 +291,7 @@ export function SyncTab({
             type="button"
             onClick={runGhostAll}
             disabled={ghostPending !== null}
-            className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {ghostPending === "__all__" ? "Running…" : "Sync all"}
           </button>
@@ -305,19 +305,19 @@ export function SyncTab({
             />
           </div>
         ) : (
-          <div className="mb-3 text-xs text-zinc-600">{ghostResults.__all__ ?? "—"}</div>
+          <div className="mb-3 text-xs text-muted">{ghostResults.__all__ ?? "—"}</div>
         )}
-        <ul className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+        <ul className="overflow-hidden rounded-xl border border-line bg-surface">
           {knownBoards.map((b) => {
             const ghost = ghostBoards.find((g) => g.mondayBoardId === b.id);
             return (
               <li
                 key={b.key}
-                className="flex items-center gap-4 border-t border-zinc-100 px-4 py-3 first:border-t-0"
+                className="flex items-center gap-4 border-t border-line px-4 py-3 first:border-t-0"
               >
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium">{b.label}</div>
-                  <div className="text-xs text-zinc-500">
+                  <div className="text-xs text-muted">
                     <span className="font-mono">{b.id}</span>
                     {ghost ? (
                       <>
@@ -329,14 +329,14 @@ export function SyncTab({
                     )}
                   </div>
                 </div>
-                <div className="w-80 text-right text-xs text-zinc-600 truncate">
+                <div className="w-80 text-right text-xs text-muted truncate">
                   {ghostResults[b.key] ?? "—"}
                 </div>
                 <button
                   type="button"
                   onClick={() => runGhost(b.id, b.key)}
                   disabled={ghostPending !== null}
-                  className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+                  className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {ghostPending === b.key ? "Running…" : "Sync"}
                 </button>
@@ -350,7 +350,7 @@ export function SyncTab({
       <section>
         <div className="mb-2">
           <h2 className="text-base font-semibold">Fill</h2>
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-muted">
             Reads from the ghost tables Sync populated and upserts the typed mirrors
             (Customer / Supplier / BusinessArea / Style). Pure DB → DB — no Monday API
             calls, so safe to re-run as many times as you want. Run Sync first to refresh
@@ -364,28 +364,28 @@ export function SyncTab({
           <Stat label="Business areas (active)" value={counts.businessAreas} />
           <Stat label="Styles" value={counts.styles} />
         </div>
-        <ul className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+        <ul className="overflow-hidden rounded-xl border border-line bg-surface">
           {DOMAIN_KINDS.map(({ kind, label, hint }) => {
             const prog = domainProgress[kind];
             const isPending = domainPending === kind;
             return (
               <li
                 key={kind}
-                className="flex flex-col gap-2 border-t border-zinc-100 px-4 py-3 first:border-t-0"
+                className="flex flex-col gap-2 border-t border-line px-4 py-3 first:border-t-0"
               >
                 <div className="flex items-center gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium">{label}</div>
-                    <div className="text-xs text-zinc-500">{hint}</div>
+                    <div className="text-xs text-muted">{hint}</div>
                   </div>
-                  <div className="w-72 text-right text-xs text-zinc-600 truncate">
+                  <div className="w-72 text-right text-xs text-muted truncate">
                     {!isPending ? (domainResults[kind] ?? "—") : null}
                   </div>
                   <button
                     type="button"
                     onClick={() => runDomain(kind)}
                     disabled={domainPending !== null}
-                    className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+                    className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isPending ? "Running…" : "Fill"}
                   </button>
@@ -400,12 +400,12 @@ export function SyncTab({
       </section>
 
       {/* ──────── Recent runs ──────── */}
-      <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
-        <header className="border-b border-zinc-100 bg-zinc-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+      <section className="overflow-hidden rounded-xl border border-line bg-surface">
+        <header className="border-b border-line bg-subtle px-4 py-2 text-xs font-medium text-muted">
           Recent Fill runs ({recent.length})
         </header>
         <table className="w-full text-sm">
-          <thead className="text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="text-left text-xs text-muted">
             <tr>
               <th className="px-4 py-2">Kind</th>
               <th className="px-4 py-2">Status</th>
@@ -421,39 +421,39 @@ export function SyncTab({
           <tbody>
             {recent.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-zinc-500">
+                <td colSpan={9} className="px-4 py-8 text-center text-muted">
                   No sync runs yet. Click a button above to bootstrap mirrors.
                 </td>
               </tr>
             ) : (
               recent.map((j) => (
-                <tr key={j.id} className="border-t border-zinc-100">
+                <tr key={j.id} className="border-t border-line">
                   <td className="px-4 py-2 font-mono text-xs">{j.kind}</td>
                   <td className="px-4 py-2">
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
                         j.status === "COMPLETED"
-                          ? "bg-emerald-100 text-emerald-800"
+                          ? "bg-good-soft text-good"
                           : j.status === "RUNNING"
-                            ? "bg-blue-100 text-blue-800"
-                            : "bg-red-100 text-red-800"
+                            ? "bg-accent-soft text-accent-text"
+                            : "bg-bad-soft text-bad"
                       }`}
                     >
                       {j.status.toLowerCase()}
                     </span>
                   </td>
-                  <td className="px-4 py-2 tabular-nums text-zinc-600">{j.itemsTotal}</td>
-                  <td className="px-4 py-2 tabular-nums text-zinc-600">{j.itemsSynced}</td>
+                  <td className="px-4 py-2 tabular-nums text-muted">{j.itemsTotal}</td>
+                  <td className="px-4 py-2 tabular-nums text-muted">{j.itemsSynced}</td>
                   <td
-                    className="px-4 py-2 tabular-nums text-amber-700"
+                    className="px-4 py-2 tabular-nums text-warn"
                     title="Items not promoted because they need operator action (e.g. ambiguous customer). Surface in /import."
                   >
                     {j.itemsSkipped}
                   </td>
-                  <td className="px-4 py-2 tabular-nums text-zinc-600">{j.itemsFailed}</td>
-                  <td className="px-4 py-2 text-xs text-zinc-500">{formatDate(j.startedAt)}</td>
-                  <td className="px-4 py-2 text-xs text-zinc-500">{formatDate(j.finishedAt)}</td>
-                  <td className="px-4 py-2 text-xs text-red-700">
+                  <td className="px-4 py-2 tabular-nums text-muted">{j.itemsFailed}</td>
+                  <td className="px-4 py-2 text-xs text-muted">{formatDate(j.startedAt)}</td>
+                  <td className="px-4 py-2 text-xs text-muted">{formatDate(j.finishedAt)}</td>
+                  <td className="px-4 py-2 text-xs text-bad">
                     {j.error ? <span title={j.error}>{j.error.slice(0, 80)}</span> : "—"}
                   </td>
                 </tr>
@@ -468,8 +468,8 @@ export function SyncTab({
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-md border border-zinc-200 bg-white px-3 py-2">
-      <div className="text-xs text-zinc-500">{label}</div>
+    <div className="rounded-md border border-line bg-surface px-3 py-2">
+      <div className="text-xs text-muted">{label}</div>
       <div className="text-lg font-semibold tabular-nums">{value}</div>
     </div>
   );
@@ -504,8 +504,8 @@ function FillProgressBar({
   // Before the first poll lands we have no data — show indeterminate.
   if (!progress || progress.itemsTotal === 0) {
     return (
-      <div className="flex items-center gap-3 text-xs text-zinc-500">
-        <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-100">
+      <div className="flex items-center gap-3 text-xs text-muted">
+        <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-subtle">
           <div className="h-full w-full animate-pulse rounded-full bg-zinc-300" />
         </div>
         <span className="tabular-nums">starting…</span>
@@ -523,22 +523,22 @@ function FillProgressBar({
 
   return (
     <div className="flex items-center gap-3 text-xs">
-      <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-100">
+      <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-subtle">
         <div
-          className="h-full rounded-full bg-zinc-900 transition-[width] duration-300"
+          className="h-full rounded-full bg-primary transition-[width] duration-300"
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="w-44 text-right tabular-nums text-zinc-600">
+      <span className="w-44 text-right tabular-nums text-muted">
         {done}/{progress.itemsTotal} {unit} · {pct}%
       </span>
-      <span className="w-32 text-right tabular-nums text-zinc-500">
+      <span className="w-32 text-right tabular-nums text-muted">
         {formatDuration(elapsedSec)} elapsed
         {etaSec !== null && remaining > 0 && ` · ~${formatDuration(etaSec)} left`}
       </span>
       {(progress.itemsFailed > 0 || progress.itemsSkipped > 0) && (
         <span
-          className="text-zinc-500"
+          className="text-muted"
           title={
             kind === "all"
               ? "Counts below are for the Styles leg (the slowest)."
@@ -546,10 +546,10 @@ function FillProgressBar({
           }
         >
           {progress.itemsSkipped > 0 && (
-            <span className="text-amber-700">{progress.itemsSkipped} skipped </span>
+            <span className="text-warn">{progress.itemsSkipped} skipped </span>
           )}
           {progress.itemsFailed > 0 && (
-            <span className="text-red-700">{progress.itemsFailed} failed</span>
+            <span className="text-bad">{progress.itemsFailed} failed</span>
           )}
         </span>
       )}

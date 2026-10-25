@@ -35,13 +35,13 @@ export default async function SystemPromptsPage() {
   }));
 
   return (
-    <div className="px-8 py-8">
-      <Link href="/settings" className="text-xs text-zinc-500 underline">
+    <div className="px-6 py-5">
+      <Link href="/settings" className="text-xs text-muted underline">
         ← Back to settings
       </Link>
       <div className="mt-2 mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Prompts</h1>
-        <p className="mt-1 max-w-3xl text-sm text-zinc-500">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Prompts</h1>
+        <p className="mt-1 max-w-3xl text-sm text-muted">
           System prompts that steer the app&apos;s AI features. Editing one takes effect immediately on
           the next AI run. The strict output format each feature needs is fixed in code and appended
           automatically — you&apos;re editing the guidance, not the machine contract. Reset to default
@@ -50,7 +50,7 @@ export default async function SystemPromptsPage() {
       </div>
 
       {!available ? (
-        <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="mb-5 rounded-md border border-transparent bg-warn-soft px-4 py-3 text-sm text-warn">
           The <code className="font-mono">system_prompts</code> table isn&apos;t deployed yet — the
           built-in defaults below are live and in use, but saving is disabled until{" "}
           <code className="font-mono">db:deploy</code> runs.

@@ -65,7 +65,7 @@ export function UploadProgress({ enabled }: { enabled: boolean }) {
   const total = p.uploaded + p.pending + p.failed + p.skipped;
   if (total === 0) {
     return (
-      <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-500">
+      <div className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50">
         Nothing in tonight&rsquo;s queue — new approvals appear here as they&rsquo;re captured.
       </div>
     );
@@ -82,20 +82,20 @@ export function UploadProgress({ enabled }: { enabled: boolean }) {
     : null;
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
+    <div className="rounded-xl border border-line bg-surface px-4 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="text-sm font-semibold text-zinc-900">
+        <div className="text-sm font-semibold text-ink">
           SharePoint uploads —{" "}
           <span className="tabular-nums">
             {p.uploaded}/{total}
           </span>{" "}
-          <span className="font-normal text-zinc-500">
+          <span className="font-normal text-muted">
             {done ? "done" : `uploaded · ${p.pending} to go`}
           </span>
         </div>
-        <div className="text-xs text-zinc-500">
+        <div className="text-xs text-muted">
           {!enabled && p.pending > 0 ? (
-            <span className="text-amber-600">sending is OFF — uploads paused</span>
+            <span className="text-warn">sending is OFF — uploads paused</span>
           ) : done ? (
             "queue settled"
           ) : (
@@ -107,15 +107,15 @@ export function UploadProgress({ enabled }: { enabled: boolean }) {
         </div>
       </div>
 
-      <div className="mt-2 flex h-2.5 w-full overflow-hidden rounded-full bg-amber-100">
-        <div className="h-full bg-emerald-500 transition-all duration-700" style={{ width: pct(p.uploaded) }} />
+      <div className="mt-2 flex h-2.5 w-full overflow-hidden rounded-full bg-warn-soft">
+        <div className="h-full bg-good transition-all duration-700" style={{ width: pct(p.uploaded) }} />
         <div className="h-full bg-red-400 transition-all duration-700" style={{ width: pct(p.failed) }} />
         <div className="h-full bg-zinc-300 transition-all duration-700" style={{ width: pct(p.skipped) }} />
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
         <span className="tabular-nums">
-          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-500" />
+          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-good" />
           {p.uploaded} uploaded
         </span>
         <span className="tabular-nums">

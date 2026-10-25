@@ -49,32 +49,32 @@ export default async function ReviewActivityPage() {
   const { rows, endColumnMissing } = await getReviewActivity();
 
   return (
-    <div className="px-8 py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Review activity</h1>
-      <p className="text-sm text-zinc-500">
+    <div className="px-6 py-5">
+      <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Review activity</h1>
+      <p className="text-sm text-muted">
         Every claimed review, newest first — who started it, when, and how long it took. Start is
         stamped when a reviewer opens or claims a review; end is stamped when the job settles.
       </p>
 
       {endColumnMissing ? (
-        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+        <div className="mt-4 rounded-lg border border-transparent bg-warn-soft p-3 text-xs text-warn">
           The <code>reviewEndedAt</code> column isn&rsquo;t deployed yet — run{" "}
           <code>npm run db:deploy</code> to apply the migration. End times stay blank until then.
         </div>
       ) : null}
 
       {rows.length === 0 ? (
-        <div className="mt-6 rounded-lg border border-zinc-200 bg-white p-8 text-center">
-          <div className="text-sm font-semibold text-zinc-800">No reviews started yet.</div>
-          <p className="mt-1 text-sm text-zinc-500">
+        <div className="mt-6 rounded-xl border border-line bg-surface p-8 text-center">
+          <div className="text-sm font-semibold text-ink">No reviews started yet.</div>
+          <p className="mt-1 text-sm text-muted">
             A row appears here once a reviewer claims or opens a review.
           </p>
         </div>
       ) : (
-        <div className="mt-6 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+        <div className="mt-6 overflow-x-auto rounded-xl border border-line bg-surface">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-[11px] uppercase tracking-wide text-zinc-500">
+              <tr className="border-b border-line bg-subtle text-left text-[11px] text-muted">
                 <th className="px-4 py-2 font-semibold">Style</th>
                 <th className="px-4 py-2 font-semibold">Customer</th>
                 <th className="px-4 py-2 font-semibold">Business area</th>
@@ -87,30 +87,30 @@ export default async function ReviewActivityPage() {
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.jobId} className="border-t border-zinc-100 hover:bg-zinc-50/60">
+                <tr key={r.jobId} className="border-t border-line hover:bg-zinc-50/60">
                   <td className="px-4 py-2">
                     <Link
                       href={`/styles/${r.styleId}`}
-                      className="font-medium text-zinc-900 hover:underline"
+                      className="font-medium text-ink hover:underline"
                     >
                       {r.styleName}
                     </Link>
                     {r.poNumber ? (
-                      <span className="ml-2 text-xs text-zinc-500">PO {r.poNumber}</span>
+                      <span className="ml-2 text-xs text-muted">PO {r.poNumber}</span>
                     ) : null}
                   </td>
-                  <td className="px-4 py-2 text-zinc-600">{r.customerName}</td>
-                  <td className="px-4 py-2 text-zinc-600">{r.businessArea ?? "—"}</td>
-                  <td data-private className="px-4 py-2 text-zinc-700">{r.reviewerName ?? "—"}</td>
-                  <td className="px-4 py-2 text-xs text-zinc-600">{STAMP.format(r.startedAt)}</td>
-                  <td className="px-4 py-2 text-xs text-zinc-600">{endLabel(r)}</td>
-                  <td className="px-4 py-2 text-xs tabular-nums text-zinc-700">
+                  <td className="px-4 py-2 text-muted">{r.customerName}</td>
+                  <td className="px-4 py-2 text-muted">{r.businessArea ?? "—"}</td>
+                  <td data-private className="px-4 py-2 text-ink">{r.reviewerName ?? "—"}</td>
+                  <td className="px-4 py-2 text-xs text-muted">{STAMP.format(r.startedAt)}</td>
+                  <td className="px-4 py-2 text-xs text-muted">{endLabel(r)}</td>
+                  <td className="px-4 py-2 text-xs tabular-nums text-ink">
                     {formatDuration(r.startedAt, r.endedAt)}
                   </td>
                   <td className="px-4 py-2">
                     <span
                       className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                        STATUS_STYLE[r.status] ?? "bg-zinc-100 text-zinc-600"
+                        STATUS_STYLE[r.status] ?? "bg-subtle text-muted"
                       }`}
                     >
                       {r.status.toLowerCase().replace(/_/g, " ")}

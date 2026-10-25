@@ -31,11 +31,11 @@ export function RunNowButton() {
         type="button"
         onClick={onClick}
         disabled={pending}
-        className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 disabled:opacity-50"
+        className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
       >
         {pending ? "Running…" : "Run pending jobs now"}
       </button>
-      {result && <span className="text-xs text-zinc-600">{result}</span>}
+      {result && <span className="text-xs text-muted">{result}</span>}
     </div>
   );
 }

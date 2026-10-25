@@ -119,16 +119,16 @@ export function PoDeliveryPanel({ poNumber, supplierId }: { poNumber: string; su
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm">
-          <span className="text-2xl font-semibold tabular-nums text-zinc-900">
+          <span className="text-[18px] font-semibold tabular-nums text-ink">
             {t.deliveredDocs} of {t.expectedDocs}
           </span>
-          <span className="ml-2 text-zinc-500">documents delivered</span>
+          <span className="ml-2 text-muted">documents delivered</span>
           {data.folderUrl ? (
             <a
               href={data.folderUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="ml-3 text-xs underline text-zinc-500 hover:text-zinc-900"
+              className="ml-3 text-xs underline text-muted hover:text-ink"
             >
               Open folder ↗
             </a>
@@ -139,7 +139,7 @@ export function PoDeliveryPanel({ poNumber, supplierId }: { poNumber: string; su
             type="button"
             onClick={() => void refresh()}
             disabled={loading || busy}
-            className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-400"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? "Checking…" : "Re-check"}
           </button>
@@ -149,7 +149,7 @@ export function PoDeliveryPanel({ poNumber, supplierId }: { poNumber: string; su
               onClick={() => void repair()}
               disabled={busy || loading}
               title="Re-push the approved PDFs under the names their layouts ask for, then clear the old files"
-              className="rounded-md border border-emerald-300 bg-white px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400"
+              className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? "Repairing…" : `Deliver the missing ${repairable}`}
             </button>
@@ -159,21 +159,21 @@ export function PoDeliveryPanel({ poNumber, supplierId }: { poNumber: string; su
 
       {/* Per style — the roll-up that makes a style with nothing delivered
           impossible to miss. */}
-      <div className="overflow-hidden rounded-lg border border-zinc-200">
+      <div className="overflow-x-auto rounded-lg border border-line">
         <table className="w-full text-sm">
           <tbody>
             {data.styles.map((s) => (
-              <tr key={s.styleId} className="border-b border-zinc-100 last:border-0">
+              <tr key={s.styleId} className="border-b border-line last:border-0">
                 <td className="px-4 py-2">
-                  <Link href={`/styles/${s.styleId}`} className="underline hover:text-zinc-950">
+                  <Link href={`/styles/${s.styleId}`} className="underline hover:text-ink">
                     {s.styleName}
                   </Link>
                 </td>
                 <td className="px-4 py-2 text-right tabular-nums">
-                  <span className={s.delivered === s.expected ? "text-emerald-700" : s.delivered === 0 ? "font-semibold text-red-700" : "text-amber-700"}>
+                  <span className={s.delivered === s.expected ? "text-good" : s.delivered === 0 ? "font-semibold text-bad" : "text-warn"}>
                     {s.delivered} of {s.expected}
                   </span>
-                  {s.delivered === 0 ? <span className="ml-2 text-xs text-red-600">nothing delivered</span> : null}
+                  {s.delivered === 0 ? <span className="ml-2 text-xs text-bad">nothing delivered</span> : null}
                 </td>
               </tr>
             ))}
@@ -182,7 +182,7 @@ export function PoDeliveryPanel({ poNumber, supplierId }: { poNumber: string; su
       </div>
 
       {notes.length > 0 ? (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 px-4 py-3 text-xs text-emerald-900">
+        <div className="rounded-lg border border-transparent bg-emerald-50/50 px-4 py-3 text-xs text-good">
           {notes.map((n, i) => (
             <div key={i}>{i === 0 ? `✓ ${n}` : `• ${n}`}</div>
           ))}
@@ -194,26 +194,26 @@ export function PoDeliveryPanel({ poNumber, supplierId }: { poNumber: string; su
           silently destroy artwork. */}
       {collisions.length > 0 ? (
         <section>
-          <h2 className="text-sm font-semibold text-red-800">
+          <h2 className="text-sm font-semibold text-bad">
             {t.collisionDocs} document(s) can never land — two outputs want one file name
           </h2>
-          <p className="mt-1 text-xs text-zinc-600">
+          <p className="mt-1 text-xs text-muted">
             A folder holds one file per name, so the second upload overwrites the first. Re-pushing cannot
             fix this; the layout&apos;s file name has to tell them apart. What differs is listed under each.
           </p>
           <ul className="mt-2 space-y-2">
             {collisions.map((g) => (
-              <li key={g.fileName} className="rounded-lg border border-red-200 bg-red-50/40 px-3 py-2 text-xs">
-                <div className="font-medium text-zinc-900">
+              <li key={g.fileName} className="rounded-lg border border-transparent bg-red-50/40 px-3 py-2 text-xs">
+                <div className="font-medium text-ink">
                   {g.wanted}× <span className="break-all">{g.fileName}</span>
                   {g.present ? (
-                    <span className="ml-2 font-normal text-zinc-500">— one is in the folder, the rest were overwritten</span>
+                    <span className="ml-2 font-normal text-muted">— one is in the folder, the rest were overwritten</span>
                   ) : (
-                    <span className="ml-2 font-normal text-zinc-500">— none delivered</span>
+                    <span className="ml-2 font-normal text-muted">— none delivered</span>
                   )}
                 </div>
-                <div className="mt-0.5 text-red-800">↳ {g.distinguishers.join(" · ")}</div>
-                <div className="mt-1 space-y-0.5 text-zinc-500">
+                <div className="mt-0.5 text-bad">↳ {g.distinguishers.join(" · ")}</div>
+                <div className="mt-1 space-y-0.5 text-muted">
                   {g.documents.map((d) => (
                     <div key={d.jobAssetId}>
                       {d.styleName} · {d.name} · {d.variantKey.split("#")[1] ?? "whole style"}
@@ -227,16 +227,16 @@ export function PoDeliveryPanel({ poNumber, supplierId }: { poNumber: string; su
       ) : null}
 
       <section>
-        <h2 className="text-sm font-semibold text-zinc-800">
+        <h2 className="text-sm font-semibold text-ink">
           {outstanding.length === 0 ? "Every document is in the folder" : `${outstanding.length} file name(s) outstanding`}
         </h2>
         {outstanding.length === 0 ? (
-          <p className="mt-1 text-xs text-emerald-700">
+          <p className="mt-1 text-xs text-good">
             ✓ Every approved document for this PO is in the supplier&apos;s folder under the name its layout
             asks for.
           </p>
         ) : (
-          <ul className="mt-2 divide-y divide-zinc-100 overflow-hidden rounded-lg border border-zinc-200">
+          <ul className="mt-2 divide-y divide-line overflow-hidden rounded-lg border border-line">
             {outstanding.filter((g) => g.wanted === 1).map((g) => (
               <NameRow key={g.fileName} group={g} />
             ))}
@@ -246,15 +246,15 @@ export function PoDeliveryPanel({ poNumber, supplierId }: { poNumber: string; su
 
       {data.staleFiles.length > 0 || data.strayFiles.length > 0 ? (
         <section className="text-xs">
-          <h2 className="text-sm font-semibold text-zinc-800">Other files in the folder</h2>
+          <h2 className="text-sm font-semibold text-ink">Other files in the folder</h2>
           {data.staleFiles.length > 0 ? (
-            <p className="mt-1 text-zinc-600">
+            <p className="mt-1 text-muted">
               <span className="font-medium">{data.staleFiles.length} left over from a rename</span> — ours,
               and cleared automatically when the repair runs: {data.staleFiles.map((f) => f.fileName).join(", ")}
             </p>
           ) : null}
           {data.strayFiles.length > 0 ? (
-            <p className="mt-1 text-zinc-600">
+            <p className="mt-1 text-muted">
               <span className="font-medium">{data.strayFiles.length} nothing on this PO accounts for</span> —
               usually the supplier&apos;s or customer&apos;s own upload, so they are never touched:{" "}
               {data.strayFiles.map((f) => f.fileName).join(", ")}
@@ -263,7 +263,7 @@ export function PoDeliveryPanel({ poNumber, supplierId }: { poNumber: string; su
         </section>
       ) : null}
 
-      <p className="text-[11px] text-zinc-400">Checked {new Date(data.checkedAt).toLocaleString()}.</p>
+      <p className="text-[11px] text-faint">Checked {new Date(data.checkedAt).toLocaleString()}.</p>
     </div>
   );
 }
@@ -273,13 +273,13 @@ function NameRow({ group }: { group: DeliveryNameGroup }) {
   const renamed = group.presentAsPrevious;
   return (
     <li className="flex items-start gap-2 px-3 py-2 text-xs">
-      <span aria-hidden className={`mt-px shrink-0 font-semibold ${renamed ? "text-sky-600" : "text-red-600"}`}>
+      <span aria-hidden className={`mt-px shrink-0 font-semibold ${renamed ? "text-accent-text" : "text-bad"}`}>
         {renamed ? "⟳" : "✗"}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="font-medium text-zinc-500">{renamed ? "under an old name" : "missing"}</span>{" "}
-        <span className="break-all text-zinc-800">{group.fileName}</span>
-        <span className="block text-[11px] text-zinc-500">
+        <span className="font-medium text-muted">{renamed ? "under an old name" : "missing"}</span>{" "}
+        <span className="break-all text-ink">{group.fileName}</span>
+        <span className="block text-[11px] text-muted">
           {d.styleName} · {d.name}
           {renamed ? ` · in the folder as “${d.previousFileName}”` : ""}
         </span>

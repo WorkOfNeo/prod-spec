@@ -18,36 +18,36 @@ export default async function CustomersPage() {
   });
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-6 py-5">
       <div className="mb-6 flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Customers</h1>
-          <p className="mt-1 text-sm text-zinc-500">
+          <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Customers</h1>
+          <p className="mt-1 text-sm text-muted">
             Mirrored from Monday board <code className="font-mono">3317892788</code>. Sync from{" "}
             <Link href="/sync" className="underline">Sync</Link> or via webhook.
           </p>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="bg-subtle text-left text-xs text-muted">
             <tr>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Country</th>
-              <th className="px-4 py-3">Priority</th>
-              <th className="px-4 py-3">Sales</th>
-              <th className="px-4 py-3">Styles</th>
-              <th className="px-4 py-3">Prod specs</th>
-              <th className="px-4 py-3">Source</th>
-              <th className="px-4 py-3">Synced</th>
-              <th className="px-4 py-3"></th>
+              <th className="px-3 py-2">Name</th>
+              <th className="px-3 py-2">Country</th>
+              <th className="px-3 py-2">Priority</th>
+              <th className="px-3 py-2">Sales</th>
+              <th className="px-3 py-2">Styles</th>
+              <th className="px-3 py-2">Prod specs</th>
+              <th className="px-3 py-2">Source</th>
+              <th className="px-3 py-2">Synced</th>
+              <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {customers.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-12 text-center text-zinc-500">
+                <td colSpan={9} className="px-4 py-12 text-center text-muted">
                   No customers yet. Run the Customer sync from{" "}
                   <Link href="/sync" className="underline">/sync</Link>.
                 </td>
@@ -56,9 +56,9 @@ export default async function CustomersPage() {
               customers.map((c) => (
                 <tr
                   key={c.id}
-                  className={`border-t border-zinc-100 hover:bg-zinc-50 ${c.active ? "" : "opacity-50"}`}
+                  className={`border-t border-line hover:bg-subtle ${c.active ? "" : "opacity-50"}`}
                 >
-                  <td className="px-4 py-3 font-medium">
+                  <td className="px-3 py-2 font-medium">
                     <span className="flex items-center gap-1.5">
                       <Link href={`/customers/${c.id}`} className="hover:underline">{c.name}</Link>
                       {parseCustomerConfig(c.config).skipSupplierDelivery && (
@@ -66,17 +66,17 @@ export default async function CustomersPage() {
                       )}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-zinc-600">{c.country ?? "—"}</td>
-                  <td className="px-4 py-3 text-zinc-600">{c.priority ?? "—"}</td>
-                  <td className="px-4 py-3 text-zinc-600">{c.salesResponsible ?? "—"}</td>
-                  <td className="px-4 py-3 tabular-nums text-zinc-600">{c._count.styles}</td>
-                  <td className="px-4 py-3 tabular-nums text-zinc-600">{c._count.prodSpecs}</td>
-                  <td className="px-4 py-3 text-xs text-zinc-500 font-mono">
+                  <td className="px-3 py-2 text-muted">{c.country ?? "—"}</td>
+                  <td className="px-3 py-2 text-muted">{c.priority ?? "—"}</td>
+                  <td className="px-3 py-2 text-muted">{c.salesResponsible ?? "—"}</td>
+                  <td className="px-3 py-2 tabular-nums text-muted">{c._count.styles}</td>
+                  <td className="px-3 py-2 tabular-nums text-muted">{c._count.prodSpecs}</td>
+                  <td className="px-3 py-2 text-xs text-muted font-mono">
                     {c.mondayItemId ? c.mondayItemId : "manual"}
                   </td>
-                  <td className="px-4 py-3 text-xs text-zinc-500">{formatDate(c.lastSyncedAt)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <Link href={`/customers/${c.id}`} className="text-xs text-zinc-700 underline">
+                  <td className="px-3 py-2 text-xs text-muted">{formatDate(c.lastSyncedAt)}</td>
+                  <td className="px-3 py-2 text-right">
+                    <Link href={`/customers/${c.id}`} className="text-xs text-ink underline">
                       Configure
                     </Link>
                   </td>

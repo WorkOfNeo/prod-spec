@@ -21,10 +21,10 @@ export default async function CountriesPage() {
   const availableLanguages = languages;
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-6 py-5">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Countries</h1>
-        <p className="mt-1 max-w-3xl text-sm text-zinc-500">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Countries</h1>
+        <p className="mt-1 max-w-3xl text-sm text-muted">
           Translation namespace for the rest of the app. Each row is one country with its primary
           language code and its name translated into every other language. Wash care symbols,
           ProdSpec care instructions, and the future <code className="font-mono">Style.countryOfOrigin</code>{" "}

@@ -71,22 +71,22 @@ export function InvitesTable({ invites }: { invites: InviteRow[] }) {
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+    <div className="overflow-x-auto rounded-xl border border-line bg-surface">
       <table className="w-full text-sm">
-        <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+        <thead className="bg-subtle text-left text-xs text-muted">
           <tr>
-            <th className="px-4 py-3">Email</th>
-            <th className="px-4 py-3">Role</th>
-            <th className="px-4 py-3">Status</th>
-            <th className="px-4 py-3">Expires</th>
-            <th className="px-4 py-3">Invited by</th>
-            <th className="px-4 py-3"></th>
+            <th className="px-3 py-2">Email</th>
+            <th className="px-3 py-2">Role</th>
+            <th className="px-3 py-2">Status</th>
+            <th className="px-3 py-2">Expires</th>
+            <th className="px-3 py-2">Invited by</th>
+            <th className="px-3 py-2"></th>
           </tr>
         </thead>
         <tbody>
           {invites.length === 0 ? (
             <tr>
-              <td colSpan={6} className="px-4 py-10 text-center text-zinc-500">
+              <td colSpan={6} className="px-4 py-10 text-center text-muted">
                 No invitations yet. Create one above — you&apos;ll get a link to share.
               </td>
             </tr>
@@ -95,31 +95,31 @@ export function InvitesTable({ invites }: { invites: InviteRow[] }) {
               const pill = STATUS_PILLS[inv.status];
               const busy = busyId === inv.id;
               return (
-                <tr key={inv.id} className="border-t border-zinc-100">
-                  <td data-private className="px-4 py-3">{inv.email}</td>
-                  <td className="px-4 py-3 text-zinc-600">{inv.role}</td>
-                  <td className="px-4 py-3">
+                <tr key={inv.id} className="border-t border-line">
+                  <td data-private className="px-3 py-2">{inv.email}</td>
+                  <td className="px-3 py-2 text-muted">{inv.role}</td>
+                  <td className="px-3 py-2">
                     <span
                       className={`inline-block rounded-full border px-2 py-0.5 text-[11px] font-semibold ${pill.cls}`}
                     >
                       {pill.label}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-zinc-500">
+                  <td className="px-3 py-2 text-muted">
                     {inv.status === "USED" ? (inv.usedLabel ?? "—") : inv.expiresLabel}
                   </td>
-                  <td data-private className="px-4 py-3 text-zinc-500">{inv.invitedByName}</td>
-                  <td className="px-4 py-3 text-right text-xs whitespace-nowrap">
+                  <td data-private className="px-3 py-2 text-muted">{inv.invitedByName}</td>
+                  <td className="px-3 py-2 text-right text-xs whitespace-nowrap">
                     {inv.status === "PENDING" && (
                       <>
                         <button
                           type="button"
                           onClick={() => copyLink(inv)}
-                          className="text-zinc-600 underline hover:text-zinc-900"
+                          className="text-muted underline hover:text-ink"
                         >
                           {copiedId === inv.id ? "Copied ✓" : "Copy"}
                         </button>
-                        <span className="px-1 text-zinc-300">·</span>
+                        <span className="px-1 text-faint">·</span>
                       </>
                     )}
                     {(inv.status === "PENDING" || inv.status === "EXPIRED") && (
@@ -128,22 +128,22 @@ export function InvitesTable({ invites }: { invites: InviteRow[] }) {
                           type="button"
                           disabled={busy}
                           onClick={() => resend(inv.id)}
-                          className="text-zinc-600 underline hover:text-zinc-900 disabled:opacity-50"
+                          className="text-muted underline hover:text-ink disabled:opacity-50"
                         >
                           {busy ? "…" : "Resend"}
                         </button>
-                        <span className="px-1 text-zinc-300">·</span>
+                        <span className="px-1 text-faint">·</span>
                         <button
                           type="button"
                           disabled={busy}
                           onClick={() => revoke(inv.id, inv.email)}
-                          className="text-red-600 underline hover:text-red-800 disabled:opacity-50"
+                          className="text-bad underline hover:text-bad disabled:opacity-50"
                         >
                           Revoke
                         </button>
                       </>
                     )}
-                    {inv.status === "USED" && <span className="text-zinc-400">{inv.usedLabel}</span>}
+                    {inv.status === "USED" && <span className="text-faint">{inv.usedLabel}</span>}
                   </td>
                 </tr>
               );
@@ -151,7 +151,7 @@ export function InvitesTable({ invites }: { invites: InviteRow[] }) {
           )}
         </tbody>
       </table>
-      {error && <p className="border-t border-zinc-100 px-4 py-2 text-xs text-red-600">{error}</p>}
+      {error && <p className="border-t border-line px-4 py-2 text-xs text-bad">{error}</p>}
       {outcome && <EmailSimulationDialog outcome={outcome} onClose={() => setOutcome(null)} />}
     </div>
   );

@@ -19,10 +19,10 @@ export default async function BusinessAreasPage() {
   });
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-6 py-5">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Business areas</h1>
-        <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Business areas</h1>
+        <p className="mt-1 max-w-2xl text-sm text-muted">
           Mirrored from the Business Area dropdown on the Styles board, or created manually for new
           areas Monday doesn&apos;t carry yet. <code className="font-mono">mondayValue</code> is the
           string ingest matches against; <code className="font-mono">name</code> is the editable

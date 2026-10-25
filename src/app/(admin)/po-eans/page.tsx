@@ -162,10 +162,10 @@ export default async function PoEansPage({
   const scopeQuery = viewingParked ? "scope=parked" : "";
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-6 py-5">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">PO barcodes</h1>
-        <p className="mt-1 max-w-3xl text-sm text-zinc-500">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">PO barcodes</h1>
+        <p className="mt-1 max-w-3xl text-sm text-muted">
           Each style&rsquo;s <strong>PO number</strong> is resolved automatically: the matching{" "}
           <strong>Purchase Order PDF</strong> in the central <strong>Suppliers</strong> SharePoint
           library is parsed and the per-size/colour <strong>Barcode EAN</strong> (in size order) +{" "}
@@ -181,11 +181,11 @@ export default async function PoEansPage({
 
       {minPo !== null && !floatedActive && (
         <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-zinc-500">PO cutoff ≥ {minPo}:</span>
+          <span className="text-muted">PO cutoff ≥ {minPo}:</span>
           <a
             href="/po-eans"
             className={`rounded-full px-3 py-1 font-medium ${
-              !viewingParked ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+              !viewingParked ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50" : "bg-subtle text-muted hover:bg-subtle"
             }`}
           >
             Active <span className="tabular-nums opacity-80">{activeCount.toLocaleString()}</span>
@@ -193,13 +193,13 @@ export default async function PoEansPage({
           <a
             href="/po-eans?scope=parked"
             className={`rounded-full px-3 py-1 font-medium ${
-              viewingParked ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+              viewingParked ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50" : "bg-subtle text-muted hover:bg-subtle"
             }`}
           >
             Parked <span className="tabular-nums opacity-80">{parkedCount.toLocaleString()}</span>
           </a>
           {viewingParked && (
-            <span className="text-xs text-zinc-400">
+            <span className="text-xs text-faint">
               below the cutoff — not auto-scraped; use Re-resolve to scrape manually
             </span>
           )}

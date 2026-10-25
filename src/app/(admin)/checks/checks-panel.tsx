@@ -251,18 +251,18 @@ export function ChecksPanel({ initialPo, initialSupplier }: { initialPo: string;
     <div className="space-y-6">
       <form onSubmit={submitPo} className="flex flex-wrap items-end gap-3">
         <label className="text-sm">
-          <span className="block text-xs uppercase tracking-wide text-zinc-500">Purchase order</span>
+          <span className="block text-xs text-muted">Purchase order</span>
           <input
             value={poInput}
             onChange={(e) => setPoInput(e.target.value)}
             placeholder="PO number"
-            className="mt-1 w-56 rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            className="mt-1 w-56 rounded-md border border-line px-3 py-2 text-sm"
           />
         </label>
         <button
           type="submit"
           disabled={loading || !poInput.trim()}
-          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? "Checking…" : "Run checks"}
         </button>
@@ -271,7 +271,7 @@ export function ChecksPanel({ initialPo, initialSupplier }: { initialPo: string;
             type="button"
             onClick={() => void scan(report.poNumber, supplierId)}
             disabled={loading || busy}
-            className="rounded-md border border-zinc-300 px-4 py-2 text-sm disabled:opacity-40"
+            className="rounded-md border border-line px-4 py-2 text-sm disabled:opacity-40"
           >
             Re-scan everything
           </button>
@@ -295,7 +295,7 @@ export function ChecksPanel({ initialPo, initialSupplier }: { initialPo: string;
               <li key={s.supplierId}>
                 <button
                   type="button"
-                  className="underline hover:text-zinc-950"
+                  className="underline hover:text-ink"
                   onClick={() => {
                     setSupplierId(s.supplierId);
                     void scan(po, s.supplierId);
@@ -365,24 +365,24 @@ function ReportView(props: {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm">
+      <div className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <span className="font-medium">{report.poNumber}</span>
-            <span className="text-zinc-500"> · {report.supplierName ?? "supplier"}</span>
-            <span className="text-zinc-500">
+            <span className="text-muted"> · {report.supplierName ?? "supplier"}</span>
+            <span className="text-muted">
               {" "}
               · {report.styles.length} style{report.styles.length === 1 ? "" : "s"} on this PO
             </span>
           </div>
           {report.folderUrl ? (
-            <a href={report.folderUrl} target="_blank" rel="noreferrer" className="text-xs underline text-zinc-500">
+            <a href={report.folderUrl} target="_blank" rel="noreferrer" className="text-xs underline text-muted">
               Open the folder
             </a>
           ) : null}
         </div>
-        {report.folderPath ? <div className="mt-1 text-xs text-zinc-400">{report.folderPath}</div> : null}
-        <div className="mt-1 text-xs text-zinc-500">
+        {report.folderPath ? <div className="mt-1 text-xs text-faint">{report.folderPath}</div> : null}
+        <div className="mt-1 text-xs text-muted">
           {report.styles.map((s) => s.styleName).join(", ")}
         </div>
       </div>
@@ -390,19 +390,19 @@ function ReportView(props: {
       {props.outcome ? <OutcomeBox applied={props.outcome} /> : null}
 
       {totalFlagged > 0 ? (
-        <div className="sticky top-12 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
-          <span className="text-amber-900">
+        <div className="sticky top-12 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-transparent bg-warn-soft px-4 py-3 text-sm">
+          <span className="text-warn">
             {props.selectedCount} of {totalFlagged} flagged file{totalFlagged === 1 ? "" : "s"} selected.
           </span>
           <button
             type="button"
             disabled={props.selectedCount === 0 || props.busy}
             onClick={props.onConfirmBulk}
-            className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Review and apply {props.selectedCount || ""}
           </button>
-          <span className="text-xs text-amber-800">
+          <span className="text-xs text-warn">
             You will see every file named before anything happens.
           </span>
         </div>
@@ -437,27 +437,27 @@ function SectionView({
   const [showOk, setShowOk] = useState(false);
 
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white">
-      <header className="border-b border-zinc-100 px-4 py-3">
-        <h2 className="text-sm font-semibold text-zinc-900">{section.title}</h2>
-        <p className="mt-1 text-xs text-zinc-500">{section.description}</p>
-        <p className="mt-2 text-xs text-zinc-400">
+    <section className="rounded-xl border border-line bg-surface">
+      <header className="border-b border-line px-4 py-3">
+        <h2 className="text-sm font-semibold text-ink">{section.title}</h2>
+        <p className="mt-1 text-xs text-muted">{section.description}</p>
+        <p className="mt-2 text-xs text-faint">
           {section.scanned} file{section.scanned === 1 ? "" : "s"} scanned · {section.flagged.length} flagged
         </p>
       </header>
 
       {section.notes.map((n, i) => (
-        <p key={i} className="border-b border-zinc-100 bg-zinc-50 px-4 py-2 text-xs text-zinc-600">
+        <p key={i} className="border-b border-line bg-subtle px-4 py-2 text-xs text-muted">
           {n}
         </p>
       ))}
 
       {section.flagged.length === 0 ? (
-        <p className="px-4 py-3 text-sm text-emerald-700">
+        <p className="px-4 py-3 text-sm text-good">
           ✓ Nothing in this folder looks wrong to this check.
         </p>
       ) : (
-        <ul className="divide-y divide-zinc-100">
+        <ul className="divide-y divide-line">
           {section.flagged.map((row) => {
             const k = rowKey(section.id, row.id);
             const picked = selection.get(k) ?? null;
@@ -474,16 +474,16 @@ function SectionView({
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline gap-2">
-                      <code className="break-all text-sm font-medium text-zinc-900">{row.fileName}</code>
-                      {row.owner ? <span className="text-xs text-zinc-500">{row.owner.styleName}</span> : null}
+                      <code className="break-all text-sm font-medium text-ink">{row.fileName}</code>
+                      {row.owner ? <span className="text-xs text-muted">{row.owner.styleName}</span> : null}
                       {row.location !== "approved-layouts" ? (
-                        <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500">
+                        <span className="rounded bg-subtle px-1.5 py-0.5 text-[11px] text-muted">
                           PO folder
                         </span>
                       ) : null}
                     </div>
-                    <p className="mt-0.5 text-sm text-zinc-700">{row.verdict}</p>
-                    {row.detail ? <p className="mt-0.5 text-xs text-zinc-500">{row.detail}</p> : null}
+                    <p className="mt-0.5 text-sm text-ink">{row.verdict}</p>
+                    {row.detail ? <p className="mt-0.5 text-xs text-muted">{row.detail}</p> : null}
 
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                       {row.allowed.map((a) => (
@@ -495,20 +495,20 @@ function SectionView({
                             disabled={busy}
                             onChange={() => onToggle(section.id, row, a)}
                           />
-                          <span className={a === "delete" ? "text-red-700" : "text-zinc-700"}>
+                          <span className={a === "delete" ? "text-bad" : "text-ink"}>
                             {a === "rename" ? `Rename to “${row.renameTo}”` : "Delete this file"}
                           </span>
                         </label>
                       ))}
                       {row.allowed.length === 0 ? (
-                        <span className="text-zinc-400">Report only — no action offered.</span>
+                        <span className="text-faint">Report only — no action offered.</span>
                       ) : null}
                       {picked ? (
                         <button
                           type="button"
                           disabled={busy}
                           onClick={() => onApplyOne(section, row, picked)}
-                          className="rounded border border-zinc-300 px-2 py-1 disabled:opacity-40"
+                          className="rounded border border-line px-2 py-1 disabled:opacity-40"
                         >
                           Apply to this file
                         </button>
@@ -517,17 +517,17 @@ function SectionView({
                         type="button"
                         disabled={busy}
                         onClick={() => onRecheck(section, row)}
-                        className="rounded border border-zinc-200 px-2 py-1 text-zinc-500 disabled:opacity-40"
+                        className="rounded border border-line px-2 py-1 text-muted disabled:opacity-40"
                       >
                         Re-check
                       </button>
                       {row.webUrl ? (
-                        <a href={row.webUrl} target="_blank" rel="noreferrer" className="underline text-zinc-500">
+                        <a href={row.webUrl} target="_blank" rel="noreferrer" className="underline text-muted">
                           Open
                         </a>
                       ) : null}
                     </div>
-                    {rowNotes[k] ? <p className="mt-1 text-xs text-zinc-500">{rowNotes[k]}</p> : null}
+                    {rowNotes[k] ? <p className="mt-1 text-xs text-muted">{rowNotes[k]}</p> : null}
                   </div>
                 </div>
               </li>
@@ -538,11 +538,11 @@ function SectionView({
 
       {/* Coverage. Shown as a count that opens, because "what did you actually
           look at?" is the question that makes a clean result believable. */}
-      <div className="border-t border-zinc-100 px-4 py-2">
+      <div className="border-t border-line px-4 py-2">
         <button
           type="button"
           onClick={() => setShowOk((v) => !v)}
-          className="text-xs text-zinc-500 underline hover:text-zinc-800"
+          className="text-xs text-muted underline hover:text-ink"
         >
           {showOk ? "Hide" : "Show"} the {section.ok.length} file{section.ok.length === 1 ? "" : "s"} that look
           right
@@ -551,11 +551,11 @@ function SectionView({
           <ul className="mt-2 space-y-1">
             {section.ok.map((row) => (
               <li key={row.id} className="text-xs">
-                <code className="break-all text-zinc-700">{row.fileName}</code>
-                <span className="text-zinc-400"> — {row.verdict}</span>
+                <code className="break-all text-ink">{row.fileName}</code>
+                <span className="text-faint"> — {row.verdict}</span>
               </li>
             ))}
-            {section.ok.length === 0 ? <li className="text-xs text-zinc-400">Nothing.</li> : null}
+            {section.ok.length === 0 ? <li className="text-xs text-faint">Nothing.</li> : null}
           </ul>
         ) : null}
       </div>
@@ -583,25 +583,25 @@ function ConfirmDialog({
   const renames = rows.filter((r) => r.action === "rename");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(15_17_21/0.40)] p-4">
+      <div className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-surface p-5 shadow-xl">
         <h2 className="text-base font-semibold">Confirm the changes to the supplier&apos;s folder</h2>
-        {folderPath ? <p className="mt-1 text-xs text-zinc-500">{folderPath}</p> : null}
+        {folderPath ? <p className="mt-1 text-xs text-muted">{folderPath}</p> : null}
 
         {deletes.length > 0 ? (
           <div className="mt-4">
-            <h3 className="text-sm font-medium text-red-700">
+            <h3 className="text-sm font-medium text-bad">
               Permanently delete {deletes.length} file{deletes.length === 1 ? "" : "s"}
             </h3>
-            <p className="mt-0.5 text-xs text-zinc-500">
+            <p className="mt-0.5 text-xs text-muted">
               These leave the supplier&apos;s folder. The app cannot undo it — recovery means the SharePoint
               recycle bin.
             </p>
             <ul className="mt-2 space-y-1.5">
               {deletes.map(({ row }) => (
                 <li key={row.id} className="text-xs">
-                  <code className="break-all font-medium text-zinc-900">{row.fileName}</code>
-                  <div className="text-zinc-500">{row.verdict}</div>
+                  <code className="break-all font-medium text-ink">{row.fileName}</code>
+                  <div className="text-muted">{row.verdict}</div>
                 </li>
               ))}
             </ul>
@@ -610,18 +610,18 @@ function ConfirmDialog({
 
         {renames.length > 0 ? (
           <div className="mt-4">
-            <h3 className="text-sm font-medium text-zinc-900">
+            <h3 className="text-sm font-medium text-ink">
               Rename {renames.length} file{renames.length === 1 ? "" : "s"} in place
             </h3>
-            <p className="mt-0.5 text-xs text-zinc-500">
+            <p className="mt-0.5 text-xs text-muted">
               Same file, same bytes, same version history — only the name changes.
             </p>
             <ul className="mt-2 space-y-1.5">
               {renames.map(({ row }) => (
                 <li key={row.id} className="text-xs">
-                  <code className="break-all text-zinc-500">{row.fileName}</code>
-                  <span className="text-zinc-400"> → </span>
-                  <code className="break-all font-medium text-zinc-900">{row.renameTo}</code>
+                  <code className="break-all text-muted">{row.fileName}</code>
+                  <span className="text-faint"> → </span>
+                  <code className="break-all font-medium text-ink">{row.renameTo}</code>
                 </li>
               ))}
             </ul>
@@ -633,7 +633,7 @@ function ConfirmDialog({
             type="button"
             onClick={onCancel}
             disabled={busy}
-            className="rounded-md border border-zinc-300 px-4 py-2 text-sm disabled:opacity-40"
+            className="rounded-md border border-line px-4 py-2 text-sm disabled:opacity-40"
           >
             Cancel
           </button>
@@ -642,7 +642,7 @@ function ConfirmDialog({
             onClick={onConfirm}
             disabled={busy}
             className={`rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-40 ${
-              deletes.length > 0 ? "bg-red-700" : "bg-zinc-900"
+              deletes.length > 0 ? "bg-bad" : "bg-primary"
             }`}
           >
             {busy
@@ -660,18 +660,18 @@ function ConfirmDialog({
 function OutcomeBox({ applied }: { applied: AppliedAction[] }) {
   if (applied.length === 0) return null;
   return (
-    <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm">
-      <p className="font-medium text-zinc-900">What happened</p>
+    <div className="rounded-lg border border-line bg-subtle px-4 py-3 text-sm">
+      <p className="font-medium text-ink">What happened</p>
       <ul className="mt-1 space-y-0.5 text-xs">
         {applied.map((a, i) => (
           <li
             key={`${a.itemId}-${i}`}
             className={
               a.outcome === "done"
-                ? "text-emerald-700"
+                ? "text-good"
                 : a.outcome === "refused" || a.outcome === "failed" || a.outcome === "conflict"
-                  ? "text-amber-800"
-                  : "text-zinc-500"
+                  ? "text-warn"
+                  : "text-muted"
             }
           >
             {a.message}
@@ -688,17 +688,17 @@ function OutcomeBox({ applied }: { applied: AppliedAction[] }) {
 function HistoryView({ rows }: { rows: HistoryRow[] }) {
   if (rows.length === 0) return null;
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
-      <h2 className="text-sm font-semibold text-zinc-900">What this page has already changed on this PO</h2>
+    <section className="rounded-xl border border-line bg-surface px-4 py-3">
+      <h2 className="text-sm font-semibold text-ink">What this page has already changed on this PO</h2>
       <ul className="mt-2 space-y-1 text-xs">
         {rows.map((r) => (
-          <li key={r.id} className="text-zinc-600">
-            <span className="text-zinc-400">{new Date(r.createdAt).toISOString().slice(0, 16).replace("T", " ")}</span>{" "}
-            <span className={r.action === "delete" ? "text-red-700" : "text-zinc-700"}>{r.action}</span>{" "}
+          <li key={r.id} className="text-muted">
+            <span className="text-faint">{new Date(r.createdAt).toISOString().slice(0, 16).replace("T", " ")}</span>{" "}
+            <span className={r.action === "delete" ? "text-bad" : "text-ink"}>{r.action}</span>{" "}
             <code className="break-all">{r.fileName}</code>
             {r.newFileName ? <span> → <code className="break-all">{r.newFileName}</code></span> : null}
-            <span className="text-zinc-400"> · {r.outcome}</span>
-            {r.userEmail ? <span className="text-zinc-400"> · {r.userEmail}</span> : null}
+            <span className="text-faint"> · {r.outcome}</span>
+            {r.userEmail ? <span className="text-faint"> · {r.userEmail}</span> : null}
           </li>
         ))}
       </ul>

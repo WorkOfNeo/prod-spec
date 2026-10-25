@@ -63,26 +63,26 @@ export default async function NotificationsSettingsPage() {
   }));
 
   return (
-    <div className="px-8 py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Notifications</h1>
-      <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+    <div className="px-6 py-5">
+      <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Notifications</h1>
+      <p className="mt-1 max-w-2xl text-sm text-muted">
         Who gets notified when outputs are generated, and a log of every email — sent or simulated.
       </p>
 
       <div className="mt-4 max-w-2xl">
         {sendingLive && resendConfigured ? (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          <div className="rounded-lg border border-transparent bg-good-soft px-4 py-3 text-sm text-good">
             <strong>✓ Live mode</strong> — <code className="text-xs">RESEND_EMAILS=true</code>; emails are
             really sent via Resend from <code className="text-xs">{fromAddress}</code>.
           </div>
         ) : sendingLive ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+          <div className="rounded-lg border border-transparent bg-bad-soft px-4 py-3 text-sm text-bad">
             <strong>⚠ Sending is on but Resend is not configured</strong> — set{" "}
             <code className="text-xs">RESEND_API_KEY</code>. Emails are currently recorded as SKIPPED,
             not sent.
           </div>
         ) : (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="rounded-lg border border-transparent bg-warn-soft px-4 py-3 text-sm text-warn">
             <strong>⚠ Simulation mode</strong> — <code className="text-xs">RESEND_EMAILS</code> is not{" "}
             <code className="text-xs">&quot;true&quot;</code>. No emails are sent; every send is recorded
             below and shown as a popup when triggered from the UI.
@@ -99,10 +99,10 @@ export default async function NotificationsSettingsPage() {
       </div>
 
       <div className="mt-6 max-w-5xl">
-        <h2 className="text-sm font-semibold text-zinc-900">
-          Email activity <span className="ml-1 font-normal text-zinc-400">last {rows.length}</span>
+        <h2 className="text-sm font-semibold text-ink">
+          Email activity <span className="ml-1 font-normal text-faint">last {rows.length}</span>
         </h2>
-        <p className="mt-1 text-sm text-zinc-500">
+        <p className="mt-1 text-sm text-muted">
           Every outbound email attempt. <strong>View</strong> opens the full body and attachment list —
           for simulated emails that is exactly what would have been sent.
         </p>

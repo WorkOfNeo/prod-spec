@@ -21,9 +21,9 @@ export default async function DevDataPage() {
   if (!devDataLoaderEnabled()) notFound();
   await requireAdminPage();
   return (
-    <div className="px-8 py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Dev data</h1>
-      <p className="mt-1 max-w-3xl text-sm text-zinc-500">
+    <div className="px-6 py-5">
+      <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Dev data</h1>
+      <p className="mt-1 max-w-3xl text-sm text-muted">
         Load purchase orders from production into this development environment. Production is only read; everything
         lands in this environment&apos;s own database. Loaded POs keep syncing every {devDataSyncMinutes()} minutes: changes
         made in production come through, and your own changes here stay until production changes the same thing.

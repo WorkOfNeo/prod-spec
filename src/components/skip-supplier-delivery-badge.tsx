@@ -28,11 +28,11 @@ export function SkipSupplierDeliveryBadge({
       <span
         title={TITLE}
         className={cn(
-          "inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700",
+          "inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-transparent bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-accent-text",
           className,
         )}
       >
-        <span className="inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full bg-indigo-500" />
+        <span className="inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full bg-accent" />
         Delivers own
       </span>
     );
@@ -41,11 +41,11 @@ export function SkipSupplierDeliveryBadge({
     <span
       title={TITLE}
       className={cn(
-        "inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-900",
+        "inline-flex items-center gap-2 rounded-lg border border-transparent bg-accent-soft px-3 py-1.5 text-sm font-medium text-accent-text",
         className,
       )}
     >
-      <span className="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-indigo-500" />
+      <span className="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-accent" />
       Customer delivers own — no supplier delivery sent.
     </span>
   );

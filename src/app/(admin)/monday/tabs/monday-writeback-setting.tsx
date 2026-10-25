@@ -35,11 +35,11 @@ export function MondayWriteBackSetting({ initialEnabled }: { initialEnabled: boo
   }
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-5">
+    <div className="rounded-xl border border-line bg-surface p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold text-zinc-900">Status write-backs to Monday</h2>
-          <p className="mt-1 text-sm text-zinc-500">
+          <h2 className="text-sm font-semibold text-ink">Status write-backs to Monday</h2>
+          <p className="mt-1 text-sm text-muted">
             When on, ProdSpec writes statuses back to Monday: a fully-approved style flips the Styles
             board subitems <strong>01e</strong> + <strong>01f</strong> to <strong>Approved</strong>.
             Rejections never write back to Monday. When off,
@@ -47,7 +47,7 @@ export function MondayWriteBackSetting({ initialEnabled }: { initialEnabled: boo
             still recorded below so you can preview it first. Emails and inbound webhooks are
             unaffected by this switch.
           </p>
-          {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
+          {error ? <p className="mt-2 text-xs text-bad">{error}</p> : null}
         </div>
         <Toggle
           checked={enabled}
@@ -57,7 +57,7 @@ export function MondayWriteBackSetting({ initialEnabled }: { initialEnabled: boo
           ariaLabel="Status write-backs to Monday"
         />
       </div>
-      <div className="mt-3 text-xs text-zinc-400">
+      <div className="mt-3 text-xs text-faint">
         {saving
           ? "Saving…"
           : enabled

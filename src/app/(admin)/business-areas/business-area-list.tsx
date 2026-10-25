@@ -49,7 +49,7 @@ export function BusinessAreaList({ initialAreas }: { initialAreas: Area[] }) {
           type="button"
           onClick={() => setCreating(true)}
           disabled={busy}
-          className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           + New business area
         </button>
@@ -57,33 +57,33 @@ export function BusinessAreaList({ initialAreas }: { initialAreas: Area[] }) {
           type="button"
           onClick={seed}
           disabled={busy}
-          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         >
           Seed standard 7
         </button>
-        <span className="text-xs text-zinc-500">
+        <span className="text-xs text-muted">
           Seeds PL, LICENSE, BRAND_HOUSE, LOVED, D2C, SPARK_SHOP, STOCK if they don&apos;t exist yet.
         </span>
-        {err && <span className="text-xs text-red-600">{err}</span>}
+        {err && <span className="text-xs text-bad">{err}</span>}
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="bg-subtle text-left text-xs text-muted">
             <tr>
-              <th className="px-4 py-3">Monday value</th>
-              <th className="px-4 py-3">Display name</th>
-              <th className="px-4 py-3">Styles</th>
-              <th className="px-4 py-3">Prod specs</th>
-              <th className="px-4 py-3">Active</th>
-              <th className="px-4 py-3">Synced</th>
-              <th className="px-4 py-3"></th>
+              <th className="px-3 py-2">Monday value</th>
+              <th className="px-3 py-2">Display name</th>
+              <th className="px-3 py-2">Styles</th>
+              <th className="px-3 py-2">Prod specs</th>
+              <th className="px-3 py-2">Active</th>
+              <th className="px-3 py-2">Synced</th>
+              <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {initialAreas.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-zinc-500">
+                <td colSpan={7} className="px-4 py-12 text-center text-muted">
                   No business areas yet. Click <strong>Seed standard 7</strong> to pre-populate, or{" "}
                   <strong>+ New business area</strong> for a custom one.
                 </td>
@@ -92,29 +92,29 @@ export function BusinessAreaList({ initialAreas }: { initialAreas: Area[] }) {
               initialAreas.map((a) => (
                 <tr
                   key={a.id}
-                  className={`border-t border-zinc-100 ${a.active ? "" : "opacity-60"}`}
+                  className={`border-t border-line ${a.active ? "" : "opacity-60"}`}
                 >
-                  <td className="px-4 py-3 font-mono text-xs">{a.mondayValue}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2 font-mono text-xs">{a.mondayValue}</td>
+                  <td className="px-3 py-2">
                     {a.name}
                     {a.mergedInto && (
                       <span
-                        className="ml-2 inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600"
+                        className="ml-2 inline-flex items-center rounded-full bg-subtle px-2 py-0.5 text-[11px] font-medium text-muted"
                         title={`Merged into ${a.mergedInto.name} (${a.mergedInto.mondayValue})`}
                       >
                         → {a.mergedInto.name}
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 tabular-nums text-zinc-600">{a.styleCount}</td>
-                  <td className="px-4 py-3 tabular-nums text-zinc-600">{a.prodSpecCount}</td>
-                  <td className="px-4 py-3 text-zinc-600">{a.active ? "yes" : "no"}</td>
-                  <td className="px-4 py-3 text-xs text-zinc-500">{a.lastSyncedAt}</td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-3 py-2 tabular-nums text-muted">{a.styleCount}</td>
+                  <td className="px-3 py-2 tabular-nums text-muted">{a.prodSpecCount}</td>
+                  <td className="px-3 py-2 text-muted">{a.active ? "yes" : "no"}</td>
+                  <td className="px-3 py-2 text-xs text-muted">{a.lastSyncedAt}</td>
+                  <td className="px-3 py-2 text-right">
                     <button
                       type="button"
                       onClick={() => setEditing(a)}
-                      className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                      className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink hover:bg-subtle"
                     >
                       Edit
                     </button>
@@ -268,37 +268,37 @@ function AreaDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(15_17_21/0.40)] px-4">
+      <div className="w-full max-w-lg rounded-lg bg-surface p-6 shadow-2xl">
         <div className="mb-4 flex items-start justify-between">
           <h2 className="text-lg font-semibold">{title}</h2>
-          <button type="button" onClick={onClose} className="text-xs text-zinc-500 underline">
+          <button type="button" onClick={onClose} className="text-xs text-muted underline">
             close
           </button>
         </div>
 
-        <label className="block text-xs font-medium text-zinc-700">
+        <label className="block text-xs font-medium text-ink">
           Monday value *
           <input
             type="text"
             value={mondayValue}
             onChange={(e) => setMondayValue(e.target.value)}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-sm"
+            className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-sm"
             placeholder="PL"
             required
           />
-          <span className="mt-1 block font-normal text-zinc-500">
+          <span className="mt-1 block font-normal text-muted">
             Exact string Monday&apos;s Business Area dropdown emits — ingest matches on this.
           </span>
         </label>
 
-        <label className="mt-4 block text-xs font-medium text-zinc-700">
+        <label className="mt-4 block text-xs font-medium text-ink">
           Display name *
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm"
             placeholder="Private Label"
             required
           />
@@ -311,9 +311,9 @@ function AreaDialog({
         )}
 
         {mode === "edit" && area && (
-          <div className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+          <div className="mt-5 rounded-md border border-line bg-subtle p-3">
             {area.mergedInto ? (
-              <p className="text-xs text-zinc-600">
+              <p className="text-xs text-muted">
                 Already merged into{" "}
                 <strong>
                   {area.mergedInto.name} ({area.mergedInto.mondayValue})
@@ -322,12 +322,12 @@ function AreaDialog({
               </p>
             ) : (
               <>
-                <div className="mb-2 text-xs font-medium text-zinc-700">Merge into…</div>
+                <div className="mb-2 text-xs font-medium text-ink">Merge into…</div>
                 <div className="flex gap-2">
                   <select
                     value={mergeTargetId}
                     onChange={(e) => setMergeTargetId(e.target.value)}
-                    className="flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm"
+                    className="flex-1 inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={busy}
                   >
                     <option value="">— pick canonical BA —</option>
@@ -341,12 +341,12 @@ function AreaDialog({
                     type="button"
                     onClick={merge}
                     disabled={busy || !mergeTargetId}
-                    className="rounded-md bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                    className="rounded-md bg-warn px-3 py-1.5 text-sm font-medium text-white hover:bg-warn disabled:opacity-50"
                   >
                     {busy ? "Merging…" : "Merge"}
                   </button>
                 </div>
-                <p className="mt-2 text-[11px] leading-snug text-zinc-500">
+                <p className="mt-2 text-[11px] leading-snug text-muted">
                   Re-points styles + prod specs onto the canonical BA, marks this row as an
                   alias, and redirects future ingests. Use when Monday has variants like
                   &quot;PL&quot; and &quot;Private Label&quot; that should be one.
@@ -356,7 +356,7 @@ function AreaDialog({
           </div>
         )}
 
-        {err && <p className="mt-3 text-xs text-red-600">{err}</p>}
+        {err && <p className="mt-3 text-xs text-bad">{err}</p>}
 
         <div className="mt-5 flex items-center justify-between">
           <div>
@@ -365,7 +365,7 @@ function AreaDialog({
                 type="button"
                 onClick={destroy}
                 disabled={busy}
-                className="text-xs text-red-700 underline disabled:opacity-50"
+                className="text-xs text-bad underline disabled:opacity-50"
               >
                 Delete permanently
               </button>
@@ -375,7 +375,7 @@ function AreaDialog({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink hover:bg-subtle"
             >
               Cancel
             </button>
@@ -383,7 +383,7 @@ function AreaDialog({
               type="button"
               onClick={save}
               disabled={busy || !mondayValue || !name}
-              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? "Saving…" : "Save"}
             </button>

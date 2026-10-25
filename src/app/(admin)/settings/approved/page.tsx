@@ -255,9 +255,9 @@ export default async function ApprovedDeliveryPage({
     status === "NO_FOLDER" ? "no PO folder" : status === "AMBIGUOUS" ? "multiple PO folders" : status.toLowerCase();
 
   return (
-    <div className="px-8 py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Approved &amp; delivery</h1>
-      <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+    <div className="px-6 py-5">
+      <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Approved &amp; delivery</h1>
+      <p className="mt-1 max-w-2xl text-sm text-muted">
         Approved outputs waiting to reach their supplier — what goes out in tonight&rsquo;s digest,
         and where each file stands on SharePoint.
       </p>
@@ -270,9 +270,9 @@ export default async function ApprovedDeliveryPage({
           { label: "Customers", value: totalCustomers },
           { label: "Business areas", value: baNames.size },
         ].map((c) => (
-          <div key={c.label} className="rounded-lg border border-zinc-200 px-4 py-3">
-            <div className="text-2xl font-semibold tabular-nums text-zinc-900">{c.value}</div>
-            <div className="mt-0.5 text-xs uppercase tracking-wide text-zinc-500">{c.label}</div>
+          <div key={c.label} className="rounded-lg border border-line px-4 py-3">
+            <div className="text-[18px] font-semibold tabular-nums text-ink">{c.value}</div>
+            <div className="mt-0.5 text-xs text-muted">{c.label}</div>
           </div>
         ))}
       </div>
@@ -304,15 +304,15 @@ export default async function ApprovedDeliveryPage({
           LAYOUTS" subfolder). The layout change is forward-only, so styles
           already pushed under an older naming need this once to keep their whole
           set in one place. */}
-      <div className="mt-6 max-w-3xl rounded-lg border border-zinc-200 bg-zinc-50/60 px-4 py-3">
-        <div className="text-sm font-medium text-zinc-800">Supplier folder naming</div>
-        <p className="mt-0.5 mb-2 text-xs text-zinc-500">
+      <div className="mt-6 max-w-3xl rounded-lg border border-line bg-zinc-50/60 px-4 py-3">
+        <div className="text-sm font-medium text-ink">Supplier folder naming</div>
+        <p className="mt-0.5 mb-2 text-xs text-muted">
           Approved layouts land in{" "}
-          <span className="font-mono text-[11px] text-zinc-600">
+          <span className="font-mono text-[11px] text-muted">
             PO - Customer - Supplier
           </span>{" "}
           →{" "}
-          <span className="font-mono text-[11px] text-zinc-600">APPROVED LAYOUTS</span>, shared across
+          <span className="font-mono text-[11px] text-muted">APPROVED LAYOUTS</span>, shared across
           styles on the same PO — and, from the PO set below, inside a folder per style/colourway. Run this once to move styles that were already pushed under an older
           naming into the new folders. Old folders are left in place — use the cleanup script
           (<span className="font-mono text-[11px]">npm run cleanup-legacy-supplier-folders</span>) to
@@ -326,9 +326,9 @@ export default async function ApprovedDeliveryPage({
           because an approved output is never regenerated, so editing its
           filename doesn't reach the file already on SharePoint — this renames it
           in place (no re-generate, no re-review). */}
-      <div className="mt-4 max-w-3xl rounded-lg border border-zinc-200 bg-zinc-50/60 px-4 py-3">
-        <div className="text-sm font-medium text-zinc-800">Output filenames</div>
-        <p className="mt-0.5 mb-2 text-xs text-zinc-500">
+      <div className="mt-4 max-w-3xl rounded-lg border border-line bg-zinc-50/60 px-4 py-3">
+        <div className="text-sm font-medium text-ink">Output filenames</div>
+        <p className="mt-0.5 mb-2 text-xs text-muted">
           Reconcile every uploaded output&rsquo;s SharePoint filename with what its layout&rsquo;s
           current filename template says it should be. Use after editing an output&rsquo;s filename
           when it&rsquo;s already approved &amp; uploaded — an approved output isn&rsquo;t regenerated,
@@ -339,10 +339,10 @@ export default async function ApprovedDeliveryPage({
       </div>
 
       {/* Per-supplier summary — who gets what tonight, and to which email. */}
-      <h2 className="mt-8 mb-2 text-sm font-semibold text-zinc-700">By supplier</h2>
-      <div className="overflow-hidden rounded-lg border border-zinc-200">
+      <h2 className="mt-8 mb-2 text-sm font-semibold text-ink">By supplier</h2>
+      <div className="overflow-x-auto rounded-lg border border-line">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="bg-subtle text-left text-xs text-muted">
             <tr>
               <th className="px-4 py-2">Supplier</th>
               <th className="px-4 py-2">Email</th>
@@ -353,24 +353,24 @@ export default async function ApprovedDeliveryPage({
           <tbody>
             {groupList.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-zinc-500">
+                <td colSpan={4} className="px-4 py-6 text-center text-muted">
                   Nothing queued yet. Outputs appear here as soon as they&rsquo;re approved.
                 </td>
               </tr>
             ) : (
               groupList.map((g) => (
-                <tr key={g.supplierId ?? "none"} className="border-t border-zinc-100">
-                  <td className="px-4 py-2 font-medium text-zinc-800">{g.name}</td>
+                <tr key={g.supplierId ?? "none"} className="border-t border-line">
+                  <td className="px-4 py-2 font-medium text-ink">{g.name}</td>
                   <td className="px-4 py-2">
                     {g.email ? (
-                      <span data-private className="font-mono text-xs text-zinc-600">{g.email}</span>
+                      <span data-private className="font-mono text-xs text-muted">{g.email}</span>
                     ) : (
-                      <span className="inline-flex rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700">
+                      <span className="inline-flex rounded-full border border-transparent bg-bad-soft px-2 py-0.5 text-[11px] font-medium text-bad">
                         no email on file
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-2 tabular-nums text-zinc-700">{g.count}</td>
+                  <td className="px-4 py-2 tabular-nums text-ink">{g.count}</td>
                   <td className="px-4 py-2 text-right">
                     <SupplierPreviewButton supplierId={g.supplierId} supplierName={g.name} />
                   </td>
@@ -382,15 +382,15 @@ export default async function ApprovedDeliveryPage({
       </div>
 
       {/* Detail — every queued output. */}
-      <h2 id="queued" className="mt-8 mb-2 scroll-mt-4 text-sm font-semibold text-zinc-700">
+      <h2 id="queued" className="mt-8 mb-2 scroll-mt-4 text-sm font-semibold text-ink">
         Queued outputs{" "}
-        <span className="font-normal text-zinc-400">
+        <span className="font-normal text-faint">
           ({pending.length.toLocaleString()} of {totalQueued.toLocaleString()})
         </span>
       </h2>
-      <div className="max-h-[70vh] overflow-y-auto rounded-lg border border-zinc-200">
+      <div className="max-h-[70vh] overflow-y-auto rounded-lg border border-line">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 z-10 bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="sticky top-0 z-10 bg-subtle text-left text-xs text-muted">
             <tr>
               <th className="px-4 py-2">Customer / BA</th>
               <th className="px-4 py-2">Style</th>
@@ -403,7 +403,7 @@ export default async function ApprovedDeliveryPage({
           <tbody>
             {pending.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-zinc-500">
+                <td colSpan={6} className="px-4 py-6 text-center text-muted">
                   No approved outputs are waiting.
                 </td>
               </tr>
@@ -413,26 +413,26 @@ export default async function ApprovedDeliveryPage({
                 const customer = customerById.get(item.customerId);
                 const ba = style?.businessAreaRef?.name ?? style?.businessArea ?? "—";
                 return (
-                  <tr key={item.id} className="border-t border-zinc-100">
+                  <tr key={item.id} className="border-t border-line">
                     <td className="px-4 py-2">
-                      <div className="font-medium text-zinc-800">{customer?.name ?? "—"}</div>
-                      <div className="text-xs text-zinc-500">{ba}</div>
+                      <div className="font-medium text-ink">{customer?.name ?? "—"}</div>
+                      <div className="text-xs text-muted">{ba}</div>
                     </td>
                     <td className="px-4 py-2">
-                      <Link href={`/styles/${item.styleId}`} className="text-zinc-700 underline">
+                      <Link href={`/styles/${item.styleId}`} className="text-ink underline">
                         {style?.name ?? item.styleId}
                       </Link>
                       {style?.poNumber ? (
-                        <div className="font-mono text-[11px] text-zinc-400">{style.poNumber}</div>
+                        <div className="font-mono text-[11px] text-faint">{style.poNumber}</div>
                       ) : null}
                     </td>
                     <td className="px-4 py-2">
-                      <div className="text-zinc-700">{item.displayName ?? item.docType}</div>
-                      <div className="font-mono text-[11px] text-zinc-400">{item.variantKey}</div>
+                      <div className="text-ink">{item.displayName ?? item.docType}</div>
+                      <div className="font-mono text-[11px] text-faint">{item.variantKey}</div>
                     </td>
-                    <td className="px-4 py-2 text-zinc-600">
+                    <td className="px-4 py-2 text-muted">
                       {item.supplierId ? supplierById.get(item.supplierId)?.name ?? "—" : (
-                        <span className="text-red-500">none</span>
+                        <span className="text-bad">none</span>
                       )}
                     </td>
                     <td className="px-4 py-2">
@@ -463,20 +463,20 @@ export default async function ApprovedDeliveryPage({
                       })()}
                       {item.sharePointStatus === "FAILED" && pushErrorById.get(item.id) ? (
                         <div
-                          className="mt-0.5 max-w-[280px] text-[10px] leading-tight text-red-600"
+                          className="mt-0.5 max-w-[280px] text-[11px] leading-tight text-bad"
                           title={pushErrorById.get(item.id)}
                         >
                           {pushErrorById.get(item.id)}
                         </div>
                       ) : null}
                       {item.sharePointStatus === "UPLOADED" ? (
-                        <div className="mt-0.5 text-[10px] text-zinc-400">
+                        <div className="mt-0.5 text-[11px] text-faint">
                           {item.sharePointVerifiedAt
                             ? `verified ${item.sharePointVerifiedAt.toISOString().slice(0, 10)}`
                             : "not yet verified"}
                         </div>
                       ) : item.sharePointStatus === "AMBIGUOUS" ? (
-                        <div className="mt-1 text-[10px] text-fuchsia-700">
+                        <div className="mt-1 text-[11px] text-fuchsia-700">
                           <div className="mb-0.5">pick where to send:</div>
                           <PoFolderPicker
                             styleId={item.styleId}
@@ -486,7 +486,7 @@ export default async function ApprovedDeliveryPage({
                         </div>
                       ) : null}
                     </td>
-                    <td className="px-4 py-2 text-xs text-zinc-500">
+                    <td className="px-4 py-2 text-xs text-muted">
                       {item.queuedAt.toISOString().slice(0, 16).replace("T", " ")}
                     </td>
                   </tr>
@@ -505,17 +505,17 @@ export default async function ApprovedDeliveryPage({
           after send, or re-armed by the self-heal verify). These rows are
           invisible in the queue above (it's sentAt-null only), so without this
           section a flagged row vanishes from the page at midnight. */}
-      <h2 className="mt-8 mb-2 text-sm font-semibold text-zinc-700">
+      <h2 className="mt-8 mb-2 text-sm font-semibold text-ink">
         SharePoint gaps — sent, but files not in the folder
         {sentGaps.length > 0 ? (
-          <span className="ml-2 inline-flex rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-700">
+          <span className="ml-2 inline-flex rounded-full border border-transparent bg-warn-soft px-2 py-0.5 text-[11px] font-medium text-warn">
             {sentGaps.length}
           </span>
         ) : null}
       </h2>
-      <div className="overflow-hidden rounded-lg border border-zinc-200">
+      <div className="overflow-x-auto rounded-lg border border-line">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="bg-subtle text-left text-xs text-muted">
             <tr>
               <th className="px-4 py-2">Customer / BA</th>
               <th className="px-4 py-2">Style</th>
@@ -528,7 +528,7 @@ export default async function ApprovedDeliveryPage({
           <tbody>
             {sentGaps.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-zinc-500">
+                <td colSpan={6} className="px-4 py-6 text-center text-muted">
                   None — every sent output&rsquo;s files are in its supplier folder.
                 </td>
               </tr>
@@ -543,26 +543,26 @@ export default async function ApprovedDeliveryPage({
                 // supplier") will move it.
                 const inLease = item.queuedAt.getTime() >= Date.now() - SENT_RETRY_LEASE_MS;
                 return (
-                  <tr key={item.id} className="border-t border-zinc-100">
+                  <tr key={item.id} className="border-t border-line">
                     <td className="px-4 py-2">
-                      <div className="font-medium text-zinc-800">{customer?.name ?? "—"}</div>
-                      <div className="text-xs text-zinc-500">{ba}</div>
+                      <div className="font-medium text-ink">{customer?.name ?? "—"}</div>
+                      <div className="text-xs text-muted">{ba}</div>
                     </td>
                     <td className="px-4 py-2">
-                      <Link href={`/styles/${item.styleId}`} className="text-zinc-700 underline">
+                      <Link href={`/styles/${item.styleId}`} className="text-ink underline">
                         {style?.name ?? item.styleId}
                       </Link>
                       {style?.poNumber ? (
-                        <div className="font-mono text-[11px] text-zinc-400">{style.poNumber}</div>
+                        <div className="font-mono text-[11px] text-faint">{style.poNumber}</div>
                       ) : null}
                     </td>
                     <td className="px-4 py-2">
-                      <div className="text-zinc-700">{item.displayName ?? item.docType}</div>
-                      <div className="font-mono text-[11px] text-zinc-400">{item.variantKey}</div>
+                      <div className="text-ink">{item.displayName ?? item.docType}</div>
+                      <div className="font-mono text-[11px] text-faint">{item.variantKey}</div>
                     </td>
-                    <td className="px-4 py-2 text-zinc-600">
+                    <td className="px-4 py-2 text-muted">
                       {item.supplierId ? supplierById.get(item.supplierId)?.name ?? "—" : (
-                        <span className="text-red-500">none</span>
+                        <span className="text-bad">none</span>
                       )}
                     </td>
                     <td className="px-4 py-2">
@@ -573,14 +573,14 @@ export default async function ApprovedDeliveryPage({
                       </span>
                       {pushErrorById.get(item.id) ? (
                         <div
-                          className="mt-0.5 max-w-[280px] text-[10px] leading-tight text-red-600"
+                          className="mt-0.5 max-w-[280px] text-[11px] leading-tight text-bad"
                           title={pushErrorById.get(item.id)}
                         >
                           {pushErrorById.get(item.id)}
                         </div>
                       ) : null}
                       {item.sharePointStatus === "AMBIGUOUS" ? (
-                        <div className="mt-1 text-[10px] text-fuchsia-700">
+                        <div className="mt-1 text-[11px] text-fuchsia-700">
                           <div className="mb-0.5">pick where to send:</div>
                           <PoFolderPicker
                             styleId={item.styleId}
@@ -592,9 +592,9 @@ export default async function ApprovedDeliveryPage({
                     </td>
                     <td className="px-4 py-2 text-xs">
                       {inLease ? (
-                        <span className="text-emerald-700">auto-retrying</span>
+                        <span className="text-good">auto-retrying</span>
                       ) : (
-                        <span className="text-zinc-500">
+                        <span className="text-muted">
                           aged out — re-push from the{" "}
                           <Link href={`/styles/${item.styleId}`} className="underline">
                             style page
@@ -602,7 +602,7 @@ export default async function ApprovedDeliveryPage({
                         </span>
                       )}
                       {item.lastPushAt ? (
-                        <div className="mt-0.5 text-[10px] text-zinc-400">
+                        <div className="mt-0.5 text-[11px] text-faint">
                           last try {item.lastPushAt.toISOString().slice(0, 16).replace("T", " ")}
                         </div>
                       ) : null}
@@ -616,10 +616,10 @@ export default async function ApprovedDeliveryPage({
       </div>
 
       {/* Sent / history — recent nightly (or manual) batch runs. */}
-      <h2 className="mt-8 mb-2 text-sm font-semibold text-zinc-700">Recent sends</h2>
-      <div className="overflow-hidden rounded-lg border border-zinc-200">
+      <h2 className="mt-8 mb-2 text-sm font-semibold text-ink">Recent sends</h2>
+      <div className="overflow-x-auto rounded-lg border border-line">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="bg-subtle text-left text-xs text-muted">
             <tr>
               <th className="px-4 py-2">When</th>
               <th className="px-4 py-2">Source</th>
@@ -632,7 +632,7 @@ export default async function ApprovedDeliveryPage({
           <tbody>
             {batches.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-zinc-500">
+                <td colSpan={6} className="px-4 py-6 text-center text-muted">
                   No batch has run yet. Use “Run batch now” above, or wait for the midnight cron.
                 </td>
               </tr>
@@ -641,41 +641,41 @@ export default async function ApprovedDeliveryPage({
                 const per = (b.perSupplier as PerSup[]) ?? [];
                 const followUp = followUpById.get(b.id) ?? null;
                 return (
-                  <tr key={b.id} className="border-t border-zinc-100 align-top">
-                    <td className="px-4 py-2 text-xs text-zinc-500">
+                  <tr key={b.id} className="border-t border-line align-top">
+                    <td className="px-4 py-2 text-xs text-muted">
                       {b.createdAt.toISOString().slice(0, 16).replace("T", " ")}
                     </td>
-                    <td className="px-4 py-2 text-zinc-600">{b.source}</td>
+                    <td className="px-4 py-2 text-muted">{b.source}</td>
                     <td className="px-4 py-2">
-                      <span className="inline-flex rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-700">
+                      <span className="inline-flex rounded-full border border-line bg-subtle px-2 py-0.5 text-[11px] font-medium text-ink">
                         {b.status}
                       </span>
-                      <div className="mt-0.5 text-[11px] text-zinc-400">
+                      <div className="mt-0.5 text-[11px] text-faint">
                         {b.sentCount}/{b.outputCount} output(s) sent
                       </div>
                     </td>
-                    <td className="px-4 py-2 tabular-nums text-zinc-700">{b.supplierCount}</td>
+                    <td className="px-4 py-2 tabular-nums text-ink">{b.supplierCount}</td>
                     <td className="px-4 py-2">
                       {per.length === 0 ? (
-                        <span className="text-zinc-400">—</span>
+                        <span className="text-faint">—</span>
                       ) : (
                         <ul className="space-y-0.5">
                           {per.map((p, i) => (
-                            <li key={i} className="text-[11px] text-zinc-600">
-                              <span className="font-medium text-zinc-700">{p.supplierName ?? "—"}</span>{" "}
-                              <span className="text-zinc-400">·</span> {p.status}
+                            <li key={i} className="text-[11px] text-muted">
+                              <span className="font-medium text-ink">{p.supplierName ?? "—"}</span>{" "}
+                              <span className="text-faint">·</span> {p.status}
                               {p.status === "SENT" && p.emailLogId ? (
                                 openedLogIds.has(p.emailLogId) ? (
-                                  <span className="ml-1 rounded-full bg-emerald-50 px-1.5 text-emerald-700">opened</span>
+                                  <span className="ml-1 rounded-full bg-good-soft px-1.5 text-good">opened</span>
                                 ) : (
-                                  <span className="ml-1 text-zinc-400">not yet opened</span>
+                                  <span className="ml-1 text-faint">not yet opened</span>
                                 )
                               ) : null}
-                              {p.status === "NO_EMAIL" ? <span className="ml-1 text-red-500">(no email)</span> : null}
+                              {p.status === "NO_EMAIL" ? <span className="ml-1 text-bad">(no email)</span> : null}
                               {p.status === "FAILED" ? (
-                                <div className="mt-0.5 text-[10px] leading-snug text-red-600">
+                                <div className="mt-0.5 text-[11px] leading-snug text-bad">
                                   {p.error?.replace(/^Send failed:\s*/, "") ?? "send failed"}
-                                  {p.email ? <span data-private className="text-zinc-400"> · to {p.email}</span> : null}
+                                  {p.email ? <span data-private className="text-faint"> · to {p.email}</span> : null}
                                 </div>
                               ) : null}
                             </li>
@@ -685,7 +685,7 @@ export default async function ApprovedDeliveryPage({
                     </td>
                     <td className="px-4 py-2">
                       {per.length === 0 ? (
-                        <span className="text-zinc-400">—</span>
+                        <span className="text-faint">—</span>
                       ) : (
                         <SupplierMessageButton
                           batchId={b.id}
@@ -703,7 +703,7 @@ export default async function ApprovedDeliveryPage({
         </table>
       </div>
 
-      <p className="mt-6 max-w-2xl text-xs text-zinc-400">
+      <p className="mt-6 max-w-2xl text-xs text-faint">
         Missing supplier emails resolve once the Monday supplier sync is updated. Open-tracking needs
         the Resend webhook pointed at <span className="font-mono">/api/webhooks/resend</span>.
       </p>

@@ -57,23 +57,23 @@ function rateLabel(rate: number | null): string {
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
-      <div className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</div>
-      <div className="mt-1 text-2xl font-semibold text-gray-900">{value}</div>
-      {sub ? <div className="mt-0.5 text-xs text-gray-500">{sub}</div> : null}
+    <div className="rounded-xl border border-line bg-surface px-4 py-3">
+      <div className="text-xs font-medium text-muted">{label}</div>
+      <div className="mt-1 text-[18px] font-semibold text-ink">{value}</div>
+      {sub ? <div className="mt-0.5 text-xs text-muted">{sub}</div> : null}
     </div>
   );
 }
 
 function DurationCard({ label, stat, hint }: { label: string; stat: DurationStat; hint: string }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
-      <div className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</div>
-      <div className="mt-1 text-2xl font-semibold text-gray-900">{formatDuration(stat.medianMs)}</div>
-      <div className="mt-0.5 text-xs text-gray-500">
+    <div className="rounded-xl border border-line bg-surface px-4 py-3">
+      <div className="text-xs font-medium text-muted">{label}</div>
+      <div className="mt-1 text-[18px] font-semibold text-ink">{formatDuration(stat.medianMs)}</div>
+      <div className="mt-0.5 text-xs text-muted">
         median · avg {formatDuration(stat.avgMs)} · {stat.n} order{stat.n === 1 ? "" : "s"}
       </div>
-      <div className="mt-1 text-[11px] leading-tight text-gray-400">{hint}</div>
+      <div className="mt-1 text-[11px] leading-tight text-faint">{hint}</div>
     </div>
   );
 }
@@ -86,7 +86,7 @@ function PercentBar({ segments }: { segments: { label: string; count: number }[]
   const total = segments.reduce((sum, s) => sum + s.count, 0);
   if (total === 0) {
     return (
-      <div className="rounded-md border border-dashed border-gray-300 px-3 py-4 text-center text-xs text-gray-400">
+      <div className="rounded-md border border-dashed border-line px-3 py-4 text-center text-xs text-faint">
         Nothing measurable in this scope yet
       </div>
     );
@@ -107,7 +107,7 @@ function PercentBar({ segments }: { segments: { label: string; count: number }[]
           ),
         )}
       </div>
-      <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+      <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
         {segments.map((s, i) => (
           <span key={s.label} className="inline-flex items-center gap-1.5">
             <span
@@ -132,8 +132,8 @@ function Section({
 }) {
   return (
     <section className="mt-8">
-      <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
-      {note ? <p className="mt-0.5 max-w-3xl text-xs text-gray-500">{note}</p> : null}
+      <h2 className="text-sm font-semibold text-ink">{title}</h2>
+      {note ? <p className="mt-0.5 max-w-3xl text-xs text-muted">{note}</p> : null}
       <div className="mt-3">{children}</div>
     </section>
   );
@@ -171,18 +171,18 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
   );
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-6 py-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Review dashboard</h1>
-          <p className="mt-1 max-w-3xl text-sm text-gray-600">
+          <h1 className="text-xl font-semibold text-ink">Review dashboard</h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted">
             Every order in the active book, where it stands in review, and how long each step takes.
             One order = one style. Use the filters to scope every card below.
           </p>
         </div>
         <Link
           href="/reviews"
-          className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           View review list
         </Link>
@@ -190,14 +190,14 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
 
       {/* Item 2 — filters. A plain GET form: no client JS, bookmarkable, and
           every card on the page reads the same scope. */}
-      <form method="GET" className="mt-6 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+      <form method="GET" className="mt-6 rounded-lg border border-line bg-subtle px-4 py-3">
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-gray-600">Client</span>
+            <span className="text-xs font-medium text-muted">Client</span>
             <select
               name="customer"
               defaultValue={sp.customer ?? ""}
-              className="min-w-48 rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+              className="min-w-48 rounded border border-line bg-surface px-2 py-1.5 text-sm"
             >
               <option value="">All clients</option>
               {options.customers.map((c) => (
@@ -208,11 +208,11 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-gray-600">Supplier</span>
+            <span className="text-xs font-medium text-muted">Supplier</span>
             <select
               name="supplier"
               defaultValue={sp.supplier ?? ""}
-              className="min-w-48 rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+              className="min-w-48 rounded border border-line bg-surface px-2 py-1.5 text-sm"
             >
               <option value="">All suppliers</option>
               {options.suppliers.map((s) => (
@@ -223,11 +223,11 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-gray-600">Person reviewing</span>
+            <span className="text-xs font-medium text-muted">Person reviewing</span>
             <select
               name="reviewer"
               defaultValue={sp.reviewer ?? ""}
-              className="min-w-40 rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+              className="min-w-40 rounded border border-line bg-surface px-2 py-1.5 text-sm"
             >
               <option value="">Everyone</option>
               {options.reviewers.map((r) => (
@@ -238,33 +238,33 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-gray-600">Decisions from</span>
+            <span className="text-xs font-medium text-muted">Decisions from</span>
             <input
               type="date"
               name="from"
               defaultValue={sp.from ?? ""}
-              className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-gray-600">to</span>
+            <span className="text-xs font-medium text-muted">to</span>
             <input
               type="date"
               name="to"
               defaultValue={sp.to ?? ""}
-              className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
             />
           </label>
           <button
             type="submit"
-            className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Apply
           </button>
           {filtered ? (
             <Link
               href="/reviews/dashboard"
-              className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
             >
               Clear
             </Link>
@@ -323,12 +323,12 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {data.firstPass.map((w) => (
-            <div key={w.label} className="rounded-lg border border-gray-200 bg-white px-4 py-3">
+            <div key={w.label} className="rounded-xl border border-line bg-surface px-4 py-3">
               <div className="flex items-baseline justify-between">
-                <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                <span className="text-xs font-medium text-muted">
                   {w.label}
                 </span>
-                <span className="text-sm font-semibold text-gray-900">
+                <span className="text-sm font-semibold text-ink">
                   {w.total > 0 ? `${pct(w.clean, w.total)}%` : "—"}
                 </span>
               </div>
@@ -350,7 +350,7 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
         title="Time to full approval"
         note="Orders that reached fully approved, measured from their first generation to the last approval."
       >
-        <div className="rounded-lg border border-gray-200 bg-white px-4 py-4">
+        <div className="rounded-xl border border-line bg-surface px-4 py-4">
           <PercentBar
             segments={[
               { label: "Within 1 day", count: data.turnaround.within1d },
@@ -359,7 +359,7 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
               { label: "Over a week", count: data.turnaround.overWeek },
             ]}
           />
-          <div className="mt-2 text-xs text-gray-500">
+          <div className="mt-2 text-xs text-muted">
             {data.turnaround.total.toLocaleString("en-GB")} fully approved order
             {data.turnaround.total === 1 ? "" : "s"} in scope.
           </div>
@@ -406,15 +406,15 @@ export default async function ReviewDashboardPage({ searchParams }: { searchPara
 function ClientTable({ data }: { data: ReviewerDashboard }) {
   if (data.clients.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500">
+      <div className="rounded-lg border border-dashed border-line px-4 py-8 text-center text-sm text-muted">
         No orders in scope.
       </div>
     );
   }
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200">
-      <table className="min-w-full divide-y divide-gray-200 bg-white text-sm">
-        <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+    <div className="overflow-x-auto rounded-lg border border-line">
+      <table className="min-w-full divide-y divide-line bg-surface text-sm">
+        <thead className="bg-subtle text-xs text-muted">
           <tr>
             <th className="px-4 py-2 text-left font-medium">Client</th>
             <th className="px-4 py-2 text-right font-medium">Orders</th>
@@ -424,32 +424,32 @@ function ClientTable({ data }: { data: ReviewerDashboard }) {
             <th className="px-4 py-2 text-right font-medium">Approval rate</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody className="divide-y divide-line">
           {data.clients.map((c) => (
-            <tr key={c.customerId} className="hover:bg-gray-50">
-              <td className="px-4 py-2 text-gray-900">{c.customerName}</td>
-              <td className="px-4 py-2 text-right tabular-nums text-gray-700">
+            <tr key={c.customerId} className="hover:bg-subtle">
+              <td className="px-4 py-2 text-ink">{c.customerName}</td>
+              <td className="px-4 py-2 text-right tabular-nums text-ink">
                 {c.styles.toLocaleString("en-GB")}
               </td>
-              <td className="px-4 py-2 text-right tabular-nums text-gray-700">
+              <td className="px-4 py-2 text-right tabular-nums text-ink">
                 {c.fullyReviewed.toLocaleString("en-GB")}
-                <span className="ml-1 text-xs text-gray-400">({pct(c.fullyReviewed, c.styles)}%)</span>
+                <span className="ml-1 text-xs text-faint">({pct(c.fullyReviewed, c.styles)}%)</span>
               </td>
-              <td className="px-4 py-2 text-right tabular-nums text-gray-700">
+              <td className="px-4 py-2 text-right tabular-nums text-ink">
                 {rateLabel(c.firstPassRate)}
                 {c.firstPassTotal > 0 ? (
-                  <span className="ml-1 text-xs text-gray-400">
+                  <span className="ml-1 text-xs text-faint">
                     ({c.firstPassClean}/{c.firstPassTotal})
                   </span>
                 ) : null}
               </td>
-              <td className="px-4 py-2 text-right tabular-nums text-gray-700">
+              <td className="px-4 py-2 text-right tabular-nums text-ink">
                 {formatDuration(c.medianTurnaroundMs)}
               </td>
-              <td className="px-4 py-2 text-right tabular-nums text-gray-700">
+              <td className="px-4 py-2 text-right tabular-nums text-ink">
                 {rateLabel(c.approvalRate)}
                 {c.decided > 0 ? (
-                  <span className="ml-1 text-xs text-gray-400">({c.decided} decided)</span>
+                  <span className="ml-1 text-xs text-faint">({c.decided} decided)</span>
                 ) : null}
               </td>
             </tr>

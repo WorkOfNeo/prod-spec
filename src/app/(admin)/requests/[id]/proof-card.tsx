@@ -33,19 +33,19 @@ export function ProofCard({ revisionId, pick }: { revisionId: string; pick: Proo
   const reason = REASON[pick.reason];
 
   return (
-    <article className="rounded-md border border-zinc-200 p-3">
+    <article className="rounded-md border border-line p-3">
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${reason.className}`}>
               {reason.label}
             </span>
-            <span className="truncate text-sm font-medium text-zinc-900">{pick.styleLabel}</span>
-            {pick.suffix && <span className="font-mono text-xs text-zinc-500">{pick.suffix}</span>}
+            <span className="truncate text-sm font-medium text-ink">{pick.styleLabel}</span>
+            {pick.suffix && <span className="font-mono text-xs text-muted">{pick.suffix}</span>}
           </div>
-          <p className="mt-1 text-xs text-zinc-500">{pick.note}</p>
+          <p className="mt-1 text-xs text-muted">{pick.note}</p>
         </div>
-        <div className="flex rounded-md ring-1 ring-zinc-200" role="group" aria-label="Compare as">
+        <div className="flex rounded-md ring-1 ring-line" role="group" aria-label="Compare as">
           <ModeButton active={mode === "side"} onClick={() => setMode("side")} label="Side by side">
             <Columns2 className="h-3.5 w-3.5" aria-hidden />
           </ModeButton>
@@ -58,17 +58,17 @@ export function ProofCard({ revisionId, pick }: { revisionId: string; pick: Proo
       {mode === "side" ? (
         <div className="mt-3 grid grid-cols-2 gap-2">
           <figure>
-            <figcaption className="mb-1 text-[11px] font-medium uppercase tracking-wide text-zinc-500">Before</figcaption>
+            <figcaption className="mb-1 text-[11px] font-medium text-muted">Before</figcaption>
             <ProofImage src={before} alt={`${pick.styleLabel}: as it prints today`} />
           </figure>
           <figure>
-            <figcaption className="mb-1 text-[11px] font-medium uppercase tracking-wide text-zinc-500">After</figcaption>
+            <figcaption className="mb-1 text-[11px] font-medium text-muted">After</figcaption>
             <ProofImage src={after} alt={`${pick.styleLabel}: with this draft`} />
           </figure>
         </div>
       ) : (
         <div className="mt-3">
-          <div className="relative overflow-hidden rounded bg-white ring-1 ring-zinc-200">
+          <div className="relative overflow-hidden rounded bg-surface ring-1 ring-line">
             <ProofImage src={before} alt={`${pick.styleLabel}: as it prints today`} bare />
             {/* eslint-disable-next-line @next/next/no-img-element -- private, session-gated PNG */}
             <img
@@ -77,9 +77,9 @@ export function ProofCard({ revisionId, pick }: { revisionId: string; pick: Proo
               className="absolute inset-0 h-full w-full object-contain"
               style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }}
             />
-            <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-blue-500" style={{ left: `${pos}%` }} />
-            <span className="absolute left-1 top-1 rounded bg-blue-600/80 px-1 text-[10px] font-medium text-white">After</span>
-            <span className="absolute right-1 top-1 rounded bg-zinc-700/70 px-1 text-[10px] font-medium text-white">Before</span>
+            <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-accent" style={{ left: `${pos}%` }} />
+            <span className="absolute left-1 top-1 rounded bg-blue-600/80 px-1 text-[11px] font-medium text-white">After</span>
+            <span className="absolute right-1 top-1 rounded bg-zinc-700/70 px-1 text-[11px] font-medium text-white">Before</span>
           </div>
           <input
             type="range"
@@ -114,7 +114,7 @@ function ModeButton({
       aria-pressed={active}
       title={label}
       className={`inline-flex items-center gap-1 px-2 py-1 text-xs first:rounded-l-md last:rounded-r-md ${
-        active ? "bg-zinc-900 text-white" : "bg-white text-zinc-600 hover:bg-zinc-50"
+        active ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50" : "bg-surface text-muted hover:bg-subtle"
       }`}
     >
       {children}
@@ -140,7 +140,7 @@ function ProofImage({ src, alt, bare = false }: { src: string; alt: string; bare
     }
   };
   return (
-    <div className={`relative min-h-24 ${bare ? "" : "rounded bg-white ring-1 ring-zinc-200"}`}>
+    <div className={`relative min-h-24 ${bare ? "" : "rounded bg-surface ring-1 ring-line"}`}>
       {state !== "error" && (
         <a href={src} target="_blank" rel="noreferrer" title="Open full size">
           {/* eslint-disable-next-line @next/next/no-img-element -- private, session-gated PNG */}
@@ -155,12 +155,12 @@ function ProofImage({ src, alt, bare = false }: { src: string; alt: string; bare
         </a>
       )}
       {state === "loading" && (
-        <div className="absolute inset-0 flex items-center justify-center text-zinc-400">
+        <div className="absolute inset-0 flex items-center justify-center text-faint">
           <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden />
         </div>
       )}
       {state === "error" && (
-        <div className="flex min-h-24 flex-col items-center justify-center gap-1 p-3 text-center text-xs text-zinc-500">
+        <div className="flex min-h-24 flex-col items-center justify-center gap-1 p-3 text-center text-xs text-muted">
           <ImageOff className="h-5 w-5" aria-hidden />
           <span>{message ?? "This picture could not be rendered."}</span>
         </div>
