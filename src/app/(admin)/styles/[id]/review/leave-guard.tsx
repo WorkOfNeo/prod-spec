@@ -78,18 +78,18 @@ function FinishReviewModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(15_17_21/0.40)] p-4"
       onClick={onStay}
       role="dialog"
       aria-modal="true"
     >
       <div
-        className="w-full max-w-lg rounded-xl bg-white p-5 shadow-2xl"
+        className="w-full max-w-lg rounded-xl bg-surface p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-sm font-semibold text-zinc-900">Finish this review before you go?</h3>
-        <p className="mt-0.5 text-xs text-zinc-500">{styleContext}</p>
-        <p className="mt-3 text-sm text-zinc-700">
+        <h3 className="text-sm font-semibold text-ink">Finish this review before you go?</h3>
+        <p className="mt-0.5 text-xs text-muted">{styleContext}</p>
+        <p className="mt-3 text-sm text-ink">
           {decided > 0 ? (
             <>
               You&rsquo;ve decided <b>{decided} of {total}</b> documents.
@@ -106,7 +106,7 @@ function FinishReviewModal({
           <button
             type="button"
             onClick={onLeave}
-            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-zinc-50"
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             Leave — it&rsquo;ll wait on My tasks
           </button>
@@ -114,7 +114,7 @@ function FinishReviewModal({
             type="button"
             autoFocus
             onClick={onStay}
-            className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800"
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Keep reviewing
           </button>

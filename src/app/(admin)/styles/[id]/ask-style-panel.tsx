@@ -81,8 +81,8 @@ export function AskStylePanel({ styleId, className = "mt-8" }: { styleId: string
 
   return (
     <section className={className}>
-      <h2 className="text-sm font-semibold text-zinc-900">Ask about this style</h2>
-      <p className="mt-1 text-xs text-zinc-500">
+      <h2 className="text-sm font-semibold text-ink">Ask about this style</h2>
+      <p className="mt-1 text-xs text-muted">
         Answered only from this style&apos;s own data — its Monday fields, PO scrape, outputs and
         supplier folder. If the answer isn&apos;t in there, it says so rather than guessing.
       </p>
@@ -99,12 +99,12 @@ export function AskStylePanel({ styleId, className = "mt-8" }: { styleId: string
           onChange={(e) => setQuestion(e.target.value)}
           placeholder="e.g. why does this only have two sizes?"
           disabled={busy}
-          className="flex-1 rounded-md border border-zinc-300 px-3 py-1.5 text-sm placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none disabled:bg-zinc-50"
+          className="flex-1 rounded-md border border-line px-3 py-1.5 text-sm placeholder:text-faint focus:border-accent focus:outline-none disabled:bg-subtle"
         />
         <button
           type="submit"
           disabled={busy || !question.trim()}
-          className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busy ? "Asking…" : "Ask"}
         </button>
@@ -117,7 +117,7 @@ export function AskStylePanel({ styleId, className = "mt-8" }: { styleId: string
             type="button"
             disabled={busy}
             onClick={() => void ask(s)}
-            className="rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[11px] text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+            className="rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] text-muted hover:bg-subtle disabled:opacity-50"
           >
             {s}
           </button>
@@ -130,13 +130,13 @@ export function AskStylePanel({ styleId, className = "mt-8" }: { styleId: string
         <div
           className={`mt-3 rounded-md border px-3 py-2 text-sm ${
             state.soft
-              ? "border-zinc-200 bg-zinc-50 text-zinc-600"
-              : "border-rose-200 bg-rose-50 text-rose-700"
+              ? "border-line bg-subtle text-muted"
+              : "border-transparent bg-bad-soft text-bad"
           }`}
         >
           {state.message}
           {state.soft && (
-            <span className="mt-1 block text-xs text-zinc-500">
+            <span className="mt-1 block text-xs text-muted">
               Everything else on this page is still accurate — the panels above are read straight
               from the style&apos;s data, not from the AI.
             </span>
@@ -151,21 +151,21 @@ function Answer({ answer }: { answer: StyleExplainAnswer }) {
   return (
     <div
       className={`mt-3 rounded-md border px-3 py-2.5 ${
-        answer.insufficient ? "border-zinc-200 bg-zinc-50" : "border-sky-200 bg-sky-50"
+        answer.insufficient ? "border-line bg-subtle" : "border-transparent bg-accent-soft"
       }`}
     >
       {answer.likelyCause && !answer.insufficient && (
-        <p className="text-xs font-semibold uppercase tracking-wide text-sky-800">
+        <p className="text-xs font-semibold text-accent-text">
           {answer.likelyCause}
         </p>
       )}
-      <p className="mt-0.5 text-sm leading-relaxed whitespace-pre-line text-zinc-800">
+      <p className="mt-0.5 text-sm leading-relaxed whitespace-pre-line text-ink">
         {answer.answer}
       </p>
 
       {answer.pointers.length > 0 && (
         <div className="mt-2.5 border-t border-sky-200/70 pt-2">
-          <p className="text-[11px] font-medium text-zinc-500">Where to look</p>
+          <p className="text-[11px] font-medium text-muted">Where to look</p>
           <ul className="mt-1 space-y-0.5">
             {answer.pointers.map((p) => (
               <li key={p.id} className="text-xs">
@@ -183,13 +183,13 @@ function Answer({ answer }: { answer: StyleExplainAnswer }) {
 // board id is missing, so we can't link it) — render the label rather than a
 // dead link.
 function PointerLink({ pointer }: { pointer: ExplainPointer }) {
-  if (!pointer.href) return <span className="text-zinc-600">{pointer.label}</span>;
+  if (!pointer.href) return <span className="text-muted">{pointer.label}</span>;
   const external = pointer.href.startsWith("http");
   return (
     <a
       href={pointer.href}
       {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-      className="text-sky-800 underline decoration-sky-300 underline-offset-2 hover:decoration-sky-600"
+      className="text-accent-text underline decoration-sky-300 underline-offset-2 hover:decoration-sky-600"
     >
       {pointer.label}
       {external && <span aria-hidden> ↗</span>}

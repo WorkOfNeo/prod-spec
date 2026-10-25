@@ -131,28 +131,28 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
   const hasFilters = query.trim() !== "" || docFilter !== "all" || sourceFilter !== "all";
 
   return (
-    <div className="mt-4 overflow-hidden rounded-md border border-zinc-200 bg-zinc-50">
+    <div className="mt-4 overflow-hidden rounded-md border border-line bg-subtle">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+        className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm font-medium text-ink hover:bg-subtle"
         aria-expanded={open}
       >
         <span className="flex items-center gap-2">
           <Chevron open={open} />
           Add output
-          <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
+          <span className="rounded-full bg-subtle px-2 py-0.5 text-[11px] font-medium text-muted">
             {variants.length} available
           </span>
         </span>
       </button>
 
       {open && (
-        <div className="border-t border-zinc-200 bg-white p-3">
+        <div className="border-t border-line bg-surface p-3">
           {/* Search */}
           <div className="relative">
             <svg
-              className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"
+              className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-faint"
               viewBox="0 0 20 20"
               fill="none"
               stroke="currentColor"
@@ -175,7 +175,7 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
                 }
               }}
               placeholder="Search by name, type, key…"
-              className="w-full rounded-md border border-zinc-300 bg-white py-2 pl-9 pr-9 text-sm text-zinc-800 placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+              className="w-full rounded-md border border-line bg-surface py-2 pl-9 pr-9 text-sm text-ink placeholder:text-faint focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/10"
             />
             {query ? (
               <button
@@ -184,7 +184,7 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
                   setQuery("");
                   inputRef.current?.focus();
                 }}
-                className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+                className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-faint hover:bg-subtle hover:text-ink"
                 title="Clear search"
                 aria-label="Clear search"
               >
@@ -210,7 +210,7 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
               )}
               {sourcesPresent.size > 1 && (
                 <>
-                  <span className="mx-1 h-4 w-px bg-zinc-200" aria-hidden="true" />
+                  <span className="mx-1 h-4 w-px bg-subtle" aria-hidden="true" />
                   <FilterChip active={sourceFilter === "all"} onClick={() => setSourceFilter("all")}>
                     All sources
                   </FilterChip>
@@ -232,7 +232,7 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
           )}
 
           {/* Result count */}
-          <div className="mt-2.5 flex items-center justify-between text-[11px] text-zinc-400">
+          <div className="mt-2.5 flex items-center justify-between text-[11px] text-faint">
             <span>
               {filtered.length === variants.length
                 ? `${variants.length} output${variants.length === 1 ? "" : "s"}`
@@ -242,7 +242,7 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
               <button
                 type="button"
                 onClick={resetFilters}
-                className="font-medium text-zinc-500 underline hover:text-zinc-800"
+                className="font-medium text-muted underline hover:text-ink"
               >
                 Clear filters
               </button>
@@ -251,7 +251,7 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
 
           {/* Cards */}
           {filtered.length === 0 ? (
-            <div className="mt-2 rounded-md border border-dashed border-zinc-300 bg-zinc-50 px-3 py-6 text-center text-xs text-zinc-500">
+            <div className="mt-2 rounded-md border border-dashed border-line bg-subtle px-3 py-6 text-center text-xs text-muted">
               No outputs match{query.trim() ? ` “${query.trim()}”` : " these filters"}.
             </div>
           ) : (
@@ -261,33 +261,33 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
                 return (
                   <div
                     key={v.key}
-                    className="flex flex-col rounded-lg border border-zinc-200 bg-white transition hover:border-zinc-400 hover:shadow-sm"
+                    className="flex flex-col rounded-xl border border-line bg-surface transition hover:border-zinc-400 hover:shadow-sm"
                   >
                     <button
                       type="button"
                       onClick={() => onAdd(v)}
-                      className="group rounded-t-lg p-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900"
+                      className="group rounded-t-lg p-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                       title={`Add “${v.name}”`}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 text-sm font-medium text-zinc-900">{v.name}</div>
+                        <div className="min-w-0 text-sm font-medium text-ink">{v.name}</div>
                         <span
-                          className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                          className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
                             DOC_TYPE_BADGE[v.docType] ?? FALLBACK_BADGE
                           }`}
                         >
                           {v.docTypeLabel}
                         </span>
                       </div>
-                      <div className="mt-0.5 truncate font-mono text-[10px] text-zinc-400">
+                      <div className="mt-0.5 truncate font-mono text-[11px] text-faint">
                         {v.key}
                       </div>
-                      <div className="mt-1 line-clamp-2 text-xs text-zinc-500">{v.description}</div>
+                      <div className="mt-1 line-clamp-2 text-xs text-muted">{v.description}</div>
                       <div className="mt-2 flex items-center justify-between gap-2">
-                        <span className="text-[10px] text-zinc-400">
+                        <span className="text-[11px] text-faint">
                           {v.defaultWidthMm}×{v.defaultHeightMm} mm · {SOURCE_LABEL[source]}
                         </span>
-                        <span className="inline-flex items-center gap-1 rounded-md bg-zinc-900 px-2 py-1 text-[11px] font-medium text-white opacity-90 transition group-hover:opacity-100">
+                        <span className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-white opacity-90 transition group-hover:opacity-100">
                           + Add
                         </span>
                       </div>
@@ -296,11 +296,11 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
                     {/* On-demand preview — sample data wearing this spec's
                         config. Lazy: only fetches once expanded and scrolled
                         into view. */}
-                    <div className="border-t border-zinc-100">
+                    <div className="border-t border-line">
                       <button
                         type="button"
                         onClick={() => togglePreview(v.key)}
-                        className="flex w-full items-center gap-1 px-3 py-1.5 text-[11px] font-medium text-zinc-400 hover:text-zinc-700"
+                        className="flex w-full items-center gap-1 px-3 py-1.5 text-[11px] font-medium text-faint hover:text-ink"
                         aria-expanded={previewOpen}
                       >
                         <Chevron open={previewOpen} small />
@@ -308,7 +308,7 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
                       </button>
                       {previewOpen && (
                         <div className="px-3 pb-3">
-                          <div className="rounded-md bg-zinc-100 p-2">
+                          <div className="rounded-md bg-subtle p-2">
                             <LazyOutputPreview
                               src={`/api/admin/prod-specs/${prodSpecId}/output-preview?variantKey=${encodeURIComponent(v.key)}`}
                               widthMm={v.defaultWidthMm}
@@ -345,8 +345,8 @@ function FilterChip({
       onClick={onClick}
       className={`rounded-full border px-2.5 py-0.5 text-xs font-medium transition ${
         active
-          ? "border-zinc-900 bg-zinc-900 text-white"
-          : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:text-zinc-800"
+          ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          : "border-line bg-surface text-muted hover:border-line hover:text-ink"
       }`}
     >
       {children}
@@ -375,7 +375,7 @@ function XIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
 function Chevron({ open, small }: { open: boolean; small?: boolean }) {
   return (
     <svg
-      className={`${small ? "h-3 w-3" : "h-4 w-4"} text-zinc-400 transition-transform ${
+      className={`${small ? "h-3 w-3" : "h-4 w-4"} text-faint transition-transform ${
         open ? "rotate-90" : ""
       }`}
       viewBox="0 0 20 20"

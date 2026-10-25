@@ -34,9 +34,9 @@ export default async function OutputBuilderPage({
   const { role } = await getSessionWithRole();
   if (role !== "ADMIN") {
     return (
-      <div className="px-8 py-8">
-        <h1 className="text-xl font-semibold tracking-tight">Output builder</h1>
-        <p className="mt-3 text-sm text-zinc-500">The Output Builder is admin-only.</p>
+      <div className="px-6 py-5">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Output builder</h1>
+        <p className="mt-3 text-sm text-muted">The Output Builder is admin-only.</p>
       </div>
     );
   }
@@ -47,9 +47,9 @@ export default async function OutputBuilderPage({
   if (tab === "file-names") {
     const summaries = await scanFilenameCollisions();
     return (
-      <div className="px-8 py-8">
-        <h1 className="text-xl font-semibold tracking-tight">Output builder</h1>
-        <p className="mt-1 text-sm text-zinc-500">
+      <div className="px-6 py-5">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Output builder</h1>
+        <p className="mt-1 text-sm text-muted">
           Split layouts that resolve several documents to the same file name — every duplicate is a file the
           supplier never received.
         </p>
@@ -80,15 +80,15 @@ export default async function OutputBuilderPage({
     // output_layouts table not reachable — almost always "migration not
     // applied yet". Render the actionable state instead of a 500.
     return (
-      <div className="px-8 py-8">
-        <h1 className="text-xl font-semibold tracking-tight">Output builder</h1>
-        <div className="mt-6 max-w-xl rounded-lg border border-amber-200 bg-amber-50 px-5 py-4">
-          <p className="text-sm font-medium text-amber-800">Database migration pending</p>
-          <p className="mt-1 text-sm text-amber-700">
+      <div className="px-6 py-5">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Output builder</h1>
+        <div className="mt-6 max-w-xl rounded-lg border border-transparent bg-warn-soft px-5 py-4">
+          <p className="text-sm font-medium text-warn">Database migration pending</p>
+          <p className="mt-1 text-sm text-warn">
             The <code className="font-mono text-xs">output_layouts</code> table doesn&apos;t exist yet. Apply the
             pending migration, then reload:
           </p>
-          <pre className="mt-2 rounded bg-white px-3 py-2 font-mono text-xs text-zinc-700">npm run db:deploy</pre>
+          <pre className="mt-2 rounded bg-surface px-3 py-2 font-mono text-xs text-ink">npm run db:deploy</pre>
         </div>
       </div>
     );

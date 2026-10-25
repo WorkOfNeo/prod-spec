@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 
 export function PageHeader({
   back,
+  backSlot,
   title,
   meta,
   actions,
@@ -15,6 +16,9 @@ export function PageHeader({
   className = "",
 }: {
   back?: { href: string; label: string };
+  // A back link that needs the browser (e.g. one that remembers the list's
+  // filters) — rendered where `back` would be.
+  backSlot?: ReactNode;
   title: ReactNode;
   meta?: ReactNode;
   actions?: ReactNode;
@@ -23,7 +27,9 @@ export function PageHeader({
 }) {
   return (
     <div data-section="Page header" className={`flex flex-wrap items-start justify-between gap-x-6 gap-y-3 ${className}`}>
-      <div className="min-w-0">
+      {/* Grows from 20rem, so a long description wraps under the title instead
+          of pushing the actions onto their own line. */}
+      <div className="min-w-0 flex-[1_1_20rem]">
         {back ? (
           <Link
             href={back.href}
@@ -32,12 +38,14 @@ export function PageHeader({
             <ChevronLeft size={14} aria-hidden="true" />
             {back.label}
           </Link>
+        ) : backSlot ? (
+          <div className="mb-1">{backSlot}</div>
         ) : null}
         <h1 className="text-ink text-[18px] leading-7 font-semibold tracking-[-0.01em]">{title}</h1>
         {meta ? <div className="text-muted mt-0.5 text-[13px]">{meta}</div> : null}
         {children}
       </div>
-      {actions ? <div className="flex flex-wrap items-start gap-2">{actions}</div> : null}
+      {actions ? <div className="flex shrink-0 flex-wrap items-start gap-2">{actions}</div> : null}
     </div>
   );
 }

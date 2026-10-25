@@ -112,7 +112,7 @@ export function CareStandardPanel({
 
   if (careLabels.length === 0) {
     return (
-      <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+      <p className="rounded-md border border-transparent bg-warn-soft p-3 text-xs text-warn">
         No active care labels — visit <code className="font-mono">/settings/care-labels</code> and
         click <strong>Seed standard set</strong>. The standard catalogue is what prints; this prod
         spec has nothing to compose from yet.
@@ -124,9 +124,9 @@ export function CareStandardPanel({
     <div className="flex flex-col gap-5">
       {/* 1 — symbol test picker */}
       <div>
-        <div className="text-xs font-medium text-zinc-700">
+        <div className="text-xs font-medium text-ink">
           Test with wash-care symbols
-          <span className="ml-2 font-normal text-zinc-400">
+          <span className="ml-2 font-normal text-faint">
             pick what a style would carry — the lines below filter live, exactly like the print
           </span>
         </div>
@@ -142,9 +142,9 @@ export function CareStandardPanel({
                 className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
                   active
                     ? s.restrictive
-                      ? "border-red-300 bg-red-50 text-red-800"
-                      : "border-zinc-900 bg-zinc-900 text-white"
-                    : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-400"
+                      ? "border-transparent bg-bad-soft text-bad"
+                      : "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    : "border-line bg-surface text-muted hover:border-zinc-400"
                 }`}
               >
                 {s.name}
@@ -155,36 +155,36 @@ export function CareStandardPanel({
       </div>
 
       {/* 2 — the standard lines + live verdicts */}
-      <div className="overflow-hidden rounded-md border border-zinc-200">
+      <div className="overflow-x-auto rounded-md border border-line">
         <table className="w-full text-xs">
           <thead>
-            <tr className="border-b border-zinc-200 bg-zinc-50 text-left">
-              <th className="px-3 py-1.5 font-medium text-zinc-500">Care label (standard)</th>
-              <th className="px-3 py-1.5 font-medium text-zinc-500">Action</th>
-              <th className="px-3 py-1.5 font-medium text-zinc-500">Prints?</th>
+            <tr className="border-b border-line bg-subtle text-left">
+              <th className="px-3 py-1.5 font-medium text-muted">Care label (standard)</th>
+              <th className="px-3 py-1.5 font-medium text-muted">Action</th>
+              <th className="px-3 py-1.5 font-medium text-muted">Prints?</th>
             </tr>
           </thead>
           <tbody>
             {rows.map(({ label, verdict }) => (
               <tr
                 key={label.id}
-                className={`border-b border-zinc-100 last:border-b-0 ${
-                  verdict.visible ? "" : "bg-zinc-50/60 text-zinc-400"
+                className={`border-b border-line last:border-b-0 ${
+                  verdict.visible ? "" : "bg-zinc-50/60 text-faint"
                 }`}
               >
                 <td className="px-3 py-1.5">{label.sourceText}</td>
-                <td className="px-3 py-1.5 text-zinc-500">
+                <td className="px-3 py-1.5 text-muted">
                   {label.action ? LAUNDERING_ACTION_LABELS[label.action] : "—"}
                 </td>
                 <td className="px-3 py-1.5">
                   <span
                     className={`inline-flex items-center gap-1.5 ${
-                      verdict.visible ? "text-emerald-700" : "text-zinc-400"
+                      verdict.visible ? "text-good" : "text-faint"
                     }`}
                   >
                     <span
                       className={`inline-block h-1.5 w-1.5 rounded-full ${
-                        verdict.visible ? "bg-emerald-500" : "bg-zinc-300"
+                        verdict.visible ? "bg-good" : "bg-zinc-300"
                       }`}
                     />
                     {reasonText(verdict)}
@@ -198,9 +198,9 @@ export function CareStandardPanel({
 
       {/* 3 — composed line per output language + coverage + demoted override */}
       <div>
-        <div className="text-xs font-medium text-zinc-700">
+        <div className="text-xs font-medium text-ink">
           Printed line per language
-          <span className="ml-2 font-normal text-zinc-400">
+          <span className="ml-2 font-normal text-faint">
             visible lines joined with &ldquo; / &rdquo;, translated from the Translation board
           </span>
         </div>
@@ -216,20 +216,20 @@ export function CareStandardPanel({
             const fallbackCount = parts.filter((p) => p.fallback).length;
             const override = (careByLang[code] ?? "").trim();
             return (
-              <li key={code} className="rounded-md border border-zinc-200 bg-white p-3">
+              <li key={code} className="rounded-md border border-line bg-surface p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs font-semibold text-zinc-700">
-                    {name} <span className="font-mono font-normal text-zinc-400">({code})</span>
+                  <div className="text-xs font-semibold text-ink">
+                    {name} <span className="font-mono font-normal text-faint">({code})</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     {override && (
-                      <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                      <span className="rounded-full border border-transparent bg-warn-soft px-2 py-0.5 text-[11px] font-bold text-warn">
                         overridden
                       </span>
                     )}
                     {!override && fallbackCount > 0 && (
                       <span
-                        className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800"
+                        className="rounded-full border border-transparent bg-warn-soft px-2 py-0.5 text-[11px] font-medium text-warn"
                         title="Missing Translation-board entries — these parts print in ENGLISH under this language's flag until translated."
                       >
                         {fallbackCount} of {parts.length} untranslated → prints English
@@ -239,20 +239,20 @@ export function CareStandardPanel({
                 </div>
                 <div className="mt-1.5 text-xs leading-relaxed">
                   {override ? (
-                    <span className="text-amber-900">{sanitizeCareInstructions(override)}</span>
+                    <span className="text-warn">{sanitizeCareInstructions(override)}</span>
                   ) : parts.length === 0 ? (
-                    <span className="italic text-zinc-400">
+                    <span className="italic text-faint">
                       nothing prints — every line is filtered out for the picked symbols
                     </span>
                   ) : (
                     parts.map((p, i) => (
                       <span key={i}>
-                        {i > 0 && <span className="text-zinc-300"> / </span>}
+                        {i > 0 && <span className="text-faint"> / </span>}
                         <span
                           className={
                             p.fallback
-                              ? "underline decoration-amber-400 decoration-dotted underline-offset-2 text-amber-800"
-                              : "text-zinc-800"
+                              ? "underline decoration-amber-400 decoration-dotted underline-offset-2 text-warn"
+                              : "text-ink"
                           }
                           title={p.fallback ? "No translation — prints the English source line" : undefined}
                         >
@@ -263,7 +263,7 @@ export function CareStandardPanel({
                   )}
                 </div>
                 <details className="mt-2">
-                  <summary className="cursor-pointer text-[11px] font-medium text-zinc-400 hover:text-zinc-600">
+                  <summary className="cursor-pointer text-[11px] font-medium text-faint hover:text-muted">
                     {override ? "Edit override" : "Override standard text"}
                   </summary>
                   <div className="mt-1.5">
@@ -271,14 +271,14 @@ export function CareStandardPanel({
                       value={careByLang[code] ?? ""}
                       onChange={(e) => onChangeCareByLang(code, e.target.value)}
                       rows={2}
-                      className="w-full rounded-md border border-zinc-300 px-3 py-2 text-xs"
+                      className="w-full rounded-md border border-line px-3 py-2 text-xs"
                       placeholder="Leave empty to use the standard (recommended)"
                     />
                     {override && (
                       <button
                         type="button"
                         onClick={() => onChangeCareByLang(code, "")}
-                        className="mt-1 text-[11px] text-red-700 underline"
+                        className="mt-1 text-[11px] text-bad underline"
                       >
                         Clear override → use standard
                       </button>

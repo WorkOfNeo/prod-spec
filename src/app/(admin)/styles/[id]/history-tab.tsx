@@ -186,16 +186,16 @@ export async function HistoryTab({ styleId }: { styleId: string }) {
   return (
     <div className="mt-6 max-w-3xl">
       {events.length === 0 ? (
-        <p className="text-sm text-zinc-500">Nothing recorded for this style yet.</p>
+        <p className="text-sm text-muted">Nothing recorded for this style yet.</p>
       ) : (
-        <ol data-private className="relative border-l border-zinc-200 pl-6">
+        <ol data-private className="relative border-l border-line pl-6">
           {events.map((e, i) => (
             <li key={i} className="relative pb-5">
               <span
                 className={`absolute -left-[1.85rem] top-1.5 h-3 w-3 rounded-full border-2 border-white ${DOT[e.tone]}`}
               />
-              <div className="text-xs tabular-nums text-zinc-400">{formatDate(e.at)}</div>
-              <div className="text-sm font-medium text-zinc-800">
+              <div className="text-xs tabular-nums text-faint">{formatDate(e.at)}</div>
+              <div className="text-sm font-medium text-ink">
                 {e.href ? (
                   <Link href={e.href} className="hover:underline" target={e.href.startsWith("http") ? "_blank" : undefined}>
                     {e.title}
@@ -204,7 +204,7 @@ export async function HistoryTab({ styleId }: { styleId: string }) {
                   e.title
                 )}
               </div>
-              {e.detail ? <div className="mt-0.5 text-xs text-zinc-500">{e.detail}</div> : null}
+              {e.detail ? <div className="mt-0.5 text-xs text-muted">{e.detail}</div> : null}
             </li>
           ))}
         </ol>

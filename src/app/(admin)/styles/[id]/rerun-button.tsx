@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { EmailSimulationDialog, type EmailOutcomeView } from "@/components/email-simulation-dialog";
 import { track } from "@/lib/analytics";
+import { buttonClass } from "@/components/ui/button";
 
 export function RerunButton({
   styleId,
@@ -53,11 +54,11 @@ export function RerunButton({
         type="button"
         onClick={onClick}
         disabled={disabled || pending}
-        className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 disabled:opacity-50"
+        className={buttonClass("secondary")}
       >
         {pending ? pendingLabel : label}
       </button>
-      {error && <span className="text-xs text-red-600">{error}</span>}
+      {error && <span className="text-bad text-[12px]">{error}</span>}
       {email ? <EmailSimulationDialog outcome={email} onClose={() => setEmail(null)} /> : null}
     </div>
   );

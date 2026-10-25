@@ -227,14 +227,14 @@ export function ManualStyleForm(props: ManualStyleFormProps) {
         <button
           type="button"
           onClick={fillSample}
-          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-50"
+          className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         >
           Fill with sample data
         </button>
         <button
           type="button"
           onClick={clearAll}
-          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-50"
+          className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         >
           Clear
         </button>
@@ -246,7 +246,7 @@ export function ManualStyleForm(props: ManualStyleFormProps) {
             value={state.customerId}
             onChange={(e) => update("customerId", e.target.value)}
             disabled={mode === "edit"}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm disabled:bg-zinc-50 disabled:text-zinc-500"
+            className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm disabled:bg-subtle disabled:text-muted"
             required
           >
             {customers.map((c) => (
@@ -256,7 +256,7 @@ export function ManualStyleForm(props: ManualStyleFormProps) {
             ))}
           </select>
           {mode === "edit" && (
-            <span className="mt-1 block font-normal text-zinc-500">
+            <span className="mt-1 block font-normal text-muted">
               Customer is immutable after create. Delete and re-create to reassign.
             </span>
           )}
@@ -269,7 +269,7 @@ export function ManualStyleForm(props: ManualStyleFormProps) {
         </Field>
         <Field label="Business area *">
           {businessAreas.length === 0 ? (
-            <div className="mt-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <div className="mt-1 rounded-md border border-transparent bg-warn-soft px-3 py-2 text-xs text-warn">
               No business areas yet — go to <a href="/business-areas" className="underline">Business areas</a>{" "}
               or run a Styles sync.
             </div>
@@ -277,7 +277,7 @@ export function ManualStyleForm(props: ManualStyleFormProps) {
             <select
               value={state.businessAreaId}
               onChange={(e) => pickBusinessArea(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm"
               required
             >
               {businessAreas.map((b) => (
@@ -297,7 +297,7 @@ export function ManualStyleForm(props: ManualStyleFormProps) {
           <select
             value={state.supplierId}
             onChange={(e) => update("supplierId", e.target.value)}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm"
           >
             <option value="">— none —</option>
             {suppliers.map((s) => (
@@ -338,7 +338,7 @@ export function ManualStyleForm(props: ManualStyleFormProps) {
 
       <Section title="Wash care" wide>
         {washSymbols.length === 0 ? (
-          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <div className="rounded-md border border-transparent bg-warn-soft px-3 py-2 text-xs text-warn">
             No wash-care symbols yet — go to <a href="/settings/washcare-symbols" className="underline">Settings → Wash-care symbols</a>{" "}
             and seed or upload some first.
           </div>
@@ -398,7 +398,7 @@ export function ManualStyleForm(props: ManualStyleFormProps) {
           hint="Optional. Printed as-is on Care Label 02 (page 4). Upload images at Settings → QR codes."
         >
           {qrImages.length === 0 ? (
-            <div className="mt-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <div className="mt-1 rounded-md border border-transparent bg-warn-soft px-3 py-2 text-xs text-warn">
               No QR images yet — add one at{" "}
               <a href="/settings/qr-codes" className="underline">Settings → QR codes</a>.
             </div>
@@ -406,7 +406,7 @@ export function ManualStyleForm(props: ManualStyleFormProps) {
             <select
               value={state.qrImageId}
               onChange={(e) => update("qrImageId", e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm"
             >
               <option value="">— none —</option>
               {qrImages.map((q) => (
@@ -420,17 +420,17 @@ export function ManualStyleForm(props: ManualStyleFormProps) {
         <QrPreview qrImages={qrImages} selectedId={state.qrImageId} />
       </Section>
 
-      {error && <p className="mt-4 text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-4 text-xs text-bad">{error}</p>}
 
       <div className="mt-6 flex gap-3">
         <button
           type="submit"
           disabled={pending || !state.customerId}
-          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {pending ? "Rendering PDFs…" : mode === "create" ? "Save & render PDFs" : "Save & re-render PDFs"}
         </button>
-        <span className="self-center text-xs text-zinc-500">
+        <span className="self-center text-xs text-muted">
           Rendering takes ~5–10 s the first time (Puppeteer warm-up).
         </span>
       </div>
@@ -474,21 +474,21 @@ function WashSymbolPicker({
             onClick={() => onToggle(s.code)}
             className={`flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm transition ${
               isSelected
-                ? "border-zinc-900 bg-zinc-50 ring-1 ring-zinc-900"
-                : "border-zinc-200 bg-white hover:border-zinc-400"
+                ? "border-ink bg-subtle ring-1 ring-accent"
+                : "border-line bg-surface hover:border-zinc-400"
             }`}
           >
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-zinc-50">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-subtle">
               {dataUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={dataUrl} alt={s.code} className="h-6 w-6 object-contain" />
               ) : (
-                <span className="text-[8px] text-zinc-400">no svg</span>
+                <span className="text-[8px] text-faint">no svg</span>
               )}
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-xs font-medium">{s.name}</div>
-              <div className="truncate font-mono text-[10px] text-zinc-500">{s.code}</div>
+              <div className="truncate font-mono text-[11px] text-muted">{s.code}</div>
             </div>
           </button>
         );
@@ -513,16 +513,16 @@ function QrPreview({ qrImages, selectedId }: { qrImages: QrImage[]; selectedId: 
       : `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(img)))}`;
   return (
     <div className="mt-3 flex items-center gap-3">
-      <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50">
+      <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md border border-line bg-subtle">
         {dataUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={dataUrl} alt={selected.name} className="h-16 w-16 object-contain" />
         ) : (
-          <span className="text-[10px] text-zinc-400">no image</span>
+          <span className="text-[11px] text-faint">no image</span>
         )}
       </div>
-      <div className="text-xs text-zinc-500">
-        <div className="font-medium text-zinc-700">{selected.name}</div>
+      <div className="text-xs text-muted">
+        <div className="font-medium text-ink">{selected.name}</div>
         Prints on Care Label 02, page 4.
       </div>
     </div>
@@ -539,8 +539,8 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="mt-6 rounded-lg border border-zinc-200 bg-white p-5">
-      <h2 className="mb-3 text-sm font-semibold text-zinc-700">{title}</h2>
+    <section className="mt-6 rounded-xl border border-line bg-surface p-5">
+      <h2 className="mb-3 text-sm font-semibold text-ink">{title}</h2>
       <div className={wide ? "" : "grid grid-cols-2 gap-4"}>{children}</div>
     </section>
   );
@@ -561,14 +561,14 @@ function ProdSpecPreview({
 }) {
   if (!customerId || !businessAreaId) {
     return (
-      <p className="mt-2 text-[11px] text-zinc-500">
+      <p className="mt-2 text-[11px] text-muted">
         Pick a Business area to see which ProdSpec this Style will use.
       </p>
     );
   }
   if (!matched) {
     return (
-      <p className="mt-2 text-[11px] text-amber-800">
+      <p className="mt-2 text-[11px] text-warn">
         ⚠ No ProdSpec exists for this Customer × Business Area yet — it&apos;ll be auto-created on save
         with empty Outputs. You&apos;ll need to open it and add variants before any PDFs render.
       </p>
@@ -576,7 +576,7 @@ function ProdSpecPreview({
   }
   if (matched.outputsCount === 0) {
     return (
-      <p className="mt-2 text-[11px] text-amber-800">
+      <p className="mt-2 text-[11px] text-warn">
         ⚠ Linked ProdSpec: <strong>{matched.name}</strong> — has no Outputs configured.{" "}
         <a href={`/prod-specs/${matched.id}`} target="_blank" rel="noreferrer" className="underline">
           Open and add variants ↗
@@ -585,7 +585,7 @@ function ProdSpecPreview({
     );
   }
   return (
-    <p className="mt-2 text-[11px] text-emerald-700">
+    <p className="mt-2 text-[11px] text-good">
       ✓ Linked ProdSpec: <strong>{matched.name}</strong> — {matched.outputsCount} output
       {matched.outputsCount === 1 ? "" : "s"} configured.{" "}
       <a href={`/prod-specs/${matched.id}`} target="_blank" rel="noreferrer" className="underline">
@@ -607,10 +607,10 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className={`text-xs font-medium text-zinc-700 ${wide ? "col-span-2" : ""}`}>
+    <label className={`text-xs font-medium text-ink ${wide ? "col-span-2" : ""}`}>
       {label}
       {children}
-      {hint && <span className="mt-1 block font-normal text-zinc-500">{hint}</span>}
+      {hint && <span className="mt-1 block font-normal text-muted">{hint}</span>}
     </label>
   );
 }
@@ -632,7 +632,7 @@ function Input({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       required={required}
-      className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+      className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
     />
   );
 }
@@ -651,7 +651,7 @@ function Textarea({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       rows={rows}
-      className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900"
+      className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-accent"
     />
   );
 }

@@ -46,23 +46,23 @@ export function ResolvedProdSpecButton(props: ResolvedProdSpecProps) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex max-w-full items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm shadow-sm transition hover:border-zinc-300 hover:bg-zinc-50"
+        className="inline-flex max-w-full items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-sm shadow-sm transition hover:border-line hover:bg-subtle"
       >
-        <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-400">
+        <span className="text-[11px] font-medium text-faint">
           Prod spec
         </span>
-        <span className="truncate font-semibold text-zinc-900">{props.name}</span>
+        <span className="truncate font-semibold text-ink">{props.name}</span>
         <ReadyBadge
           styleStatus={props.styleStatus}
           filled={props.requiredReadiness.filled}
           total={props.requiredReadiness.total}
         />
         {props.fullyApproved && (
-          <span className="inline-flex whitespace-nowrap rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+          <span className="inline-flex whitespace-nowrap rounded-full bg-good-soft px-2 py-0.5 text-[11px] font-medium text-good">
             Fully approved
           </span>
         )}
-        <span className="whitespace-nowrap text-xs text-zinc-400">View details →</span>
+        <span className="whitespace-nowrap text-xs text-faint">View details →</span>
       </button>
 
       {open && <ResolvedProdSpecModal {...props} onClose={() => setOpen(false)} />}
@@ -103,19 +103,19 @@ function ResolvedProdSpecModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 py-10"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[rgb(15_17_21/0.40)] p-4 py-10"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="Resolved prod spec"
     >
       <div
-        className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-2xl"
+        className="w-full max-w-2xl rounded-lg bg-surface p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <div className="text-xs uppercase tracking-wide text-zinc-500">Auto-resolved</div>
+            <div className="text-xs text-muted">Auto-resolved</div>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <span className="text-lg font-semibold">{name}</span>
               <ReadyBadge
@@ -124,7 +124,7 @@ function ResolvedProdSpecModal({
                 total={requiredReadiness.total}
               />
             </div>
-            <div className="mt-1 text-xs text-zinc-500">
+            <div className="mt-1 text-xs text-muted">
               Business area: <span className="font-mono">{businessAreaMondayValue}</span> · threshold{" "}
               {autoGenerateThresholdPct}% · {active ? "active" : "inactive"}
             </div>
@@ -132,14 +132,14 @@ function ResolvedProdSpecModal({
           <div className="flex shrink-0 items-center gap-3">
             <Link
               href={`/prod-specs/${prodSpecId}`}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
             >
               Edit prod spec →
             </Link>
             <button
               type="button"
               onClick={onClose}
-              className="text-xs text-zinc-500 underline hover:text-zinc-700"
+              className="text-xs text-muted underline hover:text-ink"
             >
               close
             </button>
@@ -152,17 +152,17 @@ function ResolvedProdSpecModal({
           <Field label="Supplier (style)">{supplierName ?? "—"}</Field>
         </div>
 
-        <div className="mt-4 border-t border-zinc-100 pt-4">
+        <div className="mt-4 border-t border-line pt-4">
           <div className="flex items-center justify-between">
-            <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            <div className="text-xs font-medium text-muted">
               Required fields (from selected outputs)
             </div>
             {requiredReadiness.total > 0 && (
               <span
                 className={`text-xs font-semibold tabular-nums ${
                   requiredReadiness.filled === requiredReadiness.total
-                    ? "text-emerald-600"
-                    : "text-amber-600"
+                    ? "text-good"
+                    : "text-warn"
                 }`}
               >
                 {requiredReadiness.filled}/{requiredReadiness.total}
@@ -170,17 +170,17 @@ function ResolvedProdSpecModal({
             )}
           </div>
           {requiredReadiness.total === 0 ? (
-            <p className="mt-2 text-xs text-zinc-400">
+            <p className="mt-2 text-xs text-faint">
               No outputs selected yet — pick outputs on the prod spec to see required fields.
             </p>
           ) : (
             <ul className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
               {requiredReadiness.fields.map((f, i) => (
                 <li key={i} className="flex items-center gap-1.5">
-                  <span className={f.ok ? "text-emerald-600" : "text-amber-600"}>
+                  <span className={f.ok ? "text-good" : "text-warn"}>
                     {f.ok ? "✓" : "✗"}
                   </span>
-                  <span className={f.ok ? "text-zinc-700" : "font-medium text-amber-700"}>
+                  <span className={f.ok ? "text-ink" : "font-medium text-warn"}>
                     {f.label}
                   </span>
                 </li>
@@ -189,19 +189,19 @@ function ResolvedProdSpecModal({
           )}
         </div>
 
-        <div className="mt-4 border-t border-zinc-100 pt-4">
+        <div className="mt-4 border-t border-line pt-4">
           <div className="flex items-center justify-between">
-            <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            <div className="text-xs font-medium text-muted">
               Files the next run will generate
             </div>
             {totalFiles > 0 && (
-              <span className="text-xs font-semibold tabular-nums text-zinc-600">
+              <span className="text-xs font-semibold tabular-nums text-muted">
                 {totalFiles} PDF{totalFiles === 1 ? "" : "s"} total
               </span>
             )}
           </div>
           {outputsFilesPreview.length === 0 ? (
-            <p className="mt-2 text-xs text-zinc-400">
+            <p className="mt-2 text-xs text-faint">
               No outputs selected yet — pick outputs on the prod spec to see what a run produces.
             </p>
           ) : (
@@ -209,24 +209,24 @@ function ResolvedProdSpecModal({
               {outputsFilesPreview.map((o) => (
                 <li key={o.variantKey} className="text-xs">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="min-w-0 truncate font-medium text-zinc-700">{o.name}</span>
+                    <span className="min-w-0 truncate font-medium text-ink">{o.name}</span>
                     <span
-                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${
-                        o.known ? "bg-zinc-100 text-zinc-700" : "bg-red-100 text-red-700"
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${
+                        o.known ? "bg-subtle text-ink" : "bg-bad-soft text-bad"
                       }`}
                     >
                       {o.known ? `${o.files.length} PDF${o.files.length === 1 ? "" : "s"}` : "unknown variant"}
                     </span>
                   </div>
                   {o.known && (
-                    <ul className="mt-1 space-y-0.5 font-mono text-[11px] leading-relaxed text-zinc-500">
+                    <ul className="mt-1 space-y-0.5 font-mono text-[11px] leading-relaxed text-muted">
                       {o.files.slice(0, 12).map((f, i) => (
                         <li key={i} className="truncate" title={f}>
                           {f}
                         </li>
                       ))}
                       {o.files.length > 12 && (
-                        <li className="font-sans text-zinc-400">+{o.files.length - 12} more</li>
+                        <li className="font-sans text-faint">+{o.files.length - 12} more</li>
                       )}
                     </ul>
                   )}
@@ -234,26 +234,26 @@ function ResolvedProdSpecModal({
               ))}
             </ul>
           )}
-          <p className="mt-2 text-[10px] text-zinc-400">
+          <p className="mt-2 text-[11px] text-faint">
             Counts use the style&apos;s current size/EAN rows — a new PO scrape can change them.
           </p>
         </div>
 
         <div className="mt-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+          <div className="text-xs font-medium text-muted">
             Suppliers attached to this ProdSpec
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
             {suppliers.length === 0 ? (
-              <span className="text-xs text-zinc-500">— none —</span>
+              <span className="text-xs text-muted">— none —</span>
             ) : (
               suppliers.map((s) => (
                 <span
                   key={s.id}
-                  className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-3 py-1 text-xs"
+                  className="inline-flex items-center gap-1 rounded-full bg-subtle px-3 py-1 text-xs"
                 >
                   <span className="font-medium">{s.name}</span>
-                  {s.country && <span className="text-zinc-500">· {s.country}</span>}
+                  {s.country && <span className="text-muted">· {s.country}</span>}
                 </span>
               ))
             )}
@@ -306,7 +306,7 @@ function ReadyBadge({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="text-zinc-500">{label}</div>
+      <div className="text-muted">{label}</div>
       <div className="font-medium">{children}</div>
     </div>
   );

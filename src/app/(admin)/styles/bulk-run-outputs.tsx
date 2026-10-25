@@ -206,32 +206,32 @@ export function BulkRunOutputs({
   if (active && batch) {
     const pct = batch.total > 0 ? Math.min(100, Math.round((batch.done / batch.total) * 100)) : 0;
     return (
-      <div className="mb-4 rounded-md border border-zinc-200 bg-white px-3 py-2.5">
+      <div className="mb-4 rounded-md border border-line bg-surface px-3 py-2.5">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2 text-sm text-zinc-700">
+          <div className="flex min-w-0 items-center gap-2 text-sm text-ink">
             <Spinner />
             <span className="font-medium">Running outputs</span>
-            <span className="tabular-nums text-zinc-500">
+            <span className="tabular-nums text-muted">
               {batch.done}/{batch.total}
             </span>
             {batch.failed > 0 && (
-              <span className="tabular-nums text-red-600">· {batch.failed} failed</span>
+              <span className="tabular-nums text-bad">· {batch.failed} failed</span>
             )}
-            <span className="truncate text-xs text-zinc-400" title={batch.label}>
+            <span className="truncate text-xs text-faint" title={batch.label}>
               · {batch.label}
             </span>
           </div>
           {batch.createdByEmail && (
-            <span data-private className="shrink-0 text-xs text-zinc-400">started by {batch.createdByEmail}</span>
+            <span data-private className="shrink-0 text-xs text-faint">started by {batch.createdByEmail}</span>
           )}
         </div>
-        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-subtle">
           <div
-            className="h-full rounded-full bg-zinc-900 transition-[width] duration-500"
+            className="h-full rounded-full bg-primary transition-[width] duration-500"
             style={{ width: `${pct}%` }}
           />
         </div>
-        <p className="mt-1.5 text-[11px] text-zinc-400">
+        <p className="mt-1.5 text-[11px] text-faint">
           Rendering in the background — safe to leave this page; progress resumes when you return.
         </p>
       </div>
@@ -241,17 +241,17 @@ export function BulkRunOutputs({
   return (
     <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
       {error && (
-        <span className="mr-auto rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-800">
+        <span className="mr-auto rounded-md border border-transparent bg-warn-soft px-2.5 py-1 text-xs text-warn">
           {error}
         </span>
       )}
       {!error && notice && (
-        <span className="mr-auto rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs text-zinc-600">
+        <span className="mr-auto rounded-md border border-line bg-subtle px-2.5 py-1 text-xs text-muted">
           {notice}
         </span>
       )}
       {showCompleted && batch && (
-        <span className="mr-auto inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">
+        <span className="mr-auto inline-flex items-center gap-2 rounded-md border border-transparent bg-good-soft px-2.5 py-1 text-xs font-medium text-good">
           <span>
             ✓ Outputs generated · {batch.done}/{batch.total}
             {batch.failed > 0 ? ` · ${batch.failed} failed` : ""}
@@ -260,7 +260,7 @@ export function BulkRunOutputs({
             type="button"
             onClick={() => setDismissed(true)}
             aria-label="Dismiss"
-            className="text-emerald-600 hover:text-emerald-900"
+            className="text-good hover:text-good"
           >
             ✕
           </button>
@@ -275,7 +275,7 @@ export function BulkRunOutputs({
             ? "No styles in the current view"
             : "Re-render every already-generated style in the view (e.g. after a data fix) — approved outputs stay approved"
         }
-        className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300"
+        className="shrink-0 inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
       >
         <RegenerateIcon />
         {submitting ? "Starting…" : `Regenerate all (${styleIds.length})`}
@@ -289,7 +289,7 @@ export function BulkRunOutputs({
             ? "No styles in the current view"
             : "Generate each style's ready, not-yet-generated outputs (fills gaps; never re-renders)"
         }
-        className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+        className="shrink-0 inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <RunAllIcon />
         {submitting ? "Starting…" : `Run all outputs (${styleIds.length})`}
@@ -301,7 +301,7 @@ export function BulkRunOutputs({
 function Spinner() {
   return (
     <svg
-      className="h-4 w-4 shrink-0 animate-spin text-zinc-500"
+      className="h-4 w-4 shrink-0 animate-spin text-muted"
       viewBox="0 0 24 24"
       fill="none"
       aria-hidden="true"

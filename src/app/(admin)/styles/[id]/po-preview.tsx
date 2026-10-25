@@ -33,7 +33,7 @@ export function PoPreview({
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
-      <span className="text-zinc-500">Purchase Order</span>
+      <span className="text-muted">Purchase Order</span>
       <button type="button" onClick={() => setOpen(true)} className={linkCls}>
         PO {poNumber}
       </button>
@@ -44,7 +44,7 @@ export function PoPreview({
         href={poPdfPath(styleId)}
         target="_blank"
         rel="noreferrer"
-        className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 font-medium text-zinc-700 hover:bg-zinc-50"
+        className="rounded-md border border-line bg-surface px-3 py-1.5 font-medium text-ink hover:bg-subtle"
       >
         Open in new tab ↗
       </a>

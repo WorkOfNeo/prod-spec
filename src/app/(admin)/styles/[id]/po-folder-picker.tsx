@@ -57,7 +57,7 @@ export function PoFolderPicker({
               href={m.webUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="min-w-0 flex-1 truncate underline hover:text-zinc-950"
+              className="min-w-0 flex-1 truncate underline hover:text-ink"
               title={m.name}
             >
               {m.name} ↗
@@ -72,18 +72,18 @@ export function PoFolderPicker({
             disabled={busy}
             onClick={() => choose(m.name)}
             className={`shrink-0 rounded-md border px-2 py-0.5 font-medium ${
-              compact ? "text-[10px]" : "text-[11px]"
-            } ${
+              compact ? "text-[11px]" : "text-[11px]"
+            }    ${
               busy
-                ? "cursor-not-allowed border-zinc-200 text-zinc-400"
-                : "border-fuchsia-300 bg-white text-fuchsia-700 hover:bg-fuchsia-50"
+                ? "cursor-not-allowed border-line text-faint"
+                : "border-fuchsia-300 bg-surface text-fuchsia-700 hover:bg-fuchsia-50"
             }`}
           >
             {choosing === m.name ? "Selecting…" : "Use this folder"}
           </button>
         </div>
       ))}
-      {error ? <div className="text-[11px] text-red-600">{error}</div> : null}
+      {error ? <div className="text-[11px] text-bad">{error}</div> : null}
     </div>
   );
 }

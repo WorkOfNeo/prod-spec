@@ -127,14 +127,14 @@ export function ReviewInfoAreaSizePicker({
   const customDirty = cw !== widthMm || ch !== heightMm;
 
   return (
-    <div className="border-t border-zinc-100 px-3 py-2">
+    <div className="border-t border-line px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[11px] font-medium text-zinc-500">Print size</span>
+        <span className="text-[11px] font-medium text-muted">Print size</span>
         <select
           value={selectValue}
           disabled={busy !== null}
           onChange={(e) => onSelect(e.target.value)}
-          className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-700 disabled:opacity-50"
+          className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         >
           {sizes.map((s) => (
             <option key={s.id} value={`size:${s.id}`}>
@@ -156,42 +156,42 @@ export function ReviewInfoAreaSizePicker({
               value={customW}
               disabled={busy !== null}
               onChange={(e) => setCustomW(e.target.value)}
-              className="w-14 rounded-md border border-zinc-300 px-1.5 py-1 text-xs tabular-nums"
+              className="w-14 rounded-md border border-line px-1.5 py-1 text-xs tabular-nums"
               aria-label="Custom width (mm)"
             />
-            <span className="text-[10px] text-zinc-400">×</span>
+            <span className="text-[11px] text-faint">×</span>
             <input
               type="text"
               inputMode="decimal"
               value={customH}
               disabled={busy !== null}
               onChange={(e) => setCustomH(e.target.value)}
-              className="w-14 rounded-md border border-zinc-300 px-1.5 py-1 text-xs tabular-nums"
+              className="w-14 rounded-md border border-line px-1.5 py-1 text-xs tabular-nums"
               aria-label="Custom height (mm)"
             />
-            <span className="text-[10px] text-zinc-400">mm</span>
+            <span className="text-[11px] text-faint">mm</span>
             <button
               type="button"
               disabled={busy !== null || !customValid || (!customDirty && currentSizeId === null)}
               onClick={() => void applyAndRerun({ infoAreaSizeId: null, widthMm: cw, heightMm: ch })}
-              className="rounded-md bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+              className="rounded-md bg-primary px-2.5 py-1 text-[11px] font-medium text-white hover:bg-primary disabled:opacity-50"
             >
               Apply
             </button>
           </span>
         )}
         {busy ? (
-          <span className="text-[11px] text-zinc-400">
+          <span className="text-[11px] text-faint">
             {busy === "saving" ? "Saving…" : "Regenerating at the new size…"}
           </span>
         ) : null}
       </div>
-      <p className="mt-1 text-[10px] text-zinc-400">
+      <p className="mt-1 text-[11px] text-faint">
         {ready
           ? "Picking a size regenerates this output so the proof above shows it."
           : "Saves the size — this output can't regenerate until its missing fields are filled."}
       </p>
-      {err && <p className="mt-1 text-[11px] text-red-600">{err}</p>}
+      {err && <p className="mt-1 text-[11px] text-bad">{err}</p>}
     </div>
   );
 }

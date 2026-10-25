@@ -232,62 +232,62 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
     }
   }
 
-  if (loading) return <p className="text-xs text-zinc-400">Loading manually-supplied packaging…</p>;
+  if (loading) return <p className="text-xs text-faint">Loading manually-supplied packaging…</p>;
 
   const accept = data ? data.accepts.map((e) => `.${e}`).join(",") : undefined;
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-muted">
         Lines the cover page lists as <strong>manually supplied</strong> — named on the order&apos;s
         Trims column, but not produced by this app. Drop the finished document here and it goes into
         the same <span className="font-mono">APPROVED LAYOUTS</span> folder the generated outputs do,
         and the cover stops saying &ldquo;Waiting for Customer Information&rdquo; for that line.
       </p>
-      <p className="text-xs text-zinc-500">
+      <p className="text-xs text-muted">
         Already put it in the supplier&apos;s folder yourself? Press <strong>Approve</strong> on that
         line instead — the cover treats it exactly as it treats an upload made here. No trim
         document is uploaded and nothing is deleted from the folder; the app is simply told it
         already has the file.
       </p>
-      <p className="text-[11px] text-zinc-400">
+      <p className="text-[11px] text-faint">
         Either way the cover page is queued for a rebuild and re-uploaded to the supplier&apos;s
         folder a few seconds later, so their copy stops waiting on the line — the same debounced
         refresh that runs when an output is approved.
       </p>
 
       {coverStatus === "updating" && (
-        <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+        <p className="rounded-md border border-transparent bg-accent-soft px-3 py-2 text-xs text-accent-text">
           Rebuilding the cover page… it refreshes here by itself when it&apos;s done.
         </p>
       )}
       {coverStatus === "updated" && (
-        <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+        <p className="rounded-md border border-transparent bg-good-soft px-3 py-2 text-xs text-good">
           Cover page rebuilt and sent on to the supplier&apos;s folder.
         </p>
       )}
       {coverStatus === "slow" && (
-        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <p className="rounded-md border border-transparent bg-warn-soft px-3 py-2 text-xs text-warn">
           The cover rebuild is taking longer than usual. It stays queued and is retried automatically
           — reload the page in a few minutes to see it.
         </p>
       )}
 
       {error && (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+        <p className="rounded-md border border-transparent bg-bad-soft px-3 py-2 text-xs text-bad">
           {error}
         </p>
       )}
 
       {data && !data.trimsEnabled && (
-        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <p className="rounded-md border border-transparent bg-warn-soft px-3 py-2 text-xs text-warn">
           Trims on the cover page are switched off, so no cover currently lists a manually-supplied
           line. Turn it on under Settings ▸ Cover page to use this.
         </p>
       )}
 
       {data && data.trimsEnabled && data.lines.length === 0 && (
-        <p className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-3 text-center text-xs text-zinc-500">
+        <p className="rounded-md border border-line bg-subtle px-3 py-3 text-center text-xs text-muted">
           Nothing on this style&apos;s cover is manually supplied — every packaging line is produced
           here.
         </p>
@@ -310,11 +310,11 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
       </div>
 
       {data && data.orphaned.length > 0 && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-          <p className="text-xs font-medium text-amber-900">
+        <div className="rounded-md border border-transparent bg-warn-soft px-3 py-2">
+          <p className="text-xs font-medium text-warn">
             No longer on the cover — still standing against the supplier&apos;s folder
           </p>
-          <p className="mb-2 text-[11px] text-amber-800">
+          <p className="mb-2 text-[11px] text-warn">
             The Trims column changed since these were supplied. Remove them unless the supplier
             should still have them. Removing an uploaded file takes it out of the folder; removing a
             line approved by hand only drops the record here — the document you put there yourself
@@ -322,7 +322,7 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
           </p>
           <ul className="flex flex-col gap-1">
             {data.orphaned.map((u) => (
-              <li key={u.id} className="flex items-center justify-between gap-2 text-xs text-amber-900">
+              <li key={u.id} className="flex items-center justify-between gap-2 text-xs text-warn">
                 <span className="truncate">
                   {u.trimLabel} ·{" "}
                   {u.fileName ? (
@@ -334,7 +334,7 @@ export function ManualTrimsPanel({ styleId }: { styleId: string }) {
                 <button
                   type="button"
                   onClick={() => void remove(u)}
-                  className="shrink-0 rounded border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-900 hover:bg-amber-100"
+                  className="shrink-0 rounded border border-transparent bg-surface px-2 py-0.5 text-[11px] font-medium text-warn hover:bg-warn-soft"
                 >
                   Remove
                 </button>
@@ -387,31 +387,31 @@ function ZoneCard({
   const canApprove = !upload?.pushed && !approvedByHand;
 
   return (
-    <div className="flex flex-col rounded-lg border border-zinc-200 bg-white p-3">
+    <div className="flex flex-col rounded-xl border border-line bg-surface p-3">
       {/* The cover's own wording, verbatim. Do not shorten or re-case it — a
           person is matching this against the printed page. */}
       <div className="mb-2 flex items-start justify-between gap-2">
-        <h3 className="text-sm font-semibold text-zinc-800">{line.label}</h3>
+        <h3 className="text-sm font-semibold text-ink">{line.label}</h3>
         <StatePill upload={upload} />
       </div>
 
       <div className="flex flex-col gap-2">
         {upload && hasFile && (
-          <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-xs">
+          <div className="rounded-md border border-line bg-subtle px-2.5 py-2 text-xs">
             <a
               href={`/api/admin/styles/${styleId}/manual-trims/${upload.id}`}
               target="_blank"
               rel="noreferrer"
-              className="block truncate font-medium text-zinc-800 underline-offset-2 hover:underline"
+              className="block truncate font-medium text-ink underline-offset-2 hover:underline"
               title={upload.originalName ?? undefined}
             >
               {upload.originalName}
             </a>
-            <p className="mt-0.5 truncate font-mono text-[10px] text-zinc-500" title={upload.fileName ?? undefined}>
+            <p className="mt-0.5 truncate font-mono text-[11px] text-muted" title={upload.fileName ?? undefined}>
               {upload.fileName}
             </p>
             {upload.byteSize != null && (
-              <p className="mt-0.5 text-[10px] text-zinc-400">{formatBytes(upload.byteSize)}</p>
+              <p className="mt-0.5 text-[11px] text-faint">{formatBytes(upload.byteSize)}</p>
             )}
           </div>
         )}
@@ -419,9 +419,9 @@ function ZoneCard({
         {/* The statement, stated. A line the cover calls approved on somebody's
             word should say whose word it was on the screen where it was given. */}
         {approvedByHand && (
-          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-[11px] text-emerald-900">
+          <div className="rounded-md border border-transparent bg-good-soft px-2.5 py-2 text-[11px] text-good">
             <p className="font-medium">Approved by hand — uploaded to SharePoint outside this app.</p>
-            <p className="mt-0.5 text-emerald-800">
+            <p className="mt-0.5 text-good">
               The cover lists this line as approved
               {upload?.manualApprovedAt ? ` since ${formatStamp(upload.manualApprovedAt)}` : ""}.
               {hasFile ? " The file above stayed here; it was never pushed from this app." : ""}
@@ -430,7 +430,7 @@ function ZoneCard({
         )}
 
         {upload?.uploadError && (
-          <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+          <p className="rounded border border-transparent bg-warn-soft px-2 py-1 text-[11px] text-warn">
             {upload.uploadError}
           </p>
         )}
@@ -441,7 +441,7 @@ function ZoneCard({
               href={upload.webUrl}
               target="_blank"
               rel="noreferrer"
-              className="rounded border border-zinc-300 bg-white px-2 py-1 text-[11px] font-medium text-zinc-700 hover:bg-zinc-50"
+              className="rounded border border-line bg-surface px-2 py-1 text-[11px] font-medium text-ink hover:bg-subtle"
             >
               Open in SharePoint
             </a>
@@ -452,7 +452,7 @@ function ZoneCard({
               disabled={busy}
               onClick={() => onApprove(true)}
               title="I have already put this document in the supplier's SharePoint folder myself — mark the cover line approved. Nothing is uploaded."
-              className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+              className="rounded border border-transparent bg-good-soft px-2 py-1 text-[11px] font-medium text-good hover:bg-good-soft disabled:opacity-50"
             >
               {busy ? "Working…" : "✓ Approve"}
             </button>
@@ -463,7 +463,7 @@ function ZoneCard({
               disabled={busy}
               onClick={() => onApprove(false)}
               title="Take the statement back — the cover goes back to waiting for this line. Nothing is removed from SharePoint."
-              className="rounded border border-zinc-300 bg-white px-2 py-1 text-[11px] font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+              className="rounded border border-line bg-surface px-2 py-1 text-[11px] font-medium text-ink hover:bg-subtle disabled:opacity-50"
             >
               {busy ? "Working…" : "Undo approval"}
             </button>
@@ -473,7 +473,7 @@ function ZoneCard({
               type="button"
               disabled={busy}
               onClick={() => onRemove(upload)}
-              className="rounded border border-zinc-300 bg-white px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+              className="rounded border border-line bg-surface px-2 py-1 text-[11px] font-medium text-bad hover:bg-bad-soft disabled:opacity-50"
             >
               {busy ? "Working…" : "Remove"}
             </button>
@@ -486,12 +486,12 @@ function ZoneCard({
         <FileDropZone accept={accept} busy={busy} onFiles={(files) => files[0] && onFile(files[0])}>
           {({ dragOver, busy: b }) =>
             hasFile ? (
-              <span className="text-[11px] text-zinc-500">
+              <span className="text-[11px] text-muted">
                 {b ? "Uploading…" : dragOver ? "Drop to replace" : "Drop a new file to replace this"}
               </span>
             ) : (
               <>
-                <span className="text-sm font-medium text-zinc-700">
+                <span className="text-sm font-medium text-ink">
                   {b
                     ? "Uploading…"
                     : dragOver
@@ -500,7 +500,7 @@ function ZoneCard({
                         ? "Optional: keep a copy here too"
                         : "Drop the document here"}
                 </span>
-                <span className="text-[11px] text-zinc-500">
+                <span className="text-[11px] text-muted">
                   or click to browse · PDF, artwork or an office document · max {formatBytes(maxBytes)}
                 </span>
               </>
@@ -515,27 +515,27 @@ function ZoneCard({
 function StatePill({ upload }: { upload: Upload | null }) {
   if (!upload) {
     return (
-      <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+      <span className="shrink-0 rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-medium text-warn">
         Not supplied
       </span>
     );
   }
   if (upload.manuallyApproved) {
     return (
-      <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+      <span className="shrink-0 rounded-full bg-good-soft px-2 py-0.5 text-[11px] font-medium text-good">
         Approved by hand
       </span>
     );
   }
   if (!upload.pushed) {
     return (
-      <span className="shrink-0 rounded-full bg-zinc-200 px-2 py-0.5 text-[10px] font-medium text-zinc-700">
+      <span className="shrink-0 rounded-full bg-subtle px-2 py-0.5 text-[11px] font-medium text-ink">
         Saved, not in the folder
       </span>
     );
   }
   return (
-    <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+    <span className="shrink-0 rounded-full bg-good-soft px-2 py-0.5 text-[11px] font-medium text-good">
       In the supplier folder
     </span>
   );

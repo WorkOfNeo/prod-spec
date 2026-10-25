@@ -110,42 +110,42 @@ export function DeliveredCard({
 
   return (
     <>
-      <div className={`flex flex-col rounded-lg border bg-white p-3 ${BORDER_BY_STATUS[asset.reviewStatus]}`}>
+      <div className={`flex flex-col rounded-lg border bg-surface p-3 ${BORDER_BY_STATUS[asset.reviewStatus]}`}>
         {/* Artifact preview — one PDF per card. */}
-        <div className="relative h-56 overflow-hidden rounded-md bg-zinc-50">
+        <div className="relative h-56 overflow-hidden rounded-md bg-subtle">
           <iframe
             src={previewUrl}
             title={asset.displayName}
-            className="absolute inset-0 h-full w-full rounded-md bg-white shadow-sm"
+            className="absolute inset-0 h-full w-full rounded-md bg-surface shadow-sm"
           />
         </div>
 
         <div className="mt-3 flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold">{asset.displayName}</div>
-            <div className="truncate font-mono text-[10px] text-zinc-500">{asset.fileName}</div>
+            <div className="truncate font-mono text-[11px] text-muted">{asset.fileName}</div>
           </div>
           <span
-            className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_PILL[asset.reviewStatus]}`}
+            className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_PILL[asset.reviewStatus]}`}
           >
             {asset.reviewStatus.replace("_", " ").toLowerCase()}
           </span>
         </div>
 
         {asset.reviewStatus === "REJECTED" && asset.rejectReason && (
-          <div className="mt-2 rounded-md bg-red-50 px-2 py-1.5 text-[11px] text-red-800">
+          <div className="mt-2 rounded-md bg-bad-soft px-2 py-1.5 text-[11px] text-bad">
             <span className="font-semibold">Reason:</span> {asset.rejectReason}
           </div>
         )}
 
         {(asset.reviewedAt || asset.reviewerEmail) && (
-          <div className="mt-2 text-[10px] text-zinc-500">
+          <div className="mt-2 text-[11px] text-muted">
             {asset.reviewerEmail && <>by {asset.reviewerEmail} · </>}
             {asset.reviewedAt && new Date(asset.reviewedAt).toLocaleString("en-GB")}
           </div>
         )}
 
-        {err && <p className="mt-2 text-[11px] text-red-600">{err}</p>}
+        {err && <p className="mt-2 text-[11px] text-bad">{err}</p>}
 
         {/* Review actions — icon buttons (open / download / approve / reject). */}
         <div className="mt-3 flex gap-2">
@@ -155,7 +155,7 @@ export function DeliveredCard({
             rel="noopener noreferrer"
             title="Open in new tab"
             aria-label="Open in new tab"
-            className="inline-flex items-center justify-center rounded-md border border-zinc-300 bg-white p-1.5 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+            className="inline-flex items-center justify-center rounded-md border border-line bg-surface p-1.5 text-muted hover:bg-subtle hover:text-ink"
           >
             <OpenIcon />
           </a>
@@ -164,7 +164,7 @@ export function DeliveredCard({
             download={asset.fileName}
             title={`Download ${asset.fileName}`}
             aria-label={`Download ${asset.fileName}`}
-            className="inline-flex items-center justify-center rounded-md border border-zinc-300 bg-white p-1.5 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+            className="inline-flex items-center justify-center rounded-md border border-line bg-surface p-1.5 text-muted hover:bg-subtle hover:text-ink"
           >
             <DownloadIcon />
           </a>
@@ -174,7 +174,7 @@ export function DeliveredCard({
             disabled={busy || asset.reviewStatus === "APPROVED"}
             title={asset.reviewStatus === "APPROVED" ? "Approved" : "Approve"}
             aria-label={asset.reviewStatus === "APPROVED" ? "Approved" : "Approve"}
-            className="inline-flex items-center justify-center rounded-md bg-emerald-600 p-1.5 text-white hover:bg-emerald-700 disabled:opacity-50"
+            className="inline-flex items-center justify-center rounded-md bg-good p-1.5 text-white hover:bg-good disabled:opacity-50"
           >
             <CheckIcon />
           </button>
@@ -185,7 +185,7 @@ export function DeliveredCard({
               disabled={busy}
               title="Ignore for this style — skipped in generation, SharePoint and the nightly email"
               aria-label="Ignore for this style"
-              className="inline-flex items-center justify-center rounded-md border border-zinc-300 bg-white p-1.5 text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+              className="inline-flex items-center justify-center rounded-md border border-line bg-surface p-1.5 text-muted hover:bg-subtle disabled:opacity-50"
             >
               <IgnoreIcon />
             </button>
@@ -196,7 +196,7 @@ export function DeliveredCard({
             disabled={busy}
             title="Reject"
             aria-label="Reject"
-            className="inline-flex items-center justify-center rounded-md bg-red-600 p-1.5 text-white hover:bg-red-700 disabled:opacity-50"
+            className="inline-flex items-center justify-center rounded-md bg-bad p-1.5 text-white hover:bg-bad disabled:opacity-50"
           >
             <XIcon />
           </button>
@@ -205,7 +205,7 @@ export function DeliveredCard({
         {/* Carton customize — same action as the /review decide page, available
             here on the Review tab for carton-capable outputs. */}
         {carton && styleId ? (
-          <div className="mt-2 border-t border-zinc-100 pt-2">
+          <div className="mt-2 border-t border-line pt-2">
             <ReviewCartonCustomize
               styleId={styleId}
               variantKey={carton.variantKey}
@@ -357,17 +357,17 @@ function RejectDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(15_17_21/0.40)] px-4">
+      <div className="w-full max-w-lg rounded-lg bg-surface p-6 shadow-2xl">
         <div className="mb-4 flex items-start justify-between">
           <div>
             <h2 className="text-lg font-semibold">Reject {asset.displayName}</h2>
-            <p className="mt-1 text-xs text-zinc-500">
+            <p className="mt-1 text-xs text-muted">
               Reason is required and recorded for analytics. Use a suggestion below for consistency
               if it fits, or write your own.
             </p>
           </div>
-          <button type="button" onClick={onClose} className="text-xs text-zinc-500 underline">
+          <button type="button" onClick={onClose} className="text-xs text-muted underline">
             close
           </button>
         </div>
@@ -378,31 +378,31 @@ function RejectDialog({
               key={r}
               type="button"
               onClick={() => setReason(r)}
-              className="rounded-full border border-zinc-300 bg-white px-3 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+              className="rounded-full border border-line bg-surface px-3 py-1 text-xs font-medium text-ink hover:bg-subtle"
             >
               {r}
             </button>
           ))}
         </div>
 
-        <label className="block text-xs font-medium text-zinc-700">
+        <label className="block text-xs font-medium text-ink">
           Reason *
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={4}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm"
             placeholder="What's wrong with this file?"
           />
         </label>
 
-        {err && <p className="mt-3 text-xs text-red-600">{err}</p>}
+        {err && <p className="mt-3 text-xs text-bad">{err}</p>}
 
         <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+            className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink hover:bg-subtle"
           >
             Cancel
           </button>
@@ -410,7 +410,7 @@ function RejectDialog({
             type="button"
             onClick={submit}
             disabled={busy || !reason.trim()}
-            className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+            className="rounded-md bg-bad px-4 py-2 text-sm font-medium text-white hover:bg-bad disabled:opacity-50"
           >
             {busy ? "Rejecting…" : "Reject"}
           </button>

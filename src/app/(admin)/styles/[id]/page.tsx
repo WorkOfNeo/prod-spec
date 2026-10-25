@@ -1,4 +1,4 @@
-import { cache } from "react";
+import { cache, type ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -16,11 +16,7 @@ import { getSessionWithRole } from "@/lib/auth-server";
 import { shareUrl } from "@/lib/supplier-share/share";
 import { findMissingDetailFields } from "@/lib/styles/detail-fields";
 import { computeReadiness, type Readiness, type ReadinessTone } from "@/lib/styles/readiness";
-import {
-  computeEffectiveStatus,
-  EFFECTIVE_STATUS_TONE_CLASSES,
-  type EffectiveStatus,
-} from "@/lib/styles/effective-status";
+import { computeEffectiveStatus, type EffectiveStatus } from "@/lib/styles/effective-status";
 import { outputReadinessForStyle } from "@/lib/styles/output-readiness";
 import { styleReadinessNotice } from "@/lib/styles/readiness-notice";
 import { OutputReadinessNotice, type ReadinessHrefs } from "@/components/output-readiness-notice";
@@ -29,6 +25,12 @@ import { loadDocTypeExclusionRules, loadDocTypeLabels } from "@/lib/pdf/doc-type
 import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
 import { getCurrentOutputsForStyle } from "@/lib/outputs/current-outputs";
 import { RerunButton } from "./rerun-button";
+import { Pencil } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { TabLinks, type TabLink } from "@/components/ui/tabs";
+import { Section } from "@/components/ui/section";
+import { Pill, StatusDot, type PillTone } from "@/components/ui/pill";
+import { buttonClass } from "@/components/ui/button";
 import { StyleOutputCard, type StyleOutputCardProps } from "./style-output-card";
 import { OutputsAccordion } from "./outputs-accordion";
 import { ProdSpecTab } from "./prod-spec-tab";
@@ -135,11 +137,21 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   return { title: style?.name ?? "Style" };
 }
 
-const READINESS_TONE: Record<ReadinessTone, { box: string; dot: string }> = {
-  ready: { box: "border-emerald-200 bg-emerald-50 text-emerald-900", dot: "bg-emerald-500" },
-  paused: { box: "border-blue-200 bg-blue-50 text-blue-900", dot: "bg-blue-500" },
-  incomplete: { box: "border-amber-200 bg-amber-50 text-amber-900", dot: "bg-amber-500" },
-  blocked: { box: "border-amber-200 bg-amber-50 text-amber-900", dot: "bg-amber-500" },
+const READINESS_TONE: Record<ReadinessTone, PillTone> = {
+  ready: "good",
+  paused: "accent",
+  incomplete: "warn",
+  blocked: "warn",
+};
+
+// The /styles status pill colours, in the theme's tones.
+const STATUS_TONE: Record<EffectiveStatus["tone"], PillTone> = {
+  zinc: "neutral",
+  amber: "warn",
+  green: "good",
+  blue: "accent",
+  purple: "accent",
+  red: "bad",
 };
 
 // Completion bar with a threshold marker. The fill turns green once the
@@ -154,14 +166,14 @@ function CompletionBar({
   ready: boolean;
 }) {
   return (
-    <div className="relative h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+    <div className="bg-subtle relative h-1.5 w-full overflow-hidden rounded-full">
       <div
-        className={`h-full ${ready ? "bg-emerald-500" : "bg-zinc-900"}`}
+        className={`h-full rounded-full ${ready ? "bg-good" : "bg-primary"}`}
         style={{ width: `${pct}%` }}
       />
       {threshold != null && threshold < 100 && (
         <div
-          className="absolute top-0 h-full w-0.5 bg-zinc-500"
+          className="bg-faint absolute top-0 h-full w-0.5"
           style={{ left: `${threshold}%` }}
           title={`Threshold ${threshold}%`}
         />
@@ -785,160 +797,148 @@ export default async function StyleDetail({
       };
     });
 
+  // Outputs waiting for a decision — the count on the Review button and tab.
+  const pendingCount = currentFiles.filter((f) => f.asset.reviewStatus === "PENDING_REVIEW").length;
+  const tabs: TabLink[] = TABS.map((t) => ({
+    key: t.key,
+    label: t.label,
+    href: `/styles/${style.id}?tab=${t.key}`,
+    count: t.key === "review" && pendingCount > 0 ? pendingCount : undefined,
+  }));
+  const businessAreaName = style.businessAreaRef?.name ?? style.businessArea ?? null;
+
   return (
-    <div className="px-8 py-8">
+    <div className="px-6 py-5">
       <LogStyleView styleId={id} surface="STYLE" />
-      {/* Back to the list the reviewer came from — their PO search + filters,
-          or this style's own PO as the fallback. See back-to-styles.tsx. */}
-      <BackToStyles poNumber={style.poNumber} />
-      <div className="mt-2 flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{style.name}</h1>
-          <p className="text-sm text-zinc-500">
-            {style.customer.name} · {style.businessAreaRef?.name ?? style.businessArea ?? "—"} · Monday {style.mondayItemId}
+      <PageHeader
+        // Back to the list the reviewer came from — their PO search + filters,
+        // or this style's own PO as the fallback. See back-to-styles.tsx.
+        backSlot={<BackToStyles poNumber={style.poNumber} />}
+        title={style.name}
+        meta={
+          <>
+            {style.customer.name}
+            {businessAreaName ? ` · ${businessAreaName}` : ""}
             {style.poNumber ? ` · PO ${style.poNumber}` : ""}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {latestJob?.status === "AWAITING_REVIEW" && (
-            <Link
-              href={`/styles/${style.id}/review`}
-              className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800"
-            >
-              Review
-            </Link>
-          )}
-          {isAdmin && (
-            <Link
-              href={`/styles/${style.id}/edit`}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-            >
-              Edit
-            </Link>
-          )}
-          {canRun && (
-            <RerunButton
-              styleId={style.id}
-              disabled={latestJob?.status === "RUNNING" || latestJob?.status === "QUEUED"}
-              label={currentFiles.length > 0 ? "Re-run" : "Generate"}
-              pendingLabel={currentFiles.length > 0 ? "Re-running…" : "Generating…"}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* Orientation before diagnosis: Monday duplicates a style row per PO
-          under the same name, so the first question is "am I on the right
-          row?", not "is this row ready?". Sits above the readiness notice
-          because a correct answer to the wrong row is still the wrong answer.
-          Renders nothing at all — no wrapper, no spacing — when this style has
-          no lookalikes, which is the norm. */}
-      {relatedRows && <RelatedRowsCard {...relatedRows} />}
-
-      {/* Above the tabs, side by side: the pipeline readiness notice (a
-          collapsible accordion) on the left, the Supplier folder / SharePoint
-          delivery on the right — both stay visible on every tab. */}
-      <div className="mt-4 grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-        <OutputReadinessNotice
-          notice={readinessNotice}
-          role={isAdmin ? "ADMIN" : "REVIEWER"}
-          hrefs={readinessHrefs}
-          collapsible
-        />
-        <SupplierFolderStatus
-          styleId={style.id}
-          supplierName={style.supplier?.name ?? null}
-          folderUrl={style.supplier?.sharepointUrl ?? null}
-          poNumber={style.poNumber}
-          delivery={supplierDelivery}
-          canFixTemplate={isAdmin}
-          className=""
-        />
-      </div>
-
-      {/* Answers "did the files actually land, and is what's in the folder
-          still what we think it is?" — the half the recurring verify sweep
-          can't cover, since that only re-checks rows it already believes it
-          uploaded. Full width but ONE line: the counts float here and the
-          filenames live in its dialog. */}
-      <FolderReconcilePanel
-        styleId={style.id}
-        poNumber={style.poNumber}
-        className="mt-4"
+            {style.supplier ? ` · ${style.supplier.name}` : ""}
+            <span className="text-faint"> · Monday {style.mondayItemId}</span>
+          </>
+        }
+        actions={
+          <>
+            {isAdmin && (
+              <Link href={`/styles/${style.id}/edit`} className={buttonClass("secondary")}>
+                <Pencil size={13} aria-hidden="true" />
+                Edit
+              </Link>
+            )}
+            {canRun && (
+              <RerunButton
+                styleId={style.id}
+                disabled={latestJob?.status === "RUNNING" || latestJob?.status === "QUEUED"}
+                label={currentFiles.length > 0 ? "Re-run" : "Generate"}
+                pendingLabel={currentFiles.length > 0 ? "Re-running…" : "Generating…"}
+              />
+            )}
+            {latestJob?.status === "AWAITING_REVIEW" && (
+              <Link href={`/styles/${style.id}/review`} className={buttonClass("primary")}>
+                Review
+                {pendingCount > 0 ? <span className="tabular-nums opacity-70">{pendingCount}</span> : null}
+              </Link>
+            )}
+          </>
+        }
       />
 
-      {customerConfig.skipSupplierDelivery && <SkipSupplierDeliveryBadge className="mt-4" />}
+      <div className="mt-4 flex flex-col gap-3">
+        {/* Orientation before diagnosis: Monday duplicates a style row per PO
+            under the same name, so the first question is "am I on the right
+            row?", not "is this row ready?". Renders nothing at all when this
+            style has no lookalikes, which is the norm. */}
+        {relatedRows && <RelatedRowsCard {...relatedRows} />}
 
-      <nav className="mt-6 border-b border-zinc-200">
-        <ul className="flex gap-1">
-          {TABS.map((t) => (
-            <li key={t.key}>
-              <Link
-                href={`/styles/${style.id}?tab=${t.key}`}
-                scroll={false}
-                className={`inline-block border-b-2 px-4 py-2 text-sm font-medium transition ${
-                  tab === t.key
-                    ? "border-zinc-900 text-zinc-900"
-                    : "border-transparent text-zinc-500 hover:text-zinc-700"
-                }`}
-              >
-                {t.label}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </nav>
+        {/* Above the tabs, side by side: the pipeline readiness notice (a
+            collapsible accordion) on the left, the Supplier folder / SharePoint
+            delivery on the right — both stay visible on every tab. */}
+        <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
+          <OutputReadinessNotice
+            notice={readinessNotice}
+            role={isAdmin ? "ADMIN" : "REVIEWER"}
+            hrefs={readinessHrefs}
+            collapsible
+          />
+          <SupplierFolderStatus
+            styleId={style.id}
+            supplierName={style.supplier?.name ?? null}
+            folderUrl={style.supplier?.sharepointUrl ?? null}
+            poNumber={style.poNumber}
+            delivery={supplierDelivery}
+            canFixTemplate={isAdmin}
+            className=""
+          />
+        </div>
 
-      {tab === "details" && (
-        <DetailsTab
-          style={style}
-          missing={missing}
-          resolvedFields={resolvedFields}
-          recordFields={recordFields}
-          readiness={readiness}
-          statusView={statusView}
-          eanView={eanView}
-          requiredFieldKeys={requiredKeys}
-          requiredFields={prodSpecReadiness}
-          outputCards={outputCards}
-          careDerived={careDerived}
-        />
-      )}
+        {/* Answers "did the files actually land, and is what's in the folder
+            still what we think it is?" — the half the recurring verify sweep
+            can't cover. Full width but ONE line: the counts float here and the
+            filenames live in its dialog. */}
+        <FolderReconcilePanel styleId={style.id} poNumber={style.poNumber} />
 
-      {tab === "prod-spec" && (
-        <ProdSpecTab
-          styleId={style.id}
-          prodSpec={style.prodSpec}
-          customerId={style.customerId}
-          businessAreaId={style.businessAreaId}
-          businessAreaLabel={style.businessAreaRef?.name ?? style.businessArea ?? null}
-          businessAreaText={style.businessArea ?? null}
-          candidateBusinessArea={candidateBusinessArea}
-          supplier={style.supplier}
-          poNumber={style.poNumber}
-          styleStatus={style.status}
-          requiredReadiness={prodSpecReadiness}
-          outputsFilesPreview={outputsFilesPreview}
-          supplierShare={
-            supplierShare
-              ? {
-                  url: shareUrl(supplierShare.token),
-                  pin: supplierShare.pin,
-                  email: supplierShare.email,
-                  visitCount: supplierShare.visitCount,
-                  firstVisitedAt: supplierShare.firstVisitedAt?.toISOString() ?? null,
-                  lastVisitedAt: supplierShare.lastVisitedAt?.toISOString() ?? null,
-                }
-              : null
-          }
-          jobs={reviewJobs}
-        />
-      )}
+        {customerConfig.skipSupplierDelivery && <SkipSupplierDeliveryBadge />}
+      </div>
 
-      {tab === "review" && (
-        <ReviewTab styleId={style.id} current={currentFiles} jobs={reviewJobs} />
-      )}
-      {tab === "history" && <HistoryTab styleId={style.id} />}
+      <TabLinks items={tabs} active={tab} label="Style" className="mt-5" />
+
+      <div className="mt-5">
+        {tab === "details" && (
+          <DetailsTab
+            style={style}
+            missing={missing}
+            resolvedFields={resolvedFields}
+            recordFields={recordFields}
+            readiness={readiness}
+            statusView={statusView}
+            eanView={eanView}
+            requiredFieldKeys={requiredKeys}
+            requiredFields={prodSpecReadiness}
+            outputCards={outputCards}
+            careDerived={careDerived}
+          />
+        )}
+
+        {tab === "prod-spec" && (
+          <ProdSpecTab
+            styleId={style.id}
+            prodSpec={style.prodSpec}
+            customerId={style.customerId}
+            businessAreaId={style.businessAreaId}
+            businessAreaLabel={style.businessAreaRef?.name ?? style.businessArea ?? null}
+            businessAreaText={style.businessArea ?? null}
+            candidateBusinessArea={candidateBusinessArea}
+            supplier={style.supplier}
+            poNumber={style.poNumber}
+            styleStatus={style.status}
+            requiredReadiness={prodSpecReadiness}
+            outputsFilesPreview={outputsFilesPreview}
+            supplierShare={
+              supplierShare
+                ? {
+                    url: shareUrl(supplierShare.token),
+                    pin: supplierShare.pin,
+                    email: supplierShare.email,
+                    visitCount: supplierShare.visitCount,
+                    firstVisitedAt: supplierShare.firstVisitedAt?.toISOString() ?? null,
+                    lastVisitedAt: supplierShare.lastVisitedAt?.toISOString() ?? null,
+                  }
+                : null
+            }
+            jobs={reviewJobs}
+          />
+        )}
+
+        {tab === "review" && <ReviewTab styleId={style.id} current={currentFiles} jobs={reviewJobs} />}
+        {tab === "history" && <HistoryTab styleId={style.id} />}
+      </div>
     </div>
   );
 }
@@ -1007,26 +1007,25 @@ function DetailsTab({
     new Set(outputCards.filter((o) => !o.ready && !o.excluded).flatMap((o) => o.missing)),
   );
   return (
-    <>
-      <div className={`mt-6 flex items-start gap-3 rounded-lg border p-4 ${tone.box}`}>
-        <span className={`mt-1 inline-block h-2.5 w-2.5 flex-shrink-0 rounded-full ${tone.dot}`} />
-        <div>
-          <div className="text-sm font-semibold">{readiness.title}</div>
-          <div className="mt-0.5 text-sm opacity-90">{bannerDetail}</div>
+    <div className="flex flex-col gap-6">
+      {/* Where this style stands: can it generate, and if not, why. */}
+      <div className="border-line bg-surface flex items-start gap-3 rounded-xl border px-4 py-3">
+        <StatusDot tone={tone} className="mt-1.5" />
+        <div className="min-w-0">
+          <div className="text-ink text-[13px] font-semibold">{readiness.title}</div>
+          <div className="text-muted mt-0.5 text-[13px]">{bannerDetail}</div>
         </div>
       </div>
 
-      <section className="mt-6 grid grid-cols-3 gap-6">
+      <section className="stagger grid grid-cols-1 gap-3 md:grid-cols-3">
         {/* 1 — Required COLUMNS: progress toward the auto-generate threshold
             (measured against the customer's required columns). A separate
             check from the output fields in card 2. */}
-        <div className="rounded-lg border border-zinc-200 bg-white p-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-            Required columns
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-semibold">{style.completionPct}%</span>
-            <span className="text-xs text-zinc-400">filled · auto-runs at ≥ {readiness.threshold}%</span>
+        <div className="border-line bg-surface rounded-xl border px-4 py-3">
+          <div className="text-muted text-[12px]">Required columns</div>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-ink text-[24px] leading-8 font-semibold tabular-nums">{style.completionPct}%</span>
+            <span className="text-faint text-[12px]">filled · auto-runs at {readiness.threshold}%</span>
           </div>
           <div className="mt-2">
             <CompletionBar
@@ -1037,55 +1036,51 @@ function DetailsTab({
           </div>
           {missing.length > 0 ? (
             <div className="mt-3">
-              <div className="text-xs font-medium text-zinc-500">Missing columns</div>
-              <ul className="mt-1 space-y-0.5 text-xs text-zinc-600">
+              <div className="text-muted text-[12px]">Missing columns</div>
+              <ul className="text-ink mt-1 space-y-0.5 text-[12px]">
                 {missing.slice(0, 8).map((m) => (
-                  <li key={m.id}>· {m.label}</li>
+                  <li key={m.id}>{m.label}</li>
                 ))}
-                {missing.length > 8 && (
-                  <li className="text-zinc-400">… and {missing.length - 8} more</li>
-                )}
+                {missing.length > 8 && <li className="text-faint">and {missing.length - 8} more</li>}
               </ul>
             </div>
           ) : (
-            <div className="mt-3 text-xs text-zinc-500">All required columns filled.</div>
+            <div className="text-muted mt-3 text-[12px]">All required columns filled.</div>
           )}
         </div>
 
         {/* 2 — Required OUTPUT FIELDS: what the enabled outputs actually need to
             render. This is the real "can it generate" gate, and the reason the
             banner can read "Not ready" even when columns are 100%. */}
-        <div className="rounded-lg border border-zinc-200 bg-white p-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">Output fields</div>
+        <div className="border-line bg-surface rounded-xl border px-4 py-3">
+          <div className="text-muted text-[12px]">Output fields</div>
           {requiredFields.total > 0 ? (
             <>
-              <div className="mt-2 flex items-baseline gap-2">
+              <div className="mt-1 flex items-baseline gap-2">
                 <span
-                  className={`text-2xl font-semibold tabular-nums ${
-                    outputComplete ? "text-emerald-600" : "text-amber-600"
+                  className={`text-[24px] leading-8 font-semibold tabular-nums ${
+                    outputComplete ? "text-good" : "text-warn"
                   }`}
                 >
                   {requiredFields.filled}/{requiredFields.total}
                 </span>
-                <span className="text-xs text-zinc-400">the fields this style&rsquo;s outputs need</span>
+                <span className="text-faint text-[12px]">the fields this style&rsquo;s outputs need</span>
               </div>
               {missingOutput.length > 0 ? (
                 <div className="mt-3">
-                  <div className="text-xs font-medium text-zinc-500">Missing — blocks generation</div>
-                  <ul className="mt-1 space-y-0.5 text-xs text-amber-700">
+                  <div className="text-muted text-[12px]">Missing, holds back generation</div>
+                  <ul className="text-warn mt-1 space-y-0.5 text-[12px]">
                     {missingOutput.map((l) => (
-                      <li key={l}>· {l}</li>
+                      <li key={l}>{l}</li>
                     ))}
                   </ul>
                 </div>
               ) : (
-                <div className="mt-3 text-xs text-emerald-600">All output fields present.</div>
+                <div className="text-good mt-3 text-[12px]">All output fields present.</div>
               )}
             </>
           ) : (
-            <div className="mt-2 text-sm text-zinc-400">
-              This style&rsquo;s outputs need no detail fields.
-            </div>
+            <div className="text-muted mt-2 text-[13px]">This style&rsquo;s outputs need no detail fields.</div>
           )}
         </div>
 
@@ -1093,17 +1088,15 @@ function DetailsTab({
             /styles list (effective-status.ts) so the two never disagree —
             NOT the stored Style.status, which completion re-evaluation
             used to reset. */}
-        <div className="rounded-lg border border-zinc-200 bg-white p-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">Status</div>
+        <div className="border-line bg-surface rounded-xl border px-4 py-3">
+          <div className="text-muted text-[12px]">Status</div>
           <div className="mt-2">
-            <span
-              className={`inline-flex rounded-full px-2.5 py-1 text-sm font-medium ${EFFECTIVE_STATUS_TONE_CLASSES[statusView.tone]}`}
-            >
+            <Pill tone={STATUS_TONE[statusView.tone]} dot>
               {statusView.label}
-            </span>
+            </Pill>
           </div>
-          <div className="mt-1.5 text-xs text-zinc-500">{statusView.hint}</div>
-          <div className="mt-2 text-xs text-zinc-400">Last synced {formatDate(style.lastSyncedAt)}</div>
+          <div className="text-muted mt-2 text-[12px]">{statusView.hint}</div>
+          <div className="text-faint mt-2 text-[12px]">Last synced {formatDate(style.lastSyncedAt)}</div>
         </div>
       </section>
 
@@ -1123,249 +1116,212 @@ function DetailsTab({
       )}
 
       {careDerived.lines.length > 0 && (
-        <section className="mt-8">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-zinc-700">
-              Care instructions · derived from the standard
-            </h2>
-            <span className="text-xs text-zinc-400">
-              The catalogue at /settings/care-labels, filtered by this row&apos;s wash-care symbols.
-            </span>
-          </div>
-          <div className="mt-2 rounded-lg border border-zinc-200 bg-white p-4">
+        <Section
+          title="Care instructions"
+          desc="Derived from the standard at /settings/care-labels, filtered by this row's wash-care symbols."
+        >
+          <div className="border-line bg-surface rounded-xl border p-4">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-                Symbols on row
-              </span>
+              <span className="text-muted text-[12px]">Symbols on the row</span>
               {careDerived.symbols.length === 0 && (
-                <span className="text-xs text-zinc-400">none — only &ldquo;always&rdquo; lines print</span>
+                <span className="text-faint text-[12px]">none, so only &ldquo;always&rdquo; lines print</span>
               )}
               {careDerived.symbols.map((s) => (
-                <span
+                <Pill
                   key={s.token}
-                  title={s.resolved ? s.name : `Unknown token "${s.token}" — not in the symbol catalogue (no artwork, no care-line suppression). Map it at /settings/washcare-symbols.`}
-                  className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                  tone={s.resolved ? "neutral" : "warn"}
+                  title={
                     s.resolved
-                      ? "border-zinc-200 bg-zinc-50 text-zinc-700"
-                      : "border-amber-300 bg-amber-50 text-amber-800"
-                  }`}
+                      ? s.name
+                      : `Unknown token "${s.token}" — not in the symbol catalogue (no artwork, no care-line suppression). Map it at /settings/washcare-symbols.`
+                  }
                 >
-                  {s.resolved ? s.name : `⚠ ${s.name}`}
-                </span>
+                  {s.name}
+                </Pill>
               ))}
             </div>
             <ul className="mt-3 space-y-1">
               {careDerived.lines.map((line) => (
                 <li
                   key={line.text}
-                  className={`flex items-baseline gap-2 text-xs ${
-                    line.visible ? "text-zinc-800" : "text-zinc-400"
-                  }`}
+                  className={`flex items-baseline gap-2 text-[12px] ${line.visible ? "text-ink" : "text-faint"}`}
                 >
-                  <span
-                    className={`mt-0.5 inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full ${
-                      line.visible ? "bg-emerald-500" : "bg-zinc-300"
-                    }`}
-                  />
-                  <span className={line.visible ? "" : "line-through decoration-zinc-300"}>
-                    {line.text}
-                  </span>
-                  <span className="text-[11px] text-zinc-400">· {line.reason}</span>
+                  <StatusDot tone={line.visible ? "good" : "neutral"} className="size-1.5" />
+                  <span className={line.visible ? "" : "line-through"}>{line.text}</span>
+                  <span className="text-faint text-[11px]">· {line.reason}</span>
                 </li>
               ))}
             </ul>
           </div>
-        </section>
+        </Section>
       )}
 
-      <section className="mt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-zinc-700">Record &amp; links</h2>
-          <span className="text-xs text-zinc-400">
-            Linked records and source identity — the supplier, prod spec, Monday source, etc.
-          </span>
-        </div>
-        <div className="mt-2 overflow-hidden rounded-lg border border-zinc-200 bg-white">
-          <dl className="grid grid-cols-1 sm:grid-cols-2">
-            {recordFields.map((f, i) => {
-              const external = f.href?.startsWith("http");
-              return (
-                <div
-                  key={f.label}
-                  className={`flex gap-3 border-t border-zinc-100 px-4 py-2.5 ${
-                    i % 2 === 0 ? "sm:border-r" : ""
-                  }`}
-                >
-                  <dt className="w-40 flex-shrink-0 text-xs font-medium uppercase tracking-wide text-zinc-500">
-                    {f.label}
-                  </dt>
-                  <dd className={`flex-1 break-words text-sm ${f.value ? "text-zinc-800" : "text-zinc-300"}`}>
-                    {f.value ? (
-                      f.href ? (
-                        <a
-                          href={f.href}
-                          className="text-zinc-800 underline hover:text-zinc-950"
-                          {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-                        >
-                          {f.value}
-                        </a>
-                      ) : (
-                        f.value
-                      )
-                    ) : (
-                      "—"
-                    )}
-                  </dd>
-                </div>
-              );
-            })}
-          </dl>
-        </div>
-      </section>
-
-      <section className="mt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-zinc-700">Resolved fields</h2>
-          <span className="text-xs text-zinc-400">
-            What the PDFs render — resolved from the column mapping.
-            {requiredFields.total > 0 && (
-              <>
-                {" "}
-                <span className="rounded bg-zinc-200 px-1 py-px text-[9px] font-semibold uppercase text-zinc-700">
-                  req
-                </span>{" "}
-                = required
-              </>
-            )}
-          </span>
-        </div>
-        <div className="mt-2 overflow-hidden rounded-lg border border-zinc-200 bg-white">
-          <dl className="grid grid-cols-1 sm:grid-cols-2">
-            {resolvedFields.map((f, i) => {
-              const isRequired = requiredSet.has(f.field);
-              const isMissing = isRequired && !f.value.trim();
-              return (
-                <div
-                  key={f.field}
-                  className={`flex gap-3 border-t border-zinc-100 px-4 py-2.5 ${
-                    i % 2 === 0 ? "sm:border-r" : ""
-                  } ${isMissing ? "bg-amber-50" : ""}`}
-                >
-                  <dt className="w-40 flex-shrink-0 text-xs font-medium uppercase tracking-wide text-zinc-500">
-                    <span className="flex items-center gap-1.5">
-                      {f.label}
-                      {isRequired && (
-                        <span
-                          title="Required field — needed by one of this style's outputs"
-                          className={`rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide ${
-                            isMissing ? "bg-amber-200 text-amber-900" : "bg-zinc-200 text-zinc-700"
-                          }`}
-                        >
-                          req
-                        </span>
-                      )}
-                    </span>
-                  </dt>
-                  <dd
-                    className={`flex-1 text-sm break-words ${
-                      f.value ? "text-zinc-800" : isMissing ? "text-amber-700" : "text-zinc-300"
-                    }`}
+      <Section title="Record and links" desc="Linked records and source identity: the supplier, prod spec, Monday source and so on.">
+        <FieldGrid
+          rows={recordFields.map((f) => {
+            const external = f.href?.startsWith("http");
+            return {
+              key: f.label,
+              label: f.label,
+              empty: !f.value,
+              value: f.value ? (
+                f.href ? (
+                  <a
+                    href={f.href}
+                    className="text-accent-text hover:underline"
+                    {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                   >
-                    {f.field === "ean13" && f.value.includes("=") ? (
-                      // Per-size EAN map ("S=570…,M=570…") — one line per
-                      // size instead of an unreadable comma run. Duplicate
-                      // sizes (multi-colourway POs) keep their own lines,
-                      // with the colourway named when the resolved PO rows
-                      // know it.
-                      <div className="space-y-0.5 font-mono text-xs">
-                        {f.value.split(",").map((pair, j) => {
-                          const [size, ean] = pair.split("=");
-                          const color = eanColor.get(ean?.trim() ?? "");
-                          return (
-                            <div key={`${pair}-${j}`}>
-                              <span className="inline-block w-14 text-zinc-500">{size?.trim()}</span>
-                              <span>{ean?.trim()}</span>
-                              {color && <span className="ml-2 text-zinc-400">{color}</span>}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      f.value || (isMissing ? "missing" : "—")
-                    )}
-                    {f.fallback && (
-                      <span
-                        title={`No mapped value — falling back to the ${f.fallback}`}
-                        className="ml-1.5 inline-block rounded bg-sky-100 px-1 py-px align-middle text-[9px] font-medium uppercase tracking-wide text-sky-700"
-                      >
-                        via {f.fallback}
-                      </span>
-                    )}
-                  </dd>
-                </div>
-              );
-            })}
-          </dl>
-        </div>
-      </section>
+                    {f.value}
+                  </a>
+                ) : (
+                  f.value
+                )
+              ) : (
+                "—"
+              ),
+            };
+          })}
+        />
+      </Section>
 
-      <section className="mt-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-zinc-700">EAN barcodes</h2>
-          <span className="text-xs text-zinc-400">Read from the PO PDF — per size, in size order</span>
-        </div>
+      <Section
+        title="Resolved fields"
+        desc={
+          <>
+            What the PDFs render, resolved from the column mapping.
+            {requiredFields.total > 0 ? " Required fields are marked." : ""}
+          </>
+        }
+      >
+        <FieldGrid
+          rows={resolvedFields.map((f) => {
+            const isRequired = requiredSet.has(f.field);
+            const isMissing = isRequired && !f.value.trim();
+            return {
+              key: f.field,
+              label: (
+                <span className="flex items-center gap-1.5">
+                  {f.label}
+                  {isRequired && (
+                    <span title="Required: needed by one of this style's outputs" className={isMissing ? "text-warn" : "text-faint"}>
+                      required
+                    </span>
+                  )}
+                </span>
+              ),
+              highlight: isMissing,
+              empty: !f.value && !isMissing,
+              value: (
+                <>
+                  {f.field === "ean13" && f.value.includes("=") ? (
+                    // Per-size EAN map ("S=570…,M=570…") — one line per size
+                    // instead of an unreadable comma run. Duplicate sizes
+                    // (multi-colourway POs) keep their own lines, with the
+                    // colourway named when the resolved PO rows know it.
+                    <div className="space-y-0.5 font-mono text-[12px]">
+                      {f.value.split(",").map((pair, j) => {
+                        const [size, ean] = pair.split("=");
+                        const color = eanColor.get(ean?.trim() ?? "");
+                        return (
+                          <div key={`${pair}-${j}`}>
+                            <span className="text-muted inline-block w-14">{size?.trim()}</span>
+                            <span>{ean?.trim()}</span>
+                            {color && <span className="text-faint ml-2">{color}</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <span className={isMissing ? "text-warn" : ""}>{f.value || (isMissing ? "missing" : "—")}</span>
+                  )}
+                  {f.fallback && (
+                    <Pill tone="accent" className="ml-1.5 align-middle" title={`No mapped value — falling back to the ${f.fallback}`}>
+                      via {f.fallback}
+                    </Pill>
+                  )}
+                </>
+              ),
+            };
+          })}
+        />
+      </Section>
+
+      <Section title="EAN barcodes" desc="Read from the PO PDF, per size, in size order.">
         {style.poNumber && (
-          <div className="mt-3">
+          <div className="mb-3">
             <PoPreview styleId={style.id} poNumber={style.poNumber} status={style.eanStatus} />
           </div>
         )}
-        <div className="mt-2">
-          <EanPanel styleId={style.id} hasPo={Boolean(style.poNumber)} initial={eanView} />
-        </div>
-      </section>
+        <EanPanel styleId={style.id} hasPo={Boolean(style.poNumber)} initial={eanView} />
+      </Section>
 
       {/* Last on the page on purpose: everything above already states the
           facts, so this is for the question those panels didn't happen to
           answer — the one that would otherwise have become a Slack message. */}
       <AskStylePanel styleId={style.id} />
 
-      <section className="mt-8">
-        <h2 className="text-sm font-semibold text-zinc-700">Jobs</h2>
-        <div className="mt-2 overflow-hidden rounded-lg border border-zinc-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+      <Section title="Jobs" count={style.jobs.length}>
+        <div className="border-line bg-surface overflow-x-auto rounded-xl border">
+          <table className="w-full text-[13px]">
+            <thead className="border-line text-muted border-b text-left text-[12px]">
               <tr>
-                <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2">Trigger</th>
-                <th className="px-4 py-2">Assets</th>
-                <th className="px-4 py-2">Reviewer</th>
-                <th className="px-4 py-2">Created</th>
+                <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2 font-medium">Trigger</th>
+                <th className="px-3 py-2 font-medium">Assets</th>
+                <th className="px-3 py-2 font-medium">Reviewer</th>
+                <th className="px-3 py-2 font-medium">Created</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-line divide-y">
               {style.jobs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-zinc-500">
+                  <td colSpan={5} className="text-muted px-3 py-8 text-center">
                     No jobs yet.
                   </td>
                 </tr>
               ) : (
                 style.jobs.map((j) => (
-                  <tr key={j.id} className="border-t border-zinc-100">
-                    <td className="px-4 py-2">{j.status}</td>
-                    <td className="px-4 py-2 text-zinc-600">{j.triggerSource}</td>
-                    <td className="px-4 py-2">{j.assets.length}</td>
-                    <td className="px-4 py-2 text-zinc-600">
+                  <tr key={j.id}>
+                    <td className="text-ink px-3 py-2">{j.status}</td>
+                    <td className="text-muted px-3 py-2">{j.triggerSource}</td>
+                    <td className="px-3 py-2 tabular-nums">{j.assets.length}</td>
+                    <td className="text-muted px-3 py-2" data-private>
                       {j.reviewActions[0]?.user.email ?? "—"}
                     </td>
-                    <td className="px-4 py-2 text-zinc-500">{formatDate(j.createdAt)}</td>
+                    <td className="text-muted px-3 py-2 whitespace-nowrap">{formatDate(j.createdAt)}</td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
         </div>
-      </section>
-    </>
+      </Section>
+    </div>
+  );
+}
+
+// A two-column list of label → value pairs in a card (Record and links,
+// Resolved fields). `highlight` marks a required field that's empty.
+function FieldGrid({
+  rows,
+}: {
+  rows: Array<{ key: string; label: ReactNode; value: ReactNode; empty?: boolean; highlight?: boolean }>;
+}) {
+  return (
+    <div className="border-line bg-surface overflow-hidden rounded-xl border">
+      <dl className="grid grid-cols-1 sm:grid-cols-2">
+        {rows.map((r, i) => (
+          <div
+            key={r.key}
+            className={`border-line flex gap-3 border-t px-4 py-2.5 ${i < 2 ? "sm:border-t-0" : ""}    ${
+              i === 0 ? "border-t-0" : ""
+            }    ${i % 2 === 0 ? "sm:border-r" : ""}    ${r.highlight ? "bg-warn-soft" : ""}`}
+          >
+            <dt className="text-muted w-40 flex-shrink-0 text-[12px] leading-5">{r.label}</dt>
+            <dd className={`flex-1 text-[13px] break-words ${r.empty ? "text-faint" : "text-ink"}`}>{r.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }

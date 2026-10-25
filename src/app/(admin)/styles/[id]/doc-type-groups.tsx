@@ -33,8 +33,8 @@ export function DocTypeAccordion({
   children: ReactNode;
 }) {
   return (
-    <details open={defaultOpen} className="group rounded-lg border border-zinc-200 bg-white">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 select-none hover:bg-zinc-50 [&::-webkit-details-marker]:hidden">
+    <details open={defaultOpen} className="group rounded-xl border border-line bg-surface">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 select-none hover:bg-subtle [&::-webkit-details-marker]:hidden">
         <span className="inline-flex items-center gap-2">
           <svg
             viewBox="0 0 24 24"
@@ -43,17 +43,17 @@ export function DocTypeAccordion({
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="h-3.5 w-3.5 text-zinc-400 transition-transform group-open:rotate-90"
+            className="h-3.5 w-3.5 text-faint transition-transform group-open:rotate-90"
             aria-hidden="true"
           >
             <polyline points="9 18 15 12 9 6" />
           </svg>
-          <span className="text-sm font-semibold text-zinc-800">{label}</span>
-          <span className="text-xs font-normal text-zinc-400">({count})</span>
+          <span className="text-sm font-semibold text-ink">{label}</span>
+          <span className="text-xs font-normal text-faint">({count})</span>
         </span>
-        {rightHint ? <span className="text-xs text-zinc-500">{rightHint}</span> : null}
+        {rightHint ? <span className="text-xs text-muted">{rightHint}</span> : null}
       </summary>
-      <div className="border-t border-zinc-100 p-4">{children}</div>
+      <div className="border-t border-line p-4">{children}</div>
     </details>
   );
 }

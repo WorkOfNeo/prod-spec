@@ -207,7 +207,7 @@ export function AssetActions({
   }
 
   return (
-    <div className="flex flex-col gap-2 border-t border-zinc-100 px-3 py-2.5">
+    <div className="flex flex-col gap-2 border-t border-line px-3 py-2.5">
       {/* Secondary row — the decided status pill (left) and quiet utility
           actions (right): Customize for carton outputs, and a demoted Reject
           once an output is already approved. Only rendered when it has
@@ -217,12 +217,12 @@ export function AssetActions({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
             {isApproved ? (
-              <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+              <span className="inline-flex items-center rounded-full border border-transparent bg-good-soft px-2.5 py-0.5 text-[11px] font-semibold text-good">
                 ✓ Approved
               </span>
             ) : isRejected ? (
               <span
-                className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-700"
+                className="inline-flex items-center rounded-full border border-transparent bg-bad-soft px-2.5 py-0.5 text-[11px] font-semibold text-bad"
                 title={rejectReason ?? undefined}
               >
                 ✗ Rejected
@@ -236,7 +236,7 @@ export function AssetActions({
                 type="button"
                 onClick={() => setRejecting(true)}
                 disabled={pending !== null}
-                className="rounded-md px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                className="rounded-md px-2 py-1 text-xs font-medium text-bad hover:bg-bad-soft disabled:opacity-50"
               >
                 {pending === "reject" ? "Rejecting…" : "Reject"}
               </button>
@@ -254,7 +254,7 @@ export function AssetActions({
             type="button"
             onClick={() => setRejecting(true)}
             disabled={pending !== null}
-            className="flex-1 rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+            className="flex-1 inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-bad transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             {pending === "reject" ? "Rejecting…" : "✗ Reject"}
           </button>
@@ -264,7 +264,7 @@ export function AssetActions({
               onClick={() => setIgnoring(true)}
               disabled={pending !== null}
               title="Not wanted for this style — skip it in generation, SharePoint and the nightly email"
-              className="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+              className="flex-1 inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
             >
               {pending === "ignore" ? "Ignoring…" : "⊘ Ignore"}
             </button>
@@ -274,7 +274,7 @@ export function AssetActions({
             onClick={approve}
             disabled={pending !== null || blocked}
             title={blocked ? blockedTitle : "Approve this output"}
-            className="flex-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex-1 inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {pending === "approve" ? "Approving…" : "✓ Approve"}
           </button>
@@ -287,7 +287,7 @@ export function AssetActions({
           onClick={push}
           disabled={pushing}
           title="Create the supplier's SharePoint subfolder and upload this approved PDF"
-          className="flex w-full items-center justify-center rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-100 disabled:opacity-50"
+          className="flex w-full items-center justify-center rounded-md border border-transparent bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent-text hover:bg-accent-soft disabled:opacity-50"
         >
           {pushing ? "Pushing…" : "⬆ Push to supplier"}
         </button>
@@ -300,7 +300,7 @@ export function AssetActions({
             onClick={approve}
             disabled={pending !== null || blocked}
             title={blocked ? blockedTitle : "Approve this output anyway"}
-            className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md border border-transparent bg-good-soft px-3 py-1.5 text-xs font-medium text-good hover:bg-good-soft disabled:cursor-not-allowed disabled:opacity-50"
           >
             {pending === "approve" ? "Approving…" : "✓ Approve anyway"}
           </button>
@@ -312,7 +312,7 @@ export function AssetActions({
               onClick={() => setIgnoring(true)}
               disabled={pending !== null}
               title="Not wanted for this style — skip it in generation, SharePoint and the nightly email"
-              className="rounded-md px-2 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 disabled:opacity-50"
+              className="rounded-md px-2 py-1 text-xs font-medium text-muted hover:bg-subtle disabled:opacity-50"
             >
               {pending === "ignore" ? "Ignoring…" : "⊘ Ignore"}
             </button>
@@ -320,12 +320,12 @@ export function AssetActions({
         </div>
       ) : null}
 
-      {error ? <span className="text-xs text-red-600">{error}</span> : null}
+      {error ? <span className="text-xs text-bad">{error}</span> : null}
       {publishNote && !email ? (
-        <span className="text-xs text-emerald-700">{publishNote}</span>
+        <span className="text-xs text-good">{publishNote}</span>
       ) : null}
       {pushNote ? (
-        <span className="text-xs text-sky-700">
+        <span className="text-xs text-accent-text">
           {pushNote.text}
           {pushNote.url ? (
             <>

@@ -24,7 +24,7 @@ export function OutputsAccordion({
   const extra = missingFieldLabels.length - shown.length;
 
   return (
-    <section className="mt-8 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+    <section className="border-line bg-surface rounded-xl border p-4">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -34,27 +34,27 @@ export function OutputsAccordion({
         <Chevron open={open} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold text-zinc-700">
+            <h2 className="text-ink text-[14px] font-semibold">
               Outputs · {readyCount} of {total} ready
             </h2>
             {!open && !hasMissing && (
-              <span className="text-xs text-zinc-400">all outputs have their fields</span>
+              <span className="text-faint text-[12px]">all outputs have their fields</span>
             )}
           </div>
           {/* Collapsed: the missing fields at the top, so blockers are visible
               at a glance. Expanded, the per-output rows carry the same detail. */}
           {!open && hasMissing && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] font-medium text-zinc-500">Missing fields:</span>
+              <span className="text-muted text-[12px]">Missing fields:</span>
               {shown.map((l) => (
                 <span
                   key={l}
-                  className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                  className="bg-warn-soft text-warn rounded-full px-2 py-0.5 text-[11px] font-medium"
                 >
                   {l}
                 </span>
               ))}
-              {extra > 0 && <span className="text-[11px] text-zinc-400">+{extra} more</span>}
+              {extra > 0 && <span className="text-faint text-[11px]">+{extra} more</span>}
             </div>
           )}
         </div>
@@ -62,7 +62,7 @@ export function OutputsAccordion({
 
       {open && (
         <>
-          <p className="mt-1 pl-5 text-xs text-zinc-400">
+          <p className="text-faint mt-1 pl-5 text-[12px]">
             Live previews render from the row&apos;s current data — run each output on its own as it
             goes ready.
           </p>
@@ -83,7 +83,7 @@ function Chevron({ open }: { open: boolean }) {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={`mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform ${
+      className={`text-faint mt-0.5 h-3.5 w-3.5 shrink-0 transition-transform ${
         open ? "rotate-90" : ""
       }`}
       aria-hidden="true"

@@ -151,29 +151,29 @@ export function EanPanel({
   const coverage = scrapeSizes ? computeSizeCoverage(scrapeSizes, view.sizeEans) : null;
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4">
+    <div className="rounded-xl border border-line bg-surface p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${meta.cls}`}>
             {meta.label}
           </span>
-          {view.poFileName && <span className="text-xs text-zinc-400">{view.poFileName}</span>}
+          {view.poFileName && <span className="text-xs text-faint">{view.poFileName}</span>}
         </div>
         {hasPo ? (
           <button
             type="button"
             onClick={resolve}
             disabled={loading}
-            className="shrink-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+            className="shrink-0 inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? "Resolving…" : hasEans ? "Re-resolve" : "Resolve"}
           </button>
         ) : (
-          <span className="text-xs text-zinc-400">Add a PO number to resolve EANs</span>
+          <span className="text-xs text-faint">Add a PO number to resolve EANs</span>
         )}
       </div>
 
-      {error && <div className="mt-2 text-xs text-red-600">{error}</div>}
+      {error && <div className="mt-2 text-xs text-bad">{error}</div>}
 
       {coverage && <SizeCoverageLine c={coverage} />}
 
@@ -184,8 +184,8 @@ export function EanPanel({
               row per size × colour); "Style board" forces this style's board
               colour on the per-EAN rows instead. Colour CODE is unaffected. */}
           <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-            <span className="font-medium text-zinc-600">Colour on per-EAN prints</span>
-            <div className="inline-flex overflow-hidden rounded-md border border-zinc-300">
+            <span className="font-medium text-muted">Colour on per-EAN prints</span>
+            <div className="inline-flex overflow-hidden rounded-md border border-line">
               {[
                 { v: false, label: "PO label" },
                 { v: true, label: "Style board" },
@@ -199,8 +199,8 @@ export function EanPanel({
                     onClick={() => setColourSource(opt.v)}
                     className={`px-2.5 py-1 font-medium transition-colors disabled:opacity-40 ${
                       active
-                        ? "bg-zinc-800 text-white"
-                        : "bg-white text-zinc-600 hover:bg-zinc-50"
+                        ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                        : "bg-surface text-muted hover:bg-subtle"
                     }`}
                   >
                     {opt.label}
@@ -208,7 +208,7 @@ export function EanPanel({
                 );
               })}
             </div>
-            <span className="text-zinc-400">
+            <span className="text-faint">
               {colourBusy
                 ? "saving & re-rendering…"
                 : useStyleBoardColour
@@ -217,7 +217,7 @@ export function EanPanel({
             </span>
           </div>
           <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase tracking-wide text-zinc-400">
+            <thead className="text-left text-xs text-faint">
               <tr>
                 <th className="py-1 pr-3 font-medium" title="Untick to hide this EAN from all prints">
                   Show
@@ -239,7 +239,7 @@ export function EanPanel({
               {view.sizeEans.map((s) => (
                 <tr
                   key={s.id}
-                  className={`border-t border-zinc-100 ${s.excluded ? "opacity-45" : ""}`}
+                  className={`border-t border-line ${s.excluded ? "opacity-45" : ""}`}
                 >
                   <td className="py-1 pr-3">
                     <input
@@ -251,8 +251,8 @@ export function EanPanel({
                       className="h-4 w-4 cursor-pointer accent-zinc-800 disabled:opacity-40"
                     />
                   </td>
-                  <td className="py-1 pr-4 text-zinc-600">{s.size}</td>
-                  <td className="py-1 pr-4 text-zinc-600">
+                  <td className="py-1 pr-4 text-muted">{s.size}</td>
+                  <td className="py-1 pr-4 text-muted">
                     {colorFromVariantLabel(s.variantLabel) || "—"}
                   </td>
                   <td
@@ -274,16 +274,16 @@ export function EanPanel({
                     className={`py-1 pr-4 tabular-nums ${
                       s.cartonEan
                         ? s.excluded
-                          ? "text-zinc-400 line-through"
-                          : "text-zinc-600"
-                        : "text-zinc-300"
+                          ? "text-faint line-through"
+                          : "text-muted"
+                        : "text-faint"
                     }`}
                   >
                     {s.cartonEan ?? "—"}
                   </td>
-                  <td className="py-1 pr-4 text-xs text-zinc-400">
+                  <td className="py-1 pr-4 text-xs text-faint">
                     {s.manual ? (
-                      <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700">
+                      <span className="rounded bg-warn-soft px-1.5 py-0.5 font-medium text-warn">
                         manual
                       </span>
                     ) : (
@@ -297,7 +297,7 @@ export function EanPanel({
                         disabled={busy}
                         onClick={() => override({ op: "delete", id: s.id })}
                         title="Delete this manually-added EAN"
-                        className="rounded px-1.5 text-xs text-red-500 hover:bg-red-50 disabled:opacity-40"
+                        className="rounded px-1.5 text-xs text-bad hover:bg-bad-soft disabled:opacity-40"
                       >
                         Delete
                       </button>
@@ -306,15 +306,15 @@ export function EanPanel({
                 </tr>
               ))}
               {/* Add a missing EAN by hand — persists and survives re-resolve. */}
-              <tr className="border-t border-zinc-100">
-                <td className="py-1 pr-3 text-center text-zinc-300">+</td>
+              <tr className="border-t border-line">
+                <td className="py-1 pr-3 text-center text-faint">+</td>
                 <td className="py-1 pr-4">
                   <input
                     value={addSize}
                     onChange={(e) => setAddSize(e.target.value)}
                     placeholder="Size"
                     disabled={busy}
-                    className="w-16 rounded border border-zinc-300 px-1.5 py-0.5 text-sm"
+                    className="w-16 rounded border border-line px-1.5 py-0.5 text-sm"
                   />
                 </td>
                 <td className="py-1 pr-4" />
@@ -329,7 +329,7 @@ export function EanPanel({
                     inputMode="numeric"
                     maxLength={13}
                     disabled={busy}
-                    className="w-40 rounded border border-zinc-300 px-1.5 py-0.5 text-sm tabular-nums"
+                    className="w-40 rounded border border-line px-1.5 py-0.5 text-sm tabular-nums"
                   />
                 </td>
                 <td className="py-1 pr-4" />
@@ -339,7 +339,7 @@ export function EanPanel({
                     type="button"
                     disabled={busy || !addSize.trim() || addEan.length !== 13}
                     onClick={addRow}
-                    className="rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+                    className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Add
                   </button>
@@ -352,24 +352,24 @@ export function EanPanel({
               say what's missing rather than showing nothing — the per-size
               cartons in the table above are a separate thing. */}
           {view.cartonEan ? (
-            <div className="mt-2 text-xs tabular-nums text-zinc-500">
+            <div className="mt-2 text-xs tabular-nums text-muted">
               assort / master carton{" "}
-              <span className="font-medium text-zinc-800">{view.cartonEan}</span>
+              <span className="font-medium text-ink">{view.cartonEan}</span>
             </div>
           ) : (
-            <div className="mt-2 text-xs text-zinc-400">
+            <div className="mt-2 text-xs text-faint">
               No assort / master carton — the barcode column carries no “Assort - …” line. Layouts
               that print one carton per style ({"{{cartonEan}}"} without a per-carton repeat) have
               nothing to show; use a per-carton repeat to print the per-size cartons above.
             </div>
           )}
-          <p className="mt-2 text-xs text-zinc-400">
+          <p className="mt-2 text-xs text-faint">
             Untick an EAN to hide it from all prints; add a row for a missing one. Both survive
             re-resolve.
           </p>
         </div>
       ) : (
-        <p className="mt-3 text-sm text-zinc-500">
+        <p className="mt-3 text-sm text-muted">
           {view.message
             ? view.message
             : "No PO number on this style yet."}
@@ -391,12 +391,12 @@ function SizeCoverageLine({ c }: { c: SizeCoverage }) {
   return (
     <p
       className={`mt-2 text-xs leading-relaxed ${
-        c.complete ? "text-zinc-500" : "text-amber-800"
+        c.complete ? "text-muted" : "text-warn"
       }`}
     >
       {c.parts.map((part, i) => (
         <span key={i}>
-          {i > 0 && <span className="text-zinc-300"> · </span>}
+          {i > 0 && <span className="text-faint"> · </span>}
           <span className={i === 0 ? "font-medium" : ""}>{part}</span>
         </span>
       ))}
@@ -411,8 +411,8 @@ function SizeCoverageLine({ c }: { c: SizeCoverage }) {
 // Resolve / Re-resolve is clicked.
 function Diagnostics({ d }: { d: EanDiagnostics }) {
   return (
-    <details className="mt-3 rounded-md border border-zinc-100 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
-      <summary className="cursor-pointer select-none font-medium text-zinc-700">
+    <details className="mt-3 rounded-md border border-line bg-subtle px-3 py-2 text-xs text-muted">
+      <summary className="cursor-pointer select-none font-medium text-ink">
         Diagnostics — which file was read &amp; what was in it
       </summary>
       {(d.poFileWebUrl || d.supplierFolderUrl) && (
@@ -422,7 +422,7 @@ function Diagnostics({ d }: { d: EanDiagnostics }) {
               href={d.poFileWebUrl}
               target="_blank"
               rel="noreferrer"
-              className="font-medium text-blue-600 underline"
+              className="font-medium text-accent-text underline"
             >
               Open PO PDF in SharePoint ↗
             </a>
@@ -432,7 +432,7 @@ function Diagnostics({ d }: { d: EanDiagnostics }) {
               href={d.supplierFolderUrl}
               target="_blank"
               rel="noreferrer"
-              className="font-medium text-blue-600 underline"
+              className="font-medium text-accent-text underline"
             >
               Open supplier folder ↗
             </a>
@@ -460,7 +460,7 @@ function Diagnostics({ d }: { d: EanDiagnostics }) {
 
       {d.candidates.length > 1 && (
         <div className="mt-2">
-          <div className="font-medium text-zinc-700">All matching PDFs (best first)</div>
+          <div className="font-medium text-ink">All matching PDFs (best first)</div>
           <ul className="mt-1 space-y-0.5">
             {d.candidates.map((c, i) => (
               <li key={i} className="flex justify-between gap-3">
@@ -469,14 +469,14 @@ function Diagnostics({ d }: { d: EanDiagnostics }) {
                     href={c.webUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className={`underline ${i === 0 ? "font-medium text-blue-700" : "text-blue-600"}`}
+                    className={`underline ${i === 0 ? "font-medium text-accent-text" : "text-accent-text"}`}
                   >
                     {c.name}
                   </a>
                 ) : (
-                  <span className={i === 0 ? "font-medium text-zinc-800" : ""}>{c.name}</span>
+                  <span className={i === 0 ? "font-medium text-ink" : ""}>{c.name}</span>
                 )}
-                <span className="tabular-nums text-zinc-400">{c.score}</span>
+                <span className="tabular-nums text-faint">{c.score}</span>
               </li>
             ))}
           </ul>
@@ -485,8 +485,8 @@ function Diagnostics({ d }: { d: EanDiagnostics }) {
 
       {d.textSnippet && (
         <div className="mt-2">
-          <div className="font-medium text-zinc-700">PDF text snippet</div>
-          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-white p-2 text-[11px] leading-snug text-zinc-600">
+          <div className="font-medium text-ink">PDF text snippet</div>
+          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-surface p-2 text-[11px] leading-snug text-muted">
             {d.textSnippet}
           </pre>
         </div>
@@ -498,8 +498,8 @@ function Diagnostics({ d }: { d: EanDiagnostics }) {
 function Row({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex justify-between gap-3">
-      <dt className="text-zinc-500">{k}</dt>
-      <dd className="text-right font-medium text-zinc-800">{v}</dd>
+      <dt className="text-muted">{k}</dt>
+      <dd className="text-right font-medium text-ink">{v}</dd>
     </div>
   );
 }

@@ -124,7 +124,7 @@ export function ReviewWorkspace({
         aria-label="Outputs"
         className="border-line bg-sidebar border-b lg:sticky lg:top-12 lg:row-span-2 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto lg:border-r lg:border-b-0 xl:static xl:row-span-1 xl:max-h-none"
       >
-        <div className="border-line bg-sidebar sticky top-0 z-10 border-b px-3 py-3">
+        <div className="border-line bg-sidebar sticky top-12 z-10 border-b px-3 py-3 lg:top-0">
           <div className="flex items-baseline justify-between text-[12px]">
             <span className="text-ink font-medium">Outputs</span>
             <span className="text-muted tabular-nums">

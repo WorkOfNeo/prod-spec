@@ -20,28 +20,27 @@ export function OutputBuilderTabs({
   brokenCount?: number;
 }) {
   return (
-    <div className="mt-5 flex items-center gap-1 border-b border-zinc-200">
+    <nav aria-label="Output builder" className="border-line mt-4 flex gap-5 border-b">
       {TABS.map((t) => {
         const isActive = t.key === active;
         return (
           <Link
             key={t.key}
             href={t.href}
-            className={
-              isActive
-                ? "-mb-px border-b-2 border-zinc-900 px-3 py-2 text-sm font-medium text-zinc-900"
-                : "-mb-px border-b-2 border-transparent px-3 py-2 text-sm text-zinc-500 hover:text-zinc-800"
-            }
+            aria-current={isActive ? "page" : undefined}
+            className={`-mb-px inline-flex h-9 items-center gap-1.5 border-b-2 text-[13px] transition-colors duration-150 ${
+              isActive ? "border-ink text-ink font-medium" : "text-muted hover:text-ink border-transparent"
+            }`}
           >
             {t.label}
             {t.key === "file-names" && brokenCount > 0 ? (
-              <span className="ml-2 rounded-full bg-red-100 px-1.5 py-0.5 text-xs font-semibold text-red-700">
+              <span className="bg-bad-soft text-bad rounded-full px-1.5 text-[11px] font-medium tabular-nums">
                 {brokenCount}
               </span>
             ) : null}
           </Link>
         );
       })}
-    </div>
+    </nav>
   );
 }

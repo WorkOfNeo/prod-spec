@@ -70,11 +70,11 @@ function Row({
   const ean = eanStatusMeta(eanStatus);
   return (
     <li className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1.5 text-sm">
-      <span className="min-w-[7.5rem] font-semibold tabular-nums text-zinc-800">
-        {poNumber?.trim() || <span className="font-normal text-zinc-400">no PO</span>}
+      <span className="min-w-[7.5rem] font-semibold tabular-nums text-ink">
+        {poNumber?.trim() || <span className="font-normal text-faint">no PO</span>}
       </span>
-      <span className="text-zinc-400">·</span>
-      <span className="text-zinc-600" title={sizes.length > 0 ? sizes.join(", ") : undefined}>
+      <span className="text-faint">·</span>
+      <span className="text-muted" title={sizes.length > 0 ? sizes.join(", ") : undefined}>
         {sizeSummary(sizes)}
       </span>
       <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${ean.cls}`}>
@@ -83,7 +83,7 @@ function Row({
       {/* Only shown for the weaker keys — an exact-name match needs no excuse,
           but a consignment-code hit must not masquerade as a certainty. */}
       {note && (
-        <span className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-800">
+        <span className="rounded-full border border-transparent bg-surface px-2 py-0.5 text-[11px] font-medium text-warn">
           {note}
         </span>
       )}
@@ -91,12 +91,12 @@ function Row({
         {href ? (
           <Link
             href={href}
-            className="rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             open
           </Link>
         ) : (
-          <span className="rounded-md bg-amber-200/70 px-2.5 py-1 text-xs font-semibold text-amber-900">
+          <span className="rounded-md bg-amber-200/70 px-2.5 py-1 text-xs font-semibold text-warn">
             you are here
           </span>
         )}
@@ -156,12 +156,12 @@ export function RelatedRowsCard({ current, related, className = "mt-4" }: Relate
   );
 
   return (
-    <div className={`rounded-lg border border-amber-300 bg-amber-50 p-4 ${className}`}>
-      <h3 className="flex items-center gap-2 text-sm font-semibold text-amber-900">
+    <div className={`rounded-lg border border-transparent bg-warn-soft p-4 ${className}`}>
+      <h3 className="flex items-center gap-2 text-sm font-semibold text-warn">
         <span aria-hidden>⚠</span>
         {headline}
       </h3>
-      <p className="mt-1 text-xs text-amber-800">
+      <p className="mt-1 text-xs text-warn">
         Each Purchase Order gets its own Monday row, and they can carry different
         parts of the size run. Check you are on the order you meant — nothing below
         is an error.

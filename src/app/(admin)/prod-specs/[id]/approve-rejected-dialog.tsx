@@ -168,7 +168,7 @@ export function ApproveRejectedDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 py-10"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[rgb(15_17_21/0.40)] p-4 py-10"
       onClick={() => {
         if (!submitting) onClose();
       }}
@@ -177,18 +177,18 @@ export function ApproveRejectedDialog({
       aria-label="Approve rejected PDFs"
     >
       <div
-        className="flex w-full max-w-lg flex-col rounded-xl bg-white shadow-2xl"
+        className="flex w-full max-w-lg flex-col rounded-xl bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4">
-          <h2 className="text-sm font-semibold text-zinc-900">
+        <div className="flex items-center justify-between border-b border-line px-5 py-4">
+          <h2 className="text-sm font-semibold text-ink">
             {result ? "Fully approved" : "Approve rejected PDFs"}
           </h2>
           <button
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="rounded-md px-2 py-1 text-sm text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40"
+            className="rounded-md px-2 py-1 text-sm text-faint hover:bg-subtle hover:text-ink disabled:opacity-40"
             aria-label="Close"
           >
             ✕
@@ -200,12 +200,12 @@ export function ApproveRejectedDialog({
           {result ? (
             <ResultPanel result={result} batch={batch} />
           ) : loading ? (
-            <p className="text-sm text-zinc-500">Checking for rejected PDFs…</p>
+            <p className="text-sm text-muted">Checking for rejected PDFs…</p>
           ) : error ? (
-            <p className="text-sm text-red-600">{error}</p>
+            <p className="text-sm text-bad">{error}</p>
           ) : hasRejected ? (
             <>
-              <p className="text-sm text-zinc-700">
+              <p className="text-sm text-ink">
                 Do you want to approve the following{" "}
                 <span className="font-semibold">
                   {rejectedOutputs} PDF{rejectedOutputs === 1 ? "" : "s"}
@@ -216,13 +216,13 @@ export function ApproveRejectedDialog({
                 too.
               </p>
               {inactive && <InactiveWarning />}
-              <ul className="mt-3 max-h-72 divide-y divide-zinc-100 overflow-y-auto rounded-md border border-zinc-200">
+              <ul className="mt-3 max-h-72 divide-y divide-line overflow-y-auto rounded-md border border-line">
                 {list!.styles.map((s) => (
                   <li key={s.id} className="px-3 py-2">
                     <div className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-sm font-medium text-zinc-800">{s.name}</span>
+                      <span className="truncate text-sm font-medium text-ink">{s.name}</span>
                       {s.poNumber && (
-                        <span className="shrink-0 text-xs tabular-nums text-zinc-400">
+                        <span className="shrink-0 text-xs tabular-nums text-faint">
                           PO {s.poNumber}
                         </span>
                       )}
@@ -231,7 +231,7 @@ export function ApproveRejectedDialog({
                       {s.rejectedNames.map((n, i) => (
                         <span
                           key={i}
-                          className="rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[11px] text-red-700"
+                          className="rounded border border-transparent bg-bad-soft px-1.5 py-0.5 text-[11px] text-bad"
                         >
                           {n}
                         </span>
@@ -241,14 +241,14 @@ export function ApproveRejectedDialog({
                 ))}
               </ul>
               {list!.capped && (
-                <p className="mt-2 text-xs text-zinc-400">
+                <p className="mt-2 text-xs text-faint">
                   Showing the first {list!.styles.length} styles — more will also be re-run.
                 </p>
               )}
             </>
           ) : (
             <>
-              <p className="text-sm text-zinc-700">
+              <p className="text-sm text-ink">
                 No rejected PDFs on this spec right now. Marking it{" "}
                 <span className="font-semibold">Fully approved</span> will auto-approve future
                 print-safe generations.
@@ -259,12 +259,12 @@ export function ApproveRejectedDialog({
         </div>
 
         {/* ---- Footer actions ---- */}
-        <div className="flex items-center justify-end gap-2 border-t border-zinc-100 px-5 py-3">
+        <div className="flex items-center justify-end gap-2 border-t border-line px-5 py-3">
           {result ? (
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md bg-zinc-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Done
             </button>
@@ -274,7 +274,7 @@ export function ApproveRejectedDialog({
                 type="button"
                 onClick={onClose}
                 disabled={submitting}
-                className="rounded-md border border-zinc-300 bg-white px-3.5 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -282,7 +282,7 @@ export function ApproveRejectedDialog({
                 type="button"
                 onClick={() => void confirm()}
                 disabled={submitting || loading || (!!error && !list)}
-                className="rounded-md bg-emerald-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-40"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {submitting
                   ? "Working…"
@@ -300,7 +300,7 @@ export function ApproveRejectedDialog({
 
 function InactiveWarning() {
   return (
-    <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+    <p className="mt-3 rounded-md border border-transparent bg-warn-soft px-3 py-2 text-xs text-warn">
       This spec is <span className="font-semibold">inactive</span>, so nothing can generate yet. The
       flag will be set, but the rejected PDFs won&apos;t re-run until you activate the spec and
       re-run it.
@@ -311,7 +311,7 @@ function InactiveWarning() {
 function ResultPanel({ result, batch }: { result: ConfirmResult; batch: Batch | null }) {
   if (result.inactive) {
     return (
-      <p className="text-sm text-zinc-700">
+      <p className="text-sm text-ink">
         Marked <span className="font-semibold">Fully approved</span>. The spec is inactive, so the{" "}
         {result.rejectedOutputs} rejected PDF{result.rejectedOutputs === 1 ? "" : "s"} will re-run
         and auto-approve once you activate the spec and re-run it.
@@ -320,7 +320,7 @@ function ResultPanel({ result, batch }: { result: ConfirmResult; batch: Batch | 
   }
   if (result.batchId == null || result.enqueued === 0) {
     return (
-      <p className="text-sm text-zinc-700">
+      <p className="text-sm text-ink">
         Marked <span className="font-semibold">Fully approved</span>. There was nothing to re-run —
         future print-safe generations will auto-approve.
       </p>
@@ -332,7 +332,7 @@ function ResultPanel({ result, batch }: { result: ConfirmResult; batch: Batch | 
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
   return (
     <div>
-      <p className="text-sm text-zinc-700">
+      <p className="text-sm text-ink">
         {finished ? "Re-ran" : "Re-running"}{" "}
         <span className="font-semibold">
           {result.rejectedOutputs} PDF{result.rejectedOutputs === 1 ? "" : "s"}
@@ -340,18 +340,18 @@ function ResultPanel({ result, batch }: { result: ConfirmResult; batch: Batch | 
         across {result.enqueued} style{result.enqueued === 1 ? "" : "s"}. Fresh print-safe PDFs
         auto-approve as they finish — safe to close this and leave the page.
       </p>
-      <div className="mt-3 flex items-center gap-2 text-xs text-zinc-500">
+      <div className="mt-3 flex items-center gap-2 text-xs text-muted">
         <span className="tabular-nums">
           {done}/{total} styles
         </span>
         {batch && batch.failed > 0 && (
-          <span className="tabular-nums text-red-600">· {batch.failed} failed</span>
+          <span className="tabular-nums text-bad">· {batch.failed} failed</span>
         )}
-        {finished && <span className="text-emerald-600">· done</span>}
+        {finished && <span className="text-good">· done</span>}
       </div>
-      <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+      <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-subtle">
         <div
-          className="h-full rounded-full bg-emerald-500 transition-[width] duration-500"
+          className="h-full rounded-full bg-good transition-[width] duration-500"
           style={{ width: `${pct}%` }}
         />
       </div>

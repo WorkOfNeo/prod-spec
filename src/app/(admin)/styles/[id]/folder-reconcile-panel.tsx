@@ -263,29 +263,29 @@ export function FolderReconcilePanel({ styleId, poNumber, className = "mt-8" }: 
         className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border px-3 py-2 text-xs ${tone}`}
       >
         <h2
-          className="shrink-0 text-sm font-semibold text-zinc-700"
+          className="shrink-0 text-sm font-semibold text-ink"
           title={data?.folderPath ?? undefined}
         >
           Supplier folder check
         </h2>
 
         {loading && !data ? (
-          <span className="text-zinc-500">Reading the supplier&apos;s folder…</span>
+          <span className="text-muted">Reading the supplier&apos;s folder…</span>
         ) : error && !data ? (
           // A failed fetch is NOT a diff. Say the check didn't run — never let
           // an empty result read as "everything is fine" or "the files are gone".
-          <span className="text-amber-800">⚠ Couldn&apos;t check the folder — {error}</span>
+          <span className="text-warn">⚠ Couldn&apos;t check the folder — {error}</span>
         ) : !summary || !data ? null : summary.listable ? (
           <>
-            <span className="text-zinc-600">
-              Expected <span className="font-semibold text-zinc-800">{data.expectedCount}</span> · present{" "}
-              <span className="font-semibold text-zinc-800">{data.presentCount}</span> ·{" "}
+            <span className="text-muted">
+              Expected <span className="font-semibold text-ink">{data.expectedCount}</span> · present{" "}
+              <span className="font-semibold text-ink">{data.presentCount}</span> ·{" "}
               {summary.ok.length} matched
             </span>
             {/* The folder is the PO's. Saying so up front is what stops a
                 sibling's files reading as junk someone has to investigate. */}
             {data.siblingStyles.length > 0 ? (
-              <span className="text-zinc-500">
+              <span className="text-muted">
                 +{summary.siblingFileCount} from{" "}
                 {data.siblingStyles.length === 1
                   ? `“${data.siblingStyles[0].styleName}”`
@@ -293,7 +293,7 @@ export function FolderReconcilePanel({ styleId, poNumber, className = "mt-8" }: 
               </span>
             ) : null}
             {summary.clean ? (
-              <span className="text-emerald-800">✓ matches the current output config</span>
+              <span className="text-good">✓ matches the current output config</span>
             ) : (
               <span className="flex flex-wrap items-center gap-1.5">
                 {summary.renamed.length > 0 ? (
@@ -312,7 +312,7 @@ export function FolderReconcilePanel({ styleId, poNumber, className = "mt-8" }: 
             )}
           </>
         ) : (
-          <span className="text-zinc-600" title={data.message}>
+          <span className="text-muted" title={data.message}>
             {data.state === "unavailable" ||
             data.state === "po-folder-missing" ||
             data.state === "po-folder-ambiguous"
@@ -327,7 +327,7 @@ export function FolderReconcilePanel({ styleId, poNumber, className = "mt-8" }: 
             <button
               type="button"
               onClick={() => setOpen(true)}
-              className="rounded-md border border-zinc-300 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-700 hover:bg-zinc-50"
+              className="rounded-md border border-line bg-surface px-2 py-0.5 text-[11px] font-medium text-ink hover:bg-subtle"
             >
               {summary && summary.issueCount > 0 ? `Details (${summary.issueCount})` : "Details"}
             </button>
@@ -354,7 +354,7 @@ export function FolderReconcilePanel({ styleId, poNumber, className = "mt-8" }: 
             <a
               href={`/delivery/${encodeURIComponent(po)}`}
               title={`Every style on PO ${po}, checked against this folder`}
-              className="rounded-md border border-sky-300 bg-white px-2 py-0.5 text-[11px] font-medium text-sky-700 hover:bg-sky-50"
+              className="rounded-md border border-transparent bg-surface px-2 py-0.5 text-[11px] font-medium text-accent-text hover:bg-accent-soft"
             >
               Whole PO delivery ↗
             </a>
@@ -365,8 +365,8 @@ export function FolderReconcilePanel({ styleId, poNumber, className = "mt-8" }: 
             disabled={loading || busy !== null}
             className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${
               loading || busy !== null
-                ? "cursor-not-allowed border-zinc-200 text-zinc-400"
-                : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
+                ? "cursor-not-allowed border-line text-faint"
+                : "border-line bg-surface text-ink hover:bg-subtle"
             }`}
           >
             {loading ? "Checking…" : "Re-check"}
@@ -376,8 +376,8 @@ export function FolderReconcilePanel({ styleId, poNumber, className = "mt-8" }: 
 
       {/* A repair's outcome belongs on the page too — the dialog it was pressed
           in may well have been closed by the time the re-check lands. */}
-      {notice ? <div className="mt-1.5 text-[11px] text-emerald-700">✓ {notice}</div> : null}
-      {error && data ? <div className="mt-1.5 text-[11px] text-red-600">{error}</div> : null}
+      {notice ? <div className="mt-1.5 text-[11px] text-good">✓ {notice}</div> : null}
+      {error && data ? <div className="mt-1.5 text-[11px] text-bad">{error}</div> : null}
 
       {open && data && summary ? (
         <FolderReconcileDialog
@@ -467,14 +467,14 @@ function FolderReconcileDialog({
       aria-label="Supplier folder check"
     >
       <div
-        className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl"
+        className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-5 py-3">
+        <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-3">
           <div className="min-w-0">
-            <h2 className="text-[15px] font-semibold text-zinc-900">Supplier folder check</h2>
+            <h2 className="text-[15px] font-semibold text-ink">Supplier folder check</h2>
             {data.folderPath ? (
-              <p className="mt-0.5 break-all text-xs text-zinc-500">{data.folderPath}</p>
+              <p className="mt-0.5 break-all text-xs text-muted">{data.folderPath}</p>
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -484,8 +484,8 @@ function FolderReconcileDialog({
               disabled={loading || busy !== null}
               className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${
                 loading || busy !== null
-                  ? "cursor-not-allowed border-zinc-200 text-zinc-400"
-                  : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
+                  ? "cursor-not-allowed border-line text-faint"
+                  : "border-line bg-surface text-ink hover:bg-subtle"
               }`}
             >
               {loading ? "Checking…" : "Re-check"}
@@ -493,7 +493,7 @@ function FolderReconcileDialog({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md border border-zinc-300 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-700 hover:bg-zinc-50"
+              className="rounded-md border border-line bg-surface px-2 py-0.5 text-[11px] font-medium text-ink hover:bg-subtle"
             >
               Close
             </button>
@@ -507,10 +507,10 @@ function FolderReconcileDialog({
             <div
               className={`m-4 rounded-lg border px-4 py-2.5 text-xs ${
                 data.state === "unavailable"
-                  ? "border-amber-200 bg-amber-50/60 text-amber-800"
+                  ? "border-transparent bg-amber-50/60 text-warn"
                   : data.state === "po-folder-ambiguous"
                     ? "border-fuchsia-200 bg-fuchsia-50/60 text-fuchsia-800"
-                    : "border-zinc-200 bg-zinc-50 text-zinc-600"
+                    : "border-line bg-subtle text-muted"
               }`}
             >
               {data.state === "unavailable" ? "⚠ " : data.state === "po-folder-ambiguous" ? "⚠ " : ""}
@@ -534,18 +534,18 @@ function FolderReconcileDialog({
             </div>
           ) : (
             <>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-zinc-100 bg-zinc-50/60 px-4 py-2 text-xs text-zinc-600">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-zinc-50/60 px-4 py-2 text-xs text-muted">
                 <span>
-                  Expected <span className="font-semibold text-zinc-800">{data.expectedCount}</span> from
-                  this style · present <span className="font-semibold text-zinc-800">{data.presentCount}</span>{" "}
+                  Expected <span className="font-semibold text-ink">{data.expectedCount}</span> from
+                  this style · present <span className="font-semibold text-ink">{data.presentCount}</span>{" "}
                   in the folder
                 </span>
-                <span className="text-zinc-400">·</span>
+                <span className="text-faint">·</span>
                 <span>{ok.length} matched</span>
                 {data.siblingStyles.length > 0 ? (
                   <>
-                    <span className="text-zinc-400">·</span>
-                    <span className="text-zinc-500">
+                    <span className="text-faint">·</span>
+                    <span className="text-muted">
                       shared PO folder — {summary.siblingFileCount} more expected from{" "}
                       {data.siblingStyles.length === 1
                         ? `“${data.siblingStyles[0].styleName}”`
@@ -561,7 +561,7 @@ function FolderReconcileDialog({
                     href={data.folderUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="ml-auto underline hover:text-zinc-950"
+                    className="ml-auto underline hover:text-ink"
                   >
                     Open folder ↗
                   </a>
@@ -569,19 +569,19 @@ function FolderReconcileDialog({
               </div>
 
               {data.state === "subfolder-missing" ? (
-                <div className="border-b border-zinc-100 px-4 py-2 text-xs text-amber-800">
+                <div className="border-b border-line px-4 py-2 text-xs text-warn">
                   ⚠ {data.message}
                 </div>
               ) : null}
 
               {clean ? (
-                <div className="px-4 py-2.5 text-xs text-emerald-800">
+                <div className="px-4 py-2.5 text-xs text-good">
                   ✓ The folder matches the current output config exactly — every file this style expects is
                   there under the name its layout asks for today, and nothing in the folder is unaccounted
                   for{data.siblingStyles.length > 0 ? " by some style on this PO" : ""}.
                 </div>
               ) : (
-                <ul className="divide-y divide-zinc-100">
+                <ul className="divide-y divide-line">
                   {/* Renamed first: it is the one bucket that is NOT a problem
                       with the artwork, and reading it before "missing" is what
                       stops someone hunting for a file that never moved. */}
@@ -602,13 +602,13 @@ function FolderReconcileDialog({
                   ))}
                   {notQueued.map((n) => (
                     <li key={`n-${n.variantKey}`} className="flex items-start gap-2 px-4 py-2 text-xs">
-                      <span aria-hidden className="mt-px shrink-0 font-semibold text-sky-600">
+                      <span aria-hidden className="mt-px shrink-0 font-semibold text-accent-text">
                         ⓘ
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="font-medium text-zinc-500">never queued</span>{" "}
-                        <span className="break-all text-zinc-800">{n.fileName}</span>
-                        <span className="block text-[11px] text-zinc-500">
+                        <span className="font-medium text-muted">never queued</span>{" "}
+                        <span className="break-all text-ink">{n.fileName}</span>
+                        <span className="block text-[11px] text-muted">
                           The current output config expects this, but it was never added to the
                           supplier-send queue — so the automatic re-check has never looked for it
                           {n.present ? " (it IS in the folder, so someone pushed it by hand)" : ""}. Use the
@@ -624,12 +624,12 @@ function FolderReconcileDialog({
                   but staying silent about them would make this check look like
                   it had simply ignored half the folder. */}
               {siblingIssueStyles.length > 0 ? (
-                <div className="border-t border-zinc-100 px-4 py-2 text-[11px] text-zinc-500">
+                <div className="border-t border-line px-4 py-2 text-[11px] text-muted">
                   Other styles on this PO have outstanding files too:{" "}
                   {siblingIssueStyles.map((s, i) => (
                     <span key={s.styleId}>
                       {i > 0 ? ", " : ""}
-                      <a href={`/styles/${s.styleId}`} className="underline hover:text-zinc-800">
+                      <a href={`/styles/${s.styleId}`} className="underline hover:text-ink">
                         {s.styleName}
                       </a>
                     </span>
@@ -642,7 +642,7 @@ function FolderReconcileDialog({
                   an adopt targets ONE file and ONE target name, so a single
                   panel-level button could never express it. */}
               {unexpected.some((u) => u.likelyRenamedFrom?.isSelf) ? (
-                <div className="border-t border-zinc-100 px-4 py-2 text-[11px] text-zinc-500">
+                <div className="border-t border-line px-4 py-2 text-[11px] text-muted">
                   “Adopt renamed file” renames the file already in the folder back to the expected name
                   (same file, same history) — unlike re-uploading, which would leave both copies side by
                   side.
@@ -653,7 +653,7 @@ function FolderReconcileDialog({
         </div>
 
         {listable && !clean ? (
-          <div className="flex flex-wrap items-center gap-2 border-t border-zinc-200 bg-zinc-50/60 px-4 py-2.5">
+          <div className="flex flex-wrap items-center gap-2 border-t border-line bg-zinc-50/60 px-4 py-2.5">
             {renamed.length > 0 ? (
               <button
                 type="button"
@@ -667,8 +667,8 @@ function FolderReconcileDialog({
                 title="Restamp the name, upload the approved PDF under it, then delete the old copy"
                 className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${
                   busy !== null || loading
-                    ? "cursor-not-allowed border-zinc-200 text-zinc-400"
-                    : "border-sky-300 bg-white text-sky-700 hover:bg-sky-50"
+                    ? "cursor-not-allowed border-line text-faint"
+                    : "border-transparent bg-surface text-accent-text hover:bg-accent-soft"
                 }`}
               >
                 {busy?.startsWith("Re-pushed")
@@ -688,14 +688,14 @@ function FolderReconcileDialog({
                 }
                 className={`rounded-md border px-2 py-0.5 text-[11px] font-medium ${
                   busy !== null || loading
-                    ? "cursor-not-allowed border-zinc-200 text-zinc-400"
-                    : "border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50"
+                    ? "cursor-not-allowed border-line text-faint"
+                    : "border-transparent bg-surface text-good hover:bg-good-soft"
                 }`}
               >
                 {busy?.startsWith("Re-armed") ? "Re-arming…" : `Re-upload missing (${rearmable.length})`}
               </button>
             ) : null}
-            <span className="text-[11px] text-zinc-500">
+            <span className="text-[11px] text-muted">
               {renamed.length > 0
                 ? "Re-pushing uploads the approved PDF straight away (it doesn’t wait for the sweep), then removes the file left under the old name."
                 : rearmable.length > 0
@@ -708,9 +708,9 @@ function FolderReconcileDialog({
         ) : null}
 
         {notice || error ? (
-          <div className="border-t border-zinc-200 px-4 py-2 text-[11px]">
-            {notice ? <div className="text-emerald-700">✓ {notice}</div> : null}
-            {error ? <div className="text-red-600">{error}</div> : null}
+          <div className="border-t border-line px-4 py-2 text-[11px]">
+            {notice ? <div className="text-good">✓ {notice}</div> : null}
+            {error ? <div className="text-bad">{error}</div> : null}
           </div>
         ) : null}
       </div>
@@ -729,20 +729,20 @@ function RenamedLine({ row }: { row: RenamedRow }) {
   const blocked = row.staleClaimedBy.length > 0;
   return (
     <li className="flex items-start gap-2 px-4 py-2 text-xs">
-      <span aria-hidden className="mt-px shrink-0 font-semibold text-sky-600">
+      <span aria-hidden className="mt-px shrink-0 font-semibold text-accent-text">
         ⟳
       </span>
       <span className="min-w-0 flex-1">
-        <span className="font-medium text-zinc-500">name changed</span>{" "}
-        <span className="break-all text-zinc-800">{row.fileName}</span>
-        <span className="block text-[11px] text-zinc-500">
+        <span className="font-medium text-muted">name changed</span>{" "}
+        <span className="break-all text-ink">{row.fileName}</span>
+        <span className="block text-[11px] text-muted">
           {row.name} · in the folder as{" "}
           {row.staleWebUrl ? (
             <a
               href={row.staleWebUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="break-all underline hover:text-zinc-800"
+              className="break-all underline hover:text-ink"
             >
               “{row.previousFileName}” ↗
             </a>
@@ -750,7 +750,7 @@ function RenamedLine({ row }: { row: RenamedRow }) {
             <span className="break-all">“{row.previousFileName}”</span>
           )}
           {blocked ? (
-            <span className="block text-amber-700">
+            <span className="block text-warn">
               ⚠ {row.staleClaimedBy.map((s) => `“${s.styleName}”`).join(", ")} on this PO still uses that
               file — re-pushing will upload the new name but leave the old file until that style is repaired
               too.
@@ -765,13 +765,13 @@ function RenamedLine({ row }: { row: RenamedRow }) {
 function MissingLine({ row }: { row: MissingRow }) {
   return (
     <li className="flex items-start gap-2 px-4 py-2 text-xs">
-      <span aria-hidden className="mt-px shrink-0 font-semibold text-red-600">
+      <span aria-hidden className="mt-px shrink-0 font-semibold text-bad">
         ✗
       </span>
       <span className="min-w-0 flex-1">
-        <span className="font-medium text-zinc-500">missing</span>{" "}
-        <span className="break-all text-zinc-800">{row.fileName}</span>
-        <span className="block text-[11px] text-zinc-500">
+        <span className="font-medium text-muted">missing</span>{" "}
+        <span className="break-all text-ink">{row.fileName}</span>
+        <span className="block text-[11px] text-muted">
           {row.name}
           {row.likelyRenamedTo
             ? ` · looks like it was renamed by hand to “${row.likelyRenamedTo.fileName}” (${confidenceLabel(
@@ -807,24 +807,24 @@ function UnexpectedLine({
   const label = `Adopted “${row.fileName}”`;
   return (
     <li className="flex items-start gap-2 px-4 py-2 text-xs">
-      <span aria-hidden className="mt-px shrink-0 font-semibold text-amber-600">
+      <span aria-hidden className="mt-px shrink-0 font-semibold text-warn">
         ⚠
       </span>
       <span className="min-w-0 flex-1">
-        <span className="font-medium text-zinc-500">unexpected</span>{" "}
+        <span className="font-medium text-muted">unexpected</span>{" "}
         {row.webUrl ? (
           <a
             href={row.webUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="break-all text-zinc-800 underline hover:text-zinc-950"
+            className="break-all text-ink underline hover:text-ink"
           >
             {row.fileName} ↗
           </a>
         ) : (
-          <span className="break-all text-zinc-800">{row.fileName}</span>
+          <span className="break-all text-ink">{row.fileName}</span>
         )}
-        <span className="block text-[11px] text-zinc-500">
+        <span className="block text-[11px] text-muted">
           {guess
             ? `← likely renamed by hand from “${guess.fileName}” (${guess.name}${
                 guess.isSelf ? "" : ` · on “${guess.styleName}”, another style on this PO`
@@ -847,8 +847,8 @@ function UnexpectedLine({
           title={`Rename it back to “${guess.fileName}”`}
           className={`shrink-0 rounded-md border px-2 py-0.5 text-[11px] font-medium ${
             disabled
-              ? "cursor-not-allowed border-zinc-200 text-zinc-400"
-              : "border-amber-300 bg-white text-amber-700 hover:bg-amber-50"
+              ? "cursor-not-allowed border-line text-faint"
+              : "border-transparent bg-surface text-warn hover:bg-warn-soft"
           }`}
         >
           {busy === label ? "Adopting…" : "Adopt renamed file"}

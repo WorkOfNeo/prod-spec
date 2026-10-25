@@ -58,7 +58,7 @@ export function OutputEditDialog({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="w-full rounded-md border border-zinc-200 px-2 py-1.5 text-[11px] font-medium text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-800"
+        className="w-full rounded-md border border-line px-2 py-1.5 text-[11px] font-medium text-muted hover:border-line hover:bg-subtle hover:text-ink"
       >
         Edit any line{editedCount > 0 ? ` (${editedCount} edited)` : ""}
       </button>
@@ -264,40 +264,40 @@ function EditDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(15_17_21/0.50)] p-4"
       role="dialog"
       aria-modal="true"
       aria-label={`Edit ${outputName}`}
     >
-      <div className="flex h-[92vh] w-full max-w-[1400px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
-        <div className="flex items-baseline gap-2 border-b border-zinc-200 px-5 py-3">
-          <h3 className="truncate text-sm font-semibold text-zinc-900">{outputName}</h3>
+      <div className="flex h-[92vh] w-full max-w-[1400px] flex-col overflow-hidden rounded-xl bg-surface shadow-2xl">
+        <div className="flex items-baseline gap-2 border-b border-line px-5 py-3">
+          <h3 className="truncate text-sm font-semibold text-ink">{outputName}</h3>
           {docSuffix ? (
-            <span className="truncate font-mono text-[11px] text-zinc-500">· {docSuffix}</span>
+            <span className="truncate font-mono text-[11px] text-muted">· {docSuffix}</span>
           ) : null}
         </div>
 
         <div className="flex min-h-0 flex-1">
           {/* Left — every line this document prints. */}
-          <div className="flex w-[420px] shrink-0 flex-col border-r border-zinc-200">
+          <div className="flex w-[420px] shrink-0 flex-col border-r border-line">
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
               {lines.length === 0 ? (
-                <p className="text-[11px] leading-relaxed text-zinc-500">
+                <p className="text-[11px] leading-relaxed text-muted">
                   This output isn&apos;t built from an Output Builder layout, so it has no editable
                   lines. Correct it in its template, or on Monday.
                 </p>
               ) : (
                 <>
-                  <p className="text-[11px] leading-relaxed text-zinc-500">
+                  <p className="text-[11px] leading-relaxed text-muted">
                     Every line this document prints. Type plain text, or use a{" "}
-                    <code className="rounded bg-zinc-100 px-1">{"{{token}}"}</code> — both work.
+                    <code className="rounded bg-subtle px-1">{"{{token}}"}</code> — both work.
                     Clearing a line back to its original reverts it to the layout.
                   </p>
                   <div className="mt-3 space-y-3">
                     {pages.map((p) => (
                       <div key={p.pageId} className="space-y-2">
                         {pages.length > 1 ? (
-                          <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                          <p className="text-[11px] font-semibold text-faint">
                             {p.title}
                           </p>
                         ) : null}
@@ -314,24 +314,24 @@ function EditDialog({
                                     layout spacers say so, so they read as "you
                                     can add text here" rather than as a bug. */}
                                 <p
-                                  className="min-w-0 flex-1 truncate text-[11px] text-zinc-600"
+                                  className="min-w-0 flex-1 truncate text-[11px] text-muted"
                                   title={l.resolved || (blank ? "empty line" : "(prints nothing)")}
                                 >
                                   {l.resolved || (
-                                    <span className="italic text-zinc-400">
+                                    <span className="italic text-faint">
                                       {blank ? "empty" : "prints nothing"}
                                     </span>
                                   )}
                                 </p>
                                 {isOverride ? (
-                                  <span className="rounded-sm bg-amber-100 px-1 text-[9px] font-semibold uppercase text-amber-700">
+                                  <span className="rounded-sm bg-warn-soft px-1 text-[11px] font-semibold text-warn">
                                     edited
                                   </span>
                                 ) : null}
                                 {l.kind === "graphic" ? (
                                   <span
                                     title="This line draws a barcode, symbol or logo — replacing it prints text instead."
-                                    className="rounded-sm bg-zinc-100 px-1 text-[9px] font-semibold uppercase text-zinc-500"
+                                    className="rounded-sm bg-subtle px-1 text-[11px] font-semibold text-muted"
                                   >
                                     graphic
                                   </span>
@@ -344,7 +344,7 @@ function EditDialog({
                                 maxLength={MAX_LINE_LENGTH}
                                 onChange={(e) => setVal(l.lineKey, e.target.value)}
                                 placeholder="empty line — type to add text"
-                                className="mt-1 w-full rounded-md border border-zinc-300 px-2 py-1 font-mono text-[11px] disabled:bg-zinc-50"
+                                className="mt-1 w-full rounded-md border border-line px-2 py-1 font-mono text-[11px] disabled:bg-subtle"
                               />
                             </div>
                           );
@@ -358,27 +358,27 @@ function EditDialog({
           </div>
 
           {/* Right — this document as it would print after saving. */}
-          <div className="min-h-0 flex-1 overflow-y-auto bg-zinc-100 p-6">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-subtle p-6">
             <div className="mx-auto max-w-3xl">
               {preview.kind === "html" ? (
                 <div className={stale ? "opacity-60 transition-opacity" : "transition-opacity"}>
                   <PreviewFrame html={preview.html} widthMm={widthMm} heightMm={heightMm} />
                 </div>
               ) : preview.kind === "static" ? (
-                <div className="rounded-md border border-dashed border-zinc-300 bg-white px-3 py-6 text-center text-xs text-zinc-500">
+                <div className="rounded-md border border-dashed border-line bg-surface px-3 py-6 text-center text-xs text-muted">
                   {preview.message}
                 </div>
               ) : preview.kind === "error" ? (
-                <div className="rounded-md border border-dashed border-red-300 bg-red-50 px-3 py-6 text-center text-xs text-red-600">
+                <div className="rounded-md border border-dashed border-transparent bg-bad-soft px-3 py-6 text-center text-xs text-bad">
                   Preview failed to render
                   <div className="mt-1 text-red-400">{preview.message}</div>
                 </div>
               ) : (
-                <div className="rounded-md bg-white/60 px-3 py-10 text-center text-[11px] text-zinc-400">
+                <div className="rounded-md bg-white/60 px-3 py-10 text-center text-[11px] text-faint">
                   Rendering preview…
                 </div>
               )}
-              <p className="mt-3 text-center text-[10px] text-zinc-400">
+              <p className="mt-3 text-center text-[11px] text-faint">
                 {stale && preview.kind === "html"
                   ? "Updating…"
                   : "Live preview — Save & re-render to produce the PDF."}
@@ -387,10 +387,10 @@ function EditDialog({
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-4 border-t border-zinc-200 px-5 py-3">
+        <div className="flex items-center justify-between gap-4 border-t border-line px-5 py-3">
           <div className="min-w-0 flex-1">
             {isMultiDoc ? (
-              <label className="flex items-center gap-1.5 text-[11px] text-zinc-600">
+              <label className="flex items-center gap-1.5 text-[11px] text-muted">
                 <input
                   type="checkbox"
                   checked={applyToAll}
@@ -400,14 +400,14 @@ function EditDialog({
                 Apply to every PDF this output renders — off, it fixes only this one
               </label>
             ) : null}
-            {error ? <p className="text-[11px] font-medium text-red-700">{error}</p> : null}
+            {error ? <p className="text-[11px] font-medium text-bad">{error}</p> : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={onClose}
               disabled={busy}
-              className="rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+              className="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink hover:bg-subtle disabled:opacity-50"
             >
               Cancel
             </button>
@@ -415,7 +415,7 @@ function EditDialog({
               type="button"
               onClick={() => void save()}
               disabled={busy || !hasChanges}
-              className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-800 disabled:opacity-50"
+              className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? "Re-rendering…" : "Save & re-render"}
             </button>
