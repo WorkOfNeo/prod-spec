@@ -35,11 +35,11 @@ export default async function ChecksSweepPage() {
   if (!canReview(role)) redirect("/");
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="max-w-6xl px-6 py-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Checks — every purchase order</h1>
-          <p className="mt-1 max-w-3xl text-sm text-zinc-500">
+          <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Checks — every purchase order</h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted">
             Runs the folder check on every PO in scope and collects what it finds in one place, grouped by
             what is actually wrong. It takes about an hour, runs in the background, and can be left and
             come back to. Repairs still happen on each PO&apos;s own check, where the folder is re-read
@@ -48,7 +48,7 @@ export default async function ChecksSweepPage() {
         </div>
         <Link
           href="/checks"
-          className="rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+          className="rounded-md border border-line px-3 py-2 text-sm text-ink hover:bg-subtle"
         >
           Check one PO
         </Link>

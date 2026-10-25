@@ -36,7 +36,7 @@ const SIZE_CLASSES: Record<ToggleSize, { track: string; thumb: string; translate
     track: "h-4 w-7",
     thumb: "h-3 w-3",
     translate: "translate-x-3",
-    text: "text-[10px]",
+    text: "text-[11px]",
   },
   md: {
     track: "h-5 w-9",
@@ -76,21 +76,21 @@ export function Toggle({
         onClick={() => !disabled && onChange(!checked)}
         className={cn(
           "relative inline-flex shrink-0 items-center rounded-full transition-colors",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 focus-visible:ring-offset-1",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1",
           sz.track,
-          checked ? "bg-zinc-900" : "bg-zinc-200",
+          checked ? "bg-primary" : "bg-subtle",
         )}
       >
         <span
           className={cn(
-            "inline-block translate-x-0.5 transform rounded-full bg-white shadow-sm transition-transform",
+            "inline-block translate-x-0.5 transform rounded-full bg-surface shadow-sm transition-transform",
             sz.thumb,
             checked && sz.translate,
           )}
         />
       </button>
       {(label || (onLabel && offLabel)) && (
-        <span className={cn("font-medium", sz.text, checked ? "text-zinc-900" : "text-zinc-500")}>
+        <span className={cn("font-medium", sz.text, checked ? "text-ink" : "text-muted")}>
           {label ?? (checked ? onLabel : offLabel)}
         </span>
       )}

@@ -81,20 +81,20 @@ export function InspectorTab({
     <div className="flex flex-col gap-6">
       <form
         onSubmit={onSubmit}
-        className="flex items-end gap-3 rounded-lg border border-zinc-200 bg-white p-4"
+        className="flex items-end gap-3 rounded-xl border border-line bg-surface p-4"
       >
-        <label className="flex-1 text-xs font-medium text-zinc-700">
+        <label className="flex-1 text-xs font-medium text-ink">
           Board ID
           <input
             type="text"
             value={boardId}
             onChange={(e) => setBoardId(e.target.value)}
             placeholder="6979419195"
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-sm"
+            className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-sm"
           />
         </label>
         <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-zinc-700">Known boards</span>
+          <span className="text-xs font-medium text-ink">Known boards</span>
           <div className="flex flex-wrap gap-2">
             {knownBoards.map((b) => (
               <button
@@ -104,7 +104,7 @@ export function InspectorTab({
                   setBoardId(b.id);
                   void load(b.id);
                 }}
-                className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink hover:bg-subtle"
               >
                 {b.label}
               </button>
@@ -114,37 +114,37 @@ export function InspectorTab({
         <button
           type="submit"
           disabled={loading || !boardId.trim()}
-          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? "Loading…" : "Inspect"}
         </button>
       </form>
 
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <div className="rounded-md border border-transparent bg-bad-soft px-4 py-3 text-sm text-bad">
           {error}
         </div>
       )}
 
       {data && (
         <>
-          <section className="rounded-lg border border-zinc-200 bg-white p-4">
+          <section className="rounded-xl border border-line bg-surface p-4">
             <h2 className="text-sm font-semibold">Board</h2>
             <p className="mt-1 text-sm">
               <span className="font-medium">{data.board.name}</span>{" "}
-              <span className="font-mono text-xs text-zinc-500">{data.board.id}</span>
+              <span className="font-mono text-xs text-muted">{data.board.id}</span>
             </p>
             {data.board.description && (
-              <p className="mt-1 text-xs text-zinc-500">{data.board.description}</p>
+              <p className="mt-1 text-xs text-muted">{data.board.description}</p>
             )}
           </section>
 
-          <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
-            <header className="border-b border-zinc-100 bg-zinc-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+          <section className="overflow-hidden rounded-xl border border-line bg-surface">
+            <header className="border-b border-line bg-subtle px-4 py-2 text-xs font-medium text-muted">
               Columns ({data.columns.length})
             </header>
             <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase tracking-wide text-zinc-500">
+              <thead className="text-left text-xs text-muted">
                 <tr>
                   <th className="px-4 py-2">ID</th>
                   <th className="px-4 py-2">Title</th>
@@ -154,24 +154,24 @@ export function InspectorTab({
               </thead>
               <tbody>
                 {data.columns.map((c) => (
-                  <tr key={c.id} className="border-t border-zinc-100 align-top">
+                  <tr key={c.id} className="border-t border-line align-top">
                     <td className="px-4 py-2 font-mono text-xs">
                       <button
                         type="button"
                         onClick={() => navigator.clipboard.writeText(c.id)}
                         title="Copy column id"
-                        className="text-zinc-800 underline"
+                        className="text-ink underline"
                       >
                         {c.id}
                       </button>
                     </td>
                     <td className="px-4 py-2">{c.title}</td>
-                    <td className="px-4 py-2 font-mono text-xs text-zinc-600">{c.type}</td>
+                    <td className="px-4 py-2 font-mono text-xs text-muted">{c.type}</td>
                     <td className="px-4 py-2 text-xs">
                       {c.settings != null && Object.keys(c.settings as object).length > 0 ? (
                         <details>
-                          <summary className="cursor-pointer text-zinc-600">view</summary>
-                          <pre className="mt-1 max-w-md overflow-x-auto rounded bg-zinc-50 p-2 font-mono text-[10px] leading-tight">
+                          <summary className="cursor-pointer text-muted">view</summary>
+                          <pre className="mt-1 max-w-md overflow-x-auto rounded bg-subtle p-2 font-mono text-[11px] leading-tight">
                             {JSON.stringify(c.settings, null, 2)}
                           </pre>
                         </details>
@@ -186,13 +186,13 @@ export function InspectorTab({
           </section>
 
           {data.sample && (
-            <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
-              <header className="border-b border-zinc-100 bg-zinc-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+            <section className="overflow-hidden rounded-xl border border-line bg-surface">
+              <header className="border-b border-line bg-subtle px-4 py-2 text-xs font-medium text-muted">
                 Sample item — {data.sample.name}{" "}
-                <span className="font-mono text-zinc-400">({data.sample.id})</span>
+                <span className="font-mono text-faint">({data.sample.id})</span>
               </header>
               <table className="w-full text-sm">
-                <thead className="text-left text-xs uppercase tracking-wide text-zinc-500">
+                <thead className="text-left text-xs text-muted">
                   <tr>
                     <th className="px-4 py-2">Column ID</th>
                     <th className="px-4 py-2">Type</th>
@@ -202,22 +202,22 @@ export function InspectorTab({
                 </thead>
                 <tbody>
                   {data.sample.columns.map((cv) => (
-                    <tr key={cv.id} className="border-t border-zinc-100 align-top">
+                    <tr key={cv.id} className="border-t border-line align-top">
                       <td className="px-4 py-2 font-mono text-xs">{cv.id}</td>
-                      <td className="px-4 py-2 font-mono text-xs text-zinc-600">{cv.type}</td>
+                      <td className="px-4 py-2 font-mono text-xs text-muted">{cv.type}</td>
                       <td className="px-4 py-2 text-xs">
-                        {cv.text ?? <span className="text-zinc-400">—</span>}
+                        {cv.text ?? <span className="text-faint">—</span>}
                       </td>
                       <td className="px-4 py-2 text-xs">
                         {cv.value != null ? (
                           <details>
-                            <summary className="cursor-pointer text-zinc-600">view</summary>
-                            <pre className="mt-1 max-w-md overflow-x-auto rounded bg-zinc-50 p-2 font-mono text-[10px] leading-tight">
+                            <summary className="cursor-pointer text-muted">view</summary>
+                            <pre className="mt-1 max-w-md overflow-x-auto rounded bg-subtle p-2 font-mono text-[11px] leading-tight">
                               {JSON.stringify(cv.value, null, 2)}
                             </pre>
                           </details>
                         ) : (
-                          <span className="text-zinc-400">—</span>
+                          <span className="text-faint">—</span>
                         )}
                       </td>
                     </tr>
@@ -227,11 +227,11 @@ export function InspectorTab({
             </section>
           )}
 
-          <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
-            <header className="border-b border-zinc-100 bg-zinc-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+          <section className="overflow-hidden rounded-xl border border-line bg-surface">
+            <header className="border-b border-line bg-subtle px-4 py-2 text-xs font-medium text-muted">
               Raw JSON
             </header>
-            <pre className="overflow-x-auto p-4 font-mono text-[10px] leading-tight text-zinc-800">
+            <pre className="overflow-x-auto p-4 font-mono text-[11px] leading-tight text-ink">
               {JSON.stringify(data, null, 2)}
             </pre>
           </section>

@@ -23,12 +23,12 @@ export default async function EditCustomerPage({ params }: { params: Promise<{ i
   const config = parseCustomerConfig(customer.config);
 
   return (
-    <div className="px-8 py-8">
-      <Link href="/settings" className="text-xs text-zinc-500 underline">
+    <div className="px-6 py-5">
+      <Link href="/settings" className="text-xs text-muted underline">
         ← Back to settings
       </Link>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight">{customer.name}</h1>
-      <p className="mt-1 text-sm text-zinc-500">Slug: <code>{customer.slug}</code></p>
+      <h1 className="mt-2 text-[18px] font-semibold tracking-[-0.01em]">{customer.name}</h1>
+      <p className="mt-1 text-sm text-muted">Slug: <code>{customer.slug}</code></p>
 
       <CustomerForm
         mode="edit"

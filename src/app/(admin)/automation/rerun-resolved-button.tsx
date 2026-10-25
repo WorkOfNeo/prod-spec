@@ -41,12 +41,12 @@ export function RerunResolvedButton({ count, cutoff }: { count: number; cutoff: 
         type="button"
         onClick={run}
         disabled={busy || count === 0}
-        className="shrink-0 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+        className="shrink-0 inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? "Re-queuing…" : `Re-run resolved${count > 0 ? ` (${count})` : ""}`}
       </button>
       {result && (
-        <div className={`text-xs ${result.ok ? "text-zinc-500" : "text-red-600"}`}>{result.text}</div>
+        <div className={`text-xs ${result.ok ? "text-muted" : "text-bad"}`}>{result.text}</div>
       )}
     </div>
   );

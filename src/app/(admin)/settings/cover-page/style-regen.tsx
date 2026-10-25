@@ -203,10 +203,10 @@ export function StyleRegenPanel({
     // reaching for the bulk sweep instead.
     <div
       id="regenerate-a-style"
-      className="mt-10 scroll-mt-8 rounded-lg border border-zinc-200 bg-white p-5"
+      className="mt-10 scroll-mt-8 rounded-xl border border-line bg-surface p-5"
     >
-      <h2 className="text-sm font-semibold text-zinc-800">Regenerate a style</h2>
-      <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-zinc-500">
+      <h2 className="text-sm font-semibold text-ink">Regenerate a style</h2>
+      <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-muted">
         Fixing one style rather than the whole client? Enter its style number. The same number
         usually covers several orders — one per PO, one per colourway — so every match is listed
         and all of them are corrected together. Each style&rsquo;s cover PDF is rebuilt with the
@@ -219,14 +219,14 @@ export function StyleRegenPanel({
           is ONE PDF, so a rebuild is never partial. Anyone arriving from the
           Packaging rows tab needs that said out loud, or they will assume their
           row edits were left behind and reach for the bulk sweep as well. */}
-      <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-zinc-500">
+      <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-muted">
         The cover is a single PDF, so this rebuilds <strong>all</strong> of it — the
         required-packaging list as much as the General information pages. It is the one-style
         rebuild for any cover change, wherever on this screen it was made.
       </p>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <label htmlFor="gi-regen-style" className="text-[13px] font-medium text-zinc-700">
+        <label htmlFor="gi-regen-style" className="text-[13px] font-medium text-ink">
           Style number:
         </label>
         <input
@@ -243,34 +243,34 @@ export function StyleRegenPanel({
             }
           }}
           placeholder="Style number"
-          className="w-52 rounded border border-zinc-300 px-2 py-1.5 text-[13px]"
+          className="w-52 rounded border border-line px-2 py-1.5 text-[13px]"
         />
         <button
           type="button"
           onClick={findStyle}
           disabled={!query.trim() || phase === "resolving" || phase === "running"}
-          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-400"
+          className="rounded-md border border-line bg-surface px-3 py-1.5 text-[13px] font-medium text-ink hover:bg-subtle disabled:cursor-not-allowed disabled:text-faint"
         >
           {phase === "resolving" ? "Looking up…" : "Find style"}
         </button>
       </div>
 
       {error && (
-        <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700">
+        <div className="mt-3 rounded-md border border-transparent bg-bad-soft px-3 py-2 text-[13px] text-bad">
           {error}
         </div>
       )}
 
       {phase === "plan" && matches.length === 0 && (
-        <p className="mt-3 text-[13px] text-zinc-500">
+        <p className="mt-3 text-[13px] text-muted">
           No style matches <strong>{query.trim()}</strong>. Check the number — this searches every
           client, so a style under a different client would still show up here.
         </p>
       )}
 
       {(phase === "plan" || phase === "running") && matches.length > 0 && (
-        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-4">
-          <p className="text-sm font-medium text-amber-900">
+        <div className="mt-4 rounded-md border border-transparent bg-warn-soft p-4">
+          <p className="text-sm font-medium text-warn">
             {ambiguous ? (
               <>
                 {matches.length} styles carry that number
@@ -282,7 +282,7 @@ export function StyleRegenPanel({
             )}
           </p>
 
-          <ul className="mt-3 divide-y divide-amber-200 rounded-md border border-amber-200 bg-white">
+          <ul className="mt-3 divide-y divide-amber-200 rounded-md border border-transparent bg-surface">
             {matches.map((m) => (
               <li key={m.styleId} className="px-3 py-2">
                 <label
@@ -297,26 +297,26 @@ export function StyleRegenPanel({
                     onChange={() => toggle(m.styleId)}
                     className="self-center"
                   />
-                  <span className="font-mono text-[13px] font-semibold text-zinc-800">
+                  <span className="font-mono text-[13px] font-semibold text-ink">
                     {m.styleName}
                   </span>
                   {m.customerName && (
-                    <span className="text-[12px] text-zinc-500">{m.customerName}</span>
+                    <span className="text-[12px] text-muted">{m.customerName}</span>
                   )}
-                  <span className="text-[12px] text-zinc-400">{m.poNumber ?? "no PO number"}</span>
-                  <span className="text-[12px] text-zinc-400">
+                  <span className="text-[12px] text-faint">{m.poNumber ?? "no PO number"}</span>
+                  <span className="text-[12px] text-faint">
                     {m.supplierName ?? "no supplier linked"}
                   </span>
-                  <span className="ml-auto text-[11px] text-zinc-400">{m.status}</span>
+                  <span className="ml-auto text-[11px] text-faint">{m.status}</span>
                 </label>
                 {!m.hasCover && (
-                  <p className="mt-1 pl-6 text-[12px] text-amber-800">
+                  <p className="mt-1 pl-6 text-[12px] text-warn">
                     Never generated a bundle, so there is no cover to rebuild. It will include the
                     current General information the first time it generates.
                   </p>
                 )}
                 {m.hasCover && !m.inThisSpec && (
-                  <p className="mt-1 pl-6 text-[12px] text-amber-800">
+                  <p className="mt-1 pl-6 text-[12px] text-warn">
                     Belongs to <strong>{m.prodSpecName ?? "another client"}</strong>, not{" "}
                     {scopeLabel} — its cover prints that client&rsquo;s General information, which
                     is what will be rebuilt.
@@ -327,12 +327,12 @@ export function StyleRegenPanel({
           </ul>
 
           {selected.length === 0 ? (
-            <p className="mt-3 text-[13px] leading-relaxed text-amber-900">
+            <p className="mt-3 text-[13px] leading-relaxed text-warn">
               Nothing to regenerate — none of these styles has a cover to rebuild yet.
             </p>
           ) : (
             <>
-              <p className="mt-3 text-[13px] leading-relaxed text-amber-900">
+              <p className="mt-3 text-[13px] leading-relaxed text-warn">
                 <strong>
                   {selected.length} {plural(selected.length, "style", "styles")}
                 </strong>{" "}
@@ -349,7 +349,7 @@ export function StyleRegenPanel({
                 )}{" "}
                 Outputs are not re-rendered and approvals are untouched.
               </p>
-              <label className="mt-3 flex items-start gap-2 text-[13px] text-amber-900">
+              <label className="mt-3 flex items-start gap-2 text-[13px] text-warn">
                 <input
                   type="checkbox"
                   checked={notifySupplier}
@@ -371,7 +371,7 @@ export function StyleRegenPanel({
               type="button"
               onClick={regenerate}
               disabled={phase === "running" || selected.length === 0}
-              className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:bg-zinc-300"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {phase === "running"
                 ? `Regenerating ${selected.length} ${plural(selected.length, "style", "styles")}…`
@@ -381,13 +381,13 @@ export function StyleRegenPanel({
               type="button"
               onClick={reset}
               disabled={phase === "running"}
-              className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed"
+              className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink hover:bg-subtle disabled:cursor-not-allowed"
             >
               Cancel
             </button>
           </div>
           {phase === "running" && selected.length > 1 && (
-            <p className="mt-2 text-[12px] text-amber-800">
+            <p className="mt-2 text-[12px] text-warn">
               Each cover is rebuilt and pushed in turn, so this takes a moment per style. The
               result below reports every one of them separately.
             </p>
@@ -399,11 +399,11 @@ export function StyleRegenPanel({
         <div
           className={`mt-4 rounded-md border p-4 ${
             run.summary.allSucceeded
-              ? "border-emerald-200 bg-emerald-50"
-              : "border-amber-300 bg-amber-50"
+              ? "border-transparent bg-good-soft"
+              : "border-transparent bg-warn-soft"
           }`}
         >
-          <p className="text-sm font-medium text-zinc-900">
+          <p className="text-sm font-medium text-ink">
             {run.summary.pushed} of {run.summary.total}{" "}
             {plural(run.summary.total, "style", "styles")} regenerated and delivered
             {run.summary.notPushed > 0 && `, ${run.summary.notPushed} rebuilt but not delivered`}
@@ -416,22 +416,22 @@ export function StyleRegenPanel({
             {run.results.map((r) => (
               <li
                 key={r.styleId}
-                className="rounded border border-zinc-200 bg-white px-3 py-2 text-[13px]"
+                className="rounded border border-line bg-surface px-3 py-2 text-[13px]"
               >
                 <div className="flex flex-wrap items-baseline gap-x-2">
-                  <span className="font-mono font-semibold text-zinc-800">
+                  <span className="font-mono font-semibold text-ink">
                     {r.styleName ?? r.styleId}
                   </span>
                   {!r.inThisSpec && r.prodSpecName && (
-                    <span className="text-[11px] text-zinc-400">{r.prodSpecName}</span>
+                    <span className="text-[11px] text-faint">{r.prodSpecName}</span>
                   )}
                   <span
                     className={`ml-auto text-[12px] font-medium ${
                       r.outcome === "pushed"
-                        ? "text-emerald-700"
+                        ? "text-good"
                         : r.outcome === "push-failed" || r.outcome === "error"
-                          ? "text-red-700"
-                          : "text-amber-800"
+                          ? "text-bad"
+                          : "text-warn"
                     }`}
                   >
                     {r.outcome === "pushed"
@@ -449,7 +449,7 @@ export function StyleRegenPanel({
                 </div>
 
                 {r.outcome === "pushed" && (
-                  <p className="mt-1 text-zinc-600">
+                  <p className="mt-1 text-muted">
                     Cover rebuilt with the current General information and pushed to SharePoint
                     {r.folderUrl ? (
                       <>
@@ -469,12 +469,12 @@ export function StyleRegenPanel({
                   </p>
                 )}
                 {r.outcome === "not-pushed" && (
-                  <p className="mt-1 text-amber-800">
+                  <p className="mt-1 text-warn">
                     Cover rebuilt, but nothing was uploaded: {requeueNote(r.requeue)}.
                   </p>
                 )}
                 {r.outcome === "push-failed" && (
-                  <p className="mt-1 text-red-700">
+                  <p className="mt-1 text-bad">
                     The cover was rebuilt but did <strong>not</strong> reach SharePoint
                     {r.pushError ? `: ${r.pushError}` : "."} It stays queued and the recurring
                     supplier sweep will retry it.
@@ -483,13 +483,13 @@ export function StyleRegenPanel({
                 {(r.outcome === "no-cover" ||
                   r.outcome === "error" ||
                   r.outcome === "not-found") &&
-                  r.message && <p className="mt-1 text-zinc-600">{r.message}</p>}
+                  r.message && <p className="mt-1 text-muted">{r.message}</p>}
               </li>
             ))}
           </ul>
 
           {run.summary.pushed > 0 && (
-            <p className="mt-3 text-[12px] text-zinc-500">
+            <p className="mt-3 text-[12px] text-muted">
               {notifySupplier
                 ? "The suppliers involved are included in tonight's digest."
                 : "No emails were sent."}
@@ -502,7 +502,7 @@ export function StyleRegenPanel({
               reset();
               setQuery("");
             }}
-            className="mt-4 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+            className="mt-4 inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             Done
           </button>

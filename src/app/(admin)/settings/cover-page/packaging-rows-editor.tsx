@@ -485,7 +485,7 @@ export function PackagingRowsEditor({ initialRows, trimsEnabled, customers }: Pr
           screen that let someone hide a row and then say nothing would be
           inviting them to conclude the feature is faulty. */}
       {!trimsEnabled && (
-        <div className="mb-6 max-w-3xl rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-[13px] leading-relaxed text-sky-900">
+        <div className="mb-6 max-w-3xl rounded-md border border-transparent bg-accent-soft px-3 py-2 text-[13px] leading-relaxed text-accent-text">
           <strong>Trims on cover pages is off, so none of this is printing yet.</strong> Rows,
           wording and both ticks are all stored and all inert: covers currently list the layouts we
           generate, exactly as they always have. Hiding a row today changes nothing — and it will
@@ -494,27 +494,27 @@ export function PackagingRowsEditor({ initialRows, trimsEnabled, customers }: Pr
           switch itself is on the{" "}
           <Link
             href="/settings/cover-page"
-            className="font-medium text-sky-900 underline underline-offset-2"
+            className="font-medium text-accent-text underline underline-offset-2"
           >
             Cover page
           </Link>{" "}
           tab.
         </div>
       )}
-      <p className="max-w-2xl text-sm text-zinc-500">
+      <p className="max-w-2xl text-sm text-muted">
         Every line a cover page can print. A row is written once here — never once per client —
         because &ldquo;Care label&rdquo; is a different layout for each client and a per-client list
         would never be finished. Each row also says which Monday <strong>Trims</strong> values land
         on it; the same mapping read the other way round — value by value, worst-first — is{" "}
         <Link
           href="/settings/trims"
-          className="font-medium text-zinc-700 underline underline-offset-2"
+          className="font-medium text-ink underline underline-offset-2"
         >
           Settings › Trims
         </Link>
         . It is one mapping: a change made here shows up there, and the other way about.
       </p>
-      <p className="mt-2 max-w-2xl text-sm text-zinc-500">
+      <p className="mt-2 max-w-2xl text-sm text-muted">
         Open a row to edit it. The <strong>note</strong> is a standing fact about the document and
         prints in every state; the two status boxes are what the Status column says while the
         artwork is still to come, and once it is confirmed. Leave a box empty to use the wording
@@ -523,7 +523,7 @@ export function PackagingRowsEditor({ initialRows, trimsEnabled, customers }: Pr
         bundles — covers already in a supplier&rsquo;s folder keep their words until they are
         rebuilt.
       </p>
-      <p className="mt-2 max-w-2xl text-sm text-zinc-500">
+      <p className="mt-2 max-w-2xl text-sm text-muted">
         Each row also decides two things about the packaging itself:{" "}
         <strong>always supplied by hand</strong> keeps the line an upload even once a layout
         produces it, and <strong>print on the cover</strong> decides whether the row appears at all.
@@ -535,12 +535,12 @@ export function PackagingRowsEditor({ initialRows, trimsEnabled, customers }: Pr
       {/* The save indicator lives at the TOP as well as the bottom, because a
           collapsed row can be edited and closed without the bottom of the page
           ever being on screen. */}
-      <div className="mt-6 flex flex-wrap items-center gap-3 border-b border-zinc-200 pb-2">
-        <span className="text-[13px] font-medium text-zinc-700">
+      <div className="mt-6 flex flex-wrap items-center gap-3 border-b border-line pb-2">
+        <span className="text-[13px] font-medium text-ink">
           {shown.length} row{shown.length === 1 ? "" : "s"}
         </span>
         {removedCount > 0 && (
-          <label className="flex items-center gap-2 text-[13px] text-zinc-500">
+          <label className="flex items-center gap-2 text-[13px] text-muted">
             <input
               type="checkbox"
               checked={showRemoved}
@@ -553,14 +553,14 @@ export function PackagingRowsEditor({ initialRows, trimsEnabled, customers }: Pr
           <button
             type="button"
             onClick={() => setOpen(new Set(shown.map((r) => r.key)))}
-            className="text-[12px] text-zinc-500 underline underline-offset-2 hover:text-zinc-800"
+            className="text-[12px] text-muted underline underline-offset-2 hover:text-ink"
           >
             Expand all
           </button>
           <button
             type="button"
             onClick={() => setOpen(new Set())}
-            className="text-[12px] text-zinc-500 underline underline-offset-2 hover:text-zinc-800"
+            className="text-[12px] text-muted underline underline-offset-2 hover:text-ink"
           >
             Collapse all
           </button>
@@ -568,10 +568,10 @@ export function PackagingRowsEditor({ initialRows, trimsEnabled, customers }: Pr
             role="status"
             className={`text-[13px] ${
               saveState === "error"
-                ? "text-red-600"
+                ? "text-bad"
                 : saveState === "saved" && !dirty
-                  ? "text-emerald-700"
-                  : "text-zinc-400"
+                  ? "text-good"
+                  : "text-faint"
             }`}
           >
             {status}
@@ -610,8 +610,8 @@ export function PackagingRowsEditor({ initialRows, trimsEnabled, customers }: Pr
           permanent id, so it is confirmed ONCE, on purpose, instead of being
           minted by a debounce firing mid-word. Everything afterwards — the
           wording, the ticks, even renaming it — autosaves. */}
-      <div className="mt-4 rounded-lg border border-dashed border-zinc-300 bg-zinc-50/60 p-4">
-        <span className="text-[13px] font-medium text-zinc-700">Add a row</span>
+      <div className="mt-4 rounded-lg border border-dashed border-line bg-zinc-50/60 p-4">
+        <span className="text-[13px] font-medium text-ink">Add a row</span>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <input
             type="text"
@@ -624,18 +624,18 @@ export function PackagingRowsEditor({ initialRows, trimsEnabled, customers }: Pr
                 void createRow();
               }
             }}
-            className="min-w-[16rem] flex-1 rounded border border-zinc-300 bg-white px-2 py-1.5 text-[13px] text-zinc-800 placeholder:text-zinc-300 focus:border-zinc-400 focus:outline-none"
+            className="min-w-[16rem] flex-1 rounded border border-line bg-surface px-2 py-1.5 text-[13px] text-ink placeholder:text-faint focus:border-accent focus:outline-none"
           />
           <button
             type="button"
             onClick={() => void createRow()}
             disabled={creating || newLabel.trim() === ""}
-            className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-zinc-300"
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {creating ? "Adding…" : "Create row"}
           </button>
         </div>
-        <p className="mt-2 max-w-3xl text-[11px] text-zinc-500">
+        <p className="mt-2 max-w-3xl text-[11px] text-muted">
           The name becomes this row&rsquo;s permanent id, which every trim mapping and layout pin
           then points at — so it is created once, here, rather than as you type. You can rename the
           row afterwards as often as you like: the id stays put, and nothing mapped to it comes
@@ -649,9 +649,9 @@ export function PackagingRowsEditor({ initialRows, trimsEnabled, customers }: Pr
           which is how a wording change gets made and then quietly doubted.
           Deliberately BELOW the rows: the order of the screen is edit, look,
           and only then rebuild. */}
-      <div className="mt-10 rounded-lg border border-zinc-200 bg-white p-5">
-        <h2 className="text-sm font-semibold text-zinc-800">See it on a real cover</h2>
-        <p className="mt-1 max-w-3xl text-[13px] leading-relaxed text-zinc-500">
+      <div className="mt-10 rounded-xl border border-line bg-surface p-5">
+        <h2 className="text-sm font-semibold text-ink">See it on a real cover</h2>
+        <p className="mt-1 max-w-3xl text-[13px] leading-relaxed text-muted">
           The rows above are a list; the cover is a page. This renders one, for a real style, so the
           lines, the wording and the statuses can be read where they will actually be read — the
           custom text included, since the style names the client it belongs to.
@@ -689,8 +689,8 @@ export function PackagingRowsEditor({ initialRows, trimsEnabled, customers }: Pr
             it rebuilds the packaging list too. Linking rather than duplicating:
             a second copy of a control that overwrites suppliers' files is a
             second place for it to drift. */}
-        <p className="mt-4 max-w-3xl text-[13px] leading-relaxed text-zinc-500">
-          <strong className="font-medium text-zinc-800">
+        <p className="mt-4 max-w-3xl text-[13px] leading-relaxed text-muted">
+          <strong className="font-medium text-ink">
             Editing these rows changes nothing that already exists.
           </strong>{" "}
           Saving applies to bundles generated from now on; every cover already sitting in a
@@ -698,7 +698,7 @@ export function PackagingRowsEditor({ initialRows, trimsEnabled, customers }: Pr
           use{" "}
           <Link
             href="/settings/cover-page?tab=general-info#regenerate-a-style"
-            className="font-medium text-zinc-700 underline underline-offset-2"
+            className="font-medium text-ink underline underline-offset-2"
           >
             Regenerate a style
           </Link>{" "}
@@ -750,8 +750,8 @@ function RowAccordion({
 
   return (
     <div
-      className={`rounded-lg border bg-white ${
-        r.active ? "border-zinc-200" : "border-dashed border-zinc-300 opacity-60"
+      className={`rounded-lg border bg-surface ${
+        r.active ? "border-line" : "border-dashed border-line opacity-60"
       }`}
     >
       <button
@@ -762,12 +762,12 @@ function RowAccordion({
       >
         <span
           aria-hidden
-          className={`text-zinc-400 transition-transform ${open ? "rotate-90" : ""}`}
+          className={`text-faint transition-transform ${open ? "rotate-90" : ""}`}
         >
           ▸
         </span>
-        <span className="text-[13px] font-medium text-zinc-800">
-          {r.label.trim() || <span className="text-zinc-300">Unnamed row</span>}
+        <span className="text-[13px] font-medium text-ink">
+          {r.label.trim() || <span className="text-faint">Unnamed row</span>}
         </span>
         {/* Every decision on the row, in one line. Each badge is present only
             when it is NOT the neutral value, so a plain row stays plain and the
@@ -782,7 +782,7 @@ function RowAccordion({
         )}
         {!r.active && <Badge tone="zinc">removed</Badge>}
         {r.builtIn && <Badge tone="zinc">built in</Badge>}
-        <span className="ml-auto text-[11px] text-zinc-400">
+        <span className="ml-auto text-[11px] text-faint">
           {boundCount === null
             ? ""
             : `${boundCount} Monday value${boundCount === 1 ? "" : "s"}`}
@@ -790,10 +790,10 @@ function RowAccordion({
       </button>
 
       {open && (
-        <div className="border-t border-zinc-100 px-4 pb-4 pt-3">
+        <div className="border-t border-line px-4 pb-4 pt-3">
           <div className="flex flex-wrap items-center gap-3">
             <label className="min-w-[14rem] flex-1">
-              <span className="mb-0.5 block text-[11px] uppercase tracking-wide text-zinc-400">
+              <span className="mb-0.5 block text-[11px] text-faint">
                 Row name
               </span>
               <input
@@ -801,10 +801,10 @@ function RowAccordion({
                 value={r.label}
                 placeholder="Row name, e.g. Inlay card"
                 onChange={(e) => patch(r.key, { label: e.target.value })}
-                className="w-full rounded border border-zinc-200 px-2 py-1.5 text-[13px] font-medium text-zinc-800 placeholder:text-zinc-300 focus:border-zinc-400 focus:outline-none"
+                className="w-full rounded border border-line px-2 py-1.5 text-[13px] font-medium text-ink placeholder:text-faint focus:border-accent focus:outline-none"
               />
             </label>
-            <label className="flex items-center gap-2 pt-4 text-[13px] text-zinc-600">
+            <label className="flex items-center gap-2 pt-4 text-[13px] text-muted">
               <input
                 type="checkbox"
                 checked={!r.artwork}
@@ -823,14 +823,14 @@ function RowAccordion({
             <button
               type="button"
               onClick={() => patch(r.key, { active: !r.active })}
-              className="ml-auto mt-4 rounded border border-zinc-300 px-2 py-1 text-[12px] font-medium text-zinc-600 hover:bg-zinc-50"
+              className="ml-auto mt-4 rounded border border-line px-2 py-1 text-[12px] font-medium text-muted hover:bg-subtle"
             >
               {r.active ? "Remove" : "Restore"}
             </button>
           </div>
 
           {!r.active && (
-            <p className="mt-2 text-[12px] text-zinc-500">
+            <p className="mt-2 text-[12px] text-muted">
               Removed — it stops being offered for new mappings. Trim values already pointing at it
               keep printing this row and its wording, so nothing on a cover changes until they are
               re-mapped. To stop it printing, untick <strong>Print on the cover</strong> below
@@ -841,11 +841,11 @@ function RowAccordion({
           {/* WHO SUPPLIES IT, and WHETHER IT PRINTS. Two decisions about the
               kind of packaging itself, kept together and away from the wording
               boxes, which are about what the cover says once it does print. */}
-          <div className="mt-3 flex flex-wrap items-start gap-x-6 gap-y-3 border-t border-zinc-100 pt-3">
+          <div className="mt-3 flex flex-wrap items-start gap-x-6 gap-y-3 border-t border-line pt-3">
             <div className="min-w-[17rem] flex-1">
               <label
                 className={`flex items-center gap-2 text-[13px] ${
-                  r.artwork ? "text-zinc-600" : "text-zinc-300"
+                  r.artwork ? "text-muted" : "text-faint"
                 }`}
               >
                 <input
@@ -856,7 +856,7 @@ function RowAccordion({
                 />
                 Always supplied by hand
               </label>
-              <p className="mt-0.5 text-[11px] text-zinc-400">
+              <p className="mt-0.5 text-[11px] text-faint">
                 {r.artwork ? (
                   <>
                     The buyer sends us this artwork. The line stays a manual upload — and keeps its
@@ -874,7 +874,7 @@ function RowAccordion({
               </p>
             </div>
             <div className="min-w-[17rem] flex-1">
-              <label className="flex items-center gap-2 text-[13px] text-zinc-600">
+              <label className="flex items-center gap-2 text-[13px] text-muted">
                 <input
                   type="checkbox"
                   checked={r.printOnCover}
@@ -882,7 +882,7 @@ function RowAccordion({
                 />
                 Print on the cover
               </label>
-              <p className="mt-0.5 text-[11px] text-zinc-400">
+              <p className="mt-0.5 text-[11px] text-faint">
                 Off hides this <em>kind of packaging</em> wherever it comes from — no line, no
                 status, no drop zone — however Monday words it, and including documents we generate
                 ourselves. Taking a value off the row below hides <em>one Monday word</em> instead.
@@ -892,8 +892,8 @@ function RowAccordion({
                   delete — untick it and it is natural to assume the line has
                   just come off the covers in the suppliers' folders. It has
                   not, and it never will until those covers are rebuilt. */}
-              <p className="mt-1 text-[11px] text-zinc-500">
-                <strong className="font-medium text-zinc-700">
+              <p className="mt-1 text-[11px] text-muted">
+                <strong className="font-medium text-ink">
                   Nothing already delivered changes.
                 </strong>{" "}
                 Hiding a row takes effect on bundles generated from here on; covers already in a
@@ -909,7 +909,7 @@ function RowAccordion({
                 value={r.note ?? ""}
                 placeholder="No note"
                 onChange={(e) => patch(r.key, { note: e.target.value })}
-                className="w-full rounded border border-zinc-200 px-2 py-1.5 text-[13px] text-zinc-800 placeholder:text-zinc-300 focus:border-zinc-400 focus:outline-none"
+                className="w-full rounded border border-line px-2 py-1.5 text-[13px] text-ink placeholder:text-faint focus:border-accent focus:outline-none"
               />
             </Field>
             {r.artwork ? (
@@ -920,7 +920,7 @@ function RowAccordion({
                     value={r.pending ?? ""}
                     placeholder={DEFAULT_PENDING_STATUS}
                     onChange={(e) => patch(r.key, { pending: e.target.value })}
-                    className="w-full rounded border border-zinc-200 px-2 py-1.5 text-[13px] text-zinc-800 placeholder:text-zinc-300 focus:border-zinc-400 focus:outline-none"
+                    className="w-full rounded border border-line px-2 py-1.5 text-[13px] text-ink placeholder:text-faint focus:border-accent focus:outline-none"
                   />
                 </Field>
                 <Field label="Delivered">
@@ -929,12 +929,12 @@ function RowAccordion({
                     value={r.delivered ?? ""}
                     placeholder={DEFAULT_DELIVERED_STATUS}
                     onChange={(e) => patch(r.key, { delivered: e.target.value })}
-                    className="w-full rounded border border-zinc-200 px-2 py-1.5 text-[13px] text-zinc-800 placeholder:text-zinc-300 focus:border-zinc-400 focus:outline-none"
+                    className="w-full rounded border border-line px-2 py-1.5 text-[13px] text-ink placeholder:text-faint focus:border-accent focus:outline-none"
                   />
                 </Field>
               </div>
             ) : (
-              <p className="text-[12px] text-zinc-400">
+              <p className="text-[12px] text-faint">
                 No status boxes: nothing is ever delivered for a packing instruction, so a status
                 would sit at &ldquo;waiting&rdquo; forever.
               </p>
@@ -1025,11 +1025,11 @@ function CustomerCopyForRow({
   const deliveredFallback = row.delivered?.trim() || DEFAULT_DELIVERED_STATUS;
 
   return (
-    <div className="mt-3 border-t border-zinc-100 pt-3">
-      <span className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-400">
+    <div className="mt-3 border-t border-line pt-3">
+      <span className="mb-1 block text-[11px] text-faint">
         Custom delivery text for named clients
       </span>
-      <p className="mb-2 max-w-3xl text-[11px] text-zinc-400">
+      <p className="mb-2 max-w-3xl text-[11px] text-faint">
         Everything else about this row stays the same for everybody — only these two sentences
         change, and only for the clients named here. Every other client reads the wording above. A
         box left empty falls back to that wording on its own, so writing just one of the two is
@@ -1042,12 +1042,12 @@ function CustomerCopyForRow({
           const offerable = customers.filter((c) => !claimed.has(c.id));
           const says = (entry.pending?.trim() ?? "") !== "" || (entry.delivered?.trim() ?? "") !== "";
           return (
-            <div key={i} className="rounded border border-zinc-200 bg-zinc-50/60 p-3">
+            <div key={i} className="rounded border border-line bg-zinc-50/60 p-3">
               <div className="flex flex-wrap items-center gap-1">
                 {ids.map((id) => (
                   <span
                     key={id}
-                    className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-[12px] text-zinc-700"
+                    className="inline-flex items-center gap-1 rounded border border-line bg-surface px-1.5 py-0.5 text-[12px] text-ink"
                   >
                     {/* A client whose row has gone (renamed away, deactivated)
                         still shows, as its id. The words stored against it are
@@ -1059,7 +1059,7 @@ function CustomerCopyForRow({
                       onClick={() =>
                         patchEntry(i, { customerIds: ids.filter((x) => x !== id) })
                       }
-                      className="text-zinc-400 hover:text-red-600"
+                      className="text-faint hover:text-bad"
                       aria-label={`Remove ${customerName.get(id) ?? id} from this custom text`}
                     >
                       ×
@@ -1072,7 +1072,7 @@ function CustomerCopyForRow({
                     const picked = e.target.value;
                     if (picked) patchEntry(i, { customerIds: [...ids, picked] });
                   }}
-                  className="rounded border border-zinc-300 bg-white px-2 py-1 text-[12px]"
+                  className="rounded border border-line bg-surface px-2 py-1 text-[12px]"
                 >
                   <option value="">Add a client…</option>
                   {offerable.map((c) => (
@@ -1084,7 +1084,7 @@ function CustomerCopyForRow({
                 <button
                   type="button"
                   onClick={() => onChange(entries.filter((_, x) => x !== i))}
-                  className="ml-auto rounded border border-zinc-300 bg-white px-2 py-1 text-[12px] text-zinc-600 hover:bg-zinc-50"
+                  className="ml-auto rounded border border-line bg-surface px-2 py-1 text-[12px] text-muted hover:bg-subtle"
                 >
                   Delete
                 </button>
@@ -1097,7 +1097,7 @@ function CustomerCopyForRow({
                     value={entry.pending ?? ""}
                     placeholder={pendingFallback}
                     onChange={(e) => patchEntry(i, { pending: e.target.value })}
-                    className="w-full rounded border border-zinc-200 bg-white px-2 py-1.5 text-[13px] text-zinc-800 placeholder:text-zinc-300 focus:border-zinc-400 focus:outline-none"
+                    className="w-full rounded border border-line bg-surface px-2 py-1.5 text-[13px] text-ink placeholder:text-faint focus:border-accent focus:outline-none"
                   />
                 </Field>
                 <Field label="Delivered">
@@ -1106,7 +1106,7 @@ function CustomerCopyForRow({
                     value={entry.delivered ?? ""}
                     placeholder={deliveredFallback}
                     onChange={(e) => patchEntry(i, { delivered: e.target.value })}
-                    className="w-full rounded border border-zinc-200 bg-white px-2 py-1.5 text-[13px] text-zinc-800 placeholder:text-zinc-300 focus:border-zinc-400 focus:outline-none"
+                    className="w-full rounded border border-line bg-surface px-2 py-1.5 text-[13px] text-ink placeholder:text-faint focus:border-accent focus:outline-none"
                   />
                 </Field>
               </div>
@@ -1115,12 +1115,12 @@ function CustomerCopyForRow({
                   either state is stored as nothing and a person would otherwise
                   come back to find their work gone with no explanation. */}
               {ids.length === 0 && (
-                <p className="mt-1 text-[11px] text-amber-700">
+                <p className="mt-1 text-[11px] text-warn">
                   No client named, so this entry is not saved. Add one, or delete the entry.
                 </p>
               )}
               {ids.length > 0 && !says && (
-                <p className="mt-1 text-[11px] text-amber-700">
+                <p className="mt-1 text-[11px] text-warn">
                   Both boxes are empty, so this entry is not saved — an override of nothing is
                   nothing. Write one of the two, or delete the entry.
                 </p>
@@ -1134,7 +1134,7 @@ function CustomerCopyForRow({
         type="button"
         onClick={() => onChange([...entries, { customerIds: [], pending: "", delivered: "" }])}
         disabled={claimed.size >= customers.length && customers.length > 0}
-        className="mt-2 rounded border border-zinc-300 px-2 py-1 text-[12px] font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-300"
+        className="mt-2 rounded border border-line px-2 py-1 text-[12px] font-medium text-ink hover:bg-subtle disabled:cursor-not-allowed disabled:text-faint"
       >
         Add custom text
       </button>
@@ -1174,14 +1174,14 @@ function TrimValuesForRow({
   // A row minted in this session has no id yet, so nothing can point at it.
   if (!rowValue) {
     return (
-      <p className="mt-3 border-t border-zinc-100 pt-3 text-[12px] text-zinc-400">
+      <p className="mt-3 border-t border-line pt-3 text-[12px] text-faint">
         Save the row first — a Monday value can only be pointed at a row that exists.
       </p>
     );
   }
   if (state === "loading" || !labels || !overrides) {
     return (
-      <p className="mt-3 border-t border-zinc-100 pt-3 text-[12px] text-zinc-400">
+      <p className="mt-3 border-t border-line pt-3 text-[12px] text-faint">
         {state === "failed"
           ? "The survey of live Monday values could not be read, so mapping is unavailable here. Settings › Trims still works."
           : "Reading the Monday trim values…"}
@@ -1198,8 +1198,8 @@ function TrimValuesForRow({
     .sort((a, b) => b.styles - a.styles || a.label.localeCompare(b.label));
 
   return (
-    <div className="mt-3 border-t border-zinc-100 pt-3">
-      <span className="mb-1 block text-[11px] uppercase tracking-wide text-zinc-400">
+    <div className="mt-3 border-t border-line pt-3">
+      <span className="mb-1 block text-[11px] text-faint">
         Monday trim values on this row
       </span>
       <div className="flex flex-wrap items-center gap-1">
@@ -1209,7 +1209,7 @@ function TrimValuesForRow({
           return (
             <span
               key={l.normalized}
-              className="inline-flex items-center gap-1 rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[12px] text-zinc-700"
+              className="inline-flex items-center gap-1 rounded border border-line bg-subtle px-1.5 py-0.5 text-[12px] text-ink"
               title={
                 wouldSuppress
                   ? "This row is the only one it lands on — removing it keeps the value off covers entirely."
@@ -1217,16 +1217,16 @@ function TrimValuesForRow({
               }
             >
               {l.label}
-              <span className="tabular-nums text-zinc-400">{l.styles.toLocaleString()}</span>
+              <span className="tabular-nums text-faint">{l.styles.toLocaleString()}</span>
               {elsewhere.length > 0 && (
-                <span className="text-zinc-400">
+                <span className="text-faint">
                   · also on {elsewhere.map((c) => rowLabel.get(c) ?? c).join(", ")}
                 </span>
               )}
               <button
                 type="button"
                 onClick={() => onChange(unbindLabelFromRow(overrides, l, rowValue))}
-                className="text-zinc-400 hover:text-red-600"
+                className="text-faint hover:text-bad"
                 aria-label={`Remove ${l.label} from this row`}
               >
                 ×
@@ -1240,7 +1240,7 @@ function TrimValuesForRow({
             const picked = labels.find((l) => l.normalized === e.target.value);
             if (picked) onChange(bindLabelToRow(overrides, picked, rowValue));
           }}
-          className="rounded border border-zinc-300 px-2 py-1 text-[12px]"
+          className="rounded border border-line px-2 py-1 text-[12px]"
         >
           <option value="">Add a Monday value…</option>
           {offerable.map((l) => {
@@ -1255,7 +1255,7 @@ function TrimValuesForRow({
         </select>
       </div>
       {bound.some((l) => unbindingWouldSuppress(overrides, l, rowValue)) && (
-        <p className="mt-1 text-[11px] text-zinc-400">
+        <p className="mt-1 text-[11px] text-faint">
           A value this row is the only home for stops printing on covers entirely when it is removed
           here — that is the same &ldquo;not packaging&rdquo; decision Settings › Trims offers.
         </p>
@@ -1279,7 +1279,7 @@ function Badge({ tone, children }: { tone: "zinc" | "amber" | "sky"; children: R
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-0.5 block text-[11px] uppercase tracking-wide text-zinc-400">
+      <span className="mb-0.5 block text-[11px] text-faint">
         {label}
       </span>
       {children}

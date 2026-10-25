@@ -21,7 +21,7 @@ export function CombinationsTable({ combinations }: { combinations: NewCombinati
 
   if (combinations.length === 0) {
     return (
-      <div className="rounded-lg border border-zinc-200 bg-white px-4 py-8 text-center text-sm text-zinc-500">
+      <div className="rounded-xl border border-line bg-surface px-4 py-8 text-center text-sm text-muted">
         No new combinations detected. New (customer × business area) pairs land here as ghost
         data syncs.
       </div>
@@ -65,26 +65,26 @@ export function CombinationsTable({ combinations }: { combinations: NewCombinati
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+    <div className="overflow-hidden rounded-xl border border-line bg-surface">
       {toast && (
         <div
           className={`border-b px-4 py-2 text-sm ${
             toast.kind === "ok"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-red-200 bg-red-50 text-red-700"
+              ? "border-transparent bg-good-soft text-good"
+              : "border-transparent bg-bad-soft text-bad"
           }`}
         >
           {toast.message}
         </div>
       )}
       <table className="w-full text-sm">
-        <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+        <thead className="bg-subtle text-left text-xs text-muted">
           <tr>
-            <th className="px-4 py-3">Customer</th>
-            <th className="px-4 py-3">Business area</th>
-            <th className="px-4 py-3">Matches</th>
-            <th className="px-4 py-3">Sample items</th>
-            <th className="px-4 py-3 text-right">Action</th>
+            <th className="px-3 py-2">Customer</th>
+            <th className="px-3 py-2">Business area</th>
+            <th className="px-3 py-2">Matches</th>
+            <th className="px-3 py-2">Sample items</th>
+            <th className="px-3 py-2 text-right">Action</th>
           </tr>
         </thead>
         <tbody>
@@ -92,28 +92,28 @@ export function CombinationsTable({ combinations }: { combinations: NewCombinati
             const key = `${c.customerId}::${c.businessAreaId}`;
             const isBusy = busy === key;
             return (
-              <tr key={key} className="border-t border-zinc-100 hover:bg-zinc-50">
-                <td className="px-4 py-3 font-medium">{c.customerName}</td>
-                <td className="px-4 py-3 text-zinc-600">{c.businessAreaName}</td>
-                <td className="px-4 py-3 text-zinc-600 tabular-nums">
+              <tr key={key} className="border-t border-line hover:bg-subtle">
+                <td className="px-3 py-2 font-medium">{c.customerName}</td>
+                <td className="px-3 py-2 text-muted">{c.businessAreaName}</td>
+                <td className="px-3 py-2 text-muted tabular-nums">
                   {c.matchCount}
                   {c.ambiguousCount > 0 && (
-                    <span className="ml-1 text-xs text-zinc-400">
+                    <span className="ml-1 text-xs text-faint">
                       (+{c.ambiguousCount} ambiguous)
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-3 text-xs text-zinc-500">
+                <td className="px-3 py-2 text-xs text-muted">
                   {c.sampleItems.slice(0, 3).join(" · ") || "—"}
                 </td>
-                <td className="px-4 py-3 text-right">
+                <td className="px-3 py-2 text-right">
                   <button
                     type="button"
                     onClick={() =>
                       accept(c.customerId, c.businessAreaId, c.customerName, c.businessAreaName)
                     }
                     disabled={busy !== null}
-                    className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isBusy ? "Accepting…" : "Accept"}
                   </button>

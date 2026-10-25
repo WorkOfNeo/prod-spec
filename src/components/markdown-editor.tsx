@@ -155,8 +155,8 @@ export function MarkdownEditor({ value, onChange, uploadUrl }: Props) {
   }
 
   return (
-    <div className="mdedit overflow-hidden rounded-md border border-zinc-300 bg-white">
-      <div className="flex flex-wrap items-center gap-1 border-b border-zinc-200 bg-zinc-50 px-2 py-1.5">
+    <div className="mdedit overflow-hidden rounded-md border border-line bg-surface">
+      <div className="flex flex-wrap items-center gap-1 border-b border-line bg-subtle px-2 py-1.5">
         <ToolBtn label="H1" title="Heading 1 (type # + space)" active={state?.h1} onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()} disabled={mode === "source"} />
         <ToolBtn label="H2" title="Heading 2 (type ## + space)" active={state?.h2} onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} disabled={mode === "source"} />
         <ToolBtn label="H3" title="Heading 3 (type ### + space)" active={state?.h3} onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()} disabled={mode === "source"} />
@@ -207,14 +207,14 @@ export function MarkdownEditor({ value, onChange, uploadUrl }: Props) {
         <ToolBtn label="↺" title="Undo" onClick={() => editor?.chain().focus().undo().run()} disabled={mode === "source" || !state?.canUndo} />
         <ToolBtn label="↻" title="Redo" onClick={() => editor?.chain().focus().redo().run()} disabled={mode === "source" || !state?.canRedo} />
 
-        <div className="ml-auto flex items-center gap-0.5 rounded-md border border-zinc-200 bg-white p-0.5">
+        <div className="ml-auto flex items-center gap-0.5 rounded-md border border-line bg-surface p-0.5">
           {(["visual", "source"] as const).map((m) => (
             <button
               key={m}
               type="button"
               onClick={() => switchMode(m)}
               className={`rounded px-2 py-0.5 text-[11px] font-medium ${
-                mode === m ? "bg-zinc-900 text-white" : "text-zinc-500 hover:text-zinc-800"
+                mode === m ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50" : "text-muted hover:text-ink"
               }`}
             >
               {m === "visual" ? "Visual" : "Markdown"}
@@ -224,7 +224,7 @@ export function MarkdownEditor({ value, onChange, uploadUrl }: Props) {
       </div>
 
       {uploadErr && (
-        <div className="border-b border-red-200 bg-red-50 px-3 py-1.5 text-[11px] text-red-700">
+        <div className="border-b border-transparent bg-bad-soft px-3 py-1.5 text-[11px] text-bad">
           {uploadErr}
         </div>
       )}
@@ -297,8 +297,8 @@ function ToolBtn({
       disabled={disabled}
       className={`rounded px-2 py-1 text-[11.5px] transition-colors disabled:opacity-35 ${
         bold ? "font-bold" : "font-medium"
-      } ${italic ? "italic" : ""} ${
-        active ? "bg-zinc-900 text-white" : "text-zinc-600 hover:bg-zinc-200/70 hover:text-zinc-900"
+      }  ${italic ? "italic" : ""}  ${
+        active ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50" : "text-muted hover:bg-zinc-200/70 hover:text-ink"
       }`}
     >
       {label}
@@ -307,7 +307,7 @@ function ToolBtn({
 }
 
 function Divider() {
-  return <span aria-hidden className="mx-0.5 h-4 w-px bg-zinc-200" />;
+  return <span aria-hidden className="mx-0.5 h-4 w-px bg-subtle" />;
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {

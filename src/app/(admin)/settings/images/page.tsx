@@ -31,13 +31,13 @@ export default async function LayoutImagesPage() {
   }
 
   return (
-    <div className="px-8 py-8">
-      <Link href="/settings" className="text-xs text-zinc-500 underline">
+    <div className="px-6 py-5">
+      <Link href="/settings" className="text-xs text-muted underline">
         ← Back to settings
       </Link>
       <div className="mt-2 mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Images</h1>
-        <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Images</h1>
+        <p className="mt-1 max-w-2xl text-sm text-muted">
           Shared artwork for the Output Builder. Place a picture on a layout with{" "}
           <code className="font-mono">{"{{image:<name>}}"}</code> — as many as an output needs, and the
           same picture on as many layouts as you like. Correct it here and every layout that places it

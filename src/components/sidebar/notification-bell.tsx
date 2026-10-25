@@ -155,7 +155,7 @@ export function NotificationBell({ align = "side" }: { align?: "side" | "end" } 
           <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
         </svg>
         {badge > 0 && (
-          <span className="absolute -right-1 -top-1 inline-flex min-w-[1.125rem] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-none text-white tabular-nums">
+          <span className="absolute -right-1 -top-1 inline-flex min-w-[1.125rem] items-center justify-center rounded-full bg-bad px-1 text-[11px] font-semibold leading-none text-white tabular-nums">
             {badge > 99 ? "99+" : badge}
           </span>
         )}
@@ -165,19 +165,19 @@ export function NotificationBell({ align = "side" }: { align?: "side" | "end" } 
         <div
           role="dialog"
           aria-label="Notifications"
-          className={`absolute z-50 w-[340px] overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-xl ${
+          className={`absolute z-50 w-[340px] overflow-hidden rounded-xl border border-line bg-surface shadow-xl ${
             // "side": beside the button (it used to live in the sidebar); "end": under it, right-aligned (top bar).
             align === "end" ? "right-0 top-full mt-2" : "left-full top-0 ml-2"
           }`}
         >
-          <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          <div className="flex items-center justify-between border-b border-line px-3 py-2">
+            <span className="text-xs font-semibold text-muted">
               Notifications
             </span>
             <Link
               href="/import"
               onClick={() => setOpen(false)}
-              className="text-xs font-medium text-zinc-700 hover:text-zinc-900 hover:underline"
+              className="text-xs font-medium text-ink hover:text-ink hover:underline"
             >
               View all →
             </Link>
@@ -185,16 +185,16 @@ export function NotificationBell({ align = "side" }: { align?: "side" | "end" } 
 
           <div className="max-h-[420px] overflow-y-auto">
             {listLoading && (
-              <div className="px-3 py-6 text-center text-sm text-zinc-500">Loading…</div>
+              <div className="px-3 py-6 text-center text-sm text-muted">Loading…</div>
             )}
             {!listLoading && listError && (
-              <div className="px-3 py-4 text-sm text-red-700">{listError}</div>
+              <div className="px-3 py-4 text-sm text-bad">{listError}</div>
             )}
             {!listLoading && !listError && list && list.notifications.length === 0 && (
-              <div className="px-3 py-6 text-center text-sm text-zinc-500">All caught up.</div>
+              <div className="px-3 py-6 text-center text-sm text-muted">All caught up.</div>
             )}
             {!listLoading && !listError && list && list.notifications.length > 0 && (
-              <ul className="divide-y divide-zinc-100">
+              <ul className="divide-y divide-line">
                 {list.notifications.map((n) => (
                   <NotificationItem
                     key={`${n.kind}:${n.customerId}:${n.businessAreaId}`}
@@ -207,7 +207,7 @@ export function NotificationBell({ align = "side" }: { align?: "side" | "end" } 
           </div>
 
           {list && list.notifications.length > 0 && (
-            <div className="border-t border-zinc-100 bg-zinc-50 px-3 py-2 text-[11px] text-zinc-500">
+            <div className="border-t border-line bg-subtle px-3 py-2 text-[11px] text-muted">
               {list.totals.newCombinations} new ·{" "}
               {list.totals.needsConfig} needs config ·{" "}
               {list.totals.importable} ready
@@ -233,14 +233,14 @@ function NotificationItem({
         <Link
           href="/import"
           onClick={onClick}
-          className="flex items-start gap-3 px-3 py-2.5 hover:bg-zinc-50"
+          className="flex items-start gap-3 px-3 py-2.5 hover:bg-subtle"
         >
-          <span className="mt-1 inline-block h-2 w-2 flex-shrink-0 rounded-full bg-amber-500" />
+          <span className="mt-1 inline-block h-2 w-2 flex-shrink-0 rounded-full bg-warn" />
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-medium text-zinc-900">
+            <span className="block text-sm font-medium text-ink">
               {row.customerName} · {row.businessAreaName}
             </span>
-            <span className="mt-0.5 block text-xs text-zinc-500">
+            <span className="mt-0.5 block text-xs text-muted">
               New combination · {row.matchCount} match
               {row.matchCount === 1 ? "" : "es"}
               {row.ambiguousCount > 0 && ` (+${row.ambiguousCount} ambiguous)`}
@@ -256,14 +256,14 @@ function NotificationItem({
         <Link
           href={`/prod-specs/${row.prodSpecId}`}
           onClick={onClick}
-          className="flex items-start gap-3 px-3 py-2.5 hover:bg-zinc-50"
+          className="flex items-start gap-3 px-3 py-2.5 hover:bg-subtle"
         >
-          <span className="mt-1 inline-block h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />
+          <span className="mt-1 inline-block h-2 w-2 flex-shrink-0 rounded-full bg-accent" />
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-medium text-zinc-900">
+            <span className="block text-sm font-medium text-ink">
               {row.customerName} · {row.businessAreaName}
             </span>
-            <span className="mt-0.5 block text-xs text-zinc-500">
+            <span className="mt-0.5 block text-xs text-muted">
               Needs config · {row.styleCount} style
               {row.styleCount === 1 ? "" : "s"} waiting · no outputs set
             </span>
@@ -277,14 +277,14 @@ function NotificationItem({
       <Link
         href="/import"
         onClick={onClick}
-        className="flex items-start gap-3 px-3 py-2.5 hover:bg-zinc-50"
+        className="flex items-start gap-3 px-3 py-2.5 hover:bg-subtle"
       >
-        <span className="mt-1 inline-block h-2 w-2 flex-shrink-0 rounded-full bg-emerald-500" />
+        <span className="mt-1 inline-block h-2 w-2 flex-shrink-0 rounded-full bg-good" />
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-medium text-zinc-900">
+          <span className="block text-sm font-medium text-ink">
             {row.customerName} · {row.businessAreaName}
           </span>
-          <span className="mt-0.5 block text-xs text-zinc-500">
+          <span className="mt-0.5 block text-xs text-muted">
             Ready to import · {row.count} item{row.count === 1 ? "" : "s"}
           </span>
         </span>

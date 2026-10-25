@@ -27,7 +27,7 @@ export function ImpactTable({ impact }: { impact: ImpactSummary }) {
       </dl>
 
       {counts.approvedChanged > 0 && (
-        <p className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <p className="flex items-start gap-2 rounded-md border border-transparent bg-warn-soft px-3 py-2 text-sm text-warn">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <span>
             {plural(counts.approvedChanged, "approved document")} change{counts.approvedChanged === 1 ? "s" : ""}. Approving does
@@ -37,7 +37,7 @@ export function ImpactTable({ impact }: { impact: ImpactSummary }) {
         </p>
       )}
       {counts.deliveredChanged > 0 && (
-        <p className="flex items-start gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900">
+        <p className="flex items-start gap-2 rounded-md border border-transparent bg-warn-soft px-3 py-2 text-sm text-warn">
           <Truck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <span>
             {plural(counts.deliveredChanged, "changed document")} {counts.deliveredChanged === 1 ? "was" : "were"} already
@@ -46,7 +46,7 @@ export function ImpactTable({ impact }: { impact: ImpactSummary }) {
         </p>
       )}
       {errors.length > 0 && (
-        <details className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+        <details className="rounded-md border border-transparent bg-bad-soft px-3 py-2 text-sm text-bad">
           <summary className="cursor-pointer">{plural(errors.length, "style")} could not be compared</summary>
           <ul className="mt-1 list-disc pl-5 text-xs">
             {errors.slice(0, ROWS_SHOWN).map((e) => (
@@ -59,15 +59,15 @@ export function ImpactTable({ impact }: { impact: ImpactSummary }) {
       )}
 
       {changed.length === 0 ? (
-        <p className="text-sm text-zinc-500">No document prints differently with this draft.</p>
+        <p className="text-sm text-muted">No document prints differently with this draft.</p>
       ) : (
         <div className="space-y-2">
           {IMPACT_REVIEW_STATUSES.map((status) => {
             const rows = changed.filter((r) => r.reviewStatus === status);
             if (rows.length === 0) return null;
             return (
-              <details key={status} open={status === "PENDING_REVIEW" || status === "APPROVED"} className="rounded-md border border-zinc-200">
-                <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-zinc-800">
+              <details key={status} open={status === "PENDING_REVIEW" || status === "APPROVED"} className="rounded-md border border-line">
+                <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-ink">
                   {REVIEW_STATUS_LABEL[status]} · {count(rows.length)}
                 </summary>
                 <RowsTable rows={rows} />
@@ -82,8 +82,8 @@ export function ImpactTable({ impact }: { impact: ImpactSummary }) {
 
 function Tile({ label, value, strong = false }: { label: string; value: number; strong?: boolean }) {
   return (
-    <div className={`rounded-md px-3 py-2 ${strong ? "bg-zinc-900 text-white" : "bg-zinc-50 text-zinc-900"}`}>
-      <dt className={`text-[11px] uppercase tracking-wide ${strong ? "text-zinc-300" : "text-zinc-500"}`}>{label}</dt>
+    <div className={`rounded-md px-3 py-2 ${strong ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50" : "bg-subtle text-ink"}`}>
+      <dt className={`text-[11px] ${strong ? "text-faint" : "text-muted"}`}>{label}</dt>
       <dd className="text-lg font-semibold tabular-nums">{count(value)}</dd>
     </div>
   );
@@ -91,9 +91,9 @@ function Tile({ label, value, strong = false }: { label: string; value: number; 
 
 export function RowsTable({ rows }: { rows: ImpactRow[] }) {
   return (
-    <div className="overflow-x-auto border-t border-zinc-100">
+    <div className="overflow-x-auto border-t border-line">
       <table className="w-full text-xs">
-        <thead className="bg-zinc-50 text-left text-[11px] uppercase tracking-wide text-zinc-500">
+        <thead className="bg-subtle text-left text-[11px] text-muted">
           <tr>
             <th className="px-3 py-1.5 font-medium">Style</th>
             <th className="px-3 py-1.5 font-medium">PO</th>
@@ -103,14 +103,14 @@ export function RowsTable({ rows }: { rows: ImpactRow[] }) {
         </thead>
         <tbody>
           {rows.slice(0, ROWS_SHOWN).map((r) => (
-            <tr key={`${r.styleId}|${r.variantKey}`} className="border-t border-zinc-100">
+            <tr key={`${r.styleId}|${r.variantKey}`} className="border-t border-line">
               <td className="px-3 py-1.5">
-                <a href={`/styles/${r.styleId}`} className="text-zinc-900 hover:underline">
+                <a href={`/styles/${r.styleId}`} className="text-ink hover:underline">
                   {r.styleLabel}
                 </a>
               </td>
-              <td className="px-3 py-1.5 text-zinc-600">{r.poNumber ?? "—"}</td>
-              <td className="px-3 py-1.5 font-mono text-zinc-600">{docSuffix(r.variantKey) ?? "—"}</td>
+              <td className="px-3 py-1.5 text-muted">{r.poNumber ?? "—"}</td>
+              <td className="px-3 py-1.5 font-mono text-muted">{docSuffix(r.variantKey) ?? "—"}</td>
               <td className="px-3 py-1.5">
                 <div className="flex flex-wrap gap-1">
                   {r.inFlight && <Flag tone="blue">run in progress</Flag>}
@@ -122,7 +122,7 @@ export function RowsTable({ rows }: { rows: ImpactRow[] }) {
         </tbody>
       </table>
       {rows.length > ROWS_SHOWN && (
-        <p className="px-3 py-1.5 text-xs text-zinc-500">+{count(rows.length - ROWS_SHOWN)} more</p>
+        <p className="px-3 py-1.5 text-xs text-muted">+{count(rows.length - ROWS_SHOWN)} more</p>
       )}
     </div>
   );
@@ -130,5 +130,5 @@ export function RowsTable({ rows }: { rows: ImpactRow[] }) {
 
 function Flag({ tone, children }: { tone: "blue" | "orange"; children: React.ReactNode }) {
   const cls = tone === "blue" ? "bg-blue-50 text-blue-700 ring-blue-200" : "bg-orange-50 text-orange-700 ring-orange-200";
-  return <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset ${cls}`}>{children}</span>;
+  return <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset ${cls}`}>{children}</span>;
 }

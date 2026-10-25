@@ -8,12 +8,12 @@ export const metadata = { title: "New customer" };
 export default async function NewCustomerPage() {
   await requireAdminPage();
   return (
-    <div className="px-8 py-8">
-      <Link href="/settings" className="text-xs text-zinc-500 underline">
+    <div className="px-6 py-5">
+      <Link href="/settings" className="text-xs text-muted underline">
         ← Back to settings
       </Link>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight">New customer</h1>
-      <p className="mt-1 text-sm text-zinc-500">
+      <h1 className="mt-2 text-[18px] font-semibold tracking-[-0.01em]">New customer</h1>
+      <p className="mt-1 text-sm text-muted">
         Slug is permanent. Use kebab-case (e.g. <code>netto-germany</code>).
       </p>
 

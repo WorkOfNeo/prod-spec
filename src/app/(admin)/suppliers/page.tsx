@@ -38,36 +38,36 @@ export default async function SuppliersPage() {
   }
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-6 py-5">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Suppliers</h1>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Suppliers</h1>
+        <p className="mt-1 text-sm text-muted">
           Mirrored from Monday board <code className="font-mono">3363275451</code>. Read-only;
           edit in Monday and Re-sync to pull updates here.
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="bg-subtle text-left text-xs text-muted">
             <tr>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Purchaser</th>
-              <th className="px-4 py-3">Email / contact</th>
-              <th className="px-4 py-3">Contacts</th>
-              <th className="px-4 py-3">Country</th>
-              <th className="px-4 py-3">Location</th>
-              <th className="px-4 py-3">Folder</th>
-              <th className="px-4 py-3">Styles</th>
-              <th className="px-4 py-3">In specs</th>
-              <th className="px-4 py-3">Synced</th>
-              <th className="px-4 py-3"></th>
+              <th className="px-3 py-2">Name</th>
+              <th className="px-3 py-2">Purchaser</th>
+              <th className="px-3 py-2">Email / contact</th>
+              <th className="px-3 py-2">Contacts</th>
+              <th className="px-3 py-2">Country</th>
+              <th className="px-3 py-2">Location</th>
+              <th className="px-3 py-2">Folder</th>
+              <th className="px-3 py-2">Styles</th>
+              <th className="px-3 py-2">In specs</th>
+              <th className="px-3 py-2">Synced</th>
+              <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {suppliers.length === 0 ? (
               <tr>
-                <td colSpan={11} className="px-4 py-12 text-center text-zinc-500">
+                <td colSpan={11} className="px-4 py-12 text-center text-muted">
                   No suppliers yet. Run the Supplier sync from <a href="/sync" className="underline">/sync</a>.
                 </td>
               </tr>
@@ -75,27 +75,27 @@ export default async function SuppliersPage() {
               suppliers.map((s) => (
                 <tr
                   key={s.id}
-                  className={`border-t border-zinc-100 ${s.active ? "" : "opacity-50"}`}
+                  className={`border-t border-line ${s.active ? "" : "opacity-50"}`}
                 >
-                  <td className="px-4 py-3 font-medium">{s.name}</td>
-                  <td className="px-4 py-3 text-zinc-600">{s.purchaser ?? "—"}</td>
-                  <td data-private className="px-4 py-3 text-xs text-zinc-600">
-                    {s.email ? <div>{s.email}</div> : <span className="text-zinc-400">—</span>}
+                  <td className="px-3 py-2 font-medium">{s.name}</td>
+                  <td className="px-3 py-2 text-muted">{s.purchaser ?? "—"}</td>
+                  <td data-private className="px-3 py-2 text-xs text-muted">
+                    {s.email ? <div>{s.email}</div> : <span className="text-faint">—</span>}
                     {s.contactEmail && (
-                      <div className="text-zinc-400">
+                      <div className="text-faint">
                         cc {s.contactName ? `${s.contactName} · ` : ""}
                         {s.contactEmail}
                       </div>
                     )}
                   </td>
-                  <td data-private className="px-4 py-3 text-xs text-zinc-600">
+                  <td data-private className="px-3 py-2 text-xs text-muted">
                     {(contactsBySupplier.get(s.id) ?? []).length === 0 ? (
-                      <span className="text-zinc-400">—</span>
+                      <span className="text-faint">—</span>
                     ) : (
                       (contactsBySupplier.get(s.id) ?? []).map((c, i) => (
                         <div
                           key={i}
-                          className={c.status === "Active" ? "" : "text-zinc-400 line-through"}
+                          className={c.status === "Active" ? "" : "text-faint line-through"}
                           title={`${c.contactType ?? "—"} · ${c.status ?? "—"}`}
                         >
                           {c.name}
@@ -104,15 +104,15 @@ export default async function SuppliersPage() {
                       ))
                     )}
                   </td>
-                  <td className="px-4 py-3 text-zinc-600">{s.country ?? "—"}</td>
-                  <td className="px-4 py-3 text-zinc-600">{s.location ?? "—"}</td>
-                  <td className="px-4 py-3 text-xs">
+                  <td className="px-3 py-2 text-muted">{s.country ?? "—"}</td>
+                  <td className="px-3 py-2 text-muted">{s.location ?? "—"}</td>
+                  <td className="px-3 py-2 text-xs">
                     {s.sharepointUrl ? (
                       <a
                         href={s.sharepointUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-zinc-700 underline"
+                        className="text-ink underline"
                       >
                         open
                       </a>
@@ -120,10 +120,10 @@ export default async function SuppliersPage() {
                       "—"
                     )}
                   </td>
-                  <td className="px-4 py-3 tabular-nums text-zinc-600">{s._count.styles}</td>
-                  <td className="px-4 py-3 tabular-nums text-zinc-600">{s._count.prodSpecSuppliers}</td>
-                  <td className="px-4 py-3 text-xs text-zinc-500">{formatDate(s.lastSyncedAt)}</td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-3 py-2 tabular-nums text-muted">{s._count.styles}</td>
+                  <td className="px-3 py-2 tabular-nums text-muted">{s._count.prodSpecSuppliers}</td>
+                  <td className="px-3 py-2 text-xs text-muted">{formatDate(s.lastSyncedAt)}</td>
+                  <td className="px-3 py-2 text-right">
                     <ResyncSupplierButton supplierId={s.id} />
                   </td>
                 </tr>

@@ -40,11 +40,11 @@ export function PoCutoffControl({
   }
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4">
+    <div className="rounded-xl border border-line bg-surface p-4">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold text-zinc-900">Scrape from PO</h2>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+          <h2 className="text-sm font-semibold text-ink">Scrape from PO</h2>
+          <p className="mt-1 max-w-2xl text-sm text-muted">
             Auto-scrape (PO→EAN) only touches styles whose PO is{" "}
             <strong>at or above</strong> this number. Orders before it are parked
             {parkedCount > 0 ? ` (${parkedCount.toLocaleString()} right now)` : ""} — never
@@ -52,7 +52,7 @@ export function PoCutoffControl({
             (e.g. <code>C-PO63144</code>) — everything from that PO onward is in scope. Empty =
             no cutoff (whole backlog). Generation has its own cutoff (next to this).
           </p>
-          {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
+          {error ? <p className="mt-2 text-xs text-bad">{error}</p> : null}
         </div>
         <div className="flex items-center gap-2">
           <input
@@ -60,13 +60,13 @@ export function PoCutoffControl({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder="C-PO63144"
-            className="w-40 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none"
+            className="w-40 rounded-md border border-line bg-surface px-3 py-2 text-sm placeholder:text-faint focus:border-accent focus:outline-none"
           />
           <button
             type="button"
             onClick={save}
             disabled={saving}
-            className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-40"
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save"}
           </button>

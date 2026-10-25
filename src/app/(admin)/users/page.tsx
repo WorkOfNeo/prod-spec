@@ -19,9 +19,9 @@ export default async function UsersPage() {
   const auth = await requireRole(["ADMIN"]);
   if (!auth.ok) {
     return (
-      <div className="px-8 py-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Users &amp; invites</h1>
-        <p className="mt-4 max-w-md rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+      <div className="px-6 py-5">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Users &amp; invites</h1>
+        <p className="mt-4 max-w-md rounded-lg border border-transparent bg-warn-soft px-4 py-3 text-sm text-warn">
           This page is for admins. Ask an admin if you need someone added or removed.
         </p>
       </div>
@@ -73,33 +73,33 @@ export default async function UsersPage() {
   }
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-6 py-5">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Users &amp; invites</h1>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Users &amp; invites</h1>
+        <p className="mt-1 text-sm text-muted">
           Who can access Prod Spec, and pending invitations. Signup is by invite only.
         </p>
       </div>
 
       {migrationPending && (
-        <p className="mb-6 max-w-xl rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <p className="mb-6 max-w-xl rounded-lg border border-transparent bg-warn-soft px-4 py-3 text-sm text-warn">
           The invites table is not migrated yet — run <code className="font-mono">npm run db:deploy</code>,
           then reload. Inviting is disabled until then; existing users are unaffected.
         </p>
       )}
 
       <section>
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">People</h2>
+        <h2 className="mb-2 text-xs font-semibold text-muted">People</h2>
         <UsersTable users={userRows} currentUserId={auth.userId} />
       </section>
 
       <section className="mt-8">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Invite someone</h2>
+        <h2 className="mb-2 text-xs font-semibold text-muted">Invite someone</h2>
         <InvitePanel disabled={migrationPending} />
       </section>
 
       <section className="mt-8">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Invitations</h2>
+        <h2 className="mb-2 text-xs font-semibold text-muted">Invitations</h2>
         <InvitesTable invites={inviteRows} />
       </section>
     </div>

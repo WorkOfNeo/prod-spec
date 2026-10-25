@@ -30,10 +30,10 @@ export const metadata = { title: "Import" };
 export default async function ImportPage() {
   await requireAdminPage();
   return (
-    <div className="px-8 py-8">
+    <div className="px-6 py-5">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Import</h1>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Import</h1>
+        <p className="mt-1 text-sm text-muted">
           Promote items from the Monday Styles board into Style rows. New
           (customer × business area) combinations surface here for one-click acceptance.
           Pre-Order data is not pulled here — it&apos;s a separate enrichment flow that
@@ -83,8 +83,8 @@ async function Stats() {
         <Stat label="Needs config" value={unconfigured.length} tone="primary" />
         <Stat label="Ready to import" value={s.importable} tone="primary" />
       </div>
-      <details className="rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm">
-        <summary className="cursor-pointer select-none text-zinc-600">
+      <details className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50">
+        <summary className="cursor-pointer select-none text-muted">
           Funnel — where the other {Math.max(0, s.scannedItems - s.alreadyPromoted - s.importable - s.ambiguous - s.contributedToCombination)} items
           went
         </summary>
@@ -123,7 +123,7 @@ async function NewCombinationsSection() {
   const scan = await scanForImport();
   return (
     <>
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
+      <h2 className="mb-3 text-sm font-semibold text-muted">
         New combinations ({scan.newCombinations.length})
       </h2>
       <CombinationsTable combinations={scan.newCombinations} />
@@ -135,36 +135,36 @@ async function NeedsConfigSection() {
   const rows = await findUnconfiguredProdSpecs();
   return (
     <>
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
+      <h2 className="mb-3 text-sm font-semibold text-muted">
         ProdSpecs needing configuration ({rows.length})
       </h2>
       {rows.length === 0 ? (
-        <div className="rounded-lg border border-zinc-200 bg-white px-4 py-8 text-center text-sm text-zinc-500">
+        <div className="rounded-xl border border-line bg-surface px-4 py-8 text-center text-sm text-muted">
           Every active ProdSpec has at least one enabled output. Nothing to set up.
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+        <div className="overflow-x-auto rounded-xl border border-line bg-surface">
           <table className="w-full text-sm">
-            <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+            <thead className="bg-subtle text-left text-xs text-muted">
               <tr>
-                <th className="px-4 py-3">Customer</th>
-                <th className="px-4 py-3">Business area</th>
-                <th className="px-4 py-3 text-right">Styles waiting</th>
-                <th className="px-4 py-3 text-right">Action</th>
+                <th className="px-3 py-2">Customer</th>
+                <th className="px-3 py-2">Business area</th>
+                <th className="px-3 py-2 text-right">Styles waiting</th>
+                <th className="px-3 py-2 text-right">Action</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((p) => (
-                <tr key={p.id} className="border-t border-zinc-100 hover:bg-zinc-50">
-                  <td className="px-4 py-3 font-medium">{p.customerName}</td>
-                  <td className="px-4 py-3 text-zinc-600">{p.businessAreaName}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-zinc-600">
+                <tr key={p.id} className="border-t border-line hover:bg-subtle">
+                  <td className="px-3 py-2 font-medium">{p.customerName}</td>
+                  <td className="px-3 py-2 text-muted">{p.businessAreaName}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted">
                     {p.styleCount}
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-3 py-2 text-right">
                     <Link
                       href={`/prod-specs/${p.id}`}
-                      className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-900 hover:bg-zinc-50"
+                      className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Configure →
                     </Link>
@@ -195,7 +195,7 @@ function StatsSkeleton() {
       {[0, 1, 2, 3].map((i) => (
         <div
           key={i}
-          className="h-[68px] animate-pulse rounded-lg border border-zinc-200 bg-zinc-50"
+          className="h-[68px] animate-pulse rounded-lg border border-line bg-subtle"
         />
       ))}
     </div>
@@ -205,13 +205,13 @@ function StatsSkeleton() {
 function SectionSkeleton({ title }: { title: string }) {
   return (
     <>
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
+      <h2 className="mb-3 text-sm font-semibold text-muted">
         {title}
       </h2>
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="overflow-hidden rounded-xl border border-line bg-surface">
         <div className="space-y-2 p-4">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="h-10 animate-pulse rounded bg-zinc-100" />
+            <div key={i} className="h-10 animate-pulse rounded bg-subtle" />
           ))}
         </div>
       </div>
@@ -245,7 +245,7 @@ function Stat({
 }) {
   const toneClass =
     tone === "primary"
-      ? "border-zinc-900 bg-zinc-900 text-white"
+      ? "border-ink bg-zinc-900 text-white"
       : tone === "muted"
         ? "border-zinc-200 bg-zinc-50 text-zinc-500"
         : "border-zinc-200 bg-white text-zinc-900";
@@ -254,8 +254,8 @@ function Stat({
       className={`rounded-lg border px-4 py-3 ${toneClass}`}
       title={hint}
     >
-      <div className="text-xs uppercase tracking-wide opacity-75">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
+      <div className="text-xs opacity-75">{label}</div>
+      <div className="mt-1 text-[18px] font-semibold tabular-nums">{value}</div>
     </div>
   );
 }

@@ -33,18 +33,18 @@ export function QrImageList({ initialQrImages }: { initialQrImages: QrImage[] })
         <button
           type="button"
           onClick={() => setCreating(true)}
-          className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           + New QR image
         </button>
-        <span className="text-xs text-zinc-500">
+        <span className="text-xs text-muted">
           Upload the QR picture, then link it to a style from the style&apos;s edit page.
         </span>
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         {initialQrImages.length === 0 ? (
-          <div className="col-span-full rounded-lg border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500">
+          <div className="col-span-full rounded-xl border border-line bg-surface p-8 text-center text-sm text-muted">
             No QR images yet. Click <strong>+ New QR image</strong> to upload one.
           </div>
         ) : (
@@ -87,26 +87,26 @@ function QrImageCard({ qrImage, onEdit }: { qrImage: QrImage; onEdit: () => void
   return (
     <div
       className={`rounded-lg border p-3 ${
-        qrImage.active ? "border-zinc-200 bg-white" : "border-amber-300 bg-amber-50 opacity-70"
+        qrImage.active ? "border-line bg-surface" : "border-transparent bg-warn-soft opacity-70"
       }`}
     >
-      <div className="flex h-24 items-center justify-center rounded-md bg-zinc-50">
+      <div className="flex h-24 items-center justify-center rounded-md bg-subtle">
         {dataUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={dataUrl} alt={qrImage.name} className="h-20 w-20 object-contain" />
         ) : (
-          <span className="text-xs text-amber-700">no image</span>
+          <span className="text-xs text-warn">no image</span>
         )}
       </div>
       <div className="mt-2 flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium">{qrImage.name}</div>
-          {!qrImage.active && <div className="text-xs text-amber-700">disabled</div>}
+          {!qrImage.active && <div className="text-xs text-warn">disabled</div>}
         </div>
         <button
           type="button"
           onClick={onEdit}
-          className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+          className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink hover:bg-subtle"
         >
           Edit
         </button>
@@ -239,44 +239,44 @@ function QrImageDialog({
   const dataUrl = asDataUrl(image);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(15_17_21/0.40)] px-4">
       <div
         onDragEnter={onDragEnter}
         onDragLeave={onDragLeave}
         onDragOver={onDragOver}
         onDrop={onDrop}
-        className={`relative w-full max-w-xl rounded-lg bg-white p-6 shadow-2xl transition-shadow ${
-          dragOver ? "ring-4 ring-zinc-900 ring-offset-2" : ""
+        className={`relative w-full max-w-xl rounded-lg bg-surface p-6 shadow-2xl transition-shadow ${
+          dragOver ? "ring-4 ring-accent ring-offset-2" : ""
         }`}
       >
         {dragOver && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-zinc-900/5">
-            <div className="rounded-md border-2 border-dashed border-zinc-900 bg-white/95 px-6 py-4 text-center text-sm font-medium text-zinc-900">
+            <div className="rounded-md border-2 border-dashed border-ink bg-white/95 px-6 py-4 text-center text-sm font-medium text-ink">
               Drop SVG / PNG / JPG to attach
             </div>
           </div>
         )}
         <div className="mb-4 flex items-start justify-between">
           <h2 className="text-lg font-semibold">{title}</h2>
-          <button type="button" onClick={onClose} className="text-xs text-zinc-500 underline">
+          <button type="button" onClick={onClose} className="text-xs text-muted underline">
             close
           </button>
         </div>
 
-        <label className="block text-xs font-medium text-zinc-700">
+        <label className="block text-xs font-medium text-ink">
           Name
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm"
             placeholder="e.g. Care guide QR"
           />
         </label>
 
         <div className="mt-4 grid grid-cols-2 gap-4">
           <div>
-            <label className="text-xs font-medium text-zinc-700">
+            <label className="text-xs font-medium text-ink">
               QR image (SVG, PNG, or JPG — drop anywhere in this dialog)
             </label>
             <input
@@ -288,16 +288,16 @@ function QrImageDialog({
               }}
               className="mt-1 block w-full text-xs"
             />
-            <span className="mt-1 block text-[10px] text-zinc-500">Max 1 MB.</span>
+            <span className="mt-1 block text-[11px] text-muted">Max 1 MB.</span>
           </div>
           <div>
-            <div className="text-xs font-medium text-zinc-700">Preview</div>
-            <div className="mt-1 flex h-40 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50">
+            <div className="text-xs font-medium text-ink">Preview</div>
+            <div className="mt-1 flex h-40 items-center justify-center rounded-md border border-line bg-subtle">
               {dataUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={dataUrl} alt="preview" className="h-32 w-32 object-contain" />
               ) : (
-                <span className="text-xs text-zinc-500">no image yet</span>
+                <span className="text-xs text-muted">no image yet</span>
               )}
             </div>
             {mode === "edit" && (
@@ -308,7 +308,7 @@ function QrImageDialog({
           </div>
         </div>
 
-        {err && <p className="mt-3 text-xs text-red-600">{err}</p>}
+        {err && <p className="mt-3 text-xs text-bad">{err}</p>}
 
         <div className="mt-5 flex items-center justify-between">
           <div>
@@ -317,7 +317,7 @@ function QrImageDialog({
                 type="button"
                 onClick={destroy}
                 disabled={busy}
-                className="text-xs text-red-700 underline disabled:opacity-50"
+                className="text-xs text-bad underline disabled:opacity-50"
               >
                 Delete permanently
               </button>
@@ -327,7 +327,7 @@ function QrImageDialog({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink hover:bg-subtle"
             >
               Cancel
             </button>
@@ -335,7 +335,7 @@ function QrImageDialog({
               type="button"
               onClick={save}
               disabled={busy || !name || !image}
-              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? "Saving…" : "Save"}
             </button>

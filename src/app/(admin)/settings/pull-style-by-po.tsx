@@ -121,14 +121,14 @@ export function PullStyleByPo({ initialPulled }: { initialPulled: Pulled[] }) {
   }
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-5">
-      <h2 className="text-sm font-semibold text-zinc-900">Pull style by PO</h2>
-      <p className="mt-1 text-sm text-zinc-500">
+    <div className="rounded-xl border border-line bg-surface p-5">
+      <h2 className="text-sm font-semibold text-ink">Pull style by PO</h2>
+      <p className="mt-1 text-sm text-muted">
         Pull styles into the styleboard by Contrast PO number (e.g.{" "}
-        <code className="rounded bg-zinc-100 px-1 py-0.5 text-xs">C-62498</code>) — paste a single PO
+        <code className="rounded bg-subtle px-1 py-0.5 text-xs">C-62498</code>) — paste a single PO
         or a comma/space-separated list to look up many at once. Useful for testing every output
         layout. Pulled styles stay visible on{" "}
-        <Link href="/styles" className="underline hover:text-zinc-700">
+        <Link href="/styles" className="underline hover:text-ink">
           /styles
         </Link>{" "}
         even when their Monday group would normally hide them. Generate outputs from there.
@@ -143,28 +143,28 @@ export function PullStyleByPo({ initialPulled }: { initialPulled: Pulled[] }) {
             if (e.key === "Enter") lookup();
           }}
           placeholder="C-62498, C-62499, 62500…"
-          className="w-96 rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+          className="w-96 rounded-md border border-line px-3 py-2 text-sm focus:border-accent focus:outline-none"
         />
         <button
           type="button"
           onClick={lookup}
           disabled={looking || !po.trim()}
-          className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {looking ? "Looking up…" : "Look up"}
         </button>
       </div>
 
-      {lookupError ? <p className="mt-2 text-xs text-red-600">{lookupError}</p> : null}
+      {lookupError ? <p className="mt-2 text-xs text-bad">{lookupError}</p> : null}
 
       {candidates !== null ? (
         candidates.length === 0 ? (
-          <p className="mt-4 text-sm text-zinc-500">No styles found for that PO.</p>
+          <p className="mt-4 text-sm text-muted">No styles found for that PO.</p>
         ) : (
           <div className="mt-4">
-            <div className="overflow-hidden rounded-md border border-zinc-200">
+            <div className="overflow-x-auto rounded-md border border-line">
               <table className="w-full text-sm">
-                <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+                <thead className="bg-subtle text-left text-xs text-muted">
                   <tr>
                     <th className="px-3 py-2 w-8"></th>
                     <th className="px-3 py-2">Style</th>
@@ -176,7 +176,7 @@ export function PullStyleByPo({ initialPulled }: { initialPulled: Pulled[] }) {
                 </thead>
                 <tbody>
                   {candidates.map((c) => (
-                    <tr key={c.mondayItemId} className="border-t border-zinc-100">
+                    <tr key={c.mondayItemId} className="border-t border-line">
                       <td className="px-3 py-2">
                         <input
                           type="checkbox"
@@ -185,26 +185,26 @@ export function PullStyleByPo({ initialPulled }: { initialPulled: Pulled[] }) {
                           onChange={() => toggle(c.mondayItemId)}
                         />
                       </td>
-                      <td className="px-3 py-2 font-medium text-zinc-900">
+                      <td className="px-3 py-2 font-medium text-ink">
                         {c.name}
                         {c.poNumber ? (
-                          <span className="ml-1 text-xs font-normal text-zinc-400">{c.poNumber}</span>
+                          <span className="ml-1 text-xs font-normal text-faint">{c.poNumber}</span>
                         ) : null}
                       </td>
-                      <td className="px-3 py-2 text-zinc-600">{c.customerName ?? "—"}</td>
-                      <td className="px-3 py-2 text-zinc-600">{c.businessArea ?? "—"}</td>
-                      <td className="px-3 py-2 text-zinc-500">{c.groupTitle ?? "—"}</td>
+                      <td className="px-3 py-2 text-muted">{c.customerName ?? "—"}</td>
+                      <td className="px-3 py-2 text-muted">{c.businessArea ?? "—"}</td>
+                      <td className="px-3 py-2 text-muted">{c.groupTitle ?? "—"}</td>
                       <td className="px-3 py-2">
                         {c.alreadyPulled ? (
-                          <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-700">
+                          <span className="rounded bg-good-soft px-1.5 py-0.5 text-xs text-good">
                             Pulled
                           </span>
                         ) : c.inDb ? (
-                          <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">
+                          <span className="rounded bg-subtle px-1.5 py-0.5 text-xs text-muted">
                             In DB
                           </span>
                         ) : (
-                          <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">
+                          <span className="rounded bg-accent-soft px-1.5 py-0.5 text-xs text-accent-text">
                             New
                           </span>
                         )}
@@ -219,11 +219,11 @@ export function PullStyleByPo({ initialPulled }: { initialPulled: Pulled[] }) {
                 type="button"
                 onClick={pull}
                 disabled={pulling || selected.size === 0}
-                className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {pulling ? "Pulling…" : `Pull ${selected.size} into styleboard`}
               </button>
-              <span className="text-xs text-zinc-400">
+              <span className="text-xs text-faint">
                 Refreshes each from Monday, then pins it. Outputs are generated from /styles.
               </span>
             </div>
@@ -232,17 +232,17 @@ export function PullStyleByPo({ initialPulled }: { initialPulled: Pulled[] }) {
       ) : null}
 
       {result ? (
-        <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm">
-          <p className="font-medium text-zinc-900">
+        <div className="mt-4 rounded-md border border-line bg-subtle p-3 text-sm">
+          <p className="font-medium text-ink">
             Pulled {result.pulled.length} style{result.pulled.length === 1 ? "" : "s"}.{" "}
             {result.pulled.length > 0 ? (
-              <Link href="/styles" className="underline hover:text-zinc-700">
+              <Link href="/styles" className="underline hover:text-ink">
                 View on /styles
               </Link>
             ) : null}
           </p>
           {result.skipped.length > 0 ? (
-            <div className="mt-2 text-xs text-amber-700">
+            <div className="mt-2 text-xs text-warn">
               <p className="font-medium">Skipped {result.skipped.length} (need attention):</p>
               <ul className="ml-4 list-disc">
                 {result.skipped.map((s) => (
@@ -252,7 +252,7 @@ export function PullStyleByPo({ initialPulled }: { initialPulled: Pulled[] }) {
             </div>
           ) : null}
           {result.errors.length > 0 ? (
-            <div className="mt-2 text-xs text-red-600">
+            <div className="mt-2 text-xs text-bad">
               <p className="font-medium">Errored {result.errors.length}:</p>
               <ul className="ml-4 list-disc">
                 {result.errors.map((e) => (
@@ -267,18 +267,18 @@ export function PullStyleByPo({ initialPulled }: { initialPulled: Pulled[] }) {
       ) : null}
 
       {pulled.length > 0 ? (
-        <div className="mt-5 border-t border-zinc-100 pt-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        <div className="mt-5 border-t border-line pt-4">
+          <h3 className="text-xs font-semibold text-faint">
             Currently pulled ({pulled.length})
           </h3>
-          <ul className="mt-2 divide-y divide-zinc-100">
+          <ul className="mt-2 divide-y divide-line">
             {pulled.map((p) => (
               <li key={p.id} className="flex items-center justify-between py-2 text-sm">
-                <span className="text-zinc-700">
+                <span className="text-ink">
                   <Link href={`/styles/${p.id}`} className="font-medium hover:underline">
                     {p.name}
                   </Link>
-                  <span className="ml-2 text-xs text-zinc-400">
+                  <span className="ml-2 text-xs text-faint">
                     {p.customerName}
                     {p.poNumber ? ` · ${p.poNumber}` : ""}
                   </span>
@@ -287,7 +287,7 @@ export function PullStyleByPo({ initialPulled }: { initialPulled: Pulled[] }) {
                   type="button"
                   onClick={() => unpull(p.id)}
                   disabled={unpulling === p.id}
-                  className="text-xs text-zinc-500 underline hover:text-red-600 disabled:opacity-50"
+                  className="text-xs text-muted underline hover:text-bad disabled:opacity-50"
                 >
                   {unpulling === p.id ? "Removing…" : "Un-pull"}
                 </button>

@@ -62,39 +62,39 @@ export function PublishedPanel({ output, onChanged }: { output: OutputView; onCh
 
   return (
     <div className="space-y-6">
-      <section className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4">
-        <h2 className="flex flex-wrap items-center gap-2 text-sm font-semibold text-zinc-900">
-          <CircleCheck className="h-4 w-4 text-emerald-600" aria-hidden />
+      <section className="rounded-lg border border-transparent bg-emerald-50/40 p-4">
+        <h2 className="flex flex-wrap items-center gap-2 text-sm font-semibold text-ink">
+          <CircleCheck className="h-4 w-4 text-good" aria-hidden />
           Live{info?.publishedVersion != null ? ` as layout version ${info.publishedVersion}` : ""}
-          {output.publishedLabel && <span className="font-normal text-zinc-500">· {output.publishedLabel}</span>}
+          {output.publishedLabel && <span className="font-normal text-muted">· {output.publishedLabel}</span>}
           {output.firstTryApproved && (
-            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+            <span className="rounded-full bg-good-soft px-2 py-0.5 text-[11px] font-medium text-good">
               Approved on the first draft
             </span>
           )}
         </h2>
         {info ? (
-          <p className="mt-2 text-sm text-zinc-700">{info.summary}</p>
+          <p className="mt-2 text-sm text-ink">{info.summary}</p>
         ) : (
-          <p className="mt-2 text-sm text-zinc-500">The layout change is live.</p>
+          <p className="mt-2 text-sm text-muted">The layout change is live.</p>
         )}
       </section>
 
       {styles.length > 0 && (
-        <section className="rounded-lg border border-zinc-200 bg-white p-4">
-          <h2 className="text-sm font-semibold text-zinc-900">
+        <section className="rounded-xl border border-line bg-surface p-4">
+          <h2 className="text-sm font-semibold text-ink">
             {approvedChangedCount > 0
               ? `Approved documents that changed · ${approvedChangedCount.toLocaleString("en")}`
               : `Changed documents held back · ${heldCount.toLocaleString("en")}`}
           </h2>
-          <p className="mt-1 text-sm text-zinc-500">
+          <p className="mt-1 text-sm text-muted">
             {approvedChangedCount > 0 && "These were approved before the change and were not rerun. "}
             {heldCount > 0 &&
               `${plural(heldCount, "changed document")} ${heldCount === 1 ? "was" : "were"} not rerun either: ${HELD_REASON}. `}
             Send a style back to review to regenerate its documents of this output with the new layout; nothing reaches a
             supplier until someone approves them again.
           </p>
-          <ul className="mt-3 divide-y divide-zinc-100 rounded-md border border-zinc-200">
+          <ul className="mt-3 divide-y divide-line rounded-md border border-line">
             {styles.map((s) => (
               <li key={s.styleId} className="px-3 py-2">
                 <label className="flex flex-wrap items-center gap-2 text-sm">
@@ -103,32 +103,32 @@ export function PublishedPanel({ output, onChanged }: { output: OutputView; onCh
                     checked={picked.has(s.styleId)}
                     onChange={() => toggle(s.styleId)}
                     disabled={busy}
-                    className="h-4 w-4 rounded border-zinc-300"
+                    className="h-4 w-4 rounded border-line"
                   />
-                  <span className="font-medium text-zinc-900">{s.label}</span>
-                  <span className="text-xs text-zinc-500">
+                  <span className="font-medium text-ink">{s.label}</span>
+                  <span className="text-xs text-muted">
                     {s.poNumber ?? ""}
                     {s.approvedChanged.length > 0 && ` · ${plural(s.approvedChanged.length, "approved document")} changed`}
                   </span>
                   {s.held.length > 0 && (
                     <span
                       title={HELD_REASON}
-                      className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800 ring-1 ring-inset ring-amber-200"
+                      className="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] text-warn ring-1 ring-inset ring-amber-200"
                     >
                       {plural(s.held.length, "held document")}
                     </span>
                   )}
                   {sentBack.has(s.styleId) && (
-                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-600">sent back already</span>
+                    <span className="rounded-full bg-subtle px-2 py-0.5 text-[11px] text-muted">sent back already</span>
                   )}
                   {s.delivered && (
-                    <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] text-orange-700 ring-1 ring-inset ring-orange-200">
+                    <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] text-warn ring-1 ring-inset ring-orange-200">
                       delivered
                     </span>
                   )}
                 </label>
                 {s.held.length > 0 && (
-                  <p className="ml-6 mt-0.5 text-xs text-zinc-500">
+                  <p className="ml-6 mt-0.5 text-xs text-muted">
                     {plural(s.held.length, "changed document")} {HELD_REASON}.
                   </p>
                 )}
@@ -137,14 +137,14 @@ export function PublishedPanel({ output, onChanged }: { output: OutputView; onCh
           </ul>
 
           {confirming ? (
-            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+            <div className="mt-3 rounded-md border border-transparent bg-warn-soft p-3 text-sm text-warn">
               <p>{sendBackConfirmText(pickedStyles)}</p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={sendBack}
                   disabled={busy || picked.size === 0}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-md bg-warn px-3 py-1.5 text-sm font-medium text-white hover:bg-warn disabled:opacity-50"
                 >
                   {busy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden /> : <RotateCcw className="h-4 w-4" aria-hidden />}
                   Send back to review
@@ -153,7 +153,7 @@ export function PublishedPanel({ output, onChanged }: { output: OutputView; onCh
                   type="button"
                   onClick={() => setConfirming(false)}
                   disabled={busy}
-                  className="rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-white disabled:opacity-50"
+                  className="rounded-md px-3 py-1.5 text-sm text-muted hover:bg-surface disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -167,25 +167,25 @@ export function PublishedPanel({ output, onChanged }: { output: OutputView; onCh
                 setDone(null);
               }}
               disabled={picked.size === 0}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+              className="mt-3 inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
             >
               <RotateCcw className="h-4 w-4" aria-hidden />
               Send approved documents back to review…
             </button>
           )}
-          {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-          {done && <p className="mt-2 text-xs text-emerald-700">{done}</p>}
+          {error && <p className="mt-2 text-xs text-bad">{error}</p>}
+          {done && <p className="mt-2 text-xs text-good">{done}</p>}
         </section>
       )}
 
       {delivered.length > 0 && (
-        <section className="rounded-lg border border-orange-200 bg-white p-4">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
-            <Truck className="h-4 w-4 text-orange-600" aria-hidden />
+        <section className="rounded-lg border border-transparent bg-surface p-4">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+            <Truck className="h-4 w-4 text-warn" aria-hidden />
             Changed documents already delivered to the supplier · {delivered.length.toLocaleString("en")}
           </h2>
-          <p className="mt-1 text-sm text-zinc-500">The supplier has the old version of these.</p>
-          <div className="mt-2 rounded-md border border-zinc-200">
+          <p className="mt-1 text-sm text-muted">The supplier has the old version of these.</p>
+          <div className="mt-2 rounded-md border border-line">
             <RowsTable rows={delivered} />
           </div>
         </section>

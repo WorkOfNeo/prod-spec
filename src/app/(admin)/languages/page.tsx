@@ -14,10 +14,10 @@ export default async function LanguagesPage() {
   });
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-6 py-5">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Languages</h1>
-        <p className="mt-1 max-w-3xl text-sm text-zinc-500">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Languages</h1>
+        <p className="mt-1 max-w-3xl text-sm text-muted">
           The translation namespace for every multilingual field in the system. Wash care symbol
           translations, country name translations, and ProdSpec care instructions all key by{" "}
           <code className="font-mono">Language.code</code>. Add a language here to make it appear as

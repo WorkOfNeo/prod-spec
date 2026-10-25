@@ -46,12 +46,12 @@ export function RunNowButton() {
         type="button"
         onClick={run}
         disabled={busy}
-        className="shrink-0 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-40"
+        className="shrink-0 inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? "Running…" : "Run now"}
       </button>
       {results.map((r) => (
-        <div key={r.label} className={`text-xs ${r.ok ? "text-zinc-500" : "text-red-600"}`}>
+        <div key={r.label} className={`text-xs ${r.ok ? "text-muted" : "text-bad"}`}>
           {r.label}: {r.detail}
         </div>
       ))}

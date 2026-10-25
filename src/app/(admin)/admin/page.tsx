@@ -50,23 +50,23 @@ export default async function AdminPanelPage({
   const tab = normalizeTab((await searchParams).tab);
 
   return (
-    <div className="px-8 py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Admin</h1>
-      <p className="mt-1 max-w-3xl text-sm text-zinc-500">
+    <div className="px-6 py-5">
+      <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Admin</h1>
+      <p className="mt-1 max-w-3xl text-sm text-muted">
         Oversight of the review flow — who looked at what, what they approved or rejected, and which
         customer / business-area combinations are taking in styles without a prod spec to generate them.
       </p>
 
-      <nav className="mt-6 border-b border-zinc-200">
-        <ul className="flex gap-1">
+      <nav className="mt-6 border-b border-line">
+        <ul className="flex gap-5 overflow-x-auto">
           {TABS.map((t) => (
             <li key={t.key}>
               <Link
                 href={`/admin?tab=${t.key}`}
-                className={`inline-block border-b-2 px-4 py-2 text-sm font-medium transition ${
+                className={`-mb-px inline-flex h-9 shrink-0 items-center gap-1.5 border-b-2 text-[13px] transition-colors duration-150 ${
                   tab === t.key
-                    ? "border-zinc-900 text-zinc-900"
-                    : "border-transparent text-zinc-500 hover:text-zinc-700"
+                    ? "border-ink text-ink"
+                    : "border-transparent text-muted hover:text-ink"
                 }`}
               >
                 {t.label}
@@ -91,9 +91,9 @@ export default async function AdminPanelPage({
 
 function TableShell({ head, children }: { head: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+    <div className="overflow-x-auto rounded-xl border border-line bg-surface">
       <table className="w-full text-sm">
-        <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+        <thead className="bg-subtle text-left text-xs text-muted">
           {head}
         </thead>
         <tbody>{children}</tbody>
@@ -105,7 +105,7 @@ function TableShell({ head, children }: { head: React.ReactNode; children: React
 function EmptyRow({ colSpan, children }: { colSpan: number; children: React.ReactNode }) {
   return (
     <tr>
-      <td colSpan={colSpan} className="px-4 py-10 text-center text-sm text-zinc-500">
+      <td colSpan={colSpan} className="px-4 py-10 text-center text-sm text-muted">
         {children}
       </td>
     </tr>
@@ -123,9 +123,9 @@ function Pill({ tone, children }: { tone: string; children: React.ReactNode }) {
 function CustomerBA({ customer, ba }: { customer: string; ba: string | null }) {
   const baLabel = blankCheck(ba);
   return (
-    <span className="text-zinc-600">
+    <span className="text-muted">
       {customer}
-      {baLabel ? <span className="text-zinc-400"> · {baLabel}</span> : null}
+      {baLabel ? <span className="text-faint"> · {baLabel}</span> : null}
     </span>
   );
 }
@@ -164,22 +164,22 @@ async function UsersTab() {
   return (
     <>
       <div className="mb-4 flex items-center gap-2 text-sm">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
-          <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-good-soft px-2.5 py-1 font-medium text-good">
+          <span className="inline-block h-2 w-2 rounded-full bg-good" />
           {onlineCount} online now
         </span>
-        <span className="text-zinc-400">
+        <span className="text-faint">
           of {rows.length} user{rows.length === 1 ? "" : "s"}
         </span>
       </div>
       <TableShell
         head={
           <tr>
-            <th className="px-4 py-3">User</th>
-            <th className="px-4 py-3">Role</th>
-            <th className="px-4 py-3">Status</th>
-            <th className="px-4 py-3">Last online</th>
-            <th className="px-4 py-3">Member since</th>
+            <th className="px-3 py-2">User</th>
+            <th className="px-3 py-2">Role</th>
+            <th className="px-3 py-2">Status</th>
+            <th className="px-3 py-2">Last online</th>
+            <th className="px-3 py-2">Member since</th>
           </tr>
         }
       >
@@ -187,32 +187,32 @@ async function UsersTab() {
           <EmptyRow colSpan={5}>No users yet.</EmptyRow>
         ) : (
           rows.map((u) => (
-            <tr key={u.id} className="border-t border-zinc-100 hover:bg-zinc-50">
-              <td data-private className="px-4 py-3">
-                <div className="text-zinc-800">{u.name || "—"}</div>
-                <div className="text-xs text-zinc-400">{u.email}</div>
+            <tr key={u.id} className="border-t border-line hover:bg-subtle">
+              <td data-private className="px-3 py-2">
+                <div className="text-ink">{u.name || "—"}</div>
+                <div className="text-xs text-faint">{u.email}</div>
               </td>
-              <td className="px-4 py-3">
+              <td className="px-3 py-2">
                 <Pill tone={u.role === "ADMIN" ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-600"}>
                   {u.role}
                 </Pill>
               </td>
-              <td className="px-4 py-3">
+              <td className="px-3 py-2">
                 {u.online ? (
-                  <span className="inline-flex items-center gap-1.5 font-medium text-emerald-700">
-                    <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                  <span className="inline-flex items-center gap-1.5 font-medium text-good">
+                    <span className="inline-block h-2 w-2 rounded-full bg-good" />
                     Online
                   </span>
                 ) : u.lastSeen ? (
-                  <span className="text-zinc-500">{timeAgo(u.lastSeen)}</span>
+                  <span className="text-muted">{timeAgo(u.lastSeen)}</span>
                 ) : (
-                  <span className="text-zinc-300">Never seen</span>
+                  <span className="text-faint">Never seen</span>
                 )}
               </td>
-              <td className="whitespace-nowrap px-4 py-3 text-zinc-500">
+              <td className="whitespace-nowrap px-3 py-2 text-muted">
                 {u.lastSeen ? formatDate(u.lastSeen) : "—"}
               </td>
-              <td className="whitespace-nowrap px-4 py-3 text-zinc-500">{formatDate(u.createdAt)}</td>
+              <td className="whitespace-nowrap px-3 py-2 text-muted">{formatDate(u.createdAt)}</td>
             </tr>
           ))
         )}
@@ -245,17 +245,17 @@ async function ViewsTab() {
 
   return (
     <>
-      <p className="mb-3 text-xs text-zinc-400">
+      <p className="mb-3 text-xs text-faint">
         Every open of a style page, newest first — one row per visit. Latest 200.
       </p>
       <TableShell
         head={
           <tr>
-            <th className="px-4 py-3">When</th>
-            <th className="px-4 py-3">Who</th>
-            <th className="px-4 py-3">Style</th>
-            <th className="px-4 py-3">Customer · BA</th>
-            <th className="px-4 py-3">Surface</th>
+            <th className="px-3 py-2">When</th>
+            <th className="px-3 py-2">Who</th>
+            <th className="px-3 py-2">Style</th>
+            <th className="px-3 py-2">Customer · BA</th>
+            <th className="px-3 py-2">Surface</th>
           </tr>
         }
       >
@@ -265,18 +265,18 @@ async function ViewsTab() {
           </EmptyRow>
         ) : (
           views.map((v) => (
-            <tr key={v.id} className="border-t border-zinc-100 hover:bg-zinc-50">
-              <td className="whitespace-nowrap px-4 py-3 text-zinc-500">{formatDate(v.createdAt)}</td>
-              <td className="px-4 py-3 text-zinc-800">{v.user.name || v.user.email}</td>
-              <td className="px-4 py-3">
-                <Link href={`/styles/${v.style.id}`} className="text-zinc-800 underline hover:text-zinc-950">
+            <tr key={v.id} className="border-t border-line hover:bg-subtle">
+              <td className="whitespace-nowrap px-3 py-2 text-muted">{formatDate(v.createdAt)}</td>
+              <td className="px-3 py-2 text-ink">{v.user.name || v.user.email}</td>
+              <td className="px-3 py-2">
+                <Link href={`/styles/${v.style.id}`} className="text-ink underline hover:text-ink">
                   {v.style.name}
                 </Link>
               </td>
-              <td className="px-4 py-3">
+              <td className="px-3 py-2">
                 <CustomerBA customer={v.style.customer.name} ba={v.style.businessAreaRef?.name ?? null} />
               </td>
-              <td className="px-4 py-3">
+              <td className="px-3 py-2">
                 {v.surface === "REVIEW" ? (
                   <Pill tone="bg-blue-50 text-blue-700">Review</Pill>
                 ) : (
@@ -325,18 +325,18 @@ async function ApprovalsTab() {
 
   return (
     <>
-      <p className="mb-3 text-xs text-zinc-400">
+      <p className="mb-3 text-xs text-faint">
         Outputs currently approved, newest first. A re-run replaces a style&rsquo;s outputs, so this
         reflects the latest approved state rather than a permanent event history. Latest 200.
       </p>
       <TableShell
         head={
           <tr>
-            <th className="px-4 py-3">Approved</th>
-            <th className="px-4 py-3">By</th>
-            <th className="px-4 py-3">Output</th>
-            <th className="px-4 py-3">Style</th>
-            <th className="px-4 py-3">Customer · BA</th>
+            <th className="px-3 py-2">Approved</th>
+            <th className="px-3 py-2">By</th>
+            <th className="px-3 py-2">Output</th>
+            <th className="px-3 py-2">Style</th>
+            <th className="px-3 py-2">Customer · BA</th>
           </tr>
         }
       >
@@ -344,17 +344,17 @@ async function ApprovalsTab() {
           <EmptyRow colSpan={5}>No approved outputs yet.</EmptyRow>
         ) : (
           approvals.map((a) => (
-            <tr key={a.id} className="border-t border-zinc-100 hover:bg-zinc-50">
-              <td className="whitespace-nowrap px-4 py-3 text-zinc-500">{formatDate(a.reviewedAt)}</td>
-              <td className="px-4 py-3 text-zinc-800">
+            <tr key={a.id} className="border-t border-line hover:bg-subtle">
+              <td className="whitespace-nowrap px-3 py-2 text-muted">{formatDate(a.reviewedAt)}</td>
+              <td className="px-3 py-2 text-ink">
                 {a.reviewedBy ? a.reviewedBy.name || a.reviewedBy.email : "—"}
               </td>
-              <td className="px-4 py-3 text-zinc-700">{a.displayName || a.docType}</td>
-              <td className="px-4 py-3">
+              <td className="px-3 py-2 text-ink">{a.displayName || a.docType}</td>
+              <td className="px-3 py-2">
                 {a.job?.style ? (
                   <Link
                     href={`/styles/${a.job.style.id}`}
-                    className="text-zinc-800 underline hover:text-zinc-950"
+                    className="text-ink underline hover:text-ink"
                   >
                     {a.job.style.name}
                   </Link>
@@ -362,7 +362,7 @@ async function ApprovalsTab() {
                   "—"
                 )}
               </td>
-              <td className="px-4 py-3">
+              <td className="px-3 py-2">
                 {a.job?.style ? (
                   <CustomerBA
                     customer={a.job.style.customer.name}
@@ -396,7 +396,7 @@ async function RejectionsTab() {
 
   return (
     <>
-      <p className="mb-3 text-xs text-zinc-400">
+      <p className="mb-3 text-xs text-faint">
         Every rejection ticket with the reviewer&rsquo;s message and a link to the output. Work them on
         the{" "}
         <Link href="/settings/rejection-log" className="underline">
@@ -407,12 +407,12 @@ async function RejectionsTab() {
       <TableShell
         head={
           <tr>
-            <th className="px-4 py-3">When</th>
-            <th className="px-4 py-3">By</th>
-            <th className="px-4 py-3">Output</th>
-            <th className="px-4 py-3">Message</th>
-            <th className="px-4 py-3">Status</th>
-            <th className="px-4 py-3">Link</th>
+            <th className="px-3 py-2">When</th>
+            <th className="px-3 py-2">By</th>
+            <th className="px-3 py-2">Output</th>
+            <th className="px-3 py-2">Message</th>
+            <th className="px-3 py-2">Status</th>
+            <th className="px-3 py-2">Link</th>
           </tr>
         }
       >
@@ -420,31 +420,31 @@ async function RejectionsTab() {
           <EmptyRow colSpan={6}>No rejections logged.</EmptyRow>
         ) : (
           tickets.map((t) => (
-            <tr key={t.id} className="border-t border-zinc-100 align-top hover:bg-zinc-50">
-              <td className="whitespace-nowrap px-4 py-3 text-zinc-500">{formatDate(t.createdAt)}</td>
-              <td className="px-4 py-3 text-zinc-800">{t.reportedBy.name || t.reportedBy.email}</td>
-              <td className="px-4 py-3">
-                <div className="text-zinc-700">{t.outputName}</div>
-                <div className="text-xs text-zinc-400">{t.styleName}</div>
+            <tr key={t.id} className="border-t border-line align-top hover:bg-subtle">
+              <td className="whitespace-nowrap px-3 py-2 text-muted">{formatDate(t.createdAt)}</td>
+              <td className="px-3 py-2 text-ink">{t.reportedBy.name || t.reportedBy.email}</td>
+              <td className="px-3 py-2">
+                <div className="text-ink">{t.outputName}</div>
+                <div className="text-xs text-faint">{t.styleName}</div>
                 <div className="mt-0.5">
                   <CustomerBA customer={t.customerName} ba={t.businessArea} />
                 </div>
               </td>
-              <td className="max-w-sm px-4 py-3 text-zinc-700">
+              <td className="max-w-sm px-3 py-2 text-ink">
                 <span className="line-clamp-3 whitespace-pre-wrap" title={t.comment}>
                   {t.comment}
                 </span>
                 {t.reopenedCount > 0 ? (
-                  <span className="mt-1 block text-[11px] text-zinc-400">reopened ×{t.reopenedCount}</span>
+                  <span className="mt-1 block text-[11px] text-faint">reopened ×{t.reopenedCount}</span>
                 ) : null}
               </td>
-              <td className="px-4 py-3">
+              <td className="px-3 py-2">
                 <Pill tone={TICKET_TONE[t.status] ?? "bg-zinc-100 text-zinc-600"}>{t.status}</Pill>
               </td>
-              <td className="whitespace-nowrap px-4 py-3">
+              <td className="whitespace-nowrap px-3 py-2">
                 <Link
                   href={`/styles/${t.styleId}/review`}
-                  className="text-zinc-800 underline hover:text-zinc-950"
+                  className="text-ink underline hover:text-ink"
                 >
                   Output →
                 </Link>
@@ -520,18 +520,18 @@ async function GapsTab() {
 
   return (
     <>
-      <p className="mb-3 text-xs text-zinc-400">
+      <p className="mb-3 text-xs text-faint">
         Customer × business-area combinations with active styles but no actively-generating prod spec —
         styles are coming in, but nothing is being produced for them.
       </p>
       <TableShell
         head={
           <tr>
-            <th className="px-4 py-3">Customer</th>
-            <th className="px-4 py-3">Business area</th>
-            <th className="px-4 py-3">Active styles</th>
-            <th className="px-4 py-3">Prod spec</th>
-            <th className="px-4 py-3">Action</th>
+            <th className="px-3 py-2">Customer</th>
+            <th className="px-3 py-2">Business area</th>
+            <th className="px-3 py-2">Active styles</th>
+            <th className="px-3 py-2">Prod spec</th>
+            <th className="px-3 py-2">Action</th>
           </tr>
         }
       >
@@ -543,25 +543,25 @@ async function GapsTab() {
           rows.map((g) => (
             <tr
               key={`${g.customerId}|${g.businessAreaId ?? "none"}`}
-              className="border-t border-zinc-100 hover:bg-zinc-50"
+              className="border-t border-line hover:bg-subtle"
             >
-              <td className="px-4 py-3 text-zinc-800">{g.customerName}</td>
-              <td className="px-4 py-3 text-zinc-700">{g.baLabel}</td>
-              <td className="px-4 py-3 tabular-nums text-zinc-700">{g.count}</td>
-              <td className="px-4 py-3">
+              <td className="px-3 py-2 text-ink">{g.customerName}</td>
+              <td className="px-3 py-2 text-ink">{g.baLabel}</td>
+              <td className="px-3 py-2 tabular-nums text-ink">{g.count}</td>
+              <td className="px-3 py-2">
                 {g.spec ? (
                   <Pill tone="bg-amber-50 text-amber-800">Inactive</Pill>
                 ) : (
                   <Pill tone="bg-rose-50 text-rose-700">Missing</Pill>
                 )}
               </td>
-              <td className="whitespace-nowrap px-4 py-3">
+              <td className="whitespace-nowrap px-3 py-2">
                 {g.spec ? (
-                  <Link href={`/prod-specs/${g.spec.id}`} className="text-zinc-800 underline hover:text-zinc-950">
+                  <Link href={`/prod-specs/${g.spec.id}`} className="text-ink underline hover:text-ink">
                     Open spec →
                   </Link>
                 ) : (
-                  <Link href="/prod-specs" className="text-zinc-800 underline hover:text-zinc-950">
+                  <Link href="/prod-specs" className="text-ink underline hover:text-ink">
                     Create spec →
                   </Link>
                 )}

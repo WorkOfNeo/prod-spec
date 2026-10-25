@@ -23,18 +23,18 @@ export default async function GuidePage({ params }: { params: Promise<{ slug: st
   }
 
   return (
-    <div className="px-8 py-8">
-      <Link href="/guides" className="text-xs text-zinc-500 hover:text-zinc-800">
+    <div className="px-6 py-5">
+      <Link href="/guides" className="text-xs text-muted hover:text-ink">
         ← All guides
       </Link>
       <div className="mt-1 flex items-start justify-between gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight">{guide.title}</h1>
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">{guide.title}</h1>
         <div className="flex shrink-0 items-center gap-2">
           <a
             href={guideHtmlSrc(guide)}
             target="_blank"
             rel="noopener noreferrer"
-            className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             Open in new tab ↗
           </a>
@@ -42,14 +42,14 @@ export default async function GuidePage({ params }: { params: Promise<{ slug: st
             href={guidePdfSrc(guide)}
             target="_blank"
             rel="noopener noreferrer"
-            className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             Download PDF
           </a>
         </div>
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="mt-5 overflow-hidden rounded-xl border border-line bg-surface">
         <GuideFrame src={guideHtmlSrc(guide)} title={guide.title} />
       </div>
     </div>

@@ -80,9 +80,9 @@ export function ReviewBlock({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-lg border border-zinc-200 bg-white p-4">
+      <section className="rounded-xl border border-line bg-surface p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-zinc-900">Proposed change</h2>
+          <h2 className="text-sm font-semibold text-ink">Proposed change</h2>
           {revisions.length > 0 && (
             <DraftSelector
               revisions={revisions}
@@ -94,27 +94,27 @@ export function ReviewBlock({
           )}
         </div>
         {selected && selected.id !== output.currentRevisionId && (
-          <p className="mt-2 rounded-md bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+          <p className="mt-2 rounded-md bg-subtle px-3 py-2 text-xs text-muted">
             You are looking at draft {ordinal.get(selected.id)} ({selected.status.toLowerCase()}). Approve applies to the current
             draft{current ? ` (draft ${ordinal.get(current.id)})` : ""}.
           </p>
         )}
 
         {summary && (
-          <div className="mt-3 flex gap-2 rounded-md border border-zinc-200 bg-zinc-50 p-3">
-            <Bot className="mt-0.5 h-4 w-4 shrink-0 text-zinc-500" aria-hidden />
-            <p className="whitespace-pre-wrap text-sm text-zinc-800">{summary.body}</p>
+          <div className="mt-3 flex gap-2 rounded-md border border-line bg-subtle p-3">
+            <Bot className="mt-0.5 h-4 w-4 shrink-0 text-muted" aria-hidden />
+            <p className="whitespace-pre-wrap text-sm text-ink">{summary.body}</p>
           </div>
         )}
 
         {/* Proofs */}
         <div className="mt-4">
-          <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">Before and after</h3>
+          <h3 className="text-xs font-medium text-muted">Before and after</h3>
           {!selected ? (
-            <p className="mt-2 text-sm text-zinc-500">No draft yet.</p>
+            <p className="mt-2 text-sm text-muted">No draft yet.</p>
           ) : proofs?.state === "ready" ? (
             proofs.data.picks.length === 0 ? (
-              <p className="mt-2 text-sm text-zinc-500">No documents to show: no style prints this layout.</p>
+              <p className="mt-2 text-sm text-muted">No documents to show: no style prints this layout.</p>
             ) : (
               <div className="mt-2 grid gap-4 xl:grid-cols-2">
                 {proofs.data.picks.map((p) => (
@@ -123,12 +123,12 @@ export function ReviewBlock({
               </div>
             )
           ) : proofs?.state === "error" ? (
-            <p className="mt-2 flex items-center gap-1.5 text-sm text-red-600">
+            <p className="mt-2 flex items-center gap-1.5 text-sm text-bad">
               <TriangleAlert className="h-4 w-4" aria-hidden />
               {proofs.message}
             </p>
           ) : (
-            <p className="mt-2 flex items-center gap-1.5 text-sm text-zinc-500">
+            <p className="mt-2 flex items-center gap-1.5 text-sm text-muted">
               <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
               Picking documents to compare…
             </p>
@@ -137,14 +137,14 @@ export function ReviewBlock({
       </section>
 
       {/* Impact */}
-      <section className="rounded-lg border border-zinc-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-zinc-900">Which documents change</h2>
+      <section className="rounded-xl border border-line bg-surface p-4">
+        <h2 className="text-sm font-semibold text-ink">Which documents change</h2>
         {impact ? (
           <ImpactTable impact={impact} />
         ) : proofs?.state === "error" ? (
-          <p className="mt-2 text-sm text-red-600">{proofs.message}</p>
+          <p className="mt-2 text-sm text-bad">{proofs.message}</p>
         ) : (
-          <p className="mt-2 flex items-center gap-1.5 text-sm text-zinc-500">
+          <p className="mt-2 flex items-center gap-1.5 text-sm text-muted">
             <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
             Comparing every style that prints this layout…
           </p>
@@ -152,20 +152,20 @@ export function ReviewBlock({
       </section>
 
       {/* Definition diff */}
-      <section className="rounded-lg border border-zinc-200 bg-white p-4">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
-          <FileDiff className="h-4 w-4 text-zinc-500" aria-hidden />
+      <section className="rounded-xl border border-line bg-surface p-4">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
+          <FileDiff className="h-4 w-4 text-muted" aria-hidden />
           Layout changes
         </h2>
         {diff?.state === "ready" ? (
           <>
             {diff.data.changes.length === 0 ? (
-              <p className="mt-2 text-sm text-zinc-500">The draft doesn&apos;t change the layout definition.</p>
+              <p className="mt-2 text-sm text-muted">The draft doesn&apos;t change the layout definition.</p>
             ) : (
-              <ul className="mt-2 space-y-1 text-sm text-zinc-800">
+              <ul className="mt-2 space-y-1 text-sm text-ink">
                 {diff.data.changes.map((c, i) => (
                   <li key={i} className="flex gap-2">
-                    <span className="mt-0.5 shrink-0 rounded bg-zinc-100 px-1.5 text-[11px] font-medium uppercase text-zinc-500">
+                    <span className="mt-0.5 shrink-0 rounded bg-subtle px-1.5 text-[11px] font-medium text-muted">
                       {c.kind.replace("_", " ")}
                     </span>
                     <span>{c.summary}</span>
@@ -174,7 +174,7 @@ export function ReviewBlock({
               </ul>
             )}
             <details className="mt-3 text-xs">
-              <summary className="cursor-pointer text-zinc-500 hover:text-zinc-900">Raw definitions (before / after)</summary>
+              <summary className="cursor-pointer text-muted hover:text-ink">Raw definitions (before / after)</summary>
               <div className="mt-2 grid gap-2 lg:grid-cols-2">
                 <JsonBlock label="Before (live when the draft was made)" value={diff.data.before} />
                 <JsonBlock label="After (this draft)" value={diff.data.after} />
@@ -182,9 +182,9 @@ export function ReviewBlock({
             </details>
           </>
         ) : diff?.state === "error" ? (
-          <p className="mt-2 text-sm text-red-600">{diff.message}</p>
+          <p className="mt-2 text-sm text-bad">{diff.message}</p>
         ) : selected ? (
-          <p className="mt-2 flex items-center gap-1.5 text-sm text-zinc-500">
+          <p className="mt-2 flex items-center gap-1.5 text-sm text-muted">
             <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
             Loading…
           </p>
@@ -229,7 +229,7 @@ function DraftSelector({
             onClick={() => onSelect(r.id)}
             title={`Revision #${r.number} · ${r.status.toLowerCase()} · ${r.createdLabel}`}
             className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${
-              active ? "bg-zinc-900 text-white ring-zinc-900" : "bg-white text-zinc-600 ring-zinc-200 hover:bg-zinc-50"
+              active ? "bg-primary text-white ring-accent" : "bg-surface text-muted ring-line hover:bg-subtle"
             }`}
           >
             Draft {ordinal.get(r.id)}
@@ -244,8 +244,8 @@ function DraftSelector({
 function JsonBlock({ label, value }: { label: string; value: unknown }) {
   return (
     <div className="min-w-0">
-      <div className="mb-1 text-[11px] font-medium text-zinc-500">{label}</div>
-      <pre className="max-h-96 overflow-auto rounded-md bg-zinc-950 p-3 font-mono text-[11px] leading-relaxed text-zinc-100">
+      <div className="mb-1 text-[11px] font-medium text-muted">{label}</div>
+      <pre className="max-h-96 overflow-auto rounded-md bg-primary p-3 font-mono text-[11px] leading-relaxed text-faint">
         {JSON.stringify(value, null, 2)}
       </pre>
     </div>

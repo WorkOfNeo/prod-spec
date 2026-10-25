@@ -38,36 +38,36 @@ export default async function TrimsSettingsPage() {
     loadTrimConceptRows(),
   ]);
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
-      <h1 className="text-lg font-semibold text-zinc-900">Trims</h1>
-      <p className="mt-1 max-w-3xl text-[13px] leading-relaxed text-zinc-500">
+    <div className="max-w-6xl px-6 py-5">
+      <h1 className="text-lg font-semibold text-ink">Trims</h1>
+      <p className="mt-1 max-w-3xl text-[13px] leading-relaxed text-muted">
         Every style carries a <strong>Trims</strong> list on Monday — the buyer&rsquo;s list of what
         the order needs. The cover page prints that list in Monday&rsquo;s own words so the supplier
         can tick it off, and marks each line as something we produce, something supplied
         separately, or a packing instruction with no artwork.
       </p>
-      <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-zinc-500">
+      <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-muted">
         A trim is never matched to one layout — &ldquo;Care label&rdquo; exists once per customer and
         that mapping would never be finished. Every trim value is matched instead onto one of the
         cover page&rsquo;s <strong>packaging rows</strong>, the shared list that layouts are matched
         onto too, so a new customer&rsquo;s layout is recognised the moment it is created.
       </p>
 
-      <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-zinc-500">
+      <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-muted">
         The keyword rules below are a <strong>suggestion</strong>: they pre-fill a value&rsquo;s row
         so the common vocabulary needs no typing, and a value keeps following its suggestion until
         someone decides otherwise. Accepting a suggestion turns it into a decision that no later
         rule edit can change.
       </p>
 
-      <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-zinc-500">
+      <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-muted">
         The vocabulary below is scoped to the <strong>generation PO cutoff</strong> — only orders
         that will actually be printed. Words that survive only on pre-cutoff orders are not put in
         front of anyone to map. The rows themselves — adding one, renaming one, and the wording each
         prints on a cover — live on{" "}
         <Link
           href="/settings/cover-page?tab=packaging"
-          className="font-medium text-zinc-700 underline underline-offset-2"
+          className="font-medium text-ink underline underline-offset-2"
         >
           Cover page › Packaging rows
         </Link>

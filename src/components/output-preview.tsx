@@ -78,7 +78,7 @@ export function PreviewFrame({
       style={{ height: scale > 0 ? scaledH : heightMm * MM_TO_PX }}
     >
       <div
-        className="mx-auto overflow-hidden bg-white shadow-md ring-1 ring-black/5"
+        className="mx-auto overflow-hidden bg-surface shadow-md ring-1 ring-black/5"
         style={{
           width: naturalW * scale,
           height: scaledH,
@@ -210,20 +210,20 @@ export function LazyOutputPreview({
         <PreviewFrame html={state.html} widthMm={widthMm} heightMm={heightMm} />
       ) : state.kind === "static" ? (
         <div className="flex min-h-[8rem] items-center justify-center">
-          <div className="max-w-full rounded-md border border-dashed border-zinc-300 bg-zinc-50 px-3 py-2 text-center text-xs text-zinc-500">
+          <div className="max-w-full rounded-md border border-dashed border-line bg-subtle px-3 py-2 text-center text-xs text-muted">
             {state.message}
           </div>
         </div>
       ) : state.kind === "error" ? (
         <div className="flex min-h-[8rem] items-center justify-center">
-          <div className="max-w-full rounded-md border border-dashed border-red-300 bg-red-50 px-3 py-2 text-center text-xs text-red-600">
+          <div className="max-w-full rounded-md border border-dashed border-transparent bg-bad-soft px-3 py-2 text-center text-xs text-bad">
             Preview failed to render
             <div className="mt-1 text-red-400">{state.message}</div>
           </div>
         </div>
       ) : (
         <div
-          className="flex items-center justify-center rounded-md bg-zinc-100/60 text-[11px] text-zinc-400"
+          className="flex items-center justify-center rounded-md bg-zinc-100/60 text-[11px] text-faint"
           style={{ minHeight: "8rem" }}
         >
           {state.kind === "loading" ? "Rendering preview…" : "Preview loads when visible"}

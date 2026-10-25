@@ -115,10 +115,10 @@ export function OutputRulesEditor({
   const hasInclude = parsed.some((r) => r.mode === "include");
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+    <div className="rounded-lg border border-line bg-subtle p-3">
       {drafts.length === 0 ? (
-        <p className="text-[11px] text-zinc-400">
-          No rules — <span className="font-medium text-zinc-500">{subject}</span> is generated for
+        <p className="text-[11px] text-faint">
+          No rules — <span className="font-medium text-muted">{subject}</span> is generated for
           every style that declares it. Add one to limit it.
         </p>
       ) : (
@@ -132,8 +132,8 @@ export function OutputRulesEditor({
                 onChange={(e) => update(i, { mode: e.target.value as RuleMode })}
                 className={`rounded-md border px-2 py-1.5 font-medium ${
                   r.mode === "include"
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                    : "border-amber-300 bg-amber-50 text-amber-900"
+                    ? "border-transparent bg-good-soft text-good"
+                    : "border-transparent bg-warn-soft text-warn"
                 }`}
                 aria-label="Rule direction"
               >
@@ -143,7 +143,7 @@ export function OutputRulesEditor({
               <select
                 value={fields.some((f) => f.field === r.field) ? r.field : "__other__"}
                 onChange={(e) => update(i, { field: e.target.value })}
-                className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-zinc-700"
+                className="rounded-md border border-line bg-surface px-2 py-1.5 text-ink"
                 aria-label="Field"
               >
                 {groupFields(fields).map(([group, opts]) => {
@@ -168,7 +168,7 @@ export function OutputRulesEditor({
               <select
                 value={r.op}
                 onChange={(e) => update(i, { op: e.target.value as RuleOp })}
-                className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-zinc-700"
+                className="rounded-md border border-line bg-surface px-2 py-1.5 text-ink"
                 aria-label="Match type"
               >
                 <option value="contains">contains</option>
@@ -189,7 +189,7 @@ export function OutputRulesEditor({
                   value={r.keywordsText}
                   onChange={(e) => update(i, { keywordsText: e.target.value })}
                   placeholder="0"
-                  className="w-24 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-zinc-700 placeholder:text-zinc-400"
+                  className="w-24 rounded-md border border-line bg-surface px-2 py-1.5 text-ink placeholder:text-faint"
                   aria-label="Threshold"
                 />
               ) : (
@@ -198,14 +198,14 @@ export function OutputRulesEditor({
                   value={r.keywordsText}
                   onChange={(e) => update(i, { keywordsText: e.target.value })}
                   placeholder="shoes, boot, sandal…"
-                  className="min-w-[12rem] flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-zinc-700 placeholder:text-zinc-400"
+                  className="min-w-[12rem] flex-1 rounded-md border border-line bg-surface px-2 py-1.5 text-ink placeholder:text-faint"
                   aria-label="Keywords (comma-separated)"
                 />
               )}
               <button
                 type="button"
                 onClick={() => removeRule(i)}
-                className="px-1 text-zinc-400 hover:text-red-600"
+                className="px-1 text-faint hover:text-bad"
                 title="Remove rule"
               >
                 ✕
@@ -218,10 +218,10 @@ export function OutputRulesEditor({
       {/* Plain-English read-back of what the rows now mean, so the operator
           confirms the behaviour rather than the form. */}
       {parsed.length > 0 ? (
-        <ul className="mt-2.5 space-y-0.5 border-t border-zinc-200 pt-2">
+        <ul className="mt-2.5 space-y-0.5 border-t border-line pt-2">
           {parsed.map((r, i) => (
-            <li key={i} className="text-[11px] text-zinc-500">
-              <span className="text-zinc-400">·</span> {ruleSentence(r)}
+            <li key={i} className="text-[11px] text-muted">
+              <span className="text-faint">·</span> {ruleSentence(r)}
             </li>
           ))}
         </ul>
@@ -231,21 +231,21 @@ export function OutputRulesEditor({
         <button
           type="button"
           onClick={() => addRule("include")}
-          className="rounded-md border border-emerald-300 bg-white px-2.5 py-1 text-[11px] font-medium text-emerald-800 hover:bg-emerald-50"
+          className="rounded-md border border-transparent bg-surface px-2.5 py-1 text-[11px] font-medium text-good hover:bg-good-soft"
         >
           + Generate when
         </button>
         <button
           type="button"
           onClick={() => addRule("exclude")}
-          className="rounded-md border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-medium text-amber-900 hover:bg-amber-50"
+          className="rounded-md border border-transparent bg-surface px-2.5 py-1 text-[11px] font-medium text-warn hover:bg-warn-soft"
         >
           + Don’t generate when
         </button>
         {footer}
       </div>
 
-      <p className="mt-1.5 text-[10px] leading-relaxed text-zinc-400">
+      <p className="mt-1.5 text-[11px] leading-relaxed text-faint">
         Keywords are comma-separated and case-insensitive — “contains” matches substrings,
         “equals” needs the whole field. “Is greater/less than” compares Price as a number
         against one threshold; a style with no price, or one we can’t read as a single amount
@@ -256,7 +256,7 @@ export function OutputRulesEditor({
           <>
             {" "}
             With a <span className="font-medium">Generate when</span> rule set,{" "}
-            <span className="font-medium text-zinc-500">{subject}</span> is generated ONLY for
+            <span className="font-medium text-muted">{subject}</span> is generated ONLY for
             styles matching one of them — including never, while the field is still empty. The
             style and review screens show the reason.
           </>

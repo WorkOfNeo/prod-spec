@@ -33,16 +33,16 @@ export function AutoGenerateSetting({ initialEnabled }: { initialEnabled: boolea
   }
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-5">
+    <div className="rounded-xl border border-line bg-surface p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold text-zinc-900">Auto-generate outputs</h2>
-          <p className="mt-1 text-sm text-zinc-500">
+          <h2 className="text-sm font-semibold text-ink">Auto-generate outputs</h2>
+          <p className="mt-1 text-sm text-muted">
             When on, a style that reaches its ProdSpec&rsquo;s completion threshold automatically
             generates the PDF outputs configured for its Customer × Business Area. When off, styles
             still sync from Monday, but no PDFs are produced until someone runs them manually.
           </p>
-          {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
+          {error ? <p className="mt-2 text-xs text-bad">{error}</p> : null}
         </div>
         <Toggle
           checked={enabled}
@@ -52,7 +52,7 @@ export function AutoGenerateSetting({ initialEnabled }: { initialEnabled: boolea
           ariaLabel="Auto-generate outputs"
         />
       </div>
-      <div className="mt-3 text-xs text-zinc-400">
+      <div className="mt-3 text-xs text-faint">
         {saving
           ? "Saving…"
           : enabled

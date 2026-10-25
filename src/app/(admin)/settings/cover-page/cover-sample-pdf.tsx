@@ -76,9 +76,9 @@ export function CoverSamplePdf({ lead, unsavedNote, inputId }: Props) {
   }, [styleQuery]);
 
   return (
-    <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-3">
+    <div className="rounded-md border border-line bg-subtle px-3 py-3">
       <div className="flex flex-wrap items-center gap-2">
-        <label htmlFor={inputId} className="text-[13px] font-medium text-zinc-700">
+        <label htmlFor={inputId} className="text-[13px] font-medium text-ink">
           Check one style:
         </label>
         <input
@@ -92,27 +92,27 @@ export function CoverSamplePdf({ lead, unsavedNote, inputId }: Props) {
             }
           }}
           placeholder="Style number"
-          className="w-52 rounded border border-zinc-300 px-2 py-1.5 text-[13px]"
+          className="w-52 rounded border border-line px-2 py-1.5 text-[13px]"
         />
         <button
           type="button"
           onClick={open}
           disabled={!styleQuery.trim() || loading}
-          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-[13px] font-medium text-zinc-700 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-400"
+          className="rounded-md border border-line bg-surface px-3 py-1.5 text-[13px] font-medium text-ink hover:bg-subtle disabled:cursor-not-allowed disabled:text-faint"
         >
           {loading ? "Rendering…" : "Open the real cover PDF"}
         </button>
       </div>
-      <p className="mt-2 max-w-3xl text-[12px] leading-relaxed text-zinc-500">
+      <p className="mt-2 max-w-3xl text-[12px] leading-relaxed text-muted">
         {lead} It is rendered by the same builder that produces the real thing, with the trims
         folded in, so it is the page itself and not a preview of one — this is what the cover{" "}
         <strong>would</strong> print once <em>Trims on cover pages</em> is switched on. It is only a
         sample: nothing is saved, nothing is pushed to SharePoint, and no supplier sees it.
       </p>
       {unsavedNote ? (
-        <p className="mt-2 max-w-3xl text-[12px] leading-relaxed text-amber-700">{unsavedNote}</p>
+        <p className="mt-2 max-w-3xl text-[12px] leading-relaxed text-warn">{unsavedNote}</p>
       ) : null}
-      {error && <p className="mt-2 text-[12px] text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-[12px] text-bad">{error}</p>}
     </div>
   );
 }

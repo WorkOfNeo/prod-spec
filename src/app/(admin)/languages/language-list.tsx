@@ -31,15 +31,15 @@ export function LanguageList({ initialLanguages }: Props) {
         <button
           type="button"
           onClick={() => setDialog({ mode: "create" })}
-          className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           + New language
         </button>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="bg-subtle text-left text-xs text-muted">
             <tr>
               <th className="px-4 py-2">#</th>
               <th className="px-4 py-2">Code</th>
@@ -52,22 +52,22 @@ export function LanguageList({ initialLanguages }: Props) {
           <tbody>
             {initialLanguages.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-zinc-500">
+                <td colSpan={6} className="px-4 py-12 text-center text-muted">
                   No languages yet. Click <strong>Seed standard set</strong> for the 22 languages
                   in the Prod Spec spec.
                 </td>
               </tr>
             ) : (
               initialLanguages.map((l) => (
-                <tr key={l.id} className="border-t border-zinc-100">
-                  <td className="px-4 py-2 text-xs tabular-nums text-zinc-500">{l.sortOrder}</td>
+                <tr key={l.id} className="border-t border-line">
+                  <td className="px-4 py-2 text-xs tabular-nums text-muted">{l.sortOrder}</td>
                   <td className="px-4 py-2 font-mono text-xs">{l.code}</td>
                   <td className="px-4 py-2 font-medium">{l.name}</td>
-                  <td className="px-4 py-2 text-zinc-600">{l.nativeName ?? "—"}</td>
+                  <td className="px-4 py-2 text-muted">{l.nativeName ?? "—"}</td>
                   <td className="px-4 py-2">
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs ${
-                        l.active ? "bg-emerald-100 text-emerald-800" : "bg-zinc-100 text-zinc-600"
+                        l.active ? "bg-good-soft text-good" : "bg-subtle text-muted"
                       }`}
                     >
                       {l.active ? "active" : "disabled"}
@@ -77,7 +77,7 @@ export function LanguageList({ initialLanguages }: Props) {
                     <button
                       type="button"
                       onClick={() => setDialog({ mode: "edit", row: l })}
-                      className="text-xs text-zinc-700 underline"
+                      className="text-xs text-ink underline"
                     >
                       Edit
                     </button>
@@ -132,11 +132,11 @@ function SeedButton() {
         type="button"
         onClick={seed}
         disabled={busy}
-        className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+        className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? "Seeding…" : "Seed standard set (22 langs)"}
       </button>
-      {msg && <span className="text-xs text-zinc-500">{msg}</span>}
+      {msg && <span className="text-xs text-muted">{msg}</span>}
     </div>
   );
 }
@@ -210,60 +210,60 @@ function LanguageDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/30 p-6">
-      <div className="my-12 w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgb(15_17_21/0.30)] p-6">
+      <div className="my-12 w-full max-w-md rounded-lg bg-surface p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold">
             {mode === "create" ? "New language" : `Edit ${row?.name}`}
           </h2>
-          <button onClick={onClose} className="text-xs text-zinc-500 underline">
+          <button onClick={onClose} className="text-xs text-muted underline">
             Close
           </button>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <label className="text-xs font-medium text-zinc-700">
-            Code <span className="font-normal text-zinc-400">(BCP 47)</span>
+          <label className="text-xs font-medium text-ink">
+            Code <span className="font-normal text-faint">(BCP 47)</span>
             <input
               type="text"
               value={code}
               disabled={mode === "edit"}
               onChange={(e) => setCode(e.target.value)}
               maxLength={10}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-sm disabled:bg-zinc-50"
+              className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-sm disabled:bg-subtle"
               placeholder="en, de-AT"
               required
             />
           </label>
-          <label className="text-xs font-medium text-zinc-700">
+          <label className="text-xs font-medium text-ink">
             Sort order
             <input
               type="number"
               value={sortOrder}
               onChange={(e) => setSortOrder(Number(e.target.value))}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm tabular-nums"
+              className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm tabular-nums"
               min={0}
               max={9999}
             />
           </label>
-          <label className="col-span-2 text-xs font-medium text-zinc-700">
+          <label className="col-span-2 text-xs font-medium text-ink">
             Name (English)
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm"
               placeholder="English"
               required
             />
           </label>
-          <label className="col-span-2 text-xs font-medium text-zinc-700">
-            Native name <span className="font-normal text-zinc-400">(optional)</span>
+          <label className="col-span-2 text-xs font-medium text-ink">
+            Native name <span className="font-normal text-faint">(optional)</span>
             <input
               type="text"
               value={nativeName}
               onChange={(e) => setNativeName(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm"
               placeholder="English"
             />
           </label>
@@ -275,7 +275,7 @@ function LanguageDialog({
           </div>
         )}
 
-        {err && <p className="mt-3 text-xs text-red-600">{err}</p>}
+        {err && <p className="mt-3 text-xs text-bad">{err}</p>}
 
         <div className="mt-5 flex items-center justify-between">
           {mode === "edit" ? (
@@ -283,7 +283,7 @@ function LanguageDialog({
               type="button"
               onClick={remove}
               disabled={busy}
-              className="text-xs text-red-600 underline disabled:opacity-50"
+              className="text-xs text-bad underline disabled:opacity-50"
             >
               Delete
             </button>
@@ -294,7 +294,7 @@ function LanguageDialog({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+              className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
             >
               Cancel
             </button>
@@ -302,7 +302,7 @@ function LanguageDialog({
               type="button"
               onClick={save}
               disabled={busy || !code || !name}
-              className="rounded-md bg-zinc-900 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+              className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? "Saving…" : mode === "create" ? "Create" : "Save"}
             </button>

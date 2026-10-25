@@ -155,13 +155,13 @@ export function PoEansTable({
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search style, PO, or supplier…"
-          className="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none"
+          className="flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm placeholder:text-faint focus:border-accent focus:outline-none"
         />
         <button
           type="button"
           onClick={runBulk}
           disabled={busy || filtered.length === 0}
-          className="shrink-0 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-40"
+          className="shrink-0 inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {bulkLabel}
         </button>
@@ -173,7 +173,7 @@ export function PoEansTable({
         {activeFilter && (
           <Link
             href={scoped("")}
-            className="inline-flex items-center gap-1 rounded-full border border-zinc-300 bg-white px-2 py-0.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+            className="inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2 py-0.5 text-xs font-medium text-muted hover:bg-subtle"
           >
             ← all
           </Link>
@@ -182,7 +182,7 @@ export function PoEansTable({
           <Link
             href="/po-eans?floated=1"
             aria-pressed={isFloatedView}
-            className={`inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-red-500 ${
+            className={`inline-flex items-center gap-1 rounded-full bg-bad px-2 py-0.5 text-xs font-semibold text-white hover:bg-bad ${
               isFloatedView ? "ring-2 ring-red-300 ring-offset-1" : ""
             }`}
           >
@@ -199,7 +199,7 @@ export function PoEansTable({
                 key={status}
                 href={scoped(`status=${status}`)}
                 aria-pressed={active}
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium hover:opacity-80 ${m.cls} ${
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium hover:opacity-80 ${m.cls}  ${
                   active ? "ring-2 ring-zinc-400 ring-offset-1" : ""
                 }`}
               >
@@ -210,22 +210,22 @@ export function PoEansTable({
       </div>
 
       {truncated && (
-        <p className="mb-3 -mt-1 text-xs text-zinc-400">
+        <p className="mb-3 -mt-1 text-xs text-faint">
           Showing the first {rows.length} of {activeTotal}. Narrow with search, or re-resolve in
           batches.
         </p>
       )}
 
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="bg-subtle text-left text-xs text-muted">
             <tr>
-              <th className="px-4 py-3">Style</th>
-              <th className="px-4 py-3">PO</th>
-              <th className="px-4 py-3">Supplier</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">EANs (size order) + carton</th>
-              <th className="px-4 py-3" />
+              <th className="px-3 py-2">Style</th>
+              <th className="px-3 py-2">PO</th>
+              <th className="px-3 py-2">Supplier</th>
+              <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2">EANs (size order) + carton</th>
+              <th className="px-3 py-2" />
             </tr>
           </thead>
           <tbody>
@@ -237,43 +237,43 @@ export function PoEansTable({
               // re-resolve (override present) has reset the counter server-side.
               const floated = !ov && eanFloated(r.initial.status, r.eanAttempts);
               return (
-                <tr key={r.id} className="border-t border-zinc-100 align-top">
-                  <td className="px-4 py-3 font-medium">
+                <tr key={r.id} className="border-t border-line align-top">
+                  <td className="px-3 py-2 font-medium">
                     {r.name}
                     {r.colourCode && (
-                      <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-xs font-normal text-zinc-500">
+                      <span className="ml-2 rounded bg-subtle px-1.5 py-0.5 text-xs font-normal text-muted">
                         {r.colourCode}
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2">
                     <PoPdfLink styleId={r.id} poNumber={r.poNumber} />
                   </td>
-                  <td className="px-4 py-3 text-zinc-600">{r.supplierName ?? "—"}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2 text-muted">{r.supplierName ?? "—"}</td>
+                  <td className="px-3 py-2">
                     <StatusBadge status={loading ? "RESOLVING" : view.status} />
                     {floated && (
-                      <span className="ml-1 inline-flex rounded-full bg-red-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
+                      <span className="ml-1 inline-flex rounded-full bg-bad px-1.5 py-0.5 text-[11px] font-semibold text-white">
                         gave up · {r.eanAttempts}×
                       </span>
                     )}
                     {!ov && r.resolvedAt && (
-                      <div className="mt-0.5 text-[11px] text-zinc-400">{r.resolvedAt}</div>
+                      <div className="mt-0.5 text-[11px] text-faint">{r.resolvedAt}</div>
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2">
                     {loading ? (
-                      <span className="text-zinc-400">Resolving…</span>
+                      <span className="text-faint">Resolving…</span>
                     ) : (
                       <ResultCell view={view} />
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2">
                     <button
                       type="button"
                       onClick={() => resolve(r.id)}
                       disabled={loading}
-                      className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+                      className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {loading ? "…" : "Re-resolve"}
                     </button>
@@ -291,16 +291,16 @@ export function PoEansTable({
 function ResultCell({ view }: { view: EanView }) {
   return (
     <div>
-      {view.poFileName && <div className="mb-1 text-xs text-zinc-400">{view.poFileName}</div>}
+      {view.poFileName && <div className="mb-1 text-xs text-faint">{view.poFileName}</div>}
       {view.sizeEans.length > 0 && (
         <ul className="space-y-0.5 text-xs">
           {view.sizeEans.map((s, i) => {
             const color = colorFromVariantLabel(s.variantLabel);
             return (
               <li key={i} className="tabular-nums">
-                <span className="text-zinc-500">{s.size}</span>
-                {color && <span className="text-zinc-400"> · {color}</span>}{" "}
-                <span className={s.ean13 ? "font-medium text-zinc-800" : "text-zinc-300"}>
+                <span className="text-muted">{s.size}</span>
+                {color && <span className="text-faint"> · {color}</span>}{" "}
+                <span className={s.ean13 ? "font-medium text-ink" : "text-faint"}>
                   {s.ean13 ?? "— no match"}
                 </span>
               </li>
@@ -309,14 +309,14 @@ function ResultCell({ view }: { view: EanView }) {
         </ul>
       )}
       {view.cartonEan && (
-        <div className="mt-1 text-xs tabular-nums text-zinc-500">
-          carton <span className="font-medium text-zinc-800">{view.cartonEan}</span>
+        <div className="mt-1 text-xs tabular-nums text-muted">
+          carton <span className="font-medium text-ink">{view.cartonEan}</span>
         </div>
       )}
       {view.sizeEans.length === 0 && !view.message && (
-        <span className="text-xs text-zinc-400">—</span>
+        <span className="text-xs text-faint">—</span>
       )}
-      {view.message && <div className="mt-1 text-xs text-zinc-400">{view.message}</div>}
+      {view.message && <div className="mt-1 text-xs text-faint">{view.message}</div>}
     </div>
   );
 }

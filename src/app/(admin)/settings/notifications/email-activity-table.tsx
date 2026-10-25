@@ -42,7 +42,7 @@ export function EmailActivityTable({ rows }: { rows: EmailActivityRow[] }) {
 
   if (rows.length === 0) {
     return (
-      <p className="mt-3 rounded-lg border border-dashed border-zinc-300 px-4 py-6 text-center text-sm text-zinc-400">
+      <p className="mt-3 rounded-lg border border-dashed border-line px-4 py-6 text-center text-sm text-faint">
         No emails yet — they appear here as soon as a job finishes generating (sent, simulated or
         skipped).
       </p>
@@ -50,10 +50,10 @@ export function EmailActivityTable({ rows }: { rows: EmailActivityRow[] }) {
   }
 
   return (
-    <div className="mt-3 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+    <div className="mt-3 overflow-x-auto rounded-xl border border-line bg-surface">
       <table className="w-full text-left text-sm">
         <thead>
-          <tr className="border-b border-zinc-200 text-[11px] tracking-wide text-zinc-500 uppercase">
+          <tr className="border-b border-line text-[11px] text-muted">
             <th className="px-3 py-2 font-semibold">When</th>
             <th className="px-3 py-2 font-semibold">Type</th>
             <th className="px-3 py-2 font-semibold">Status</th>
@@ -64,8 +64,8 @@ export function EmailActivityTable({ rows }: { rows: EmailActivityRow[] }) {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.id} className="border-b border-zinc-100 last:border-b-0">
-              <td className="px-3 py-2 whitespace-nowrap text-zinc-500">{row.whenLabel}</td>
+            <tr key={row.id} className="border-b border-line last:border-b-0">
+              <td className="px-3 py-2 whitespace-nowrap text-muted">{row.whenLabel}</td>
               <td className="px-3 py-2 whitespace-nowrap">{TYPE_LABELS[row.type] ?? row.type}</td>
               <td className="px-3 py-2">
                 <span
@@ -74,15 +74,15 @@ export function EmailActivityTable({ rows }: { rows: EmailActivityRow[] }) {
                   {row.status}
                 </span>
               </td>
-              <td className="max-w-48 truncate px-3 py-2 text-zinc-600" title={row.to}>
-                {row.to || <span className="text-amber-700">—</span>}
+              <td className="max-w-48 truncate px-3 py-2 text-muted" title={row.to}>
+                {row.to || <span className="text-warn">—</span>}
               </td>
-              <td className="max-w-72 truncate px-3 py-2 text-zinc-600" title={row.subject}>
+              <td className="max-w-72 truncate px-3 py-2 text-muted" title={row.subject}>
                 {row.subject}
               </td>
               <td className="px-3 py-2 text-right whitespace-nowrap">
                 {row.styleId ? (
-                  <Link href={`/styles/${row.styleId}`} className="mr-3 text-xs text-zinc-400 underline hover:text-zinc-700">
+                  <Link href={`/styles/${row.styleId}`} className="mr-3 text-xs text-faint underline hover:text-ink">
                     style
                   </Link>
                 ) : null}
@@ -99,7 +99,7 @@ export function EmailActivityTable({ rows }: { rows: EmailActivityRow[] }) {
                       createdAtLabel: row.whenLabel,
                     })
                   }
-                  className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium hover:bg-zinc-50"
+                  className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   View
                 </button>

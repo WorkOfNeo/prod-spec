@@ -70,16 +70,16 @@ export default async function RequestPage({
   const view = result.view;
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
-      <Link href="/requests" className="text-sm text-zinc-500 hover:text-zinc-900">
+    <div className="max-w-7xl px-6 py-5">
+      <Link href="/requests" className="text-sm text-muted hover:text-ink">
         ← Requests
       </Link>
       <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            <span className="font-mono text-zinc-400">{view.ref}</span> {view.title}
+          <h1 className="text-[18px] font-semibold tracking-[-0.01em]">
+            <span className="font-mono text-faint">{view.ref}</span> {view.title}
           </h1>
-          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-zinc-500">
+          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
             <RequestStatusPill status={view.status} />
             <span>
               Filed by {view.requester} · {view.createdLabel}
@@ -90,8 +90,8 @@ export default async function RequestPage({
       </div>
       {view.message.trim() && (
         <details className="mt-3 max-w-3xl text-sm">
-          <summary className="cursor-pointer text-zinc-500 hover:text-zinc-900">The request as written</summary>
-          <p className="mt-2 whitespace-pre-wrap rounded-md border border-zinc-200 bg-white p-3 text-zinc-700">
+          <summary className="cursor-pointer text-muted hover:text-ink">The request as written</summary>
+          <p className="mt-2 whitespace-pre-wrap rounded-md border border-line bg-surface p-3 text-ink">
             {view.message}
           </p>
         </details>

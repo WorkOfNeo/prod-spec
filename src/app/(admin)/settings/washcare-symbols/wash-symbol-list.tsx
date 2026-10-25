@@ -142,12 +142,12 @@ export function WashSymbolList({
       {(unmappedLabels.length > 0 || missingArtwork.length > 0) && (
         <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
           {unmappedLabels.length > 0 && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-              <div className="text-sm font-semibold text-amber-900">
+            <div className="rounded-lg border border-transparent bg-warn-soft p-4">
+              <div className="text-sm font-semibold text-warn">
                 {unmappedLabels.length} of {optionCount} Monday wash-care options don&rsquo;t
                 resolve to a symbol
               </div>
-              <p className="mt-1 text-xs text-amber-800">
+              <p className="mt-1 text-xs text-warn">
                 A style carrying one of these prints a dashed placeholder tile AND skips
                 care-line suppression (the token carries no action — &ldquo;Do not iron&rdquo;
                 wouldn&rsquo;t drop ironing lines). If this is the same instruction under a
@@ -155,7 +155,7 @@ export function WashSymbolList({
                 and update its <code className="font-mono">mondayValue</code> instead of creating
                 a duplicate — otherwise, create the missing symbol.
               </p>
-              <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs text-amber-900">
+              <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs text-warn">
                 {unmappedLabels.map((label) => (
                   <li key={label} className="flex items-center justify-between gap-2">
                     <span className="truncate" title={label}>
@@ -165,7 +165,7 @@ export function WashSymbolList({
                       type="button"
                       onClick={() => setCreating(label)}
                       disabled={busy}
-                      className="shrink-0 rounded border border-amber-300 bg-white px-1.5 py-0.5 text-[10px] font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                      className="shrink-0 rounded border border-transparent bg-surface px-1.5 py-0.5 text-[11px] font-medium text-warn hover:bg-warn-soft disabled:opacity-50"
                     >
                       Create symbol
                     </button>
@@ -175,15 +175,15 @@ export function WashSymbolList({
             </div>
           )}
           {missingArtwork.length > 0 && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-              <div className="text-sm font-semibold text-amber-900">
+            <div className="rounded-lg border border-transparent bg-warn-soft p-4">
+              <div className="text-sm font-semibold text-warn">
                 {missingArtwork.length} active symbols have no artwork yet
               </div>
-              <p className="mt-1 text-xs text-amber-800">
+              <p className="mt-1 text-xs text-warn">
                 They render as dashed name tiles on every output that uses them — fine for
                 review, blocked at approval. Upload the SVG on each symbol below.
               </p>
-              <ul className="mt-2 max-h-48 space-y-0.5 overflow-y-auto font-mono text-xs text-amber-900">
+              <ul className="mt-2 max-h-48 space-y-0.5 overflow-y-auto font-mono text-xs text-warn">
                 {missingArtwork.map((code) => (
                   <li key={code}>· {code}</li>
                 ))}
@@ -198,7 +198,7 @@ export function WashSymbolList({
           type="button"
           onClick={() => setCreating(true)}
           disabled={busy}
-          className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           + New symbol
         </button>
@@ -206,7 +206,7 @@ export function WashSymbolList({
           type="button"
           onClick={seed}
           disabled={busy}
-          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         >
           Seed ISO 3758 codes (16)
         </button>
@@ -214,7 +214,7 @@ export function WashSymbolList({
           type="button"
           onClick={deleteAll}
           disabled={busy || initialSymbols.length === 0}
-          className="rounded-md border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-40"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-bad transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           title={
             initialSymbols.length === 0
               ? "Nothing to delete"
@@ -223,16 +223,16 @@ export function WashSymbolList({
         >
           Delete all ({initialSymbols.length})
         </button>
-        <span className="text-xs text-zinc-500">
+        <span className="text-xs text-muted">
           Seeding creates placeholder rows for the standard codes — upload the SVG into each
           afterwards.
         </span>
-        {err && <span className="text-xs text-red-600">{err}</span>}
+        {err && <span className="text-xs text-bad">{err}</span>}
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         {initialSymbols.length === 0 ? (
-          <div className="col-span-full rounded-lg border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500">
+          <div className="col-span-full rounded-xl border border-line bg-surface p-8 text-center text-sm text-muted">
             No symbols yet. Click <strong>Seed ISO 3758 codes</strong> to pre-populate the standard
             16, or <strong>+ New symbol</strong> to add a custom one.
           </div>
@@ -283,26 +283,26 @@ function SymbolCard({ symbol, onEdit }: { symbol: Symbol; onEdit: () => void }) 
   return (
     <div
       className={`rounded-lg border p-3 ${
-        symbol.active ? "border-zinc-200 bg-white" : "border-amber-300 bg-amber-50 opacity-70"
+        symbol.active ? "border-line bg-surface" : "border-transparent bg-warn-soft opacity-70"
       }`}
     >
-      <div className="flex h-20 items-center justify-center rounded-md bg-zinc-50">
+      <div className="flex h-20 items-center justify-center rounded-md bg-subtle">
         {dataUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={dataUrl} alt={symbol.code} className="h-14 w-14 object-contain" />
         ) : (
-          <span className="text-xs text-amber-700">no image</span>
+          <span className="text-xs text-warn">no image</span>
         )}
       </div>
       <div className="mt-2 flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="truncate font-mono text-xs text-zinc-700">{symbol.code}</div>
+          <div className="truncate font-mono text-xs text-ink">{symbol.code}</div>
           <div className="truncate text-sm">{symbol.name}</div>
           {symbol.action && (
             <div className="mt-1">
               <span
-                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                  symbol.restrictive ? "bg-rose-100 text-rose-800" : "bg-sky-100 text-sky-700"
+                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                  symbol.restrictive ? "bg-bad-soft text-bad" : "bg-accent-soft text-accent-text"
                 }`}
               >
                 {LAUNDERING_ACTION_LABELS[symbol.action]}
@@ -310,14 +310,14 @@ function SymbolCard({ symbol, onEdit }: { symbol: Symbol; onEdit: () => void }) 
               </span>
             </div>
           )}
-          <div className="mt-1 text-xs text-zinc-500">
+          <div className="mt-1 text-xs text-muted">
             Monday: {symbol.mondayValue ? <code className="font-mono">{symbol.mondayValue}</code> : "—"}
           </div>
         </div>
         <button
           type="button"
           onClick={onEdit}
-          className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+          className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink hover:bg-subtle"
         >
           Edit
         </button>
@@ -539,19 +539,19 @@ function SymbolDialog({
     : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(15_17_21/0.40)] px-4">
       <div
         onDragEnter={onDragEnter}
         onDragLeave={onDragLeave}
         onDragOver={onDragOver}
         onDrop={onDrop}
-        className={`relative w-full max-w-2xl rounded-lg bg-white p-6 shadow-2xl transition-shadow ${
-          dragOver ? "ring-4 ring-zinc-900 ring-offset-2" : ""
+        className={`relative w-full max-w-2xl rounded-lg bg-surface p-6 shadow-2xl transition-shadow ${
+          dragOver ? "ring-4 ring-accent ring-offset-2" : ""
         }`}
       >
         {dragOver && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-zinc-900/5">
-            <div className="rounded-md border-2 border-dashed border-zinc-900 bg-white/95 px-6 py-4 text-center text-sm font-medium text-zinc-900">
+            <div className="rounded-md border-2 border-dashed border-ink bg-white/95 px-6 py-4 text-center text-sm font-medium text-ink">
               Drop SVG / PNG / JPG to attach
             </div>
           </div>
@@ -561,67 +561,67 @@ function SymbolDialog({
           <button
             type="button"
             onClick={onClose}
-            className="text-xs text-zinc-500 underline"
+            className="text-xs text-muted underline"
           >
             close
           </button>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <label className="text-xs font-medium text-zinc-700">
+          <label className="text-xs font-medium text-ink">
             Code
             <input
               type="text"
               value={code}
               onChange={(e) => setCode(e.target.value)}
               disabled={mode === "edit"}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-sm disabled:bg-zinc-50 disabled:text-zinc-500"
+              className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-sm disabled:bg-subtle disabled:text-muted"
               placeholder="wash30"
             />
-            <span className="mt-1 block font-normal text-zinc-500">
+            <span className="mt-1 block font-normal text-muted">
               Stable identifier. Lowercase a-z, 0-9, _ or -. Immutable after create.
             </span>
           </label>
-          <label className="text-xs font-medium text-zinc-700">
+          <label className="text-xs font-medium text-ink">
             Display name
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm"
               placeholder="Wash at 30°C"
             />
           </label>
         </div>
 
-        <label className="mt-4 block text-xs font-medium text-zinc-700">
+        <label className="mt-4 block text-xs font-medium text-ink">
           Monday value (optional)
           <input
             type="text"
             value={mondayValue}
             onChange={(e) => setMondayValue(e.target.value)}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-sm"
+            className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-sm"
             placeholder="(e.g. the option label Monday's wash-care column emits)"
           />
-          <span className="mt-1 block font-normal text-zinc-500">
+          <span className="mt-1 block font-normal text-muted">
             When ingest sees this exact string in the wash-care column it resolves to this symbol.
           </span>
         </label>
 
-        <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50/40 p-3">
-          <div className="text-xs font-semibold text-zinc-700">Care-instruction rule</div>
-          <p className="mb-2 mt-0.5 text-[11px] text-zinc-500">
+        <div className="mt-4 rounded-md border border-line bg-zinc-50/40 p-3">
+          <div className="text-xs font-semibold text-ink">Care-instruction rule</div>
+          <p className="mb-2 mt-0.5 text-[11px] text-muted">
             Classify which laundering action this symbol concerns. A{" "}
             <strong>prohibition</strong> symbol (&ldquo;Do not …&rdquo;) removes every care-label
             line tagged with the same action — e.g. <em>Do not iron</em> drops the ironing lines.
           </p>
           <div className="grid grid-cols-2 gap-4">
-            <label className="text-xs font-medium text-zinc-700">
+            <label className="text-xs font-medium text-ink">
               Action
               <select
                 value={action}
                 onChange={(e) => setAction(e.target.value as LaunderingAction | "")}
-                className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm"
               >
                 <option value="">— none —</option>
                 {LAUNDERING_ACTIONS.map((a) => (
@@ -645,7 +645,7 @@ function SymbolDialog({
 
         <div className="mt-4 grid grid-cols-2 gap-4">
           <div>
-            <label className="text-xs font-medium text-zinc-700">
+            <label className="text-xs font-medium text-ink">
               Image file (SVG, PNG, or JPG — drop anywhere in this dialog)
             </label>
             <input
@@ -657,49 +657,49 @@ function SymbolDialog({
               }}
               className="mt-1 block w-full text-xs"
             />
-            <span className="mt-1 block text-[10px] text-zinc-500">
+            <span className="mt-1 block text-[11px] text-muted">
               SVG is preferred — vector, crisp at any print size. PNG / JPG work for bitmap artwork
               supplied by the print shop. Max 1 MB.
             </span>
 
             {storedAsDataUrl ? (
-              <div className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600">
+              <div className="mt-3 rounded-md border border-line bg-subtle p-3 text-xs text-muted">
                 <div>
                   Uploaded as <strong>{dataUrlKind}</strong>{" "}
-                  <span className="text-zinc-500">
+                  <span className="text-muted">
                     ({Math.round(svg.length / 1024)} KB)
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setSvg("")}
-                  className="mt-2 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs font-medium hover:bg-zinc-50"
+                  className="mt-2 inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Clear and replace
                 </button>
               </div>
             ) : (
-              <label className="mt-3 block text-xs font-medium text-zinc-700">
+              <label className="mt-3 block text-xs font-medium text-ink">
                 Or paste SVG markup
                 <textarea
                   value={svg}
                   onChange={(e) => setSvg(e.target.value)}
                   rows={8}
                   spellCheck={false}
-                  className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-[10px]"
+                  className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-[11px]"
                   placeholder={"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\">…</svg>"}
                 />
               </label>
             )}
           </div>
           <div>
-            <div className="text-xs font-medium text-zinc-700">Preview</div>
-            <div className="mt-1 flex h-40 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50">
+            <div className="text-xs font-medium text-ink">Preview</div>
+            <div className="mt-1 flex h-40 items-center justify-center rounded-md border border-line bg-subtle">
               {dataUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={dataUrl} alt="preview" className="h-32 w-32 object-contain" />
               ) : (
-                <span className="text-xs text-zinc-500">no image yet</span>
+                <span className="text-xs text-muted">no image yet</span>
               )}
             </div>
             {mode === "edit" && (
@@ -710,26 +710,26 @@ function SymbolDialog({
           </div>
         </div>
 
-        <div className="mt-5 rounded-md border border-zinc-200 bg-zinc-50/40 p-3">
+        <div className="mt-5 rounded-md border border-line bg-zinc-50/40 p-3">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-medium text-zinc-700">Translations</span>
-            <span className="text-[10px] text-zinc-500">
+            <span className="text-xs font-medium text-ink">Translations</span>
+            <span className="text-[11px] text-muted">
               {languageInputs.length === 0
                 ? "Seed languages first to see slots here"
                 : `${languageInputs.length} language${languageInputs.length === 1 ? "" : "s"}`}
             </span>
           </div>
           {languageInputs.length === 0 ? (
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-muted">
               No active languages — visit <code className="font-mono">/languages</code> and click{" "}
               <strong>Seed standard set</strong> to populate the language slots.
             </p>
           ) : (
             <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
               {languageInputs.map((lang) => (
-                <label key={lang.code} className="text-xs font-medium text-zinc-700">
+                <label key={lang.code} className="text-xs font-medium text-ink">
                   {lang.name}{" "}
-                  <span className="font-mono text-[10px] font-normal text-zinc-400">
+                  <span className="font-mono text-[11px] font-normal text-faint">
                     {lang.code}
                   </span>
                   <input
@@ -738,7 +738,7 @@ function SymbolDialog({
                     onChange={(e) =>
                       setTranslations((prev) => ({ ...prev, [lang.code]: e.target.value }))
                     }
-                    className="mt-1 w-full rounded-md border border-zinc-300 px-2 py-1.5 text-xs"
+                    className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-xs"
                     placeholder={lang.code === "en" ? "Wash at 30°C" : ""}
                   />
                 </label>
@@ -747,7 +747,7 @@ function SymbolDialog({
           )}
         </div>
 
-        {err && <p className="mt-3 text-xs text-red-600">{err}</p>}
+        {err && <p className="mt-3 text-xs text-bad">{err}</p>}
 
         <div className="mt-5 flex items-center justify-between">
           <div>
@@ -756,7 +756,7 @@ function SymbolDialog({
                 type="button"
                 onClick={destroy}
                 disabled={busy}
-                className="text-xs text-red-700 underline disabled:opacity-50"
+                className="text-xs text-bad underline disabled:opacity-50"
               >
                 Delete permanently
               </button>
@@ -766,7 +766,7 @@ function SymbolDialog({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              className="rounded-md border border-line px-3 py-2 text-sm font-medium text-ink hover:bg-subtle"
             >
               Cancel
             </button>
@@ -774,7 +774,7 @@ function SymbolDialog({
               type="button"
               onClick={save}
               disabled={busy || !code || !name}
-              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? "Saving…" : "Save"}
             </button>

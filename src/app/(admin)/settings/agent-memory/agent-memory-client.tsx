@@ -79,12 +79,12 @@ export function AgentMemoryClient({ memories, events }: { memories: MemoryView[]
                 aria-pressed={active}
                 className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
                   active
-                    ? "border-zinc-900 bg-zinc-900 text-white"
-                    : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
+                    ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    : "border-line bg-surface text-ink hover:bg-subtle"
                 }`}
               >
                 {chip.label}
-                <span className={`ml-1.5 font-mono tabular-nums ${active ? "text-zinc-300" : "text-zinc-400"}`}>
+                <span className={`ml-1.5 font-mono tabular-nums ${active ? "text-faint" : "text-faint"}`}>
                   {count(chip.scope)}
                 </span>
               </button>
@@ -93,9 +93,9 @@ export function AgentMemoryClient({ memories, events }: { memories: MemoryView[]
         </div>
 
         {memories.length === 0 ? (
-          <div className="mt-6 rounded-lg border border-zinc-200 bg-white p-8 text-center">
-            <div className="text-sm font-semibold text-zinc-800">No notes yet.</div>
-            <p className="mt-1 text-sm text-zinc-500">
+          <div className="mt-6 rounded-xl border border-line bg-surface p-8 text-center">
+            <div className="text-sm font-semibold text-ink">No notes yet.</div>
+            <p className="mt-1 text-sm text-muted">
               When you correct a draft in a review, the agent may suggest a note. It shows up here
               for you to keep or dismiss.
             </p>
@@ -116,11 +116,11 @@ export function AgentMemoryClient({ memories, events }: { memories: MemoryView[]
             />
             {closed.length > 0 ? (
               <details className="group">
-                <summary className="cursor-pointer text-sm font-semibold text-zinc-700 select-none">
+                <summary className="cursor-pointer text-sm font-semibold text-ink select-none">
                   Dismissed and forgotten{" "}
-                  <span className="font-mono font-normal text-zinc-400 tabular-nums">{closed.length}</span>
+                  <span className="font-mono font-normal text-faint tabular-nums">{closed.length}</span>
                 </summary>
-                <p className="mt-1 text-xs text-zinc-500">The agent doesn&apos;t read these. Restore one to use it again.</p>
+                <p className="mt-1 text-xs text-muted">The agent doesn&apos;t read these. Restore one to use it again.</p>
                 <ul className="mt-2 grid gap-2">
                   {closed.map((m) => (
                     <NoteRow key={m.id} note={m} />
@@ -133,15 +133,15 @@ export function AgentMemoryClient({ memories, events }: { memories: MemoryView[]
       </div>
 
       <aside className="min-w-0">
-        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900">
-          <History className="h-4 w-4 text-zinc-400" aria-hidden="true" />
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+          <History className="h-4 w-4 text-faint" aria-hidden="true" />
           Follow along
         </h2>
-        <p className="mt-1 text-xs text-zinc-500">The latest thing that happened to each note, newest first.</p>
+        <p className="mt-1 text-xs text-muted">The latest thing that happened to each note, newest first.</p>
         {events.length === 0 ? (
-          <p className="mt-3 text-xs text-zinc-400">Nothing yet.</p>
+          <p className="mt-3 text-xs text-faint">Nothing yet.</p>
         ) : (
-          <ol className="mt-3 grid gap-3 border-l border-zinc-200 pl-4">
+          <ol className="mt-3 grid gap-3 border-l border-line pl-4">
             {events.map((e) => (
               <li key={e.key} className="relative">
                 <span
@@ -149,11 +149,11 @@ export function AgentMemoryClient({ memories, events }: { memories: MemoryView[]
                   aria-hidden="true"
                 />
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs font-medium text-zinc-800">{e.label}</span>
-                  <span className="shrink-0 font-mono text-[10px] text-zinc-400 tabular-nums">{e.whenLabel}</span>
+                  <span className="text-xs font-medium text-ink">{e.label}</span>
+                  <span className="shrink-0 font-mono text-[11px] text-faint tabular-nums">{e.whenLabel}</span>
                 </div>
-                <p className="mt-0.5 line-clamp-2 text-xs text-zinc-600">{e.text}</p>
-                <p className="mt-0.5 text-[11px] text-zinc-400">
+                <p className="mt-0.5 line-clamp-2 text-xs text-muted">{e.text}</p>
+                <p className="mt-0.5 text-[11px] text-faint">
                   {e.scopeLabel} · {e.source}
                 </p>
               </li>
@@ -168,12 +168,12 @@ export function AgentMemoryClient({ memories, events }: { memories: MemoryView[]
 function Section({ title, hint, notes, empty }: { title: string; hint: string; notes: MemoryView[]; empty: string }) {
   return (
     <section>
-      <h2 className="text-sm font-semibold text-zinc-900">
-        {title} <span className="font-mono font-normal text-zinc-400 tabular-nums">{notes.length}</span>
+      <h2 className="text-sm font-semibold text-ink">
+        {title} <span className="font-mono font-normal text-faint tabular-nums">{notes.length}</span>
       </h2>
-      <p className="mt-0.5 text-xs text-zinc-500">{hint}</p>
+      <p className="mt-0.5 text-xs text-muted">{hint}</p>
       {notes.length === 0 ? (
-        <p className="mt-2 text-xs text-zinc-400">{empty}</p>
+        <p className="mt-2 text-xs text-faint">{empty}</p>
       ) : (
         <ul className="mt-2 grid gap-2">
           {notes.map((m) => (
@@ -224,7 +224,7 @@ function NoteRow({ note }: { note: MemoryView }) {
   const closed = note.state === "DISMISSED" || note.state === "FORGOTTEN";
 
   return (
-    <li className={`rounded-lg border border-zinc-200 bg-white p-3 ${closed ? "opacity-75" : ""}`}>
+    <li className={`rounded-xl border border-line bg-surface p-3 ${closed ? "opacity-75" : ""}`}>
       {editing ? (
         <textarea
           value={draft}
@@ -232,25 +232,25 @@ function NoteRow({ note }: { note: MemoryView }) {
           rows={3}
           maxLength={1000}
           autoFocus
-          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm leading-relaxed focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+          className="w-full rounded-md border border-line px-3 py-2 text-sm leading-relaxed focus:ring-2 focus:ring-accent focus:outline-none"
         />
       ) : (
-        <p className={`text-sm whitespace-pre-line ${closed ? "text-zinc-500" : "text-zinc-900"}`}>{note.text}</p>
+        <p className={`text-sm whitespace-pre-line ${closed ? "text-muted" : "text-ink"}`}>{note.text}</p>
       )}
 
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
-        <span className="rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-zinc-600">{note.scopeLabel}</span>
+        <span className="rounded border border-line bg-subtle px-1.5 py-0.5 text-muted">{note.scopeLabel}</span>
         <span className={`rounded-full border px-2 py-0.5 font-semibold ${pill.className}`}>{pill.label}</span>
-        <span className="text-zinc-500">
+        <span className="text-muted">
           {note.sourceRequestId ? (
-            <Link href={`/requests/${note.sourceRequestId}`} className="hover:text-zinc-800 hover:underline">
+            <Link href={`/requests/${note.sourceRequestId}`} className="hover:text-ink hover:underline">
               {note.sourceLabel}
             </Link>
           ) : (
             note.sourceLabel
           )}
         </span>
-        <span className="text-zinc-400" title={note.lastUsedLabel ? `Last read ${note.lastUsedLabel}` : undefined}>
+        <span className="text-faint" title={note.lastUsedLabel ? `Last read ${note.lastUsedLabel}` : undefined}>
           used in <span className="font-mono tabular-nums">{note.usedCount}</span> draft{note.usedCount === 1 ? "" : "s"}
         </span>
 
@@ -305,7 +305,7 @@ function NoteRow({ note }: { note: MemoryView }) {
           ) : null}
         </span>
       </div>
-      {err ? <p className="mt-1.5 text-xs text-red-600">{err}</p> : null}
+      {err ? <p className="mt-1.5 text-xs text-bad">{err}</p> : null}
     </li>
   );
 }
@@ -328,8 +328,8 @@ function ActionButton({
       disabled={disabled}
       className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium disabled:opacity-50 ${
         primary
-          ? "bg-zinc-900 text-white hover:bg-zinc-800"
-          : "border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
+          ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          : "border border-line bg-surface text-ink hover:bg-subtle"
       }`}
     >
       {children}

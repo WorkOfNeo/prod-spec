@@ -79,10 +79,10 @@ export function CustomerConfigForm({
 
   return (
     <form onSubmit={onSubmit} className="mt-3 flex flex-col gap-4">
-      <div className="flex items-start justify-between gap-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4">
+      <div className="flex items-start justify-between gap-4 rounded-lg border border-line bg-subtle p-4">
         <div>
-          <div className="text-xs font-medium text-zinc-700">Customer delivers their own goods</div>
-          <p className="mt-1 text-xs font-normal text-zinc-500">
+          <div className="text-xs font-medium text-ink">Customer delivers their own goods</div>
+          <p className="mt-1 text-xs font-normal text-muted">
             Turn on for customers like Woolworth who handle delivery themselves. The app will not
             send supplier delivery for this customer&rsquo;s styles. Generation, review and auto-run
             are unaffected — only delivery.
@@ -104,7 +104,7 @@ export function CustomerConfigForm({
             type="text"
             value={logoUrl}
             onChange={(e) => setLogoUrl(e.target.value)}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-xs"
+            className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-xs"
             placeholder="https://example.com/logo.png"
           />
         </Field>
@@ -113,7 +113,7 @@ export function CustomerConfigForm({
             type="text"
             value={barcodeFontFamily}
             onChange={(e) => setBarcodeFontFamily(e.target.value)}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-xs"
+            className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-xs"
             placeholder="Libre Barcode 128 Text"
           />
         </Field>
@@ -126,7 +126,7 @@ export function CustomerConfigForm({
             type="text"
             value={barcodeFontSrc}
             onChange={(e) => setBarcodeFontSrc(e.target.value)}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-xs"
+            className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-xs"
             placeholder="https://fonts.googleapis.com/css2?family=Libre+Barcode+128+Text"
           />
         </Field>
@@ -138,7 +138,7 @@ export function CustomerConfigForm({
           onChange={(e) => setColumnMappingText(e.target.value)}
           rows={10}
           spellCheck={false}
-          className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-xs"
+          className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-xs"
         />
       </Field>
 
@@ -152,17 +152,17 @@ export function CustomerConfigForm({
           onChange={(e) => setRequiredFieldsText(e.target.value)}
           rows={6}
           spellCheck={false}
-          className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-xs"
+          className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-xs"
         />
       </Field>
 
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p className="text-xs text-bad">{error}</p>}
 
       <div className="flex gap-2">
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {pending ? "Saving…" : "Save config"}
         </button>
@@ -183,10 +183,10 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className={`text-xs font-medium text-zinc-700 ${wide ? "col-span-2" : ""}`}>
+    <label className={`text-xs font-medium text-ink ${wide ? "col-span-2" : ""}`}>
       {label}
       {children}
-      {hint && <span className="mt-1 block font-normal text-zinc-500">{hint}</span>}
+      {hint && <span className="mt-1 block font-normal text-muted">{hint}</span>}
     </label>
   );
 }

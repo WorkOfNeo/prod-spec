@@ -63,10 +63,10 @@ function statusLabel(d: DocRow): string {
 
 function DocList({ docs, emptyNote }: { docs: DocRow[]; emptyNote: string }) {
   if (docs.length === 0) {
-    return <p className="px-3 py-2 text-[12px] italic text-zinc-400">{emptyNote}</p>;
+    return <p className="px-3 py-2 text-[12px] italic text-faint">{emptyNote}</p>;
   }
   return (
-    <ol className="divide-y divide-zinc-100">
+    <ol className="divide-y divide-line">
       {docs.map((d, i) => (
         // GREEN = this line is answered by a layout we already generate, so the
         // trim was matched to a real document. That match is the thing most
@@ -75,34 +75,34 @@ function DocList({ docs, emptyNote }: { docs: DocRow[]; emptyNote: string }) {
         // you have to hunt for.
         <li
           key={`${d.displayName}-${i}`}
-          className={`px-3 py-2 ${d.kind === "app" ? "bg-emerald-50" : ""}`}
+          className={`px-3 py-2 ${d.kind === "app" ? "bg-good-soft" : ""}`}
         >
           <div className="flex items-baseline justify-between gap-3">
-            <span className="text-[12px] font-medium text-zinc-800">{d.displayName}</span>
-            <span className="shrink-0 text-[11px] tabular-nums text-zinc-400">
+            <span className="text-[12px] font-medium text-ink">{d.displayName}</span>
+            <span className="shrink-0 text-[11px] tabular-nums text-faint">
               {d.widthMm !== null && d.heightMm !== null ? `${d.widthMm} × ${d.heightMm} mm` : "—"}
             </span>
           </div>
           {d.suppliedAs?.length ? (
-            <div className="mt-0.5 text-[11px] text-emerald-800">
+            <div className="mt-0.5 text-[11px] text-good">
               Matched to {d.suppliedAs.join(" + ")}
             </div>
           ) : d.kind === "app" ? (
-            <div className="mt-0.5 text-[11px] text-emerald-800">We generate this</div>
+            <div className="mt-0.5 text-[11px] text-good">We generate this</div>
           ) : null}
           <div
             className={`mt-0.5 text-[11px] ${
               d.approved === false
-                ? "text-amber-700"
+                ? "text-warn"
                 : d.approved === true
-                  ? "text-emerald-700"
-                  : "text-zinc-400"
+                  ? "text-good"
+                  : "text-faint"
             }`}
           >
             {statusLabel(d)}
           </div>
           {d.copy?.note?.trim() ? (
-            <div className="mt-0.5 text-[11px] italic text-zinc-500">{d.copy.note.trim()}</div>
+            <div className="mt-0.5 text-[11px] italic text-muted">{d.copy.note.trim()}</div>
           ) : null}
         </li>
       ))}
@@ -239,11 +239,11 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
   const busy = phase === "sampling" || phase === "scanning" || phase === "running";
 
   return (
-    <div className="mt-10 rounded-lg border border-zinc-200 bg-white p-5">
+    <div className="mt-10 rounded-xl border border-line bg-surface p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold text-zinc-800">Preview cover changes</h2>
-          <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-zinc-500">
+          <h2 className="text-sm font-semibold text-ink">Preview cover changes</h2>
+          <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-muted">
             Shows what each cover says now against what it would say with the Monday
             <strong> Trims</strong> list folded in, so you can check the wording before anything is
             rebuilt. Regenerating from here updates the covers in the suppliers&rsquo; SharePoint
@@ -255,13 +255,13 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
           <button
             type="button"
             onClick={showSample}
-            className="shrink-0 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+            className="shrink-0 inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Show me a sample
           </button>
         )}
         {phase === "sampling" && (
-          <span className="shrink-0 py-2 text-sm text-zinc-400">Building sample…</span>
+          <span className="shrink-0 py-2 text-sm text-faint">Building sample…</span>
         )}
       </div>
 
@@ -282,7 +282,7 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
       </div>
 
       {phase === "error" && (
-        <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="mt-4 rounded-md border border-transparent bg-bad-soft px-3 py-2 text-sm text-bad">
           {error}
           <button type="button" onClick={() => setPhase("idle")} className="ml-3 underline">
             Try again
@@ -291,13 +291,13 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
       )}
 
       {(phase === "sample" || phase === "scanning" || phase === "scanned") && samples.length === 0 && (
-        <p className="mt-4 text-sm text-zinc-500">
+        <p className="mt-4 text-sm text-muted">
           No styles have a generated cover yet — nothing to preview.
         </p>
       )}
 
       {trimsEnabled === false && samples.length > 0 && phase !== "running" && phase !== "done" && (
-        <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-[13px] text-sky-900">
+        <div className="mt-4 rounded-md border border-transparent bg-accent-soft px-3 py-2 text-[13px] text-accent-text">
           <strong>Trims on cover pages is off.</strong> The &ldquo;after&rdquo; column below is what
           covers <em>would</em> say once it is switched on — nothing is printing it yet, and every
           cover in the folders still reads exactly as before. Rebuilding is disabled while it is
@@ -309,25 +309,25 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
       {samples.length > 0 && phase !== "running" && phase !== "done" && (
         <div className="mt-5 space-y-4">
           {samples.map((d) => (
-            <div key={d.styleId} className="rounded-md border border-zinc-200">
-              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-zinc-200 bg-zinc-50 px-3 py-2">
-                <span className="text-[13px] font-semibold text-zinc-800">{d.styleName}</span>
-                {d.customerName && <span className="text-[12px] text-zinc-500">{d.customerName}</span>}
-                {d.poNumber && <span className="text-[12px] text-zinc-400">{d.poNumber}</span>}
-                <span className="ml-auto text-[11px] text-zinc-500">
+            <div key={d.styleId} className="rounded-md border border-line">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line bg-subtle px-3 py-2">
+                <span className="text-[13px] font-semibold text-ink">{d.styleName}</span>
+                {d.customerName && <span className="text-[12px] text-muted">{d.customerName}</span>}
+                {d.poNumber && <span className="text-[12px] text-faint">{d.poNumber}</span>}
+                <span className="ml-auto text-[11px] text-muted">
                   {d.addedRows > 0 ? `+${d.addedRows} row${d.addedRows === 1 ? "" : "s"}` : "no new rows"}
                   {d.changed ? "" : " · cover already current"}
                 </span>
               </div>
-              <div className="grid grid-cols-1 divide-y divide-zinc-200 md:grid-cols-2 md:divide-x md:divide-y-0">
+              <div className="grid grid-cols-1 divide-y divide-line md:grid-cols-2 md:divide-x md:divide-y-0">
                 <div>
-                  <div className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                  <div className="px-3 pt-2 text-[11px] font-semibold text-faint">
                     Before
                   </div>
                   <DocList docs={d.before} emptyNote="No packaging listed at all." />
                 </div>
                 <div>
-                  <div className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                  <div className="px-3 pt-2 text-[11px] font-semibold text-faint">
                     After
                   </div>
                   <DocList docs={d.after} emptyNote="No packaging listed at all." />
@@ -342,18 +342,18 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
                 <button
                   type="button"
                   onClick={scanAll}
-                  className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+                  className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Scan all {allIds.length} covers
                 </button>
-                <span className="text-[12px] text-zinc-500">
+                <span className="text-[12px] text-muted">
                   Read-only — works out which ones need rebuilding.
                 </span>
               </>
             )}
             {phase === "scanning" && (
               <>
-                <span className="text-[13px] text-zinc-600">
+                <span className="text-[13px] text-muted">
                   Scanned {scanned}/{allIds.length} · <strong>{changedIds.length}</strong> need
                   rebuilding
                 </span>
@@ -362,7 +362,7 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
                   onClick={() => {
                     stopRef.current = true;
                   }}
-                  className="text-[12px] text-zinc-600 underline"
+                  className="text-[12px] text-muted underline"
                 >
                   Stop
                 </button>
@@ -370,19 +370,19 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
             )}
             {phase === "scanned" && (
               <>
-                <span className="text-[13px] text-zinc-700">
+                <span className="text-[13px] text-ink">
                   <strong>{changedIds.length}</strong> of {scanned} covers would change.
                 </span>
                 {changedIds.length > 0 &&
                   (trimsEnabled === false ? (
-                    <span className="text-[12px] text-zinc-500">
+                    <span className="text-[12px] text-muted">
                       Switch trims on below to rebuild these.
                     </span>
                   ) : (
                     <button
                       type="button"
                       onClick={runRegen}
-                      className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+                      className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Regenerate these {changedIds.length} — no supplier email
                     </button>
@@ -395,7 +395,7 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
 
       {(phase === "running" || phase === "done") && (
         <div className="mt-5">
-          <div className="flex items-center justify-between text-xs text-zinc-500">
+          <div className="flex items-center justify-between text-xs text-muted">
             <span>
               {phase === "running" ? "Regenerating…" : "Done"} · {regen.processed}/
               {changedIds.length}
@@ -406,16 +406,16 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
                 onClick={() => {
                   stopRef.current = true;
                 }}
-                className="text-zinc-600 underline"
+                className="text-muted underline"
               >
                 Stop
               </button>
             )}
           </div>
-          <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+          <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-subtle">
             <div
               className={`h-full rounded-full transition-all ${
-                phase === "done" ? "bg-emerald-500" : "bg-zinc-800"
+                phase === "done" ? "bg-good" : "bg-primary"
               }`}
               style={{
                 width: `${
@@ -426,15 +426,15 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
               }}
             />
           </div>
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-zinc-600">
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-muted">
             <span>
-              Rebuilt <strong className="text-zinc-900">{regen.refreshed}</strong>
+              Rebuilt <strong className="text-ink">{regen.refreshed}</strong>
             </span>
             <span>
-              Pushed to SharePoint <strong className="text-zinc-900">{regen.pushed}</strong>
+              Pushed to SharePoint <strong className="text-ink">{regen.pushed}</strong>
             </span>
-            <span className="text-zinc-500">No supplier emails sent</span>
-            {regen.errors > 0 && <span className="text-red-600">Errors {regen.errors}</span>}
+            <span className="text-muted">No supplier emails sent</span>
+            {regen.errors > 0 && <span className="text-bad">Errors {regen.errors}</span>}
           </div>
           {phase === "done" && (
             <button
@@ -446,7 +446,7 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
                 setScanned(0);
                 setRegen({ processed: 0, refreshed: 0, pushed: 0, errors: 0 });
               }}
-              className="mt-4 rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              className="mt-4 rounded-md border border-line px-3 py-2 text-sm font-medium text-ink hover:bg-subtle"
             >
               Close
             </button>
@@ -455,7 +455,7 @@ export function CoverChangesPanel({ prodSpecId }: { prodSpecId?: string } = {}) 
       )}
 
       {busy && phase === "sampling" && (
-        <p className="mt-4 text-[13px] text-zinc-400">
+        <p className="mt-4 text-[13px] text-faint">
           Building both manifests for {SAMPLE_SIZE} styles…
         </p>
       )}

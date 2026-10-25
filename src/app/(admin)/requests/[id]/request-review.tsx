@@ -92,7 +92,7 @@ export function RequestReview({ view: initial, initialOutputId }: { view: Reques
   };
 
   if (!output) {
-    return <p className="text-sm text-zinc-500">This request has no outputs.</p>;
+    return <p className="text-sm text-muted">This request has no outputs.</p>;
   }
 
   return (
@@ -135,7 +135,7 @@ function OutputTabs({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-1 border-b border-zinc-200" role="tablist" aria-label="Outputs">
+    <div className="flex flex-wrap gap-1 border-b border-line" role="tablist" aria-label="Outputs">
       {outputs.map((o) => {
         const active = o.id === selectedId;
         const meta = OUTPUT_STATUS_META[o.status] ?? { label: o.status, tone: "zinc" as const };
@@ -148,8 +148,8 @@ function OutputTabs({
             onClick={() => onSelect(o.id)}
             className={`-mb-px inline-flex items-center gap-2 rounded-t-md border px-3 py-2 text-sm ${
               active
-                ? "border-zinc-200 border-b-white bg-white font-medium text-zinc-900"
-                : "border-transparent text-zinc-500 hover:text-zinc-900"
+                ? "border-line border-b-white bg-surface font-medium text-ink"
+                : "border-transparent text-muted hover:text-ink"
             }`}
           >
             <span className="max-w-[16rem] truncate">{o.label}</span>
@@ -170,12 +170,12 @@ function WhatTheyAsked({ view, output }: { view: RequestView; output: OutputView
     ...view.generalAttachments.map((a) => ({ ...a, general: true })),
   ];
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white p-4">
+    <section className="rounded-xl border border-line bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-500">What they asked</h2>
+        <h2 className="text-xs font-medium text-muted">What they asked</h2>
         {view.admin && <LayoutLabel output={output} />}
       </div>
-      <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-800">{output.text}</p>
+      <p className="mt-2 whitespace-pre-wrap text-sm text-ink">{output.text}</p>
       {shots.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
           {shots.map((a) => (
@@ -184,12 +184,12 @@ function WhatTheyAsked({ view, output }: { view: RequestView; output: OutputView
               type="button"
               onClick={() => setOpen({ id: a.id, name: a.fileName })}
               title={a.general ? `${a.fileName} (for the whole request)` : a.fileName}
-              className="group relative overflow-hidden rounded-md ring-1 ring-zinc-200 hover:ring-zinc-400"
+              className="group relative overflow-hidden rounded-md ring-1 ring-line hover:ring-zinc-400"
             >
               {/* eslint-disable-next-line @next/next/no-img-element -- private, session-gated bytes */}
               <img src={attachmentUrl(view.id, a.id)} alt={a.fileName} className="h-20 w-24 object-cover" loading="lazy" />
               {a.general && (
-                <span className="absolute bottom-0 left-0 right-0 bg-black/50 px-1 text-[10px] text-white">Whole request</span>
+                <span className="absolute bottom-0 left-0 right-0 bg-[rgb(15_17_21/0.50)] px-1 text-[11px] text-white">Whole request</span>
               )}
             </button>
           ))}
@@ -201,12 +201,12 @@ function WhatTheyAsked({ view, output }: { view: RequestView; output: OutputView
           aria-modal="true"
           aria-label={open.name}
           onClick={() => setOpen(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(15_17_21/0.70)] p-6"
         >
           <button
             type="button"
             onClick={() => setOpen(null)}
-            className="absolute right-4 top-4 rounded-full bg-white/90 p-1.5 text-zinc-700 hover:bg-white"
+            className="absolute right-4 top-4 rounded-full bg-white/90 p-1.5 text-ink hover:bg-surface"
             aria-label="Close"
           >
             <X className="h-4 w-4" aria-hidden />
@@ -215,7 +215,7 @@ function WhatTheyAsked({ view, output }: { view: RequestView; output: OutputView
           <img
             src={attachmentUrl(view.id, open.id)}
             alt={open.name}
-            className="max-h-full max-w-full rounded bg-white shadow-xl"
+            className="max-h-full max-w-full rounded bg-surface shadow-xl"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
@@ -264,7 +264,7 @@ function AdminBody({
           icon={<LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />}
           title="The agent is working…"
         >
-          <p className="text-sm text-zinc-600">This page updates by itself. Nothing prints differently until you approve a draft.</p>
+          <p className="text-sm text-muted">This page updates by itself. Nothing prints differently until you approve a draft.</p>
           <LiveSteps steps={currentRunSteps(stepsFor(view, output.id))} />
         </Panel>
       );
@@ -306,7 +306,7 @@ function AdminBody({
       const reason = latest(messages, (m) => m.outputId === output.id && m.authorKind === "SYSTEM");
       return (
         <Panel tone="red" icon={<TriangleAlert className="h-4 w-4" aria-hidden />} title="The agent run failed">
-          {reason && <p className="whitespace-pre-wrap text-sm text-zinc-700">{reason.body}</p>}
+          {reason && <p className="whitespace-pre-wrap text-sm text-ink">{reason.body}</p>}
           {actions({ label: "Run again", again: true })}
         </Panel>
       );
@@ -321,13 +321,13 @@ function AdminBody({
     case "REJECTED":
       return (
         <Panel tone="zinc" icon={<X className="h-4 w-4" aria-hidden />} title="Rejected — the layout stays as it is">
-          {output.rejectReason && <p className="whitespace-pre-wrap text-sm text-zinc-700">{output.rejectReason}</p>}
+          {output.rejectReason && <p className="whitespace-pre-wrap text-sm text-ink">{output.rejectReason}</p>}
         </Panel>
       );
     case "APPROVED":
       return (
         <Panel tone="green" icon={<CircleCheck className="h-4 w-4" aria-hidden />} title="Approved — publishing">
-          <p className="text-sm text-zinc-600">
+          <p className="text-sm text-muted">
             An approval is publishing this draft. If this doesn&apos;t change within a few minutes, the approval stopped
             half way: finish it here.
           </p>
@@ -352,25 +352,25 @@ function NeedsCodePanel({
   return (
     <Panel tone="orange" icon={<Code className="h-4 w-4" aria-hidden />} title="This change needs new code first">
       {spec ? (
-        <div className="space-y-2 text-sm text-zinc-700">
+        <div className="space-y-2 text-sm text-ink">
           <p>
-            A new value, <code className="rounded bg-zinc-100 px-1 font-mono text-xs">{`{{${spec.tokenKey}}}`}</code>{" "}
+            A new value, <code className="rounded bg-subtle px-1 font-mono text-xs">{`{{${spec.tokenKey}}}`}</code>{" "}
             ({spec.label}), from {spec.board} → {spec.column}.
           </p>
           <p className="whitespace-pre-wrap">{spec.rule}</p>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-muted">
             {spec.cases} worked example{spec.cases === 1 ? "" : "s"}. The agent picks this up again by itself once the value is
             live.
           </p>
         </div>
       ) : (
-        <p className="text-sm text-zinc-600">
+        <p className="text-sm text-muted">
           {output.awaitingToken ? `Waiting for {{${output.awaitingToken}}}.` : "The agent handed this to the developer."}
         </p>
       )}
       <a
         href={`/requests/${view.id}/build-prompt?output=${encodeURIComponent(output.id)}`}
-        className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+        className="mt-3 inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
       >
         <ExternalLink className="h-4 w-4" aria-hidden />
         Get build prompt
@@ -396,13 +396,13 @@ function QuestionPanel({
       title={waitingFor === "you" ? "The agent has a question" : "Waiting for the requester"}
     >
       {question ? (
-        <blockquote className="whitespace-pre-wrap rounded-md border-l-4 border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+        <blockquote className="whitespace-pre-wrap rounded-md border-l-4 border-transparent bg-warn-soft px-3 py-2 text-sm text-warn">
           {question}
         </blockquote>
       ) : (
-        <p className="text-sm text-zinc-600">The question is in the thread.</p>
+        <p className="text-sm text-muted">The question is in the thread.</p>
       )}
-      <p className="mt-2 text-xs text-zinc-500">
+      <p className="mt-2 text-xs text-muted">
         {waitingFor === "you"
           ? "Answer in the thread; the agent continues with your answer."
           : "They were emailed the question. Their answer in the thread restarts the agent."}
@@ -417,10 +417,10 @@ function QuestionPanel({
 function AgentAnsweredPanel({ answer, children }: { answer: string; children?: React.ReactNode }) {
   return (
     <Panel tone="amber" icon={<Bot className="h-4 w-4" aria-hidden />} title="The agent answered — no change proposed">
-      <blockquote className="whitespace-pre-wrap rounded-md border-l-4 border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800">
+      <blockquote className="whitespace-pre-wrap rounded-md border-l-4 border-line bg-surface px-3 py-2 text-sm text-ink">
         {answer}
       </blockquote>
-      <p className="mt-2 text-xs text-zinc-500">
+      <p className="mt-2 text-xs text-muted">
         Reply in the thread to start a new run, run the agent again, or close the request with a reason.
       </p>
       {children}
@@ -452,18 +452,18 @@ function RequesterBody({ view, output }: { view: RequestView; output: OutputView
     return (
       <Panel tone="violet" icon={<CircleHelp className="h-4 w-4" aria-hidden />} title="We need an answer from you">
         {question && (
-          <blockquote className="whitespace-pre-wrap rounded-md border-l-4 border-violet-300 bg-violet-50 px-3 py-2 text-sm text-violet-950">
+          <blockquote className="whitespace-pre-wrap rounded-md border-l-4 border-transparent bg-accent-soft px-3 py-2 text-sm text-accent-text">
             {question.body}
           </blockquote>
         )}
-        <p className="mt-2 text-xs text-zinc-500">Answer in the box next to the thread.</p>
+        <p className="mt-2 text-xs text-muted">Answer in the box next to the thread.</p>
       </Panel>
     );
   }
   const t = text[output.status] ?? { title: output.status, body: "" };
   return (
     <Panel tone={output.status === "PUBLISHED" ? "green" : "zinc"} icon={null} title={t.title}>
-      {t.body && <p className="whitespace-pre-wrap text-sm text-zinc-600">{t.body}</p>}
+      {t.body && <p className="whitespace-pre-wrap text-sm text-muted">{t.body}</p>}
     </Panel>
   );
 }
@@ -493,7 +493,7 @@ export function Panel({
 }) {
   return (
     <section className={`rounded-lg border p-4 ${PANEL_TONE[tone]}`}>
-      <h2 className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+      <h2 className="flex items-center gap-2 text-sm font-semibold text-ink">
         {icon}
         {title}
       </h2>
@@ -537,7 +537,7 @@ function RunButton({
         type="button"
         onClick={run}
         disabled={busy}
-        className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+        className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? (
           <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
@@ -548,7 +548,7 @@ function RunButton({
         )}
         {label}
       </button>
-      {error && <span className="text-xs text-red-600">{error}</span>}
+      {error && <span className="text-xs text-bad">{error}</span>}
     </div>
   );
 }

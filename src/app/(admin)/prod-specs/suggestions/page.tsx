@@ -21,7 +21,7 @@ export default async function SuggestionsPage() {
   const suggestions = await computeSuggestions();
 
   return (
-    <div className="mx-auto max-w-3xl px-8 py-8">
+    <div className="max-w-3xl px-6 py-5">
       <Link href="/prod-specs" className="text-xs text-muted underline">
         ← Prod specs
       </Link>

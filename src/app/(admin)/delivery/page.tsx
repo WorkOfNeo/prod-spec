@@ -72,11 +72,11 @@ export default async function DeliveryPage({ searchParams }: { searchParams: Pro
   const totalCollisions = listable.reduce((a, r) => a + r.collisionDocs, 0);
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="max-w-6xl px-6 py-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Delivery to suppliers</h1>
-          <p className="mt-1 max-w-3xl text-sm text-zinc-500">
+          <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Delivery to suppliers</h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted">
             One row per purchase order — every approved document for the PO, checked against what is
             actually in the supplier&apos;s <span className="font-medium">APPROVED LAYOUTS</span> folder. The
             folder belongs to the PO, not to a style, so this is the only place a style with nothing
@@ -86,7 +86,7 @@ export default async function DeliveryPage({ searchParams }: { searchParams: Pro
       </div>
 
       {rows.length === 0 ? (
-        <div className="mt-6 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
+        <div className="mt-6 rounded-lg border border-line bg-subtle px-4 py-3 text-sm text-muted">
           Nothing checked yet. The <code className="text-xs">po-delivery</code> cron fills this in — it
           rotates through the PO folders least-recently-checked first, so the list builds up over the
           first day.
@@ -105,14 +105,14 @@ export default async function DeliveryPage({ searchParams }: { searchParams: Pro
             <Stat label="Folders unreadable" value={String(unresolvable.length)} tone={unresolvable.length > 0 ? "warn" : "ok"} />
           </div>
 
-          <nav className="mt-6 flex flex-wrap gap-1 border-b border-zinc-200 text-sm">
+          <nav className="mt-6 flex gap-5 overflow-x-auto border-b border-line">
             <Tab href="/delivery" active={show === "problems"} label={`Needs attention (${problems.length})`} />
             <Tab href="/delivery?show=done" active={show === "done"} label={`Fully delivered (${done.length})`} />
             <Tab href="/delivery?show=all" active={show === "all"} label={`All (${rows.length})`} />
           </nav>
 
           {shown.length === 0 ? (
-            <p className="mt-6 text-sm text-zinc-500">
+            <p className="mt-6 text-sm text-muted">
               {show === "problems"
                 ? "✓ Every checked PO has all of its approved documents in the supplier's folder."
                 : "Nothing here yet."}
@@ -121,7 +121,7 @@ export default async function DeliveryPage({ searchParams }: { searchParams: Pro
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[52rem] border-separate border-spacing-0 text-sm">
                 <thead>
-                  <tr className="text-left text-xs uppercase tracking-wide text-zinc-500">
+                  <tr className="text-left text-xs text-muted">
                     <Th>PO</Th>
                     <Th>Supplier</Th>
                     <Th className="text-right">Styles</Th>
@@ -135,32 +135,32 @@ export default async function DeliveryPage({ searchParams }: { searchParams: Pro
                     const listableRow = LISTABLE.has(r.state);
                     const pct = r.expectedDocs > 0 ? Math.round((r.deliveredDocs / r.expectedDocs) * 100) : 0;
                     return (
-                      <tr key={r.id} className="border-t border-zinc-100 align-top">
+                      <tr key={r.id} className="border-t border-line align-top">
                         <Td className="whitespace-nowrap">
                           <Link
                             href={`/delivery/${encodeURIComponent(r.poNumber)}?supplier=${r.supplierId}`}
-                            className="font-medium text-zinc-900 underline decoration-zinc-300 hover:decoration-zinc-900"
+                            className="font-medium text-ink underline decoration-zinc-300 hover:decoration-zinc-900"
                           >
                             {r.poNumber}
                           </Link>
                         </Td>
-                        <Td className="max-w-[16rem] truncate text-zinc-600">{r.supplierName ?? "—"}</Td>
-                        <Td className="text-right tabular-nums text-zinc-600">{r.styleCount}</Td>
+                        <Td className="max-w-[16rem] truncate text-muted">{r.supplierName ?? "—"}</Td>
+                        <Td className="text-right tabular-nums text-muted">{r.styleCount}</Td>
                         <Td className="whitespace-nowrap text-right tabular-nums">
                           {listableRow ? (
-                            <span className={r.fullyDelivered ? "text-emerald-700" : "font-medium text-amber-700"}>
+                            <span className={r.fullyDelivered ? "text-good" : "font-medium text-warn"}>
                               {r.deliveredDocs} / {r.expectedDocs}
-                              <span className="ml-1 text-xs text-zinc-400">{pct}%</span>
+                              <span className="ml-1 text-xs text-faint">{pct}%</span>
                             </span>
                           ) : (
-                            <span className="text-zinc-400">—</span>
+                            <span className="text-faint">—</span>
                           )}
                         </Td>
                         <Td className="text-xs">
                           {!listableRow ? (
-                            <span className="text-amber-700">⚠ {r.message}</span>
+                            <span className="text-warn">⚠ {r.message}</span>
                           ) : r.fullyDelivered ? (
-                            <span className="text-emerald-700">✓ complete</span>
+                            <span className="text-good">✓ complete</span>
                           ) : (
                             <span className="flex flex-wrap gap-x-2 gap-y-0.5">
                               {r.missingDocs > 0 ? <Chip tone="bad">{r.missingDocs} missing</Chip> : null}
@@ -173,7 +173,7 @@ export default async function DeliveryPage({ searchParams }: { searchParams: Pro
                             </span>
                           )}
                         </Td>
-                        <Td className="text-right text-xs whitespace-nowrap text-zinc-400">
+                        <Td className="text-right text-xs whitespace-nowrap text-faint">
                           {r.checkedAt.toISOString().slice(0, 16).replace("T", " ")}
                         </Td>
                       </tr>
@@ -192,10 +192,10 @@ export default async function DeliveryPage({ searchParams }: { searchParams: Pro
 function Stat({ label, value, tone = "ok", hint }: { label: string; value: string; tone?: "ok" | "warn" | "bad"; hint?: string }) {
   const colour = tone === "bad" ? "text-red-700" : tone === "warn" ? "text-amber-700" : "text-zinc-900";
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
-      <div className="text-xs uppercase tracking-wide text-zinc-500">{label}</div>
+    <div className="rounded-xl border border-line bg-surface px-4 py-3">
+      <div className="text-xs text-muted">{label}</div>
       <div className={`mt-0.5 text-xl font-semibold tabular-nums ${colour}`}>{value}</div>
-      {hint ? <div className="mt-0.5 text-[11px] text-zinc-400">{hint}</div> : null}
+      {hint ? <div className="mt-0.5 text-[11px] text-faint">{hint}</div> : null}
     </div>
   );
 }
@@ -204,8 +204,8 @@ function Tab({ href, active, label }: { href: string; active: boolean; label: st
   return (
     <Link
       href={href}
-      className={`-mb-px border-b-2 px-3 py-2 ${
-        active ? "border-zinc-900 font-medium text-zinc-900" : "border-transparent text-zinc-500 hover:text-zinc-800"
+      className={`-mb-px inline-flex h-9 shrink-0 items-center gap-1.5 border-b-2 text-[13px] transition-colors duration-150 ${
+        active ? "border-ink font-medium text-ink" : "border-transparent text-muted hover:text-ink"
       }`}
     >
       {label}

@@ -64,7 +64,7 @@ export function CustomerForm({ mode, initial, customerId }: Props) {
   return (
     <form onSubmit={onSubmit} className="mt-6 flex max-w-3xl flex-col gap-4">
       <div className="grid grid-cols-2 gap-4">
-        <label className="text-xs font-medium text-zinc-700">
+        <label className="text-xs font-medium text-ink">
           Slug
           <input
             type="text"
@@ -72,26 +72,26 @@ export function CustomerForm({ mode, initial, customerId }: Props) {
             disabled={mode === "edit"}
             value={slug}
             onChange={(e) => setSlug(e.target.value)}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:bg-zinc-50 disabled:text-zinc-500"
+            className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-accent disabled:bg-subtle disabled:text-muted"
             placeholder="netto-germany"
           />
         </label>
-        <label className="text-xs font-medium text-zinc-700">
+        <label className="text-xs font-medium text-ink">
           Name
           <input
             type="text"
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+            className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
             placeholder="Netto Germany"
           />
         </label>
       </div>
 
-      <label className="text-xs font-medium text-zinc-700">
+      <label className="text-xs font-medium text-ink">
         Config JSON
-        <span className="ml-2 font-normal text-zinc-500">
+        <span className="ml-2 font-normal text-muted">
           (mondayBoardIds, enabledDocTypes, sharepointPath) — column mapping is shared, edit it under Settings → Monday
         </span>
         <textarea
@@ -99,17 +99,17 @@ export function CustomerForm({ mode, initial, customerId }: Props) {
           onChange={(e) => setConfigText(e.target.value)}
           rows={20}
           spellCheck={false}
-          className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900"
+          className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-accent"
         />
       </label>
 
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p className="text-xs text-bad">{error}</p>}
 
       <div className="flex gap-2">
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {pending ? "Saving…" : mode === "create" ? "Create customer" : "Save changes"}
         </button>

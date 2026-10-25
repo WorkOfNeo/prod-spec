@@ -87,28 +87,28 @@ export function DropdownSearch({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search labels, columns, boards…"
-          className="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none"
+          className="flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm placeholder:text-faint focus:border-accent focus:outline-none"
         />
-        <span className="text-xs tabular-nums text-zinc-500">
+        <span className="text-xs tabular-nums text-muted">
           {filtered.length} / {options.length}
         </span>
       </div>
 
       <div
-        className="overflow-y-auto rounded-lg border border-zinc-200 bg-white"
+        className="overflow-y-auto rounded-xl border border-line bg-surface"
         style={{ maxHeight }}
       >
         {filtered.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-zinc-500">
+          <p className="px-4 py-8 text-center text-sm text-muted">
             {emptyMessage ?? "No matches."}
           </p>
         ) : grouped && groups ? (
-          <div className="divide-y divide-zinc-100">
+          <div className="divide-y divide-line">
             {groups.map((g) => (
               <section key={`${g.board}::${g.column}`} className="">
-                <header className="sticky top-0 z-10 border-b border-zinc-100 bg-zinc-50 px-4 py-2 text-xs">
-                  <div className="font-medium text-zinc-700">{g.column}</div>
-                  {g.board && <div className="text-zinc-500">{g.board}</div>}
+                <header className="sticky top-0 z-10 border-b border-line bg-subtle px-4 py-2 text-xs">
+                  <div className="font-medium text-ink">{g.column}</div>
+                  {g.board && <div className="text-muted">{g.board}</div>}
                 </header>
                 <ul className="flex flex-wrap gap-1.5 p-3">
                   {g.rows.map((o) => (
@@ -132,7 +132,7 @@ export function DropdownSearch({
 
 function OptionChip({ o }: { o: SearchableOption }) {
   return (
-    <li className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs">
+    <li className="inline-flex items-center gap-1.5 rounded-full border border-line bg-subtle px-2 py-0.5 text-xs">
       {o.color && (
         <span
           className="inline-block h-2 w-2 rounded-full"
@@ -140,7 +140,7 @@ function OptionChip({ o }: { o: SearchableOption }) {
         />
       )}
       <span>{o.label}</span>
-      <span className="font-mono text-[10px] text-zinc-500">{o.optionId}</span>
+      <span className="font-mono text-[11px] text-muted">{o.optionId}</span>
     </li>
   );
 }

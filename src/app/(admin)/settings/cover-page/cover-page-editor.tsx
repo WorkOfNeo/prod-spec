@@ -73,9 +73,9 @@ export function CoverPageEditor({ initialMarkdown }: { initialMarkdown: string }
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-zinc-700">Content</span>
+          <span className="text-sm font-medium text-ink">Content</span>
           <span
-            className={`text-xs ${saveState === "error" ? "text-red-600" : "text-zinc-400"}`}
+            className={`text-xs ${saveState === "error" ? "text-bad" : "text-faint"}`}
             role="status"
           >
             {status}
@@ -86,7 +86,7 @@ export function CoverPageEditor({ initialMarkdown }: { initialMarkdown: string }
           onChange={onChange}
           uploadUrl="/api/admin/settings/cover-page/images"
         />
-        <p className="text-[11px] text-zinc-400">
+        <p className="text-[11px] text-faint">
           Type <code className="font-mono">#</code> + space for a heading,{" "}
           <code className="font-mono">-</code> + space for a list; tables and images insert from the
           toolbar. Keep it short — it sits on the cover sheet, so long content is better placed in a
@@ -95,8 +95,8 @@ export function CoverPageEditor({ initialMarkdown }: { initialMarkdown: string }
       </div>
 
       <div className="flex flex-col gap-2">
-        <span className="text-sm font-medium text-zinc-700">Cover preview (sample)</span>
-        <div className="rounded-md bg-zinc-100 p-3">
+        <span className="text-sm font-medium text-ink">Cover preview (sample)</span>
+        <div className="rounded-md bg-subtle p-3">
           <LazyOutputPreview
             src="/api/admin/settings/cover-page/preview"
             widthMm={210}

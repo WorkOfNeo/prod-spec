@@ -112,16 +112,16 @@ export function WebhooksTab({
       <section>
         <MondayWriteBackSetting initialEnabled={writeBackEnabled} />
         <div className="mt-4 mb-2">
-          <h2 className="text-sm font-semibold text-zinc-700">Status write-back log (outgoing)</h2>
-          <p className="mt-1 text-xs text-zinc-500">
+          <h2 className="text-sm font-semibold text-ink">Status write-back log (outgoing)</h2>
+          <p className="mt-1 text-xs text-muted">
             Every status ProdSpec writes (or, while the switch is off,{" "}
             <strong>would write</strong>) to Monday — newest first, with the original value and what
             it changed to. <em>simulated</em> rows are previews only; nothing was sent.
           </p>
         </div>
-        <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+        <div className="overflow-x-auto rounded-xl border border-line bg-surface">
           <table className="w-full text-sm">
-            <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+            <thead className="bg-subtle text-left text-xs text-muted">
               <tr>
                 <th className="px-4 py-2">When</th>
                 <th className="px-4 py-2">Outcome</th>
@@ -133,23 +133,23 @@ export function WebhooksTab({
             <tbody>
               {writeBacks.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-zinc-500">
+                  <td colSpan={5} className="px-4 py-8 text-center text-muted">
                     No write-backs yet. Approve every output of a style and the status change —
                     applied or simulated — shows up here.
                   </td>
                 </tr>
               ) : (
                 writeBacks.map((w) => (
-                  <tr key={w.id} className="border-t border-zinc-100 align-top">
-                    <td className="whitespace-nowrap px-4 py-2 text-xs text-zinc-500">
+                  <tr key={w.id} className="border-t border-line align-top">
+                    <td className="whitespace-nowrap px-4 py-2 text-xs text-muted">
                       {formatDate(w.at)}
                     </td>
                     <td className="px-4 py-2">
                       <ModeBadge mode={w.mode} />
                     </td>
-                    <td className="px-4 py-2 text-zinc-700">{w.board}</td>
-                    <td className="px-4 py-2 font-mono text-xs text-zinc-500">{w.item}</td>
-                    <td className="px-4 py-2 text-xs text-zinc-700">
+                    <td className="px-4 py-2 text-ink">{w.board}</td>
+                    <td className="px-4 py-2 font-mono text-xs text-muted">{w.item}</td>
+                    <td className="px-4 py-2 text-xs text-ink">
                       <span title={w.change}>{w.change.slice(0, 160)}</span>
                     </td>
                   </tr>
@@ -164,8 +164,8 @@ export function WebhooksTab({
       <section>
         <div className="mb-2 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-zinc-700">Monday webhooks</h2>
-            <p className="mt-1 text-xs text-zinc-500">
+            <h2 className="text-sm font-semibold text-ink">Monday webhooks</h2>
+            <p className="mt-1 text-xs text-muted">
               Append-only registry. Deletion is a manual action, never automated (project rule).
               <strong> Register</strong> subscribes the Pre-Order, Styles, Customers and Suppliers
               boards so changes flow in live.
@@ -173,9 +173,9 @@ export function WebhooksTab({
           </div>
           <RegisterWebhooksButton />
         </div>
-        <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+        <div className="overflow-x-auto rounded-xl border border-line bg-surface">
           <table className="w-full text-sm">
-            <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+            <thead className="bg-subtle text-left text-xs text-muted">
               <tr>
                 <th className="px-4 py-2">Board</th>
                 <th className="px-4 py-2">Event</th>
@@ -186,20 +186,20 @@ export function WebhooksTab({
             <tbody>
               {webhooks.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-zinc-500">
+                  <td colSpan={4} className="px-4 py-8 text-center text-muted">
                     No webhooks registered. Click <strong>Register</strong> above to bootstrap.
                   </td>
                 </tr>
               ) : (
                 webhooks.map((w) => (
-                  <tr key={w.id} className="border-t border-zinc-100">
+                  <tr key={w.id} className="border-t border-line">
                     <td className="px-4 py-2">
-                      <span className="font-medium text-zinc-700">{w.boardLabel}</span>
-                      <span className="ml-2 font-mono text-xs text-zinc-400">{w.boardId}</span>
+                      <span className="font-medium text-ink">{w.boardLabel}</span>
+                      <span className="ml-2 font-mono text-xs text-faint">{w.boardId}</span>
                     </td>
                     <td className="px-4 py-2">{prettyEvent(w.eventType)}</td>
                     <td className="px-4 py-2 font-mono text-xs">{w.mondayWebhookId}</td>
-                    <td className="px-4 py-2 text-zinc-500">{formatDate(w.createdAt)}</td>
+                    <td className="px-4 py-2 text-muted">{formatDate(w.createdAt)}</td>
                   </tr>
                 ))
               )}
@@ -211,15 +211,15 @@ export function WebhooksTab({
       {/* ──────── Webhook activity log ──────── */}
       <section>
         <div className="mb-2">
-          <h2 className="text-sm font-semibold text-zinc-700">Webhook activity</h2>
-          <p className="mt-1 text-xs text-zinc-500">
+          <h2 className="text-sm font-semibold text-ink">Webhook activity</h2>
+          <p className="mt-1 text-xs text-muted">
             The most recent events Monday has pushed to us (newest first). Use it to confirm a board
             is live — change something on Monday and it should appear here within seconds.
           </p>
         </div>
-        <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+        <div className="overflow-x-auto rounded-xl border border-line bg-surface">
           <table className="w-full text-sm">
-            <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+            <thead className="bg-subtle text-left text-xs text-muted">
               <tr>
                 <th className="px-4 py-2">When</th>
                 <th className="px-4 py-2">Status</th>
@@ -232,15 +232,15 @@ export function WebhooksTab({
             <tbody>
               {activity.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
+                  <td colSpan={6} className="px-4 py-8 text-center text-muted">
                     No webhook events received yet. Once a board is registered, edits on Monday show
                     up here.
                   </td>
                 </tr>
               ) : (
                 activity.map((a) => (
-                  <tr key={a.id} className="border-t border-zinc-100 align-top">
-                    <td className="whitespace-nowrap px-4 py-2 text-xs text-zinc-500">
+                  <tr key={a.id} className="border-t border-line align-top">
+                    <td className="whitespace-nowrap px-4 py-2 text-xs text-muted">
                       {formatDate(a.at)}
                     </td>
                     <td className="px-4 py-2">
@@ -249,9 +249,9 @@ export function WebhooksTab({
                     <td className="px-4 py-2" title={a.event}>
                       {prettyEvent(a.event)}
                     </td>
-                    <td className="px-4 py-2 text-zinc-700">{a.board}</td>
-                    <td className="px-4 py-2 font-mono text-xs text-zinc-500">{a.item}</td>
-                    <td className="px-4 py-2 text-xs text-zinc-500">
+                    <td className="px-4 py-2 text-ink">{a.board}</td>
+                    <td className="px-4 py-2 font-mono text-xs text-muted">{a.item}</td>
+                    <td className="px-4 py-2 text-xs text-muted">
                       {a.detail ? <span title={a.detail}>{a.detail.slice(0, 120)}</span> : "—"}
                     </td>
                   </tr>

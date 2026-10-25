@@ -41,21 +41,21 @@ export default async function JobsPage() {
   ]);
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-6 py-5">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Jobs</h1>
-          <p className="mt-1 text-sm text-zinc-500">Generation runs and webhook ingestion log.</p>
+          <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Jobs</h1>
+          <p className="mt-1 text-sm text-muted">Generation runs and webhook ingestion log.</p>
         </div>
         <RunNowButton />
       </div>
 
-      <section className="mt-6 overflow-hidden rounded-lg border border-zinc-200 bg-white">
-        <header className="border-b border-zinc-100 bg-zinc-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+      <section className="mt-6 overflow-hidden rounded-xl border border-line bg-surface">
+        <header className="border-b border-line bg-subtle px-4 py-2 text-xs font-medium text-muted">
           Job runs ({jobs.length})
         </header>
         <table className="w-full text-sm">
-          <thead className="text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="text-left text-xs text-muted">
             <tr>
               <th className="px-4 py-2">Style</th>
               <th className="px-4 py-2">Status</th>
@@ -66,17 +66,17 @@ export default async function JobsPage() {
           <tbody>
             {jobs.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-zinc-500">
+                <td colSpan={4} className="px-4 py-8 text-center text-muted">
                   No jobs yet.
                 </td>
               </tr>
             ) : (
               jobs.map((j) => (
-                <tr key={j.id} className="border-t border-zinc-100">
+                <tr key={j.id} className="border-t border-line">
                   <td className="px-4 py-2 font-medium">{j.style.name}</td>
                   <td className="px-4 py-2">{j.status}</td>
-                  <td className="px-4 py-2 text-zinc-600">{j.triggerSource}</td>
-                  <td className="px-4 py-2 text-zinc-500">{formatDate(j.createdAt)}</td>
+                  <td className="px-4 py-2 text-muted">{j.triggerSource}</td>
+                  <td className="px-4 py-2 text-muted">{formatDate(j.createdAt)}</td>
                 </tr>
               ))
             )}
@@ -84,20 +84,20 @@ export default async function JobsPage() {
         </table>
       </section>
 
-      <section className="mt-8 overflow-hidden rounded-lg border border-zinc-200 bg-white">
-        <header className="border-b border-zinc-100 bg-zinc-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+      <section className="mt-8 overflow-hidden rounded-xl border border-line bg-surface">
+        <header className="border-b border-line bg-subtle px-4 py-2 text-xs font-medium text-muted">
           Recent log entries ({recentLogs.length})
         </header>
-        <ul className="divide-y divide-zinc-100 font-mono text-xs">
+        <ul className="divide-y divide-line font-mono text-xs">
           {recentLogs.length === 0 ? (
-            <li className="px-4 py-8 text-center text-zinc-500">No log entries yet.</li>
+            <li className="px-4 py-8 text-center text-muted">No log entries yet.</li>
           ) : (
             recentLogs.map((log) => (
               <li key={log.id} className="px-4 py-2">
                 <div className="flex gap-3">
-                  <span className="w-36 shrink-0 text-zinc-500">{formatDate(log.createdAt)}</span>
+                  <span className="w-36 shrink-0 text-muted">{formatDate(log.createdAt)}</span>
                   <span className={`w-12 shrink-0 ${LEVEL_STYLES[log.level] ?? ""}`}>{log.level}</span>
-                  <span className="flex-1 text-zinc-700">{log.message}</span>
+                  <span className="flex-1 text-ink">{log.message}</span>
                 </div>
               </li>
             ))

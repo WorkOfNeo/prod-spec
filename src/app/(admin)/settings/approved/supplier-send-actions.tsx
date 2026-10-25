@@ -52,23 +52,23 @@ export function SupplierPreviewButton({
       <button
         type="button"
         onClick={load}
-        className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+        className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
       >
         Preview email
       </button>
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(15_17_21/0.40)] p-4"
           onClick={() => setOpen(false)}
         >
           <div
-            className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+            className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-surface shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4 border-b border-zinc-200 px-5 py-3">
+            <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-3">
               <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-zinc-900">Midnight digest — {supplierName}</h3>
-                <p className="mt-0.5 text-xs text-zinc-500">
+                <h3 className="text-sm font-semibold text-ink">Midnight digest — {supplierName}</h3>
+                <p className="mt-0.5 text-xs text-muted">
                   {loading
                     ? "Building preview…"
                     : preview?.empty
@@ -78,25 +78,25 @@ export function SupplierPreviewButton({
                         : ""}
                 </p>
                 {!loading && preview && !preview.empty ? (
-                  <p className="mt-0.5 truncate text-xs font-medium text-zinc-700">{preview.subject}</p>
+                  <p className="mt-0.5 truncate text-xs font-medium text-ink">{preview.subject}</p>
                 ) : null}
               </div>
-              <button type="button" onClick={() => setOpen(false)} className="text-xs text-zinc-500 underline">
+              <button type="button" onClick={() => setOpen(false)} className="text-xs text-muted underline">
                 close
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-auto bg-zinc-50 p-4">
+            <div className="min-h-0 flex-1 overflow-auto bg-subtle p-4">
               {error ? (
-                <p className="text-sm text-red-600">{error}</p>
+                <p className="text-sm text-bad">{error}</p>
               ) : loading ? (
-                <p className="text-sm text-zinc-500">Loading…</p>
+                <p className="text-sm text-muted">Loading…</p>
               ) : preview?.empty ? (
-                <p className="text-sm text-zinc-500">No approved outputs are queued for this supplier.</p>
+                <p className="text-sm text-muted">No approved outputs are queued for this supplier.</p>
               ) : preview?.html ? (
                 <iframe
                   title="Email preview"
                   srcDoc={preview.html}
-                  className="h-[55vh] w-full rounded-md border border-zinc-200 bg-white"
+                  className="h-[55vh] w-full rounded-md border border-line bg-surface"
                 />
               ) : null}
             </div>
@@ -148,11 +148,11 @@ export function RunBatchNowButton({ enabled }: { enabled: boolean }) {
         type="button"
         onClick={run}
         disabled={busy}
-        className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
+        className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? "Running…" : enabled ? "Run batch now" : "Run batch now (dry run)"}
       </button>
-      {msg ? <span className="text-xs text-zinc-500">{msg}</span> : null}
+      {msg ? <span className="text-xs text-muted">{msg}</span> : null}
     </div>
   );
 }
@@ -202,11 +202,11 @@ export function UploadNowButton({ enabled }: { enabled: boolean }) {
         type="button"
         onClick={run}
         disabled={busy}
-        className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
+        className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? "Uploading…" : enabled ? "Upload to SharePoint now" : "Upload to SharePoint now (off — reconcile only)"}
       </button>
-      {msg ? <span className="text-xs text-zinc-500">{msg}</span> : null}
+      {msg ? <span className="text-xs text-muted">{msg}</span> : null}
     </div>
   );
 }
@@ -243,11 +243,11 @@ export function RetryFloatedButton({ floatedCount }: { floatedCount: number }) {
         type="button"
         onClick={run}
         disabled={busy}
-        className="rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+        className="rounded-md border border-transparent bg-bad-soft px-3 py-1.5 text-sm font-medium text-bad hover:bg-bad-soft disabled:opacity-50"
       >
         {busy ? "Re-arming…" : `Retry ${floatedCount} gave-up upload${floatedCount === 1 ? "" : "s"}`}
       </button>
-      {msg ? <span className="text-xs text-zinc-500">{msg}</span> : null}
+      {msg ? <span className="text-xs text-muted">{msg}</span> : null}
     </div>
   );
 }
@@ -319,7 +319,7 @@ export function BackfillFoldersButton() {
           type="button"
           onClick={runPreview}
           disabled={busy}
-          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busy && !preview ? "Checking…" : "Re-consolidate supplier folders"}
         </button>
@@ -328,23 +328,23 @@ export function BackfillFoldersButton() {
             type="button"
             onClick={apply}
             disabled={busy || (preview.repushed ?? 0) === 0}
-            className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+            className="rounded-md border border-transparent bg-good-soft px-3 py-1.5 text-sm font-medium text-good hover:bg-good-soft disabled:opacity-50"
           >
             {busy ? "Applying…" : `Apply — re-push ${preview.repushed ?? 0} style${(preview.repushed ?? 0) === 1 ? "" : "s"}`}
           </button>
         ) : null}
       </div>
 
-      {error ? <span className="text-xs text-red-600">{error}</span> : null}
+      {error ? <span className="text-xs text-bad">{error}</span> : null}
 
       {result && !error ? (
-        <div className="max-w-2xl rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+        <div className="max-w-2xl rounded-md border border-line bg-subtle px-3 py-2 text-xs text-muted">
           <div>
             {applied ? "Done — " : "Preview — "}
-            <span className="font-medium text-zinc-800">{result.repushed ?? 0}</span>{" "}
+            <span className="font-medium text-ink">{result.repushed ?? 0}</span>{" "}
             {applied ? "re-pushed" : "would be re-pushed"} of {result.candidates ?? 0} already-pushed
             style(s){" "}
-            <span className="text-zinc-400">
+            <span className="text-faint">
               ({result.skipped ?? 0} skipped
               {(result.failed ?? 0) > 0 ? `, ${result.failed} failed` : ""})
             </span>
@@ -352,19 +352,19 @@ export function BackfillFoldersButton() {
           </div>
           {applied && result.cleanup && result.cleanup.length > 0 ? (
             <details className="mt-1">
-              <summary className="cursor-pointer text-zinc-500">
+              <summary className="cursor-pointer text-muted">
                 {result.cleanup.length} old folder{result.cleanup.length === 1 ? "" : "s"} to delete
                 manually
               </summary>
               <ul className="mt-1 space-y-0.5">
                 {result.cleanup.map((c, i) => (
                   <li key={i} className="truncate">
-                    <span className="text-zinc-500">{c.styleName}</span>{" "}
+                    <span className="text-muted">{c.styleName}</span>{" "}
                     <a
                       href={c.oldFolderUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-zinc-600 underline hover:text-zinc-900"
+                      className="text-muted underline hover:text-ink"
                     >
                       old folder ↗
                     </a>
@@ -467,7 +467,7 @@ export function FixFilenamesButton() {
           type="button"
           onClick={runPreview}
           disabled={busy}
-          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         >
           {busy && !preview ? "Checking…" : "Fix output filenames"}
         </button>
@@ -476,26 +476,26 @@ export function FixFilenamesButton() {
             type="button"
             onClick={apply}
             disabled={busy || (preview.needFix ?? 0) === 0}
-            className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+            className="rounded-md border border-transparent bg-good-soft px-3 py-1.5 text-sm font-medium text-good hover:bg-good-soft disabled:opacity-50"
           >
             {busy ? "Renaming…" : `Apply — rename ${preview.needFix ?? 0} file${(preview.needFix ?? 0) === 1 ? "" : "s"}`}
           </button>
         ) : null}
       </div>
 
-      {error ? <span className="text-xs text-red-600">{error}</span> : null}
+      {error ? <span className="text-xs text-bad">{error}</span> : null}
 
       {result && !error ? (
-        <div className="max-w-2xl rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+        <div className="max-w-2xl rounded-md border border-line bg-subtle px-3 py-2 text-xs text-muted">
           <div>
             {applied ? "Done — " : "Preview — "}
-            <span className="font-medium text-zinc-800">
+            <span className="font-medium text-ink">
               {applied
                 ? (result.renamed ?? 0) + (result.deletedStale ?? 0) + (result.rearmed ?? 0)
                 : result.needFix ?? 0}
             </span>{" "}
             {applied ? "corrected" : "to rename"} of {result.scanned ?? 0} uploaded output(s){" "}
-            <span className="text-zinc-400">
+            <span className="text-faint">
               ({result.alreadyCorrect ?? 0} already correct
               {/* A re-arm is NOT a rename: the file was in the folder under
                   neither name (the usual cause is a collision the first style
@@ -508,19 +508,19 @@ export function FixFilenamesButton() {
           </div>
           {renames.length > 0 ? (
             <details className="mt-1" open={!applied}>
-              <summary className="cursor-pointer text-zinc-500">
+              <summary className="cursor-pointer text-muted">
                 {renames.length} file{renames.length === 1 ? "" : "s"} — old → new
               </summary>
               <ul className="mt-1 max-h-64 space-y-1 overflow-y-auto pr-1">
                 {renames.map((r, i) => (
-                  <li key={i} className="border-b border-zinc-100 pb-1 last:border-0">
-                    <span className="text-zinc-500">{r.styleName}</span>
+                  <li key={i} className="border-b border-line pb-1 last:border-0">
+                    <span className="text-muted">{r.styleName}</span>
                     <div className="font-mono text-[11px] leading-tight">
-                      <span className="text-zinc-400 line-through">{r.currentName}</span>
-                      <span className="mx-1 text-zinc-400">→</span>
-                      <span className="text-emerald-700">{r.correctName}</span>
+                      <span className="text-faint line-through">{r.currentName}</span>
+                      <span className="mx-1 text-faint">→</span>
+                      <span className="text-good">{r.correctName}</span>
                     </div>
-                    {r.note && applied ? <span className="text-[10px] text-zinc-400">{r.note}</span> : null}
+                    {r.note && applied ? <span className="text-[11px] text-faint">{r.note}</span> : null}
                   </li>
                 ))}
               </ul>
@@ -531,7 +531,7 @@ export function FixFilenamesButton() {
               {(result.items ?? [])
                 .filter((i) => i.action === "failed")
                 .map((f, i) => (
-                  <li key={i} className="text-[11px] text-red-600">
+                  <li key={i} className="text-[11px] text-bad">
                     {f.styleName} · {f.variantKey}: {f.note}
                   </li>
                 ))}

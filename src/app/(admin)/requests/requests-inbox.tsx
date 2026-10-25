@@ -51,8 +51,8 @@ export function RequestsInbox({
               aria-selected={active}
               className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset ${
                 active
-                  ? "bg-zinc-900 text-white ring-zinc-900"
-                  : "bg-white text-zinc-600 ring-zinc-200 hover:bg-zinc-50"
+                  ? "bg-primary text-white ring-accent"
+                  : "bg-surface text-muted ring-line hover:bg-subtle"
               }`}
             >
               {f.label}
@@ -61,9 +61,9 @@ export function RequestsInbox({
         })}
       </div>
 
-      <section className="mt-4 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <section className="mt-4 overflow-hidden rounded-xl border border-line bg-surface">
         <table className="w-full text-sm">
-          <thead className="border-b border-zinc-100 bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="border-b border-line bg-subtle text-left text-xs text-muted">
             <tr>
               <th className="w-24 px-4 py-2 font-medium">Request</th>
               <th className="px-4 py-2 font-medium">Title</th>
@@ -76,14 +76,14 @@ export function RequestsInbox({
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={columns} className="px-4 py-12 text-center">
-                  <Inbox className="mx-auto h-6 w-6 text-zinc-300" aria-hidden />
-                  <p className="mt-2 text-sm text-zinc-500">
+                  <Inbox className="mx-auto h-6 w-6 text-faint" aria-hidden />
+                  <p className="mt-2 text-sm text-muted">
                     {status
                       ? `No requests are ${REQUEST_STATUS_META[status].label.toLowerCase()}.`
                       : "No requests yet."}
                   </p>
                   {!status && (
-                    <Link href="/requests/new" className="mt-2 inline-block text-sm font-medium text-zinc-900 underline">
+                    <Link href="/requests/new" className="mt-2 inline-block text-sm font-medium text-ink underline">
                       Report a wrong output
                     </Link>
                   )}
@@ -94,32 +94,32 @@ export function RequestsInbox({
                 <tr
                   key={r.id}
                   onClick={() => router.push(`/requests/${r.id}`)}
-                  className="cursor-pointer border-t border-zinc-100 align-top hover:bg-zinc-50"
+                  className="cursor-pointer border-t border-line align-top hover:bg-subtle"
                 >
-                  <td className="px-4 py-3 font-mono text-xs text-zinc-500">{r.ref}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2 font-mono text-xs text-muted">{r.ref}</td>
+                  <td className="px-3 py-2">
                     <Link
                       href={`/requests/${r.id}`}
                       onClick={(e) => e.stopPropagation()}
-                      className="font-medium text-zinc-900 hover:underline"
+                      className="font-medium text-ink hover:underline"
                     >
                       {r.title}
                     </Link>
-                    <div className="mt-1 flex items-center gap-2 text-xs text-zinc-500">
+                    <div className="mt-1 flex items-center gap-2 text-xs text-muted">
                       <RequestStatusPill status={r.status} />
                       {/* The default title already ends in the PO. */}
                       {r.poNumber && !r.title.includes(r.poNumber) && <span>PO {r.poNumber}</span>}
                     </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2">
                     <div className="flex max-w-md flex-wrap gap-1">
                       {r.outputs.map((o) => (
                         <OutputStatusPill key={o.id} label={o.label} status={o.status} />
                       ))}
                     </div>
                   </td>
-                  {showRequester && <td className="px-4 py-3 text-zinc-600">{r.requester}</td>}
-                  <td className="px-4 py-3 text-zinc-500">{r.createdLabel}</td>
+                  {showRequester && <td className="px-3 py-2 text-muted">{r.requester}</td>}
+                  <td className="px-3 py-2 text-muted">{r.createdLabel}</td>
                 </tr>
               ))
             )}

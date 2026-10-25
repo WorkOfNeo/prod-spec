@@ -71,11 +71,11 @@ export default async function AutomationPage({
     params.tab === "activity" ? "activity" : params.tab === "settings" ? "settings" : "pipeline";
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-6 py-5">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Automation</h1>
-          <p className="mt-1 max-w-3xl text-sm text-zinc-500">
+          <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Automation</h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted">
             The full pipeline — Monday sync → barcodes → generation → review → SharePoint → supplier
             digest. <strong>Run now</strong> fires the scrape and generation sweep immediately.
           </p>
@@ -83,8 +83,8 @@ export default async function AutomationPage({
         <RunNowButton />
       </div>
 
-      <nav className="mb-6 border-b border-zinc-200">
-        <ul className="flex gap-1">
+      <nav className="mb-6 border-b border-line">
+        <ul className="flex gap-5 overflow-x-auto">
           {(
             [
               { key: "pipeline", label: "Pipeline" },
@@ -96,10 +96,10 @@ export default async function AutomationPage({
               <Link
                 href={`/automation?tab=${t.key}`}
                 scroll={false}
-                className={`inline-block border-b-2 px-4 py-2 text-sm font-medium transition ${
+                className={`-mb-px inline-flex h-9 shrink-0 items-center gap-1.5 border-b-2 text-[13px] transition-colors duration-150 ${
                   tab === t.key
-                    ? "border-zinc-900 text-zinc-900"
-                    : "border-transparent text-zinc-500 hover:text-zinc-700"
+                    ? "border-ink text-ink"
+                    : "border-transparent text-muted hover:text-ink"
                 }`}
               >
                 {t.label}
@@ -171,8 +171,8 @@ async function PipelineTab() {
 
       {/* The funnel */}
       <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-zinc-900">Pipeline</h2>
-        <span className="text-xs text-zinc-400">
+        <h2 className="text-sm font-semibold text-ink">Pipeline</h2>
+        <span className="text-xs text-faint">
           scoped to the automation windows
           {snapshot.genCutoff !== null ? ` · generation PO ≥ ${snapshot.genCutoff}` : ""}
           {snapshot.parkedBelowGen > 0
@@ -180,26 +180,26 @@ async function PipelineTab() {
             : ""}
         </span>
       </div>
-      <div className="mb-6 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="mb-6 overflow-hidden rounded-xl border border-line bg-surface">
         {snapshot.stages.map((s, i) => (
           <Link
             key={s.key}
             href={s.href}
-            className={`flex items-center gap-4 px-4 py-3 hover:bg-zinc-50 ${
-              i > 0 ? "border-t border-zinc-100" : ""
+            className={`flex items-center gap-4 px-4 py-3 hover:bg-subtle ${
+              i > 0 ? "border-t border-line" : ""
             }`}
           >
-            <span className="w-8 text-right text-xs tabular-nums text-zinc-300">{i + 1}</span>
+            <span className="w-8 text-right text-xs tabular-nums text-faint">{i + 1}</span>
             <span className="flex-1">
-              <span className="block text-sm font-medium text-zinc-800">{s.label}</span>
-              <span className="block text-xs text-zinc-400">{s.hint}</span>
+              <span className="block text-sm font-medium text-ink">{s.label}</span>
+              <span className="block text-xs text-faint">{s.hint}</span>
             </span>
             {s.floated > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+              <span className="inline-flex items-center gap-1 rounded-full bg-bad px-2 py-0.5 text-xs font-semibold text-white">
                 gave up <span className="tabular-nums">{s.floated}</span>
               </span>
             )}
-            <span className="text-xl font-semibold tabular-nums text-zinc-900">
+            <span className="text-xl font-semibold tabular-nums text-ink">
               {s.count.toLocaleString()}
             </span>
           </Link>
@@ -210,7 +210,7 @@ async function PipelineTab() {
       <div className="mb-6 grid gap-6 md:grid-cols-2">
         <div>
           <div className="mb-2 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-zinc-900">EAN queue</h2>
+            <h2 className="text-sm font-semibold text-ink">EAN queue</h2>
             <RerunResolvedButton count={rerunnableResolved} cutoff={minPo} />
           </div>
           <div className="flex flex-wrap gap-2">
@@ -229,24 +229,24 @@ async function PipelineTab() {
           </div>
         </div>
         <div>
-          <h2 className="mb-2 text-sm font-semibold text-zinc-900">Generation jobs</h2>
+          <h2 className="mb-2 text-sm font-semibold text-ink">Generation jobs</h2>
           <div className="flex flex-wrap gap-2">
             {JOB_ORDER.filter((s) => (jobCounts.get(s) ?? 0) > 0).map((s) => (
               <span
                 key={s}
-                className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700"
+                className="inline-flex items-center gap-1 rounded-full bg-subtle px-2 py-0.5 text-xs font-medium text-ink"
               >
                 {s.toLowerCase().replace(/_/g, " ")}{" "}
                 <span className="tabular-nums opacity-70">{jobCounts.get(s)}</span>
               </span>
             ))}
           </div>
-          <h2 className="mt-4 mb-2 text-sm font-semibold text-zinc-900">Styles by status</h2>
+          <h2 className="mt-4 mb-2 text-sm font-semibold text-ink">Styles by status</h2>
           <div className="flex flex-wrap gap-2">
             {STYLE_ORDER.filter((s) => (styleCounts.get(s) ?? 0) > 0).map((s) => (
               <span
                 key={s}
-                className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700"
+                className="inline-flex items-center gap-1 rounded-full bg-subtle px-2 py-0.5 text-xs font-medium text-ink"
               >
                 {s.toLowerCase().replace(/_/g, " ")}{" "}
                 <span className="tabular-nums opacity-70">{styleCounts.get(s)}</span>
@@ -303,7 +303,7 @@ async function ActivityTab({ showAll, feedKind }: { showAll: boolean; feedKind?:
           <Link
             href={`/automation?tab=activity${showAll ? "&show=all" : ""}`}
             className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
-              !kind ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+              !kind ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50" : "border-line text-muted hover:bg-subtle"
             }`}
           >
             All
@@ -314,15 +314,15 @@ async function ActivityTab({ showAll, feedKind }: { showAll: boolean; feedKind?:
               href={tabHref({ feed: k })}
               className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
                 kind === k
-                  ? "border-zinc-900 bg-zinc-900 text-white"
-                  : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+                  ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  : "border-line text-muted hover:bg-subtle"
               }`}
             >
               {FEED_KIND_LABELS[k]}
             </Link>
           ))}
         </div>
-        <div className="flex items-center gap-3 text-xs text-zinc-400">
+        <div className="flex items-center gap-3 text-xs text-faint">
           <span>
             {heartbeats
               .map(([label, at]) => `${label} ${at ? formatDate(at) : "never"}`)
@@ -330,50 +330,50 @@ async function ActivityTab({ showAll, feedKind }: { showAll: boolean; feedKind?:
           </span>
           <Link
             href={showAll ? tabHref({ show: "" }) : tabHref({ show: "all" })}
-            className="rounded-md border border-zinc-200 px-2 py-1 font-medium text-zinc-600 hover:bg-zinc-50"
+            className="rounded-md border border-line px-2 py-1 font-medium text-muted hover:bg-subtle"
           >
             {showAll ? "Activity only" : `Show idle${hiddenIdle > 0 ? ` (+${hiddenIdle})` : ""}`}
           </Link>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="bg-subtle text-left text-xs text-muted">
             <tr>
-              <th className="px-4 py-3">When</th>
-              <th className="px-4 py-3">What</th>
-              <th className="px-4 py-3">By</th>
-              <th className="px-4 py-3">Result</th>
-              <th className="px-4 py-3">Took</th>
+              <th className="px-3 py-2">When</th>
+              <th className="px-3 py-2">What</th>
+              <th className="px-3 py-2">By</th>
+              <th className="px-3 py-2">Result</th>
+              <th className="px-3 py-2">Took</th>
             </tr>
           </thead>
           <tbody>
             {events.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-zinc-400">
+                <td colSpan={5} className="px-4 py-6 text-center text-faint">
                   Nothing recorded yet{kind ? ` for ${FEED_KIND_LABELS[kind]}` : ""}. Runs land here
                   as the crons fire or operators trigger work.
                 </td>
               </tr>
             )}
             {events.map((e) => (
-              <tr key={e.id} className="border-t border-zinc-100 align-top">
-                <td className="px-4 py-2 whitespace-nowrap text-zinc-600">{formatDate(e.at)}</td>
+              <tr key={e.id} className="border-t border-line align-top">
+                <td className="px-4 py-2 whitespace-nowrap text-muted">{formatDate(e.at)}</td>
                 <td className="px-4 py-2">
                   {e.href ? (
-                    <Link href={e.href} className="font-medium text-zinc-800 hover:underline">
+                    <Link href={e.href} className="font-medium text-ink hover:underline">
                       {e.title}
                     </Link>
                   ) : (
-                    <span className="font-medium text-zinc-800">{e.title}</span>
+                    <span className="font-medium text-ink">{e.title}</span>
                   )}
-                  <span className="ml-2 rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                  <span className="ml-2 rounded-full bg-subtle px-1.5 py-0.5 text-[11px] font-medium text-muted">
                     {FEED_KIND_LABELS[e.kind]}
                   </span>
                 </td>
-                <td className="px-4 py-2 whitespace-nowrap text-zinc-500">{e.source}</td>
-                <td className="px-4 py-2 text-zinc-600">
+                <td className="px-4 py-2 whitespace-nowrap text-muted">{e.source}</td>
+                <td className="px-4 py-2 text-muted">
                   <span
                     className={`mr-2 inline-flex rounded-full border px-1.5 py-0.5 text-[11px] font-medium ${STATUS_PILL[e.status]}`}
                   >
@@ -381,7 +381,7 @@ async function ActivityTab({ showAll, feedKind }: { showAll: boolean; feedKind?:
                   </span>
                   <span className="text-xs">{e.detail}</span>
                 </td>
-                <td className="px-4 py-2 whitespace-nowrap tabular-nums text-zinc-400">
+                <td className="px-4 py-2 whitespace-nowrap tabular-nums text-faint">
                   {e.durationMs == null ? "—" : `${(e.durationMs / 1000).toFixed(1)}s`}
                 </td>
               </tr>
@@ -419,16 +419,16 @@ async function SettingsTab() {
         <PoCutoffControl initialCutoff={minPo} parkedCount={parkedQueued} />
         <GenerationCutoffControl explicitCutoff={genMinPoExplicit} effectiveCutoff={genMinPo} />
       </div>
-      <div className="rounded-lg border border-zinc-200 bg-white p-5">
-        <h2 className="text-sm font-semibold text-zinc-900">Supplier sending</h2>
-        <p className="mt-1 max-w-2xl text-sm text-zinc-600">
+      <div className="rounded-xl border border-line bg-surface p-5">
+        <h2 className="text-sm font-semibold text-ink">Supplier sending</h2>
+        <p className="mt-1 max-w-2xl text-sm text-muted">
           The master toggle, the backfill PO cutoff
           {supplierMinPo !== null ? ` (currently PO ≥ ${supplierMinPo})` : " (not set — backfill idle)"} and
           the send queue live on the delivery page.
         </p>
         <Link
           href="/settings/approved"
-          className="mt-3 inline-block rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+          className="mt-3 inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         >
           Open Approved &amp; delivery
         </Link>
@@ -439,17 +439,17 @@ async function SettingsTab() {
 
 function StateCard({ label, on, hint }: { label: string; on: boolean; hint: string }) {
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4">
-      <div className="text-sm font-semibold text-zinc-900">{label}</div>
+    <div className="rounded-xl border border-line bg-surface p-4">
+      <div className="text-sm font-semibold text-ink">{label}</div>
       <div className="mt-1 flex items-center gap-2">
         <span
           className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
-            on ? "bg-emerald-100 text-emerald-800" : "bg-zinc-200 text-zinc-600"
+            on ? "bg-good-soft text-good" : "bg-subtle text-muted"
           }`}
         >
           {on ? "ON" : "OFF"}
         </span>
-        <span className="text-xs text-zinc-400">{hint}</span>
+        <span className="text-xs text-faint">{hint}</span>
       </div>
     </div>
   );

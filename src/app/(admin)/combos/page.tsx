@@ -66,11 +66,11 @@ export default async function CombosPage() {
   const readyCount = rows.length - newCount;
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-6 py-5">
       <div className="mb-6 flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">New combos</h1>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+          <h1 className="text-[18px] font-semibold tracking-[-0.01em]">New combos</h1>
+          <p className="mt-1 max-w-2xl text-sm text-muted">
             Customer × business-area combinations present among active styles (the same set as{" "}
             <Link href="/styles" className="underline">
               Styles
@@ -85,22 +85,22 @@ export default async function CombosPage() {
         <RescanCombosButton />
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="bg-subtle text-left text-xs text-muted">
             <tr>
-              <th className="px-4 py-3">Customer</th>
-              <th className="px-4 py-3">Business area</th>
-              <th className="px-4 py-3">Active styles</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">First seen</th>
-              <th className="px-4 py-3"></th>
+              <th className="px-3 py-2">Customer</th>
+              <th className="px-3 py-2">Business area</th>
+              <th className="px-3 py-2">Active styles</th>
+              <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2">First seen</th>
+              <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-zinc-500">
+                <td colSpan={6} className="px-4 py-12 text-center text-muted">
                   No combos yet. Run a style sync from{" "}
                   <Link href="/sync" className="underline">
                     /sync
@@ -114,20 +114,20 @@ export default async function CombosPage() {
                 return (
                   <tr
                     key={c.id}
-                    className={`border-t border-zinc-100 hover:bg-zinc-50 ${inactive ? "opacity-50" : ""}`}
+                    className={`border-t border-line hover:bg-subtle ${inactive ? "opacity-50" : ""}`}
                   >
-                    <td className="px-4 py-3 font-medium">
+                    <td className="px-3 py-2 font-medium">
                       <Link href={`/customers/${c.customerId}`} className="hover:underline">
                         {c.customerName}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-zinc-600">{c.baLabel}</td>
-                    <td className="px-4 py-3 tabular-nums text-zinc-600">{c.activeStyleCount}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2 text-muted">{c.baLabel}</td>
+                    <td className="px-3 py-2 tabular-nums text-muted">{c.activeStyleCount}</td>
+                    <td className="px-3 py-2">
                       <StatusPill status={status} />
                     </td>
-                    <td className="px-4 py-3 text-xs text-zinc-500">{formatDate(c.firstSeenAt)}</td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-3 py-2 text-xs text-muted">{formatDate(c.firstSeenAt)}</td>
+                    <td className="px-3 py-2 text-right">
                       <ComboRowActions id={c.id} hasBusinessArea={c.businessAreaId !== null} existingSpecId={specId} />
                     </td>
                   </tr>
@@ -144,13 +144,13 @@ export default async function CombosPage() {
 function StatusPill({ status }: { status: "NEW" | "READY" }) {
   if (status === "READY") {
     return (
-      <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+      <span className="inline-flex rounded-full bg-good-soft px-2 py-0.5 text-xs font-medium text-good">
         Ready
       </span>
     );
   }
   return (
-    <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+    <span className="inline-flex rounded-full bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn">
       New
     </span>
   );

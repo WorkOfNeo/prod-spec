@@ -42,9 +42,9 @@ export function CopyPromptButton({ text, targetId }: { text: string; targetId: s
     <button
       type="button"
       onClick={copy}
-      className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 shadow-sm hover:bg-zinc-50"
+      className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
     >
-      {state === "copied" ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+      {state === "copied" ? <Check className="h-4 w-4 text-good" /> : <Copy className="h-4 w-4" />}
       {state === "copied" ? "Copied" : state === "selected" ? "Selected — press Ctrl/Cmd+C" : "Copy prompt"}
     </button>
   );

@@ -42,12 +42,12 @@ export function ComboRowActions({
 
   return (
     <span className="inline-flex items-center gap-2">
-      {error ? <span className="text-xs text-red-600">{error}</span> : null}
+      {error ? <span className="text-xs text-bad">{error}</span> : null}
 
       {existingSpecId ? (
         <Link
           href={`/prod-specs/${existingSpecId}`}
-          className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+          className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink hover:bg-subtle"
         >
           Open spec
         </Link>
@@ -61,7 +61,7 @@ export function ComboRowActions({
               ? "Create a ProdSpec named “Customer - Business area - ” and open it"
               : "No business area to base a ProdSpec on"
           }
-          className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink hover:bg-subtle disabled:opacity-50"
         >
           {busy ? "Creating…" : "Create"}
         </button>
@@ -107,13 +107,13 @@ export function RescanCombosButton() {
 
   return (
     <div className="flex items-center gap-2">
-      {result ? <span className="text-xs text-emerald-600">{result}</span> : null}
-      {error ? <span className="text-xs text-red-600">{error}</span> : null}
+      {result ? <span className="text-xs text-good">{result}</span> : null}
+      {error ? <span className="text-xs text-bad">{error}</span> : null}
       <button
         type="button"
         onClick={rescan}
         disabled={busy}
-        className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+        className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? "Rescanning…" : "Rescan now"}
       </button>

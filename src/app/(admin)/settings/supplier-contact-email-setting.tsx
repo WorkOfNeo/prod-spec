@@ -38,9 +38,9 @@ export function SupplierContactEmailSetting({ initialEmails }: { initialEmails: 
   }
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-5">
-      <h2 className="text-sm font-semibold text-zinc-900">Supplier review CC email(s)</h2>
-      <p className="mt-1 text-sm text-zinc-500">
+    <div className="rounded-xl border border-line bg-surface p-5">
+      <h2 className="text-sm font-semibold text-ink">Supplier review CC email(s)</h2>
+      <p className="mt-1 text-sm text-muted">
         Email address(es) CC&rsquo;d on every supplier &ldquo;ready for review&rdquo; approval email.
         Enter one or more, <strong>comma-separated</strong>. Leave blank for no CC. The supplier&rsquo;s
         own inbox (To) comes from the synced supplier record.
@@ -54,19 +54,19 @@ export function SupplierContactEmailSetting({ initialEmails }: { initialEmails: 
             setOk(false);
           }}
           placeholder="jane@acme.com, ops@acme.com"
-          className="w-96 max-w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+          className="w-96 max-w-full rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
         />
         <button
           type="button"
           onClick={save}
           disabled={saving || !dirty}
-          className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save"}
         </button>
       </div>
-      {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
-      {ok ? <p className="mt-2 text-xs text-emerald-600">Saved.</p> : null}
+      {error ? <p className="mt-2 text-xs text-bad">{error}</p> : null}
+      {ok ? <p className="mt-2 text-xs text-good">Saved.</p> : null}
     </div>
   );
 }

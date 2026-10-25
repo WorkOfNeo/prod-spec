@@ -92,10 +92,10 @@ export function FileDropZone({
       }}
       className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed px-4 py-6 text-center transition ${
         inert
-          ? "cursor-default border-zinc-200 bg-zinc-50 opacity-70"
+          ? "cursor-default border-line bg-subtle opacity-70"
           : dragOver
-            ? "border-zinc-900 bg-zinc-900/5"
-            : "border-zinc-300 bg-zinc-50 hover:border-zinc-400 hover:bg-zinc-100/60"
+            ? "border-ink bg-zinc-900/5"
+            : "border-line bg-subtle hover:border-zinc-400 hover:bg-zinc-100/60"
       }`}
     >
       {children({ dragOver, busy })}

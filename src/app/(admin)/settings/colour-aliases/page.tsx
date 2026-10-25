@@ -20,16 +20,16 @@ export default async function ColourAliasesSettingsPage() {
 
   const groups = await getColourAliases();
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="text-lg font-semibold text-zinc-900">Colour aliases</h1>
-      <p className="mt-1 text-[13px] leading-relaxed text-zinc-500">
+    <div className="max-w-3xl px-6 py-5">
+      <h1 className="text-lg font-semibold text-ink">Colour aliases</h1>
+      <p className="mt-1 text-[13px] leading-relaxed text-muted">
         A pack that ships two qualities states both compositions in one field —{" "}
         <span className="font-mono text-[12px]">Pink: 95% Cotton 5% Elastane, Grey melange: 57%…</span>{" "}
         — and a layout with <strong>Split per composition</strong> gives each colour its own label to
         approve. That only happens when every part is labelled with a colour the style actually
         declares, and the match is exact: it must never guess that one colour word means another.
       </p>
-      <p className="mt-2 text-[13px] leading-relaxed text-zinc-500">
+      <p className="mt-2 text-[13px] leading-relaxed text-muted">
         The same colour is often written two ways, though — the abbreviation in the style name
         (<span className="font-mono text-[12px]">LGM</span>) and the spelt-out colour in the
         composition (<span className="font-mono text-[12px]">Grey melange</span>). Each group below

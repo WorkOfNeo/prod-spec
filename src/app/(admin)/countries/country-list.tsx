@@ -37,15 +37,15 @@ export function CountryList({ initialCountries, availableLanguages }: Props) {
         <button
           type="button"
           onClick={() => setDialog({ mode: "create" })}
-          className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           + New country
         </button>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
+          <thead className="bg-subtle text-left text-xs text-muted">
             <tr>
               <th className="px-4 py-2">Code</th>
               <th className="px-4 py-2">Name (EN)</th>
@@ -58,24 +58,24 @@ export function CountryList({ initialCountries, availableLanguages }: Props) {
           <tbody>
             {initialCountries.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-zinc-500">
+                <td colSpan={6} className="px-4 py-12 text-center text-muted">
                   No countries yet. Click <strong>Seed standard set</strong> for a starter pack of
                   16 common countries with pre-filled translations.
                 </td>
               </tr>
             ) : (
               initialCountries.map((c) => (
-                <tr key={c.id} className="border-t border-zinc-100">
+                <tr key={c.id} className="border-t border-line">
                   <td className="px-4 py-2 font-mono text-xs">{c.code}</td>
                   <td className="px-4 py-2 font-medium">{c.nameEn}</td>
-                  <td className="px-4 py-2 font-mono text-xs text-zinc-600">{c.languageCode}</td>
-                  <td className="px-4 py-2 text-xs text-zinc-600">
+                  <td className="px-4 py-2 font-mono text-xs text-muted">{c.languageCode}</td>
+                  <td className="px-4 py-2 text-xs text-muted">
                     {Object.keys(c.nameTranslations).length}
                   </td>
                   <td className="px-4 py-2">
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs ${
-                        c.active ? "bg-emerald-100 text-emerald-800" : "bg-zinc-100 text-zinc-600"
+                        c.active ? "bg-good-soft text-good" : "bg-subtle text-muted"
                       }`}
                     >
                       {c.active ? "active" : "disabled"}
@@ -85,7 +85,7 @@ export function CountryList({ initialCountries, availableLanguages }: Props) {
                     <button
                       type="button"
                       onClick={() => setDialog({ mode: "edit", row: c })}
-                      className="text-xs text-zinc-700 underline"
+                      className="text-xs text-ink underline"
                     >
                       Edit
                     </button>
@@ -141,11 +141,11 @@ function SeedButton() {
         type="button"
         onClick={seed}
         disabled={busy}
-        className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+        className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
       >
         {busy ? "Seeding…" : "Seed standard set"}
       </button>
-      {msg && <span className="text-xs text-zinc-500">{msg}</span>}
+      {msg && <span className="text-xs text-muted">{msg}</span>}
     </div>
   );
 }
@@ -249,19 +249,19 @@ function CountryDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/30 p-6">
-      <div className="my-12 w-full max-w-2xl rounded-lg bg-white p-5 shadow-xl">
+    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgb(15_17_21/0.30)] p-6">
+      <div className="my-12 w-full max-w-2xl rounded-lg bg-surface p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold">
             {mode === "create" ? "New country" : `Edit ${row?.nameEn}`}
           </h2>
-          <button onClick={onClose} className="text-xs text-zinc-500 underline">
+          <button onClick={onClose} className="text-xs text-muted underline">
             Close
           </button>
         </div>
 
         <div className="grid grid-cols-3 gap-3">
-          <label className="text-xs font-medium text-zinc-700">
+          <label className="text-xs font-medium text-ink">
             Code
             <input
               type="text"
@@ -269,41 +269,41 @@ function CountryDialog({
               disabled={mode === "edit"}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               maxLength={8}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-sm uppercase disabled:bg-zinc-50"
+              className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-sm disabled:bg-subtle"
               placeholder="DK"
               required
             />
           </label>
-          <label className="col-span-2 text-xs font-medium text-zinc-700">
+          <label className="col-span-2 text-xs font-medium text-ink">
             Name (EN)
             <input
               type="text"
               value={nameEn}
               onChange={(e) => setNameEn(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm"
               placeholder="Denmark"
               required
             />
           </label>
-          <label className="text-xs font-medium text-zinc-700">
+          <label className="text-xs font-medium text-ink">
             Language code
             <input
               type="text"
               value={languageCode}
               onChange={(e) => setLanguageCode(e.target.value.toLowerCase())}
               maxLength={8}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-sm lowercase"
+              className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-sm lowercase"
               placeholder="da"
               required
             />
           </label>
-          <label className="col-span-2 text-xs font-medium text-zinc-700">
-            Monday value <span className="font-normal text-zinc-400">(optional)</span>
+          <label className="col-span-2 text-xs font-medium text-ink">
+            Monday value <span className="font-normal text-faint">(optional)</span>
             <input
               type="text"
               value={mondayValue}
               onChange={(e) => setMondayValue(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm"
               placeholder="China"
             />
           </label>
@@ -311,23 +311,23 @@ function CountryDialog({
 
         <div className="mt-5">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-medium text-zinc-700">Name translations</span>
-            <span className="text-[10px] text-zinc-500">
+            <span className="text-xs font-medium text-ink">Name translations</span>
+            <span className="text-[11px] text-muted">
               How this country's name appears on a label in each language
             </span>
           </div>
           <div className="grid grid-cols-2 gap-2">
             {languageInputs.map((lang) => (
-              <label key={lang.code} className="text-xs font-medium text-zinc-700">
+              <label key={lang.code} className="text-xs font-medium text-ink">
                 {lang.name}{" "}
-                <span className="font-mono text-[10px] font-normal text-zinc-400">{lang.code}</span>
+                <span className="font-mono text-[11px] font-normal text-faint">{lang.code}</span>
                 <input
                   type="text"
                   value={translations[lang.code] ?? ""}
                   onChange={(e) =>
                     setTranslations((prev) => ({ ...prev, [lang.code]: e.target.value }))
                   }
-                  className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+                  className="mt-1 w-full rounded-md border border-line px-3 py-1.5 text-sm"
                 />
               </label>
             ))}
@@ -345,7 +345,7 @@ function CountryDialog({
           </div>
         )}
 
-        {err && <p className="mt-3 text-xs text-red-600">{err}</p>}
+        {err && <p className="mt-3 text-xs text-bad">{err}</p>}
 
         <div className="mt-5 flex items-center justify-between">
           {mode === "edit" ? (
@@ -353,7 +353,7 @@ function CountryDialog({
               type="button"
               onClick={remove}
               disabled={busy}
-              className="text-xs text-red-600 underline disabled:opacity-50"
+              className="text-xs text-bad underline disabled:opacity-50"
             >
               Delete
             </button>
@@ -364,7 +364,7 @@ function CountryDialog({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+              className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
             >
               Cancel
             </button>
@@ -372,7 +372,7 @@ function CountryDialog({
               type="button"
               onClick={save}
               disabled={busy || !code || !nameEn || !languageCode}
-              className="rounded-md bg-zinc-900 px-3 py-2 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+              className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-2.5 text-[12px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? "Saving…" : mode === "create" ? "Create" : "Save"}
             </button>
@@ -402,11 +402,11 @@ function AddLangInput({ onAdd }: { onAdd: (lang: string) => void }) {
         value={value}
         onChange={(e) => setValue(e.target.value)}
         maxLength={8}
-        className="w-28 rounded-md border border-zinc-300 px-2 py-1 font-mono text-xs lowercase"
+        className="w-28 rounded-md border border-line px-2 py-1 font-mono text-xs lowercase"
       />
       <button
         type="submit"
-        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs hover:bg-zinc-50"
+        className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
       >
         + Add
       </button>

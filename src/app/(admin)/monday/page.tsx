@@ -49,26 +49,26 @@ export default async function MondayPage({
   // Pre-load the data the chosen tab needs. Each tab component receives
   // only what it cares about — the others stay cheap.
   return (
-    <div className="px-8 py-8">
+    <div className="px-6 py-5">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Monday</h1>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Monday</h1>
+        <p className="mt-1 text-sm text-muted">
           Live API inspection, sync triggers, and a browsable mirror of every Monday board we know
           about.
         </p>
       </div>
 
-      <nav className="mb-6 border-b border-zinc-200">
-        <ul className="flex gap-1">
+      <nav className="mb-6 border-b border-line">
+        <ul className="flex gap-5 overflow-x-auto">
           {TABS.map((t) => (
             <li key={t.key}>
               <Link
                 href={`/monday?tab=${t.key}`}
                 scroll={false}
-                className={`inline-block border-b-2 px-4 py-2 text-sm font-medium transition ${
+                className={`-mb-px inline-flex h-9 shrink-0 items-center gap-1.5 border-b-2 text-[13px] transition-colors duration-150 ${
                   tab === t.key
-                    ? "border-zinc-900 text-zinc-900"
-                    : "border-transparent text-zinc-500 hover:text-zinc-700"
+                    ? "border-ink text-ink"
+                    : "border-transparent text-muted hover:text-ink"
                 }`}
               >
                 {t.label}

@@ -27,12 +27,12 @@ function colorFor(name: string): string {
 }
 
 export function UserAvatar({ name, size = "sm" }: { name: string; size?: "xs" | "sm" }) {
-  const dims = size === "xs" ? "h-4 w-4 text-[8px]" : "h-6 w-6 text-[10px]";
+  const dims = size === "xs" ? "h-4 w-4 text-[8px]" : "h-6 w-6 text-[11px]";
   return (
     <span
       data-private
       title={name}
-      className={`inline-flex flex-shrink-0 items-center justify-center rounded-full font-semibold text-white ${dims} ${colorFor(name)}`}
+      className={`inline-flex flex-shrink-0 items-center justify-center rounded-full font-semibold text-white ${dims}  ${colorFor(name)}`}
     >
       {initialsFor(name)}
     </span>

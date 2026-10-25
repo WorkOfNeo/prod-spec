@@ -34,17 +34,17 @@ export function PoEanAutoRunSetting({ initialEnabled }: { initialEnabled: boolea
   }
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4">
+    <div className="rounded-xl border border-line bg-surface p-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold text-zinc-900">Automatic barcode scraping</h2>
-          <p className="mt-1 text-sm text-zinc-500">
+          <h2 className="text-sm font-semibold text-ink">Automatic barcode scraping</h2>
+          <p className="mt-1 text-sm text-muted">
             When on, the cron drains this queue automatically — every PENDING style gets its PO PDF
             scraped from SharePoint. When off, styles still queue here as their PO numbers land, but
             nothing is scraped until you click &ldquo;Re-resolve&rdquo; (per row, or the batch
             button) — manual clicks always work.
           </p>
-          {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
+          {error ? <p className="mt-2 text-xs text-bad">{error}</p> : null}
         </div>
         <Toggle
           checked={enabled}
@@ -54,7 +54,7 @@ export function PoEanAutoRunSetting({ initialEnabled }: { initialEnabled: boolea
           ariaLabel="Automatic barcode scraping"
         />
       </div>
-      <div className="mt-2 text-xs text-zinc-400">
+      <div className="mt-2 text-xs text-faint">
         {saving
           ? "Saving…"
           : enabled

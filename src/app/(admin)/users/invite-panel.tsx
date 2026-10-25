@@ -83,13 +83,13 @@ export function InvitePanel({ disabled }: { disabled?: boolean }) {
           value={email}
           disabled={disabled || pending}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-64 rounded-md border border-zinc-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-50"
+          className="w-64 rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
         />
         <select
           value={role}
           disabled={disabled || pending}
           onChange={(e) => setRole(e.target.value)}
-          className="rounded-md border border-zinc-300 bg-white px-2 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:opacity-50"
+          className="h-7 rounded-md border border-line bg-surface px-2 text-[12px] text-ink outline-none focus:border-accent disabled:opacity-50"
         >
           <option value="REVIEWER">REVIEWER</option>
           <option value="ADMIN">ADMIN</option>
@@ -97,25 +97,25 @@ export function InvitePanel({ disabled }: { disabled?: boolean }) {
         <button
           type="submit"
           disabled={disabled || pending}
-          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {pending ? "Creating…" : "Create invite"}
         </button>
       </form>
-      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-xs text-bad">{error}</p>}
 
       {created && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-emerald-300 bg-emerald-50 px-3 py-2">
-          <span data-private className="text-xs font-semibold text-emerald-700">
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-transparent bg-good-soft px-3 py-2">
+          <span data-private className="text-xs font-semibold text-good">
             Invite for {created.email} ready →
           </span>
-          <code className="min-w-0 flex-1 truncate rounded border border-zinc-200 bg-white px-2 py-1 font-mono text-[11px] text-zinc-600">
+          <code className="min-w-0 flex-1 truncate rounded border border-line bg-surface px-2 py-1 font-mono text-[11px] text-muted">
             {created.link}
           </code>
           <button
             type="button"
             onClick={copyLink}
-            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-50"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             {copied ? "Copied ✓" : "Copy link"}
           </button>
@@ -123,7 +123,7 @@ export function InvitePanel({ disabled }: { disabled?: boolean }) {
             type="button"
             disabled={sending}
             onClick={sendEmail}
-            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-50 disabled:opacity-50"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             {sending ? "Sending…" : "Send email"}
           </button>

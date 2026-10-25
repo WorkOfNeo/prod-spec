@@ -23,9 +23,9 @@ export default async function SettingsPage() {
   ]);
 
   return (
-    <div className="px-8 py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-      <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+    <div className="px-6 py-5">
+      <h1 className="text-[18px] font-semibold tracking-[-0.01em]">Settings</h1>
+      <p className="mt-1 max-w-2xl text-sm text-muted">
         Global configuration for this instance.
       </p>
 
@@ -35,7 +35,7 @@ export default async function SettingsPage() {
         <PullStyleByPo initialPulled={pulledStyles} />
       </div>
 
-      <p className="mt-6 max-w-2xl text-xs text-zinc-500">
+      <p className="mt-6 max-w-2xl text-xs text-muted">
         Catalogue config lives under its own <strong>Settings</strong> menu entries — Monday, care
         labels, certificates, QR codes, translations, countries, languages, and business areas.
       </p>

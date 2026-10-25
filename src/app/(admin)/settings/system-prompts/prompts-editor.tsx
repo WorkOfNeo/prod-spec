@@ -75,24 +75,24 @@ function PromptCard({ prompt, canSave }: { prompt: PromptView; canSave: boolean 
   }
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4">
+    <div className="rounded-xl border border-line bg-surface p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-zinc-900">{prompt.name}</h2>
+            <h2 className="text-sm font-semibold text-ink">{prompt.name}</h2>
             <span
-              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+              className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
                 prompt.source === "custom"
-                  ? "border-violet-200 bg-violet-50 text-violet-700"
-                  : "border-zinc-200 bg-zinc-100 text-zinc-500"
+                  ? "border-transparent bg-accent-soft text-accent-text"
+                  : "border-line bg-subtle text-muted"
               }`}
             >
               {prompt.source === "custom" ? "customized" : "default"}
             </span>
           </div>
-          <p className="mt-1 text-xs text-zinc-500">{prompt.description}</p>
+          <p className="mt-1 text-xs text-muted">{prompt.description}</p>
         </div>
-        <span className="shrink-0 font-mono text-[10px] text-zinc-400">{prompt.key}</span>
+        <span className="shrink-0 font-mono text-[11px] text-faint">{prompt.key}</span>
       </div>
 
       <textarea
@@ -103,7 +103,7 @@ function PromptCard({ prompt, canSave }: { prompt: PromptView; canSave: boolean 
         }}
         rows={14}
         spellCheck={false}
-        className="mt-3 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-xs leading-relaxed focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+        className="mt-3 w-full rounded-md border border-line px-3 py-2 font-mono text-xs leading-relaxed focus:ring-2 focus:ring-accent focus:outline-none"
       />
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -111,7 +111,7 @@ function PromptCard({ prompt, canSave }: { prompt: PromptView; canSave: boolean 
           type="button"
           onClick={save}
           disabled={!canSave || !dirty || busy !== null}
-          className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           title={!canSave ? "Saving is disabled until db:deploy runs" : undefined}
         >
           {busy === "save" ? "Saving…" : "Save"}
@@ -121,15 +121,15 @@ function PromptCard({ prompt, canSave }: { prompt: PromptView; canSave: boolean 
             type="button"
             onClick={reset}
             disabled={busy !== null}
-            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy === "reset" ? "Resetting…" : "Reset to default"}
           </button>
         ) : null}
-        {dirty ? <span className="text-xs text-amber-600">unsaved changes</span> : null}
-        {ok ? <span className="text-xs text-emerald-700">{ok}</span> : null}
-        {err ? <span className="text-xs text-red-600">{err}</span> : null}
-        <span className="ml-auto text-[11px] text-zinc-400">
+        {dirty ? <span className="text-xs text-warn">unsaved changes</span> : null}
+        {ok ? <span className="text-xs text-good">{ok}</span> : null}
+        {err ? <span className="text-xs text-bad">{err}</span> : null}
+        <span className="ml-auto text-[11px] text-faint">
           {prompt.source === "custom" && prompt.updatedAtLabel
             ? `Edited ${prompt.updatedAtLabel}${prompt.updatedByEmail ? ` by ${prompt.updatedByEmail}` : ""}`
             : "Built-in default"}
