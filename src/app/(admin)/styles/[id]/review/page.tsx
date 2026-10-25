@@ -1,10 +1,9 @@
-import { cache } from "react";
-import Link from "next/link";
+import { cache, type ReactNode } from "react";
 import { notFound } from "next/navigation";
+import { ChevronRight } from "lucide-react";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { isAdmin, canReview } from "@/lib/roles";
-import { AssetActions } from "./asset-actions";
 import { OutputFieldEditor } from "./output-field-editor";
 import { OutputEditDialog } from "./output-edit-dialog";
 import { OutputBulkActions } from "./output-bulk-actions";
@@ -13,11 +12,15 @@ import { ReviewClaim } from "./claim-review";
 import { ReviewLeaveGuard } from "./leave-guard";
 import { ReviewCartonCustomize } from "./review-carton-customize";
 import { UndoIgnoreButton } from "./undo-ignore-button";
+import { ReviewWorkspace } from "./review-workspace";
+import type { ProofItem, ReviewItem, ThreadView, TicketStatus } from "./review-types";
 import { RunOutputButton } from "../run-output-button";
 import { RerunButton } from "../rerun-button";
 import { ManualTrimsPanel } from "../manual-trims-panel";
+import { groupByDocType } from "../doc-type-groups";
 import { LogStyleView } from "@/components/log-style-view";
-import { groupByDocType, DocTypeAccordion } from "../doc-type-groups";
+import { PageHeader } from "@/components/ui/page-header";
+import { Pill, type PillTone } from "@/components/ui/pill";
 import { loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
 import { getVariant } from "@/lib/pdf/template-registry";
 import { applyFieldOverrides } from "@/lib/pdf/pins";
@@ -28,6 +31,7 @@ import type { DocumentLine } from "@/lib/output-layouts/lines";
 import { mergeLineValues } from "@/lib/outputs/output-line-values";
 import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
 import { baseVariantKey } from "@/lib/tickets/orphan";
+import { splitTicketComment } from "@/lib/tickets/thread";
 import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import {
   getCurrentOutputsForStyle,
@@ -49,15 +53,27 @@ import { mondayItemUrl } from "@/lib/monday/url";
 import { styleReadinessNotice } from "@/lib/styles/readiness-notice";
 import {
   OutputReadinessNotice,
+  ReadinessPill,
   type ReadinessHrefs,
 } from "@/components/output-readiness-notice";
 
 export const dynamic = "force-dynamic";
 
-// The review screen now reads the STYLE's current outputs — the latest asset
-// per (variantKey) across all jobs, lined up against the declared output set —
-// so outputs generated in different runs roll up here together. Decisions stay
+// The review screen reads the STYLE's current outputs — the latest asset per
+// (variantKey) across all jobs, lined up against the declared output set — so
+// outputs generated in different runs roll up here together. Decisions stay
 // per output; the bulk shortcuts loop the per-output endpoints.
+//
+// This page loads and decides; ReviewWorkspace (client) lays it out as a list,
+// the selected proof, and the comments + decision for it. The rejection log's
+// threads come along per output, so a reviewer sees what was said before.
+
+// List sections that aren't document types.
+const MISSING_GROUP = "Not generated, missing data";
+const HISTORY_GROUP = "Earlier generations";
+const EXCLUDED_GROUP = "Excluded or ignored";
+const MANUAL_GROUP = "Supplied by hand";
+const MANUAL_KEY = "__manual-trims";
 
 // The page's style read. cache() is request-scoped, so generateMetadata (which
 // only wants the name) shares this one query instead of issuing its own.
@@ -97,9 +113,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const followThrough = reviewFollowThroughEnabled();
 
   // Every read on this page is keyed on the id alone, so they go out as ONE
-  // wave: the session, the style row and the follow-through / fixed-ticket
-  // reads used to be four more sequential round trips around the main batch.
-  // A missing style still 404s right after it; the fixed-ticket read is simply
+  // wave. A missing style still 404s right after it; the ticket read is simply
   // unused when the page takes the "No outputs to review" early return.
   const [
     { session, role },
@@ -113,7 +127,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     infoAreaSizeMap,
     inflightJobs,
     pendingJob,
-    fixedTickets,
+    tickets,
   ] = await Promise.all([
     getSessionWithRole(),
     loadStyle(id),
@@ -145,10 +159,21 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           },
         })
       : null,
-    // Outputs the admin marked FIXED on the rejection log — see fixedTicketBases.
+    // The style's rejection-log threads — the comments shown per output, and
+    // the FIXED ones that keep an older rejection in the main view.
     db.rejectionTicket.findMany({
-      where: { styleId: id, status: "FIXED" },
-      select: { variantKey: true },
+      where: { styleId: id },
+      orderBy: { createdAt: "desc" },
+      take: 300,
+      select: {
+        id: true,
+        status: true,
+        variantKey: true,
+        comment: true,
+        createdAt: true,
+        updatedAt: true,
+        reportedBy: { select: { name: true, email: true } },
+      },
     }),
   ]);
   if (!style) notFound();
@@ -165,8 +190,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
 
   // The shared, role-aware Output Readiness Notice — one model that folds the
   // whole pipeline (SharePoint → PO → EANs → fields → generation → review) into
-  // a headline pill + step ladder. Supersedes the ad-hoc progress bar, the
-  // placeholder-blocked alert, and the "Not generated yet" accordion below.
+  // a headline pill + step ladder.
   const prodSpecOutputs = parseProdSpecOutputs(style.prodSpec?.outputs ?? []);
   const viewerRole = isAdmin(role) ? "ADMIN" : "REVIEWER";
   const notice = styleReadinessNotice(
@@ -207,14 +231,12 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   // Reviewable = generated and not currently regenerating.
   const reviewable = outputs.filter((o) => o.jobAssetId != null && o.state !== "GENERATING");
   // Excluded = deliberately skipped by a doc-type keyword rule (decided, not
-  // pending) — listed separately so they don't read as "still waiting". The
-  // readiness notice (PR #154) covers the missing-fields/queued/generating
-  // outputs, so there's no separate "not generated yet" list here anymore.
+  // pending) — listed separately so they don't read as "still waiting".
   const excludedOutputs = outputs.filter((o) => o.state === "EXCLUDED");
   // Outputs that COULD NOT be generated because required fields are blank on
   // Monday. Readiness-gating (PR #152) means these never produced a (blank)
-  // PDF, so there's no tile to show — instead of silently hiding them, we show
-  // a message in the output area naming the fields to fill in on Monday.
+  // PDF, so there's no proof to show — instead of silently hiding them, they
+  // list the fields to fill in.
   const missingFieldOutputs = outputs.filter(
     (o) => o.state === "AWAITING_DATA" && o.missing.length > 0,
   );
@@ -225,7 +247,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const rejectAssetIds = pendingReviewable.map((o) => o.jobAssetId as string);
   // Bundle framing (cover / general info) regenerates with every run — it
   // can't be ignored per style, so it's excluded from "Ignore all" and its
-  // card hides the Ignore button.
+  // decision hides the Ignore option.
   const ignorableOutput = (o: CurrentOutput) => {
     const b = baseVariantKey(o.variantKey);
     return b !== COVER_VARIANT_KEY && b !== GENERAL_INFO_VARIANT_KEY;
@@ -261,36 +283,81 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
 
   if (outputs.length === 0) {
     return (
-      <div className="px-8 py-8">
+      <div className="px-6 py-5">
         <LogStyleView styleId={id} surface="REVIEW" />
-        <Link href={`/styles/${id}`} className="text-xs text-zinc-500 underline">← Back</Link>
-        <h1 className="mt-2 text-2xl font-semibold">No outputs to review</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          This style has no enabled outputs on its prod spec yet.
-        </p>
+        <PageHeader
+          back={{ href: `/styles/${id}`, label: style.name }}
+          title="No outputs to review"
+          meta="This style has no enabled outputs on its prod spec yet."
+        />
       </div>
     );
   }
+
+  // ── Comment threads ──────────────────────────────────────────────────────
+  // One ticket per (style × output) thread; the open one carries the live
+  // conversation, resolved ones are history. Images are served behind the
+  // admin log, so reviewers see how many there are, not the images.
+  const attachmentsByTicket = new Map<string, { id: string; fileName: string }[]>();
+  if (tickets.length > 0) {
+    try {
+      const atts = await db.rejectionAttachment.findMany({
+        where: { ticketId: { in: tickets.map((t) => t.id) } },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, ticketId: true, fileName: true },
+      });
+      for (const a of atts) {
+        const list = attachmentsByTicket.get(a.ticketId) ?? [];
+        list.push({ id: a.id, fileName: a.fileName });
+        attachmentsByTicket.set(a.ticketId, list);
+      }
+    } catch {
+      // rejection_attachments not deployed yet — threads without images.
+    }
+  }
+  const threadsByKey = new Map<string, ThreadView[]>();
+  for (const t of tickets) {
+    if (!t.variantKey) continue; // legacy whole-job tickets aren't one output's thread
+    const atts = attachmentsByTicket.get(t.id) ?? [];
+    const view: ThreadView = {
+      ticketId: t.id,
+      status: t.status as TicketStatus,
+      reporter: t.reportedBy.name || t.reportedBy.email,
+      createdAtIso: t.createdAt.toISOString(),
+      updatedAtIso: t.updatedAt.toISOString(),
+      entries: splitTicketComment(t.comment),
+      attachments: isAdmin(role)
+        ? atts.map((a) => ({ id: a.id, fileName: a.fileName, url: `/api/admin/rejection-tickets/${t.id}/attachments/${a.id}` }))
+        : [],
+      attachmentCount: atts.length,
+    };
+    const list = threadsByKey.get(t.variantKey) ?? [];
+    list.push(view); // newest first — the query's order
+    threadsByKey.set(t.variantKey, list);
+  }
+  const openThread = (key: string) => threadsByKey.get(key)?.find((t) => t.status !== "RESOLVED") ?? null;
+  const pastThreads = (key: string) => (threadsByKey.get(key) ?? []).filter((t) => t.status === "RESOLVED");
 
   // Outputs the admin marked FIXED on the rejection log ("ready for re-review").
   // These must stay in the MAIN view so the reviewer can act on them even if the
   // latest asset is an older-generation rejection that wasn't re-rendered — the
   // "locate on /review when marked fixed" guard (the rejection-log History split
   // relies on this so a fixed thread is always findable here).
-  const fixedTicketBases = new Set(fixedTickets.map((t) => baseVariantKey(t.variantKey)));
+  const fixedTicketBases = new Set(
+    tickets.filter((t) => t.status === "FIXED").map((t) => baseVariantKey(t.variantKey)),
+  );
   const hasFixedTicket = (o: CurrentOutput) =>
     fixedTicketBases.has(baseVariantKey(o.variantKey));
 
   // History = REJECTED outputs from an EARLIER run only. They stay fully
-  // visible — same card — but collapse into the "Earlier generations" accordion
-  // so the main view isn't cluttered by stale rejections.
+  // reviewable but fold into "Earlier generations" so the main list isn't
+  // cluttered by stale rejections.
   //
   // APPROVED outputs are NEVER history: with durable approval a full re-run
   // preserves them instead of regenerating (so their latest asset is from an
   // earlier job — fromLatestGeneration is false), but they are the CURRENT
   // approved state and must stay in the main view so the reviewer can always
-  // see them (read-only badge, no decide buttons). Before, they vanished into
-  // the accordion the moment the rest of the style was re-run.
+  // see them.
   //
   // Anything still pending — or marked fixed and awaiting re-review — is also
   // never history, even from an older job.
@@ -299,11 +366,9 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
   const history = reviewable.filter(isHistoryOutput);
   const current = reviewable.filter((o) => !isHistoryOutput(o));
 
-  const groups = groupByDocType<CurrentOutput>(current, docTypeLabels);
-
-  // Info-area outputs get an in-card print-size picker (reviewers operate
-  // here, not on the style page). Resolved per output: the ProdSpec entry
-  // carries the pick; the size map names it even if since deactivated.
+  // Info-area outputs get a print-size picker (reviewers operate here, not on
+  // the style page). Resolved per output: the ProdSpec entry carries the pick;
+  // the size map names it even if since deactivated.
   const prodSpecId = style.prodSpec?.id ?? null;
   const infoAreaFor = (o: CurrentOutput): InfoAreaProps | null => {
     if (!prodSpecId || !canEditFields) return null;
@@ -325,8 +390,100 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     };
   };
 
+  // ── The list, and what each item opens ───────────────────────────────────
+  const items: ReviewItem[] = [];
+  const panels: Record<string, ReactNode> = {};
+  const tools: Record<string, ReactNode> = {};
+
+  const addProof = (o: CurrentOutput, group: string, isHistory: boolean) => {
+    const thread = openThread(o.variantKey);
+    const item = proofItem(o, group, thread, pastThreads(o.variantKey));
+    items.push(item);
+    tools[o.variantKey] = (
+      <OutputTools
+        o={o}
+        styleId={style.id}
+        // The earlier-generation proofs are reference: no field or line editing.
+        canEditFields={canEditFields && !isHistory}
+        styleData={styleData}
+        fieldValuesByKey={fieldValuesByKey}
+        lineValuesByKey={lineValuesByKey}
+        infoArea={isHistory ? null : infoAreaFor(o)}
+      />
+    );
+  };
+
+  for (const group of groupByDocType<CurrentOutput>(current, docTypeLabels)) {
+    for (const o of group.items) addProof(o, group.label, false);
+  }
+
+  for (const o of missingFieldOutputs) {
+    items.push({
+      kind: "panel",
+      key: o.variantKey,
+      anchor: outputAnchor(o.variantKey),
+      name: o.name,
+      group: MISSING_GROUP,
+      tone: "warn",
+      statusLabel: `Missing ${o.missing.length} field${o.missing.length === 1 ? "" : "s"}`,
+    });
+    panels[o.variantKey] = (
+      <MissingDataPanel
+        o={o}
+        styleId={style.id}
+        canEditFields={canEditFields}
+        overrides={fieldValuesByKey.get(o.variantKey) ?? {}}
+        mondayHref={mondayHref ?? undefined}
+      />
+    );
+  }
+
+  for (const o of history) addProof(o, HISTORY_GROUP, true);
+
+  for (const o of excludedOutputs) {
+    items.push({
+      kind: "panel",
+      key: o.variantKey,
+      anchor: outputAnchor(o.variantKey),
+      name: o.name,
+      group: EXCLUDED_GROUP,
+      tone: "neutral",
+      statusLabel: o.ignored ? "Ignored for this style" : "Excluded by a rule",
+    });
+    panels[o.variantKey] = <ExcludedPanel o={o} styleId={style.id} />;
+  }
+
+  // The documents this app does NOT produce. A reviewer deciding on a style
+  // asks one question — is everything here? — and the generated proofs only
+  // answer half of it. The lines the buyer named on the order but nobody
+  // generated are answered here, and they are just as much a reason to hold an
+  // approval. Same panel as the style page's Review tab, deliberately: two
+  // renderings of "what is still missing" would drift.
+  items.push({
+    kind: "panel",
+    key: MANUAL_KEY,
+    anchor: "manual-trims",
+    name: "Manually supplied packaging",
+    group: MANUAL_GROUP,
+    tone: "neutral",
+    statusLabel: "",
+  });
+  panels[MANUAL_KEY] = (
+    <section>
+      <h2 className="text-ink text-[14px] font-semibold">Manually supplied packaging</h2>
+      <p className="text-muted mt-1 mb-4 text-[13px]">
+        Packaging the buyer named on the order that this app doesn&rsquo;t generate.
+      </p>
+      <ManualTrimsPanel styleId={style.id} />
+    </section>
+  );
+
+  // The pipeline ladder starts open when something in it is blocked, so a
+  // reviewer sees why before deciding.
+  const pipelineBlocked = notice.steps.some((s) => s.tone === "red");
+
   return (
-    <div className="px-8 py-8">
+    <div className="flex flex-col xl:h-[calc(100dvh-3rem)] xl:overflow-hidden">
       <LogStyleView styleId={id} surface="REVIEW" />
       {followThrough ? (
         // Per-style key now — leaving with some-decided/some-pending intercepts.
@@ -338,18 +495,42 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
           styleContext={styleContext}
         />
       ) : null}
-      <Link href={`/styles/${id}`} className="text-xs text-zinc-500 underline">← Back to style</Link>
-      <div data-section="Review header" className="mt-2 flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Review · {style.name}</h1>
-          <p className="text-sm text-zinc-500">
-            {style.customer.name}
-            {businessArea ? <> · {businessArea}</> : null}
-            {style.poNumber ? <> · PO {style.poNumber}</> : null}
-            {" · "}
-            {rollup.total} output{rollup.total === 1 ? "" : "s"}
-            {tally ? <> — {tally}</> : null}
-          </p>
+      <div className="shrink-0 px-6 pt-4 pb-4">
+        <PageHeader
+          back={{ href: `/styles/${id}`, label: style.name }}
+          title={<>Review · {style.name}</>}
+          meta={
+            <>
+              {style.customer.name}
+              {businessArea ? <> · {businessArea}</> : null}
+              {style.poNumber ? <> · PO {style.poNumber}</> : null}
+              {" · "}
+              {rollup.total} output{rollup.total === 1 ? "" : "s"}
+              {tally ? <span className="text-faint"> · {tally}</span> : null}
+            </>
+          }
+          actions={
+            <>
+              {/* Whole-style re-run, the same button and endpoint as the style
+                  page header — so a reviewer who fixed the data upstream doesn't
+                  have to bounce back there to regenerate. Safe next to the
+                  decisions because a FULL re-run skips already-approved outputs
+                  (durable approval) — only the undecided ones re-render. */}
+              {canEditFields ? <RerunButton styleId={style.id} disabled={inflightJobs > 0} /> : null}
+              {canPush && pushableCount > 0 ? (
+                <SupplierPushActions styleId={style.id} pushableCount={pushableCount} />
+              ) : null}
+              <OutputBulkActions
+                styleId={style.id}
+                styleContext={styleContext}
+                approveAssetIds={approveAssetIds}
+                rejectAssetIds={rejectAssetIds}
+                ignoreAssetIds={ignoreAssetIds}
+                blockedCount={blockedCount}
+              />
+            </>
+          }
+        >
           {followThrough && pendingJob ? (
             <ReviewClaim
               jobId={pendingJob.id}
@@ -364,232 +545,73 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
               styleContext={styleContext}
             />
           ) : null}
-        </div>
-        <div className="flex items-end gap-3">
-          {/* Whole-style re-run, the same button and endpoint as the style
-              page header — so a reviewer who fixed the data upstream doesn't
-              have to bounce back there to regenerate. Leftmost of the cluster:
-              the decision buttons are the primary action and keep their place.
-              Safe next to them because a FULL re-run skips already-approved
-              outputs (durable approval) — only the undecided ones re-render. */}
-          {canEditFields ? (
-            <RerunButton styleId={style.id} disabled={inflightJobs > 0} />
-          ) : null}
-          {canPush ? (
-            <SupplierPushActions styleId={style.id} pushableCount={pushableCount} />
-          ) : null}
-          <OutputBulkActions
-            styleId={style.id}
-            styleContext={styleContext}
-            approveAssetIds={approveAssetIds}
-            rejectAssetIds={rejectAssetIds}
-            ignoreAssetIds={ignoreAssetIds}
-            blockedCount={blockedCount}
-          />
-        </div>
-      </div>
-
-      {/* The shared Output Readiness Notice — folds the old progress bar, the
-          placeholder-blocked alert, and the "Not generated yet" accordion into
-          one role-aware ladder (source/PO/SharePoint → spec → fields →
-          generation → review). The blocked step + reviewer "don't approve"
-          banner preserve the old red alert's intent. */}
-      <div className="mt-4">
-        <OutputReadinessNotice notice={notice} role={viewerRole} hrefs={readinessHrefs} />
-      </div>
-
-      {/* Generated outputs, grouped per document type. */}
-      <div data-section="Outputs" className="mt-6 flex flex-col gap-3">
-        {groups.map((group) => {
-          const gApproved = group.items.filter((o) => o.reviewStatus === "APPROVED").length;
-          const gRejected = group.items.filter((o) => o.reviewStatus === "REJECTED").length;
-          const gPending = group.items.length - gApproved - gRejected;
-          const hint = [
-            gApproved > 0 ? `${gApproved} approved` : null,
-            gRejected > 0 ? `${gRejected} rejected` : null,
-            gPending > 0 ? `${gPending} pending` : null,
-          ]
-            .filter(Boolean)
-            .join(" · ");
-          return (
-            <DocTypeAccordion
-              key={group.docType}
-              label={group.label}
-              count={group.items.length}
-              rightHint={hint}
-            >
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                {group.items.map((o) => (
-                  <OutputReviewCard
-                    key={o.variantKey}
-                    o={o}
-                    styleId={style.id}
-                    styleContext={styleContext}
-                    canPush={canPush}
-                    canEditFields={canEditFields}
-                    styleData={styleData}
-                    fieldValuesByKey={fieldValuesByKey}
-                    lineValuesByKey={lineValuesByKey}
-                    infoArea={infoAreaFor(o)}
-                  />
-                ))}
-              </div>
-            </DocTypeAccordion>
-          );
-        })}
-      </div>
-
-      {missingFieldOutputs.length > 0 ? (
-        <div className="mt-3">
-          <DocTypeAccordion
-            label="Missing fields — could not be generated"
-            count={missingFieldOutputs.length}
-            rightHint={
-              canEditFields
-                ? "fill the values here to generate, or add them on Monday"
-                : "fill the fields on Monday, then they generate automatically"
-            }
-          >
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {missingFieldOutputs.map((o) => (
-                <div
-                  key={o.variantKey}
-                  className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4"
-                >
-                  <div className="text-sm font-semibold text-amber-900">{o.name}</div>
-                  {canEditFields ? (
-                    <>
-                      <p className="mt-1 text-xs leading-relaxed text-amber-800">
-                        Couldn&apos;t generate — missing data. Fill it in and it&apos;ll render:
-                      </p>
-                      <div className="mt-2">
-                        <OutputFieldEditor
-                          styleId={style.id}
-                          variantKey={o.variantKey}
-                          outputName={o.name}
-                          submitLabel="Save & generate"
-                          fields={o.missing.filter((m) => isPinnableField(m.field)).map((m) => m.field)}
-                          locked={o.missing.filter((m) => !isPinnableField(m.field))}
-                          overrides={fieldValuesByKey.get(o.variantKey) ?? {}}
-                          mondayHref={mondayHref ?? undefined}
-                        />
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <p className="mt-1 text-xs leading-relaxed text-amber-800">
-                        Missing fields, output could not be generated. Please fill these in{" "}
-                        {mondayHref ? (
-                          <a
-                            href={mondayHref}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-medium underline"
-                          >
-                            Monday
-                          </a>
-                        ) : (
-                          "Monday"
-                        )}
-                        :
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {o.missing.map((m) => (
-                          <span
-                            key={m.field}
-                            className="rounded-md border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-medium text-amber-800"
-                          >
-                            {m.label}
-                          </span>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
+          {/* The shared Output Readiness Notice, folded to its pill: source /
+              PO / SharePoint → spec → fields → generation → review. */}
+          <details className="group mt-2" {...(pipelineBlocked ? { open: true } : {})}>
+            <summary className="text-muted hover:text-ink inline-flex cursor-pointer list-none items-center gap-1.5 text-[12px] [&::-webkit-details-marker]:hidden">
+              <ChevronRight size={13} aria-hidden="true" className="transition-transform group-open:rotate-90" />
+              Pipeline
+              <ReadinessPill notice={notice} />
+            </summary>
+            <div className="mt-3 max-w-3xl">
+              <OutputReadinessNotice notice={notice} role={viewerRole} hrefs={readinessHrefs} />
             </div>
-          </DocTypeAccordion>
-        </div>
-      ) : null}
+          </details>
+        </PageHeader>
+      </div>
 
-      {history.length > 0 ? (
-        <div className="mt-3">
-          <DocTypeAccordion
-            label="Earlier generations"
-            count={history.length}
-            rightHint="decided in a previous run — kept for reference"
-            defaultOpen={false}
-          >
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {history.map((o) => (
-                <OutputReviewCard
-                  key={o.variantKey}
-                  o={o}
-                  styleId={style.id}
-                  styleContext={styleContext}
-                  canPush={canPush}
-                />
-              ))}
-            </div>
-          </DocTypeAccordion>
-        </div>
-      ) : null}
-
-      {excludedOutputs.length > 0 ? (
-        <div className="mt-3">
-          <DocTypeAccordion
-            label="Excluded / ignored — won't be generated"
-            count={excludedOutputs.length}
-            rightHint="skipped by a doc-type rule, or ignored for this style"
-            defaultOpen={false}
-          >
-            <ul className="divide-y divide-zinc-100 text-sm">
-              {excludedOutputs.map((o) => (
-                <li key={o.variantKey} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                  <span className="font-medium text-zinc-700">{o.name}</span>
-                  <span className="flex items-center gap-2 text-xs">
-                    {o.exclusionReason ? (
-                      <span className={o.ignored ? "text-zinc-500" : "text-amber-700"}>
-                        {o.exclusionReason}
-                      </span>
-                    ) : null}
-                    {o.ignored ? (
-                      <>
-                        <span className="rounded-full border border-zinc-300 bg-zinc-100 px-2 py-0.5 font-semibold text-zinc-600">
-                          ⊘ Ignored
-                        </span>
-                        <UndoIgnoreButton
-                          styleId={style.id}
-                          variantKey={o.variantKey.split("#")[0]}
-                        />
-                      </>
-                    ) : (
-                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">
-                        Excluded
-                      </span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </DocTypeAccordion>
-        </div>
-      ) : null}
-
-      {/* The documents this app does NOT produce.
-          A reviewer deciding on a style asks one question — is everything here?
-          — and the generated grid above only answers half of it. The lines the
-          buyer named on the order but nobody generated are answered here, and
-          they are just as much a reason to hold an approval. Same panel as the
-          style page's Review tab, deliberately: two renderings of "what is
-          still missing" would drift, and the one a reviewer trusted would be
-          whichever they happened to open. */}
-      <section className="mt-8">
-        <h2 className="mb-2 text-sm font-semibold text-zinc-700">Manually supplied packaging</h2>
-        <ManualTrimsPanel styleId={style.id} />
-      </section>
+      <ReviewWorkspace
+        styleId={style.id}
+        styleContext={styleContext}
+        canPush={canPush}
+        items={items}
+        panels={panels}
+        tools={tools}
+        collapsedGroups={[HISTORY_GROUP, EXCLUDED_GROUP]}
+        progress={{ decided, total: reviewable.length }}
+      />
     </div>
   );
+}
+
+// Where an output stands, as the list and its pill say it.
+function proofStatus(o: CurrentOutput, thread: ThreadView | null): { tone: PillTone; label: string } {
+  if (o.reviewStatus === "APPROVED") return { tone: "good", label: "Approved" };
+  if (thread?.status === "FIXED") return { tone: "accent", label: "Fixed, check again" };
+  if (o.reviewStatus === "REJECTED") return { tone: "bad", label: "Changes requested" };
+  if (o.placeholderCount > 0) return { tone: "warn", label: "Blocked by placeholders" };
+  return { tone: "neutral", label: "To review" };
+}
+
+function proofItem(o: CurrentOutput, group: string, thread: ThreadView | null, past: ThreadView[]): ProofItem {
+  const baseKey = baseVariantKey(o.variantKey);
+  const variant = getVariant(baseKey);
+  const status = proofStatus(o, thread);
+  return {
+    kind: "proof",
+    key: o.variantKey,
+    anchor: outputAnchor(o.variantKey),
+    name: o.name,
+    group,
+    tone: status.tone,
+    statusLabel: status.label,
+    assetId: o.jobAssetId as string,
+    fileName: o.fileName,
+    status: o.reviewStatus ?? "PENDING_REVIEW",
+    reviewedAtIso: o.reviewedAt?.toISOString() ?? null,
+    placeholderCount: o.placeholderCount,
+    // `v` isn't read by the route — it changes when the asset's bytes are
+    // rewritten in place (a cover rebuilt after an approval), so the iframe
+    // reloads on router.refresh() instead of keeping the page it already shows.
+    previewUrl: `/api/admin/jobs/${o.jobId}/preview?variantKey=${encodeURIComponent(o.variantKey)}${o.assetVersion ? `&v=${o.assetVersion}` : ""}`,
+    // Framing pages (cover / general info) regenerate every run — not ignorable.
+    canIgnore: baseKey !== COVER_VARIANT_KEY && baseKey !== GENERAL_INFO_VARIANT_KEY,
+    chips: [variant?.cartonNumbering ? "X of Y" : null, variant?.multipleStyles ? "Multi-style" : null].filter(
+      (c): c is string => c !== null,
+    ),
+    thread,
+    pastThreads: past,
+  };
 }
 
 // The StyleData ONE document renders from: the per-row style for a multi-doc
@@ -640,8 +662,8 @@ function outputLineEditorProps(
   };
 }
 
-// Props for the in-card info-area print-size picker — null on non-info-area
-// outputs, on history cards, and for viewers without the review role.
+// Props for the info-area print-size picker — null on non-info-area outputs,
+// on earlier-generation proofs, and for viewers without the review role.
 type InfoAreaProps = {
   prodSpecId: string;
   variantKey: string;
@@ -652,227 +674,186 @@ type InfoAreaProps = {
   heightMm: number;
 };
 
-// One reviewable output card — preview + identity header + decision footer.
-// Shared by the current-generation groups and the "Earlier generations"
-// history accordion so a prior-run decision renders identically (and stays
-// re-reviewable) without duplicating ~120 lines of markup.
-function OutputReviewCard({
+// What a reviewer can change on one output without leaving the review: the
+// carton set, the info-area print size, any printed line, or a re-run of just
+// this output. Folded under the decision ("Change it yourself").
+function OutputTools({
   o,
   styleId,
-  styleContext,
-  canPush,
-  canEditFields = false,
-  styleData = null,
+  canEditFields,
+  styleData,
   fieldValuesByKey,
   lineValuesByKey,
-  infoArea = null,
+  infoArea,
 }: {
   o: CurrentOutput;
   styleId: string;
-  styleContext: string;
-  canPush: boolean;
-  // Reviewer may override this output's fields inline (ADMIN/REVIEWER). The
-  // "Earlier generations" cards leave this off — they're reference-only.
-  canEditFields?: boolean;
-  // Info-area outputs: the in-card print-size picker (absent on history cards).
-  infoArea?: InfoAreaProps | null;
-  // StyleData for pre-filling the editor with resolved values; the full
-  // per-(style×output) override map (base + per-PDF keys). Both absent on the
-  // history cards.
-  styleData?: StyleData | null;
-  fieldValuesByKey?: ReadonlyMap<string, Record<string, string>>;
-  // Reviewer line rewrites, base + per-document keys (absent on history cards).
-  lineValuesByKey?: ReadonlyMap<string, Record<string, string>>;
+  canEditFields: boolean;
+  styleData: StyleData | null;
+  fieldValuesByKey: ReadonlyMap<string, Record<string, string>>;
+  lineValuesByKey: ReadonlyMap<string, Record<string, string>>;
+  infoArea: InfoAreaProps | null;
 }) {
-  // `v` isn't read by the route — it changes when the asset's bytes are
-  // rewritten in place (a cover rebuilt after an approval), so the iframe
-  // reloads on router.refresh() instead of keeping the page it already shows.
-  const previewUrl = `/api/admin/jobs/${o.jobId}/preview?variantKey=${encodeURIComponent(o.variantKey)}${o.assetVersion ? `&v=${o.assetVersion}` : ""}`;
+  const baseKey = baseVariantKey(o.variantKey);
   // Carton-capable outputs (numbering / multi-style) get an in-review Customize
   // action — regenerate the set in place and re-review it. Capability + print
   // dims come from the layout variant; the registry is already loaded by
   // getCurrentOutputsForStyle, so getVariant resolves here.
-  const baseKey = o.variantKey.split("#")[0];
   const variant = getVariant(baseKey);
   const cartonCapable = Boolean(variant && (variant.cartonNumbering || variant.multipleStyles));
-  // Framing pages (cover / general info) regenerate every run — not ignorable.
-  const canIgnore = baseKey !== COVER_VARIANT_KEY && baseKey !== GENERAL_INFO_VARIANT_KEY;
-  const dotClass =
-    o.reviewStatus === "APPROVED"
-      ? "bg-emerald-500"
-      : o.reviewStatus === "REJECTED"
-        ? "bg-red-500"
-        : "bg-zinc-300";
+  const framing = baseKey === COVER_VARIANT_KEY || baseKey === GENERAL_INFO_VARIANT_KEY;
   return (
-    <div
-      id={outputAnchor(o.variantKey)}
-      data-section="Output card"
-      className="flex flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white scroll-mt-4"
-    >
-      {/* Header — identity only: status dot + name + file + capability chips,
-          with Open as a quiet corner icon. Every decision lives in the footer
-          bar below the preview, so nothing competes with the title for width. */}
-      <div className="flex items-start gap-2.5 border-b border-zinc-100 bg-zinc-50 px-3 py-2.5">
-        <span
-          aria-hidden="true"
-          className={`mt-1 inline-block h-2 w-2 flex-shrink-0 rounded-full ${dotClass}`}
-        />
-        <div className="min-w-0 flex-1">
-          <div
-            className="line-clamp-2 text-sm font-semibold leading-snug text-zinc-800"
-            title={o.name}
-          >
-            {o.name}
-          </div>
-          {o.fileName ? (
-            <div className="mt-0.5 truncate font-mono text-[10px] text-zinc-500">{o.fileName}</div>
-          ) : null}
-          {variant && (variant.cartonNumbering || variant.multipleStyles) ? (
-            <div className="mt-1.5 flex flex-wrap gap-1">
-              {variant.cartonNumbering ? (
-                <span
-                  title="Carton numbering — print a numbered set (X of Y)"
-                  className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700"
-                >
-                  X of Y
-                </span>
-              ) : null}
-              {variant.multipleStyles ? (
-                <span
-                  title="Multiple styles — place other same-PO styles on the box"
-                  className="rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-700"
-                >
-                  Multi-style
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-        <a
-          href={previewUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          title="Open the full PDF in a new tab"
-          aria-label="Open the full PDF in a new tab"
-          className="flex-shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-200/70 hover:text-zinc-600"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-4 w-4"
-            aria-hidden="true"
-          >
-            <path d="M15 3h6v6" />
-            <path d="M10 14 21 3" />
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-          </svg>
-        </a>
-      </div>
-      {o.reviewStatus === "REJECTED" && o.rejectReason ? (
-        <div className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs text-red-800">
-          <span className="font-semibold">Rejected:</span> {o.rejectReason}{" "}
-          <Link href="/settings/rejection-log" className="text-red-700 underline">
-            view ticket →
-          </Link>
-        </div>
-      ) : null}
-      {o.placeholderCount > 0 ? (
-        <div className="border-b border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          ⚠ {o.placeholderCount} placeholder{o.placeholderCount === 1 ? "" : "s"} in this PDF —
-          approval is blocked until the data is fixed and the output re-run.
-        </div>
-      ) : null}
-      <iframe src={previewUrl} className="block h-[600px] w-full bg-white" title={o.name} />
-      {/* Footer action bar — Open is in the header; decisions, status and
-          Customize all live here on their own rows. */}
-      <AssetActions
-        assetId={o.jobAssetId as string}
-        styleId={styleId}
-        reviewStatus={o.reviewStatus ?? "PENDING_REVIEW"}
-        rejectReason={o.rejectReason}
-        placeholderCount={o.placeholderCount}
-        outputTitle={o.name}
-        styleContext={styleContext}
-        canPush={canPush}
-        canIgnore={canIgnore}
-        customizeSlot={
-          cartonCapable && variant ? (
-            <ReviewCartonCustomize
-              styleId={styleId}
-              variantKey={baseKey}
-              name={o.name}
-              widthMm={variant.defaultWidthMm}
-              heightMm={variant.defaultHeightMm}
-              cartonNumbering={variant.cartonNumbering ?? false}
-              multipleStyles={variant.multipleStyles ?? false}
-            />
-          ) : null
-        }
-      />
-      {/* Info-area print size — pick where reviewers operate; saving re-runs
-          this output so the proof above shows the chosen size (including the
-          "barcode won't scan at this size" chip when it can't fit). */}
-      {infoArea ? (
-        <ReviewInfoAreaSizePicker
-          styleId={styleId}
-          prodSpecId={infoArea.prodSpecId}
-          variantKey={infoArea.variantKey}
-          sizes={infoArea.sizes}
-          currentSizeId={infoArea.currentSizeId}
-          currentSizeName={infoArea.currentSizeName}
-          widthMm={infoArea.widthMm}
-          heightMm={infoArea.heightMm}
-          ready={o.missing.length === 0}
-        />
-      ) : null}
-      {/* Single-output re-run (WS8) — change the data (wash-care, care label)
-          then re-run just this output without touching the rest of the review.
-          A scoped re-run regenerates even an approved output (explicit intent),
-          so it comes back for a fresh decision. */}
-      <div className="flex items-center justify-between gap-2 border-t border-zinc-100 px-3 py-2">
-        <span className="text-[11px] text-zinc-400">Changed the data? Re-run just this output.</span>
-        <RunOutputButton
-          styleId={styleId}
-          variantKey={baseKey}
-          ready={o.missing.length === 0}
-          missingLabels={o.missing.map((m) => m.label)}
-          label="Re-run this output"
-        />
-      </div>
+    <>
       {/* Document editor — opens the side-by-side dialog: every line this
           document prints on the left, a live render on the right. Keyed by
           o.variantKey, so a single PDF of a repeat-per-EAN output is edited on
           its own by default (the dialog offers "apply to every PDF"). Framing
           pages (cover / general info) carry no editable lines. */}
-      {canEditFields && canIgnore
+      {canEditFields && !framing
         ? (() => {
-            const { lines, isMultiDoc } = outputLineEditorProps(
-              o.variantKey,
-              styleData,
-              fieldValuesByKey ?? new Map(),
-              lineValuesByKey ?? new Map(),
-            );
+            const { lines, isMultiDoc } = outputLineEditorProps(o.variantKey, styleData, fieldValuesByKey, lineValuesByKey);
             return (
-              <div className="border-t border-zinc-100 px-3 py-2">
-                <OutputEditDialog
-                  styleId={styleId}
-                  variantKey={o.variantKey}
-                  baseKey={baseKey}
-                  outputName={o.name}
-                  lines={lines}
-                  isMultiDoc={isMultiDoc}
-                  widthMm={infoArea?.widthMm ?? variant?.defaultWidthMm ?? 100}
-                  heightMm={infoArea?.heightMm ?? variant?.defaultHeightMm ?? 100}
-                />
-              </div>
+              <OutputEditDialog
+                styleId={styleId}
+                variantKey={o.variantKey}
+                baseKey={baseKey}
+                outputName={o.name}
+                lines={lines}
+                isMultiDoc={isMultiDoc}
+                widthMm={infoArea?.widthMm ?? variant?.defaultWidthMm ?? 100}
+                heightMm={infoArea?.heightMm ?? variant?.defaultHeightMm ?? 100}
+              />
             );
           })()
         : null}
-    </div>
+      {/* Info-area print size — saving re-runs this output so the proof shows
+          the chosen size (including the "barcode won't scan at this size" chip
+          when it can't fit). */}
+      {infoArea ? (
+        <div className="border-line rounded-md border [&>div]:border-t-0">
+          <ReviewInfoAreaSizePicker
+            styleId={styleId}
+            prodSpecId={infoArea.prodSpecId}
+            variantKey={infoArea.variantKey}
+            sizes={infoArea.sizes}
+            currentSizeId={infoArea.currentSizeId}
+            currentSizeName={infoArea.currentSizeName}
+            widthMm={infoArea.widthMm}
+            heightMm={infoArea.heightMm}
+            ready={o.missing.length === 0}
+          />
+        </div>
+      ) : null}
+      {cartonCapable && variant ? (
+        <div>
+          <ReviewCartonCustomize
+            styleId={styleId}
+            variantKey={baseKey}
+            name={o.name}
+            widthMm={variant.defaultWidthMm}
+            heightMm={variant.defaultHeightMm}
+            cartonNumbering={variant.cartonNumbering ?? false}
+            multipleStyles={variant.multipleStyles ?? false}
+          />
+        </div>
+      ) : null}
+      {/* Single-output re-run (WS8) — change the data (wash-care, care label)
+          then re-run just this output without touching the rest of the review.
+          A scoped re-run regenerates even an approved output (explicit intent),
+          so it comes back for a fresh decision. */}
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-muted text-[12px]">Changed the data? Re-run just this output.</span>
+        <RunOutputButton
+          styleId={styleId}
+          variantKey={baseKey}
+          ready={o.missing.length === 0}
+          missingLabels={o.missing.map((m) => m.label)}
+          label="Re-run"
+        />
+      </div>
+    </>
+  );
+}
+
+// An output that couldn't generate because required fields are blank: fill
+// them here (reviewers) or on Monday.
+function MissingDataPanel({
+  o,
+  styleId,
+  canEditFields,
+  overrides,
+  mondayHref,
+}: {
+  o: CurrentOutput;
+  styleId: string;
+  canEditFields: boolean;
+  overrides: Record<string, string>;
+  mondayHref?: string;
+}) {
+  return (
+    <section>
+      <h2 className="text-ink text-[14px] font-semibold">{o.name}</h2>
+      {canEditFields ? (
+        <>
+          <p className="text-muted mt-1 mb-4 text-[13px]">
+            Couldn&apos;t generate, some data is missing. Fill it in and it&apos;ll render.
+          </p>
+          <div className="border-line bg-surface rounded-lg border p-4">
+            <OutputFieldEditor
+              styleId={styleId}
+              variantKey={o.variantKey}
+              outputName={o.name}
+              submitLabel="Save & generate"
+              fields={o.missing.filter((m) => isPinnableField(m.field)).map((m) => m.field)}
+              locked={o.missing.filter((m) => !isPinnableField(m.field))}
+              overrides={overrides}
+              mondayHref={mondayHref}
+            />
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-muted mt-1 mb-3 text-[13px]">
+            Missing fields, so this output couldn&apos;t be generated. Fill these in on{" "}
+            {mondayHref ? (
+              <a href={mondayHref} target="_blank" rel="noopener noreferrer" className="text-accent-text underline">
+                Monday
+              </a>
+            ) : (
+              "Monday"
+            )}
+            {" "}and it generates automatically:
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {o.missing.map((m) => (
+              <Pill key={m.field} tone="warn">
+                {m.label}
+              </Pill>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+// An output that won't be generated for this style: skipped by a doc-type
+// rule, or ignored by a reviewer (undoable here).
+function ExcludedPanel({ o, styleId }: { o: CurrentOutput; styleId: string }) {
+  return (
+    <section>
+      <h2 className="text-ink text-[14px] font-semibold">{o.name}</h2>
+      <p className="text-muted mt-1 text-[13px]">
+        {o.ignored
+          ? "Ignored for this style: skipped in generation, the SharePoint upload and the nightly email."
+          : "Excluded by a document-type rule, so it won't be generated for this style."}
+      </p>
+      {o.exclusionReason ? <p className="text-ink mt-3 text-[13px]">{o.exclusionReason}</p> : null}
+      {o.ignored ? (
+        <div className="mt-4">
+          <UndoIgnoreButton styleId={styleId} variantKey={o.variantKey.split("#")[0]} />
+        </div>
+      ) : null}
+    </section>
   );
 }
