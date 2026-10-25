@@ -8,12 +8,19 @@
 // down. Never personal data, free text (a reject comment), style/PO numbers or
 // anything else that identifies a person or an order.
 //
+// Every event also carries the signed-in user's `role`: analyticsOS keeps
+// identify traits on the identify event only, so without it no other event
+// could be split by role.
+//
+// One event per OUTPUT (or pushed file), bulk included: a widget counts events
+// and can't sum a prop, so a single "approved 12" event would read as 1.
+//
 // The events, so the names stay consistent:
-//   output_approved / output_rejected / output_ignored  { scope, count }
+//   output_approved / output_rejected / output_ignored  { scope }  one per output
 //   review_completed       { outcome }  the decision that settled the job
-//   supplier_files_pushed  { scope, count }
+//   supplier_files_pushed  { scope }  one per file
 //   output_lines_edited    { lines, all_documents }
-//   outputs_regenerated    { scope, count }
+//   outputs_regenerated    { scope, count }  one per run
 //   bulk_run_started       { mode, styles }
 
 declare global {
@@ -32,9 +39,28 @@ export type AnalyticsEvent =
   | "outputs_regenerated"
   | "bulk_run_started";
 
-export function track(name: AnalyticsEvent, props?: Record<string, string | number | boolean>) {
+type Props = Record<string, string | number | boolean>;
+
+let currentRole: string | null = null;
+
+// Called by AnalyticsIdentify (admin layout) — internal user id + role only,
+// never the email or name.
+export function identifyUser(userId: string, role: string | null) {
+  currentRole = role ?? "NONE";
   if (typeof window === "undefined") return;
-  window.aos?.("track", name, props);
+  window.aos?.("identify", userId, { role: currentRole });
+}
+
+// Sign-out: the next person on this browser starts as a new visitor.
+export function resetUser() {
+  currentRole = null;
+  if (typeof window === "undefined") return;
+  window.aos?.("reset");
+}
+
+export function track(name: AnalyticsEvent, props?: Props) {
+  if (typeof window === "undefined") return;
+  window.aos?.("track", name, currentRole ? { role: currentRole, ...props } : props);
 }
 
 // The job-settling decision: the per-asset approve / reject / ignore routes

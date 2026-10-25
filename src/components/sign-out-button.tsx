@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
+import { resetUser } from "@/lib/analytics";
 
 export function SignOutButton() {
   const router = useRouter();
@@ -12,7 +13,7 @@ export function SignOutButton() {
         await authClient.signOut();
         // Forget the analyticsOS user so the next person on this browser
         // starts as a new visitor (see AnalyticsIdentify).
-        window.aos?.("reset");
+        resetUser();
         router.push("/login");
         router.refresh();
       }}
