@@ -81,7 +81,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             {/* The bell is Monday-import status — an admin surface. */}
             {isAdmin && <NotificationBell />}
           </div>
-          <nav className="mt-8 flex flex-col gap-1">
+          {/* Named too: analyticsOS labels a click by its CLOSEST section, and a
+              bare <nav> would win over the aside's name ("nav"). */}
+          <nav data-section="Sidebar" className="mt-8 flex flex-col gap-1">
             {/* Badge-carrying client link — kept out of NAV so the static
                 entries stay a plain server-rendered map. */}
             {followThrough && (

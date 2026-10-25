@@ -43,7 +43,7 @@ export function SupplierPushActions({
         return;
       }
       const n = body.pushed?.length ?? 0;
-      track("supplier_files_pushed", { scope: "style", count: n });
+      for (let i = 0; i < n; i++) track("supplier_files_pushed", { scope: "style" });
       setNote(`Pushed ${n} output${n === 1 ? "" : "s"} to ${body.folderName ?? "the supplier folder"}`);
       setFolderUrl(body.targetFolderUrl ?? null);
       router.refresh();
