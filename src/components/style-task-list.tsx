@@ -79,7 +79,7 @@ function StyleTaskAction({ t, startedContext }: { t: ReviewTask; startedContext:
   return (
     <Link
       href={`/styles/${t.styleId}/review`}
-      className={buttonClass(t.decided > 0 || startedContext ? "primary" : "secondary", "sm")}
+      className={buttonClass(t.decided > 0 ? "primary" : "secondary", "sm")}
     >
       {t.decided > 0 ? "Finish review" : startedContext ? "Continue review" : "Start review"}
     </Link>

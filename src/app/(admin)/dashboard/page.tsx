@@ -202,7 +202,7 @@ export default async function DashboardPage() {
               count={work.mine.length}
               desc="You decided some documents but not all. Nothing goes to the supplier until every document is decided."
             >
-              <StyleTaskList tasks={work.mine} activityPrefix="" comments={comments} />
+              <StyleTaskList tasks={work.mine} activityPrefix="" comments={comments} startedContext />
             </Section>
           ) : null}
 

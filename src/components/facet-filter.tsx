@@ -92,14 +92,14 @@ export function FacetFilter({
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+        className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium transition-colors ${
           count > 0
-            ? "border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800"
-            : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
+            ? "border-accent bg-accent-soft text-accent-text"
+            : "border-line bg-surface text-ink hover:bg-subtle"
         }`}
       >
         {label}
-        {count > 0 && <span className="tabular-nums text-zinc-300">· {count}</span>}
+        {count > 0 && <span className="tabular-nums opacity-80">· {count}</span>}
         <svg
           className="h-3.5 w-3.5 opacity-70"
           viewBox="0 0 20 20"
@@ -113,24 +113,24 @@ export function FacetFilter({
       {open && (
         <div
           ref={popoverRef}
-          className={`absolute left-0 z-50 mt-1 overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg ${
+          className={`border-line bg-surface absolute left-0 z-50 mt-1 overflow-hidden rounded-lg border shadow-[var(--shadow-pop)] ${
             wide ? "w-96" : "w-64"
           }`}
           role="listbox"
         >
           {showSearch && (
-            <div className="border-b border-zinc-100 px-2 py-1.5">
+            <div className="border-line border-b px-2 py-1.5">
               <input
                 ref={inputRef}
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={`Search ${label.toLowerCase()}…`}
-                className="w-full rounded-sm bg-zinc-50 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-300"
+                className="bg-subtle text-ink placeholder:text-faint w-full rounded-md px-2 py-1 text-[13px] outline-none"
               />
             </div>
           )}
-          <div className="flex items-center justify-between px-3 py-1.5 text-[11px] text-zinc-500">
+          <div className="text-muted flex items-center justify-between px-3 py-1.5 text-[11px]">
             <span className="tabular-nums">{count} selected</span>
             <div className="flex gap-2">
               <button
@@ -151,12 +151,12 @@ export function FacetFilter({
             </div>
           </div>
           <ul
-            className={`overflow-y-auto border-t border-zinc-100 py-1 ${
+            className={`border-line overflow-y-auto border-t py-1 ${
               wrapOptions ? "max-h-[28rem]" : "max-h-60"
             }`}
           >
             {filtered.length === 0 ? (
-              <li className="px-3 py-2 text-xs text-zinc-500">No matches</li>
+              <li className="text-muted px-3 py-2 text-[12px]">No matches</li>
             ) : (
               filtered.map((o) => (
                 <OptionRow
@@ -223,14 +223,14 @@ function OptionRow({
         onClick={onToggle}
         onMouseEnter={onEnter}
         onMouseLeave={onLeave}
-        className={`flex w-full gap-2 px-3 py-1.5 text-left text-sm text-zinc-800 hover:bg-zinc-50 ${
+        className={`text-ink hover:bg-subtle flex w-full gap-2 px-3 py-1.5 text-left text-[13px] ${
           wrap ? "items-start" : "items-center"
         }`}
       >
         <span
           className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-sm border ${
             wrap ? "mt-0.5" : ""
-          } ${checked ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-300"}`}
+          } ${checked ? "border-primary bg-primary text-primary-ink" : "border-line"}`}
           aria-hidden="true"
         >
           {checked && (
@@ -252,7 +252,7 @@ function OptionRow({
         ) : (
           <span className="min-w-0 flex-1 truncate">{option.label}</span>
         )}
-        <span className="flex-shrink-0 tabular-nums text-xs text-zinc-400">{option.count}</span>
+        <span className="text-faint flex-shrink-0 text-[12px] tabular-nums">{option.count}</span>
       </button>
     </li>
   );
