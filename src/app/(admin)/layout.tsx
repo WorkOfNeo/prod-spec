@@ -4,6 +4,7 @@ import { getSessionWithRole } from "@/lib/auth-server";
 import { SIGN_IN_AGAIN } from "@/lib/auth-paths";
 import { reviewFollowThroughEnabled } from "@/lib/review-flow/flags";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
+import { devDataLoaderEnabled } from "@/lib/dev-data/flags";
 import { NavigationGuardProvider } from "@/components/navigation-guard";
 import { SignOutButton } from "@/components/sign-out-button";
 import { MyTasksLink } from "@/components/sidebar/my-tasks-link";
@@ -23,7 +24,7 @@ import { AnalyticsIdentify } from "@/components/analytics-identify";
 //
 // An entry with `flag` only shows while that feature flag is on — a flagged-off
 // feature has no nav entry at all (its pages 404 too).
-const NAV: Array<{ href?: string; label?: string; divider?: true; flag?: "changeRequests" }> = [
+const NAV: Array<{ href?: string; label?: string; divider?: true; flag?: "changeRequests" | "devData" }> = [
   { href: "/styles", label: "Styles" },
   // Delivery is keyed on the PURCHASE ORDER, not the style — the only view in
   // which a style with nothing uploaded is visible. It gates on canReview, so
@@ -42,6 +43,9 @@ const NAV: Array<{ href?: string; label?: string; divider?: true; flag?: "change
   { href: "/jobs", label: "Jobs" },
   { href: "/automation", label: "Automation" },
   { href: "/admin", label: "Admin" },
+  // Dev data: load production POs into a development environment's own
+  // database. Only where DEV_DATA_LOADER=true — production never shows it.
+  { href: "/dev-data", label: "Dev data", flag: "devData" },
   { divider: true },
   { href: "/prod-specs", label: "Prod specs" },
   { href: "/output-builder", label: "Output builder" },
@@ -56,7 +60,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const isAdmin = role === "ADMIN";
   // Kill switch for the test-phase review machinery (My tasks + badge).
   const followThrough = reviewFollowThroughEnabled();
-  const flags = { changeRequests: changeRequestsEnabled() };
+  const flags = { changeRequests: changeRequestsEnabled(), devData: devDataLoaderEnabled() };
   const nav = NAV.filter((item) => !item.flag || flags[item.flag]);
 
   return (
