@@ -468,19 +468,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
     tone: "neutral",
     statusLabel: "",
   });
-  panels[MANUAL_KEY] = (
-    <section>
-      <h2 className="text-ink text-[14px] font-semibold">Manually supplied packaging</h2>
-      <p className="text-muted mt-1 mb-4 text-[13px]">
-        Packaging the buyer named on the order that this app doesn&rsquo;t generate.
-      </p>
-      <ManualTrimsPanel styleId={style.id} />
-    </section>
-  );
-
-  // The pipeline ladder starts open when something in it is blocked, so a
-  // reviewer sees why before deciding.
-  const pipelineBlocked = notice.steps.some((s) => s.tone === "red");
+  panels[MANUAL_KEY] = <ManualTrimsPanel styleId={style.id} />;
 
   return (
     <div className="flex flex-col xl:h-[calc(100dvh-3rem)] xl:overflow-hidden">
@@ -546,14 +534,15 @@ export default async function ReviewPage({ params }: { params: Promise<{ id: str
             />
           ) : null}
           {/* The shared Output Readiness Notice, folded to its pill: source /
-              PO / SharePoint → spec → fields → generation → review. */}
-          <details className="group mt-2" {...(pipelineBlocked ? { open: true } : {})}>
+              PO / SharePoint → spec → fields → generation → review. It opens
+              over the page, so the proof below never moves. */}
+          <details className="group relative mt-2">
             <summary className="text-muted hover:text-ink inline-flex cursor-pointer list-none items-center gap-1.5 text-[12px] [&::-webkit-details-marker]:hidden">
               <ChevronRight size={13} aria-hidden="true" className="transition-transform group-open:rotate-90" />
               Pipeline
               <ReadinessPill notice={notice} />
             </summary>
-            <div className="mt-3 max-w-3xl">
+            <div className="reveal absolute top-full left-0 z-40 mt-2 max-h-[70vh] w-[min(720px,calc(100vw-2rem))] overflow-y-auto rounded-xl shadow-[var(--shadow-pop)]">
               <OutputReadinessNotice notice={notice} role={viewerRole} hrefs={readinessHrefs} />
             </div>
           </details>
@@ -792,10 +781,9 @@ function MissingDataPanel({
 }) {
   return (
     <section>
-      <h2 className="text-ink text-[14px] font-semibold">{o.name}</h2>
       {canEditFields ? (
         <>
-          <p className="text-muted mt-1 mb-4 text-[13px]">
+          <p className="text-muted mb-4 text-[13px]">
             Couldn&apos;t generate, some data is missing. Fill it in and it&apos;ll render.
           </p>
           <div className="border-line bg-surface rounded-lg border p-4">
@@ -813,7 +801,7 @@ function MissingDataPanel({
         </>
       ) : (
         <>
-          <p className="text-muted mt-1 mb-3 text-[13px]">
+          <p className="text-muted mb-3 text-[13px]">
             Missing fields, so this output couldn&apos;t be generated. Fill these in on{" "}
             {mondayHref ? (
               <a href={mondayHref} target="_blank" rel="noopener noreferrer" className="text-accent-text underline">
@@ -842,8 +830,7 @@ function MissingDataPanel({
 function ExcludedPanel({ o, styleId }: { o: CurrentOutput; styleId: string }) {
   return (
     <section>
-      <h2 className="text-ink text-[14px] font-semibold">{o.name}</h2>
-      <p className="text-muted mt-1 text-[13px]">
+      <p className="text-muted text-[13px]">
         {o.ignored
           ? "Ignored for this style: skipped in generation, the SharePoint upload and the nightly email."
           : "Excluded by a document-type rule, so it won't be generated for this style."}

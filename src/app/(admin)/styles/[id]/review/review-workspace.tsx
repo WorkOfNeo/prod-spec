@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, ExternalLink, MessageSquare, Wrench } from "lucide-react";
 import { buttonClass } from "@/components/ui/button";
 import { Pill, StatusDot } from "@/components/ui/pill";
@@ -48,6 +48,7 @@ export function ReviewWorkspace({
 }) {
   const [selectedKey, setSelectedKey] = useState<string | null>(() => firstWaiting(items)?.key ?? null);
   const [folded, setFolded] = useState<Set<string>>(() => new Set(collapsedGroups));
+  const proofRef = useRef<HTMLElement>(null);
 
   // A deep link (#output-…) picks its output once the page is in the browser.
   useEffect(() => {
@@ -73,7 +74,7 @@ export function ReviewWorkspace({
   const proofs = useMemo(() => items.filter((i): i is ProofItem => i.kind === "proof"), [items]);
   const proofIndex = selected?.kind === "proof" ? proofs.findIndex((p) => p.key === selected.key) : -1;
 
-  function select(item: ReviewItem) {
+  function select(item: ReviewItem, reveal = false) {
     setSelectedKey(item.key);
     setFolded((prev) => {
       if (!prev.has(item.group)) return prev;
@@ -85,6 +86,10 @@ export function ReviewWorkspace({
       window.history.replaceState(window.history.state, "", `#${item.anchor}`);
     } catch {
       // Some embedded browsers refuse; the selection still works.
+    }
+    // Stacked (narrow) layout: the proof is below the list, so bring it up.
+    if (reveal && window.matchMedia("(max-width: 1023px)").matches) {
+      proofRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }
 
@@ -161,7 +166,7 @@ export function ReviewWorkspace({
                         <li key={item.key}>
                           <button
                             type="button"
-                            onClick={() => select(item)}
+                            onClick={() => select(item, true)}
                             aria-current={active ? "true" : undefined}
                             className={`flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 ${
                               active ? "bg-active" : "hover:bg-subtle"
@@ -198,7 +203,7 @@ export function ReviewWorkspace({
       </nav>
 
       {/* The proof (or the panel for a non-proof item). */}
-      <section aria-label="Proof" className="bg-canvas flex min-w-0 flex-col xl:min-h-0">
+      <section ref={proofRef} aria-label="Proof" className="bg-canvas flex min-w-0 scroll-mt-12 flex-col xl:min-h-0">
         {selected ? (
           <>
             <div className="border-line bg-surface flex h-11 shrink-0 items-center gap-2 border-b px-3">
@@ -228,11 +233,13 @@ export function ReviewWorkspace({
                   <span aria-hidden="true" className="bg-line h-4 w-px shrink-0" />
                 </>
               ) : null}
-              <span className="text-ink min-w-0 truncate text-[13px] font-medium" title={selected.name}>
+              <span className="text-ink max-w-[55%] min-w-0 shrink-0 truncate text-[13px] font-medium" title={selected.name}>
                 {selected.name}
               </span>
               {selected.kind === "proof" && selected.fileName ? (
-                <span className="text-muted hidden min-w-0 truncate font-mono text-[11px] md:inline">{selected.fileName}</span>
+                <span className="text-muted hidden min-w-0 truncate font-mono text-[11px] md:inline" title={selected.fileName}>
+                  {selected.fileName}
+                </span>
               ) : null}
               {selected.kind === "proof"
                 ? selected.chips.map((c) => (
