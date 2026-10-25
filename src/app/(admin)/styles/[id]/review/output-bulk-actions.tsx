@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { RejectModal } from "./reject-modal";
 import { IgnoreConfirmModal } from "./ignore-confirm-modal";
+import { track, trackSettled } from "@/lib/analytics";
 
 // Per-output bulk shortcuts. Unlike the old job-level buttons, these act on
 // the STYLE's current to-review outputs — which can span multiple generation
@@ -36,16 +37,23 @@ export function OutputBulkActions({
   async function runAll(ids: string[], make: (id: string) => Promise<Response>, label: string) {
     let ok = 0;
     let failed = 0;
+    // The decision that closed the job, if one did (the per-asset routes
+    // answer `settled`) — for the review_completed analytics event.
+    let settled: "APPROVED" | "REJECTED" | undefined;
     for (let i = 0; i < ids.length; i++) {
       setProgress(`${label} ${i + 1}/${ids.length}…`);
       try {
         const res = await make(ids[i]);
-        if (res.ok) ok += 1;
-        else failed += 1;
+        if (res.ok) {
+          ok += 1;
+          const body = (await res.json().catch(() => ({}))) as { settled?: "APPROVED" | "REJECTED" };
+          settled = body.settled ?? settled;
+        } else failed += 1;
       } catch {
         failed += 1;
       }
     }
+    trackSettled(settled);
     return { ok, failed };
   }
 
@@ -58,6 +66,7 @@ export function OutputBulkActions({
         (id) => fetch(`/api/admin/job-assets/${id}/approve`, { method: "POST" }),
         "Approving",
       );
+      if (ok > 0) track("output_approved", { scope: "bulk", count: ok });
       if (failed > 0) setError(`Approved ${ok}, ${failed} failed.`);
       router.refresh();
     } finally {
@@ -80,6 +89,7 @@ export function OutputBulkActions({
           }),
         "Rejecting",
       );
+      if (ok > 0) track("output_rejected", { scope: "bulk", count: ok, images: 0 });
       setRejecting(false);
       if (failed > 0) setError(`Rejected ${ok}, ${failed} failed.`);
       router.refresh();
@@ -101,6 +111,7 @@ export function OutputBulkActions({
         (id) => fetch(`/api/admin/job-assets/${id}/ignore`, { method: "POST" }),
         "Ignoring",
       );
+      if (ok > 0) track("output_ignored", { scope: "bulk", count: ok });
       setIgnoring(false);
       if (failed > 0) setError(`Ignored ${ok}, ${failed} failed.`);
       router.refresh();

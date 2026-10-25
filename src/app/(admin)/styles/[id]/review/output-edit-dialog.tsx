@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { PreviewFrame } from "@/components/output-preview";
 import type { DocumentLine } from "@/lib/output-layouts/lines";
 import { MAX_LINE_LENGTH } from "@/lib/output-layouts/line-keys";
+import { track } from "@/lib/analytics";
 
 // The review screen's document editor — one dialog, opened from the output
 // card, laid out like the Output Builder: the editable lines down the left, a
@@ -243,6 +244,7 @@ function EditDialog({
         setPending(false);
         return;
       }
+      track("output_lines_edited", { lines: Object.keys(payloadValues).length, all_documents: applyToAll });
       closeWhenSettled.current = true;
       startRefresh(() => router.refresh());
     } catch (e) {

@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { ProdSpecStyleRunList, StyleRunRow } from "@/lib/outputs/prod-spec-rerun";
 import { triggerLabel } from "@/lib/queue/trigger-labels";
+import { track } from "@/lib/analytics";
 
 type Batch = {
   id: string;
@@ -218,6 +219,7 @@ export function RerunStylesPanel({
         if (l) setList(l);
         return;
       }
+      track("bulk_run_started", { mode: "prod_spec" });
       window.localStorage.setItem(storageKey, data.batchId);
       const b = await fetchBatch(data.batchId);
       if (b) setBatch(b);
@@ -250,6 +252,7 @@ export function RerunStylesPanel({
         setRowErrors((prev) => ({ ...prev, [row.id]: data.error ?? `HTTP ${res.status}` }));
         return;
       }
+      track("outputs_regenerated", { scope: "style", count: row.variantKeys.length });
       const l = await fetchList(); // refresh last-run + to-run for this row
       if (l) setList(l);
     } catch (e) {

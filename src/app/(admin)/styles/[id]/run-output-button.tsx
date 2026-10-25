@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { EmailSimulationDialog, type EmailOutcomeView } from "@/components/email-simulation-dialog";
+import { track } from "@/lib/analytics";
 
 // Per-output "Run" — enqueues a job scoped to one variantKey via the rerun
 // endpoint and renders it inline (the endpoint runs the queue before
@@ -50,6 +51,7 @@ export function RunOutputButton({
       }
       // Pop the dialog only when nothing actually went out (simulated /
       // skipped / failed) — a really-sent email doesn't need a takeover.
+      track("outputs_regenerated", { scope: "output", count: 1 });
       const noteworthy = (body.emails ?? []).find((e) => e.status !== "SENT");
       if (noteworthy) setEmail(noteworthy);
       router.refresh();

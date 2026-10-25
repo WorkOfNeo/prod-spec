@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { EmailSimulationDialog, type EmailOutcomeView } from "@/components/email-simulation-dialog";
+import { track } from "@/lib/analytics";
 
 export function RerunButton({
   styleId,
@@ -35,6 +36,7 @@ export function RerunButton({
         setError(body.error ?? `HTTP ${res.status}`);
         return;
       }
+      track("outputs_regenerated", { scope: "style" });
       // While RESEND_EMAILS is off the review-ready notification comes back
       // SIMULATED — show it. Really-sent emails don't need a takeover.
       const noteworthy = (body.emails ?? []).find((e) => e.status !== "SENT");

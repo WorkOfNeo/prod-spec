@@ -6,15 +6,10 @@
 // only trait — never the email or name (analyticsOS privacy rule). A no-op when
 // the script isn't loaded (no NEXT_PUBLIC_ANALYTICS_KEY). Renders nothing.
 //
-// Sign-out calls window.aos?.("reset") — see SignOutButton.
+// Sign-out calls window.aos?.("reset") — see SignOutButton. Custom events and
+// the window.aos type live in @/lib/analytics.
 
 import { useEffect } from "react";
-
-declare global {
-  interface Window {
-    aos?: (...args: unknown[]) => void;
-  }
-}
 
 export function AnalyticsIdentify({ userId, role }: { userId: string; role: string | null }) {
   useEffect(() => {

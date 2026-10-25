@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { track } from "@/lib/analytics";
 
 // Admin-only "Push all approved" control on the review screen header. Sends
 // every approved, print-safe output for the style into the supplier's
@@ -42,6 +43,7 @@ export function SupplierPushActions({
         return;
       }
       const n = body.pushed?.length ?? 0;
+      track("supplier_files_pushed", { scope: "style", count: n });
       setNote(`Pushed ${n} output${n === 1 ? "" : "s"} to ${body.folderName ?? "the supplier folder"}`);
       setFolderUrl(body.targetFolderUrl ?? null);
       router.refresh();
