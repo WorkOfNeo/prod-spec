@@ -363,7 +363,7 @@ export default async function ApprovedDeliveryPage({
                   <td className="px-4 py-2 font-medium text-zinc-800">{g.name}</td>
                   <td className="px-4 py-2">
                     {g.email ? (
-                      <span className="font-mono text-xs text-zinc-600">{g.email}</span>
+                      <span data-private className="font-mono text-xs text-zinc-600">{g.email}</span>
                     ) : (
                       <span className="inline-flex rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700">
                         no email on file
@@ -675,7 +675,7 @@ export default async function ApprovedDeliveryPage({
                               {p.status === "FAILED" ? (
                                 <div className="mt-0.5 text-[10px] leading-snug text-red-600">
                                   {p.error?.replace(/^Send failed:\s*/, "") ?? "send failed"}
-                                  {p.email ? <span className="text-zinc-400"> · to {p.email}</span> : null}
+                                  {p.email ? <span data-private className="text-zinc-400"> · to {p.email}</span> : null}
                                 </div>
                               ) : null}
                             </li>

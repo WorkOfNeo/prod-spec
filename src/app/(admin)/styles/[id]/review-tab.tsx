@@ -96,7 +96,7 @@ export function ReviewTab({
                 : "No run yet — Re-run to generate."}
             </p>
             {latestJob?.claimedByName ? (
-              <span className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-zinc-600">
+              <span data-private className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-zinc-600">
                 <UserAvatar name={latestJob.claimedByName} />
                 <span>
                   <b>{latestJob.claimedByName}</b> owns this review

@@ -45,7 +45,7 @@ export function SupplierLinkCard({ share }: { share: SupplierShareInfo }) {
       <p className="mt-1 text-xs text-zinc-500">
         {share.email ? (
           <>
-            Sent to <span className="font-medium text-zinc-700">{share.email}</span>. They unlock it with
+            Sent to <span data-private className="font-medium text-zinc-700">{share.email}</span>. They unlock it with
             that email + the PIN.
           </>
         ) : (

@@ -211,7 +211,7 @@ export function BulkRunOutputs({
             </span>
           </div>
           {batch.createdByEmail && (
-            <span className="shrink-0 text-xs text-zinc-400">started by {batch.createdByEmail}</span>
+            <span data-private className="shrink-0 text-xs text-zinc-400">started by {batch.createdByEmail}</span>
           )}
         </div>
         <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-100">

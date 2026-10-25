@@ -228,7 +228,7 @@ export function LayoutHistory({ history, editorDirty }: { history: LayoutHistory
                           ) : null}
                           <span className="ml-auto text-xs text-zinc-400">{when(rev.createdAt)}</span>
                         </div>
-                        <div className="mt-1 text-xs text-zinc-500">
+                        <div data-private className="mt-1 text-xs text-zinc-500">
                           {rev.author}
                           {rev.publishedAt ? (
                             <>

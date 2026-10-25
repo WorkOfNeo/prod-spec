@@ -68,7 +68,7 @@ export default async function DashboardPage() {
       <RefreshOnFocus />
       <h1 className="text-2xl font-semibold tracking-tight">My tasks</h1>
       <p className="text-sm text-zinc-500">
-        {session.user.email}
+        <span data-private>{session.user.email}</span>
         {" · "}
         {waitingOnYou === 0
           ? "nothing waiting on you"

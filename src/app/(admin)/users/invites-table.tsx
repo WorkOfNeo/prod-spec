@@ -96,7 +96,7 @@ export function InvitesTable({ invites }: { invites: InviteRow[] }) {
               const busy = busyId === inv.id;
               return (
                 <tr key={inv.id} className="border-t border-zinc-100">
-                  <td className="px-4 py-3">{inv.email}</td>
+                  <td data-private className="px-4 py-3">{inv.email}</td>
                   <td className="px-4 py-3 text-zinc-600">{inv.role}</td>
                   <td className="px-4 py-3">
                     <span
@@ -108,7 +108,7 @@ export function InvitesTable({ invites }: { invites: InviteRow[] }) {
                   <td className="px-4 py-3 text-zinc-500">
                     {inv.status === "USED" ? (inv.usedLabel ?? "—") : inv.expiresLabel}
                   </td>
-                  <td className="px-4 py-3 text-zinc-500">{inv.invitedByName}</td>
+                  <td data-private className="px-4 py-3 text-zinc-500">{inv.invitedByName}</td>
                   <td className="px-4 py-3 text-right text-xs whitespace-nowrap">
                     {inv.status === "PENDING" && (
                       <>

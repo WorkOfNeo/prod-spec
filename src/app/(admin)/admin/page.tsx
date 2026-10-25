@@ -188,7 +188,7 @@ async function UsersTab() {
         ) : (
           rows.map((u) => (
             <tr key={u.id} className="border-t border-zinc-100 hover:bg-zinc-50">
-              <td className="px-4 py-3">
+              <td data-private className="px-4 py-3">
                 <div className="text-zinc-800">{u.name || "—"}</div>
                 <div className="text-xs text-zinc-400">{u.email}</div>
               </td>
