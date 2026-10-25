@@ -2,10 +2,20 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ChevronRight, ExternalLink, Image as ImageIcon, MessageSquare, RefreshCw, Search, Sparkles } from "lucide-react";
 import { outputTypeLabel } from "./rejection-filters";
 import { FacetFilter, type FacetOption } from "@/components/facet-filter";
 import { AiFixDialog } from "./ai-fix-dialog";
+import { Button, buttonClass } from "@/components/ui/button";
+import { Pill, type PillTone } from "@/components/ui/pill";
+import { UserAvatar } from "@/components/user-avatar";
+import { splitTicketComment } from "@/lib/tickets/thread";
+
+// The rejection log's workbench, as a split view: every reviewer comment on
+// the left, grouped by style; the selected one on the right with the PDF the
+// reviewer saw, the conversation, and what to do about it. Bulk selection
+// (checkboxes, "Select by comment") drives the floating bar at the bottom.
 
 // A rendered PDF for a ticket's output (jobId + the preview query that
 // addresses it), with its review state.
@@ -19,7 +29,7 @@ export type AssetView = {
 };
 
 // Loaded on demand from /api/admin/rejection-tickets/[id]/assets when a ticket
-// is expanded: the originally-rejected PDF plus the latest one for the output.
+// is selected: the originally-rejected PDF plus the latest one for the output.
 export type TicketAssets = {
   rejected: AssetView | null;
   latest: AssetView | null;
@@ -70,10 +80,10 @@ export type TicketRow = {
   searchBlob: string;
 };
 
-// One output of a style for the rejection workbench's at-a-glance overview:
-// its name, whether it can be (re)generated now, when it was last made, and —
-// for a rejected output — whether that's NEWER than the rejection ("fresh") or
-// still the version the reviewer saw. Built server-side in page.tsx.
+// One output of a style for the workbench's style overview: its name, whether
+// it can be (re)generated now, when it was last made, and — for a rejected
+// output — whether that's NEWER than the rejection ("fresh") or still the
+// version the reviewer saw. Built server-side in page.tsx.
 export type StyleOutputView = {
   variantKey: string; // base key
   name: string;
@@ -88,10 +98,6 @@ export type StyleOutputView = {
   regeneratedSinceRejection: boolean;
   reviewStatus: string | null;
 };
-
-// Per-ticket lazy-load state: undefined = not fetched, "loading"/"error"
-// = in-flight/failed, object = the fetched { rejected, latest }.
-type AssetState = TicketAssets | "loading" | "error" | undefined;
 
 // Which style-level action is mid-flight for a given style.
 type StyleAction =
@@ -116,12 +122,12 @@ function displayStatusOf(r: { status: Status; approved: boolean }): DisplayStatu
   return r.status === "RESOLVED" && r.approved ? "APPROVED" : r.status;
 }
 
-const STATUS_PILLS: Record<DisplayStatus, string> = {
-  OPEN: "border-red-200 bg-red-50 text-red-700",
-  IN_PROGRESS: "border-amber-200 bg-amber-50 text-amber-700",
-  FIXED: "border-blue-200 bg-blue-50 text-blue-700",
-  APPROVED: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  RESOLVED: "border-zinc-200 bg-zinc-100 text-zinc-600",
+const STATUS: Record<DisplayStatus, { tone: PillTone; label: string }> = {
+  OPEN: { tone: "warn", label: "Open" },
+  IN_PROGRESS: { tone: "accent", label: "In progress" },
+  FIXED: { tone: "good", label: "Fixed" },
+  APPROVED: { tone: "good", label: "Approved" },
+  RESOLVED: { tone: "neutral", label: "Resolved" },
 };
 
 type StyleGroup = {
@@ -175,9 +181,12 @@ export function TicketList({
     [isHistory],
   );
   const [enabled, setEnabled] = useState<Set<DisplayStatus>>(new Set(viewStatuses));
-  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [assets, setAssets] = useState<Record<string, AssetState>>({});
+  // Style groups are open unless folded.
+  const [foldedGroups, setFoldedGroups] = useState<Set<string>>(new Set());
+  // The ticket shown on the right.
+  const [selectedId, setSelectedId] = useState<string | null>(rows[0]?.id ?? null);
+  // Bumped after a re-run so the selected ticket's PDF preview reloads.
+  const [previewVersion, setPreviewVersion] = useState(0);
   const [pending, setPending] = useState<{ id: string; action: string } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -212,23 +221,14 @@ export function TicketList({
   );
 
   const counts = useMemo(() => {
-    const c: Record<DisplayStatus, number> = {
-      OPEN: 0,
-      IN_PROGRESS: 0,
-      FIXED: 0,
-      APPROVED: 0,
-      RESOLVED: 0,
-    };
+    const c: Record<DisplayStatus, number> = { OPEN: 0, IN_PROGRESS: 0, FIXED: 0, APPROVED: 0, RESOLVED: 0 };
     for (const r of rows) c[displayStatusOf(r)]++;
     return c;
   }, [rows]);
 
   // Facet options (searchable dropdowns) with per-value counts over the whole
   // backlog — same idiom as /styles and /prod-specs. Blank values are skipped.
-  const customerOptions = useMemo<FacetOption[]>(
-    () => facetOptionsFrom(rows, (r) => r.customerName),
-    [rows],
-  );
+  const customerOptions = useMemo<FacetOption[]>(() => facetOptionsFrom(rows, (r) => r.customerName), [rows]);
   const businessAreaOptions = useMemo<FacetOption[]>(
     () => facetOptionsFrom(rows, (r) => r.businessArea ?? ""),
     [rows],
@@ -239,12 +239,12 @@ export function TicketList({
   );
 
   // "Select by comment": group the still-to-do tickets by their exact comment
-  // text. Each option shows an excerpt + how many tickets share it; choosing it
-  // selects them all. Built over ALL rows so selection spans every style
+  // text. Each option shows the comment + how many tickets share it; choosing
+  // it selects them all. Built over ALL rows so selection spans every style
   // regardless of the other filters. Most-repeated comment first — that's the
-  // highest-value bulk action. We only include OPEN/IN_PROGRESS tickets that
-  // have NOT already been regenerated since rejection: a fixed or regenerated
-  // output no longer needs a bulk re-fix, so it shouldn't pad the counts.
+  // highest-value bulk action. Only OPEN/IN_PROGRESS tickets that have NOT
+  // already been regenerated since rejection: a fixed or regenerated output no
+  // longer needs a bulk re-fix, so it shouldn't pad the counts.
   const { commentOptions, commentTicketIds } = useMemo(() => {
     const byComment = new Map<string, string[]>();
     for (const r of rows) {
@@ -257,8 +257,6 @@ export function TicketList({
       else byComment.set(key, [r.id]);
     }
     const options: FacetOption[] = [...byComment.entries()]
-      // Full comment as the label — the dropdown wraps it (and search matches
-      // the whole text), so no need to pre-truncate.
       .map(([value, ids]) => ({ value, label: value, count: ids.length }))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
     return { commentOptions: options, commentTicketIds: byComment };
@@ -318,8 +316,8 @@ export function TicketList({
     return [...map.values()];
   }, [filtered]);
 
-  // An active text search drills into every matching style automatically.
-  const searching = query.trim() !== "";
+  // The ticket on the right: the one picked, or the first in view.
+  const current = filtered.find((r) => r.id === selectedId) ?? filtered[0] ?? null;
 
   function toggleStatus(s: DisplayStatus) {
     setEnabled((prev) => {
@@ -331,35 +329,12 @@ export function TicketList({
   }
 
   function toggleGroup(styleId: string) {
-    setOpenGroups((prev) => {
+    setFoldedGroups((prev) => {
       const next = new Set(prev);
       if (next.has(styleId)) next.delete(styleId);
       else next.add(styleId);
       return next;
     });
-  }
-
-  async function loadAsset(id: string) {
-    setAssets((a) => ({ ...a, [id]: "loading" }));
-    try {
-      const res = await fetch(`/api/admin/rejection-tickets/${id}/assets`);
-      if (!res.ok) {
-        setAssets((a) => ({ ...a, [id]: "error" }));
-        return;
-      }
-      const body = (await res.json()) as TicketAssets;
-      setAssets((a) => ({ ...a, [id]: { rejected: body.rejected, latest: body.latest } }));
-    } catch {
-      setAssets((a) => ({ ...a, [id]: "error" }));
-    }
-  }
-
-  function toggleTicket(id: string) {
-    const willOpen = expanded !== id;
-    setExpanded(willOpen ? id : null);
-    // Side effect stays outside the state updater (which StrictMode
-    // double-invokes) so the asset is fetched exactly once on open.
-    if (willOpen) void loadAsset(id);
   }
 
   async function act(row: TicketRow, action: "start" | "rerun" | "fix") {
@@ -382,12 +357,12 @@ export function TicketList({
           ...n,
           [row.id]:
             ph > 0
-              ? `Re-generated, but ${ph} placeholder(s) remain — the data gap isn't fixed yet.`
-              : "Re-generated — check the fresh preview below.",
+              ? `Re-generated, but ${ph} placeholder(s) remain: the data gap isn't fixed yet.`
+              : "Re-generated. Check the fresh preview.",
         }));
       }
-      // A re-run replaces the asset (new job) — refresh the lazy preview too.
-      if (action === "rerun" || action === "fix") void loadAsset(row.id);
+      // A re-run replaces the asset (new job) — reload the preview too.
+      if (action === "rerun" || action === "fix") setPreviewVersion((v) => v + 1);
       router.refresh();
     } finally {
       setPending(null);
@@ -416,8 +391,8 @@ export function TicketList({
 
   // Picking comment-groups in the "Select by comment" dropdown bulk-selects
   // every actionable ticket carrying those comments (across all styles) for the
-  // existing bulk mark-fixed actions — it does NOT filter the list. We diff
-  // old→new so toggling a comment off releases exactly its tickets.
+  // bulk mark-fixed actions — it does NOT filter the list. We diff old→new so
+  // toggling a comment off releases exactly its tickets.
   function onSelectComments(next: string[]) {
     const nextSet = new Set(next);
     const prev = validSelectedComments;
@@ -437,7 +412,7 @@ export function TicketList({
   }
 
   // Clear both the ticket selection and the comment-dropdown checkmarks that
-  // may have driven it (bottom-bar "Clear", and after a bulk action completes).
+  // may have driven it (the bar's "Clear", and after a bulk action completes).
   function clearSelection() {
     setSelected(new Set());
     setSelectedComments([]);
@@ -566,8 +541,8 @@ export function TicketList({
           ...r,
           [styleId]:
             failedN > 0
-              ? { tone: "warn", msg: `Regenerated with ${failedN} failure(s) — check the job log.` }
-              : { tone: "ok", msg: "Regenerated — see the fresh times below." },
+              ? { tone: "warn", msg: `Regenerated with ${failedN} failure(s). Check the job log.` }
+              : { tone: "ok", msg: "Regenerated. See the fresh times below." },
         }));
       } else {
         const fixed = body.fixed?.length ?? 0;
@@ -582,8 +557,7 @@ export function TicketList({
         if (waiting.length > 0)
           parts.push(`${waiting.length} awaiting data (${waiting.map((w) => w.outputName).join(", ")})`);
         if (failedN > 0) parts.push(`${failedN} couldn't be regenerated`);
-        const tone: StyleResult["tone"] =
-          failedN > 0 || (waiting.length > 0 && fixed === 0) ? "warn" : "ok";
+        const tone: StyleResult["tone"] = failedN > 0 || (waiting.length > 0 && fixed === 0) ? "warn" : "ok";
         setStyleResult((r) => ({
           ...r,
           [styleId]: { tone, msg: parts.length ? parts.join(" · ") : "Nothing to mark fixed." },
@@ -591,42 +565,49 @@ export function TicketList({
       }
       router.refresh();
     } catch {
-      setStyleResult((r) => ({ ...r, [styleId]: { tone: "err", msg: "Request failed — try again." } }));
+      setStyleResult((r) => ({ ...r, [styleId]: { tone: "err", msg: "Request failed. Try again." } }));
     } finally {
       setStyleBusy((b) => ({ ...b, [styleId]: null }));
     }
   }
 
+  const currentGroup = current ? groups.find((g) => g.styleId === current.styleId) ?? null : null;
+
   return (
-    <div className="mt-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search style, PO, output, comment… (paste many, comma/space separated)"
-          className="w-96 rounded-md border border-zinc-300 px-3 py-1.5 text-sm focus:ring-2 focus:ring-zinc-900 focus:outline-none"
-        />
-        {viewStatuses.map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => toggleStatus(s)}
-            className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-              enabled.has(s) ? STATUS_PILLS[s] : "border-zinc-200 bg-white text-zinc-300"
-            }`}
-            title={enabled.has(s) ? `Hide ${s} tickets` : `Show ${s} tickets`}
-          >
-            {s.replace("_", " ")} · {counts[s]}
-          </button>
-        ))}
-        <FacetFilter
-          label="Customer"
-          options={customerOptions}
-          selected={customers}
-          onChange={setCustomers}
-          searchable
-        />
+    <div className="flex flex-col xl:min-h-0 xl:flex-1">
+      {/* Find and narrow. */}
+      <div data-section="Rejection filters" className="border-line flex flex-wrap items-center gap-2 border-b px-6 py-2.5">
+        <label className="relative">
+          <span className="sr-only">Search the rejection log</span>
+          <Search size={13} aria-hidden="true" className="text-faint pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search style, PO, output, comment… (paste many)"
+            className="border-line bg-surface text-ink placeholder:text-faint focus:border-accent h-7 w-80 max-w-full rounded-md border pr-2 pl-7 text-[12px] outline-none"
+          />
+        </label>
+        <div className="flex items-center gap-1" role="group" aria-label="Status">
+          {viewStatuses.map((s) => {
+            const on = enabled.has(s);
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => toggleStatus(s)}
+                aria-pressed={on}
+                title={on ? `Hide ${STATUS[s].label.toLowerCase()} comments` : `Show ${STATUS[s].label.toLowerCase()} comments`}
+                className="rounded-full"
+              >
+                <Pill tone={on ? STATUS[s].tone : "neutral"} dot={on} className={on ? "" : "opacity-60"}>
+                  {STATUS[s].label} <span className="tabular-nums">{counts[s]}</span>
+                </Pill>
+              </button>
+            );
+          })}
+        </div>
+        <FacetFilter label="Customer" options={customerOptions} selected={customers} onChange={setCustomers} searchable />
         <FacetFilter
           label="Business area"
           options={businessAreaOptions}
@@ -634,174 +615,164 @@ export function TicketList({
           onChange={setBusinessAreas}
           searchable
         />
-        <FacetFilter
-          label="Output type"
-          options={outputTypeOptions}
-          selected={outputTypes}
-          onChange={setOutputTypes}
-          searchable
-        />
+        <FacetFilter label="Output type" options={outputTypeOptions} selected={outputTypes} onChange={setOutputTypes} searchable />
         {commentOptions.length > 0 ? (
-          <>
-            <span className="mx-0.5 h-5 w-px shrink-0 self-center bg-zinc-200" aria-hidden="true" />
-            <FacetFilter
-              label="Select by comment"
-              options={commentOptions}
-              selected={validSelectedComments}
-              onChange={onSelectComments}
-              searchable
-              wide
-              wrapOptions
-            />
-          </>
+          <FacetFilter
+            label="Select by comment"
+            options={commentOptions}
+            selected={validSelectedComments}
+            onChange={onSelectComments}
+            searchable
+            wide
+            wrapOptions
+          />
+        ) : null}
+        <span className="flex-1" />
+        <span className="text-muted text-[12px] tabular-nums">
+          {groups.length} style{groups.length === 1 ? "" : "s"} · {filtered.length} comment{filtered.length === 1 ? "" : "s"}
+        </span>
+        {!isHistory && groups.length > 0 ? (
+          <Button
+            size="sm"
+            onClick={regenerateAllInList}
+            disabled={listRun !== null || bulk !== null}
+            title="Re-render every rejected output across all styles in this list and send them back to the reviewer"
+          >
+            <RefreshCw size={13} aria-hidden="true" />
+            {listRun ? `Regenerating… ${listRun.done}/${listRun.total}` : `Regenerate all & mark fixed`}
+          </Button>
         ) : null}
       </div>
 
-      {bulkSummary ? (
-        <div
-          className={`mt-3 flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${
-            bulkSummary.failed > 0
-              ? "border-amber-200 bg-amber-50 text-amber-800"
-              : "border-emerald-200 bg-emerald-50 text-emerald-800"
-          }`}
-        >
-          <span>
-            ✓ {bulkSummary.fixed} marked fixed &amp; reviewer notified
-            {bulkSummary.failed > 0 ? ` · ${bulkSummary.failed} failed (still open — try again)` : ""}.
-          </span>
-          <button
-            type="button"
-            onClick={() => setBulkSummary(null)}
-            className="ml-auto text-xs text-zinc-500 underline hover:text-zinc-800"
-          >
-            Dismiss
-          </button>
+      {bulkSummary || listSummary ? (
+        <div className="border-line flex flex-col gap-1 border-b px-6 py-2 text-[12px]">
+          {bulkSummary ? (
+            <ResultLine
+              tone={bulkSummary.failed > 0 ? "warn" : "ok"}
+              onDismiss={() => setBulkSummary(null)}
+              text={`${bulkSummary.fixed} marked fixed and reviewer notified${
+                bulkSummary.failed > 0 ? ` · ${bulkSummary.failed} failed (still open, try again)` : ""
+              }.`}
+            />
+          ) : null}
+          {listSummary ? (
+            <ResultLine
+              tone={listSummary.failed > 0 ? "warn" : "ok"}
+              onDismiss={() => setListSummary(null)}
+              text={`${listSummary.styles} style${listSummary.styles === 1 ? "" : "s"} processed · ${listSummary.fixed} output${
+                listSummary.fixed === 1 ? "" : "s"
+              } re-rendered and sent for review${listSummary.awaiting > 0 ? ` · ${listSummary.awaiting} awaiting data` : ""}${
+                listSummary.failed > 0 ? ` · ${listSummary.failed} failed (still open, retry)` : ""
+              }.`}
+            />
+          ) : null}
         </div>
       ) : null}
 
       {groups.length === 0 ? (
-        <p className="mt-4 rounded-lg border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-400">
+        <p className="text-muted mx-6 my-6 rounded-xl border border-dashed border-[var(--line)] px-4 py-10 text-center text-[13px]">
           {rows.length === 0
             ? isHistory
-              ? "Nothing here yet — tickets land in History once they're marked fixed or approved."
-              : "No open rejections — when a reviewer rejects an output, its ticket lands here."
+              ? "Nothing here yet. Comments land in History once they're marked fixed or approved."
+              : "No open comments. When a reviewer requests changes, their comment lands here."
             : "Nothing matches the current filters."}
         </p>
       ) : (
-        <>
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <p className="text-xs text-zinc-400">
-              {groups.length} style{groups.length === 1 ? "" : "s"} · {filtered.length} rejection
-              {filtered.length === 1 ? "" : "s"}
-            </p>
-            {!isHistory ? (
-              <button
-                type="button"
-                onClick={regenerateAllInList}
-                disabled={listRun !== null || bulk !== null}
-                className="shrink-0 rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Re-render every rejected output across all styles in this list and send them back to the reviewer"
-              >
-                {listRun
-                  ? `Regenerating… ${listRun.done}/${listRun.total} styles`
-                  : `↻ Regenerate all & mark fixed (${groups.length})`}
-              </button>
-            ) : null}
-          </div>
-          {listSummary ? (
-            <div
-              className={`mt-2 flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${
-                listSummary.failed > 0
-                  ? "border-amber-200 bg-amber-50 text-amber-800"
-                  : "border-emerald-200 bg-emerald-50 text-emerald-800"
-              }`}
-            >
-              <span>
-                ✓ {listSummary.styles} style{listSummary.styles === 1 ? "" : "s"} processed ·{" "}
-                {listSummary.fixed} output{listSummary.fixed === 1 ? "" : "s"} re-rendered &amp; sent for review
-                {listSummary.awaiting > 0 ? ` · ${listSummary.awaiting} awaiting data` : ""}
-                {listSummary.failed > 0 ? ` · ${listSummary.failed} failed (still open — retry)` : ""}.
-              </span>
-              <button
-                type="button"
-                onClick={() => setListSummary(null)}
-                className="ml-auto text-xs text-zinc-500 underline hover:text-zinc-800"
-              >
-                Dismiss
-              </button>
-            </div>
-          ) : null}
-          <div className="mt-2 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_420px] xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_480px] xl:grid-rows-[minmax(0,1fr)]">
+          {/* The comments, grouped by style. */}
+          <div data-section="Rejection list" className="relative min-w-0 xl:overflow-y-auto">
             {groups.map((g) => (
-              <GroupSection
+              <StyleBlock
                 key={g.styleId}
                 group={g}
-                open={searching || openGroups.has(g.styleId)}
+                // A search drills into every matching style.
+                open={query.trim() !== "" || !foldedGroups.has(g.styleId)}
                 onToggle={() => toggleGroup(g.styleId)}
-                expandedTicket={expanded}
-                onToggleTicket={toggleTicket}
-                assets={assets}
-                pending={pending}
-                errors={errors}
-                notes={notes}
-                onAct={act}
+                currentId={current?.id ?? null}
+                onPick={(id) => {
+                  setSelectedId(id);
+                  // Stacked (narrow) layout: the comment is below the list, so bring it up.
+                  if (window.matchMedia("(max-width: 1023px)").matches) {
+                    document.getElementById("ticket-detail")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }
+                }}
                 selected={selected}
                 onToggleSelect={toggleSelect}
                 onSetManySelected={setManySelected}
                 bulkBusy={bulk !== null}
-                outputs={styleOutputs[g.styleId] ?? []}
-                styleBusy={styleBusy[g.styleId] ?? null}
-                styleResult={styleResult[g.styleId] ?? null}
-                onStyleAct={(action) => styleAct(g.styleId, action)}
-                onAiFix={setAiFixTicket}
                 readOnly={isHistory}
               />
             ))}
-          </div>
-        </>
-      )}
 
-      {selectedCount > 0 || bulk ? (
-        <div className="fixed inset-x-0 bottom-5 z-20 flex justify-center px-4">
-          <div className="flex items-center gap-3 rounded-full border border-zinc-300 bg-white py-2 pr-3 pl-4 shadow-lg">
-            {bulk ? (
-              <span className="text-sm text-zinc-700">
-                {bulk.regenerate ? "Regenerating & notifying…" : "Marking fixed & notifying…"} {bulk.done}/
-                {bulk.total}
-              </span>
-            ) : (
-              <>
-                <span className="text-sm font-medium text-zinc-700">
-                  {selectedCount} ticket{selectedCount === 1 ? "" : "s"} selected
-                </span>
-                <button
-                  type="button"
-                  onClick={() => bulkFix(false)}
-                  className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-50"
-                  title="Mark each selected ticket fixed and notify the reviewer — WITHOUT re-rendering (use when the outputs are already up to date)"
-                >
-                  ✓ Mark fixed &amp; notify
-                </button>
-                <button
-                  type="button"
-                  onClick={() => bulkFix(true)}
-                  className="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700"
-                  title="Re-render each selected output, then mark it fixed and notify the reviewer"
-                >
-                  ↻ Regenerate, mark fixed &amp; notify
-                </button>
-                <button
-                  type="button"
-                  onClick={clearSelection}
-                  className="text-xs text-zinc-500 underline hover:text-zinc-800"
-                >
-                  Clear
-                </button>
-              </>
-            )}
+            {selectedCount > 0 || bulk ? (
+              <div className="pointer-events-none sticky bottom-4 z-20 flex justify-center px-4 pt-4">
+                <div className="border-line bg-surface pointer-events-auto flex items-center gap-2 rounded-full border py-1.5 pr-2 pl-4 shadow-[var(--shadow-pop)]">
+                  {bulk ? (
+                    <span className="text-ink text-[12px]">
+                      {bulk.regenerate ? "Regenerating and notifying…" : "Marking fixed and notifying…"} {bulk.done}/{bulk.total}
+                    </span>
+                  ) : (
+                    <>
+                      <span className="text-ink text-[12px] font-medium">{selectedCount} selected</span>
+                      <Button
+                        size="sm"
+                        onClick={() => bulkFix(false)}
+                        title="Mark each selected comment fixed and notify the reviewer, WITHOUT re-rendering (use when the outputs are already up to date)"
+                      >
+                        Mark fixed &amp; notify
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onClick={() => bulkFix(true)}
+                        title="Re-render each selected output, then mark it fixed and notify the reviewer"
+                      >
+                        Regenerate, mark fixed &amp; notify
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={clearSelection}>
+                        Clear
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
+
+          {/* The selected comment. */}
+          <aside
+            id="ticket-detail"
+            aria-label="Selected comment"
+            className="scroll-mt-12 border-line bg-bg border-t lg:sticky lg:top-12 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto lg:border-t-0 lg:border-l xl:static xl:max-h-none"
+          >
+            {current ? (
+              <TicketDetail
+                key={current.id}
+                row={current}
+                previewVersion={previewVersion}
+                pendingAction={pending?.id === current.id ? pending.action : null}
+                error={errors[current.id] || null}
+                note={notes[current.id] || null}
+                onAct={(action) => act(current, action)}
+                onAiFix={setAiFixTicket}
+                readOnly={isHistory}
+                style={
+                  !isHistory && currentGroup ? (
+                    <StyleOverview
+                      group={currentGroup}
+                      outputs={styleOutputs[currentGroup.styleId] ?? []}
+                      busy={styleBusy[currentGroup.styleId] ?? null}
+                      result={styleResult[currentGroup.styleId] ?? null}
+                      onAct={(action) => styleAct(currentGroup.styleId, action)}
+                      bulkBusy={bulk !== null}
+                    />
+                  ) : null
+                }
+              />
+            ) : null}
+          </aside>
         </div>
-      ) : null}
+      )}
 
       {aiFixTicket ? (
         <AiFixDialog
@@ -818,302 +789,535 @@ export function TicketList({
   );
 }
 
-function GroupSection({
+function ResultLine({ tone, text, onDismiss }: { tone: "ok" | "warn"; text: string; onDismiss: () => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className={tone === "warn" ? "text-warn" : "text-good"}>{text}</span>
+      <button type="button" onClick={onDismiss} className="text-muted hover:text-ink ml-auto underline">
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
+// One style in the list: a header with its counts and a fold, then its comments.
+function StyleBlock({
   group,
   open,
   onToggle,
-  expandedTicket,
-  onToggleTicket,
-  assets,
-  pending,
-  errors,
-  notes,
-  onAct,
+  currentId,
+  onPick,
   selected,
   onToggleSelect,
   onSetManySelected,
   bulkBusy,
-  outputs,
-  styleBusy,
-  styleResult,
-  onStyleAct,
-  onAiFix,
   readOnly,
 }: {
   group: StyleGroup;
   open: boolean;
   onToggle: () => void;
-  expandedTicket: string | null;
-  onToggleTicket: (id: string) => void;
-  assets: Record<string, AssetState>;
-  pending: { id: string; action: string } | null;
-  errors: Record<string, string>;
-  notes: Record<string, string>;
-  onAct: (row: TicketRow, action: "start" | "rerun" | "fix") => void;
+  currentId: string | null;
+  onPick: (id: string) => void;
   selected: Set<string>;
   onToggleSelect: (id: string) => void;
   onSetManySelected: (ids: string[], on: boolean) => void;
   bulkBusy: boolean;
-  outputs: StyleOutputView[];
-  styleBusy: StyleAction | null;
-  styleResult: StyleResult | null;
-  onStyleAct: (action: StyleAction) => void;
-  onAiFix: (row: TicketRow) => void;
-  // History view: render the group + tickets read-only (no regenerate /
-  // mark-fixed bar, no selection column).
+  // History view: read-only (no selection column).
   readOnly: boolean;
 }) {
   const selectableIds = readOnly
     ? []
-    : group.tickets
-        .filter((t) => t.status === "OPEN" || t.status === "IN_PROGRESS")
-        .map((t) => t.id);
+    : group.tickets.filter((t) => t.status === "OPEN" || t.status === "IN_PROGRESS").map((t) => t.id);
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
-  // Any ticket inside this style picked for the bulk "Mark fixed" bar — flag
-  // the parent header so a comment-driven selection that lands deep in a
-  // collapsed group is still visible at a glance.
+  // Any comment inside this style picked for the bulk bar — flag the header so
+  // a comment-driven selection that lands in a folded style is still visible.
   const anySelected = selectableIds.some((id) => selected.has(id));
   return (
-    <div className="border-b border-zinc-200 last:border-b-0">
-      <div className={`flex items-stretch ${anySelected ? "bg-violet-50" : open ? "bg-zinc-50" : ""}`}>
-      {/* Left accent bar — always reserves width to avoid layout shift. */}
-      <span
-        className={`w-[3px] shrink-0 ${anySelected ? "bg-violet-500" : "bg-transparent"}`}
-        aria-hidden="true"
-      />
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex flex-1 items-center gap-3 px-3 py-2.5 text-left transition hover:bg-zinc-50"
-        aria-expanded={open}
+    <section className="border-line border-b">
+      <div
+        className={`border-line bg-sidebar sticky top-0 z-10 flex items-center gap-2 border-b px-4 py-2 ${
+          anySelected ? "shadow-[inset_3px_0_0_var(--accent)]" : ""
+        }`}
       >
-        <svg
-          viewBox="0 0 20 20"
-          className={`h-4 w-4 shrink-0 text-zinc-400 transition-transform ${open ? "rotate-90" : ""}`}
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path d="M7 5l6 5-6 5V5z" />
-        </svg>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <span className="truncate font-medium text-zinc-800">{group.styleName}</span>
-            <span className="shrink-0 font-mono text-[10px] text-zinc-400">{group.styleNumber}</span>
-          </div>
-          {group.customerName ? (
-            <div className="truncate text-xs text-zinc-500">{group.customerName}</div>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {group.regeneratedCount > 0 ? (
-            <span
-              className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap text-emerald-700"
-              title={`${group.regeneratedCount} output(s) re-generated since rejected — open to review`}
-            >
-              ↻ {group.regeneratedCount} regenerated
+        {readOnly ? null : (
+          <input
+            type="checkbox"
+            className="accent-[var(--accent)] size-3.5 shrink-0 cursor-pointer"
+            checked={allSelected}
+            disabled={selectableIds.length === 0 || bulkBusy}
+            onChange={(e) => onSetManySelected(selectableIds, e.target.checked)}
+            aria-label={allSelected ? "Deselect all in this style" : "Select all open comments in this style"}
+          />
+        )}
+        <button type="button" onClick={onToggle} aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+          <ChevronRight
+            size={14}
+            aria-hidden="true"
+            className={`text-faint shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+          />
+          <span className="min-w-0">
+            <span className="text-ink block truncate text-[13px] font-medium">
+              {group.styleName} <span className="text-faint font-mono text-[11px] font-normal">{group.styleNumber}</span>
             </span>
+            {group.customerName ? <span className="text-muted block truncate text-[12px]">{group.customerName}</span> : null}
+          </span>
+        </button>
+        <div className="hidden shrink-0 items-center gap-1 sm:flex">
+          {group.regeneratedCount > 0 ? (
+            <Pill tone="good" title={`${group.regeneratedCount} output(s) re-generated since rejected`}>
+              {group.regeneratedCount} regenerated
+            </Pill>
           ) : null}
           {DISPLAY_STATUSES.map((s) =>
             group.counts[s] > 0 ? (
-              <span
-                key={s}
-                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap ${STATUS_PILLS[s]}`}
-                title={`${group.counts[s]} ${s.replace("_", " ")}`}
-              >
-                {group.counts[s]} {s.replace("_", " ").toLowerCase()}
-              </span>
+              <Pill key={s} tone={STATUS[s].tone}>
+                {group.counts[s]} {STATUS[s].label.toLowerCase()}
+              </Pill>
             ) : null,
           )}
         </div>
-        <span className="hidden shrink-0 text-xs whitespace-nowrap text-zinc-400 sm:inline">
-          latest {group.latestLabel}
-        </span>
-      </button>
+        <span className="text-faint hidden shrink-0 text-[12px] md:inline">{group.latestLabel}</span>
         {group.prodSpecHref ? (
           <a
             href={group.prodSpecHref}
             target="_blank"
             rel="noopener noreferrer"
-            title="Open this style's Prod Spec (new tab)"
-            className="flex shrink-0 items-center px-3 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900"
+            title="Open this style's prod spec (new tab)"
+            className="text-faint hover:bg-subtle hover:text-ink inline-flex size-7 shrink-0 items-center justify-center rounded-md"
           >
-            <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-              <path
-                d="M8 4H5.5A1.5 1.5 0 004 5.5v9A1.5 1.5 0 005.5 16h9a1.5 1.5 0 001.5-1.5V12"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path d="M12 4h4v4M16 4l-6.5 6.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <ExternalLink size={13} aria-hidden="true" />
           </a>
         ) : null}
       </div>
 
       {open ? (
-        <>
-          {readOnly ? null : (
-          <div className="border-t border-zinc-100 bg-zinc-50/60 px-3 py-2.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => onStyleAct({ kind: "regenAll" })}
-                disabled={styleBusy !== null || bulkBusy}
-                title="Re-render the whole style — cover, general info and every output"
-                className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-50 disabled:opacity-50"
-              >
-                {styleBusy?.kind === "regenAll" ? "Regenerating all…" : "↻ Regenerate all"}
-              </button>
-              {selectableIds.length > 0 ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => onStyleAct({ kind: "markFixed" })}
-                    disabled={styleBusy !== null || bulkBusy}
-                    title="Mark this style's rejected outputs fixed and notify the reviewer — re-renders only the ones not already refreshed since their rejection"
-                    className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-50 disabled:opacity-50"
-                  >
-                    {styleBusy?.kind === "markFixed" ? "Marking fixed…" : "✓ Mark fixed & notify"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onStyleAct({ kind: "regenAllFix" })}
-                    disabled={styleBusy !== null || bulkBusy}
-                    title="Re-render everything, then mark all rejected outputs fixed and notify the reviewer"
-                    className="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50"
-                  >
-                    {styleBusy?.kind === "regenAllFix" ? "Regenerating & fixing…" : "↻ Regenerate all & mark fixed"}
-                  </button>
-                </>
-              ) : null}
-              {styleResult ? (
-                <span
-                  className={`text-xs ${
-                    styleResult.tone === "err"
-                      ? "text-red-600"
-                      : styleResult.tone === "warn"
-                        ? "text-amber-700"
-                        : "text-emerald-700"
+        <ul>
+          {group.tickets.map((row) => {
+            const actionable = !readOnly && (row.status === "OPEN" || row.status === "IN_PROGRESS");
+            const ds = displayStatusOf(row);
+            const entries = splitTicketComment(row.comment);
+            const active = currentId === row.id;
+            return (
+              <li key={row.id} className="border-line border-b last:border-b-0">
+                <div
+                  className={`flex items-start gap-3 px-4 py-2.5 transition-colors duration-150 ${
+                    active ? "bg-active" : "hover:bg-subtle"
                   }`}
                 >
-                  {styleResult.msg}
-                </span>
-              ) : null}
-            </div>
-
-            {outputs.length > 0 ? (
-              <ul className="mt-2.5 divide-y divide-zinc-100 rounded-md border border-zinc-200 bg-white">
-                {outputs.map((o) => (
-                  <li
-                    key={o.variantKey}
-                    className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs"
+                  {readOnly ? null : (
+                    <span className="flex h-5 w-3.5 shrink-0 items-center">
+                      {actionable ? (
+                        <input
+                          type="checkbox"
+                          className="accent-[var(--accent)] size-3.5 cursor-pointer"
+                          checked={selected.has(row.id)}
+                          disabled={bulkBusy}
+                          onChange={() => onToggleSelect(row.id)}
+                          aria-label={`Select ${row.outputName} for a bulk fix`}
+                        />
+                      ) : null}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onPick(row.id)}
+                    aria-current={active ? "true" : undefined}
+                    className="min-w-0 flex-1 text-left"
                   >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="truncate text-zinc-700">{o.name}</span>
-                      {o.rejected ? (
-                        <span className="shrink-0 rounded-full border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
-                          rejected
+                    <span className="text-ink block truncate text-[13px] font-medium">
+                      {row.outputName} <span className="text-faint font-normal">· {outputTypeLabel(row.docType)}</span>
+                    </span>
+                    <span className="text-muted mt-0.5 line-clamp-2 block text-[12px]">&ldquo;{entries.at(-1)?.text ?? row.comment}&rdquo;</span>
+                    <span className="text-faint mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px]">
+                      <span data-private>
+                        {row.reportedBy} · {row.createdAtLabel}
+                      </span>
+                      {row.poNumber ? <span>PO {row.poNumber}</span> : null}
+                      {entries.length > 1 ? (
+                        <span className="inline-flex items-center gap-1">
+                          <MessageSquare size={11} aria-hidden="true" />
+                          {entries.length}
                         </span>
                       ) : null}
-                    </span>
-                    <span className="flex shrink-0 items-center gap-2">
-                      <OutputFreshness o={o} />
-                      {o.rejected && o.declared && o.ready && !o.regeneratedSinceRejection ? (
-                        <button
-                          type="button"
-                          onClick={() => onStyleAct({ kind: "regenOutput", variantKey: o.variantKey })}
-                          disabled={styleBusy !== null || bulkBusy}
-                          title="Regenerate just this output"
-                          className="rounded border border-zinc-300 bg-white px-2 py-0.5 text-[11px] font-medium hover:bg-zinc-50 disabled:opacity-50"
-                        >
-                          {styleBusy?.kind === "regenOutput" && styleBusy.variantKey === o.variantKey
-                            ? "…"
-                            : "↻ Regenerate"}
-                        </button>
+                      {row.attachments.length > 0 ? (
+                        <span className="inline-flex items-center gap-1">
+                          <ImageIcon size={11} aria-hidden="true" />
+                          {row.attachments.length}
+                        </span>
                       ) : null}
+                      {row.regeneratedAfterRejection && row.status !== "RESOLVED" ? (
+                        <span className="text-good">Regenerated since</span>
+                      ) : null}
+                      {row.notGeneratedText ? <span className="text-warn">Not generated</span> : null}
                     </span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-          )}
-
-          <div className="overflow-x-auto border-t border-zinc-100 bg-white">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-zinc-200 text-[11px] tracking-wide text-zinc-500 uppercase">
-                {readOnly ? null : (
-                  <th className="px-3 py-2">
-                    <input
-                      type="checkbox"
-                      className="h-3.5 w-3.5 cursor-pointer align-middle accent-violet-600"
-                      checked={allSelected}
-                      disabled={selectableIds.length === 0 || bulkBusy}
-                      onChange={(e) => onSetManySelected(selectableIds, e.target.checked)}
-                      title={allSelected ? "Deselect all in this style" : "Select all open tickets in this style"}
-                    />
-                  </th>
-                )}
-                <th className="px-3 py-2 font-semibold">Created</th>
-                <th className="px-3 py-2 font-semibold">Output</th>
-                <th className="px-3 py-2 font-semibold">Customer · BA</th>
-                <th className="px-3 py-2 font-semibold">PO</th>
-                <th className="px-3 py-2 font-semibold">Comment</th>
-                <th className="px-3 py-2 font-semibold">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {group.tickets.map((row) => (
-                <Row
-                  key={row.id}
-                  row={row}
-                  expanded={expandedTicket === row.id}
-                  onToggle={() => onToggleTicket(row.id)}
-                  asset={assets[row.id]}
-                  pendingAction={pending?.id === row.id ? pending.action : null}
-                  error={errors[row.id] || null}
-                  note={notes[row.id] || null}
-                  onAct={(action) => onAct(row, action)}
-                  selected={selected.has(row.id)}
-                  onToggleSelect={() => onToggleSelect(row.id)}
-                  bulkBusy={bulkBusy}
-                  onAiFix={onAiFix}
-                  readOnly={readOnly}
-                />
-              ))}
-            </tbody>
-          </table>
-          </div>
-        </>
+                  </button>
+                  <Pill tone={STATUS[ds].tone} className="mt-0.5">
+                    {STATUS[ds].label}
+                    {row.reopenedCount > 0 ? ` ×${row.reopenedCount + 1}` : ""}
+                  </Pill>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       ) : null}
+    </section>
+  );
+}
+
+// The selected comment: what the reviewer saw, what they said, and what to do.
+function TicketDetail({
+  row,
+  previewVersion,
+  pendingAction,
+  error,
+  note,
+  onAct,
+  onAiFix,
+  readOnly,
+  style,
+}: {
+  row: TicketRow;
+  previewVersion: number;
+  pendingAction: string | null;
+  error: string | null;
+  note: string | null;
+  onAct: (action: "start" | "rerun" | "fix") => void;
+  onAiFix: (row: TicketRow) => void;
+  readOnly: boolean;
+  style: ReactNode;
+}) {
+  const actionable = !readOnly && (row.status === "OPEN" || row.status === "IN_PROGRESS");
+  const ds = displayStatusOf(row);
+  const entries = splitTicketComment(row.comment);
+  return (
+    <div className="reveal flex flex-col gap-5 p-5">
+      <div>
+        <p className="text-muted text-[12px]">
+          {row.styleName}
+          {row.poNumber ? ` · PO ${row.poNumber}` : ""}
+        </p>
+        <h2 className="text-ink mt-0.5 text-[16px] leading-6 font-semibold">{row.outputName}</h2>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <Pill tone={STATUS[ds].tone} dot>
+            {STATUS[ds].label}
+            {row.reopenedCount > 0 ? ` · reopened ×${row.reopenedCount}` : ""}
+          </Pill>
+          <Pill>{row.customerName}</Pill>
+          {row.businessArea ? <Pill>{row.businessArea}</Pill> : null}
+          <Pill>{outputTypeLabel(row.docType)}</Pill>
+        </div>
+      </div>
+
+      <TicketPreview key={`${row.id}:${previewVersion}`} ticketId={row.id} outputName={row.outputName} />
+
+      <div className="flex flex-wrap gap-2">
+        {row.editHref ? (
+          <a
+            href={row.editHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={buttonClass("secondary", "sm")}
+            title="Edit the source of this output in a new tab, then come back and re-run"
+          >
+            {row.editLabel}
+            <ExternalLink size={12} aria-hidden="true" />
+          </a>
+        ) : null}
+        <Link href={`/styles/${row.styleId}/review`} className={buttonClass("ghost", "sm")}>
+          Review screen
+        </Link>
+        <Link href={`/styles/${row.styleId}`} className={buttonClass("ghost", "sm")}>
+          Style
+        </Link>
+        {!readOnly && row.aiFixable ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onAiFix(row)}
+            title="Let the AI propose an edit to this layout from the comment: preview before and after, and keep it if you like it"
+          >
+            <Sparkles size={13} aria-hidden="true" />
+            Suggest a fix
+          </Button>
+        ) : null}
+      </div>
+
+      {/* The conversation, as the reviewer wrote it. */}
+      <section className="flex flex-col gap-2">
+        <h3 className="text-ink text-[12px] font-medium">Comments</h3>
+        <ol className="flex flex-col gap-2">
+          {entries.map((entry, i) => (
+            <li key={i} className="border-line bg-surface rounded-lg border px-3 py-2.5">
+              <div className="text-muted flex items-center gap-1.5 text-[12px]">
+                {i === 0 ? (
+                  <>
+                    <UserAvatar name={row.reportedBy} size="xs" />
+                    <span data-private className="text-ink font-medium">
+                      {row.reportedBy}
+                    </span>
+                    <span>· {row.createdAtLabel}</span>
+                  </>
+                ) : (
+                  <span>Added {entry.stamp}</span>
+                )}
+              </div>
+              <p className="text-ink mt-1 text-[13px] leading-relaxed whitespace-pre-wrap">{entry.text}</p>
+            </li>
+          ))}
+        </ol>
+        {row.attachments.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {row.attachments.map((a) => (
+              <a
+                key={a.id}
+                href={a.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`${a.fileName}, open full size`}
+                className="border-line bg-subtle hover:border-faint block size-16 overflow-hidden rounded-md border"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- admin-only attachment thumbnail, served from our API */}
+                <img src={a.url} alt={a.fileName} className="size-full object-cover" />
+              </a>
+            ))}
+          </div>
+        ) : null}
+        {row.notGeneratedText ? (
+          <p className="bg-warn-soft text-warn rounded-md px-3 py-2 text-[12px] leading-relaxed">{row.notGeneratedText}</p>
+        ) : null}
+        <p className="text-faint text-[11px] leading-relaxed">{row.historyLabel}</p>
+      </section>
+
+      {actionable ? (
+        <section data-section="Ticket actions" className="flex flex-col gap-2">
+          <Button
+            variant="primary"
+            onClick={() => onAct("fix")}
+            disabled={pendingAction !== null}
+            title="Final re-run of this output, then tell the reviewer it's ready for another look"
+          >
+            {pendingAction === "fix" ? "Fixing…" : "Re-run, mark fixed & notify"}
+          </Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              onClick={() => onAct("rerun")}
+              disabled={pendingAction !== null}
+              title="Regenerate this output WITHOUT notifying the reviewer"
+            >
+              <RefreshCw size={13} aria-hidden="true" />
+              {pendingAction === "rerun" ? "Re-running…" : "Re-run only"}
+            </Button>
+            {row.status === "OPEN" ? (
+              <Button onClick={() => onAct("start")} disabled={pendingAction !== null} title="Show the reviewer you're on it">
+                {pendingAction === "start" ? "Starting…" : "Start work"}
+              </Button>
+            ) : (
+              <span className="text-muted flex items-center justify-center text-[12px]">You&rsquo;re on it</span>
+            )}
+          </div>
+          <p className="text-faint text-[12px] leading-relaxed">
+            Fix the data or the layout first. Approving the output on the review screen resolves this comment.
+          </p>
+        </section>
+      ) : row.status === "FIXED" ? (
+        <p className="text-muted text-[12px]">
+          Waiting for the reviewer to look again; they were notified. Approval resolves it, another comment reopens it.
+        </p>
+      ) : row.status === "RESOLVED" ? (
+        <p className="text-muted text-[12px]">
+          {row.approved
+            ? "Approved: the reviewer approved this output."
+            : "Resolved: closed without a reviewer approval (for example, the output was removed)."}
+        </p>
+      ) : null}
+      {error ? <p className="text-bad text-[12px]">{error}</p> : null}
+      {note ? <p className="text-good text-[12px]">{note}</p> : null}
+
+      {style}
     </div>
   );
 }
 
-// Freshness badge for one output in the style overview: green when it's been
-// regenerated since its rejection, amber for awaiting-data / still-rejected,
-// muted for non-rejected outputs (just "generated <when>").
+// The rejected PDF (what the reviewer saw) and, when a re-run produced a newer
+// one, the latest — fetched when the comment is opened.
+function TicketPreview({ ticketId, outputName }: { ticketId: string; outputName: string }) {
+  const [state, setState] = useState<TicketAssets | "loading" | "error">("loading");
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/admin/rejection-tickets/${ticketId}/assets`)
+      .then(async (res) => {
+        if (cancelled) return;
+        if (!res.ok) {
+          setState("error");
+          return;
+        }
+        const body = (await res.json()) as TicketAssets;
+        if (!cancelled) setState({ rejected: body.rejected, latest: body.latest });
+      })
+      .catch(() => {
+        if (!cancelled) setState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ticketId]);
+
+  if (state === "loading") return <div className="skeleton h-72 rounded-lg" aria-label="Loading the PDF" />;
+  if (state === "error") return <p className="text-bad text-[12px]">Couldn&apos;t load the PDF preview.</p>;
+  const { rejected, latest } = state;
+  // Show the latest version separately only when a re-run produced a different
+  // job than the one that was rejected.
+  const latestDiffers = !!latest && (!rejected || latest.jobId !== rejected.jobId);
+  if (!rejected && !latest) return <p className="text-muted text-[12px]">No generated PDF for this output right now.</p>;
+  return (
+    <div className="flex flex-col gap-3">
+      {rejected ? (
+        <PreviewBlock title="What the reviewer saw" asset={rejected} outputName={outputName} />
+      ) : (
+        <p className="text-warn text-[12px]">The originally rejected PDF is no longer stored. The latest version is below.</p>
+      )}
+      {latestDiffers ? <PreviewBlock title="Latest re-run" asset={latest!} outputName={outputName} /> : null}
+    </div>
+  );
+}
+
+// One labelled PDF preview (header + inline iframe).
+function PreviewBlock({ title, asset, outputName }: { title: string; asset: AssetView; outputName: string }) {
+  const previewUrl = `/api/admin/jobs/${asset.jobId}/preview?${asset.previewQuery}`;
+  return (
+    <div className="border-line bg-surface overflow-hidden rounded-lg border">
+      <div className="border-line flex items-center justify-between gap-3 border-b px-3 py-1.5">
+        <span className="text-muted min-w-0 truncate text-[12px]">
+          <span className="text-ink font-medium">{title}</span> · {asset.generatedAtLabel} ·{" "}
+          {asset.reviewStatus.toLowerCase().replace("_", " ")}
+          {asset.placeholderCount > 0 ? <span className="text-warn"> · {asset.placeholderCount} placeholder(s)</span> : null}
+        </span>
+        <a href={previewUrl} target="_blank" rel="noopener noreferrer" className={buttonClass("ghost", "sm", "shrink-0")}>
+          Open
+          <ExternalLink size={12} aria-hidden="true" />
+        </a>
+      </div>
+      <iframe src={previewUrl} className="block h-80 w-full bg-white" title={`${title}: ${outputName}`} />
+    </div>
+  );
+}
+
+// The selected comment's style as a whole: re-run or close every comment on it
+// at once, and see each output's freshness.
+function StyleOverview({
+  group,
+  outputs,
+  busy,
+  result,
+  onAct,
+  bulkBusy,
+}: {
+  group: StyleGroup;
+  outputs: StyleOutputView[];
+  busy: StyleAction | null;
+  result: StyleResult | null;
+  onAct: (action: StyleAction) => void;
+  bulkBusy: boolean;
+}) {
+  const openCount = group.tickets.filter((t) => t.status === "OPEN" || t.status === "IN_PROGRESS").length;
+  return (
+    <section data-section="Style overview" className="border-line flex flex-col gap-3 border-t pt-5">
+      <div>
+        <h3 className="text-ink text-[13px] font-semibold">This style</h3>
+        <p className="text-muted text-[12px]">
+          {group.styleName} · {openCount} open comment{openCount === 1 ? "" : "s"}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          onClick={() => onAct({ kind: "regenAll" })}
+          disabled={busy !== null || bulkBusy}
+          title="Re-render the whole style: cover, general info and every output"
+        >
+          {busy?.kind === "regenAll" ? "Regenerating all…" : "Regenerate all"}
+        </Button>
+        {openCount > 0 ? (
+          <>
+            <Button
+              size="sm"
+              onClick={() => onAct({ kind: "markFixed" })}
+              disabled={busy !== null || bulkBusy}
+              title="Mark this style's rejected outputs fixed and notify the reviewer; re-renders only the ones not already refreshed since their rejection"
+            >
+              {busy?.kind === "markFixed" ? "Marking fixed…" : "Mark all fixed & notify"}
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => onAct({ kind: "regenAllFix" })}
+              disabled={busy !== null || bulkBusy}
+              title="Re-render everything, then mark all rejected outputs fixed and notify the reviewer"
+            >
+              {busy?.kind === "regenAllFix" ? "Regenerating & fixing…" : "Regenerate all & mark fixed"}
+            </Button>
+          </>
+        ) : null}
+      </div>
+      {result ? (
+        <p className={`text-[12px] ${result.tone === "err" ? "text-bad" : result.tone === "warn" ? "text-warn" : "text-good"}`}>
+          {result.msg}
+        </p>
+      ) : null}
+      {outputs.length > 0 ? (
+        <ul className="border-line bg-surface divide-line divide-y rounded-lg border">
+          {outputs.map((o) => (
+            <li key={o.variantKey} className="flex items-center justify-between gap-3 px-3 py-2 text-[12px]">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="text-ink truncate">{o.name}</span>
+                {o.rejected ? <Pill tone="warn">Open comment</Pill> : null}
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                <OutputFreshness o={o} />
+                {o.rejected && o.declared && o.ready && !o.regeneratedSinceRejection ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onAct({ kind: "regenOutput", variantKey: o.variantKey })}
+                    disabled={busy !== null || bulkBusy}
+                    title="Regenerate just this output"
+                  >
+                    {busy?.kind === "regenOutput" && busy.variantKey === o.variantKey ? "…" : "Re-run"}
+                  </Button>
+                ) : null}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
+// Freshness for one output in the style overview: regenerated since its
+// rejection, still the version the reviewer saw, can't generate (and why), or
+// just when it was last made.
 function OutputFreshness({ o }: { o: StyleOutputView }) {
   // Excluded by a doc-type rule wins — it's never generated, so show the rule
   // (the same text the review screens show) rather than freshness.
   if (o.excluded) {
     return (
-      <span className="text-[11px] text-amber-700" title={o.exclusionReason ?? undefined}>
-        ⚠ {o.exclusionReason ?? "Not generated — skipped by a document-type rule for this product."}
+      <span className="text-warn max-w-56 truncate" title={o.exclusionReason ?? undefined}>
+        {o.exclusionReason ?? "Not generated: skipped by a document-type rule"}
       </span>
     );
   }
   if (o.rejected && o.regeneratedSinceRejection) {
     return (
-      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap text-emerald-700">
-        ↻ regenerated since rejection{o.lastGeneratedLabel ? ` · ${o.lastGeneratedLabel}` : ""}
+      <span className="text-good whitespace-nowrap">
+        Regenerated since{o.lastGeneratedLabel ? ` · ${o.lastGeneratedLabel}` : ""}
       </span>
     );
   }
   if (o.rejected && !o.declared) {
     return (
-      <span className="whitespace-nowrap text-[11px] text-amber-700" title="This output was removed from the prod spec — Mark fixed resolves the ticket.">
-        ⚠ removed from spec — resolves on mark fixed
+      <span className="text-warn whitespace-nowrap" title="This output was removed from the prod spec; marking it fixed resolves the comment.">
+        Removed from the spec
       </span>
     );
   }
@@ -1121,333 +1325,14 @@ function OutputFreshness({ o }: { o: StyleOutputView }) {
   // (not just rejected ones), naming the Monday fields to fill in.
   if (!o.ready) {
     return (
-      <span className="text-[11px] text-amber-700" title={`Please fill these in Monday: ${o.missing.join(", ")}`}>
-        ⚠ missing fields
-        {o.missing.length ? `: ${o.missing.slice(0, 3).join(", ")}${o.missing.length > 3 ? "…" : ""}` : ""}
+      <span className="text-warn max-w-56 truncate" title={`Please fill these in Monday: ${o.missing.join(", ")}`}>
+        Missing fields{o.missing.length ? `: ${o.missing.slice(0, 3).join(", ")}${o.missing.length > 3 ? "…" : ""}` : ""}
       </span>
     );
   }
-  if (o.rejected) {
-    return <span className="whitespace-nowrap text-[11px] text-amber-700">still the rejected version</span>;
-  }
+  if (o.rejected) return <span className="text-warn whitespace-nowrap">Still the rejected version</span>;
   return (
-    <span className="whitespace-nowrap text-[11px] text-zinc-400">
-      {o.lastGeneratedLabel ? `generated ${o.lastGeneratedLabel}` : "not generated"}
-    </span>
-  );
-}
-
-function Row({
-  row,
-  expanded,
-  onToggle,
-  asset,
-  pendingAction,
-  error,
-  note,
-  onAct,
-  selected,
-  onToggleSelect,
-  bulkBusy,
-  onAiFix,
-  readOnly,
-}: {
-  row: TicketRow;
-  expanded: boolean;
-  onToggle: () => void;
-  asset: AssetState;
-  pendingAction: string | null;
-  error: string | null;
-  note: string | null;
-  onAct: (action: "start" | "rerun" | "fix") => void;
-  selected: boolean;
-  onToggleSelect: () => void;
-  bulkBusy: boolean;
-  onAiFix: (row: TicketRow) => void;
-  readOnly: boolean;
-}) {
-  const actionable = !readOnly && (row.status === "OPEN" || row.status === "IN_PROGRESS");
-  const ds = displayStatusOf(row);
-  const data = asset && typeof asset === "object" ? asset : null;
-  const rejected = data?.rejected ?? null;
-  const latest = data?.latest ?? null;
-  // Surface the latest version separately only when a re-run produced a
-  // different job than the one that was rejected.
-  const latestDiffers = !!latest && (!rejected || latest.jobId !== rejected.jobId);
-  return (
-    <>
-      <tr
-        onClick={onToggle}
-        className={`cursor-pointer border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50 ${expanded ? "bg-zinc-50" : ""}`}
-      >
-        {readOnly ? null : (
-          <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-            {actionable ? (
-              <input
-                type="checkbox"
-                className="h-3.5 w-3.5 cursor-pointer align-middle accent-violet-600"
-                checked={selected}
-                disabled={bulkBusy}
-                onChange={onToggleSelect}
-                aria-label="Select ticket for bulk fix"
-              />
-            ) : null}
-          </td>
-        )}
-        <td className="px-3 py-2 whitespace-nowrap text-zinc-500">{row.createdAtLabel}</td>
-        <td className="px-3 py-2 text-zinc-600">
-          {row.outputName}
-          {row.regeneratedAfterRejection && row.status !== "RESOLVED" ? (
-            <span
-              className="ml-2 inline-block rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap text-emerald-700"
-              title={
-                row.regeneratedAtLabel
-                  ? `Re-generated ${row.regeneratedAtLabel} — newer than this rejection`
-                  : "Re-generated after this rejection"
-              }
-            >
-              ↻ regenerated
-            </span>
-          ) : null}
-          {row.notGeneratedText ? (
-            <span
-              className="ml-2 inline-block rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap text-amber-700"
-              title={row.notGeneratedText}
-            >
-              ⚠ not generated
-            </span>
-          ) : null}
-        </td>
-        <td className="px-3 py-2 text-zinc-600">
-          {row.customerName}
-          {row.businessArea ? ` · ${row.businessArea}` : ""}
-        </td>
-        <td className="px-3 py-2 whitespace-nowrap text-zinc-600">{row.poNumber ?? "—"}</td>
-        <td className="max-w-56 truncate px-3 py-2 text-zinc-600" title={row.comment}>
-          {row.attachments.length > 0 ? (
-            <span
-              className="mr-1 align-middle text-[11px] text-zinc-400"
-              title={`${row.attachments.length} image${row.attachments.length === 1 ? "" : "s"} attached`}
-            >
-              📎{row.attachments.length}
-            </span>
-          ) : null}
-          {row.comment}
-        </td>
-        <td className="px-3 py-2">
-          <span
-            className={`inline-block rounded-full border px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${STATUS_PILLS[ds]}`}
-          >
-            {ds.replace("_", " ")}
-            {row.reopenedCount > 0 ? ` ×${row.reopenedCount + 1}` : ""}
-          </span>
-        </td>
-      </tr>
-      {expanded ? (
-        <tr className="border-b border-zinc-100 last:border-b-0">
-          <td colSpan={readOnly ? 6 : 7} className="bg-zinc-50 px-4 py-4">
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="rounded-lg border border-zinc-200 bg-white p-3">
-                <div className="text-[10px] font-bold tracking-wide text-zinc-400 uppercase">
-                  Comment{row.reopenedCount > 0 ? " (incl. re-rejections)" : ""}
-                </div>
-                <p className="mt-1 text-xs whitespace-pre-wrap text-zinc-700">{row.comment}</p>
-                {row.attachments.length > 0 ? (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {row.attachments.map((a) => (
-                      <a
-                        key={a.id}
-                        href={a.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title={`${a.fileName} — open full size`}
-                        className="block h-16 w-16 overflow-hidden rounded border border-zinc-200 bg-zinc-50 transition hover:border-zinc-400"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element -- admin-only attachment thumbnail, served from our API */}
-                        <img src={a.url} alt={a.fileName} className="h-full w-full object-cover" />
-                      </a>
-                    ))}
-                  </div>
-                ) : null}
-                <p className="mt-2 text-[11px] text-zinc-400">— {row.reportedBy}</p>
-              </div>
-              <div className="rounded-lg border border-zinc-200 bg-white p-3">
-                <div className="text-[10px] font-bold tracking-wide text-zinc-400 uppercase">Context</div>
-                <p className="mt-1 text-xs text-zinc-700">
-                  {row.customerName}
-                  {row.businessArea ? ` · ${row.businessArea}` : ""}
-                  {row.poNumber ? ` · PO ${row.poNumber}` : ""}
-                </p>
-                <p className="mt-1 font-mono text-[11px] break-all text-zinc-500">
-                  {row.variantKey || `(no variant key — full re-run)`}
-                </p>
-                {row.notGeneratedText ? (
-                  <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] leading-relaxed text-amber-800">
-                    {row.notGeneratedText}
-                  </p>
-                ) : null}
-                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
-                  {!readOnly && row.aiFixable ? (
-                    <button
-                      type="button"
-                      onClick={() => onAiFix(row)}
-                      className="inline-flex items-center gap-1 rounded-md border border-violet-300 bg-violet-50 px-2 py-1 font-medium text-violet-700 hover:bg-violet-100"
-                      title="Let the AI propose an edit to this layout from the rejection comment — preview before/after and keep it if you like it"
-                    >
-                      ✨ AI fix
-                    </button>
-                  ) : null}
-                  {row.editHref ? (
-                    <a
-                      href={row.editHref}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-medium text-violet-700 underline hover:text-violet-900"
-                      title="Edit the source of this output in a new tab, then come back and re-run"
-                    >
-                      {row.editLabel} →
-                    </a>
-                  ) : null}
-                  <Link href={`/styles/${row.styleId}`} className="text-zinc-500 underline hover:text-zinc-800">
-                    Open style →
-                  </Link>
-                  <Link
-                    href={`/styles/${row.styleId}/review`}
-                    className="text-zinc-500 underline hover:text-zinc-800"
-                  >
-                    Review screen →
-                  </Link>
-                </div>
-              </div>
-              <div className="rounded-lg border border-zinc-200 bg-white p-3">
-                <div className="text-[10px] font-bold tracking-wide text-zinc-400 uppercase">History</div>
-                <p className="mt-1 text-xs text-zinc-700">{row.historyLabel}</p>
-              </div>
-            </div>
-
-            {asset === "loading" || asset === undefined ? (
-              <p className="mt-3 text-xs text-zinc-400">Loading the rejected PDF…</p>
-            ) : asset === "error" ? (
-              <p className="mt-3 text-xs text-red-600">Couldn&apos;t load the PDF preview.</p>
-            ) : !rejected && !latest ? (
-              <p className="mt-3 text-xs text-zinc-400">No generated PDF for this output right now.</p>
-            ) : (
-              <>
-                {rejected ? (
-                  <PreviewBlock
-                    title="Rejected version — what the reviewer saw"
-                    asset={rejected}
-                    outputName={row.outputName}
-                  />
-                ) : (
-                  <p className="mt-3 text-xs text-amber-700">
-                    The originally rejected PDF is no longer stored — showing the latest version below.
-                  </p>
-                )}
-                {latestDiffers ? (
-                  <PreviewBlock title="Latest re-run" asset={latest!} outputName={row.outputName} />
-                ) : null}
-              </>
-            )}
-
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {row.status === "OPEN" ? (
-                <button
-                  type="button"
-                  onClick={() => onAct("start")}
-                  disabled={pendingAction !== null}
-                  className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-50 disabled:opacity-50"
-                >
-                  {pendingAction === "start" ? "Starting…" : "Start work"}
-                </button>
-              ) : null}
-              {actionable ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => onAct("rerun")}
-                    disabled={pendingAction !== null}
-                    title="Regenerate this output WITHOUT notifying the reviewer"
-                    className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-50 disabled:opacity-50"
-                  >
-                    {pendingAction === "rerun" ? "Re-running…" : "↻ Re-run output (silent)"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onAct("fix")}
-                    disabled={pendingAction !== null}
-                    title="Final re-run + notify the reviewer that it's ready for another look"
-                    className="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50"
-                  >
-                    {pendingAction === "fix" ? "Fixing…" : "✓ Mark fixed & notify reviewer"}
-                  </button>
-                </>
-              ) : null}
-              {row.status === "FIXED" ? (
-                <span className="text-xs text-blue-700">
-                  Awaiting re-review — the reviewer was notified. Approval resolves this ticket; another
-                  rejection reopens it.
-                </span>
-              ) : null}
-              {row.status === "RESOLVED" ? (
-                row.approved ? (
-                  <span className="text-xs text-emerald-700">
-                    Approved — the reviewer approved this output.
-                  </span>
-                ) : (
-                  <span className="text-xs text-zinc-500">
-                    Resolved — closed without a reviewer approval (e.g. the output was removed).
-                  </span>
-                )
-              ) : null}
-              {error ? <span className="text-xs text-red-600">{error}</span> : null}
-              {note ? <span className="text-xs text-emerald-700">{note}</span> : null}
-            </div>
-          </td>
-        </tr>
-      ) : null}
-    </>
-  );
-}
-
-// One labelled PDF preview (header + inline iframe). Used for both the
-// rejected original and, when a re-run exists, the latest version.
-function PreviewBlock({
-  title,
-  asset,
-  outputName,
-}: {
-  title: string;
-  asset: AssetView;
-  outputName: string;
-}) {
-  const previewUrl = `/api/admin/jobs/${asset.jobId}/preview?${asset.previewQuery}`;
-  return (
-    <div className="mt-3 overflow-hidden rounded-lg border border-zinc-200 bg-white">
-      <div className="flex items-center justify-between gap-3 border-b border-zinc-100 bg-zinc-50 px-3 py-1.5">
-        <span className="text-[11px] font-semibold text-zinc-600">
-          {title} · generated {asset.generatedAtLabel}
-          <span className="font-normal text-zinc-400">
-            {" · "}
-            {asset.reviewStatus.toLowerCase().replace("_", " ")}
-          </span>
-          {asset.placeholderCount > 0 ? (
-            <span className="font-normal text-amber-700"> · ⚠ {asset.placeholderCount} placeholder(s)</span>
-          ) : (
-            <span className="font-normal text-emerald-700"> · no placeholders</span>
-          )}
-        </span>
-        <a
-          href={previewUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="shrink-0 text-xs text-zinc-500 underline"
-        >
-          Open
-        </a>
-      </div>
-      <iframe src={previewUrl} className="block h-72 w-full bg-white" title={`${title} — ${outputName}`} />
-    </div>
+    <span className="text-faint whitespace-nowrap">{o.lastGeneratedLabel ? `Generated ${o.lastGeneratedLabel}` : "Not generated"}</span>
   );
 }
 

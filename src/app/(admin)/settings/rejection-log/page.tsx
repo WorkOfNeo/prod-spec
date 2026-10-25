@@ -5,6 +5,8 @@ import { outputEditLink } from "@/lib/outputs/output-edit-link";
 import { layoutIdFromVariantKey } from "@/lib/output-layouts/variant-keys";
 import { styleOutputBases, notGeneratedReason } from "@/lib/rejection-log/style-outputs";
 import { baseVariantKey } from "@/lib/tickets/orphan";
+import { PageHeader } from "@/components/ui/page-header";
+import { TabLinks, type TabLink } from "@/components/ui/tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -264,59 +266,29 @@ export default async function RejectionLogPage({
 
   // Tabs: Active is the workbench (default); History is the read-only record of
   // fixed/resolved threads. Plain links (?view=) keep this a server component.
-  const tabs = [
+  const tabs: TabLink[] = [
     { key: "active", label: "Active", count: activeCount, href: "/settings/rejection-log" },
     { key: "history", label: "History", count: historyCount, href: "/settings/rejection-log?view=history" },
-  ] as const;
+  ];
 
   return (
-    <div className="px-8 py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Rejection log</h1>
-      <p className="mt-1 max-w-3xl text-sm text-zinc-500">
-        {isHistory ? (
-          <>
-            Rejections that have been <strong>marked fixed</strong> (now awaiting the reviewer&apos;s
-            re-review) or <strong>approved</strong>. A re-rejection sends a thread back to Active. This
-            view is read-only — work open rejections on the Active tab.
-          </>
-        ) : (
-          <>
-            Outputs rejected by the reviewer, with their comments. Work them here:{" "}
-            <strong>Re-run</strong> regenerates silently, <strong>Mark fixed &amp; notify</strong>{" "}
-            re-runs and posts an in-app notification telling the reviewer to take another look.
-            Approving the output on the review screen resolves its ticket automatically, moving it to
-            History.
-          </>
-        )}
-      </p>
-
-      <div className="mt-4 flex gap-1 border-b border-zinc-200">
-        {tabs.map((t) => {
-          const active = t.key === view;
-          return (
-            <a
-              key={t.key}
-              href={t.href}
-              className={`-mb-px border-b-2 px-3 py-1.5 text-sm font-medium transition ${
-                active
-                  ? "border-zinc-900 text-zinc-900"
-                  : "border-transparent text-zinc-500 hover:text-zinc-800"
-              }`}
-            >
-              {t.label}{" "}
-              <span className={`tabular-nums ${active ? "text-zinc-500" : "text-zinc-400"}`}>
-                {t.count}
-              </span>
-            </a>
-          );
-        })}
+    <div className="flex flex-col xl:h-[calc(100dvh-3rem)] xl:overflow-hidden">
+      <div className="shrink-0 px-6 pt-5">
+        <PageHeader
+          title="Rejection log"
+          meta={
+            isHistory
+              ? "Comments marked fixed (waiting for the reviewer's second look) or approved. Read-only; a new comment sends a thread back to Active."
+              : "Reviewer comments, grouped by style. Fix the data or layout, then mark it fixed and the reviewer is told to look again. Approving the output resolves it."
+          }
+        />
+        <TabLinks items={tabs} active={view} label="Rejection log" className="mt-4" />
       </div>
 
       {totalCount > rows.length ? (
-        <p className="mt-2 text-xs text-amber-700">
+        <p className="text-warn border-line border-b px-6 py-2 text-[12px]">
           Showing the {rows.length.toLocaleString()} most recent of {totalCount.toLocaleString()}{" "}
-          {isHistory ? "fixed / resolved threads" : "open rejections"} — resolve older threads to
-          clear the backlog.
+          {isHistory ? "fixed or resolved threads" : "open comments"}. Resolve older threads to clear the backlog.
         </p>
       ) : null}
 
