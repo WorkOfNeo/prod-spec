@@ -4,6 +4,7 @@
 // barcode rendering, preview missing-markers, and that CSS named pages
 // produce a PDF with two differently-sized pages.
 import { writeFileSync } from "node:fs";
+import puppeteer from "puppeteer";
 import { LayoutDefSchema } from "@/lib/output-layouts/schema";
 import { renderLayoutHtml } from "@/lib/output-layouts/render";
 import { unresolvedTokens, staticRequiredColumns } from "@/lib/output-layouts/tokens";
@@ -115,6 +116,7 @@ main()
   .then(() => batch12())
   .then(() => batch13())
   .then(() => batch14())
+  .then(() => batch15())
   .catch((err) => {
     console.error(err);
     process.exit(1);
@@ -812,4 +814,63 @@ async function batch14() {
 
   await closeBrowser();
   console.log(process.exitCode ? "BATCH 14 FAILED" : "BATCH 14 PASSED");
+}
+
+// ---------------------------------------------------------------------
+// Batch 15 coverage: "Shrink to fit height" lands on the LARGEST size that
+// fits. A wrapping paragraph in a short cell used to be shrunk in one ratio
+// jump and overshoot — wrapped text loses height faster than its font
+// shrinks — so it printed far smaller than the cell allowed. Re-running the
+// fit (fonts.ready, the PDF renderer) must give the same size, and a block
+// that already fits keeps its authored size.
+// ---------------------------------------------------------------------
+async function batch15() {
+  const style = buildSampleStyleData();
+  const long =
+    "Hergestellt in China von Contrast Company, Rudolfgårdsvej 6A 8260 Viby J, Dänemark, " +
+    "für Netto ApS & Co. KG; Siemensdamm 64, DE-13627 Berlin, netto.de";
+  const DEF = LayoutDefSchema.parse({
+    pages: [{ id: "p1", title: "", widthMm: 35, heightMm: 90,
+      blocks: [
+        { id: "long", rect: { col: 0, row: 10, colSpan: 12, rowSpan: 2 }, fontPt: 9, fitHeight: true, lines: [long] },
+        { id: "short", rect: { col: 0, row: 0, colSpan: 12, rowSpan: 2 }, fontPt: 9, fitHeight: true, lines: ["Cap"] },
+      ] }],
+  });
+  const html = await renderLayoutHtml(DEF, style, { mode: "production" });
+  // Passed as strings so tsx doesn't inject helpers into the page.
+  const probe = (sel: string) => `(function () {
+    var b = Array.prototype.find.call(document.querySelectorAll(".ol-fith"), function (x) {
+      return (x.textContent || "").indexOf(${JSON.stringify(sel)}) >= 0; });
+    function content() { var h = 0; for (var i = 0; i < b.children.length; i++) h += b.children[i].getBoundingClientRect().height; return h; }
+    var cs = getComputedStyle(b);
+    var avail = b.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    var px = parseFloat(cs.fontSize);
+    var fitsNow = content() <= avail + 0.5;
+    b.style.fontSize = (px * 1.03) + "px";
+    var biggerFits = content() <= avail + 0.5;
+    b.style.fontSize = px + "px";
+    return { pt: px * 0.75, fitsNow: fitsNow, biggerFits: biggerFits };
+  })()`;
+  type Probe = { pt: number; fitsNow: boolean; biggerFits: boolean };
+  const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--font-render-hinting=none"] });
+  try {
+    const page = await browser.newPage();
+    await page.emulateMediaType("print");
+    await page.setContent(html, { waitUntil: "load" });
+    await page.evaluate("document.fonts.ready");
+    await page.evaluate("window.__olFitWidth()");
+    const first = (await page.evaluate(probe("Contrast Company"))) as Probe;
+    await page.evaluate("window.__olFitWidth()");
+    const again = (await page.evaluate(probe("Contrast Company"))) as Probe;
+    const short = (await page.evaluate(probe("Cap"))) as Probe;
+    assert(first.pt < 9, `the long paragraph is shrunk below its 9 pt (${first.pt.toFixed(2)} pt)`);
+    assert(first.fitsNow, "the shrunk paragraph fits its cell");
+    assert(!first.biggerFits, `3% larger would overflow, so ${first.pt.toFixed(2)} pt is the largest size that fits`);
+    assert(Math.abs(again.pt - first.pt) < 0.01, "re-running the fit gives the same size (no compounding)");
+    assert(Math.abs(short.pt - 9) < 0.01, `a block that already fits keeps its 9 pt (${short.pt.toFixed(2)} pt)`);
+  } finally {
+    await browser.close();
+  }
+  await closeBrowser();
+  console.log(process.exitCode ? "BATCH 15 FAILED" : "BATCH 15 PASSED");
 }
