@@ -1172,13 +1172,18 @@ async function prepareLayoutRender(
 //     for the block's border padding), set font-size by the ratio, one
 //     correction pass for font-metric non-linearity. Blank lines skipped.
 //   • Height (.ol-fith) — when a block's content is TALLER than its cell,
-//     scale the block font DOWN until it fits — never up, so an in-bounds
-//     block keeps its authored size. Content height is summed from the line
-//     boxes (alignment-independent — valign middle/bottom would defeat
-//     scrollHeight); available height is clientHeight minus vertical padding.
-//     Iterated (padding is constant, so the shrink is slightly non-linear)
-//     with a floor of 1 px. Stops a long {{careInstructions}} block from
-//     overflowing onto the wash-symbols block below it.
+//     scale the block font DOWN to the LARGEST size that fits — never up, so
+//     an in-bounds block keeps its authored size. Content height is summed
+//     from the line boxes (alignment-independent — valign middle/bottom would
+//     defeat scrollHeight); available height is clientHeight minus vertical
+//     padding. Binary search, not a ratio jump: wrapped text loses height
+//     faster than its font shrinks (more words fit per line), so scaling by
+//     avail/content in one step overshoots and never comes back — a German
+//     sentence that fits at 5 pt landed at 2.9 pt. Every run starts from the
+//     authored size (kept in data-ol-fs), so a re-run on fonts.ready or from
+//     the PDF renderer re-measures instead of compounding. Floor of 1 px.
+//     Stops a long {{careInstructions}} block from overflowing onto the
+//     wash-symbols block below it.
 //   • Table  (.ol-assort) — the assortment table's cells are nowrap, so a
 //     size run too wide for the block widens the table past its 100% instead
 //     of stacking "86/92" into three lines. Same measure-and-scale mechanic
@@ -1215,19 +1220,21 @@ const FIT_SCRIPT = `<script>
     return h;
   }
   function fitBlockHeight(el) {
-    var cs = getComputedStyle(el);
-    var padV = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-    var avail = el.clientHeight - padV;
-    if (avail <= 0) return;
-    for (var pass = 0; pass < 8; pass++) {
-      var content = contentHeight(el);
-      if (content <= avail + 0.5) break;
-      var cur = parseFloat(getComputedStyle(el).fontSize) || 12;
-      var next = cur * (avail / content);
-      if (next < 1) next = 1;
-      el.style.fontSize = next + "px";
-      if (next <= 1) break;
+    if (!el.hasAttribute("data-ol-fs")) el.setAttribute("data-ol-fs", el.style.fontSize || "");
+    el.style.fontSize = el.getAttribute("data-ol-fs");
+    function avail() {
+      var cs = getComputedStyle(el);
+      return el.clientHeight - ((parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0));
     }
+    function fits() { return contentHeight(el) <= avail() + 0.5; }
+    if (avail() <= 0 || fits()) return;
+    var lo = 1, hi = parseFloat(getComputedStyle(el).fontSize) || 12;
+    for (var i = 0; i < 12; i++) {
+      var mid = (lo + hi) / 2;
+      el.style.fontSize = mid + "px";
+      if (fits()) lo = mid; else hi = mid;
+    }
+    el.style.fontSize = lo + "px";
   }
   function fitTable(tbl) {
     tbl.style.fontSize = "";
