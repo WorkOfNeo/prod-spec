@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, ExternalLink, MessageSquare, Wrench } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ExternalLink, MessageSquare, Minus, Plus, Wrench } from "lucide-react";
+import { PdfProof, stepZoom, useProofZoom } from "@/components/pdf-proof";
 import { buttonClass } from "@/components/ui/button";
 import { Pill, StatusDot } from "@/components/ui/pill";
 import { CommentThread } from "./comment-thread";
@@ -48,6 +49,10 @@ export function ReviewWorkspace({
 }) {
   const [selectedKey, setSelectedKey] = useState<string | null>(() => firstWaiting(items)?.key ?? null);
   const [folded, setFolded] = useState<Set<string>>(() => new Set(collapsedGroups));
+  // The proof's zoom is remembered in this browser across outputs and visits;
+  // shownScale is what "Fit" currently works out to, for the label.
+  const [zoom, setZoom] = useProofZoom();
+  const [shownScale, setShownScale] = useState(100);
   const proofRef = useRef<HTMLElement>(null);
 
   // A deep link (#output-…) picks its output once the page is in the browser.
@@ -237,7 +242,7 @@ export function ReviewWorkspace({
                 {selected.name}
               </span>
               {selected.kind === "proof" && selected.fileName ? (
-                <span className="text-muted hidden min-w-0 truncate font-mono text-[11px] md:inline" title={selected.fileName}>
+                <span className="text-muted hidden min-w-0 truncate font-mono text-[11px] 2xl:inline" title={selected.fileName}>
                   {selected.fileName}
                 </span>
               ) : null}
@@ -250,15 +255,44 @@ export function ReviewWorkspace({
                 : null}
               <span className="flex-1" />
               {selected.kind === "proof" ? (
+                <div className="flex shrink-0 items-center" role="group" aria-label="Zoom">
+                  <button
+                    type="button"
+                    onClick={() => setZoom(stepZoom(shownScale, -1))}
+                    aria-label="Zoom out"
+                    className="text-muted hover:bg-subtle hover:text-ink inline-flex size-7 items-center justify-center rounded-md"
+                  >
+                    <Minus size={14} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setZoom("fit")}
+                    title={zoom === "fit" ? "Fitted to the width" : "Fit to the width"}
+                    className="text-ink hover:bg-subtle h-7 min-w-14 rounded-md px-1.5 text-[12px] tabular-nums"
+                  >
+                    {zoom === "fit" ? `Fit · ${shownScale}%` : `${zoom}%`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setZoom(stepZoom(shownScale, 1))}
+                    aria-label="Zoom in"
+                    className="text-muted hover:bg-subtle hover:text-ink inline-flex size-7 items-center justify-center rounded-md"
+                  >
+                    <Plus size={14} aria-hidden="true" />
+                  </button>
+                </div>
+              ) : null}
+              {selected.kind === "proof" ? (
                 <a
                   href={selected.previewUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className={buttonClass("ghost", "sm", "shrink-0")}
                   title="Open the full PDF in a new tab"
+                  aria-label="Open PDF"
                 >
                   <ExternalLink size={13} aria-hidden="true" />
-                  Open PDF
+                  <span className="hidden 2xl:inline">Open PDF</span>
                 </a>
               ) : null}
             </div>
@@ -270,9 +304,17 @@ export function ReviewWorkspace({
                     Approval is blocked until the data is fixed and the output re-run.
                   </div>
                 ) : null}
-                <div className="h-[75vh] min-h-0 xl:h-auto xl:flex-1">
-                  <iframe key={selected.previewUrl} src={selected.previewUrl} className="block size-full bg-white" title={selected.name} />
-                </div>
+                <PdfProof
+                  // One viewer per output: switching shows the new one loading,
+                  // never the previous output's pages.
+                  key={selected.previewUrl}
+                  url={selected.previewUrl}
+                  title={selected.name}
+                  zoom={zoom}
+                  onZoomChange={setZoom}
+                  onScale={setShownScale}
+                  className="h-[75vh] min-h-0 xl:h-auto xl:flex-1"
+                />
               </>
             ) : (
               <div className="min-h-0 flex-1 overflow-y-auto p-6">
