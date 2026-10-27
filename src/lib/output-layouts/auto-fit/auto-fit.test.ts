@@ -13,6 +13,7 @@ let geo: Geometry;
 let compactAround: typeof import("./compact").compactAround;
 let autoFitBlock: typeof import("./fit-block").autoFitBlock;
 let largestFitting: typeof import("./fit-block").largestFitting;
+let pickCompleteSamples: typeof import("./completeness").pickCompleteSamples;
 let buildSampleStyleData: typeof import("../../pdf/sample-data").buildSampleStyleData;
 
 before(async () => {
@@ -20,6 +21,7 @@ before(async () => {
   geo = await import("./geometry");
   ({ compactAround } = await import("./compact"));
   ({ autoFitBlock, largestFitting } = await import("./fit-block"));
+  ({ pickCompleteSamples } = await import("./completeness"));
   ({ buildSampleStyleData } = await import("../../pdf/sample-data"));
 });
 
@@ -125,6 +127,25 @@ test("largestFitting finds the boundary on the step grid", async () => {
   assert.equal(await largestFitting(2, 7, 0.25, async (pt) => pt <= 4.6), 4.5);
   assert.equal(await largestFitting(2, 7, 0.25, async () => true), 7);
   assert.equal(await largestFitting(2, 7, 0.25, async () => false), 0);
+});
+
+// ---- sample selection ------------------------------------------------------------
+
+test("samples are complete styles only; a token nobody fills disqualifies no one", () => {
+  const scanned = [
+    { sample: "A", label: "A", missing: ["{{careInstructions:da}}", "{{price}}"] },
+    { sample: "B", label: "B", missing: ["{{price}}"] },
+    { sample: "C", label: "C", missing: ["{{price}}"] },
+    { sample: "D", label: "D", missing: ["{{price}}", "{{ean13}}"] },
+  ];
+  const picked = pickCompleteSamples(scanned, 8);
+  assert.deepEqual(picked.samples, ["B", "C"]);
+  assert.deepEqual(picked.neverFilled, ["{{price}}"]);
+  assert.deepEqual(picked.incomplete, [
+    { label: "A", missing: ["{{careInstructions:da}}"] },
+    { label: "D", missing: ["{{ean13}}"] },
+  ]);
+  assert.deepEqual(pickCompleteSamples(scanned, 1).samples, ["B"]);
 });
 
 // ---- the three tiers, against a fake measurer -----------------------------------

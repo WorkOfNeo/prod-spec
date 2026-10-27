@@ -15,12 +15,18 @@
  * ONE BLOCK
  *   npx tsx --env-file=.env scripts/layout-autofit.ts --layout=<id> --page=<n|title> \
  *     --block=<id|index> [--lines=<file>] [--style=<id> …] [--spec=<prodSpecId>] \
- *     [--samples=8] [--out=<dir>]
+ *     [--samples=8] [--scan=40] [--out=<dir>]
  *
  *   --lines   replace the block's lines with this file's lines first
- *   --style   always measured, first one pictured (repeatable)
- *   --spec    ProdSpec whose newest live styles are added as samples
+ *   --style   measured and pictured first, if complete (repeatable)
+ *   --spec    ProdSpec whose newest live styles are scanned for samples
  *             (default: the first --style's spec)
+ *   --samples complete styles to measure against (default 8)
+ *   --scan    newest live styles to examine (default 40)
+ *
+ * Samples are COMPLETE styles only: every token on the face resolves (the
+ * builder's "missing on this style" check), except tokens no scanned style
+ * fills. Left-out styles and what they miss are listed in <face>.json.
  *   --page    1-based page number or page title
  *
  * A PLAN (many faces, text edits applied first)
@@ -145,6 +151,7 @@ async function main() {
   const outDir = arg("out") ?? "autofit-out";
   mkdirSync(outDir, { recursive: true });
   const take = Number(arg("samples") ?? 8);
+  const scan = Number(arg("scan") ?? 40);
 
   type Work = { name: string; layoutId: string; before: LayoutDef; after: LayoutDef; faces: Face[]; styleIds: string[]; prodSpecId: string | null };
   const work: Work[] = [];
@@ -191,14 +198,23 @@ async function main() {
   try {
     for (const w of work) {
       const { customLogo } = await db.outputLayout.findUniqueOrThrow({ where: { id: w.layoutId }, select: { customLogo: true } });
-      const samples = await loadAutoFitSamples({ prodSpecId: w.prodSpecId, styleIds: w.styleIds, take, defs: [w.before, w.after] });
-      if (!samples.length) {
-        console.log(`${w.name.padEnd(20)} no sample styles — pass --style or --spec`);
-        continue;
-      }
       const pdf = async (def: LayoutDef, pageIndex: number, sd: StyleData, file: string) =>
         writeFileSync(join(outDir, file), await renderPdf({ html: await renderLayoutHtml(def, sd, { mode: "production", pageIndex, customLogo }) }));
       for (const face of w.faces) {
+        const name = `${w.name}--p${face.pageIndex}`;
+        const set = await loadAutoFitSamples({
+          prodSpecId: w.prodSpecId,
+          styleIds: w.styleIds,
+          take,
+          scan,
+          defs: [w.before, w.after],
+          completeOn: { def: w.after, pages: [face.pageIndex] },
+        });
+        const samples = set.samples;
+        if (!samples.length) {
+          console.log(`${name.padEnd(20)} no complete style among ${set.scanned} scanned — pass --style or --spec`);
+          continue;
+        }
         const res = await autoFitBlock({
           def: w.after,
           pageIndex: face.pageIndex,
@@ -207,7 +223,6 @@ async function main() {
           evaluate: tab.evaluate,
           renderOptions: { customLogo },
         });
-        const name = `${w.name}--p${face.pageIndex}`;
         await pdf(w.before, face.pageIndex, samples[0].styleData, `${name}.before.pdf`);
         await pdf(res.def, face.pageIndex, samples[0].styleData, `${name}.proposal.pdf`);
         if (res.strategy === "overshoot") {
@@ -221,6 +236,9 @@ async function main() {
               pageIndex: face.pageIndex,
               blockIndex: face.blockIndex,
               samples: samples.map((s) => s.label),
+              scanned: set.scanned,
+              neverFilled: set.neverFilled,
+              incomplete: set.incomplete,
               strategy: res.strategy,
               pt: res.pt,
               capPt: res.capPt,
@@ -238,7 +256,7 @@ async function main() {
             1,
           ),
         );
-        console.log(`${name.padEnd(20)} ${summary(res)}  [${samples.length} styles]`);
+        console.log(`${name.padEnd(20)} ${summary(res)}  [${samples.length} complete of ${set.scanned} scanned]`);
       }
     }
   } finally {
