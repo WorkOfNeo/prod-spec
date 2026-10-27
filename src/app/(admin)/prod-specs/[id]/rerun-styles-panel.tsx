@@ -38,6 +38,7 @@ export function RerunStylesPanel({
   unsaved,
   onList,
   adoptBatchId,
+  compact = false,
 }: {
   prodSpecId: string;
   // Live editor state — the spec's active toggle and whether there are unsaved
@@ -52,6 +53,9 @@ export function RerunStylesPanel({
   // A batch the EDITOR started (a per-output "Run all") — the panel adopts it so
   // its progress card + polling are the one place a run is watched.
   adoptBatchId?: string | null;
+  // The Outputs tab's side card: the counts, Run all and its progress, without
+  // the per-style list (that lives on the Styles & approval tab).
+  compact?: boolean;
 }) {
   const base = `/api/admin/prod-specs/${prodSpecId}/rerun-styles`;
   const storageKey = `prodspec-rerun:${prodSpecId}`;
@@ -287,11 +291,148 @@ export function RerunStylesPanel({
 
   const justFinished = batch != null && batch.finishedAt != null && !dismissed;
 
+  const runState = (
+    <>
+    {/* "Run all" progress. */}
+    {activeRun && batch && (
+      <div className="mt-3 rounded-md border border-line bg-surface px-3 py-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2 text-sm text-ink">
+            <Spinner />
+            <span className="font-medium">Running all styles</span>
+            <span className="tabular-nums text-muted">
+              {batch.done}/{batch.total}
+            </span>
+            {batch.failed > 0 && (
+              <span className="tabular-nums text-bad">· {batch.failed} failed</span>
+            )}
+          </div>
+          {batch.createdByEmail && (
+            <span data-private className="shrink-0 text-xs text-faint">started by {batch.createdByEmail}</span>
+          )}
+        </div>
+        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-subtle">
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-500"
+            style={{
+              width: `${batch.total > 0 ? Math.min(100, Math.round((batch.done / batch.total) * 100)) : 0}%`,
+            }}
+          />
+        </div>
+        <p className="mt-1.5 text-[11px] text-faint">
+          Rendering in the background — safe to leave this page; progress resumes when you return.
+        </p>
+      </div>
+    )}
+
+    {error && (
+      <p className="mt-2 rounded-md border border-transparent bg-warn-soft px-2.5 py-1 text-xs text-warn">
+        {error}
+      </p>
+    )}
+
+    {justFinished && batch && (
+      <div className="mt-2 inline-flex items-center gap-2 rounded-md border border-transparent bg-good-soft px-2.5 py-1 text-xs font-medium text-good">
+        <span>
+          ✓ Run complete · {batch.done}/{batch.total}
+          {batch.failed > 0 ? ` · ${batch.failed} failed` : ""}
+        </span>
+        <button
+          type="button"
+          onClick={() => setDismissed(true)}
+          aria-label="Dismiss"
+          className="text-good hover:text-good"
+        >
+          ✕
+        </button>
+      </div>
+    )}
+    </>
+  );
+
+  const belowCutoffToggle =
+    list && list.toRerunBelowCutoff > 0 ? (
+      <label
+        className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-transparent bg-warn-soft px-1.5 py-0.5 text-warn"
+        title={`Styles on a PO below ${list.generationCutoff} are parked backlog — the automatic sweep never runs them either. Their own Run button always works.`}
+      >
+        <input
+          type="checkbox"
+          checked={includeBelowCutoff}
+          onChange={(e) => setIncludeBelowCutoff(e.target.checked)}
+          className="h-3 w-3"
+        />
+        include {list.toRerunBelowCutoff} below PO {list.generationCutoff}
+      </label>
+    ) : null;
+
+  if (compact) {
+    const counts: Array<[number, string, string]> = list
+      ? [
+          [list.withMissing, "with something new", "bg-subtle text-muted"],
+          [list.withRejected, "with a rejection", "bg-bad-soft text-bad"],
+          [list.withChanged, "changed since their run", "bg-accent-soft text-accent-text"],
+          [list.withPending, "awaiting review", "bg-warn-soft text-warn"],
+        ]
+      : [];
+    return (
+      <div className="flex flex-col gap-3 text-[12px]">
+        {listLoading ? (
+          <p className="flex items-center gap-2 text-muted">
+            <Spinner /> Counting styles…
+          </p>
+        ) : !list || list.totalStyles === 0 ? (
+          <p className="text-muted">No styles on this prod spec yet.</p>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-muted">
+              <span className="text-ink tabular-nums">{list.totalStyles}</span> styles ·{" "}
+              <span className="tabular-nums">{list.generatedStyles}</span> generated
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {counts
+                .filter(([n]) => n > 0)
+                .map(([n, label, cls]) => (
+                  <span key={label} className={`inline-flex h-5 items-center rounded-full px-2 text-[11px] font-medium ${cls}`}>
+                    {n} {label}
+                  </span>
+                ))}
+            </div>
+          </div>
+        )}
+        {belowCutoffToggle ? <div>{belowCutoffToggle}</div> : null}
+        <button
+          type="button"
+          onClick={runAll}
+          disabled={
+            submittingAll ||
+            listLoading ||
+            list == null ||
+            runAllCount === 0 ||
+            activeRun ||
+            Boolean(runAllDisabledReason)
+          }
+          title={runAllDisabledReason ?? "Run every style with outputs to regenerate on this prod spec"}
+          className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <RunAllIcon />
+          {submittingAll ? "Starting…" : `Run all${list ? ` (${runAllCount})` : ""}`}
+        </button>
+        {runState}
+        <p className="text-[11px] text-faint">
+          Regenerates every output that isn&apos;t approved — new or missing, rejected, changed and
+          awaiting review. Approved work is left alone. Re-running notifies nobody: mark comments
+          fixed on the rejection log when you&apos;ve fixed them.
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="mt-4 rounded-md border border-line bg-subtle p-3">
+    <section data-section="Run styles" className="rounded-xl border border-line bg-surface p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-ink">Run styles</p>
+          <h2 className="text-[14px] font-semibold text-ink">Run styles</h2>
           <p className="mt-0.5 text-xs text-muted">
             Every style on this prod spec. Run one, or run all — every output that isn&apos;t{" "}
             <span className="font-medium text-ink">approved</span> regenerates (new/missing,
@@ -325,20 +466,7 @@ export function RerunStylesPanel({
           <span className="inline-flex items-center gap-1">
             · <Dot className="bg-primary" /> {runAllCount} to run
           </span>
-          {list.toRerunBelowCutoff > 0 && (
-            <label
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-transparent bg-warn-soft px-1.5 py-0.5 text-warn"
-              title={`Styles on a PO below ${list.generationCutoff} are parked backlog — the automatic sweep never runs them either. Their own Run button always works.`}
-            >
-              <input
-                type="checkbox"
-                checked={includeBelowCutoff}
-                onChange={(e) => setIncludeBelowCutoff(e.target.checked)}
-                className="h-3 w-3"
-              />
-              include {list.toRerunBelowCutoff} below PO {list.generationCutoff}
-            </label>
-          )}
+          {belowCutoffToggle}
           <div className="ml-auto">
             <input
               type="search"
@@ -351,60 +479,7 @@ export function RerunStylesPanel({
         </div>
       )}
 
-      {/* "Run all" progress. */}
-      {activeRun && batch && (
-        <div className="mt-3 rounded-md border border-line bg-surface px-3 py-2.5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2 text-sm text-ink">
-              <Spinner />
-              <span className="font-medium">Running all styles</span>
-              <span className="tabular-nums text-muted">
-                {batch.done}/{batch.total}
-              </span>
-              {batch.failed > 0 && (
-                <span className="tabular-nums text-bad">· {batch.failed} failed</span>
-              )}
-            </div>
-            {batch.createdByEmail && (
-              <span data-private className="shrink-0 text-xs text-faint">started by {batch.createdByEmail}</span>
-            )}
-          </div>
-          <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-subtle">
-            <div
-              className="h-full rounded-full bg-primary transition-[width] duration-500"
-              style={{
-                width: `${batch.total > 0 ? Math.min(100, Math.round((batch.done / batch.total) * 100)) : 0}%`,
-              }}
-            />
-          </div>
-          <p className="mt-1.5 text-[11px] text-faint">
-            Rendering in the background — safe to leave this page; progress resumes when you return.
-          </p>
-        </div>
-      )}
-
-      {error && (
-        <p className="mt-2 rounded-md border border-transparent bg-warn-soft px-2.5 py-1 text-xs text-warn">
-          {error}
-        </p>
-      )}
-
-      {justFinished && batch && (
-        <div className="mt-2 inline-flex items-center gap-2 rounded-md border border-transparent bg-good-soft px-2.5 py-1 text-xs font-medium text-good">
-          <span>
-            ✓ Run complete · {batch.done}/{batch.total}
-            {batch.failed > 0 ? ` · ${batch.failed} failed` : ""}
-          </span>
-          <button
-            type="button"
-            onClick={() => setDismissed(true)}
-            aria-label="Dismiss"
-            className="text-good hover:text-good"
-          >
-            ✕
-          </button>
-        </div>
-      )}
+      {runState}
 
       {/* The styles table. */}
       <div className="mt-3 overflow-hidden rounded-md border border-line bg-surface">
@@ -442,7 +517,7 @@ export function RerunStylesPanel({
           </ul>
         )}
       </div>
-    </div>
+    </section>
   );
 }
 

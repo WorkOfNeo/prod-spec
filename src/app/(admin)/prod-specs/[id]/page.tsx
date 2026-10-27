@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { PageHeader } from "@/components/ui/page-header";
 import {
   parseBundlePageSettings,
   parseProdSpecColumnMapping,
@@ -108,23 +107,12 @@ export default async function ProdSpecDetailPage({
 
   return (
     <div className="px-6 py-5">
-      <PageHeader
-        back={{ href: "/prod-specs", label: "Prod specs" }}
-        title={prodSpec.name}
-        meta={`${prodSpec.customer.name} · ${prodSpec.businessArea.name} · updated ${formatDate(prodSpec.updatedAt)}`}
-      />
-
       <ProdSpecEditor
         prodSpecId={prodSpec.id}
+        meta={`${prodSpec.customer.name} · ${prodSpec.businessArea.name} · updated ${formatDate(prodSpec.updatedAt)}`}
         styles={testStyles}
         initialTab={
-          tab === "outputs"
-            ? "outputs"
-            : tab === "cover"
-              ? "cover"
-              : tab === "test"
-                ? "test"
-                : "general"
+          tab === "general" || tab === "cover" || tab === "styles" || tab === "test" ? tab : "outputs"
         }
         initialName={prodSpec.name}
         initialActive={prodSpec.active}

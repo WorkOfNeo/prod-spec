@@ -13,7 +13,10 @@ import {
 } from "@/lib/pdf/pins-meta";
 import { Toggle } from "@/components/toggle";
 import { Combobox } from "@/components/ui/combobox";
-import { LazyOutputPreview } from "@/components/output-preview";
+import { LazyOutputPreview, normalize as normalizePreviewHtml } from "@/components/output-preview";
+import { buttonClass } from "@/components/ui/button";
+import { Pill } from "@/components/ui/pill";
+import { ChevronRight, FileText, LayoutTemplate, MoreHorizontal, Pin, Plus, X } from "lucide-react";
 import { MarkdownEditor } from "@/components/markdown-editor";
 import { PageSettingsFields } from "./page-settings-fields";
 import {
@@ -29,7 +32,7 @@ import { ApproveRejectedDialog } from "./approve-rejected-dialog";
 import { TestPanel, type TestStyle } from "./test-panel";
 
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
-type Tab = "general" | "cover" | "outputs" | "test";
+type Tab = "general" | "cover" | "outputs" | "styles" | "test";
 
 // Debounce window before the auto-saver flushes a payload. Long enough
 // to coalesce rapid typing in the markdown / care-instruction textareas,
@@ -38,6 +41,8 @@ const AUTOSAVE_DEBOUNCE_MS = 1200;
 
 type Props = {
   prodSpecId: string;
+  // Customer · business area · last update, under the name.
+  meta: string;
   // Styles linked to this prod spec — populate the Test tab's style picker.
   styles: TestStyle[];
   initialTab: Tab;
@@ -121,6 +126,11 @@ export function ProdSpecEditor(props: Props) {
   // A per-output run's batch id, handed to the panel so its progress card
   // watches it. Bumps on every scoped run (each returns a fresh id).
   const [adoptBatchId, setAdoptBatchId] = useState<string | null>(null);
+  // The Outputs card's catalogue (Add output), which rows have their settings
+  // open, and the care section (opened from the side card's Edit).
+  const [adding, setAdding] = useState(false);
+  const [openRows, setOpenRows] = useState<Set<string>>(new Set());
+  const [careOpen, setCareOpen] = useState(false);
 
   // Toggle handler: ON is deferred to the dialog (it persists the flag itself
   // via the approve-rejected route); OFF flips instantly through the autosaver.
@@ -408,9 +418,36 @@ export function ProdSpecEditor(props: Props) {
     props.hasColumnMappingOverride ||
     props.hasRequiredFieldsOverride ||
     props.attachedSupplierCount > 0;
+  const unsaved = status === "dirty" || status === "saving";
+
+  const tabs: Array<{ key: Tab; label: string; count?: number }> = [
+    { key: "outputs", label: "Outputs", count: enabledCount },
+    { key: "general", label: "General information" },
+    { key: "cover", label: "Cover page" },
+    { key: "styles", label: "Styles & approval", count: props.approvalStylesTotal },
+    { key: "test", label: "Test" },
+  ];
+
+  function toggleRow(key: string) {
+    setOpenRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  // "Edit" on the side card opens the care section in the main column and
+  // brings it into view.
+  function openCare() {
+    setCareOpen(true);
+    window.setTimeout(() => {
+      document.getElementById("care-instructions")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+  }
 
   return (
-    <div className="mt-5 flex flex-col gap-4">
+    <div className="flex flex-col">
       {approveDialogOpen && (
         <ApproveRejectedDialog
           prodSpecId={props.prodSpecId}
@@ -418,9 +455,8 @@ export function ProdSpecEditor(props: Props) {
           onConfirmed={() => setFullyApproved(true)}
         />
       )}
-      {/* Basics melted into one sticky row: identity + workflow knobs on
-          the left, save state on the right. */}
-      <HeaderBar
+      <SpecHeader
+        meta={props.meta}
         status={status}
         savedAt={savedAt}
         error={error}
@@ -435,275 +471,226 @@ export function ProdSpecEditor(props: Props) {
         onFullyApproved={handleFullyApprovedChange}
       />
 
-      <nav aria-label="Prod spec" className="border-line border-b">
-        <ul className="flex gap-5 overflow-x-auto">
-          {(
-            [
-              { key: "general" as const, label: "General information" },
-              { key: "cover" as const, label: "Cover page" },
-              { key: "outputs" as const, label: "Outputs", count: enabledCount },
-              { key: "test" as const, label: "Test" },
-            ] satisfies Array<{ key: Tab; label: string; count?: number }>
-          ).map((t) => (
-            <li key={t.key}>
-              <button
-                type="button"
-                onClick={() => switchTab(t.key)}
-                aria-current={tab === t.key ? "page" : undefined}
-                className={`-mb-px inline-flex h-9 items-center gap-1.5 border-b-2 text-[13px] transition-colors duration-150 ${
-                  tab === t.key ? "border-ink text-ink font-medium" : "text-muted hover:text-ink border-transparent"
-                }`}
-              >
-                {t.label}
-                {t.count !== undefined && <span className="text-faint text-[12px] font-normal tabular-nums">{t.count}</span>}
-              </button>
-            </li>
-          ))}
-        </ul>
+      <nav aria-label="Prod spec" className="border-line mt-4 flex gap-5 overflow-x-auto border-b">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => switchTab(t.key)}
+            aria-current={tab === t.key ? "page" : undefined}
+            className={`-mb-px inline-flex h-9 shrink-0 items-center gap-1.5 border-b-2 text-[13px] transition-colors duration-150 ${
+              tab === t.key ? "border-ink text-ink font-medium" : "text-muted hover:text-ink border-transparent"
+            }`}
+          >
+            {t.label}
+            {t.count !== undefined && <span className="text-faint text-[12px] font-normal tabular-nums">{t.count}</span>}
+          </button>
+        ))}
       </nav>
 
-      {tab === "general" ? (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className="flex flex-col gap-4">
-            <Section title="General information page">
-              <p className="mb-3 text-xs text-muted">
-                Write it once — general requirements, inspection standards, packing rules. When
-                non-empty, these pages ride inside the{" "}
-                <strong>cover page of every bundle</strong> generated under this prod spec, right
-                after the cover sheet (<code className="font-mono">00-…-prod-spec.pdf</code>). Type{" "}
-                <code className="font-mono">#</code> + space for a heading,{" "}
-                <code className="font-mono">-</code> + space for a list; tables and images insert
-                from the toolbar. Markdown under the hood — flip to the Markdown view to paste raw
-                source.
-              </p>
-              <MarkdownEditor
-                value={generalInfoMd}
-                onChange={setGeneralInfoMd}
-                uploadUrl={`/api/admin/prod-specs/${props.prodSpecId}/images`}
-              />
-              <p className="mt-1 text-[11px] text-faint">
-                Long content flows onto further A4 pages automatically. Preview refreshes after
-                each autosave.
-              </p>
-            </Section>
-
-            <Section title="Page settings · general information">
-              <PageSettingsFields
-                value={pageSettings.generalInfo}
-                onChange={(generalInfo: PageSettings) =>
-                  setPageSettings((prev) => ({ ...prev, generalInfo }))
-                }
-              />
-            </Section>
-
-            <Section title="Styles & approval">
-              <ApproveStylesPanel
-                prodSpecId={props.prodSpecId}
-                styles={props.approvalStyles}
-                totalCount={props.approvalStylesTotal}
-              />
-            </Section>
-          </div>
-
-          <Section title="A4 preview">
-            <div className="rounded-md bg-subtle p-3">
-              <LazyOutputPreview
-                src={`/api/admin/prod-specs/${props.prodSpecId}/general-info-preview`}
-                widthMm={210}
-                heightMm={297}
-                refreshKey={savedAt ?? undefined}
-              />
-            </div>
-          </Section>
-        </div>
-      ) : tab === "cover" ? (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className="flex flex-col gap-4">
-            <Section title="Cover page · auto-generated">
-              <p className="mb-3 text-xs text-muted">
-                First page of every bundle: each enabled output&apos;s title and dimensions, once.
-                The General information pages are appended into this same document (with their
-                own page settings), so the requirements always travel with the cover. The content
-                is read-only — it follows the Outputs and General information tabs; the runner
-                builds the real one from the documents a job actually generated. Tune how the
-                cover sheet prints below.
-              </p>
-            </Section>
-
-            <Section title="Page settings · cover page">
-              <PageSettingsFields
-                value={pageSettings.cover}
-                onChange={(cover: PageSettings) => setPageSettings((prev) => ({ ...prev, cover }))}
-              />
-            </Section>
-          </div>
-
-          <Section title="A4 preview">
-            <div className="rounded-md bg-subtle p-3">
-              <LazyOutputPreview
-                src={`/api/admin/prod-specs/${props.prodSpecId}/cover-preview`}
-                widthMm={210}
-                heightMm={297}
-                refreshKey={savedAt ?? undefined}
-              />
-            </div>
-          </Section>
-        </div>
-      ) : tab === "test" ? (
-        <TestPanel
-          prodSpecId={props.prodSpecId}
-          styles={props.styles}
-          enabledOutputCount={enabledCount}
-          hasGeneralInfo={generalInfoMd.trim().length > 0}
-          flush={flushIfDirty}
-        />
-      ) : (
-        <div className="flex flex-col gap-4">
-          <Section title="What this spec produces">
-            <label className="flex items-start gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={coverOnly}
-                onChange={(e) => setCoverOnly(e.target.checked)}
-                className="mt-0.5"
-              />
-              <span>
-                <strong>Cover page only — the customer supplies every layout themselves</strong>
-                <span className="mt-1 block text-xs text-muted">
-                  A run produces the cover and nothing else. Use this when the customer sends
-                  us finished artwork and only needs the cover generated; the rest arrives
-                  through the upload zones on each style&apos;s Review tab.
-                </span>
-                <span className="mt-1 block text-xs text-muted">
-                  Leave this off and an empty Outputs list below is treated as a mistake — a
-                  run fails with &ldquo;no Outputs configured&rdquo; rather than quietly
-                  producing a bare cover. That is the point of the tick: it tells the app the
-                  emptiness is deliberate.
-                </span>
-              </span>
-            </label>
-          </Section>
-
-          <Section title="Outputs">
-            <p className="mb-3 text-xs text-muted">
-              Each enabled entry generates one PDF when the style runs through the runner. Width
-              and height are in mm and override the variant&apos;s defaults. Pins and a live
-              preview sit behind each row&apos;s expander.
-            </p>
-
-            {outputs.length === 0 ? (
-              <div className="rounded-md border border-transparent bg-warn-soft p-3 text-xs text-warn">
-                No outputs selected — saving will leave this ProdSpec rendering nothing. Add at
-                least one variant below.
+      <div className="mt-5">
+        {tab === "general" ? (
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <Card
+              title="General information"
+              description="Requirements, inspection standards, packing rules — written once, printed right after the cover of every bundle."
+            >
+              <div className="p-4">
+                <MarkdownEditor
+                  value={generalInfoMd}
+                  onChange={setGeneralInfoMd}
+                  uploadUrl={`/api/admin/prod-specs/${props.prodSpecId}/images`}
+                />
+                <p className="text-faint mt-2 text-[11px]">
+                  Type <code className="font-mono">#</code> and a space for a heading,{" "}
+                  <code className="font-mono">-</code> and a space for a list; tables and images insert from the
+                  toolbar. Long content flows onto further A4 pages. Left empty, no page is added.
+                </p>
               </div>
-            ) : (
-              <ul className="flex flex-col gap-1.5">
-                {outputs.map((o, i) => {
-                  const v = variantByKey.get(o.variantKey);
-                  const pinCount = Object.keys(parseFieldOverrides(o.fieldOverrides)).length;
-                  // Output Builder layouts (variantKey `layout:<id>`) have their
-                  // own editor — let the row open it. Coded/built-in variants
-                  // have no per-output page, so they stay plain text.
-                  const layoutId = layoutIdFromVariantKey(o.variantKey);
-                  return (
-                    <li
-                      key={`${o.variantKey}-${i}`}
-                      className={`rounded-md border bg-surface px-3 py-2 ${
-                        o.enabled ? "border-line" : "border-transparent bg-amber-50/60"
-                      }`}
+            </Card>
+            <div className="flex flex-col gap-4">
+              <Card title="Page settings · general information" description="How these pages print">
+                <div className="p-4">
+                  <PageSettingsFields
+                    value={pageSettings.generalInfo}
+                    onChange={(generalInfo: PageSettings) => setPageSettings((prev) => ({ ...prev, generalInfo }))}
+                  />
+                </div>
+              </Card>
+              <Card title="A4 preview" description="Refreshes after each save">
+                <div className="bg-canvas p-3">
+                  <LazyOutputPreview
+                    src={`/api/admin/prod-specs/${props.prodSpecId}/general-info-preview`}
+                    widthMm={210}
+                    heightMm={297}
+                    refreshKey={savedAt ?? undefined}
+                  />
+                </div>
+              </Card>
+            </div>
+          </div>
+        ) : tab === "cover" ? (
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <Card title="Preview" description="Refreshes after each save">
+              <div className="bg-canvas p-4">
+                <div className="mx-auto max-w-2xl">
+                  <LazyOutputPreview
+                    src={`/api/admin/prod-specs/${props.prodSpecId}/cover-preview`}
+                    widthMm={210}
+                    heightMm={297}
+                    refreshKey={savedAt ?? undefined}
+                  />
+                </div>
+              </div>
+            </Card>
+            <div className="flex flex-col gap-4">
+              <Card title="Cover page" description="Auto-generated, first page of every bundle">
+                <p className="text-muted px-4 py-3 text-[12px]">
+                  Each enabled output&apos;s title and size, once, then the General information pages in the same
+                  document. The content follows the Outputs and General information tabs; a run builds the real
+                  one from the documents it actually generated.
+                </p>
+              </Card>
+              <Card title="Page settings · cover page" description="How the cover sheet prints">
+                <div className="p-4">
+                  <PageSettingsFields
+                    value={pageSettings.cover}
+                    onChange={(cover: PageSettings) => setPageSettings((prev) => ({ ...prev, cover }))}
+                  />
+                </div>
+              </Card>
+            </div>
+          </div>
+        ) : tab === "styles" ? (
+          <div className="flex flex-col gap-4">
+            <ApproveStylesPanel
+              prodSpecId={props.prodSpecId}
+              styles={props.approvalStyles}
+              totalCount={props.approvalStylesTotal}
+            />
+            <RerunStylesPanel
+              prodSpecId={props.prodSpecId}
+              specActive={active}
+              unsaved={unsaved}
+              onList={setRunList}
+              adoptBatchId={adoptBatchId}
+            />
+          </div>
+        ) : tab === "test" ? (
+          <TestPanel
+            prodSpecId={props.prodSpecId}
+            styles={props.styles}
+            enabledOutputCount={enabledCount}
+            hasGeneralInfo={generalInfoMd.trim().length > 0}
+            flush={flushIfDirty}
+          />
+        ) : (
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+            <div className="flex min-w-0 flex-col gap-4">
+              <Card
+                title="Outputs"
+                description="Generated for every style on this spec, unless a rule says otherwise. Cover and general information are their own tabs."
+                actions={
+                  unaddedVariants.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setAdding((a) => !a)}
+                      aria-expanded={adding}
+                      className={buttonClass("secondary", "sm")}
                     >
-                      <div className="flex items-center gap-3">
-                        <Toggle
-                          checked={o.enabled}
-                          onChange={(next) => updateOutput(i, { enabled: next })}
-                          ariaLabel={`${v?.name ?? o.variantKey} enabled`}
-                          size="sm"
-                        />
-                        <div className="min-w-0 flex-1">
-                          {layoutId ? (
-                            <Link
-                              href={`/output-builder/${layoutId}`}
-                              title={`Open “${v?.name ?? o.variantKey}” in Output Builder`}
-                              className="group/open inline-flex max-w-full items-center gap-1 text-sm font-medium text-ink hover:text-muted"
-                            >
-                              <span className="truncate group-hover/open:underline">
-                                {v?.name ?? o.variantKey}
-                              </span>
-                              <ExternalLinkIcon className="h-3.5 w-3.5 shrink-0 text-faint group-hover/open:text-zinc-600" />
-                            </Link>
-                          ) : (
-                            <span className="block truncate text-sm font-medium" title={v?.description}>
-                              {v?.name ?? o.variantKey}
-                            </span>
-                          )}
-                          <span
-                            className="block truncate font-mono text-[11px] text-faint"
-                            title={v?.description}
-                          >
-                            {o.variantKey}
-                            {v ? <> · {v.docType}</> : <> · <span className="text-bad">unknown variant</span></>}
-                          </span>
-                        </div>
-                        <label className="flex shrink-0 items-center gap-1 text-[11px] text-muted">
-                          <input
-                            type="number"
-                            step={0.1}
-                            min={1}
-                            value={o.widthMm}
-                            onChange={(e) => updateOutput(i, { widthMm: Number(e.target.value) })}
-                            className="w-16 rounded-md border border-line px-2 py-1 text-sm tabular-nums"
-                            aria-label="Width mm"
-                          />
-                          ×
-                          <input
-                            type="number"
-                            step={0.1}
-                            min={1}
-                            value={o.heightMm}
-                            onChange={(e) => updateOutput(i, { heightMm: Number(e.target.value) })}
-                            className="w-16 rounded-md border border-line px-2 py-1 text-sm tabular-nums"
-                            aria-label="Height mm"
-                          />
-                          mm
-                        </label>
-                        <OutputRunAllButton
-                          summary={runList?.byOutput?.[o.variantKey]}
-                          listLoaded={runList !== null}
-                          running={runningOutput === o.variantKey}
-                          busy={runningOutput !== null}
-                          unsaved={status === "dirty" || status === "saving"}
-                          specActive={active}
-                          onRun={() => void runOutputAll(o.variantKey, v?.name ?? o.variantKey)}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeOutput(i)}
-                          className="shrink-0 rounded-md p-1 text-faint transition-colors hover:bg-bad-soft hover:text-bad"
-                          aria-label={`Remove ${v?.name ?? o.variantKey}`}
-                          title="Remove output"
-                        >
-                          <XIcon className="h-4 w-4" />
-                        </button>
-                      </div>
-                      {outputRunError?.key === o.variantKey && (
-                        <p className="mt-1 text-[11px] text-bad">{outputRunError.message}</p>
-                      )}
-
-                      <details className="mt-1.5">
-                        <summary className="cursor-pointer text-xs font-medium text-muted hover:text-ink">
-                          <PinIcon className="mr-1 inline-block h-3.5 w-3.5 -translate-y-px align-middle text-faint" />
-                          {pinCount === 0 ? "no pins" : `${pinCount} pin${pinCount === 1 ? "" : "s"}`} · preview
-                        </summary>
-                        <div className="mt-2 border-t border-line pt-2">
-                          {/* Carton barcode preference — CARTON_MARKING outputs
-                              only. EAN-128 = Code 128 bars + number beneath (the
-                              default); EAN-13 = digits inside the symbol. Height
-                              overrides the renderer default (16 mm coded template
-                              / font-scaled in builder layouts). */}
-                          {v?.docType === "CARTON_MARKING" && (
-                            <div className="mb-3 flex flex-wrap items-center gap-3">
-                              <label className="text-[11px] text-muted">
-                                Carton barcode
+                      {adding ? <X size={13} aria-hidden="true" /> : <Plus size={13} aria-hidden="true" />}
+                      {adding ? "Done adding" : "Add output"}
+                    </button>
+                  ) : null
+                }
+              >
+                {adding && unaddedVariants.length > 0 ? (
+                  <AddOutputPicker
+                    open
+                    variants={unaddedVariants}
+                    prodSpecId={props.prodSpecId}
+                    onAdd={addOutput}
+                    previewRefreshKey={savedAt ?? undefined}
+                  />
+                ) : null}
+                {outputs.length === 0 ? (
+                  <p
+                    className={`m-4 rounded-md p-3 text-[12px] ${coverOnly ? "bg-subtle text-muted" : "bg-warn-soft text-warn"}`}
+                  >
+                    {coverOnly
+                      ? "Cover page only: a run makes the cover and nothing else."
+                      : "No outputs yet. A run fails with “no Outputs configured” until you add one, or tick Cover page only below."}
+                  </p>
+                ) : (
+                  <ul className="divide-line divide-y">
+                    {outputs.map((o, i) => {
+                      const v = variantByKey.get(o.variantKey);
+                      const label = v?.name ?? o.variantKey;
+                      const pinCount = Object.keys(parseFieldOverrides(o.fieldOverrides)).length;
+                      // Output Builder layouts (variantKey `layout:<id>`) open in
+                      // their own editor; built-in variants have no page of their own.
+                      const layoutId = layoutIdFromVariantKey(o.variantKey);
+                      const summary = runList?.byOutput?.[o.variantKey];
+                      const open = openRows.has(o.variantKey);
+                      const previewSrc = `/api/admin/prod-specs/${props.prodSpecId}/output-preview?variantKey=${encodeURIComponent(o.variantKey)}`;
+                      return (
+                        <li key={`${o.variantKey}-${i}`} className={o.enabled ? "" : "bg-subtle/60"}>
+                          <div className="flex flex-wrap items-start gap-3 px-4 py-3 md:flex-nowrap">
+                            <OutputThumb
+                              src={previewSrc}
+                              widthMm={o.widthMm}
+                              heightMm={o.heightMm}
+                              refreshKey={savedAt ?? undefined}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-ink truncate text-[13px] font-medium" title={v?.description}>
+                                  {label}
+                                </span>
+                                {!o.enabled ? (
+                                  <Pill title="Switched off: runs skip this output">Off</Pill>
+                                ) : null}
+                              </div>
+                              <div className="text-muted mt-0.5 flex flex-wrap items-center gap-x-2.5 text-[12px]">
+                                <span>{v ? v.docTypeLabel : <span className="text-bad">Unknown variant</span>}</span>
+                                <span className="tabular-nums">
+                                  {o.widthMm} × {o.heightMm} mm
+                                </span>
+                                <span className="text-faint truncate font-mono text-[11px]">{o.variantKey}</span>
+                              </div>
+                              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                {pinCount > 0 ? (
+                                  <Pill title="Fields this output always prints with a fixed value">
+                                    <Pin size={10} aria-hidden="true" />
+                                    {pinCount} pinned
+                                  </Pill>
+                                ) : null}
+                                {summary && summary.applies > 0 ? (
+                                  <span
+                                    className="text-muted inline-flex items-center gap-1.5 text-[12px]"
+                                    title={`Approved on ${summary.approved} of the ${summary.applies} styles this output applies to`}
+                                  >
+                                    <span className="bg-subtle flex h-1.5 w-14 overflow-hidden rounded-full">
+                                      <span
+                                        className="bg-good h-full"
+                                        style={{ width: `${Math.round((summary.approved / summary.applies) * 100)}%` }}
+                                      />
+                                    </span>
+                                    <span className="tabular-nums">
+                                      {summary.approved}/{summary.applies} approved
+                                    </span>
+                                  </span>
+                                ) : null}
+                              </div>
+                              {outputRunError?.key === o.variantKey && (
+                                <p className="text-bad mt-1 text-[11px]">{outputRunError.message}</p>
+                              )}
+                            </div>
+                            <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                              {/* Carton barcode: EAN-128 = Code 128 bars with the
+                                  number beneath (the default); EAN-13 = digits
+                                  inside the symbol. */}
+                              {v?.docType === "CARTON_MARKING" && (
                                 <select
                                   value={o.cartonBarcodeType ?? "ean128"}
                                   onChange={(e) =>
@@ -711,103 +698,158 @@ export function ProdSpecEditor(props: Props) {
                                       cartonBarcodeType: e.target.value === "ean13" ? "ean13" : undefined,
                                     })
                                   }
-                                  className="ml-1 rounded-md border border-line bg-surface px-2 py-1 text-sm normal-case text-ink"
+                                  aria-label={`Carton barcode for ${label}`}
+                                  className="border-line bg-surface text-ink focus:border-accent h-7 rounded-md border px-2 text-[12px] outline-none"
                                 >
-                                  <option value="ean128">EAN-128 (Code 128) — default</option>
+                                  <option value="ean128">EAN-128 (Code 128)</option>
                                   <option value="ean13">EAN-13</option>
                                 </select>
-                              </label>
-                              <label className="text-[11px] text-muted">
-                                Bar height mm
-                                <input
-                                  type="number"
-                                  step={0.5}
-                                  min={4}
-                                  max={60}
-                                  placeholder="auto"
-                                  value={o.cartonBarcodeHeightMm ?? ""}
-                                  onChange={(e) =>
-                                    updateOutput(i, {
-                                      cartonBarcodeHeightMm: e.target.value ? Number(e.target.value) : undefined,
-                                    })
-                                  }
-                                  className="ml-1 w-20 rounded-md border border-line px-2 py-1 text-sm tabular-nums"
-                                />
-                              </label>
+                              )}
+                              {layoutId ? (
+                                <Link
+                                  href={`/output-builder/${layoutId}`}
+                                  title={`Open “${label}” in the Output Builder`}
+                                  className={buttonClass("secondary", "sm")}
+                                >
+                                  <LayoutTemplate size={13} aria-hidden="true" />
+                                  Open layout
+                                </Link>
+                              ) : null}
+                              <OutputRunAllButton
+                                summary={summary}
+                                listLoaded={runList !== null}
+                                running={runningOutput === o.variantKey}
+                                busy={runningOutput !== null}
+                                unsaved={unsaved}
+                                specActive={active}
+                                onRun={() => void runOutputAll(o.variantKey, label)}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => toggleRow(o.variantKey)}
+                                aria-expanded={open}
+                                aria-label={`More for ${label}`}
+                                title="On/off, size, pinned fields, preview, remove"
+                                className={buttonClass("ghost", "sm", "px-1.5")}
+                              >
+                                <MoreHorizontal size={15} aria-hidden="true" />
+                              </button>
                             </div>
-                          )}
-                          <PinControls
-                            overrides={o.fieldOverrides}
-                            onChange={(fieldOverrides) => updateOutput(i, { fieldOverrides })}
-                          />
-                          {/* Sample preview wearing THIS spec's config (logo,
-                              languages, care override, pins, dims). Refetches
-                              after each autosave. */}
-                          <div className="mt-3 rounded-md bg-subtle p-3">
-                            <LazyOutputPreview
-                              src={`/api/admin/prod-specs/${props.prodSpecId}/output-preview?variantKey=${encodeURIComponent(o.variantKey)}`}
-                              widthMm={o.widthMm}
-                              heightMm={o.heightMm}
-                              refreshKey={savedAt ?? undefined}
-                            />
                           </div>
-                        </div>
-                      </details>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+                          {open ? (
+                            <div className="border-line bg-subtle/40 flex flex-col gap-3 border-t px-4 py-3">
+                              <div className="text-muted flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px]">
+                                <Toggle
+                                  checked={o.enabled}
+                                  onChange={(next) => updateOutput(i, { enabled: next })}
+                                  label="Generate this output"
+                                  size="sm"
+                                />
+                                <label className="flex items-center gap-1">
+                                  Size
+                                  <input
+                                    type="number"
+                                    step={0.1}
+                                    min={1}
+                                    value={o.widthMm}
+                                    onChange={(e) => updateOutput(i, { widthMm: Number(e.target.value) })}
+                                    className="border-line bg-surface text-ink h-7 w-16 rounded-md border px-2 text-[12px] tabular-nums"
+                                    aria-label="Width mm"
+                                  />
+                                  ×
+                                  <input
+                                    type="number"
+                                    step={0.1}
+                                    min={1}
+                                    value={o.heightMm}
+                                    onChange={(e) => updateOutput(i, { heightMm: Number(e.target.value) })}
+                                    className="border-line bg-surface text-ink h-7 w-16 rounded-md border px-2 text-[12px] tabular-nums"
+                                    aria-label="Height mm"
+                                  />
+                                  mm
+                                </label>
+                                {v?.docType === "CARTON_MARKING" && (
+                                  <label className="flex items-center gap-1" title="Overrides the renderer's default bar height">
+                                    Bar height
+                                    <input
+                                      type="number"
+                                      step={0.5}
+                                      min={4}
+                                      max={60}
+                                      placeholder="auto"
+                                      value={o.cartonBarcodeHeightMm ?? ""}
+                                      onChange={(e) =>
+                                        updateOutput(i, {
+                                          cartonBarcodeHeightMm: e.target.value ? Number(e.target.value) : undefined,
+                                        })
+                                      }
+                                      className="border-line bg-surface text-ink h-7 w-16 rounded-md border px-2 text-[12px] tabular-nums"
+                                    />
+                                    mm
+                                  </label>
+                                )}
+                                <span className="flex-1" />
+                                <button
+                                  type="button"
+                                  onClick={() => removeOutput(i)}
+                                  className={buttonClass("danger", "sm")}
+                                >
+                                  Remove output
+                                </button>
+                              </div>
+                              <PinControls
+                                overrides={o.fieldOverrides}
+                                onChange={(fieldOverrides) => updateOutput(i, { fieldOverrides })}
+                              />
+                              {/* A sample wearing THIS spec's config (logo, languages,
+                                  care override, pins, size). Refetches after each save. */}
+                              <div className="bg-canvas rounded-md p-3">
+                                <LazyOutputPreview
+                                  src={previewSrc}
+                                  widthMm={o.widthMm}
+                                  heightMm={o.heightMm}
+                                  refreshKey={savedAt ?? undefined}
+                                />
+                              </div>
+                            </div>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </Card>
 
-            {unaddedVariants.length > 0 && (
-              <AddOutputPicker
-                variants={unaddedVariants}
-                prodSpecId={props.prodSpecId}
-                onAdd={addOutput}
-                previewRefreshKey={savedAt ?? undefined}
-              />
-            )}
+              <section
+                data-section="Cover page only"
+                className="border-line bg-surface rounded-xl border px-4 py-3"
+              >
+                <label className="flex items-start gap-2.5 text-[13px]">
+                  <input
+                    type="checkbox"
+                    checked={coverOnly}
+                    onChange={(e) => setCoverOnly(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="text-ink font-medium">Cover page only — the customer supplies every layout</span>
+                    <span className="text-muted mt-0.5 block text-[12px]">
+                      A run makes the cover and nothing else; the artwork arrives through the upload zones on each
+                      style&apos;s Review tab. Left off, an empty Outputs list is treated as a mistake and a run
+                      fails rather than quietly producing a bare cover.
+                    </span>
+                  </span>
+                </label>
+              </section>
 
-            <RerunStylesPanel
-              prodSpecId={props.prodSpecId}
-              specActive={active}
-              unsaved={status === "dirty" || status === "saving"}
-              onList={setRunList}
-              adoptBatchId={adoptBatchId}
-            />
-          </Section>
-
-          {/* Everything below feeds rendering, so it stays reachable — it
-              just stops occupying three screens. Collapsed by default with
-              a state summary in the header. */}
-          <details className="group rounded-lg border border-line bg-subtle">
-            <summary className="flex cursor-pointer select-none flex-wrap items-center gap-2 px-4 py-3 text-sm font-medium text-ink hover:bg-zinc-100/60">
-              <span>Advanced print configuration</span>
-              <span className="flex flex-wrap items-center gap-1.5 text-[11px] font-normal">
-                <SummaryChip>{logoSvg.trim() ? "Logo: set" : "Logo: none"}</SummaryChip>
-                <SummaryChip>
-                  {outputLanguageList.length === 0
-                    ? "Languages: template default"
-                    : `Languages: ${outputLanguageList.join(", ")}`}
-                </SummaryChip>
-                <SummaryChip>
-                  {careOverrideCount === 0
-                    ? "Care overrides: none"
-                    : `Care overrides: ${careOverrideCount}`}
-                </SummaryChip>
-              </span>
-            </summary>
-
-            <div className="flex flex-col gap-4 border-t border-line bg-surface p-4">
-              <div>
-                <h3 className="text-xs font-semibold text-muted">
-                  Logo (Customer × Business Area)
-                </h3>
-                <p className="mt-1 mb-2 text-xs text-muted">
-                  Used by templates that render a branded header — currently{" "}
-                  <code className="font-mono">care-label-01</code> (~16×7 mm at the top of each
-                  label). Upload an <strong>SVG, PNG, or JPG</strong> (drop a file anywhere in this
-                  block), or paste SVG markup. SVG preferred; PNG at ~400×175 px works; max
+              <Collapsible
+                title="Logo"
+                summary={<SummaryChip>{logoSvg.trim() ? "Set" : "None"}</SummaryChip>}
+              >
+                <p className="text-muted mb-2 text-[12px]">
+                  Customer × business area, for templates with a branded header — currently{" "}
+                  <code className="font-mono">care-label-01</code> (~16×7 mm at the top of each label). Upload an SVG,
+                  PNG or JPG (or drop it here), or paste SVG markup. SVG preferred; PNG at ~400×175 px works; max
                   256&nbsp;KB SVG / 2&nbsp;MB raster.
                 </p>
                 <div
@@ -816,18 +858,18 @@ export function ProdSpecEditor(props: Props) {
                   onDragOver={onLogoDragOver}
                   onDrop={onLogoDrop}
                   className={`relative grid grid-cols-1 gap-4 rounded-md p-2 transition sm:grid-cols-2 ${
-                    dragOver ? "ring-4 ring-accent ring-offset-2" : ""
+                    dragOver ? "ring-accent ring-4 ring-offset-2" : ""
                   }`}
                 >
                   {dragOver && (
                     <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-zinc-900/5">
-                      <div className="rounded-md border-2 border-dashed border-ink bg-white/95 px-6 py-3 text-sm font-medium text-ink">
+                      <div className="border-ink text-ink rounded-md border-2 border-dashed bg-white/95 px-6 py-3 text-sm font-medium">
                         Drop SVG, PNG, or JPG to attach
                       </div>
                     </div>
                   )}
                   <div>
-                    <label className="text-xs font-medium text-ink">
+                    <label className="text-ink text-[12px] font-medium">
                       Logo file (SVG, PNG, JPG)
                       <input
                         type="file"
@@ -839,39 +881,31 @@ export function ProdSpecEditor(props: Props) {
                         className="mt-1 block w-full text-xs"
                       />
                     </label>
-                    <label className="mt-3 block text-xs font-medium text-ink">
+                    <label className="text-ink mt-3 block text-[12px] font-medium">
                       Or paste SVG markup
                       <textarea
                         value={logoSvg}
                         onChange={(e) => setLogoSvg(e.target.value)}
                         rows={5}
                         spellCheck={false}
-                        className="mt-1 w-full rounded-md border border-line px-3 py-2 font-mono text-[11px]"
+                        className="border-line mt-1 w-full rounded-md border px-3 py-2 font-mono text-[11px]"
                         placeholder={'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 30">…</svg>'}
                       />
                     </label>
                     {logoSvg && (
-                      <button
-                        type="button"
-                        onClick={() => setLogoSvg("")}
-                        className="mt-2 text-xs text-bad underline"
-                      >
+                      <button type="button" onClick={() => setLogoSvg("")} className="text-bad mt-2 text-xs underline">
                         Clear logo
                       </button>
                     )}
-                    {logoErr && <p className="mt-2 text-xs text-bad">{logoErr}</p>}
+                    {logoErr && <p className="text-bad mt-2 text-xs">{logoErr}</p>}
                   </div>
                   <div>
-                    <div className="text-xs font-medium text-ink">Preview</div>
-                    <div className="mt-1 flex h-24 items-center justify-center rounded-md border border-line bg-subtle">
+                    <div className="text-ink text-[12px] font-medium">Preview</div>
+                    <div className="border-line bg-subtle mt-1 flex h-24 items-center justify-center rounded-md border">
                       {logoSvg ? (
                         logoSvg.trim().startsWith("data:") ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={logoSvg.trim()}
-                            alt="logo preview"
-                            className="max-h-20 max-w-[12rem] object-contain"
-                          />
+                          <img src={logoSvg.trim()} alt="logo preview" className="max-h-20 max-w-[12rem] object-contain" />
                         ) : (
                           <div
                             className="max-h-20 max-w-[12rem] [&_svg]:h-full [&_svg]:w-full"
@@ -879,31 +913,77 @@ export function ProdSpecEditor(props: Props) {
                           />
                         )
                       ) : (
-                        <span className="text-xs text-muted">no logo set</span>
+                        <span className="text-muted text-xs">no logo set</span>
                       )}
                     </div>
                   </div>
                 </div>
-              </div>
+              </Collapsible>
 
-              <div className="border-t border-line pt-4">
-                <h3 className="text-xs font-semibold text-muted">
-                  Output languages
-                </h3>
-                <p className="mt-1 mb-2 text-xs text-muted">
-                  Languages this prod spec&apos;s outputs render (care labels, info area, …), pulled
-                  from the synced Translation board. Leave empty to fall back to each
-                  template&apos;s built-in default set. Manage the list at{" "}
-                  <code className="font-mono">/languages</code>, or toggle across all prod specs on
-                  the <code className="font-mono">/prod-specs/languages</code> matrix.
+              <Collapsible
+                id="care-instructions"
+                title="Care instructions"
+                summary={
+                  <SummaryChip tone={careOverrideCount > 0 ? "warn" : "default"}>
+                    {careOverrideCount === 0 ? "From the standard" : `${careOverrideCount} language override(s)`}
+                  </SummaryChip>
+                }
+                open={careOpen}
+                onOpenChange={setCareOpen}
+              >
+                <p className="text-muted mb-2 text-[12px]">
+                  The printed care text composes from the central catalogue: every active line, filtered per product
+                  by the style&apos;s wash-care symbols, translated per language from the Translation board. A
+                  per-language <em>override</em> replaces the standard verbatim; it&apos;s available below each line,
+                  loudly badged.
                 </p>
                 {props.availableLanguages.length === 0 ? (
-                  <p className="rounded-md border border-transparent bg-warn-soft p-3 text-xs text-warn">
-                    No active languages — visit <code className="font-mono">/languages</code> and
-                    click <strong>Seed standard set</strong>.
+                  <p className="bg-warn-soft text-warn rounded-md p-3 text-xs">
+                    No active languages — visit <code className="font-mono">/languages</code> and click{" "}
+                    <strong>Seed standard set</strong> to populate the editor.
                   </p>
                 ) : (
-                  <div className="max-w-md">
+                  <CareStandardPanel
+                    careLabels={props.careLabels}
+                    symbols={props.washSymbols}
+                    translationsByLabel={props.careTranslationsByLabel}
+                    languages={props.availableLanguages}
+                    selectedLanguages={outputLanguageList}
+                    careByLang={careByLang}
+                    onChangeCareByLang={(code, value) => setCareByLang((prev) => ({ ...prev, [code]: value }))}
+                  />
+                )}
+              </Collapsible>
+
+              {hasHiddenOverrides && (
+                <div className="border-line bg-subtle text-muted rounded-lg border border-dashed px-4 py-3 text-xs">
+                  <span className="text-muted font-medium">Managed outside this editor now:</span> suppliers, column
+                  mapping and required fields.{" "}
+                  <span className="inline-flex flex-wrap gap-1.5 align-middle">
+                    {props.attachedSupplierCount > 0 && (
+                      <SummaryChip>{props.attachedSupplierCount} supplier(s) attached</SummaryChip>
+                    )}
+                    {props.hasColumnMappingOverride && (
+                      <SummaryChip tone="warn">Carries column-mapping override</SummaryChip>
+                    )}
+                    {props.hasRequiredFieldsOverride && (
+                      <SummaryChip tone="warn">Carries required-fields override</SummaryChip>
+                    )}
+                  </span>{" "}
+                  Stored values still apply at render time.
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <Card title="Languages" description="Which languages the outputs print">
+                <div className="flex flex-col gap-2 p-4">
+                  {props.availableLanguages.length === 0 ? (
+                    <p className="bg-warn-soft text-warn rounded-md p-3 text-xs">
+                      No active languages — visit <code className="font-mono">/languages</code> and click{" "}
+                      <strong>Seed standard set</strong>.
+                    </p>
+                  ) : (
                     <Combobox
                       mode="multi"
                       options={props.availableLanguages.map((l) => ({
@@ -915,71 +995,50 @@ export function ProdSpecEditor(props: Props) {
                       placeholder="Search languages…"
                       emptyLabel="No matching languages"
                     />
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t border-line pt-4">
-                <h3 className="text-xs font-semibold text-muted">
-                  Care instructions — generated from the standard
-                </h3>
-                <p className="mt-1 mb-2 text-xs text-muted">
-                  The printed care text composes from the central catalogue at{" "}
-                  <code className="font-mono">/settings/care-labels</code>: every active line,
-                  filtered per product by the style&apos;s wash-care symbols, translated per
-                  language from the Translation board. Nothing is typed per prod spec — tune the
-                  catalogue, and every output follows. A per-language <em>override</em> replaces
-                  the standard verbatim; it&apos;s available below each line, loudly badged.
-                </p>
-                {props.availableLanguages.length === 0 ? (
-                  <p className="rounded-md border border-transparent bg-warn-soft p-3 text-xs text-warn">
-                    No active languages — visit <code className="font-mono">/languages</code> and
-                    click <strong>Seed standard set</strong> to populate the editor.
+                  )}
+                  <p className="text-faint text-[11px]">
+                    Pulled from the synced Translation board. Left empty, each template prints its own default set.
+                    The <Link href="/prod-specs/languages" className="underline">languages matrix</Link> sets them
+                    across every prod spec.
                   </p>
-                ) : (
-                  <CareStandardPanel
-                    careLabels={props.careLabels}
-                    symbols={props.washSymbols}
-                    translationsByLabel={props.careTranslationsByLabel}
-                    languages={props.availableLanguages}
-                    selectedLanguages={outputLanguageList}
-                    careByLang={careByLang}
-                    onChangeCareByLang={(code, value) =>
-                      setCareByLang((prev) => ({ ...prev, [code]: value }))
-                    }
+                </div>
+              </Card>
+              <Card title="Re-run styles" description="After you fix the spec or a layout">
+                <div className="p-4">
+                  <RerunStylesPanel
+                    compact
+                    prodSpecId={props.prodSpecId}
+                    specActive={active}
+                    unsaved={unsaved}
+                    onList={setRunList}
+                    adoptBatchId={adoptBatchId}
                   />
-                )}
-              </div>
+                </div>
+              </Card>
+              <Card
+                title="Care standard"
+                description={`${props.careLabels.length} care lines, filtered per style by its wash symbols`}
+                actions={
+                  <button type="button" onClick={openCare} className={buttonClass("ghost", "sm")}>
+                    Edit
+                  </button>
+                }
+              >
+                <div className="flex flex-wrap items-center gap-2 px-4 py-3 text-[12px]">
+                  {careOverrideCount > 0 ? (
+                    <Pill tone="warn">{careOverrideCount} language override(s)</Pill>
+                  ) : (
+                    <span className="text-muted">Every language follows the standard.</span>
+                  )}
+                  <Link href="/settings/care-labels" className="text-accent-text ml-auto hover:underline">
+                    Catalogue
+                  </Link>
+                </div>
+              </Card>
             </div>
-          </details>
-
-          {hasHiddenOverrides && (
-            <div className="rounded-lg border border-dashed border-line bg-subtle px-4 py-3 text-xs text-muted">
-              <span className="font-medium text-muted">
-                Managed outside this editor now:
-              </span>{" "}
-              suppliers, column mapping and required fields.{" "}
-              <span className="inline-flex flex-wrap gap-1.5 align-middle">
-                {props.attachedSupplierCount > 0 && (
-                  <SummaryChip>{props.attachedSupplierCount} supplier(s) attached</SummaryChip>
-                )}
-                {props.hasColumnMappingOverride && (
-                  <SummaryChip tone="warn">Carries column-mapping override</SummaryChip>
-                )}
-                {props.hasRequiredFieldsOverride && (
-                  <SummaryChip tone="warn">Carries required-fields override</SummaryChip>
-                )}
-              </span>{" "}
-              Stored values still apply at render time.
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Auto-save handles persistence — there's no submit button. The
-          sticky header bar reflects the latest state and exposes a manual
-          "Save now" if the operator wants to flush before the debounce
-          fires. */}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1091,9 +1150,10 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-// Basics + save state in one sticky row. Name, threshold and Active used
-// to be a full-height "Basics" card — three values don't need a screen.
-function HeaderBar({
+// The page header: the editable name with its save state, the spec's
+// customer line, and the three workflow knobs on the right.
+function SpecHeader({
+  meta,
   status,
   savedAt,
   error,
@@ -1107,6 +1167,7 @@ function HeaderBar({
   fullyApproved,
   onFullyApproved,
 }: {
+  meta: string;
   status: SaveStatus;
   savedAt: string | null;
   error: string | null;
@@ -1124,101 +1185,214 @@ function HeaderBar({
     switch (status) {
       case "saving":
         return "Saving…";
-      case "saved":
-        return savedAt ? `Saved · ${savedAt}` : "Saved";
       case "dirty":
-        return "Unsaved changes — auto-saving…";
+        return "Unsaved · saving shortly";
       case "error":
-        return error ? `Error: ${error}` : "Error";
+        return error ? `Couldn't save: ${error}` : "Couldn't save";
+      case "saved":
       case "idle":
       default:
-        return savedAt ? `Saved · ${savedAt}` : "Auto-save on";
+        return savedAt ? `Saved ${savedAt} · auto-save on` : "Saved · auto-save on";
     }
   })();
-
-  const tone = (() => {
-    switch (status) {
-      case "saving":
-        return "border-zinc-200 bg-zinc-50";
-      case "saved":
-      case "idle":
-        return "border-emerald-200 bg-emerald-50/70";
-      case "dirty":
-        return "border-amber-200 bg-amber-50/70";
-      case "error":
-        return "border-red-200 bg-red-50/70";
-    }
-  })();
+  const dot =
+    status === "saving" ? "animate-pulse bg-faint" : status === "dirty" ? "bg-warn" : status === "error" ? "bg-bad" : "bg-good";
 
   return (
-    <div
-      className={`sticky top-12 z-10 -mx-1 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border px-3 py-2 ${tone}`}
-    >
-      <input
-        type="text"
-        value={name}
-        onChange={(e) => onName(e.target.value)}
-        required
-        aria-label="Prod spec name"
-        className="min-w-48 flex-1 rounded-md border border-line bg-surface px-3 py-1.5 text-sm font-medium"
-      />
-      <label
-        className="flex shrink-0 items-center gap-1 text-[11px] text-muted"
-        title="Completion % at which a Style auto-enqueues a generation job"
-      >
-        Auto-gen
-        <input
-          type="number"
-          min={0}
-          max={100}
-          value={threshold}
-          onChange={(e) => onThreshold(Math.max(0, Math.min(100, Number(e.target.value))))}
-          className="w-16 rounded-md border border-line bg-surface px-2 py-1.5 text-sm tabular-nums"
-        />
-        %
-      </label>
-      <Toggle checked={active} onChange={onActive} label={active ? "Active" : "Disabled"} size="sm" />
-      <Toggle
-        checked={fullyApproved}
-        onChange={onFullyApproved}
-        label={fullyApproved ? "Fully approved" : "Not approved"}
-        size="sm"
-      />
-      <div className="ml-auto flex shrink-0 items-center gap-2 text-xs">
-        <span
-          aria-hidden="true"
-          className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${
-            status === "saving"
-              ? "animate-pulse bg-zinc-400"
-              : status === "dirty"
-                ? "bg-warn"
-                : status === "error"
-                  ? "bg-bad"
-                  : "bg-good"
-          }`}
-        />
-        <span className="max-w-72 truncate text-ink" title={label}>
-          {label}
+    <div data-section="Page header" className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+      <div className="min-w-0 flex-[1_1_20rem]">
+        <nav aria-label="Breadcrumb" className="text-muted mb-1 flex items-center gap-1 text-[12px]">
+          <Link href="/prod-specs" className="hover:text-ink">
+            Prod specs
+          </Link>
+          <span className="text-faint" aria-hidden="true">
+            /
+          </span>
+        </nav>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {/* The input sizes to its text: an invisible copy of the name sits
+              in the same grid cell and sets the width. */}
+          <h1 className="-ml-1.5 inline-grid max-w-full min-w-0 text-[18px] font-semibold tracking-[-0.01em]">
+            <span aria-hidden="true" className="invisible col-start-1 row-start-1 truncate border border-transparent px-1.5 whitespace-pre">
+              {name || "Name"}{" "}
+            </span>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => onName(e.target.value)}
+              required
+              aria-label="Prod spec name"
+              className="text-ink hover:border-line focus:border-accent col-start-1 row-start-1 h-8 w-full min-w-0 rounded-md border border-transparent bg-transparent px-1.5 outline-none"
+            />
+          </h1>
+          <span role="status" className="text-muted inline-flex min-w-0 items-center gap-1.5 text-[12px]">
+            <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${dot}`} />
+            <span className={`max-w-[28rem] truncate ${status === "error" ? "text-bad" : ""}`} title={label}>
+              {label}
+            </span>
+            {status === "dirty" || status === "error" ? (
+              <button type="button" onClick={onSaveNow} className="text-ink shrink-0 underline">
+                Save now
+              </button>
+            ) : null}
+          </span>
+        </div>
+        <p className="text-muted mt-0.5 text-[13px]">{meta}</p>
+      </div>
+      <div className="text-muted flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 text-[12px]">
+        <label className="flex items-center gap-1.5" title="Completion % at which a style auto-enqueues a generation job">
+          Auto-runs at
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={threshold}
+            onChange={(e) => onThreshold(Math.max(0, Math.min(100, Number(e.target.value))))}
+            className="border-line bg-surface text-ink focus:border-accent h-7 w-14 rounded-md border px-2 text-[12px] tabular-nums outline-none"
+          />
+          %
+        </label>
+        <Toggle checked={active} onChange={onActive} label="Active" size="sm" />
+        <span title="Every style is approved for every output">
+          <Toggle checked={fullyApproved} onChange={onFullyApproved} label="Fully approved" size="sm" />
         </span>
-        <button
-          type="button"
-          onClick={onSaveNow}
-          disabled={status === "saving"}
-          className="flex-shrink-0 rounded border border-line bg-surface px-2 py-1 text-xs font-medium text-ink hover:bg-subtle disabled:opacity-50"
-        >
-          Save now
-        </button>
       </div>
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({
+  title,
+  description,
+  actions,
+  children,
+}: {
+  title: string;
+  description?: string;
+  actions?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
   return (
-    <section className="rounded-xl border border-line bg-surface p-5">
-      <h2 className="mb-3 text-sm font-semibold text-ink">{title}</h2>
+    <section data-section={title} className="border-line bg-surface overflow-hidden rounded-xl border">
+      <div className={`border-line flex items-start justify-between gap-3 px-4 py-3 ${children ? "border-b" : ""}`}>
+        <div className="min-w-0">
+          <h2 className="text-ink text-[14px] font-semibold">{title}</h2>
+          {description ? <p className="text-muted text-[12px]">{description}</p> : null}
+        </div>
+        {actions ? <div className="shrink-0">{actions}</div> : null}
+      </div>
       {children}
     </section>
+  );
+}
+
+// A card that folds: the print settings that feed rendering but are rarely
+// touched stay one line until opened. `open` makes it controlled.
+function Collapsible({
+  id,
+  title,
+  summary,
+  open,
+  onOpenChange,
+  children,
+}: {
+  id?: string;
+  title: string;
+  summary?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <details
+      id={id}
+      open={open}
+      onToggle={(e) => onOpenChange?.(e.currentTarget.open)}
+      data-section={title}
+      className="group border-line bg-surface scroll-mt-16 overflow-hidden rounded-xl border"
+    >
+      <summary className="hover:bg-subtle/60 flex cursor-pointer list-none items-center gap-2.5 px-4 py-3 select-none [&::-webkit-details-marker]:hidden">
+        <ChevronRight size={14} aria-hidden="true" className="text-faint transition-transform group-open:rotate-90" />
+        <span className="text-ink text-[14px] font-semibold">{title}</span>
+        {summary}
+      </summary>
+      <div className="border-line border-t p-4">{children}</div>
+    </details>
+  );
+}
+
+// A small live render of one output wearing this spec's settings, fitted into
+// a square — the same preview the row's settings show in full.
+const THUMB_PX = 64;
+const MM_PX = 96 / 25.4;
+
+function OutputThumb({
+  src,
+  widthMm,
+  heightMm,
+  refreshKey,
+}: {
+  src: string;
+  widthMm: number;
+  heightMm: number;
+  refreshKey?: string;
+}) {
+  const [html, setHtml] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(src, { cache: "no-store" })
+      .then(async (res) => {
+        // A static-PDF output answers 409 with JSON — no HTML to draw.
+        if (!res.ok || !(res.headers.get("content-type") ?? "").includes("text/html")) throw new Error("no preview");
+        const text = await res.text();
+        if (!cancelled) {
+          setHtml(text);
+          setFailed(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [src, refreshKey]);
+
+  const w = Math.max(widthMm, 1) * MM_PX;
+  const h = Math.max(heightMm, 1) * MM_PX;
+  const scale = Math.min(THUMB_PX / w, THUMB_PX / h);
+  return (
+    <div
+      aria-hidden="true"
+      className="border-line bg-canvas flex size-[76px] shrink-0 items-center justify-center overflow-hidden rounded-lg border"
+    >
+      {html ? (
+        // Print proofs are always on paper, whatever the theme.
+        <div className="overflow-hidden bg-white shadow-[var(--shadow-pop)]" style={{ width: w * scale, height: h * scale }}>
+          <iframe
+            srcDoc={normalizePreviewHtml(html, widthMm, heightMm)}
+            title=""
+            tabIndex={-1}
+            scrolling="no"
+            style={{
+              width: w,
+              height: h,
+              border: "none",
+              transform: `scale(${scale})`,
+              transformOrigin: "top left",
+              pointerEvents: "none",
+              display: "block",
+              background: "white",
+            }}
+          />
+        </div>
+      ) : failed ? (
+        <FileText size={18} className="text-faint" />
+      ) : (
+        <div className="skeleton size-10 rounded" />
+      )}
+    </div>
   );
 }
 
@@ -1294,11 +1468,7 @@ function OutputRunAllButton({
         `Run this output on ${count} style${count === 1 ? "" : "s"} where it isn't approved` +
           (summary && summary.changed > 0 ? ` — ${summary.changed} changed since last render` : "")
       }
-      className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-        prominent
-          ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          : "border-line bg-surface text-muted hover:bg-subtle"
-      }`}
+      className={buttonClass(prominent ? "primary" : "secondary", "sm")}
     >
       {running ? <RowSpinner /> : <RunAllRowIcon />}
       Run all{listLoaded && count > 0 ? ` (${count})` : ""}
@@ -1357,25 +1527,6 @@ function PinIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
     >
       <path d="M12 17v5" />
       <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
-    </svg>
-  );
-}
-
-function ExternalLinkIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M15 3h6v6" />
-      <path d="M10 14 21 3" />
-      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
     </svg>
   );
 }

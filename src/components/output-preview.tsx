@@ -119,7 +119,7 @@ export function PreviewFrame({
 // For ON-SCREEN overview only (never the PDF — Puppeteer renders the raw
 // html without this), separate stacked Output Builder pages with a gap +
 // hairline ring so a multi-page / repeat layout reads as distinct cards.
-function normalize(html: string, widthMm: number, heightMm: number): string {
+export function normalize(html: string, widthMm: number, heightMm: number): string {
   const css =
     `<style>html,body{margin:0;padding:0;background:#fff;width:${widthMm}mm;}` +
     `body{min-height:${heightMm}mm;}.page{min-height:${heightMm}mm;}` +
