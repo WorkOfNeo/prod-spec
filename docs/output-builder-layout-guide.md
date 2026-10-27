@@ -189,7 +189,7 @@ It's a **print guide**, like the sewing and fold lines: a dashed circle on the c
 - **Pictures**: `{{image:<name>}}` — any number per output, from the shared library (see below).
 - **Order / size**: `{{size}}` (the current row inside a repeat; `:numeric` / `:year` pick one half of a two-form label, see below), `{{sizes}}` / `{{sizeRange}}` (`:dash` joins `S-M-L-XL`, see below), `{{poNumber}}`, `{{orderNo}}` (FOB → customer order, else PO), `{{qtyPerCarton}}`, `{{lot}}`, `{{customerItemNo}}`, `{{customerOrderNo}}` (`:solid` / `:assort` — see below), `{{description}}`, `{{campaignWeek}}`.
 - **Size range (Coop)**: `{{sizeRangeCoop}}` — the whole run joined " - " with the current row's size enlarged; `:numeric` / `:year` pick one half of a two-form label (see below).
-- **Conditionals**: `{{if deliveryTerm == FOB}}…{{else}}…{{endif}}` (one line, text tokens only) — see "Conditional text" below for the three operators.
+- **Conditionals**: `{{if deliveryTerm == FOB}}…{{else}}…{{endif}}` (one line, text tokens only) — see "Conditional text" below for the operators, and "Conditional blocks" for hiding a whole block.
 - **Calculated**: `{{= sum(qtyPerCarton) }}` — arithmetic over field values; see "Calculated fields" below.
 
 ## Pictures — the image library vs the custom logo
@@ -235,6 +235,13 @@ One condition per line, no nesting, and the field must be a text token:
 | `==` / `!=` | the WHOLE field, trimmed + case-insensitive | the column holds exactly one of a few known values — `{{if deliveryTerm == FOB}}` |
 | `contains` / `!contains` | substring, case-insensitive | the column *mentions* a word inside a messier value — `{{if productGroup contains Set}}` |
 | `includes` / `!includes` | membership of a comma-separated list, per item, punctuation-insensitive (`OEKO-TEX` ≡ `OEKOTEX`) | the column is a list — `{{if certificates includes FSC}}` |
+| `is set` / `is not set` | does the field print anything at all (no value after it) | a line that only makes sense when the field is filled — `{{if polybagQty is set}}QTY: {{polybagQty}} PCS{{endif}}`. Same as the older `!= ""`, which still works |
+| `starts with` / `ends with` (`!starts with` / `!ends with`) | prefix / suffix, case-insensitive | a code whose first letters mean something — `{{if styleNumber starts with IL}}` |
+| `>` `<` `>=` `<=` | numbers, read the way `{{price}}` reads them (`KR 69,95` = 69.95) | a price or quantity threshold — `{{if price > 100}}` |
+
+A number comparison against a field that isn't one number — blank, `See customer order`, `99 SEK, 69 DKK` — is **false for every operator**, never "0". That's the same rule the generation rules' Price > / < use, so `{{if price > 100}}` and a rule "Price > 100" agree. Gotcha inherited from that parser: three digits after the last separator are a thousands group, so `1.250` reads as 1250.
+
+You don't have to type the syntax: **If…** beside **B** / **I** on the content editor opens a picker (field · operator · value, optional else) and wraps the selected text in the conditional — or inserts an empty one at the cursor.
 
 `contains` mirrors the generation-rules engine's `contains` (`src/lib/outputs/exclusion.ts`), so "does this field mention X" means the same thing in a rule and in a line.
 
@@ -252,6 +259,43 @@ in the block:
 prints **KR.**. Use `==` instead when the column really is exactly `Set` and a
 `Sunset`-style false positive would matter. The Logic palette inserts this exact
 line from the `{{if … contains …}}` chip.
+
+## Conditional blocks — "Show only when…"
+
+When a whole field comes and goes — not a word inside a line — set the
+condition on the **block** instead of in its text. Block inspector → **Show only
+when…** → one or more rules, each *field · operator · value*, using exactly the
+operators above. With two or more rules, pick **all** (every rule must hold) or
+**any** (one is enough).
+
+- **When the rules don't hold, the block doesn't print.** Its cell stays empty —
+  nothing reflows into it — and it counts as no ink, so a page set to *omit when
+  empty* still drops if its only blocks are hidden.
+- **It's decided per repetition row** on a repeating layout, so a rule on
+  `{{size}}` hides the block on some sizes and not others.
+- **A hidden block isn't waited on.** Readiness only asks for the variables of
+  blocks that print on that style, and the reviewer's "edit any line" list
+  leaves the hidden block's lines out.
+- **The builder shows it.** The canvas tags the block `if` (hover for the rule
+  text) and fades it when the test style hides it; the panel says whether it
+  prints on the test style. The true-render preview leaves it out, as the print
+  will.
+- **Publish checks it.** A rule on an unknown field, a value after `is set`, or a
+  number comparison without a number blocks publishing, like a bad `{{if}}`.
+
+In the JSON it's `block.showWhen`:
+
+```json
+"showWhen": {
+  "match": "all",
+  "rules": [{ "field": "productGroup", "op": "contains", "value": "Set" }]
+}
+```
+
+`op` is spelled as in `{{if}}` (`"=="`, `"is set"`, `">="`, `"!starts with"` …).
+No `showWhen`, or no rules, means the block always prints — every layout made
+before this existed is untouched. It's a per-block setting, not formatting:
+Copy/Paste format doesn't carry it; Duplicate and Copy block do.
 
 ## Calculated fields
 
