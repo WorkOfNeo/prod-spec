@@ -92,7 +92,7 @@ export function ApproveStylesPanel({
 
   if (styles.length === 0) {
     return (
-      <div className="rounded-md border border-line bg-subtle px-3 py-3 text-xs text-muted">
+      <div className="rounded-xl border border-line bg-surface px-4 py-6 text-center text-[13px] text-muted">
         No styles on this prod spec yet.
       </div>
     );
@@ -130,10 +130,10 @@ export function ApproveStylesPanel({
   const runningAll = busy === "all";
 
   return (
-    <div className="rounded-md border border-line bg-subtle p-3">
+    <section data-section="Approve styles" className="rounded-xl border border-line bg-surface p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-ink">Styles & approval</p>
+          <h2 className="text-[14px] font-semibold text-ink">Styles &amp; approval</h2>
           <p className="mt-0.5 text-xs text-muted">
             All live styles on this prod spec, grouped by supplier, with each style&apos;s
             outputs ready for approval. Approving runs the same publish path as the review
@@ -269,7 +269,7 @@ export function ApproveStylesPanel({
           )}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 

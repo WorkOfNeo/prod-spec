@@ -403,6 +403,11 @@ export type OutputRunSummary = {
   // Parked backlog for this output, on top of toRun — surfaced so the button
   // can say "+N parked" rather than silently under-running.
   belowCutoff: number;
+  // Styles this output applies to (not excluded by a rule or an ignore), and
+  // of those, how many hold an approved, current document — the editor's
+  // "x/y approved" per output. Counted across every style, parked or not.
+  applies: number;
+  approved: number;
 };
 
 export type ProdSpecStyleRunList = {
@@ -509,12 +514,16 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
 
   const rows: StyleRunRow[] = [];
   const byOutput = new Map<string, OutputRunSummary>();
-  const bumpOutput = (b: string, bucket: Exclude<OutputBucket, "ok">, parked: boolean) => {
+  const summaryFor = (b: string) => {
     let s = byOutput.get(b);
     if (!s) {
-      s = { toRun: 0, missing: 0, rejected: 0, changed: 0, pending: 0, belowCutoff: 0 };
+      s = { toRun: 0, missing: 0, rejected: 0, changed: 0, pending: 0, belowCutoff: 0, applies: 0, approved: 0 };
       byOutput.set(b, s);
     }
+    return s;
+  };
+  const bumpOutput = (b: string, bucket: Exclude<OutputBucket, "ok">, parked: boolean) => {
+    const s = summaryFor(b);
     // Parked styles are counted apart from toRun, because toRun IS the button's
     // promise and the route will leave the parked ones out.
     if (parked) {
@@ -552,11 +561,16 @@ export async function listProdSpecStyleRuns(prodSpecId: string): Promise<ProdSpe
       undefined,
       ignoredByStyle.get(c.id),
     )) {
-      if (!o.ready || o.excluded) continue;
-      readyCount++;
+      if (o.excluded) continue;
       const b = base(o.variantKey);
+      summaryFor(b).applies++;
+      if (!o.ready) continue;
+      readyCount++;
       const bucket = classifyOutput(state?.get(b), currentKeys.get(b) ?? null, currentVersions.get(b) ?? null);
-      if (bucket === "ok") continue;
+      if (bucket === "ok") {
+        summaryFor(b).approved++;
+        continue;
+      }
       variantKeys.push(o.variantKey);
       if (bucket === "missing") missingN++;
       else if (bucket === "rejected") rejectedN++;

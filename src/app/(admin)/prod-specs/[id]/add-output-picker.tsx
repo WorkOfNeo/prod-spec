@@ -56,10 +56,15 @@ type Props = {
   // Bumped by the editor after each autosave so open previews refetch
   // with the latest logo / languages / care config.
   previewRefreshKey?: string;
+  // Opened from outside (the Outputs card's "Add output" button). When set,
+  // the picker drops its own toggle row and shows the catalogue while true.
+  open?: boolean;
 };
 
-export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey }: Props) {
-  const [open, setOpen] = useState(false);
+export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey, open: openProp }: Props) {
+  const [openState, setOpen] = useState(false);
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : openState;
   const [query, setQuery] = useState("");
   const [docFilter, setDocFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<"all" | Source>("all");
@@ -131,21 +136,23 @@ export function AddOutputPicker({ variants, prodSpecId, onAdd, previewRefreshKey
   const hasFilters = query.trim() !== "" || docFilter !== "all" || sourceFilter !== "all";
 
   return (
-    <div className="mt-4 overflow-hidden rounded-md border border-line bg-subtle">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm font-medium text-ink hover:bg-subtle"
-        aria-expanded={open}
-      >
-        <span className="flex items-center gap-2">
-          <Chevron open={open} />
-          Add output
-          <span className="rounded-full bg-subtle px-2 py-0.5 text-[11px] font-medium text-muted">
-            {variants.length} available
+    <div className={controlled ? "" : "mt-4 overflow-hidden rounded-md border border-line bg-subtle"}>
+      {!controlled && (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm font-medium text-ink hover:bg-subtle"
+          aria-expanded={open}
+        >
+          <span className="flex items-center gap-2">
+            <Chevron open={open} />
+            Add output
+            <span className="rounded-full bg-subtle px-2 py-0.5 text-[11px] font-medium text-muted">
+              {variants.length} available
+            </span>
           </span>
-        </span>
-      </button>
+        </button>
+      )}
 
       {open && (
         <div className="border-t border-line bg-surface p-3">
