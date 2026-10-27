@@ -33,6 +33,33 @@ const DEFAULT_FIELD = CONDITION_FIELDS.some((t) => t.key === "productGroup")
 
 const inputCls = "rounded border border-zinc-200 bg-white px-1.5 py-1 text-xs text-zinc-700";
 
+// A palette label is written for the chip's tooltip ("Customer item no (bare =
+// this row's size). :product picks…"); the picker wants just the name. Cut at
+// the first aside (" — ", ". ", " :"), then drop a parenthesis unless it's a
+// short plain qualifier that tells two fields apart — "Carton no (this
+// print)" vs "Carton no (zero-padded to total)". The full label stays as the
+// option's title.
+function fieldName(label: string): string {
+  const head = label.split(/ — |\. | :/)[0];
+  const paren = /^(.*?) \(([^)]*)\)?(.*)$/.exec(head);
+  if (!paren) return head.trim() || label;
+  const [, name, inner, rest] = paren;
+  const plain = head.includes(")") && inner.length <= 24 && !/[:{=]/.test(inner);
+  return (plain ? `${name} (${inner})${rest}` : name).trim() || label;
+}
+
+// Picker text per field; where two fields would read the same (the
+// per-language composition variants) the variable key tells them apart.
+const FIELD_NAMES = (() => {
+  const names = CONDITION_FIELDS.map((t) => fieldName(t.label));
+  return new Map(
+    CONDITION_FIELDS.map((t, i) => [
+      t.key,
+      names.indexOf(names[i]) !== names.lastIndexOf(names[i]) ? `${names[i]} · ${t.key}` : names[i],
+    ]),
+  );
+})();
+
 export type TextRange = { start: number; end: number };
 
 function ConditionRow({
@@ -47,61 +74,65 @@ function ConditionRow({
   // A rule on a field that's since left the palette still shows (and stays
   // put) rather than silently snapping to another field.
   const known = CONDITION_FIELDS.some((t) => t.key === rule.field);
+  // Field on its own line: the block panel is narrow and field labels are
+  // long ("Customer item no."); operator · value · remove share the next.
   return (
-    <div className="flex flex-wrap items-center gap-1">
+    <div className="space-y-1">
       <select
         value={rule.field}
         onChange={(e) => onChange({ field: e.target.value })}
-        className={`${inputCls} min-w-0 max-w-[11rem] flex-1`}
-        aria-label="Field"
+        className={`${inputCls} w-full`}
+        aria-label="Condition field"
       >
         {!known ? <option value={rule.field}>{rule.field || "Pick a field…"}</option> : null}
         {FIELD_GROUPS.map((group) => (
           <optgroup key={group} label={group}>
             {CONDITION_FIELDS.filter((t) => t.group === group).map((t) => (
-              <option key={t.key} value={t.key}>
-                {t.label}
+              <option key={t.key} value={t.key} title={t.label}>
+                {FIELD_NAMES.get(t.key)}
               </option>
             ))}
           </optgroup>
         ))}
       </select>
-      <select
-        value={rule.op}
-        onChange={(e) => {
-          const op = e.target.value as ConditionOp;
-          onChange(conditionOpTakesValue(op) ? { op } : { op, value: "" });
-        }}
-        className={inputCls}
-        aria-label="Operator"
-      >
-        {CONDITION_OPS.map((op) => (
-          <option key={op} value={op}>
-            {CONDITION_OP_LABELS[op]}
-          </option>
-        ))}
-      </select>
-      {conditionOpTakesValue(rule.op) ? (
-        <input
-          value={rule.value}
-          onChange={(e) => onChange({ value: e.target.value })}
-          placeholder={conditionOpIsNumeric(rule.op) ? "number" : "value (empty = blank)"}
-          inputMode={conditionOpIsNumeric(rule.op) ? "decimal" : undefined}
-          className={`${inputCls} w-24 min-w-0 flex-1`}
-          aria-label="Value"
-        />
-      ) : null}
-      {onRemove ? (
-        <button
-          type="button"
-          onClick={onRemove}
-          className="flex h-6 w-6 items-center justify-center rounded text-xs text-zinc-400 hover:bg-zinc-100 hover:text-red-600"
-          title="Remove this rule"
-          aria-label="Remove this rule"
+      <div className="flex items-center gap-1">
+        <select
+          value={rule.op}
+          onChange={(e) => {
+            const op = e.target.value as ConditionOp;
+            onChange(conditionOpTakesValue(op) ? { op } : { op, value: "" });
+          }}
+          className={inputCls}
+          aria-label="Condition operator"
         >
-          ✕
-        </button>
-      ) : null}
+          {CONDITION_OPS.map((op) => (
+            <option key={op} value={op}>
+              {CONDITION_OP_LABELS[op]}
+            </option>
+          ))}
+        </select>
+        {conditionOpTakesValue(rule.op) ? (
+          <input
+            value={rule.value}
+            onChange={(e) => onChange({ value: e.target.value })}
+            placeholder={conditionOpIsNumeric(rule.op) ? "number" : "value (empty = blank)"}
+            inputMode={conditionOpIsNumeric(rule.op) ? "decimal" : undefined}
+            className={`${inputCls} w-20 min-w-0 flex-1`}
+            aria-label="Condition value"
+          />
+        ) : null}
+        {onRemove ? (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="flex h-6 w-6 items-center justify-center rounded text-xs text-zinc-400 hover:bg-zinc-100 hover:text-red-600"
+            title="Remove this rule"
+            aria-label="Remove this rule"
+          >
+            ✕
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -191,7 +222,7 @@ export function BlockShowWhenEditor({
           Remove
         </button>
       </div>
-      <div className="mt-1.5 space-y-1.5">
+      <div className="mt-1.5 space-y-2 divide-y divide-zinc-200/70 [&>*+*]:pt-2">
         {rules.map((rule, i) => (
           <ConditionRow
             key={i}
@@ -239,9 +270,16 @@ export function InsertConditionButton({
   size?: "sm" | "md";
 }) {
   const [open, setOpen] = useState(false);
-  const [rule, setRule] = useState<BlockConditionRule>({ field: DEFAULT_FIELD, op: "is set", value: "" });
+  const [rule, setRule] = useState<BlockConditionRule>({
+    field: DEFAULT_FIELD,
+    op: "is set",
+    value: "",
+  });
   const [withElse, setWithElse] = useState(false);
-  const [captured, setCaptured] = useState<{ range: TextRange | null; spansLines: boolean }>({
+  const [captured, setCaptured] = useState<{
+    range: TextRange | null;
+    spansLines: boolean;
+  }>({
     range: null,
     spansLines: false,
   });
@@ -309,8 +347,8 @@ export function InsertConditionButton({
           </code>
           {captured.spansLines ? (
             <p className="mt-1 text-[11px] text-amber-700">
-              A condition lives on one line — select text within a single line, or use the block&apos;s
-              &ldquo;Show only when…&rdquo; to hide several lines at once.
+              A condition lives on one line — select text within a single line, or use the block&apos;s &ldquo;Show only
+              when…&rdquo; to hide several lines at once.
             </p>
           ) : null}
           <div className="mt-2 flex justify-end gap-1.5">
