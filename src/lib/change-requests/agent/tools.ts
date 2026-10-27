@@ -13,6 +13,7 @@ import {
   layoutVariantKey,
 } from "@/lib/output-layouts/variant-keys";
 import { baseVariantKey } from "@/lib/tickets/orphan";
+import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { orEmpty } from "../db-safe";
 import type { ProofSide } from "../proofs";
 import {
@@ -54,7 +55,8 @@ import type { AgentTool, ToolContext, ToolResult } from "./contract";
 //     wander into a layout nobody asked about; an output with no layout yet
 //     can only be pinned to a layout the request's style actually prints;
 //   • render_proof and impact_list only take this output's own drafts, and
-//     the heavy and noisy tools have a per-run budget (RUN_LIMITS).
+//     the heavy and noisy tools have a per-run budget (RUN_LIMITS);
+//   • the cover is printed by code: get_cover reads it, nothing drafts it.
 //
 // Results are plain JSON for the model. A refusal or a failure comes back as
 // an error result with a reason the model can act on ("this block id doesn't
@@ -867,6 +869,127 @@ const listTokens = defineTool({
   },
 });
 
+// ── get_cover ────────────────────────────────────────────────────────────────
+
+const COVER_MARKDOWN_MAX = 6000;
+
+// Where each part of the cover is changed, written for the suggestion the
+// agent hands the admin. Paths rather than links: the agent quotes them.
+export function coverEditPlaces(input: {
+  prodSpecId: string;
+  prodSpecName: string;
+  stylesOnSpec: number;
+  trimsOnCover: boolean;
+}): { part: string; changeIt: string }[] {
+  const spec = `/prod-specs/${input.prodSpecId}`;
+  return [
+    {
+      part: "header",
+      changeIt:
+        "The style's own data from Monday: style name and number, PO, customer, business area, supplier. Fix it at the source; " +
+        "nothing on the cover overrides it.",
+    },
+    {
+      part: "required packaging",
+      changeIt:
+        `Which rows print: the prod spec's enabled outputs (${spec}?tab=outputs), less doc-type exclusion rules (Output Builder › ` +
+        "Doc types) and outputs ignored on the style. A row's size is its output's; confirmed vs waiting follows the review of the " +
+        "style's documents. The words a row prints: Settings › Cover page › Packaging rows (/settings/cover-page?tab=packaging). " +
+        (input.trimsOnCover
+          ? "Trims on cover is ON, so the style's Trims column on Monday adds rows too."
+          : "Trims on cover is OFF, so Monday's Trims column adds no rows."),
+    },
+    {
+      part: "cover block",
+      changeIt:
+        "Settings › Cover page (/settings/cover-page). ONE text printed on every cover of every customer: changing it changes all of them.",
+    },
+    {
+      part: "general information",
+      changeIt:
+        `Settings › Cover page › General information (/settings/cover-page?tab=general-info), or the prod spec's General ` +
+        `information tab (${spec}?tab=general). Per customer and business area: it prints on the ` +
+        `${plural(input.stylesOnSpec, "style")} of prod spec "${input.prodSpecName}".`,
+    },
+    {
+      part: "page settings",
+      changeIt: `Margins and print settings of the cover sheet: the prod spec's Cover page tab (${spec}?tab=cover).`,
+    },
+  ];
+}
+
+const getCover = defineTool({
+  name: "get_cover",
+  description:
+    "Read a style's cover document (\"Prod Spec\", the first PDF of its bundle): what it prints right now, part by part, and where each part " +
+    "is changed. The cover is printed by code, not an Output Builder layout, so no draft can change it — use this on a request about the " +
+    "cover, then suggest the change to the admin with finish. Parts: the header (the style's identity), the required-packaging rows (each " +
+    "with size and whether it is confirmed), the cover block (the same text on every cover) and the prod spec's general information. " +
+    "styleId defaults to this output's style.",
+  input: z.object({ styleId: z.string().min(1).optional() }),
+  run: async (input, ctx) => {
+    let styleId = input.styleId ?? null;
+    if (!styleId) {
+      const output = await thisOutput(ctx);
+      styleId = output?.styleId ?? output?.request.styleId ?? null;
+    }
+    if (!styleId) {
+      return fail("This request names no style, so there is no cover to read. Pass a styleId, or ask the reviewer which style it is about.");
+    }
+
+    const [{ loadStyleCoverInput }, { getTrimsOnCoverEnabled }] = await Promise.all([
+      import("@/lib/pdf/style-cover"),
+      import("@/lib/settings/app-settings"),
+    ]);
+    const cover = await loadStyleCoverInput(styleId);
+    if (!cover) return fail(`Style ${styleId} not found.`);
+    if (!cover.prodSpecId) {
+      return fail(`Style ${styleId} has no prod spec, so it has no bundle and no cover.`, { styleId });
+    }
+    const [spec, stylesOnSpec, trimsOnCover] = await Promise.all([
+      db.prodSpec.findUnique({ where: { id: cover.prodSpecId }, select: { name: true } }),
+      db.style.count({ where: { prodSpecId: cover.prodSpecId, deletedAt: null, archivedAt: null } }),
+      getTrimsOnCoverEnabled().catch(() => false),
+    ]);
+
+    const c = cover.input;
+    const markdown = (md: string | undefined) => (md?.trim() ? clip(md.trim(), COVER_MARKDOWN_MAX) : null);
+    const packaging = c.docs.map((d) => ({
+      packaging: d.displayName,
+      size: d.widthMm != null && d.heightMm != null ? `${round(d.widthMm, 1)}×${round(d.heightMm, 1)} mm` : null,
+      files: d.fileCount,
+      status: d.approved === undefined ? null : d.approved ? (d.copy?.delivered ?? "confirmed") : (d.copy?.pending ?? "waiting"),
+      from: d.kind ?? "app",
+      ...(d.sourceLabel && d.sourceLabel !== d.displayName ? { mondayTrim: d.sourceLabel } : {}),
+      ...(d.copy?.note ? { note: d.copy.note } : {}),
+    }));
+
+    await note(ctx, "read", `Cover of ${c.styleName}: ${plural(packaging.length, "packaging row")}`);
+    return ok({
+      styleId,
+      prints: {
+        header: {
+          customer: c.customerName,
+          businessArea: c.businessArea,
+          style: c.styleName,
+          styleNumber: c.styleNumber,
+          poNumber: c.poNumber,
+          supplier: c.supplierName,
+        },
+        requiredPackaging: packaging,
+        coverBlock: markdown(c.coverInfo?.markdown),
+        generalInformation: markdown(c.generalInfo?.markdown),
+      },
+      whereToChange: coverEditPlaces({
+        prodSpecId: cover.prodSpecId,
+        prodSpecName: spec?.name ?? cover.prodSpecId,
+        stylesOnSpec,
+        trimsOnCover,
+      }),
+    });
+  },
+});
+
 // ── propose_patch ────────────────────────────────────────────────────────────
 
 const OPS_MAX = 50;
@@ -928,6 +1051,12 @@ const proposePatch = defineTool({
         `This output ("${output.label}") prints from layout ${ownLayoutId}; only that layout can be drafted in this run. ` +
           "If the change belongs on another output, say so with ask_reviewer.",
         { layoutId: ownLayoutId },
+      );
+    }
+    if (output.variantKey === COVER_VARIANT_KEY) {
+      return fail(
+        "This output is the cover, which is printed by code, not an Output Builder layout: no draft can change it. Read it with " +
+          "get_cover and end with finish, suggesting the change for the admin to make by hand.",
       );
     }
     if (!ownLayoutId && output.variantKey && !isLayoutVariantKey(output.variantKey)) {
@@ -1351,6 +1480,7 @@ export const AGENT_TOOLS: AgentTool[] = [
   findLayouts,
   getLayout,
   listTokens,
+  getCover,
   proposePatch,
   renderProofTool,
   impactList,

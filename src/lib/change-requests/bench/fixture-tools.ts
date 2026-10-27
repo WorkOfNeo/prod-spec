@@ -636,6 +636,10 @@ export async function fixtureTools(benchCase: BenchCase, opts: FixtureToolsOptio
       });
     },
 
+    // Every bench case is about a layout output; none has a cover to read.
+    get_cover: async () =>
+      fail(`This output ("${c.request.outputLabel}") is a layout, not the cover: get_layout reads it.`),
+
     propose_patch: async (raw) => {
       const input = raw as ProposePatchInput;
       if (input.layoutId !== layout.id) {
