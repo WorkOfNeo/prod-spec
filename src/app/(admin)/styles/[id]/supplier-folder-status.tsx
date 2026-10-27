@@ -37,6 +37,7 @@ export function SupplierFolderStatus({
   delivery,
   canFixTemplate = false,
   className = "mt-8",
+  showHeader = true,
 }: {
   styleId: string;
   supplierName: string | null; // null ⇒ no supplier linked on the Pre-Order board
@@ -48,6 +49,8 @@ export function SupplierFolderStatus({
   // Root <section> classes — the caller controls spacing (defaults to a
   // standalone top margin; "" when placed in the above-tabs grid column).
   className?: string;
+  // False inside a card that already says "Supplier folder".
+  showHeader?: boolean;
 }) {
   const hasSupplier = supplierName != null;
   const hasLink = folderUrl != null;
@@ -56,6 +59,7 @@ export function SupplierFolderStatus({
 
   return (
     <section className={className}>
+      {showHeader ? (
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <h2 className="text-sm font-semibold text-ink">Supplier folder</h2>
@@ -67,8 +71,9 @@ export function SupplierFolderStatus({
           Where approved outputs are pushed — resolved through the Monday chain.
         </span>
       </div>
+      ) : null}
       <div
-        className={`mt-2 overflow-hidden rounded-lg border ${
+        className={`${showHeader ? "mt-2" : ""} overflow-hidden rounded-lg border ${
           ready ? "border-transparent bg-emerald-50/40" : "border-transparent bg-amber-50/50"
         }`}
       >

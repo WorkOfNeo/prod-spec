@@ -32,8 +32,28 @@ function readStash(): string | null {
   }
 }
 
-export function BackToStyles({ poNumber }: { poNumber: string | null }) {
+export function BackToStyles({
+  poNumber,
+  variant = "link",
+}: {
+  poNumber: string | null;
+  // "crumb": the page header's "Styles /" breadcrumb — same destination, the
+  // list's name as the label (the full label moves to the tooltip).
+  variant?: "link" | "crumb";
+}) {
   const stashed = useSyncExternalStore(subscribe, readStash, () => null);
+
+  if (variant === "crumb") {
+    return (
+      <Link
+        href={stylesBackHref(stashed, poNumber)}
+        className="text-muted hover:text-ink shrink-0 text-[14px]"
+        title={stylesBackLabel(stashed, poNumber)}
+      >
+        Styles
+      </Link>
+    );
+  }
 
   return (
     <Link
