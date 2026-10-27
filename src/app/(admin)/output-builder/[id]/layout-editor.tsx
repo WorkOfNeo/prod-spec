@@ -64,7 +64,25 @@ import { OutputRulesEditor, type RuleFieldOption } from "@/components/output-rul
 import { TokenAutocomplete, buildTokenSuggestions } from "@/components/token-autocomplete";
 import type { LayoutHistoryData } from "@/lib/output-layouts/revision-history";
 import { LayoutHistory, OpenDraftNotice } from "./layout-history-panel";
-import { ChevronLeft } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleHelp,
+  Eye,
+  FileDown,
+  Maximize,
+  MoreHorizontal,
+  Pencil,
+  Search,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import { buttonClass } from "@/components/ui/button";
+import { Pill } from "@/components/ui/pill";
+import { Popover } from "@/components/ui/popover";
 
 // =====================================================
 // Output Builder editor — one layout, three panes:
@@ -86,6 +104,8 @@ import { ChevronLeft } from "lucide-react";
 const AUTOSAVE_MS = 1200;
 const PREVIEW_DEBOUNCE_MS = 600;
 const PT_TO_MM = 25.4 / 72;
+// CSS px per mm at print size (96 dpi) — the canvas zoom's 100%.
+const PX_PER_MM = 96 / 25.4;
 
 // mm input accepts a comma OR dot decimal ("7,5" → 7.5).
 function parseMm(raw: string): number {
@@ -1377,7 +1397,37 @@ export function LayoutEditor({
   // ---- canvas geometry ---------------------------------------------------
 
   // Cheap derived math — no memo (keeps the React Compiler happy).
-  const scale = page ? Math.min(Math.max(Math.min(560 / page.widthMm, 380 / page.heightMm), 1), 6) : 3;
+  // Canvas view: draw on the grid, or see the production render.
+  const [canvasMode, setCanvasMode] = useState<"edit" | "render">("edit");
+  // Left rail: the page/block layers, or the variables to insert.
+  const [leftPanel, setLeftPanel] = useState<"layers" | "vars">("layers");
+  // Canvas zoom: "fit" sizes the page to the stage; a number is % of print size.
+  const [zoom, setZoom] = useState<"fit" | number>("fit");
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [stage, setStage] = useState<{ w: number; h: number } | null>(null);
+  const hasPage = page != null;
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      setStage({ w: entry.contentRect.width, h: entry.contentRect.height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hasPage]);
+
+  // Canvas px per mm. Fit puts the whole page in the stage with room around
+  // it; before the stage is measured, the old fixed box stands in.
+  const fitScale = page
+    ? stage && stage.w > 0 && stage.h > 0
+      ? Math.min(Math.max(Math.min((stage.w - 96) / page.widthMm, (stage.h - 96) / page.heightMm), 0.5), 12)
+      : Math.min(Math.max(Math.min(560 / page.widthMm, 380 / page.heightMm), 1), 6)
+    : 3;
+  const scale = zoom === "fit" ? fitScale : (zoom / 100) * PX_PER_MM;
+  const zoomPct = Math.round((scale / PX_PER_MM) * 100);
+  function stepCanvasZoom(dir: 1 | -1) {
+    setZoom(Math.min(1200, Math.max(25, Math.round(zoomPct * (dir > 0 ? 1.25 : 0.8)))));
+  }
 
   const orientation = page && page.heightMm > page.widthMm ? "portrait" : "landscape";
 
@@ -1408,73 +1458,72 @@ export function LayoutEditor({
   });
 
   return (
-    <div className="min-h-screen bg-surface">
+    <div className={`bg-bg flex flex-col ${tab === "customizer" ? "lg:h-[calc(100dvh-3rem)] lg:overflow-hidden" : ""}`}>
       {/* ---------- header ---------- */}
-      <div className="sticky top-12 z-20 border-b border-line bg-surface/95 px-6 py-3 backdrop-blur">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <Link href="/output-builder" className="text-muted hover:text-ink inline-flex items-center gap-0.5 text-[12px]">
-            <ChevronLeft size={14} aria-hidden="true" />
-            Output builder
-          </Link>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-80 rounded-md border border-transparent px-2 py-1 text-base font-semibold tracking-tight hover:border-line focus:border-line focus:outline-none"
-          />
-          <select
-            value={docType}
-            onChange={(e) => setDocType(e.target.value)}
-            className="h-7 rounded-md border border-line bg-surface px-2 text-[12px] text-ink outline-none focus:border-accent disabled:opacity-50"
-            title="Asset doc type — grouping in pickers and on JobAssets"
-          >
-            {docTypes.map((d) => (
-              <option key={d.value} value={d.value}>
-                {d.label}
-              </option>
-            ))}
-            {docTypes.some((d) => d.value === docType) ? null : (
-              <option value={docType}>{docType}</option>
-            )}
-          </select>
-          <Link
-            href="/output-builder?docTypes=1"
-            className="text-[11px] text-faint underline-offset-2 hover:text-muted hover:underline"
-            title="Add or rename document types, set keyword exclusion rules"
-          >
-            Manage types
-          </Link>
-          <label
-            className="flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-xs text-muted"
-            title="Info area: this layout's print size becomes switchable per style (admin size or custom) on the Style page — see Settings → Info area sizes"
-          >
+      <div data-section="Page header" className="border-line bg-surface border-b px-4 py-2.5 lg:px-6">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <nav aria-label="Breadcrumb" className="text-muted flex items-center gap-1 text-[13px]">
+            <Link href="/output-builder" className="hover:text-ink">
+              Output builder
+            </Link>
+            <span className="text-faint" aria-hidden="true">
+              /
+            </span>
+          </nav>
+          {/* The input sizes to its text: an invisible copy of the name sits
+              in the same grid cell and sets the width. */}
+          <h1 className="-ml-1.5 inline-grid max-w-full min-w-0 text-[17px] font-semibold tracking-[-0.01em]">
+            <span aria-hidden="true" className="invisible col-start-1 row-start-1 truncate border border-transparent px-1.5 whitespace-pre">
+              {name || "Name"}{" "}
+            </span>
             <input
-              type="checkbox"
-              checked={isInfoArea}
-              onChange={(e) => setIsInfoArea(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              aria-label="Layout name"
+              className="text-ink hover:border-line focus:border-accent col-start-1 row-start-1 h-8 w-full min-w-0 rounded-md border border-transparent bg-transparent px-1.5 outline-none"
             />
-            Info area
-          </label>
+          </h1>
           {status === "PUBLISHED" ? (
-            <span className="inline-flex rounded-full border border-transparent bg-good-soft px-2.5 py-0.5 text-xs font-medium text-good">
-              Published · v{version} — edits go live on save
-            </span>
+            <Pill tone="good">
+              <Check size={11} aria-hidden="true" />
+              Published · v{version}
+            </Pill>
           ) : (
-            <span className="inline-flex rounded-full border border-line px-2.5 py-0.5 text-xs font-medium text-muted">
-              Draft
-            </span>
+            <Pill>Draft</Pill>
           )}
-          <span className="text-xs text-faint">
-            {saveState === "saving"
-              ? "Saving…"
-              : saveState === "dirty"
-                ? "Unsaved changes"
-                : saveState === "error"
-                  ? `Save failed${saveError ? ` — ${saveError}` : ""}`
-                  : savedAt
-                    ? `Saved · ${savedAt}`
-                    : ""}
+          <span role="status" className="text-muted inline-flex min-w-0 items-center gap-1.5 text-[12px]">
+            <span
+              aria-hidden="true"
+              className={`size-1.5 shrink-0 rounded-full ${
+                saveState === "saving"
+                  ? "bg-faint animate-pulse"
+                  : saveState === "dirty"
+                    ? "bg-warn"
+                    : saveState === "error"
+                      ? "bg-bad"
+                      : "bg-good"
+              }`}
+            />
+            <span className={`max-w-[26rem] truncate ${saveState === "error" ? "text-bad" : ""}`}>
+              {saveState === "saving"
+                ? "Saving…"
+                : saveState === "dirty"
+                  ? "Unsaved changes"
+                  : saveState === "error"
+                    ? `Save failed${saveError ? ` — ${saveError}` : ""}`
+                    : `${savedAt ? `Saved ${savedAt}` : "Saved"}${status === "PUBLISHED" ? " · edits go live on save" : ""}`}
+            </span>
+            {saveState === "dirty" || saveState === "error" ? (
+              <button
+                type="button"
+                onClick={saveNow}
+                className="text-ink shrink-0 underline"
+                title="Save now (autosave runs 1.2s after the last change)"
+              >
+                Save now
+              </button>
+            ) : null}
           </span>
           <div className="ml-auto flex items-center gap-2">
             <button
@@ -1482,46 +1531,51 @@ export function LayoutEditor({
               onClick={() => setGuideOpen(true)}
               aria-label="Output Builder guide"
               title="Output Builder guide — what every control does and how to use it"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-line bg-surface text-sm font-semibold text-muted hover:border-zinc-400 hover:bg-subtle hover:text-ink"
+              className={"text-muted hover:bg-subtle hover:text-ink inline-flex size-8 items-center justify-center rounded-md"}
             >
-              ?
-            </button>
-            <button
-              type="button"
-              onClick={saveNow}
-              disabled={saveState === "saved" || saveState === "saving"}
-              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
-              title="Save now (autosave runs 1.2s after the last change)"
-            >
-              {saveState === "saving" ? "Saving…" : "Save"}
-            </button>
-            <button
-              type="button"
-              onClick={openPdf}
-              disabled={pdfBusy}
-              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {pdfBusy ? "Rendering…" : "Open PDF"}
+              <CircleHelp size={16} aria-hidden="true" />
             </button>
             {history ? <LayoutHistory history={history} editorDirty={saveState !== "saved"} /> : null}
             {status === "DRAFT" ? (
-              <button
-                type="button"
-                onClick={publish}
-                disabled={publishing}
-                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
+              <button type="button" onClick={publish} disabled={publishing} className={buttonClass("primary")}>
                 {publishing ? "Publishing…" : "Publish"}
               </button>
             ) : null}
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(true)}
-              className="ml-1 border-l border-line pl-3 text-sm font-medium text-faint hover:text-bad"
-              title="Delete this layout"
-            >
-              Delete
+            <button type="button" onClick={openPdf} disabled={pdfBusy} className={buttonClass("secondary")}>
+              <FileDown size={14} aria-hidden="true" />
+              {pdfBusy ? "Rendering…" : "Open PDF"}
             </button>
+            <Popover
+              anchor="--layout-more"
+              align="end"
+              label="More"
+              className={"border-line bg-surface text-ink hover:bg-subtle inline-flex size-8 items-center justify-center rounded-md border"}
+              trigger={<MoreHorizontal size={16} aria-hidden="true" />}
+            >
+              <div className="flex w-52 flex-col">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    (e.currentTarget.closest("[popover]") as HTMLElement | null)?.hidePopover();
+                    saveNow();
+                  }}
+                  disabled={saveState === "saved" || saveState === "saving"}
+                  className="hover:bg-subtle flex h-8 items-center rounded-md px-2 text-left text-[13px] disabled:opacity-50"
+                >
+                  {saveState === "saving" ? "Saving…" : "Save now"}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    (e.currentTarget.closest("[popover]") as HTMLElement | null)?.hidePopover();
+                    setConfirmDelete(true);
+                  }}
+                  className="text-bad hover:bg-bad-soft flex h-8 items-center rounded-md px-2 text-left text-[13px]"
+                >
+                  Delete layout…
+                </button>
+              </div>
+            </Popover>
           </div>
         </div>
         {publishErrors.length > 0 ? (
@@ -1532,13 +1586,6 @@ export function LayoutEditor({
           </ul>
         ) : null}
         {history?.openDraft ? <OpenDraftNotice draft={history.openDraft} /> : null}
-        {status === "PUBLISHED" ? (
-          <p className="mt-1.5 text-xs text-faint">
-            Available in the Prod Spec output picker as{" "}
-            <code className="rounded bg-subtle px-1 font-mono">layout:{layout.id}</code> — it only generates for
-            styles once added to a Prod Spec there.
-          </p>
-        ) : null}
       </div>
 
       {confirmDelete ? (
@@ -1754,7 +1801,7 @@ export function LayoutEditor({
       ) : null}
 
       {/* ---------- tabs ---------- */}
-      <div className="flex items-center gap-6 border-b border-line px-8">
+      <nav aria-label="Layout" className="border-line bg-surface flex gap-5 overflow-x-auto border-b px-4 lg:px-6">
         {([
           ["customizer", "Customizer"],
           ["reviews", "Reviews"],
@@ -1764,38 +1811,38 @@ export function LayoutEditor({
             key={key}
             type="button"
             onClick={() => setTab(key)}
-            className={`-mb-px border-b-2 px-1 py-2.5 text-sm font-medium transition-colors ${
-              tab === key
-                ? "border-ink text-ink"
-                : "border-transparent text-faint hover:text-ink"
+            aria-current={tab === key ? "page" : undefined}
+            className={`-mb-px inline-flex h-10 shrink-0 items-center gap-1.5 border-b-2 text-[13px] transition-colors duration-150 ${
+              tab === key ? "border-ink text-ink font-medium" : "text-muted hover:text-ink border-transparent"
             }`}
           >
             {label}
             {key === "reviews" && stats.pendingReview > 0 ? (
-              <span className="ml-1.5 rounded-full bg-warn-soft px-1.5 py-px text-[11px] font-semibold text-warn">
+              <span className="text-warn text-[12px] font-normal tabular-nums" title="Waiting for review">
                 {stats.pendingReview}
               </span>
             ) : null}
             {/* This output doesn't generate for every style — say so where the
                 operator looks first, not only inside the tab. */}
             {key === "settings" && settings.rules.length > 0 ? (
-              <span className="ml-1.5 rounded-full bg-good-soft px-1.5 py-px text-[11px] font-semibold text-good">
+              <span className="text-faint text-[12px] font-normal">
                 {settings.rules.length} rule{settings.rules.length === 1 ? "" : "s"}
               </span>
             ) : null}
           </button>
         ))}
-      </div>
+      </nav>
 
       {/* ===== Customizer tab — canvas lives here, always ===== */}
-      <div className={tab === "customizer" ? undefined : "hidden"}>
+      <div className={tab === "customizer" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
       {/* ---------- test data ---------- */}
-      <div className="flex flex-wrap items-center gap-3 border-b border-line px-8 py-2.5">
-        <span className="text-[11px] font-semibold text-faint">Test data</span>
+      <div data-section="Test data" className="border-line bg-surface flex flex-wrap items-center gap-2 border-b px-4 py-2 lg:px-6">
+        <span className="text-muted text-[12px]">Test with</span>
         <select
           value={customerId ?? ""}
           onChange={(e) => setCustomerId(e.target.value || null)}
-          className="h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
+          aria-label="Customer"
+          className="border-line bg-surface text-ink focus:border-accent h-7 w-44 rounded-md border px-2 text-[12px] outline-none"
         >
           <option value="">Customer…</option>
           {customers.map((c) => (
@@ -1807,7 +1854,8 @@ export function LayoutEditor({
         <select
           value={businessAreaId ?? ""}
           onChange={(e) => setBusinessAreaId(e.target.value || null)}
-          className="h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
+          aria-label="Business area"
+          className="border-line bg-surface text-ink focus:border-accent h-7 w-40 rounded-md border px-2 text-[12px] outline-none"
         >
           <option value="">Business area…</option>
           {businessAreas.map((b) => (
@@ -1820,6 +1868,7 @@ export function LayoutEditor({
         {customerId && businessAreaId ? (
           <>
             <div className="relative">
+              <Search size={13} aria-hidden="true" className="text-faint pointer-events-none absolute top-1/2 left-2 -translate-y-1/2" />
               <input
                 type="text"
                 value={styleQuery}
@@ -1830,7 +1879,8 @@ export function LayoutEditor({
                 onFocus={() => setSearchOpen(true)}
                 onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)}
                 placeholder="Search style / PO…"
-                className="w-44 rounded-md border border-line bg-surface py-1 pl-2 pr-6 text-sm text-ink placeholder:text-faint"
+                aria-label="Search test styles"
+                className="border-line bg-surface text-ink placeholder:text-faint focus:border-accent h-7 w-48 rounded-md border pr-6 pl-7 text-[12px] outline-none"
               />
               {styleQuery ? (
                 <button
@@ -1840,14 +1890,14 @@ export function LayoutEditor({
                     setStyleQuery("");
                     setSearchOpen(false);
                   }}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-faint hover:text-muted"
-                  title="Clear search"
+                  className="text-faint hover:text-muted absolute top-1/2 right-1.5 -translate-y-1/2"
+                  aria-label="Clear search"
                 >
-                  ✕
+                  <X size={12} aria-hidden="true" />
                 </button>
               ) : null}
               {searchOpen && styleQuery.trim() && styles.length > 0 ? (
-                <div className="absolute left-0 top-full z-30 mt-1 w-80 overflow-hidden rounded-md border border-line bg-surface shadow-md">
+                <div className="border-line bg-surface absolute top-full left-0 z-30 mt-1 w-80 overflow-hidden rounded-md border shadow-[var(--shadow-lift)]">
                   {styles.slice(0, 10).map((s, i) => (
                     <button
                       key={s.id}
@@ -1857,22 +1907,16 @@ export function LayoutEditor({
                         setStyleIdx(i);
                         setSearchOpen(false);
                       }}
-                      className={`flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-subtle ${
+                      className={`hover:bg-subtle flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-[13px] ${
                         i === styleIdx ? "bg-subtle" : ""
                       }`}
                     >
-                      <span className="truncate font-medium text-ink">{s.name}</span>
+                      <span className="text-ink truncate font-medium">{s.name}</span>
                       <span className="flex shrink-0 items-center gap-2">
-                        {s.poNumber ? <span className="font-mono text-[11px] text-faint">{s.poNumber}</span> : null}
-                        <span
-                          className={`rounded-full px-1.5 py-px text-[11px] font-medium ${
-                            s.total > 0 && s.missing.length === 0
-                              ? "bg-good-soft text-good"
-                              : "bg-warn-soft text-warn"
-                          }`}
-                        >
+                        {s.poNumber ? <span className="text-faint font-mono text-[11px]">{s.poNumber}</span> : null}
+                        <Pill tone={s.total > 0 && s.missing.length === 0 ? "good" : "warn"}>
                           {s.filled}/{s.total}
-                        </span>
+                        </Pill>
                       </span>
                     </button>
                   ))}
@@ -1880,51 +1924,50 @@ export function LayoutEditor({
               ) : null}
             </div>
             {stylesLoading ? (
-              <span className="text-xs text-faint">{styleQuery.trim() ? "Searching…" : "Finding fullest styles…"}</span>
+              <span className="text-faint text-[12px]">{styleQuery.trim() ? "Searching…" : "Finding fullest styles…"}</span>
             ) : styles.length === 0 ? (
-              <span className="text-xs text-faint">
+              <span className="text-faint text-[12px]">
                 {styleQuery.trim() ? `No styles match “${styleQuery.trim()}”` : "No styles for this pair"}
               </span>
             ) : (
               <>
-                <div className="flex items-center gap-1 rounded-md border border-line px-1 py-0.5">
+                <div className="flex items-center gap-0.5">
                   <button
                     type="button"
                     onClick={() => setStyleIdx((i) => (i + styles.length - 1) % styles.length)}
-                    className="rounded px-1.5 py-0.5 text-xs text-muted hover:bg-subtle"
-                    title="Previous style"
+                    className={"text-muted hover:bg-subtle hover:text-ink inline-flex size-7 items-center justify-center rounded-md"}
+                    aria-label="Previous style"
                   >
-                    ◀
+                    <ChevronLeft size={14} aria-hidden="true" />
                   </button>
-                  <span className="max-w-64 truncate px-1 text-sm font-medium text-ink" title={testStyle?.name}>
+                  <span className="text-ink max-w-64 truncate px-1 text-[13px] font-medium" title={testStyle?.name}>
                     {testStyle?.name}
                   </span>
                   <button
                     type="button"
                     onClick={() => setStyleIdx((i) => (i + 1) % styles.length)}
-                    className="rounded px-1.5 py-0.5 text-xs text-muted hover:bg-subtle"
-                    title="Next style"
+                    className={"text-muted hover:bg-subtle hover:text-ink inline-flex size-7 items-center justify-center rounded-md"}
+                    aria-label="Next style"
                   >
-                    ▶
+                    <ChevronRight size={14} aria-hidden="true" />
                   </button>
                 </div>
                 {testStyle ? (
                   testStyle.total === 0 ? (
-                    <span className="text-xs text-faint">no variables yet</span>
+                    <span className="text-faint text-[12px]">no variables yet</span>
                   ) : testStyle.missing.length === 0 ? (
-                    <span className="rounded-full border border-transparent bg-good-soft px-2 py-0.5 text-xs font-medium text-good">
+                    <Pill tone="good">
                       {testStyle.filled}/{testStyle.total} fields
-                    </span>
+                    </Pill>
                   ) : (
-                    <span
-                      className="rounded-full border border-transparent bg-warn-soft px-2 py-0.5 text-xs font-medium text-warn"
-                      title={`Missing: ${testStyle.missing.join(", ")}`}
-                    >
-                      {testStyle.filled}/{testStyle.total} fields · missing {testStyle.missing.join(", ")}
-                    </span>
+                    <Pill tone="warn" title={`Missing: ${testStyle.missing.join(", ")}`}>
+                      <span className="max-w-[22rem] truncate">
+                        {testStyle.filled}/{testStyle.total} fields · missing {testStyle.missing.join(", ")}
+                      </span>
+                    </Pill>
                   )
                 ) : null}
-                <span className="text-xs text-faint">
+                <span className="text-faint text-[12px]">
                   {styleIdx + 1} of {styles.length}
                   {styleQuery.trim() ? ` match${styles.length === 1 ? "" : "es"}` : ""}, fullest first
                 </span>
@@ -1932,1465 +1975,1419 @@ export function LayoutEditor({
             )}
           </>
         ) : (
-          <span className="text-xs text-faint">Pick a customer and business area to preview with real styles</span>
+          <span className="text-faint text-[12px]">Pick a customer and business area to preview with real styles</span>
         )}
       </div>
 
-      {/* ---------- main ---------- */}
-      <div className="grid grid-cols-1 gap-8 px-8 py-6 lg:grid-cols-[12.5rem_minmax(0,1fr)_19rem]">
-        {/* ----- left: pages ----- */}
-        <div>
-          <div className="text-[11px] font-semibold text-faint">Pages</div>
-          <div className="mt-2 flex flex-col gap-1.5">
-            {def.pages.map((p, i) => (
-              <div
-                key={p.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => {
-                  setPageIdx(i);
-                  setSel(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setPageIdx(i);
-                    setSel(null);
-                  }
-                }}
-                className={`group relative cursor-pointer rounded-md border px-3 py-2 text-left ${
-                  i === pageIdx ? "border-ink bg-surface" : "border-line bg-surface hover:border-line"
-                }`}
-              >
-                <div className="pr-4 text-sm font-medium text-ink">
-                  {i + 1} · {p.title || "Untitled"}
-                </div>
-                <div className="font-mono text-[11px] text-faint">
-                  {p.widthMm} × {p.heightMm} mm
-                </div>
-                {p.omitWhenEmpty ? (
-                  <div
-                    className="text-[11px] font-medium text-warn"
-                    title="This page is left out of the PDF when nothing on it resolves for the style"
-                  >
-                    skips when empty
-                  </div>
-                ) : null}
-                {def.pages.length > 1 ? (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removePage(i);
-                    }}
-                    className="absolute right-1.5 top-1.5 hidden h-4 w-4 items-center justify-center rounded-full text-[11px] leading-none text-faint hover:bg-bad-soft hover:text-bad group-hover:flex"
-                    title={`Delete page "${p.title || "Untitled"}"`}
-                  >
-                    ✕
-                  </button>
-                ) : null}
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={addPage}
-              className="rounded-md border border-dashed border-line px-3 py-1.5 text-xs font-medium text-faint hover:border-zinc-400 hover:text-muted"
-            >
-              + Add page
-            </button>
+      {/* ---------- workspace: layers · canvas · inspector ---------- */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[15rem_minmax(0,1fr)_20rem]">
+        {/* ----- left: layers / variables ----- */}
+        <aside
+          aria-label="Layers and variables"
+          className="border-line bg-surface flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
+        >
+          <div className="border-line border-b p-2">
+            <div role="group" aria-label="Panel" className="bg-seg grid grid-cols-2 rounded-lg p-0.5">
+              {([
+                ["layers", "Layers"],
+                ["vars", "Variables"],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={leftPanel === key}
+                  onClick={() => setLeftPanel(key)}
+                  className={`h-7 rounded-md text-[12px] transition-colors duration-150 ${
+                    leftPanel === key
+                      ? "bg-seg-on text-seg-on-ink font-medium shadow-[var(--shadow-pop)]"
+                      : "text-muted hover:text-ink"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {leftPanel === "layers" ? (
+              <>
+                <div className="border-line border-b p-3">
+                  <div className="text-[11px] font-semibold text-faint">Pages</div>
+                  <div className="mt-1.5 flex flex-col gap-0.5">
+                    {def.pages.map((p, i) => (
+                      <div
+                        key={p.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => {
+                          setPageIdx(i);
+                          setSel(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setPageIdx(i);
+                            setSel(null);
+                          }
+                        }}
+                        className={`group relative cursor-pointer rounded-md px-2.5 py-1.5 text-left transition-colors duration-150 ${
+                          i === pageIdx ? "bg-subtle" : "hover:bg-subtle/60"
+                        }`}
+                      >
+                        <div className="pr-4 text-[13px] font-medium text-ink">
+                          {i + 1} · {p.title || "Untitled"}
+                        </div>
+                        <div className="font-mono text-[11px] text-faint">
+                          {p.widthMm} × {p.heightMm} mm
+                        </div>
+                        {p.omitWhenEmpty ? (
+                          <div
+                            className="text-[11px] font-medium text-warn"
+                            title="This page is left out of the PDF when nothing on it resolves for the style"
+                          >
+                            skips when empty
+                          </div>
+                        ) : null}
+                        {def.pages.length > 1 ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removePage(i);
+                            }}
+                            className="absolute right-1.5 top-1.5 hidden h-4 w-4 items-center justify-center rounded-full text-[11px] leading-none text-faint hover:bg-bad-soft hover:text-bad group-hover:flex"
+                            title={`Delete page "${p.title || "Untitled"}"`}
+                          >
+                            ✕
+                          </button>
+                        ) : null}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={addPage}
+                      className="mt-1 rounded-md px-2.5 py-1 text-left text-[12px] text-muted hover:bg-subtle/60 hover:text-ink"
+                    >
+                      + Add page
+                    </button>
+                  </div>
+                </div>
+                {/* Blocks on this page — a navigable list. Click a row to select
+                    (far easier than hunting a tiny block on the canvas); hover to
+                    flash that block's position with a blue locator ring; the row
+                    ✕ deletes it. Stays in sync with the canvas selection. */}
+                <div className="p-3">
+                  <div className="flex items-baseline justify-between">
+                    <div className="text-[11px] font-semibold text-faint">Blocks</div>
+                    <div className="flex items-baseline gap-2">
+                      {page.blocks.length > 1 ? (
+                        <button
+                          type="button"
+                          onClick={selectAllOnPage}
+                          className="text-[11px] font-medium text-faint hover:text-ink"
+                          title="Select every block on this page, so one panel edit formats them all"
+                        >
+                          Select all
+                        </button>
+                      ) : null}
+                      <span className="text-[11px] tabular-nums text-faint">{page.blocks.length}</span>
+                    </div>
+                  </div>
+                  {/* Paste sits here, not in the Block panel, because it acts on
+                      the PAGE — it has to work when nothing is selected, which is
+                      exactly the state you arrive in from another layout. */}
+                  {blockClip ? (
+                    <button
+                      type="button"
+                      onClick={pasteBlocks}
+                      className="mt-2 w-full truncate rounded-md border border-dashed border-line px-2 py-1.5 text-left text-[11px] text-muted hover:border-zinc-400 hover:bg-subtle hover:text-ink"
+                      title={`Paste onto this page, rescaled from a ${blockClip.grid.cols}×${blockClip.grid.rows} grid to this page's ${grid.cols}×${grid.rows}`}
+                    >
+                      Paste {blockClip.blocks.length} block{blockClip.blocks.length === 1 ? "" : "s"} from “
+                      {blockClip.layoutName}”
+                    </button>
+                  ) : null}
+                  {clipNote ? <p className="mt-1.5 text-[11px] text-muted">{clipNote}</p> : null}
+                  {page.blocks.length === 0 ? (
+                    <p className="mt-2 text-xs text-faint">No blocks yet — drag on the grid to draw one.</p>
+                  ) : (
+                    <ul className="mt-2 max-h-64 space-y-0.5 overflow-y-auto pr-0.5">
+                      {orderedBlocks.map((b) => {
+                        const id = blockId(b);
+                        const isSel = sel === id;
+                        // A companion of the primary: formatting edits reach it,
+                        // so it gets a lighter version of the selected outline.
+                        const isCoSel = !isSel && selIds.includes(id);
+                        const { kind, text, extra } = blockSummary(b);
+                        return (
+                          <li key={id}>
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => selectBlock(id, e.shiftKey || e.metaKey || e.ctrlKey)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  selectBlock(id, e.shiftKey || e.metaKey || e.ctrlKey);
+                                }
+                              }}
+                              onMouseEnter={() => setHoverBlock(id)}
+                              onMouseLeave={() => setHoverBlock((h) => (h === id ? null : h))}
+                              onFocus={() => setHoverBlock(id)}
+                              onBlur={() => setHoverBlock((h) => (h === id ? null : h))}
+                              className={`group flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 ${
+                                isSel
+                                  ? "border-ink bg-subtle"
+                                  : isCoSel
+                                    ? "border-dashed border-zinc-400 bg-subtle"
+                                    : "border-transparent hover:border-line hover:bg-subtle"
+                              }`}
+                            >
+                              {kind ? (
+                                <span className="shrink-0 rounded bg-subtle px-1 py-px text-[11px] font-medium text-muted">
+                                  {kind}
+                                </span>
+                              ) : null}
+                              <span className={`min-w-0 flex-1 truncate text-xs ${isSel ? "text-ink" : "text-muted"}`}>
+                                {text}
+                              </span>
+                              {extra > 0 ? (
+                                <span className="shrink-0 text-[11px] text-faint" title={`${extra + 1} lines`}>
+                                  +{extra}
+                                </span>
+                              ) : null}
+                              {b.rect ? (
+                                <span className="shrink-0 font-mono text-[11px] text-faint group-hover:hidden">
+                                  R{b.rect.row + 1}·C{b.rect.col + 1}
+                                </span>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeBlock(id);
+                                }}
+                                className="hidden h-4 w-4 shrink-0 items-center justify-center rounded-full text-[11px] leading-none text-faint hover:bg-bad-soft hover:text-bad group-hover:flex"
+                                title="Delete this block"
+                                aria-label="Delete block"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="p-3">
+                <div className="flex items-baseline justify-between">
+                  <div className="text-[11px] font-semibold text-faint">Variables</div>
+                  <label className="flex items-center gap-1.5 text-[11px] text-muted" title="Resolve every variable against the selected test style">
+                    <input
+                      type="checkbox"
+                      checked={showValues}
+                      onChange={(e) => setShowValues(e.target.checked)}
+                      className="accent-zinc-900"
+                    />
+                    Show values
+                  </label>
+                </div>
+                <p className="mt-1 text-[11px] text-faint">
+                  {selBlock ? "Click to insert at the cursor." : "Select a block first."}
+                  {showValues && testStyle ? ` Values from ${testStyle.name}.` : ""}
+                </p>
+                {(["Style", "Order & carton"] as const).map((group) => (
+                  <div key={group} className="mt-3">
+                    <div className="text-[11px] font-semibold text-faint">{group}</div>
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {LAYOUT_TOKENS.filter((t) => t.group === group).flatMap((t) => {
+                        // A multi-number carton qty offers bare + :solid/:assort
+                        // (the split) + :inner/:outer (the pack pair) chips, a
+                        // size-scoped field bare + :size, a two-form size run
+                        // bare + :numeric/:year, the assortment table bare +
+                        // :total; every other token is a single bare chip.
+                        const args =
+                          t.arg === "cartonKind"
+                            ? ["", ...CARTON_QTY_KINDS]
+                            : t.arg === "sizeScope"
+                              ? ["", SIZE_SCOPE_ARG]
+                              : t.arg === "sizeForm"
+                                ? ["", ...SIZE_FORMS]
+                                : t.arg === "tableTotal"
+                                  ? ["", TABLE_TOTAL_ARG]
+                                  : [""];
+                        return args.map((a) => {
+                          const key = a ? `${t.key}:${a}` : t.key;
+                          return (
+                            <TokenChip
+                              key={key}
+                              token={`{{${key}}}`}
+                              title={`${t.label}${a ? ` (${a})` : ""}${t.example ? ` — e.g. ${t.example}` : ""}`}
+                              disabled={!selBlock}
+                              value={showValues ? (tokenValues[key] ?? "") : undefined}
+                              onClick={() => insertToken(`{{${key}}}`)}
+                            />
+                          );
+                        });
+                      })}
+                    </div>
+                  </div>
+                ))}
+                <div className="mt-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-semibold text-faint">Per language</span>
+                    <select
+                      value={langSel}
+                      onChange={(e) => setLangSel(e.target.value)}
+                      className="rounded border border-line px-1 py-0.5 text-[11px] text-muted"
+                    >
+                      {languages.map((l) => (
+                        <option key={l.code} value={l.code}>
+                          {l.code}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {LAYOUT_TOKENS.filter((t) => t.arg === "lang").map((t) => (
+                      <TokenChip
+                        key={t.key}
+                        token={`{{${t.key}:${langSel}}}`}
+                        title={t.label}
+                        disabled={!selBlock}
+                        value={showValues ? (tokenValues[`${t.key}:${langSel}`] ?? "") : undefined}
+                        onClick={() => insertToken(`{{${t.key}:${langSel}}}`)}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-semibold text-faint">
+                      Sibling styles
+                    </span>
+                    <select
+                      value={siblingSlot}
+                      onChange={(e) => setSiblingSlot(Number(e.target.value))}
+                      className="rounded border border-line px-1 py-0.5 text-[11px] text-muted"
+                      title="Which carton slot these chips fill — other styles from the same PO"
+                    >
+                      {Array.from({ length: MAX_SIBLING_SLOTS - 1 }, (_, i) => i + 2).map((n) => (
+                        <option key={n} value={n}>
+                          style{n}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="mt-1 text-[11px] text-faint">
+                    Other styles from the same PO, filled on a manual print. Turn on{" "}
+                    <b>Multiple styles</b> in Settings, then branch:{" "}
+                    <code className="rounded bg-subtle px-1 text-[11px]">
+                      {"{{if multipleStyles == true}}{{style2}}{{else}}{{style}}{{endif}}"}
+                    </code>{" "}
+                    (<code className="rounded bg-subtle px-1 text-[11px]">==</code>, not{" "}
+                    <code className="rounded bg-subtle px-1 text-[11px]">===</code>).
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    <TokenChip
+                      token="{{if multipleStyles}}…{{endif}}"
+                      title="Insert the multi-style conditional skeleton"
+                      disabled={!selBlock}
+                      onClick={() => insertToken("{{if multipleStyles == true}}{{else}}{{endif}}")}
+                    />
+                    <TokenChip
+                      token="{{style}}"
+                      title="Base style number — the single-style branch"
+                      disabled={!selBlock}
+                      onClick={() => insertToken("{{style}}")}
+                    />
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {SIBLING_FIELDS.map((f) => {
+                      const key = `style${siblingSlot}${f.suffix}`;
+                      return (
+                        <TokenChip
+                          key={key}
+                          token={`{{${key}}}`}
+                          title={`Style ${siblingSlot} · ${f.label}`}
+                          disabled={!selBlock}
+                          onClick={() => insertToken(`{{${key}}}`)}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <div className="text-[11px] font-semibold text-faint">Calculated</div>
+                  <p className="mt-1 text-[11px] text-faint">
+                    Arithmetic over field values: <code className="rounded bg-subtle px-1 text-[11px]">+ − × ÷</code>,{" "}
+                    <code className="rounded bg-subtle px-1 text-[11px]">sum/count/min/max(field)</code> across the
+                    styles on the carton (base + picked siblings — an empty slot counts as 0), and{" "}
+                    <code className="rounded bg-subtle px-1 text-[11px]">round(…, decimals)</code>.
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    <TokenChip
+                      token="{{= sum(qtyPerCarton) }}"
+                      title="Total pcs in the carton — every style's qty per carton summed (just the base style's on a standard print)"
+                      disabled={!selBlock}
+                      onClick={() => insertToken("{{= sum(qtyPerCarton) }}")}
+                    />
+                    <TokenChip
+                      token="{{= count(styleNumber) }}"
+                      title="How many styles are on the carton"
+                      disabled={!selBlock}
+                      onClick={() => insertToken("{{= count(styleNumber) }}")}
+                    />
+                    <TokenChip
+                      token="{{= }}"
+                      title="Empty calculation — write your own expression, e.g. {{= qtyPerCarton * 2 }}"
+                      disabled={!selBlock}
+                      onClick={() => insertToken("{{= }}")}
+                    />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <div className="text-[11px] font-semibold text-faint">Graphics</div>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    <TokenChip
+                      token="{{barcode:cartonEan}}"
+                      title="Carton EAN as Code 128 bars + number — scales with the block font size"
+                      disabled={!selBlock}
+                      value={showValues ? (tokenValues["barcode:cartonEan"] ?? "") : undefined}
+                      onClick={() => insertToken("{{barcode:cartonEan}}")}
+                    />
+                    <TokenChip
+                      token="{{barcode:cartonEan13}}"
+                      title="Same carton EAN as true EAN-13 bars (digits in the symbol). Use this instead of {{barcode:cartonEan}} when the carton must print EAN-13 — no ProdSpec setting needed."
+                      disabled={!selBlock}
+                      value={showValues ? (tokenValues["barcode:cartonEan13"] ?? "") : undefined}
+                      onClick={() => insertToken("{{barcode:cartonEan13}}")}
+                    />
+                    <TokenChip
+                      token="{{barcode:ean13}}"
+                      title="First size EAN as EAN-13 bars — scales with the block font size"
+                      disabled={!selBlock}
+                      value={showValues ? (tokenValues["barcode:ean13"] ?? "") : undefined}
+                      onClick={() => insertToken("{{barcode:ean13}}")}
+                    />
+                    <TokenChip
+                      token="{{washSymbols}}"
+                      title="The style's wash care symbols as a row of icons — scales with the block font size. Add a mm gap with {{washSymbols:0}} (0 = flush together)."
+                      disabled={!selBlock}
+                      value={showValues ? (tokenValues["washSymbols"] ?? "") : undefined}
+                      onClick={() => insertToken("{{washSymbols}}")}
+                    />
+                    <TokenChip
+                      token="{{logo:contrast}}"
+                      title="The Contrast logo (public/logos/contrast.svg in the repo) — height scales with the block font size"
+                      disabled={!selBlock}
+                      onClick={() => insertToken("{{logo:contrast}}")}
+                    />
+                    <TokenChip
+                      token="{{logo:contrastAddress}}"
+                      title="The Contrast logo with address (public/logos/contrast-address.svg in the repo) — height scales with the block font size"
+                      disabled={!selBlock}
+                      onClick={() => insertToken("{{logo:contrastAddress}}")}
+                    />
+                    <TokenChip
+                      token="{{logo:custom}}"
+                      title="This layout's own uploaded logo (upload it under Settings → Custom logo when this token is used) — width set as a % of its block"
+                      disabled={!selBlock}
+                      onClick={() => insertToken("{{logo:custom}}")}
+                    />
+                    <TokenChip
+                      token="{{cert:oekotex}}"
+                      title="OEKO-TEX certification mark — prints only on styles whose Certificates field includes OEKO-TEX (no {{if}} wrapper needed). Artwork from Settings → Certificates (placeholder until the licensed mark is uploaded); height scales with the block font size"
+                      disabled={!selBlock}
+                      onClick={() => insertToken("{{cert:oekotex}}")}
+                    />
+                    <TokenChip
+                      token="{{cert:fsc}}"
+                      title="FSC certification mark — prints only on styles whose Certificates field includes FSC (no {{if}} wrapper needed). Artwork from Settings → Certificates (placeholder until the licensed mark is uploaded); height scales with the block font size"
+                      disabled={!selBlock}
+                      onClick={() => insertToken("{{cert:fsc}}")}
+                    />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-[11px] font-semibold text-faint">Images</span>
+                    <a
+                      href="/settings/images"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-faint underline hover:text-ink"
+                    >
+                      Manage library →
+                    </a>
+                  </div>
+                  <p className="mt-1 text-[11px] text-faint">
+                    Shared pictures — place as many as you need on one output. Add a width to size one:{" "}
+                    <code className="rounded bg-subtle px-1 text-[11px]">{"{{image:slug:40}}"}</code>{" "}
+                    prints it at 40% of its block&apos;s width. Without a width it matches the block&apos;s
+                    font size.
+                  </p>
+                  {libraryImages.length === 0 ? (
+                    <p className="mt-1.5 text-[11px] text-warn">
+                      The library is empty —{" "}
+                      <a href="/settings/images" target="_blank" rel="noreferrer" className="underline">
+                        upload a picture
+                      </a>{" "}
+                      to place it here.
+                    </p>
+                  ) : (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {libraryImages.map((img) => (
+                        <button
+                          key={img.slug}
+                          type="button"
+                          disabled={!selBlock}
+                          onClick={() => insertToken(`{{image:${img.slug}}}`)}
+                          title={`${img.name} — inserts {{image:${img.slug}}}. Add a width % to size it, e.g. {{image:${img.slug}:40}}`}
+                          className="flex items-center gap-1.5 rounded border border-line bg-surface px-1.5 py-1 text-[11px] text-ink hover:bg-subtle disabled:opacity-40"
+                        >
+                          {img.dataUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={img.dataUrl} alt="" className="h-4 w-4 object-contain" />
+                          ) : (
+                            <span className="text-warn" title="No artwork uploaded yet">
+                              ⚠
+                            </span>
+                          )}
+                          <span className="max-w-[9rem] truncate">{img.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="mt-3">
+                  <div className="text-[11px] font-semibold text-faint">Logic</div>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    <TokenChip
+                      token="{{if …}} {{else}} {{endif}}"
+                      title='Conditional content — e.g. {{if deliveryTerm == FOB}}{{customerOrderNo}}{{else}}{{poNumber}}{{endif}}. Compares case-insensitively; also supports !=.'
+                      disabled={!selBlock}
+                      onClick={() => insertToken("{{if deliveryTerm == FOB}}{{customerOrderNo}}{{else}}{{poNumber}}{{endif}}")}
+                    />
+                    <TokenChip
+                      token="{{if … contains …}}"
+                      title='Substring condition — e.g. {{if productGroup contains Set}}PER SÆT{{else}}KR.{{endif}}: true when the field MENTIONS the word, so "Set", "Gift Set" and "SET 2-PACK" all match. Case-insensitive. Also supports !contains. Use ==/!= instead when the value must be the whole field.'
+                      disabled={!selBlock}
+                      onClick={() =>
+                        insertToken("{{if productGroup contains Set}}PER SÆT{{else}}KR.{{endif}}")
+                      }
+                    />
+                    <TokenChip
+                      token="{{if … includes …}}"
+                      title='List condition — e.g. {{if certificates includes FSC}}FSC certified{{endif}}: true when one of the comma-separated values matches, ignoring case and punctuation (OEKO-TEX = OEKOTEX). Also supports !includes. Not a substring check — use contains for that. Note: the {{cert:…}} marks already self-gate on the Certificates field — this is for conditional TEXT.'
+                      disabled={!selBlock}
+                      onClick={() => insertToken("{{if certificates includes FSC}}FSC certified{{endif}}")}
+                    />
+                  </div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-faint">
+                    One condition per line, no nesting. ==/!= compare the whole value; contains/!contains test for
+                    a word anywhere in it; includes/!includes check a comma-separated list. The {"{{cert:…}}"} marks
+                    already print only on styles that declare the certificate, so no wrapper is needed for them.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </aside>
 
-          <div className="mt-6 text-[11px] font-semibold text-faint">Page settings</div>
-          <div className="mt-2 space-y-3">
-            <div>
-              <label className="text-xs text-muted">Title</label>
-              <input
-                type="text"
-                value={page.title}
-                onChange={(e) => updatePage({ title: e.target.value })}
-                className="mt-1 w-full rounded-md border border-line px-2.5 py-1.5 text-sm"
-              />
+        {/* ----- center: canvas / true render ----- */}
+        <div className="flex min-h-0 min-w-0 flex-col">
+          <div className="border-line bg-surface flex flex-wrap items-center gap-2 border-b px-3 py-2">
+            <div role="group" aria-label="Canvas mode" className="bg-seg inline-flex rounded-lg p-0.5">
+              {([
+                ["edit", "Edit", Pencil],
+                ["render", "True render", Eye],
+              ] as const).map(([key, label, Icon]) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={canvasMode === key}
+                  onClick={() => setCanvasMode(key)}
+                  className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12px] transition-colors duration-150 ${
+                    canvasMode === key
+                      ? "bg-seg-on text-seg-on-ink font-medium shadow-[var(--shadow-pop)]"
+                      : "text-muted hover:text-ink"
+                  }`}
+                >
+                  <Icon size={13} aria-hidden="true" />
+                  {label}
+                </button>
+              ))}
             </div>
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <label className="text-xs text-muted">Width mm</label>
-                <input
-                  type="number"
-                  min={5}
-                  max={1000}
-                  value={page.widthMm}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    if (Number.isFinite(v) && v >= 5 && v <= 1000) updatePage({ widthMm: v });
-                  }}
-                  className="mt-1 w-full rounded-md border border-line px-2.5 py-1.5 text-sm tabular-nums"
-                />
-              </div>
-              <div className="flex-1">
-                <label className="text-xs text-muted">Height mm</label>
-                <input
-                  type="number"
-                  min={5}
-                  max={1000}
-                  value={page.heightMm}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    if (Number.isFinite(v) && v >= 5 && v <= 1000) updatePage({ heightMm: v });
-                  }}
-                  className="mt-1 w-full rounded-md border border-line px-2.5 py-1.5 text-sm tabular-nums"
-                />
-              </div>
-            </div>
-            <div>
-              <div className="flex items-center justify-between">
-                <label className="text-xs text-muted">Margins mm</label>
+            <span className="text-faint font-mono text-[11px]">
+              {page.widthMm} × {page.heightMm} mm · {orientation} · grid {grid.cols} × {grid.rows}
+            </span>
+            {canvasMode === "render" ? (
+              unresolved.length > 0 ? (
+                <Pill tone="warn" title={unresolved.join(" ")}>
+                  {unresolved.length} unresolved
+                </Pill>
+              ) : previewHtml ? (
+                <Pill tone="good">All variables resolved</Pill>
+              ) : null
+            ) : null}
+            <span className="flex-1" />
+            {canvasMode === "edit" ? (
+              <div className="flex items-center gap-0.5">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (marginsLinked) {
-                      setMarginsLinked(false);
-                    } else {
-                      const v = page.margins?.topMm ?? 0;
-                      updatePage({ margins: { topMm: v, rightMm: v, bottomMm: v, leftMm: v } });
-                      setMarginsLinked(true);
-                    }
-                  }}
-                  className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${
-                    marginsLinked
-                      ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                      : "border-line bg-surface text-muted hover:border-line"
-                  }`}
-                  title={marginsLinked ? "Linked — one value for all sides. Click to edit each side." : "Per side. Click to link all sides."}
+                  onClick={() => stepCanvasZoom(-1)}
+                  aria-label="Zoom out"
+                  className={"text-muted hover:bg-subtle hover:text-ink inline-flex size-7 items-center justify-center rounded-md"}
                 >
-                  {marginsLinked ? "🔗 linked" : "per side"}
+                  <ZoomOut size={14} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setZoom(100)}
+                  title="Print size"
+                  className="text-muted hover:text-ink w-12 text-center text-[12px] tabular-nums"
+                >
+                  {zoomPct}%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => stepCanvasZoom(1)}
+                  aria-label="Zoom in"
+                  className={"text-muted hover:bg-subtle hover:text-ink inline-flex size-7 items-center justify-center rounded-md"}
+                >
+                  <ZoomIn size={14} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setZoom("fit")}
+                  aria-pressed={zoom === "fit"}
+                  className={buttonClass("secondary", "sm", "ml-1")}
+                >
+                  <Maximize size={13} aria-hidden="true" />
+                  Fit
                 </button>
               </div>
-              {marginsLinked ? (
-                <input
-                  type="number"
-                  min={0}
-                  max={50}
-                  step={0.5}
-                  value={page.margins?.topMm ?? 0}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    if (Number.isFinite(v) && v >= 0 && v <= 50)
-                      updatePage({ margins: { topMm: v, rightMm: v, bottomMm: v, leftMm: v } });
+            ) : null}
+          </div>
+          <div ref={stageRef} className="bg-canvas min-h-[24rem] flex-1 overflow-auto lg:min-h-0">
+            {canvasMode === "edit" ? (
+              <div className="flex min-h-full min-w-max items-center justify-center p-12">
+                <div
+                  ref={canvasRef}
+                  onPointerDown={onCanvasPointerDown}
+                  onPointerMove={onCanvasPointerMove}
+                  onPointerUp={onCanvasPointerUp}
+                  className="relative touch-none border border-line bg-surface shadow-sm"
+                  style={{
+                    width: page.widthMm * scale,
+                    height: page.heightMm * scale,
+                    cursor: draw ? "crosshair" : "default",
+                    // The die's rounded corners. Shown, not clipped: the true
+                    // render clips content to this shape, but clipping HERE would
+                    // swallow a corner block's delete badge (it sits outside the
+                    // block) and make that block undeletable.
+                    borderRadius: (page.cornerRadiusMm ?? 0) * scale,
                   }}
-                  className="mt-1 w-full rounded-md border border-line px-2.5 py-1.5 text-sm tabular-nums"
-                />
-              ) : (
-                <div className="mt-1 grid grid-cols-2 gap-1.5">
-                  {(
-                    [
-                      ["topMm", "Top"],
-                      ["rightMm", "Right"],
-                      ["bottomMm", "Bottom"],
-                      ["leftMm", "Left"],
-                    ] as const
-                  ).map(([k, label]) => (
-                    <div key={k}>
-                      <label className="text-[11px] text-faint">{label}</label>
+                >
+                  {/* grid overlay — inset by the page margin */}
+                  <div
+                    className="pointer-events-none absolute"
+                    style={{
+                      left: gridGeom(page, scale).left,
+                      top: gridGeom(page, scale).top,
+                      width: gridGeom(page, scale).width,
+                      height: gridGeom(page, scale).height,
+                      outline:
+                        (page.margins?.topMm ?? 0) + (page.margins?.rightMm ?? 0) + (page.margins?.bottomMm ?? 0) + (page.margins?.leftMm ?? 0) > 0
+                          ? "1px dashed rgba(24,24,27,0.12)"
+                          : "none",
+                      backgroundImage:
+                        `repeating-linear-gradient(to right, transparent 0, transparent calc(${100 / grid.cols}% - 1px), rgba(24,24,27,0.045) calc(${100 / grid.cols}% - 1px), rgba(24,24,27,0.045) ${100 / grid.cols}%),` +
+                        `repeating-linear-gradient(to bottom, transparent 0, transparent calc(${100 / grid.rows}% - 1px), rgba(24,24,27,0.045) calc(${100 / grid.rows}% - 1px), rgba(24,24,27,0.045) ${100 / grid.rows}%)`,
+                    }}
+                  />
+                  {/* Page border preview — same geometry as the renderer's
+                      frame (inset in mm, scaled to the canvas), drawn on the
+                      same subset of edges. */}
+                  {pageBorder ? (
+                    <div
+                      className="pointer-events-none absolute"
+                      style={{
+                        left: pageBorder.insetMm * scale,
+                        top: pageBorder.insetMm * scale,
+                        right: pageBorder.insetMm * scale,
+                        bottom: pageBorder.insetMm * scale,
+                        ...borderSideStyle(
+                          `${Math.max(1, pageBorder.widthMm * scale)}px solid ${pageBorder.color}`,
+                          effectiveBorderSides(pageBorder),
+                        ),
+                        borderRadius:
+                          insetCornerRadiusMm(page.cornerRadiusMm, pageBorder.insetMm) * scale,
+                      }}
+                      title="Page border"
+                    />
+                  ) : null}
+                  {/* Cut line — the rounded die traced in red, same geometry as
+                      the renderer's guide (page edge, the page's own radius). */}
+                  {(page.cornerRadiusMm ?? 0) > 0 && page.cutLine !== false ? (
+                    <div
+                      className="pointer-events-none absolute"
+                      style={{
+                        inset: 0,
+                        border: "1px dashed #ff0000",
+                        borderRadius: (page.cornerRadiusMm ?? 0) * scale,
+                      }}
+                      title={`Cut line — the ${mmText(page.cornerRadiusMm ?? 0)} mm die, printed as a red guide`}
+                    />
+                  ) : null}
+                  {page.blocks.map((block) => (
+                    <CanvasBlock
+                      key={blockId(block)}
+                      block={block}
+                      page={page}
+                      scale={scale}
+                      selected={sel === blockId(block)}
+                      coSelected={sel !== blockId(block) && selIds.includes(blockId(block))}
+                      highlighted={hoverBlock === blockId(block)}
+                      onSelect={(additive) => selectBlock(blockId(block), additive)}
+                      onRemove={() => removeBlock(blockId(block))}
+                    />
+                  ))}
+                  {/* Print-guide overlays — full page width/height, matching the
+                      true render. Sewing solid, fold dashed. */}
+                  {sewingLines.map((s, i) => (
+                    <div
+                      // eslint-disable-next-line react/no-array-index-key
+                      key={`csew-${i}`}
+                      className="pointer-events-none absolute"
+                      style={{
+                        left: 0,
+                        width: page.widthMm * scale,
+                        top: (s.edge === "bottom" ? page.heightMm - s.offsetMm : s.offsetMm) * scale,
+                        borderTop: "1px solid rgba(24,24,27,0.7)",
+                      }}
+                      title={`Sewing line — ${String(s.offsetMm).replace(".", ",")} mm from ${s.edge}`}
+                    />
+                  ))}
+                  {page.foldLine === "horizontal" ? (
+                    <div
+                      className="pointer-events-none absolute"
+                      style={{
+                        left: 0,
+                        width: page.widthMm * scale,
+                        top: (page.heightMm / 2) * scale,
+                        borderTop: "1px dashed rgba(82,82,91,0.9)",
+                      }}
+                      title="Folding line — horizontal centre"
+                    />
+                  ) : null}
+                  {page.foldLine === "vertical" ? (
+                    <div
+                      className="pointer-events-none absolute"
+                      style={{
+                        top: 0,
+                        height: page.heightMm * scale,
+                        left: (page.widthMm / 2) * scale,
+                        borderLeft: "1px dashed rgba(82,82,91,0.9)",
+                      }}
+                      title="Folding line — vertical centre"
+                    />
+                  ) : null}
+                  {/* Centre hole — same geometry as the renderer's die outline:
+                      centred across the page, its centre offsetMm from the
+                      chosen edge. */}
+                  {centerHole ? (
+                    <div
+                      className="pointer-events-none absolute rounded-full"
+                      style={{
+                        width: centerHole.diameterMm * scale,
+                        height: centerHole.diameterMm * scale,
+                        left: (page.widthMm / 2 - centerHole.diameterMm / 2) * scale,
+                        top:
+                          ((centerHole.edge === "bottom"
+                            ? page.heightMm - centerHole.offsetMm
+                            : centerHole.offsetMm) -
+                            centerHole.diameterMm / 2) *
+                          scale,
+                        border: "1px dashed rgba(82,82,91,0.9)",
+                      }}
+                      title={`Centre hole — Ø ${mmText(centerHole.diameterMm)} mm, centre ${mmText(centerHole.offsetMm)} mm from ${centerHole.edge}`}
+                    />
+                  ) : null}
+                  {ghost ? (
+                    <div
+                      className="pointer-events-none absolute rounded-sm border border-ink/50 bg-zinc-900/5"
+                      style={{
+                        left: gridGeom(page, scale).left + (ghost.col / grid.cols) * gridGeom(page, scale).width,
+                        top: gridGeom(page, scale).top + (ghost.row / grid.rows) * gridGeom(page, scale).height,
+                        width: (ghost.colSpan / grid.cols) * gridGeom(page, scale).width,
+                        height: (ghost.rowSpan / grid.rows) * gridGeom(page, scale).height,
+                      }}
+                    />
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3 p-6">
+                {settings.cartonNumbering ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-transparent bg-amber-50/60 px-3 py-2 text-xs text-warn">
+                    <span className="font-medium">Preview as carton</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={cartonPreviewTotal}
+                      value={cartonPreviewNo}
+                      onChange={(e) =>
+                        setCartonPreviewNo(Math.min(cartonPreviewTotal, Math.max(1, Number(e.target.value) || 1)))
+                      }
+                      className="w-16 rounded border border-transparent bg-surface px-2 py-1 text-center tabular-nums text-warn"
+                    />
+                    <span>of</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={cartonPreviewTotal}
+                      onChange={(e) => {
+                        const total = Math.max(1, Number(e.target.value) || 1);
+                        setCartonPreviewTotal(total);
+                        if (cartonPreviewNo > total) setCartonPreviewNo(total);
+                      }}
+                      className="w-20 rounded border border-transparent bg-surface px-2 py-1 text-center tabular-nums text-warn"
+                    />
+                    <span className="text-amber-700/80">— injects the running number into the preview.</span>
+                  </div>
+                ) : null}
+                {previewHtml ? (
+                  <div className="mx-auto w-full" style={{ maxWidth: Math.max(page.widthMm * 3.78, 280) }}>
+                    <PreviewFrame
+                      html={previewHtml}
+                      widthMm={page.widthMm}
+                      heightMm={page.heightMm}
+                      cornerRadiusMm={page.cornerRadiusMm}
+                    />
+                  </div>
+                ) : (
+                  <p className="py-10 text-center text-xs text-faint">Rendering…</p>
+                )}
+                {unresolved.length > 0 ? (
+                  <p className="text-warn text-center font-mono text-[11px] leading-relaxed">{unresolved.join(" ")}</p>
+                ) : null}
+              </div>
+            )}
+          </div>
+          <p className="border-line bg-surface text-faint border-t px-4 py-2 text-[12px]">
+            {canvasMode === "edit" ? (
+              <>
+                <b className="text-muted font-medium">Drag on the grid</b> to draw a block · click a block to edit it ·{" "}
+                <kbd className="border-line rounded border px-1 font-mono text-[11px]">Del</kbd> removes the selected block
+              </>
+            ) : (
+              <>
+                True render{previewSample ? " · sample data" : testStyle ? ` · ${testStyle.name}` : ""} — the same code
+                that makes the production PDF. Empty variables show as amber chips here and never print.
+              </>
+            )}
+          </p>
+        </div>
+
+        {/* ----- right: inspector — the selected block, else the page ----- */}
+        <aside
+          aria-label="Inspector"
+          className="border-line bg-surface min-h-0 overflow-y-auto border-t lg:border-t-0 lg:border-l"
+        >
+          {selBlock ? (
+            <>
+              <div className="border-line border-b px-2 py-2">
+                <button type="button" onClick={() => setSel(null)} className={buttonClass("ghost", "sm")}>
+                  <ChevronLeft size={14} aria-hidden="true" />
+                  {page.title || `Page ${pageIdx + 1}`}
+                </button>
+              </div>
+              <div className="p-4">
+                <div className="flex items-baseline justify-between">
+                  <div className="text-[11px] font-semibold text-faint">
+                    {selIds.length > 1 ? `Block · ${selIds.length} selected` : "Block"}
+                  </div>
+                  {selBlock ? (
+                    <button
+                      type="button"
+                      onClick={() => removeBlock(blockId(selBlock))}
+                      className="text-[11px] font-medium text-faint hover:text-bad"
+                      title="Delete this block (or press Del with it selected)"
+                    >
+                      Delete
+                    </button>
+                  ) : null}
+                </div>
+                {!selBlock ? (
+                  <p className="mt-2 text-xs text-faint">
+                    Select a block on the canvas, or drag on the grid to draw a new one. Shift-click to
+                    add more blocks to the selection and format them together.
+                  </p>
+                ) : (
+                  <div className="mt-3 space-y-4">
+                    {/* Formatting actions. A new block already inherits the look
+                        of the last one you touched, so these are for the cases
+                        that inheritance can't cover: cloning a finished block,
+                        and pushing one block's look onto others after the fact. */}
+                    <div className="flex flex-wrap items-center gap-1">
+                      <PanelButton
+                        onClick={() => duplicateBlock(blockId(selBlock))}
+                        disabled={!selBlock.rect}
+                        title="Copy this block — look and text — directly below it (⌘D)"
+                      >
+                        Duplicate
+                      </PanelButton>
+                      <PanelButton
+                        onClick={copyBlocks}
+                        title={`Copy ${selIds.length > 1 ? `these ${selIds.length} blocks` : "this block"} — text and formatting — to paste into ANOTHER layout`}
+                      >
+                        Copy {selIds.length > 1 ? `${selIds.length} blocks` : "block"}
+                      </PanelButton>
+                      <PanelButton
+                        onClick={copyFormat}
+                        title="Remember this block's formatting, to paste onto others in this layout"
+                      >
+                        Copy format
+                      </PanelButton>
+                      <PanelButton
+                        onClick={pasteFormat}
+                        disabled={!formatClip}
+                        title={
+                          formatClip
+                            ? `Apply the copied formatting (${String(formatClip.fontPt ?? PLAIN_APPEARANCE.fontPt).replace(".", ",")} pt${formatClip.bold ? ", bold" : ""}${formatClip.border ? ", bordered" : ""}) to ${selIds.length > 1 ? `all ${selIds.length} selected blocks` : "this block"}`
+                            : "Copy a block's formatting first"
+                        }
+                      >
+                        Paste format
+                      </PanelButton>
+                      <PanelButton
+                        onClick={resetFormat}
+                        title={`Back to the plain default — ${PLAIN_APPEARANCE.fontPt} pt, left, no border`}
+                      >
+                        Plain
+                      </PanelButton>
+                    </div>
+                    {selIds.length > 1 ? (
+                      <p className="rounded-md bg-subtle px-2 py-1.5 text-[11px] leading-relaxed text-muted">
+                        Font, alignment, border, fit and invert apply to all {selIds.length} selected
+                        blocks. Position and text stay on this one. Shift-click a block again to drop it.
+                      </p>
+                    ) : null}
+                    {selBlock.rect ? (
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          <RectStepper
+                            label="Column"
+                            value={selBlock.rect.col + 1}
+                            min={1}
+                            max={grid.cols - selBlock.rect.colSpan + 1}
+                            onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, col: v - 1 } })}
+                          />
+                          <RectStepper
+                            label="Row"
+                            value={selBlock.rect.row + 1}
+                            min={1}
+                            max={grid.rows - selBlock.rect.rowSpan + 1}
+                            onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, row: v - 1 } })}
+                          />
+                          <RectStepper
+                            label="Width (cols)"
+                            value={selBlock.rect.colSpan}
+                            min={1}
+                            max={grid.cols - selBlock.rect.col}
+                            onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, colSpan: v } })}
+                          />
+                          <RectStepper
+                            label="Height (rows)"
+                            value={selBlock.rect.rowSpan}
+                            min={1}
+                            max={grid.rows - selBlock.rect.row}
+                            onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, rowSpan: v } })}
+                          />
+                        </div>
+                        <div className="font-mono text-[11px] text-faint">
+                          ≈ {((page.widthMm * selBlock.rect.colSpan) / grid.cols).toFixed(1)} ×{" "}
+                          {((page.heightMm * selBlock.rect.rowSpan) / grid.rows).toFixed(1)} mm
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div>
+                            <label className="text-xs text-muted">Align</label>
+                            <div className="mt-1 flex overflow-hidden rounded-md border border-line">
+                              {(["left", "center", "right"] as const).map((a) => (
+                                <button
+                                  key={a}
+                                  type="button"
+                                  onClick={() => updateAppearance({ align: a })}
+                                  className={`px-2 py-1 text-[11px] font-medium capitalize ${
+                                    (selBlock.align ?? "left") === a
+                                      ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                                      : "bg-surface text-muted hover:bg-subtle"
+                                  }`}
+                                >
+                                  {a}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-xs text-muted">Vertical</label>
+                            <div className="mt-1 flex overflow-hidden rounded-md border border-line">
+                              {(["top", "middle", "bottom"] as const).map((v) => (
+                                <button
+                                  key={v}
+                                  type="button"
+                                  onClick={() => updateAppearance({ valign: v })}
+                                  className={`px-2 py-1 text-[11px] font-medium capitalize ${
+                                    (selBlock.valign ?? "top") === v
+                                      ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                                      : "bg-surface text-muted hover:bg-subtle"
+                                  }`}
+                                >
+                                  {v}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
+
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="text-xs text-muted">Font size</label>
+                        <NumberStepper
+                          value={selBlock.fontPt}
+                          min={1}
+                          max={144}
+                          step={0.5}
+                          suffix="pt"
+                          onChange={(v) => updateAppearance({ fontPt: v })}
+                        />
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-faint">Barcodes and wash symbols scale with the font size.</p>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-1.5 text-xs text-muted">
+                        <input
+                          type="checkbox"
+                          checked={selBlock.bold}
+                          onChange={(e) => updateAppearance({ bold: e.target.checked })}
+                          className="accent-zinc-900"
+                        />
+                        Bold
+                      </label>
+                      <label className="flex items-center gap-1.5 text-xs text-muted">
+                        Line height
+                        <select
+                          value={selBlock.lineHeight}
+                          onChange={(e) => updateAppearance({ lineHeight: Number(e.target.value) })}
+                          className="rounded border border-line px-1 py-0.5 text-xs"
+                        >
+                          {[1.2, 1.3, 1.4, 1.5, 1.6, 1.8].map((lh) => (
+                            <option key={lh} value={lh}>
+                              {lh}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-1.5 text-xs text-muted">
+                        Border
+                        <select
+                          value={selBlock.border?.widthMm ?? 0}
+                          onChange={(e) => {
+                            const w = Number(e.target.value);
+                            // Applies to the whole selection — "box these five"
+                            // is the reason multi-select exists. Each block keeps
+                            // its OWN colour, padding and per-side choice; only
+                            // the width changes.
+                            patchSelected((b) => ({
+                              border:
+                                w > 0
+                                  ? {
+                                      ...b.border,
+                                      widthMm: w,
+                                      color: b.border?.color ?? "#000000",
+                                      // Keep existing padding; a brand-new border
+                                      // starts at 0.5 mm (linked) so it's never
+                                      // flush against the text.
+                                      pad: b.border
+                                        ? effectiveBorderPad(b.border)
+                                        : { topMm: 0.5, rightMm: 0.5, bottomMm: 0.5, leftMm: 0.5 },
+                                      padMm: undefined,
+                                    }
+                                  : undefined,
+                            }));
+                          }}
+                          className="rounded border border-line px-1 py-0.5 text-xs"
+                        >
+                          <option value={0}>None</option>
+                          {[0.2, 0.3, 0.5, 0.75, 1, 1.5, 2].map((w) => (
+                            <option key={w} value={w}>
+                              {w} mm
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {selBlock.border ? (
+                        <label className="flex items-center gap-1.5 text-xs text-muted">
+                          <input
+                            type="color"
+                            value={selBlock.border.color}
+                            onChange={(e) =>
+                              updateBorderField({ color: e.target.value })
+                            }
+                            className="h-6 w-8 cursor-pointer rounded border border-line bg-surface p-0.5"
+                            title="Border colour"
+                          />
+                          <input
+                            type="text"
+                            value={selBlock.border.color}
+                            onChange={(e) => {
+                              const v = e.target.value.trim();
+                              if (/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v)) {
+                                updateBorderField({ color: v });
+                              }
+                            }}
+                            className="w-20 rounded border border-line px-1.5 py-0.5 font-mono text-[11px]"
+                            spellCheck={false}
+                          />
+                        </label>
+                      ) : null}
+                    </div>
+                    {selBlock.border ? (
+                      <BorderSidePicker
+                        sides={effectiveBorderSides(selBlock.border)}
+                        onChange={(sides) =>
+                          updateBorderField({ sides })
+                        }
+                      />
+                    ) : null}
+                    {selBlock.border ? (
+                      <div className="text-xs text-muted">
+                        <div className="flex items-center justify-between">
+                          <span>Padding mm</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (padLinked) {
+                                setPadLinked(false);
+                              } else {
+                                updateBorderPad(effectiveBorderPad(selBlock.border).topMm);
+                                setPadLinked(true);
+                              }
+                            }}
+                            className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${
+                              padLinked
+                                ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                                : "border-line bg-surface text-muted hover:border-line"
+                            }`}
+                            title={
+                              padLinked
+                                ? "Linked — one value for all sides. Click to edit each side."
+                                : "Per side. Click to link all sides."
+                            }
+                          >
+                            {padLinked ? "🔗 linked" : "per side"}
+                          </button>
+                        </div>
+                        {padLinked ? (
+                          <input
+                            type="number"
+                            min={0}
+                            max={20}
+                            step={0.5}
+                            value={effectiveBorderPad(selBlock.border).topMm}
+                            onChange={(e) => {
+                              const v = Number(e.target.value);
+                              if (Number.isFinite(v) && v >= 0 && v <= 20) updateBorderPad(v);
+                            }}
+                            className="mt-1 w-full rounded-md border border-line px-2.5 py-1.5 text-sm tabular-nums"
+                            title="Inner padding between the border and the text"
+                          />
+                        ) : (
+                          <div className="mt-1 grid grid-cols-2 gap-1.5">
+                            {(
+                              [
+                                ["topMm", "Top"],
+                                ["rightMm", "Right"],
+                                ["bottomMm", "Bottom"],
+                                ["leftMm", "Left"],
+                              ] as const
+                            ).map(([k, label]) => (
+                              <div key={k}>
+                                <label className="text-[11px] text-faint">{label}</label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={20}
+                                  step={0.5}
+                                  value={effectiveBorderPad(selBlock.border)[k]}
+                                  onChange={(e) => {
+                                    const v = Number(e.target.value);
+                                    if (Number.isFinite(v) && v >= 0 && v <= 20) updateBorderPad(v, [k]);
+                                  }}
+                                  className="w-full rounded-md border border-line px-2 py-1 text-sm tabular-nums"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                    {/* Invert — a solid box with contrasting text. The colour
+                        pair is optional: leave it and the block prints the
+                        historic black/white, so nothing already published
+                        changes. */}
+                    <div>
+                      <label className="flex items-center gap-2 text-xs text-muted">
+                        <input
+                          type="checkbox"
+                          checked={selBlock.invert ?? false}
+                          onChange={(e) => updateAppearance({ invert: e.target.checked })}
+                          className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
+                        />
+                        Invert block (solid background, contrasting text)
+                      </label>
+                      {selBlock.invert ? (
+                        <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                          <HexColorField
+                            key={`${blockId(selBlock)}-invert-bg`}
+                            label="Background"
+                            value={invertColors(selBlock).bg}
+                            isDefault={selBlock.invertBg === undefined}
+                            onChange={(hex) => updateAppearance({ invertBg: hex })}
+                            onReset={() => updateAppearance({ invertBg: undefined })}
+                            fallback={INVERT_BG}
+                          />
+                          <HexColorField
+                            key={`${blockId(selBlock)}-invert-text`}
+                            label="Text"
+                            value={invertColors(selBlock).text}
+                            isDefault={selBlock.invertText === undefined}
+                            onChange={(hex) => updateAppearance({ invertText: hex })}
+                            onReset={() => updateAppearance({ invertText: undefined })}
+                            fallback={INVERT_TEXT}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                    <label className="flex items-center gap-2 text-xs text-muted">
+                      <input
+                        type="checkbox"
+                        checked={selBlock.fitWidth ?? false}
+                        onChange={(e) => updateAppearance({ fitWidth: e.target.checked })}
+                        className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
+                      />
+                      Fit width (one line, auto-scale to fill)
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-muted">
+                      <input
+                        type="checkbox"
+                        checked={selBlock.fitHeight ?? false}
+                        onChange={(e) => updateAppearance({ fitHeight: e.target.checked })}
+                        className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
+                      />
+                      Shrink text to fit cell (no overflow onto other blocks)
+                    </label>
+
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs text-muted">Content — one line per printed row</label>
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => wrapSelection("**")}
+                            className="rounded border border-line px-1.5 py-0.5 text-[11px] font-bold text-muted hover:bg-subtle"
+                            title="Bold — wraps the selection in ** **"
+                          >
+                            B
+                          </button>
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => wrapSelection("_")}
+                            className="rounded border border-line px-1.5 py-0.5 text-[11px] italic text-muted hover:bg-subtle"
+                            title="Italic — wraps the selection in _ _"
+                          >
+                            I
+                          </button>
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => setExpandedFor(sel)}
+                            className="rounded border border-line px-1.5 py-0.5 text-[11px] text-muted hover:bg-subtle"
+                            title="Expand — edit this content full width with the print preview beside it"
+                          >
+                            ⤢
+                          </button>
+                        </div>
+                      </div>
+                      <TokenAutocomplete
+                        ref={contentTaRef}
+                        value={selBlock.lines.join("\n")}
+                        onValueChange={(v) => updateBlock(blockId(selBlock), { lines: v.split("\n").slice(0, 100) })}
+                        suggestions={tokenSuggestions}
+                        values={tokenValues}
+                        valuesFrom={testStyle?.name}
+                        rows={6}
+                        spellCheck={false}
+                        className="mt-1 w-full rounded-md border border-line px-2.5 py-2 font-mono text-xs leading-relaxed"
+                      />
+                      <p className="mt-0.5 text-[11px] text-faint">
+                        Type <code className="rounded bg-subtle px-1">{"{{"}</code> for variable autofill · **bold** and
+                        _italic_ render in the print; the preview below shows the result. <b>⤢</b> opens the same content
+                        full width.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="border-line border-b px-4 py-3">
+                <div className="text-faint text-[12px]">
+                  Page {pageIdx + 1} of {def.pages.length}
+                </div>
+                <div className="text-ink truncate text-[15px] font-semibold">{page.title || "Untitled"}</div>
+              </div>
+              <InspectorSection title="Document">
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-muted">Document type</label>
+                    <select
+                      value={docType}
+                      onChange={(e) => setDocType(e.target.value)}
+                      className="border-line bg-surface text-ink focus:border-accent mt-1 h-8 w-full rounded-md border px-2 text-[13px] outline-none"
+                      title="Asset doc type — grouping in pickers and on JobAssets"
+                    >
+                      {docTypes.map((d) => (
+                        <option key={d.value} value={d.value}>
+                          {d.label}
+                        </option>
+                      ))}
+                      {docTypes.some((d) => d.value === docType) ? null : <option value={docType}>{docType}</option>}
+                    </select>
+                    <Link
+                      href="/output-builder?docTypes=1"
+                      className="mt-1 inline-block text-[11px] text-faint underline-offset-2 hover:text-muted hover:underline"
+                      title="Add or rename document types, set keyword exclusion rules"
+                    >
+                      Manage types
+                    </Link>
+                  </div>
+                  <label
+                    className="flex items-start gap-2 text-sm text-ink"
+                    title="Info area: this layout's print size becomes switchable per style (admin size or custom) on the Style page — see Settings → Info area sizes"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isInfoArea}
+                      onChange={(e) => setIsInfoArea(e.target.checked)}
+                      className="mt-0.5 h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
+                    />
+                    <span>
+                      Info area
+                      <span className="block text-[11px] text-faint">Reviewers pick the print size per style.</span>
+                    </span>
+                  </label>
+                  {status === "PUBLISHED" ? (
+                    <p className="text-[11px] text-faint">
+                      In the Prod Spec output picker as{" "}
+                      <code className="rounded bg-subtle px-1 font-mono">layout:{layout.id}</code> — it only generates
+                      for styles once added to a Prod Spec there.
+                    </p>
+                  ) : null}
+                </div>
+              </InspectorSection>
+              <InspectorSection title="Page">
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-muted">Title</label>
+                    <input
+                      type="text"
+                      value={page.title}
+                      onChange={(e) => updatePage({ title: e.target.value })}
+                      className="mt-1 w-full rounded-md border border-line px-2.5 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <label className="text-xs text-muted">Width mm</label>
+                      <input
+                        type="number"
+                        min={5}
+                        max={1000}
+                        value={page.widthMm}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          if (Number.isFinite(v) && v >= 5 && v <= 1000) updatePage({ widthMm: v });
+                        }}
+                        className="mt-1 w-full rounded-md border border-line px-2.5 py-1.5 text-sm tabular-nums"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-xs text-muted">Height mm</label>
+                      <input
+                        type="number"
+                        min={5}
+                        max={1000}
+                        value={page.heightMm}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          if (Number.isFinite(v) && v >= 5 && v <= 1000) updatePage({ heightMm: v });
+                        }}
+                        className="mt-1 w-full rounded-md border border-line px-2.5 py-1.5 text-sm tabular-nums"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs text-muted">Margins mm</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (marginsLinked) {
+                            setMarginsLinked(false);
+                          } else {
+                            const v = page.margins?.topMm ?? 0;
+                            updatePage({ margins: { topMm: v, rightMm: v, bottomMm: v, leftMm: v } });
+                            setMarginsLinked(true);
+                          }
+                        }}
+                        className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${
+                          marginsLinked
+                            ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                            : "border-line bg-surface text-muted hover:border-line"
+                        }`}
+                        title={marginsLinked ? "Linked — one value for all sides. Click to edit each side." : "Per side. Click to link all sides."}
+                      >
+                        {marginsLinked ? "🔗 linked" : "per side"}
+                      </button>
+                    </div>
+                    {marginsLinked ? (
                       <input
                         type="number"
                         min={0}
                         max={50}
                         step={0.5}
-                        value={page.margins?.[k] ?? 0}
+                        value={page.margins?.topMm ?? 0}
                         onChange={(e) => {
                           const v = Number(e.target.value);
                           if (Number.isFinite(v) && v >= 0 && v <= 50)
-                            updatePage({
-                              margins: {
-                                ...(page.margins ?? { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 }),
-                                [k]: v,
-                              },
-                            });
-                        }}
-                        className="w-full rounded-md border border-line px-2 py-1 text-sm tabular-nums"
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-              <p className="mt-0.5 text-[11px] text-faint">The grid (and all blocks) inset from the page edges.</p>
-            </div>
-            <div>
-              <label className="text-xs text-muted">Orientation</label>
-              <div className="mt-1 flex overflow-hidden rounded-md border border-line">
-                {(["portrait", "landscape"] as const).map((o) => (
-                  <button
-                    key={o}
-                    type="button"
-                    onClick={() => setOrientation(o)}
-                    className={`flex-1 px-2 py-1 text-xs font-medium capitalize ${
-                      orientation === o ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50" : "bg-surface text-muted hover:bg-subtle"
-                    }`}
-                  >
-                    {o}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {/* Conditional page — the certificate-page case: a page whose only
-                content is a gated mark prints blank on every style that
-                doesn't declare it. With this on, the page is left out of the
-                PDF instead. Opt-in per page: a deliberately blank page (a
-                plain back side) must keep printing as authored. */}
-            <div>
-              <label className="flex items-center gap-2 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  checked={!!page?.omitWhenEmpty}
-                  onChange={(e) => updatePage({ omitWhenEmpty: e.target.checked })}
-                  className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
-                />
-                Skip page when empty
-              </label>
-              <p className="mt-0.5 text-[11px] leading-relaxed text-faint">
-                Leaves this page out of the printed PDF when nothing on it resolves for the style — a
-                page whose only content is <span className="font-mono">{"{{cert:oekotex}}"}</span>{" "}
-                disappears on styles without OEKO-TEX instead of printing blank. Borders and guides
-                don&apos;t count as content, and the preview always shows the page.
-              </p>
-            </div>
-            {def.pages.length > 1 ? (
-              <button
-                type="button"
-                onClick={() => removePage(pageIdx)}
-                className="text-xs text-faint hover:text-bad"
-              >
-                Remove this page
-              </button>
-            ) : null}
-          </div>
-
-          <div className="mt-6 text-[11px] font-semibold text-faint">Grid</div>
-          <div className="mt-2 space-y-2">
-            <div className="flex items-end gap-2">
-              <div className="flex-1">
-                <label className="text-xs text-muted">Cell size (mm)</label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={gridCellMm}
-                  onChange={(e) => setGridCellMm(e.target.value)}
-                  className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm tabular-nums"
-                  placeholder={String(DEFAULT_GRID_CELL_MM)}
-                />
-              </div>
-              <button
-                type="button"
-                onClick={regenerateGrid}
-                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
-                title="Recompute cols × rows from this cell size and remap existing blocks"
-              >
-                Regenerate
-              </button>
-            </div>
-            <p className="text-[11px] leading-relaxed text-faint">
-              Current grid <span className="font-mono text-muted">{grid.cols} × {grid.rows}</span>
-              {page ? (
-                <>
-                  {" "}
-                  · ≈ {(page.widthMm / grid.cols).toFixed(1)} × {(page.heightMm / grid.rows).toFixed(1)} mm per cell
-                </>
-              ) : null}
-              . Regenerate keeps existing blocks, adjusting any that no longer fit.
-            </p>
-          </div>
-
-          <div className="mt-6 text-[11px] font-semibold text-faint">Print guides</div>
-          <div className="mt-2 space-y-3">
-            <div>
-              <div className="flex items-center justify-between">
-                <label className="text-xs text-muted">Sewing lines</label>
-                <button
-                  type="button"
-                  onClick={addSewingLine}
-                  className="text-xs font-medium text-ink hover:text-ink"
-                >
-                  + Add
-                </button>
-              </div>
-              {sewingLines.length === 0 ? (
-                <p className="mt-1 text-[11px] text-faint">
-                  A solid rule a fixed distance from the top or bottom edge (the seam allowance).
-                </p>
-              ) : (
-                <div className="mt-1.5 space-y-1.5">
-                  {sewingLines.map((s, i) => (
-                    // Inputs remount when the list length changes (key carries it),
-                    // so an uncontrolled offset field re-reads the right value after
-                    // add/remove while still letting you type a "7,5" decimal freely.
-                    <div key={`sew-${sewingLines.length}-${i}`} className="flex items-center gap-1.5">
-                      <select
-                        value={s.edge}
-                        onChange={(e) => updateSewingLine(i, { edge: e.target.value as SewingLine["edge"] })}
-                        className="h-7 rounded-md border border-line bg-surface px-2 text-[12px] text-ink outline-none focus:border-accent disabled:opacity-50"
-                      >
-                        <option value="top">From top</option>
-                        <option value="bottom">From bottom</option>
-                      </select>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        defaultValue={String(s.offsetMm).replace(".", ",")}
-                        onChange={(e) => {
-                          const v = parseMm(e.target.value);
-                          if (Number.isFinite(v) && v >= 0 && v <= 1000) updateSewingLine(i, { offsetMm: v });
-                        }}
-                        className="w-16 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
-                        aria-label="Offset from edge (mm)"
-                      />
-                      <span className="text-[11px] text-faint">mm</span>
-                      <button
-                        type="button"
-                        onClick={() => removeSewingLine(i)}
-                        className="ml-auto text-faint hover:text-bad"
-                        aria-label="Remove sewing line"
-                        title="Remove"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div>
-              <label className="text-xs text-muted">Folding line</label>
-              <select
-                value={page?.foldLine ?? "none"}
-                onChange={(e) => setFoldLine(e.target.value as FoldLine)}
-                className="mt-1 w-full h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
-              >
-                <option value="none">Off</option>
-                <option value="horizontal">Horizontal — across centre</option>
-                <option value="vertical">Vertical — down centre</option>
-              </select>
-              <p className="mt-0.5 text-[11px] text-faint">A dashed rule through the page centre.</p>
-            </div>
-
-            {/* Page border — a frame around the WHOLE page, so a design
-                doesn't need an empty full-page block just to get an
-                outline. Decorative only: no tokens, no grid cells. */}
-            <div>
-              <label className="flex items-center gap-2 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  checked={!!pageBorder}
-                  onChange={(e) => togglePageBorder(e.target.checked)}
-                  className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
-                />
-                Page border
-              </label>
-              {pageBorder ? (
-                <div className="mt-1.5 flex items-center gap-1.5">
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    defaultValue={String(pageBorder.widthMm).replace(".", ",")}
-                    onChange={(e) => {
-                      const v = parseMm(e.target.value);
-                      if (Number.isFinite(v) && v >= 0.1 && v <= 5) updatePageBorder({ widthMm: v });
-                    }}
-                    className="w-14 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
-                    aria-label="Border thickness (mm)"
-                  />
-                  <span className="text-[11px] text-faint">thick</span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    defaultValue={String(pageBorder.insetMm).replace(".", ",")}
-                    onChange={(e) => {
-                      const v = parseMm(e.target.value);
-                      if (Number.isFinite(v) && v >= 0 && v <= 50) updatePageBorder({ insetMm: v });
-                    }}
-                    className="w-14 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
-                    aria-label="Inset from page edge (mm)"
-                  />
-                  <span className="text-[11px] text-faint">inset</span>
-                  <input
-                    type="color"
-                    value={pageBorder.color}
-                    onChange={(e) => updatePageBorder({ color: e.target.value })}
-                    className="ml-auto h-6 w-8 cursor-pointer rounded border border-line bg-surface p-0.5"
-                    aria-label="Border colour"
-                  />
-                </div>
-              ) : (
-                <p className="mt-0.5 text-[11px] text-faint">
-                  Frames the whole page — thickness, inset from the edge and colour, in mm.
-                </p>
-              )}
-              {pageBorder ? (
-                <div className="mt-1.5">
-                  <BorderSidePicker
-                    sides={effectiveBorderSides(pageBorder)}
-                    onChange={(sides) => updatePageBorder({ sides })}
-                  />
-                </div>
-              ) : null}
-            </div>
-
-            {/* Rounded corners — the die's corner radius. The page itself
-                rounds (content is clipped to the shape), and the page
-                border curves with it. 0 = square, as every page was. */}
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <label className="text-xs text-muted">Rounded corners</label>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    key={`corner-${page.id}`}
-                    type="text"
-                    inputMode="decimal"
-                    defaultValue={mmText(page.cornerRadiusMm ?? 0)}
-                    onChange={(e) => {
-                      const v = parseMm(e.target.value);
-                      if (Number.isFinite(v) && v >= 0 && v <= 50)
-                        updatePage({ cornerRadiusMm: v > 0 ? v : undefined });
-                    }}
-                    className="w-16 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
-                    aria-label="Corner radius (mm)"
-                  />
-                  <span className="text-[11px] text-faint">mm radius</span>
-                </div>
-              </div>
-              <p className="mt-0.5 text-[11px] leading-relaxed text-faint">
-                The corner radius of the cut. 0 = square. Content is clipped to the rounded shape, so a
-                block that runs into a corner prints the same curve the cutter makes — and the page border
-                curves with it.
-              </p>
-              {/* The die is invisible on a printed rectangle unless something
-                  draws it, so a rounded page gets a red cut line by default.
-                  Only offered where there IS a radius. */}
-              {(page.cornerRadiusMm ?? 0) > 0 ? (
-                <>
-                  <label className="mt-1.5 flex items-center gap-2 text-sm text-ink">
-                    <input
-                      type="checkbox"
-                      checked={page.cutLine !== false}
-                      onChange={(e) => updatePage({ cutLine: e.target.checked })}
-                      className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
-                    />
-                    Show cut line
-                  </label>
-                  <p className="mt-0.5 text-[11px] leading-relaxed text-faint">
-                    Traces the die in red dashes so the curve is visible in print — the printed sheet is a
-                    rectangle, so without it a rounded page comes out square. Turn it off when the artwork
-                    already shows the curve (full-bleed colour, or a page border flush to the edge).
-                  </p>
-                </>
-              ) : null}
-            </div>
-
-            {/* Centre hole — the die-cut hang hole. Always centred across
-                the page; the offset places its CENTRE from the chosen
-                edge. Drawn as a dashed circle on the canvas and in the
-                true render so content can be kept clear of the punch. */}
-            <div>
-              <label className="flex items-center gap-2 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  checked={!!centerHole}
-                  onChange={(e) => toggleCenterHole(e.target.checked)}
-                  className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
-                />
-                Centre hole
-              </label>
-              {centerHole ? (
-                <>
-                  <div className="mt-1.5 flex items-center gap-1.5">
-                    {/* Uncontrolled so a "7,5" decimal can be typed freely;
-                        keyed by page so switching pages re-seeds them. */}
-                    <input
-                      key={`hole-d-${page.id}`}
-                      type="text"
-                      inputMode="decimal"
-                      defaultValue={mmText(centerHole.diameterMm)}
-                      onChange={(e) => {
-                        const v = parseMm(e.target.value);
-                        if (Number.isFinite(v) && v >= 0.5 && v <= 100) updateCenterHole({ diameterMm: v });
-                      }}
-                      className="w-14 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
-                      aria-label="Hole diameter (mm)"
-                    />
-                    <span className="text-[11px] text-faint">Ø mm</span>
-                    <select
-                      value={centerHole.edge}
-                      onChange={(e) => updateCenterHole({ edge: e.target.value as CenterHole["edge"] })}
-                      className="ml-auto rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink"
-                    >
-                      <option value="top">From top</option>
-                      <option value="bottom">From bottom</option>
-                    </select>
-                    <input
-                      key={`hole-o-${page.id}`}
-                      type="text"
-                      inputMode="decimal"
-                      defaultValue={mmText(centerHole.offsetMm)}
-                      onChange={(e) => {
-                        const v = parseMm(e.target.value);
-                        if (Number.isFinite(v) && v >= 0 && v <= 1000) updateCenterHole({ offsetMm: v });
-                      }}
-                      className="w-14 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
-                      aria-label="Distance from the edge to the hole centre (mm)"
-                    />
-                    <span className="text-[11px] text-faint">mm</span>
-                  </div>
-                  <p className="mt-1 text-[11px] leading-relaxed text-faint">
-                    Measured to the hole&rsquo;s <b className="font-medium text-muted">centre</b> —{" "}
-                    {mmText(Math.max(0, centerHole.offsetMm - centerHole.diameterMm / 2))} mm of clear
-                    stock between the {centerHole.edge} edge and the punch.
-                  </p>
-                </>
-              ) : (
-                <p className="mt-0.5 text-[11px] text-faint">
-                  A punched hang hole, centred across the page — diameter in mm and the distance from the
-                  top or bottom edge. Printed as a dashed guide, like the sewing and fold lines.
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-6 text-[11px] font-semibold text-faint">Settings</div>
-          <div className="mt-2 space-y-3">
-            <div>
-              <label className="text-xs text-muted">Repeat output</label>
-              <select
-                value={settings.repeatBy}
-                onChange={(e) => updateSettings({ repeatBy: e.target.value as LayoutSettings["repeatBy"] })}
-                className="mt-1 w-full h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
-              >
-                <option value="none">Don&apos;t repeat</option>
-                <option value="size">Per size</option>
-                <option value="ean">Per EAN (size × colour)</option>
-                <option value="assort">Per assortment EAN</option>
-                <option value="cartonEan">Per carton EAN (per size + assort)</option>
-                <option value="cartonEanSizeOnly">Per carton EAN (size only)</option>
-              </select>
-              {settings.repeatBy !== "none" ? (
-                <p className="mt-1.5 break-words font-mono text-[11px] leading-relaxed text-faint">
-                  {repeatValues.length > 0 ? (
-                    <>
-                      <span className="font-sans font-medium text-muted">
-                        {repeatValues.length} repetition{repeatValues.length === 1 ? "" : "s"}:{" "}
-                      </span>
-                      {repeatValues.join(", ")}
-                    </>
-                  ) : (
-                    "No sizes on the selected test style — output renders once."
-                  )}
-                </p>
-              ) : null}
-            </div>
-            {settings.repeatBy !== "none" || settings.splitByComposition ? (
-              <div>
-                <label className="text-xs text-muted">Output files</label>
-                <select
-                  value={settings.splitBy}
-                  onChange={(e) => updateSettings({ splitBy: e.target.value as LayoutSettings["splitBy"] })}
-                  className="mt-1 w-full h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
-                >
-                  <option value="ean">One PDF per EAN</option>
-                  <option value="none">One single PDF (all repetitions inside)</option>
-                </select>
-                {repeatValues.length > 0 ? (
-                  <p className="mt-1 text-[11px] text-faint">
-                    {settings.splitBy === "ean"
-                      ? `→ ${repeatValues.length} file${repeatValues.length === 1 ? "" : "s"}, each containing only its own EAN`
-                      : `→ 1 file containing all ${repeatValues.length} repetition${repeatValues.length === 1 ? "" : "s"}`}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-            {/* Second repetition axis — one document per COLOUR of a pack that
-                ships two different qualities under one order. Multiplies the
-                repeat above (per-EAN × per-composition), and fires only on a
-                style whose composition is colour-keyed, so turning it on can
-                never change a single-composition style's output. */}
-            <div>
-              <label className="flex items-center gap-2 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  checked={settings.splitByComposition}
-                  onChange={(e) => updateSettings({ splitByComposition: e.target.checked })}
-                  className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
-                />
-                Split per composition
-              </label>
-              <p className="mt-0.5 text-[11px] leading-relaxed text-faint">
-                For packs that carry two qualities — &ldquo;Pink: 95% Cotton 5% Elastane, Grey melange: 57%
-                Cotton&hellip;&rdquo;. Each colour gets its own document printing only its own fibres, so each
-                is approved separately. Only fires when every part is labelled with a colour the style
-                declares; a garment-part composition (&ldquo;Top: &hellip;, Bottom: &hellip;&rdquo;) and a
-                single composition are untouched. Add {"{{compositionColour}}"} to the file name to tell
-                the documents apart. When the two sides spell the same colour differently
-                (&ldquo;LGM&rdquo; vs &ldquo;Grey melange&rdquo;), declare it under{" "}
-                <a href="/settings/colour-aliases" target="_blank" rel="noreferrer" className="underline">
-                  Settings &rsaquo; Colour aliases
-                </a>
-                .
-              </p>
-            </div>
-            <div>
-              <label className="text-xs text-muted">Output file name</label>
-              <input
-                type="text"
-                value={settings.fileName}
-                onChange={(e) => updateSettings({ fileName: e.target.value })}
-                placeholder="{{styleNumber}}-{{size}}-sticker"
-                className="mt-1 w-full rounded-md border border-line px-2.5 py-1.5 font-mono text-xs"
-                spellCheck={false}
-              />
-              <p className="mt-1 text-[11px] text-faint">
-                {settings.fileName ? (
-                  resolvedFileName ? (
-                    <>
-                      → <span className="font-mono text-good">{resolvedFileName}</span>
-                    </>
-                  ) : (
-                    "Resolving…"
-                  )
-                ) : (settings.repeatBy !== "none" || settings.splitByComposition) && settings.splitBy === "ean" ? (
-                  "Variables allowed — {{size}}/{{ean13}}/{{colourName}} name EACH file (one per EAN)"
-                ) : (
-                  "Text variables allowed · empty = default name"
-                )}
-              </p>
-
-              {/* Preset library — shared across layouts (AppSetting), grown
-                  by whoever needs a new convention. Clicking one pastes its
-                  pattern into the field above; nothing is applied silently. */}
-              <div className="mt-2 rounded-md border border-line bg-zinc-50/70 p-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-faint">Presets</span>
-                  <button
-                    type="button"
-                    onClick={saveFileNamePreset}
-                    disabled={presetBusy || !settings.fileName.trim()}
-                    className="text-[11px] font-medium text-ink hover:text-ink disabled:cursor-not-allowed disabled:text-faint"
-                    title={
-                      settings.fileName.trim()
-                        ? "Save the current file name as a reusable preset"
-                        : "Type a file name first"
-                    }
-                  >
-                    + Save current
-                  </button>
-                </div>
-                {fileNamePresets.length === 0 ? (
-                  <p className="mt-1 text-[11px] text-faint">
-                    No presets yet — type a file name and save it to reuse it on other layouts.
-                  </p>
-                ) : (
-                  <div className="mt-1.5 space-y-1">
-                    {fileNamePresets.map((p) => {
-                      const active = settings.fileName === p.pattern;
-                      return (
-                        <div key={p.id} className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => updateSettings({ fileName: p.pattern })}
-                            className={`min-w-0 flex-1 rounded border px-1.5 py-1 text-left ${
-                              active
-                                ? "border-line bg-surface"
-                                : "border-transparent hover:border-line hover:bg-surface"
-                            }`}
-                            title={p.pattern}
-                          >
-                            <span className="block truncate text-[11px] text-ink">{p.label}</span>
-                            <span className="block truncate font-mono text-[11px] text-faint">{p.pattern}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteFileNamePreset(p)}
-                            disabled={presetBusy}
-                            className="text-faint hover:text-bad disabled:hover:text-faint"
-                            aria-label={`Remove preset ${p.label}`}
-                            title="Remove preset"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Carton numbering (X/Y) — eligibility only; standard
-                generation is untouched. Surfaces the {{cartonNo}} /
-                {{cartonTotal}} tokens and the Style-page "Carton numbers…"
-                action. */}
-            <div className="border-t border-line pt-3">
-              <label className="flex items-center gap-2 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  checked={settings.cartonNumbering}
-                  onChange={(e) => updateSettings({ cartonNumbering: e.target.checked })}
-                  className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
-                />
-                Carton numbering (X/Y)
-              </label>
-              <p className="mt-1 text-[11px] leading-relaxed text-faint">
-                Lets operators print a numbered set (1/N … N/N) from the Style page. Place{" "}
-                <code className="rounded bg-subtle px-1">{"{{cartonNo}}"}</code> /{" "}
-                <code className="rounded bg-subtle px-1">{"{{cartonTotal}}"}</code> on the label.
-              </p>
-              {settings.cartonNumbering && !usesCartonTokens ? (
-                <p className="mt-1.5 rounded-md bg-warn-soft px-2 py-1 text-[11px] leading-relaxed text-warn">
-                  ⚠ This layout doesn’t use {"{{cartonNo}}"}/{"{{cartonTotal}}"} yet — numbered prints
-                  would show no number.
-                </p>
-              ) : null}
-            </div>
-
-            {/* Multiple styles (Custom Carton Marking) — INDEPENDENT of
-                carton numbering. Eligibility only; standard generation stays
-                single-style. Surfaces the {{style2}}… slots + {{multipleStyles}}
-                and lets the Style-page carton dialog pick same-PO siblings. */}
-            <div className="border-t border-line pt-3">
-              <label className="flex items-center gap-2 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  checked={settings.multipleStyles}
-                  onChange={(e) => updateSettings({ multipleStyles: e.target.checked })}
-                  className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
-                />
-                Multiple styles on the box
-              </label>
-              <p className="mt-1 text-[11px] leading-relaxed text-faint">
-                Lets operators place OTHER styles from the same PO on the box (a manual one-off).
-                Branch with{" "}
-                <code className="rounded bg-subtle px-1">{"{{if multipleStyles == true}}"}</code>{" "}
-                and place{" "}
-                <code className="rounded bg-subtle px-1">{"{{style2}}"}</code> /{" "}
-                <code className="rounded bg-subtle px-1">{"{{style2Number}}"}</code> slots.
-              </p>
-            </div>
-
-            {/* Custom logo — appears only when the design uses
-                {{logo:custom}}. Uploaded per layout (not global); printed at
-                a % of its block width, height auto. */}
-            {usesCustomLogo ? (
-              <div className="border-t border-line pt-3">
-                <div className="text-sm text-ink">
-                  Custom logo <span className="font-mono text-[11px] text-faint">{"{{logo:custom}}"}</span>
-                </div>
-                <div className="mt-2 flex items-center gap-2">
-                  {customLogo ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={customLogo}
-                      alt="Custom logo"
-                      className="h-8 w-auto max-w-[7rem] rounded border border-line bg-surface object-contain p-0.5"
-                    />
-                  ) : (
-                    <span className="text-[11px] text-faint">none uploaded</span>
-                  )}
-                  <label
-                    className={`cursor-pointer rounded-md border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink hover:bg-subtle ${
-                      logoBusy ? "opacity-50" : ""
-                    }`}
-                  >
-                    {customLogo ? "Replace" : "Upload (SVG/PNG/JPG)"}
-                    <input
-                      type="file"
-                      accept="image/svg+xml,image/png,image/jpeg"
-                      className="hidden"
-                      disabled={logoBusy}
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) void uploadCustomLogo(f);
-                        e.target.value = "";
-                      }}
-                    />
-                  </label>
-                  {customLogo ? (
-                    <button
-                      type="button"
-                      onClick={() => void removeCustomLogo()}
-                      disabled={logoBusy}
-                      className="text-xs text-faint hover:text-bad disabled:opacity-50"
-                    >
-                      Remove
-                    </button>
-                  ) : null}
-                </div>
-                {logoError ? <p className="mt-1 text-[11px] text-bad">{logoError}</p> : null}
-
-                <div className="mt-3">
-                  <div className="flex items-baseline justify-between">
-                    <label className="text-xs text-muted">Logo width</label>
-                    <span className="font-mono text-[11px] text-faint">{settings.customLogoWidthPct}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={100}
-                    step={1}
-                    value={settings.customLogoWidthPct}
-                    onChange={(e) => updateSettings({ customLogoWidthPct: Number(e.target.value) })}
-                    className="mt-1 w-full accent-zinc-900"
-                  />
-                  <p className="mt-0.5 text-[11px] text-faint">% of the block&rsquo;s width — height scales to keep the aspect ratio.</p>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        {/* ----- center: canvas + preview ----- */}
-        <div className="min-w-0">
-          <div className="flex items-baseline justify-between">
-            <div className="text-[11px] font-semibold text-faint">Canvas</div>
-            <div className="font-mono text-[11px] text-faint">
-              {page.widthMm} × {page.heightMm} mm · {orientation} · grid {grid.cols} × {grid.rows}
-            </div>
-          </div>
-          <div className="mt-2 flex justify-center rounded-lg border border-line bg-zinc-50/60 px-6 py-10">
-            <div
-              ref={canvasRef}
-              onPointerDown={onCanvasPointerDown}
-              onPointerMove={onCanvasPointerMove}
-              onPointerUp={onCanvasPointerUp}
-              className="relative touch-none border border-line bg-surface shadow-sm"
-              style={{
-                width: page.widthMm * scale,
-                height: page.heightMm * scale,
-                cursor: draw ? "crosshair" : "default",
-                // The die's rounded corners. Shown, not clipped: the true
-                // render clips content to this shape, but clipping HERE would
-                // swallow a corner block's delete badge (it sits outside the
-                // block) and make that block undeletable.
-                borderRadius: (page.cornerRadiusMm ?? 0) * scale,
-              }}
-            >
-              {/* grid overlay — inset by the page margin */}
-              <div
-                className="pointer-events-none absolute"
-                style={{
-                  left: gridGeom(page, scale).left,
-                  top: gridGeom(page, scale).top,
-                  width: gridGeom(page, scale).width,
-                  height: gridGeom(page, scale).height,
-                  outline:
-                    (page.margins?.topMm ?? 0) + (page.margins?.rightMm ?? 0) + (page.margins?.bottomMm ?? 0) + (page.margins?.leftMm ?? 0) > 0
-                      ? "1px dashed rgba(24,24,27,0.12)"
-                      : "none",
-                  backgroundImage:
-                    `repeating-linear-gradient(to right, transparent 0, transparent calc(${100 / grid.cols}% - 1px), rgba(24,24,27,0.045) calc(${100 / grid.cols}% - 1px), rgba(24,24,27,0.045) ${100 / grid.cols}%),` +
-                    `repeating-linear-gradient(to bottom, transparent 0, transparent calc(${100 / grid.rows}% - 1px), rgba(24,24,27,0.045) calc(${100 / grid.rows}% - 1px), rgba(24,24,27,0.045) ${100 / grid.rows}%)`,
-                }}
-              />
-              {/* Page border preview — same geometry as the renderer's
-                  frame (inset in mm, scaled to the canvas), drawn on the
-                  same subset of edges. */}
-              {pageBorder ? (
-                <div
-                  className="pointer-events-none absolute"
-                  style={{
-                    left: pageBorder.insetMm * scale,
-                    top: pageBorder.insetMm * scale,
-                    right: pageBorder.insetMm * scale,
-                    bottom: pageBorder.insetMm * scale,
-                    ...borderSideStyle(
-                      `${Math.max(1, pageBorder.widthMm * scale)}px solid ${pageBorder.color}`,
-                      effectiveBorderSides(pageBorder),
-                    ),
-                    borderRadius:
-                      insetCornerRadiusMm(page.cornerRadiusMm, pageBorder.insetMm) * scale,
-                  }}
-                  title="Page border"
-                />
-              ) : null}
-              {/* Cut line — the rounded die traced in red, same geometry as
-                  the renderer's guide (page edge, the page's own radius). */}
-              {(page.cornerRadiusMm ?? 0) > 0 && page.cutLine !== false ? (
-                <div
-                  className="pointer-events-none absolute"
-                  style={{
-                    inset: 0,
-                    border: "1px dashed #ff0000",
-                    borderRadius: (page.cornerRadiusMm ?? 0) * scale,
-                  }}
-                  title={`Cut line — the ${mmText(page.cornerRadiusMm ?? 0)} mm die, printed as a red guide`}
-                />
-              ) : null}
-              {page.blocks.map((block) => (
-                <CanvasBlock
-                  key={blockId(block)}
-                  block={block}
-                  page={page}
-                  scale={scale}
-                  selected={sel === blockId(block)}
-                  coSelected={sel !== blockId(block) && selIds.includes(blockId(block))}
-                  highlighted={hoverBlock === blockId(block)}
-                  onSelect={(additive) => selectBlock(blockId(block), additive)}
-                  onRemove={() => removeBlock(blockId(block))}
-                />
-              ))}
-              {/* Print-guide overlays — full page width/height, matching the
-                  true render. Sewing solid, fold dashed. */}
-              {sewingLines.map((s, i) => (
-                <div
-                  // eslint-disable-next-line react/no-array-index-key
-                  key={`csew-${i}`}
-                  className="pointer-events-none absolute"
-                  style={{
-                    left: 0,
-                    width: page.widthMm * scale,
-                    top: (s.edge === "bottom" ? page.heightMm - s.offsetMm : s.offsetMm) * scale,
-                    borderTop: "1px solid rgba(24,24,27,0.7)",
-                  }}
-                  title={`Sewing line — ${String(s.offsetMm).replace(".", ",")} mm from ${s.edge}`}
-                />
-              ))}
-              {page.foldLine === "horizontal" ? (
-                <div
-                  className="pointer-events-none absolute"
-                  style={{
-                    left: 0,
-                    width: page.widthMm * scale,
-                    top: (page.heightMm / 2) * scale,
-                    borderTop: "1px dashed rgba(82,82,91,0.9)",
-                  }}
-                  title="Folding line — horizontal centre"
-                />
-              ) : null}
-              {page.foldLine === "vertical" ? (
-                <div
-                  className="pointer-events-none absolute"
-                  style={{
-                    top: 0,
-                    height: page.heightMm * scale,
-                    left: (page.widthMm / 2) * scale,
-                    borderLeft: "1px dashed rgba(82,82,91,0.9)",
-                  }}
-                  title="Folding line — vertical centre"
-                />
-              ) : null}
-              {/* Centre hole — same geometry as the renderer's die outline:
-                  centred across the page, its centre offsetMm from the
-                  chosen edge. */}
-              {centerHole ? (
-                <div
-                  className="pointer-events-none absolute rounded-full"
-                  style={{
-                    width: centerHole.diameterMm * scale,
-                    height: centerHole.diameterMm * scale,
-                    left: (page.widthMm / 2 - centerHole.diameterMm / 2) * scale,
-                    top:
-                      ((centerHole.edge === "bottom"
-                        ? page.heightMm - centerHole.offsetMm
-                        : centerHole.offsetMm) -
-                        centerHole.diameterMm / 2) *
-                      scale,
-                    border: "1px dashed rgba(82,82,91,0.9)",
-                  }}
-                  title={`Centre hole — Ø ${mmText(centerHole.diameterMm)} mm, centre ${mmText(centerHole.offsetMm)} mm from ${centerHole.edge}`}
-                />
-              ) : null}
-              {ghost ? (
-                <div
-                  className="pointer-events-none absolute rounded-sm border border-ink/50 bg-zinc-900/5"
-                  style={{
-                    left: gridGeom(page, scale).left + (ghost.col / grid.cols) * gridGeom(page, scale).width,
-                    top: gridGeom(page, scale).top + (ghost.row / grid.rows) * gridGeom(page, scale).height,
-                    width: (ghost.colSpan / grid.cols) * gridGeom(page, scale).width,
-                    height: (ghost.rowSpan / grid.rows) * gridGeom(page, scale).height,
-                  }}
-                />
-              ) : null}
-            </div>
-          </div>
-          <p className="mt-2 text-center text-xs text-faint">
-            <b className="font-medium text-muted">Drag on the grid</b> to draw a block exactly where you want it ·
-            click a block to edit · Del removes the selected block
-          </p>
-
-          {/* true render preview */}
-          <div className="mt-8">
-            <div className="flex items-baseline justify-between">
-              <div className="text-[11px] font-semibold text-faint">
-                Print preview — true render{previewSample ? " · sample data" : testStyle ? ` · ${testStyle.name}` : ""}
-              </div>
-              {unresolved.length > 0 ? (
-                <span className="text-xs text-warn">
-                  {unresolved.length} unresolved: {unresolved.join(" ")}
-                </span>
-              ) : previewHtml ? (
-                <span className="text-xs text-good">all variables resolved</span>
-              ) : null}
-            </div>
-            {settings.cartonNumbering ? (
-              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-transparent bg-amber-50/60 px-3 py-2 text-xs text-warn">
-                <span className="font-medium">Preview as carton</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={cartonPreviewTotal}
-                  value={cartonPreviewNo}
-                  onChange={(e) =>
-                    setCartonPreviewNo(Math.min(cartonPreviewTotal, Math.max(1, Number(e.target.value) || 1)))
-                  }
-                  className="w-16 rounded border border-transparent bg-surface px-2 py-1 text-center tabular-nums text-warn"
-                />
-                <span>of</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={cartonPreviewTotal}
-                  onChange={(e) => {
-                    const total = Math.max(1, Number(e.target.value) || 1);
-                    setCartonPreviewTotal(total);
-                    if (cartonPreviewNo > total) setCartonPreviewNo(total);
-                  }}
-                  className="w-20 rounded border border-transparent bg-surface px-2 py-1 text-center tabular-nums text-warn"
-                />
-                <span className="text-amber-700/80">— injects the running number into the preview.</span>
-              </div>
-            ) : null}
-            <div className="mt-2 rounded-lg border border-line bg-zinc-50/60 p-6">
-              {previewHtml ? (
-                <div className="mx-auto" style={{ maxWidth: Math.max(page.widthMm * 3.78, 280) }}>
-                  <PreviewFrame
-                    html={previewHtml}
-                    widthMm={page.widthMm}
-                    heightMm={page.heightMm}
-                    cornerRadiusMm={page.cornerRadiusMm}
-                  />
-                </div>
-              ) : (
-                <p className="py-10 text-center text-xs text-faint">Rendering…</p>
-              )}
-            </div>
-            <p className="mt-2 text-xs text-faint">
-              Rendered by the same code that generates the production PDF — empty variables show as amber chips here
-              and never print.
-            </p>
-          </div>
-        </div>
-
-        {/* ----- right: blocks + inspector + variables ----- */}
-        <div className="space-y-5">
-          {/* Blocks on this page — a navigable list. Click a row to select
-              (far easier than hunting a tiny block on the canvas); hover to
-              flash that block's position with a blue locator ring; the row
-              ✕ deletes it. Stays in sync with the canvas selection. */}
-          <div className="rounded-lg border border-line p-4">
-            <div className="flex items-baseline justify-between">
-              <div className="text-[11px] font-semibold text-faint">Blocks</div>
-              <div className="flex items-baseline gap-2">
-                {page.blocks.length > 1 ? (
-                  <button
-                    type="button"
-                    onClick={selectAllOnPage}
-                    className="text-[11px] font-medium text-faint hover:text-ink"
-                    title="Select every block on this page, so one panel edit formats them all"
-                  >
-                    Select all
-                  </button>
-                ) : null}
-                <span className="text-[11px] tabular-nums text-faint">{page.blocks.length}</span>
-              </div>
-            </div>
-            {/* Paste sits here, not in the Block panel, because it acts on
-                the PAGE — it has to work when nothing is selected, which is
-                exactly the state you arrive in from another layout. */}
-            {blockClip ? (
-              <button
-                type="button"
-                onClick={pasteBlocks}
-                className="mt-2 w-full truncate rounded-md border border-dashed border-line px-2 py-1.5 text-left text-[11px] text-muted hover:border-zinc-400 hover:bg-subtle hover:text-ink"
-                title={`Paste onto this page, rescaled from a ${blockClip.grid.cols}×${blockClip.grid.rows} grid to this page's ${grid.cols}×${grid.rows}`}
-              >
-                Paste {blockClip.blocks.length} block{blockClip.blocks.length === 1 ? "" : "s"} from “
-                {blockClip.layoutName}”
-              </button>
-            ) : null}
-            {clipNote ? <p className="mt-1.5 text-[11px] text-muted">{clipNote}</p> : null}
-            {page.blocks.length === 0 ? (
-              <p className="mt-2 text-xs text-faint">No blocks yet — drag on the grid to draw one.</p>
-            ) : (
-              <ul className="mt-2 max-h-64 space-y-0.5 overflow-y-auto pr-0.5">
-                {orderedBlocks.map((b) => {
-                  const id = blockId(b);
-                  const isSel = sel === id;
-                  // A companion of the primary: formatting edits reach it,
-                  // so it gets a lighter version of the selected outline.
-                  const isCoSel = !isSel && selIds.includes(id);
-                  const { kind, text, extra } = blockSummary(b);
-                  return (
-                    <li key={id}>
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => selectBlock(id, e.shiftKey || e.metaKey || e.ctrlKey)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            selectBlock(id, e.shiftKey || e.metaKey || e.ctrlKey);
-                          }
-                        }}
-                        onMouseEnter={() => setHoverBlock(id)}
-                        onMouseLeave={() => setHoverBlock((h) => (h === id ? null : h))}
-                        onFocus={() => setHoverBlock(id)}
-                        onBlur={() => setHoverBlock((h) => (h === id ? null : h))}
-                        className={`group flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 ${
-                          isSel
-                            ? "border-ink bg-subtle"
-                            : isCoSel
-                              ? "border-dashed border-zinc-400 bg-subtle"
-                              : "border-transparent hover:border-line hover:bg-subtle"
-                        }`}
-                      >
-                        {kind ? (
-                          <span className="shrink-0 rounded bg-subtle px-1 py-px text-[11px] font-medium text-muted">
-                            {kind}
-                          </span>
-                        ) : null}
-                        <span className={`min-w-0 flex-1 truncate text-xs ${isSel ? "text-ink" : "text-muted"}`}>
-                          {text}
-                        </span>
-                        {extra > 0 ? (
-                          <span className="shrink-0 text-[11px] text-faint" title={`${extra + 1} lines`}>
-                            +{extra}
-                          </span>
-                        ) : null}
-                        {b.rect ? (
-                          <span className="shrink-0 font-mono text-[11px] text-faint group-hover:hidden">
-                            R{b.rect.row + 1}·C{b.rect.col + 1}
-                          </span>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeBlock(id);
-                          }}
-                          className="hidden h-4 w-4 shrink-0 items-center justify-center rounded-full text-[11px] leading-none text-faint hover:bg-bad-soft hover:text-bad group-hover:flex"
-                          title="Delete this block"
-                          aria-label="Delete block"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-
-          <div className="rounded-lg border border-line p-4">
-            <div className="flex items-baseline justify-between">
-              <div className="text-[11px] font-semibold text-faint">
-                {selIds.length > 1 ? `Block · ${selIds.length} selected` : "Block"}
-              </div>
-              {selBlock ? (
-                <button
-                  type="button"
-                  onClick={() => removeBlock(blockId(selBlock))}
-                  className="text-[11px] font-medium text-faint hover:text-bad"
-                  title="Delete this block (or press Del with it selected)"
-                >
-                  Delete
-                </button>
-              ) : null}
-            </div>
-            {!selBlock ? (
-              <p className="mt-2 text-xs text-faint">
-                Select a block on the canvas, or drag on the grid to draw a new one. Shift-click to
-                add more blocks to the selection and format them together.
-              </p>
-            ) : (
-              <div className="mt-3 space-y-4">
-                {/* Formatting actions. A new block already inherits the look
-                    of the last one you touched, so these are for the cases
-                    that inheritance can't cover: cloning a finished block,
-                    and pushing one block's look onto others after the fact. */}
-                <div className="flex flex-wrap items-center gap-1">
-                  <PanelButton
-                    onClick={() => duplicateBlock(blockId(selBlock))}
-                    disabled={!selBlock.rect}
-                    title="Copy this block — look and text — directly below it (⌘D)"
-                  >
-                    Duplicate
-                  </PanelButton>
-                  <PanelButton
-                    onClick={copyBlocks}
-                    title={`Copy ${selIds.length > 1 ? `these ${selIds.length} blocks` : "this block"} — text and formatting — to paste into ANOTHER layout`}
-                  >
-                    Copy {selIds.length > 1 ? `${selIds.length} blocks` : "block"}
-                  </PanelButton>
-                  <PanelButton
-                    onClick={copyFormat}
-                    title="Remember this block's formatting, to paste onto others in this layout"
-                  >
-                    Copy format
-                  </PanelButton>
-                  <PanelButton
-                    onClick={pasteFormat}
-                    disabled={!formatClip}
-                    title={
-                      formatClip
-                        ? `Apply the copied formatting (${String(formatClip.fontPt ?? PLAIN_APPEARANCE.fontPt).replace(".", ",")} pt${formatClip.bold ? ", bold" : ""}${formatClip.border ? ", bordered" : ""}) to ${selIds.length > 1 ? `all ${selIds.length} selected blocks` : "this block"}`
-                        : "Copy a block's formatting first"
-                    }
-                  >
-                    Paste format
-                  </PanelButton>
-                  <PanelButton
-                    onClick={resetFormat}
-                    title={`Back to the plain default — ${PLAIN_APPEARANCE.fontPt} pt, left, no border`}
-                  >
-                    Plain
-                  </PanelButton>
-                </div>
-                {selIds.length > 1 ? (
-                  <p className="rounded-md bg-subtle px-2 py-1.5 text-[11px] leading-relaxed text-muted">
-                    Font, alignment, border, fit and invert apply to all {selIds.length} selected
-                    blocks. Position and text stay on this one. Shift-click a block again to drop it.
-                  </p>
-                ) : null}
-                {selBlock.rect ? (
-                  <>
-                    <div className="grid grid-cols-2 gap-2">
-                      <RectStepper
-                        label="Column"
-                        value={selBlock.rect.col + 1}
-                        min={1}
-                        max={grid.cols - selBlock.rect.colSpan + 1}
-                        onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, col: v - 1 } })}
-                      />
-                      <RectStepper
-                        label="Row"
-                        value={selBlock.rect.row + 1}
-                        min={1}
-                        max={grid.rows - selBlock.rect.rowSpan + 1}
-                        onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, row: v - 1 } })}
-                      />
-                      <RectStepper
-                        label="Width (cols)"
-                        value={selBlock.rect.colSpan}
-                        min={1}
-                        max={grid.cols - selBlock.rect.col}
-                        onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, colSpan: v } })}
-                      />
-                      <RectStepper
-                        label="Height (rows)"
-                        value={selBlock.rect.rowSpan}
-                        min={1}
-                        max={grid.rows - selBlock.rect.row}
-                        onChange={(v) => updateBlock(blockId(selBlock), { rect: { ...selBlock.rect!, rowSpan: v } })}
-                      />
-                    </div>
-                    <div className="font-mono text-[11px] text-faint">
-                      ≈ {((page.widthMm * selBlock.rect.colSpan) / grid.cols).toFixed(1)} ×{" "}
-                      {((page.heightMm * selBlock.rect.rowSpan) / grid.rows).toFixed(1)} mm
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div>
-                        <label className="text-xs text-muted">Align</label>
-                        <div className="mt-1 flex overflow-hidden rounded-md border border-line">
-                          {(["left", "center", "right"] as const).map((a) => (
-                            <button
-                              key={a}
-                              type="button"
-                              onClick={() => updateAppearance({ align: a })}
-                              className={`px-2 py-1 text-[11px] font-medium capitalize ${
-                                (selBlock.align ?? "left") === a
-                                  ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                                  : "bg-surface text-muted hover:bg-subtle"
-                              }`}
-                            >
-                              {a}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted">Vertical</label>
-                        <div className="mt-1 flex overflow-hidden rounded-md border border-line">
-                          {(["top", "middle", "bottom"] as const).map((v) => (
-                            <button
-                              key={v}
-                              type="button"
-                              onClick={() => updateAppearance({ valign: v })}
-                              className={`px-2 py-1 text-[11px] font-medium capitalize ${
-                                (selBlock.valign ?? "top") === v
-                                  ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                                  : "bg-surface text-muted hover:bg-subtle"
-                              }`}
-                            >
-                              {v}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                ) : null}
-
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="text-xs text-muted">Font size</label>
-                    <NumberStepper
-                      value={selBlock.fontPt}
-                      min={1}
-                      max={144}
-                      step={0.5}
-                      suffix="pt"
-                      onChange={(v) => updateAppearance({ fontPt: v })}
-                    />
-                  </div>
-                  <p className="mt-0.5 text-[11px] text-faint">Barcodes and wash symbols scale with the font size.</p>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-1.5 text-xs text-muted">
-                    <input
-                      type="checkbox"
-                      checked={selBlock.bold}
-                      onChange={(e) => updateAppearance({ bold: e.target.checked })}
-                      className="accent-zinc-900"
-                    />
-                    Bold
-                  </label>
-                  <label className="flex items-center gap-1.5 text-xs text-muted">
-                    Line height
-                    <select
-                      value={selBlock.lineHeight}
-                      onChange={(e) => updateAppearance({ lineHeight: Number(e.target.value) })}
-                      className="rounded border border-line px-1 py-0.5 text-xs"
-                    >
-                      {[1.2, 1.3, 1.4, 1.5, 1.6, 1.8].map((lh) => (
-                        <option key={lh} value={lh}>
-                          {lh}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-1.5 text-xs text-muted">
-                    Border
-                    <select
-                      value={selBlock.border?.widthMm ?? 0}
-                      onChange={(e) => {
-                        const w = Number(e.target.value);
-                        // Applies to the whole selection — "box these five"
-                        // is the reason multi-select exists. Each block keeps
-                        // its OWN colour, padding and per-side choice; only
-                        // the width changes.
-                        patchSelected((b) => ({
-                          border:
-                            w > 0
-                              ? {
-                                  ...b.border,
-                                  widthMm: w,
-                                  color: b.border?.color ?? "#000000",
-                                  // Keep existing padding; a brand-new border
-                                  // starts at 0.5 mm (linked) so it's never
-                                  // flush against the text.
-                                  pad: b.border
-                                    ? effectiveBorderPad(b.border)
-                                    : { topMm: 0.5, rightMm: 0.5, bottomMm: 0.5, leftMm: 0.5 },
-                                  padMm: undefined,
-                                }
-                              : undefined,
-                        }));
-                      }}
-                      className="rounded border border-line px-1 py-0.5 text-xs"
-                    >
-                      <option value={0}>None</option>
-                      {[0.2, 0.3, 0.5, 0.75, 1, 1.5, 2].map((w) => (
-                        <option key={w} value={w}>
-                          {w} mm
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {selBlock.border ? (
-                    <label className="flex items-center gap-1.5 text-xs text-muted">
-                      <input
-                        type="color"
-                        value={selBlock.border.color}
-                        onChange={(e) =>
-                          updateBorderField({ color: e.target.value })
-                        }
-                        className="h-6 w-8 cursor-pointer rounded border border-line bg-surface p-0.5"
-                        title="Border colour"
-                      />
-                      <input
-                        type="text"
-                        value={selBlock.border.color}
-                        onChange={(e) => {
-                          const v = e.target.value.trim();
-                          if (/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v)) {
-                            updateBorderField({ color: v });
-                          }
-                        }}
-                        className="w-20 rounded border border-line px-1.5 py-0.5 font-mono text-[11px]"
-                        spellCheck={false}
-                      />
-                    </label>
-                  ) : null}
-                </div>
-                {selBlock.border ? (
-                  <BorderSidePicker
-                    sides={effectiveBorderSides(selBlock.border)}
-                    onChange={(sides) =>
-                      updateBorderField({ sides })
-                    }
-                  />
-                ) : null}
-                {selBlock.border ? (
-                  <div className="text-xs text-muted">
-                    <div className="flex items-center justify-between">
-                      <span>Padding mm</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (padLinked) {
-                            setPadLinked(false);
-                          } else {
-                            updateBorderPad(effectiveBorderPad(selBlock.border).topMm);
-                            setPadLinked(true);
-                          }
-                        }}
-                        className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${
-                          padLinked
-                            ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                            : "border-line bg-surface text-muted hover:border-line"
-                        }`}
-                        title={
-                          padLinked
-                            ? "Linked — one value for all sides. Click to edit each side."
-                            : "Per side. Click to link all sides."
-                        }
-                      >
-                        {padLinked ? "🔗 linked" : "per side"}
-                      </button>
-                    </div>
-                    {padLinked ? (
-                      <input
-                        type="number"
-                        min={0}
-                        max={20}
-                        step={0.5}
-                        value={effectiveBorderPad(selBlock.border).topMm}
-                        onChange={(e) => {
-                          const v = Number(e.target.value);
-                          if (Number.isFinite(v) && v >= 0 && v <= 20) updateBorderPad(v);
+                            updatePage({ margins: { topMm: v, rightMm: v, bottomMm: v, leftMm: v } });
                         }}
                         className="mt-1 w-full rounded-md border border-line px-2.5 py-1.5 text-sm tabular-nums"
-                        title="Inner padding between the border and the text"
                       />
                     ) : (
                       <div className="mt-1 grid grid-cols-2 gap-1.5">
@@ -3407,12 +3404,18 @@ export function LayoutEditor({
                             <input
                               type="number"
                               min={0}
-                              max={20}
+                              max={50}
                               step={0.5}
-                              value={effectiveBorderPad(selBlock.border)[k]}
+                              value={page.margins?.[k] ?? 0}
                               onChange={(e) => {
                                 const v = Number(e.target.value);
-                                if (Number.isFinite(v) && v >= 0 && v <= 20) updateBorderPad(v, [k]);
+                                if (Number.isFinite(v) && v >= 0 && v <= 50)
+                                  updatePage({
+                                    margins: {
+                                      ...(page.margins ?? { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 }),
+                                      [k]: v,
+                                    },
+                                  });
                               }}
                               className="w-full rounded-md border border-line px-2 py-1 text-sm tabular-nums"
                             />
@@ -3420,472 +3423,679 @@ export function LayoutEditor({
                         ))}
                       </div>
                     )}
+                    <p className="mt-0.5 text-[11px] text-faint">The grid (and all blocks) inset from the page edges.</p>
                   </div>
-                ) : null}
-                {/* Invert — a solid box with contrasting text. The colour
-                    pair is optional: leave it and the block prints the
-                    historic black/white, so nothing already published
-                    changes. */}
-                <div>
-                  <label className="flex items-center gap-2 text-xs text-muted">
+                  <div>
+                    <label className="text-xs text-muted">Orientation</label>
+                    <div className="mt-1 flex overflow-hidden rounded-md border border-line">
+                      {(["portrait", "landscape"] as const).map((o) => (
+                        <button
+                          key={o}
+                          type="button"
+                          onClick={() => setOrientation(o)}
+                          className={`flex-1 px-2 py-1 text-xs font-medium capitalize ${
+                            orientation === o ? "inline-flex h-8 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-ink transition-colors enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50" : "bg-surface text-muted hover:bg-subtle"
+                          }`}
+                        >
+                          {o}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Conditional page — the certificate-page case: a page whose only
+                      content is a gated mark prints blank on every style that
+                      doesn't declare it. With this on, the page is left out of the
+                      PDF instead. Opt-in per page: a deliberately blank page (a
+                      plain back side) must keep printing as authored. */}
+                  <div>
+                    <label className="flex items-center gap-2 text-sm text-ink">
+                      <input
+                        type="checkbox"
+                        checked={!!page?.omitWhenEmpty}
+                        onChange={(e) => updatePage({ omitWhenEmpty: e.target.checked })}
+                        className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
+                      />
+                      Skip page when empty
+                    </label>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-faint">
+                      Leaves this page out of the printed PDF when nothing on it resolves for the style — a
+                      page whose only content is <span className="font-mono">{"{{cert:oekotex}}"}</span>{" "}
+                      disappears on styles without OEKO-TEX instead of printing blank. Borders and guides
+                      don&apos;t count as content, and the preview always shows the page.
+                    </p>
+                  </div>
+                  {def.pages.length > 1 ? (
+                    <button
+                      type="button"
+                      onClick={() => removePage(pageIdx)}
+                      className="text-xs text-faint hover:text-bad"
+                    >
+                      Remove this page
+                    </button>
+                  ) : null}
+                </div>
+              </InspectorSection>
+              <InspectorSection title="Grid">
+                <div className="space-y-2">
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <label className="text-xs text-muted">Cell size (mm)</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={gridCellMm}
+                        onChange={(e) => setGridCellMm(e.target.value)}
+                        className="mt-1 w-full rounded-md border border-line px-2 py-1.5 text-sm tabular-nums"
+                        placeholder={String(DEFAULT_GRID_CELL_MM)}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={regenerateGrid}
+                      className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Recompute cols × rows from this cell size and remap existing blocks"
+                    >
+                      Regenerate
+                    </button>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-faint">
+                    Current grid <span className="font-mono text-muted">{grid.cols} × {grid.rows}</span>
+                    {page ? (
+                      <>
+                        {" "}
+                        · ≈ {(page.widthMm / grid.cols).toFixed(1)} × {(page.heightMm / grid.rows).toFixed(1)} mm per cell
+                      </>
+                    ) : null}
+                    . Regenerate keeps existing blocks, adjusting any that no longer fit.
+                  </p>
+                </div>
+              </InspectorSection>
+              <InspectorSection title="Print guides" defaultOpen={false}>
+                <div className="space-y-3">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs text-muted">Sewing lines</label>
+                      <button
+                        type="button"
+                        onClick={addSewingLine}
+                        className="text-xs font-medium text-ink hover:text-ink"
+                      >
+                        + Add
+                      </button>
+                    </div>
+                    {sewingLines.length === 0 ? (
+                      <p className="mt-1 text-[11px] text-faint">
+                        A solid rule a fixed distance from the top or bottom edge (the seam allowance).
+                      </p>
+                    ) : (
+                      <div className="mt-1.5 space-y-1.5">
+                        {sewingLines.map((s, i) => (
+                          // Inputs remount when the list length changes (key carries it),
+                          // so an uncontrolled offset field re-reads the right value after
+                          // add/remove while still letting you type a "7,5" decimal freely.
+                          <div key={`sew-${sewingLines.length}-${i}`} className="flex items-center gap-1.5">
+                            <select
+                              value={s.edge}
+                              onChange={(e) => updateSewingLine(i, { edge: e.target.value as SewingLine["edge"] })}
+                              className="h-7 rounded-md border border-line bg-surface px-2 text-[12px] text-ink outline-none focus:border-accent disabled:opacity-50"
+                            >
+                              <option value="top">From top</option>
+                              <option value="bottom">From bottom</option>
+                            </select>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              defaultValue={String(s.offsetMm).replace(".", ",")}
+                              onChange={(e) => {
+                                const v = parseMm(e.target.value);
+                                if (Number.isFinite(v) && v >= 0 && v <= 1000) updateSewingLine(i, { offsetMm: v });
+                              }}
+                              className="w-16 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
+                              aria-label="Offset from edge (mm)"
+                            />
+                            <span className="text-[11px] text-faint">mm</span>
+                            <button
+                              type="button"
+                              onClick={() => removeSewingLine(i)}
+                              className="ml-auto text-faint hover:text-bad"
+                              aria-label="Remove sewing line"
+                              title="Remove"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted">Folding line</label>
+                    <select
+                      value={page?.foldLine ?? "none"}
+                      onChange={(e) => setFoldLine(e.target.value as FoldLine)}
+                      className="mt-1 w-full h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
+                    >
+                      <option value="none">Off</option>
+                      <option value="horizontal">Horizontal — across centre</option>
+                      <option value="vertical">Vertical — down centre</option>
+                    </select>
+                    <p className="mt-0.5 text-[11px] text-faint">A dashed rule through the page centre.</p>
+                  </div>
+
+                  {/* Page border — a frame around the WHOLE page, so a design
+                      doesn't need an empty full-page block just to get an
+                      outline. Decorative only: no tokens, no grid cells. */}
+                  <div>
+                    <label className="flex items-center gap-2 text-sm text-ink">
+                      <input
+                        type="checkbox"
+                        checked={!!pageBorder}
+                        onChange={(e) => togglePageBorder(e.target.checked)}
+                        className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
+                      />
+                      Page border
+                    </label>
+                    {pageBorder ? (
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          defaultValue={String(pageBorder.widthMm).replace(".", ",")}
+                          onChange={(e) => {
+                            const v = parseMm(e.target.value);
+                            if (Number.isFinite(v) && v >= 0.1 && v <= 5) updatePageBorder({ widthMm: v });
+                          }}
+                          className="w-14 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
+                          aria-label="Border thickness (mm)"
+                        />
+                        <span className="text-[11px] text-faint">thick</span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          defaultValue={String(pageBorder.insetMm).replace(".", ",")}
+                          onChange={(e) => {
+                            const v = parseMm(e.target.value);
+                            if (Number.isFinite(v) && v >= 0 && v <= 50) updatePageBorder({ insetMm: v });
+                          }}
+                          className="w-14 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
+                          aria-label="Inset from page edge (mm)"
+                        />
+                        <span className="text-[11px] text-faint">inset</span>
+                        <input
+                          type="color"
+                          value={pageBorder.color}
+                          onChange={(e) => updatePageBorder({ color: e.target.value })}
+                          className="ml-auto h-6 w-8 cursor-pointer rounded border border-line bg-surface p-0.5"
+                          aria-label="Border colour"
+                        />
+                      </div>
+                    ) : (
+                      <p className="mt-0.5 text-[11px] text-faint">
+                        Frames the whole page — thickness, inset from the edge and colour, in mm.
+                      </p>
+                    )}
+                    {pageBorder ? (
+                      <div className="mt-1.5">
+                        <BorderSidePicker
+                          sides={effectiveBorderSides(pageBorder)}
+                          onChange={(sides) => updatePageBorder({ sides })}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {/* Rounded corners — the die's corner radius. The page itself
+                      rounds (content is clipped to the shape), and the page
+                      border curves with it. 0 = square, as every page was. */}
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-xs text-muted">Rounded corners</label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          key={`corner-${page.id}`}
+                          type="text"
+                          inputMode="decimal"
+                          defaultValue={mmText(page.cornerRadiusMm ?? 0)}
+                          onChange={(e) => {
+                            const v = parseMm(e.target.value);
+                            if (Number.isFinite(v) && v >= 0 && v <= 50)
+                              updatePage({ cornerRadiusMm: v > 0 ? v : undefined });
+                          }}
+                          className="w-16 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
+                          aria-label="Corner radius (mm)"
+                        />
+                        <span className="text-[11px] text-faint">mm radius</span>
+                      </div>
+                    </div>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-faint">
+                      The corner radius of the cut. 0 = square. Content is clipped to the rounded shape, so a
+                      block that runs into a corner prints the same curve the cutter makes — and the page border
+                      curves with it.
+                    </p>
+                    {/* The die is invisible on a printed rectangle unless something
+                        draws it, so a rounded page gets a red cut line by default.
+                        Only offered where there IS a radius. */}
+                    {(page.cornerRadiusMm ?? 0) > 0 ? (
+                      <>
+                        <label className="mt-1.5 flex items-center gap-2 text-sm text-ink">
+                          <input
+                            type="checkbox"
+                            checked={page.cutLine !== false}
+                            onChange={(e) => updatePage({ cutLine: e.target.checked })}
+                            className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
+                          />
+                          Show cut line
+                        </label>
+                        <p className="mt-0.5 text-[11px] leading-relaxed text-faint">
+                          Traces the die in red dashes so the curve is visible in print — the printed sheet is a
+                          rectangle, so without it a rounded page comes out square. Turn it off when the artwork
+                          already shows the curve (full-bleed colour, or a page border flush to the edge).
+                        </p>
+                      </>
+                    ) : null}
+                  </div>
+
+                  {/* Centre hole — the die-cut hang hole. Always centred across
+                      the page; the offset places its CENTRE from the chosen
+                      edge. Drawn as a dashed circle on the canvas and in the
+                      true render so content can be kept clear of the punch. */}
+                  <div>
+                    <label className="flex items-center gap-2 text-sm text-ink">
+                      <input
+                        type="checkbox"
+                        checked={!!centerHole}
+                        onChange={(e) => toggleCenterHole(e.target.checked)}
+                        className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
+                      />
+                      Centre hole
+                    </label>
+                    {centerHole ? (
+                      <>
+                        <div className="mt-1.5 flex items-center gap-1.5">
+                          {/* Uncontrolled so a "7,5" decimal can be typed freely;
+                              keyed by page so switching pages re-seeds them. */}
+                          <input
+                            key={`hole-d-${page.id}`}
+                            type="text"
+                            inputMode="decimal"
+                            defaultValue={mmText(centerHole.diameterMm)}
+                            onChange={(e) => {
+                              const v = parseMm(e.target.value);
+                              if (Number.isFinite(v) && v >= 0.5 && v <= 100) updateCenterHole({ diameterMm: v });
+                            }}
+                            className="w-14 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
+                            aria-label="Hole diameter (mm)"
+                          />
+                          <span className="text-[11px] text-faint">Ø mm</span>
+                          <select
+                            value={centerHole.edge}
+                            onChange={(e) => updateCenterHole({ edge: e.target.value as CenterHole["edge"] })}
+                            className="ml-auto rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink"
+                          >
+                            <option value="top">From top</option>
+                            <option value="bottom">From bottom</option>
+                          </select>
+                          <input
+                            key={`hole-o-${page.id}`}
+                            type="text"
+                            inputMode="decimal"
+                            defaultValue={mmText(centerHole.offsetMm)}
+                            onChange={(e) => {
+                              const v = parseMm(e.target.value);
+                              if (Number.isFinite(v) && v >= 0 && v <= 1000) updateCenterHole({ offsetMm: v });
+                            }}
+                            className="w-14 rounded-md border border-line px-2 py-1 text-xs tabular-nums"
+                            aria-label="Distance from the edge to the hole centre (mm)"
+                          />
+                          <span className="text-[11px] text-faint">mm</span>
+                        </div>
+                        <p className="mt-1 text-[11px] leading-relaxed text-faint">
+                          Measured to the hole&rsquo;s <b className="font-medium text-muted">centre</b> —{" "}
+                          {mmText(Math.max(0, centerHole.offsetMm - centerHole.diameterMm / 2))} mm of clear
+                          stock between the {centerHole.edge} edge and the punch.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="mt-0.5 text-[11px] text-faint">
+                        A punched hang hole, centred across the page — diameter in mm and the distance from the
+                        top or bottom edge. Printed as a dashed guide, like the sewing and fold lines.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </InspectorSection>
+              <InspectorSection title="Output">
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-muted">Repeat output</label>
+                    <select
+                      value={settings.repeatBy}
+                      onChange={(e) => updateSettings({ repeatBy: e.target.value as LayoutSettings["repeatBy"] })}
+                      className="mt-1 w-full h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
+                    >
+                      <option value="none">Don&apos;t repeat</option>
+                      <option value="size">Per size</option>
+                      <option value="ean">Per EAN (size × colour)</option>
+                      <option value="assort">Per assortment EAN</option>
+                      <option value="cartonEan">Per carton EAN (per size + assort)</option>
+                      <option value="cartonEanSizeOnly">Per carton EAN (size only)</option>
+                    </select>
+                    {settings.repeatBy !== "none" ? (
+                      <p className="mt-1.5 break-words font-mono text-[11px] leading-relaxed text-faint">
+                        {repeatValues.length > 0 ? (
+                          <>
+                            <span className="font-sans font-medium text-muted">
+                              {repeatValues.length} repetition{repeatValues.length === 1 ? "" : "s"}:{" "}
+                            </span>
+                            {repeatValues.join(", ")}
+                          </>
+                        ) : (
+                          "No sizes on the selected test style — output renders once."
+                        )}
+                      </p>
+                    ) : null}
+                  </div>
+                  {settings.repeatBy !== "none" || settings.splitByComposition ? (
+                    <div>
+                      <label className="text-xs text-muted">Output files</label>
+                      <select
+                        value={settings.splitBy}
+                        onChange={(e) => updateSettings({ splitBy: e.target.value as LayoutSettings["splitBy"] })}
+                        className="mt-1 w-full h-8 rounded-md border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
+                      >
+                        <option value="ean">One PDF per EAN</option>
+                        <option value="none">One single PDF (all repetitions inside)</option>
+                      </select>
+                      {repeatValues.length > 0 ? (
+                        <p className="mt-1 text-[11px] text-faint">
+                          {settings.splitBy === "ean"
+                            ? `→ ${repeatValues.length} file${repeatValues.length === 1 ? "" : "s"}, each containing only its own EAN`
+                            : `→ 1 file containing all ${repeatValues.length} repetition${repeatValues.length === 1 ? "" : "s"}`}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {/* Second repetition axis — one document per COLOUR of a pack that
+                      ships two different qualities under one order. Multiplies the
+                      repeat above (per-EAN × per-composition), and fires only on a
+                      style whose composition is colour-keyed, so turning it on can
+                      never change a single-composition style's output. */}
+                  <div>
+                    <label className="flex items-center gap-2 text-sm text-ink">
+                      <input
+                        type="checkbox"
+                        checked={settings.splitByComposition}
+                        onChange={(e) => updateSettings({ splitByComposition: e.target.checked })}
+                        className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
+                      />
+                      Split per composition
+                    </label>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-faint">
+                      For packs that carry two qualities — &ldquo;Pink: 95% Cotton 5% Elastane, Grey melange: 57%
+                      Cotton&hellip;&rdquo;. Each colour gets its own document printing only its own fibres, so each
+                      is approved separately. Only fires when every part is labelled with a colour the style
+                      declares; a garment-part composition (&ldquo;Top: &hellip;, Bottom: &hellip;&rdquo;) and a
+                      single composition are untouched. Add {"{{compositionColour}}"} to the file name to tell
+                      the documents apart. When the two sides spell the same colour differently
+                      (&ldquo;LGM&rdquo; vs &ldquo;Grey melange&rdquo;), declare it under{" "}
+                      <a href="/settings/colour-aliases" target="_blank" rel="noreferrer" className="underline">
+                        Settings &rsaquo; Colour aliases
+                      </a>
+                      .
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted">Output file name</label>
                     <input
-                      type="checkbox"
-                      checked={selBlock.invert ?? false}
-                      onChange={(e) => updateAppearance({ invert: e.target.checked })}
-                      className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
+                      type="text"
+                      value={settings.fileName}
+                      onChange={(e) => updateSettings({ fileName: e.target.value })}
+                      placeholder="{{styleNumber}}-{{size}}-sticker"
+                      className="mt-1 w-full rounded-md border border-line px-2.5 py-1.5 font-mono text-xs"
+                      spellCheck={false}
                     />
-                    Invert block (solid background, contrasting text)
-                  </label>
-                  {selBlock.invert ? (
-                    <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-                      <HexColorField
-                        key={`${blockId(selBlock)}-invert-bg`}
-                        label="Background"
-                        value={invertColors(selBlock).bg}
-                        isDefault={selBlock.invertBg === undefined}
-                        onChange={(hex) => updateAppearance({ invertBg: hex })}
-                        onReset={() => updateAppearance({ invertBg: undefined })}
-                        fallback={INVERT_BG}
+                    <p className="mt-1 text-[11px] text-faint">
+                      {settings.fileName ? (
+                        resolvedFileName ? (
+                          <>
+                            → <span className="font-mono text-good">{resolvedFileName}</span>
+                          </>
+                        ) : (
+                          "Resolving…"
+                        )
+                      ) : (settings.repeatBy !== "none" || settings.splitByComposition) && settings.splitBy === "ean" ? (
+                        "Variables allowed — {{size}}/{{ean13}}/{{colourName}} name EACH file (one per EAN)"
+                      ) : (
+                        "Text variables allowed · empty = default name"
+                      )}
+                    </p>
+
+                    {/* Preset library — shared across layouts (AppSetting), grown
+                        by whoever needs a new convention. Clicking one pastes its
+                        pattern into the field above; nothing is applied silently. */}
+                    <div className="mt-2 rounded-md border border-line bg-zinc-50/70 p-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-medium text-faint">Presets</span>
+                        <button
+                          type="button"
+                          onClick={saveFileNamePreset}
+                          disabled={presetBusy || !settings.fileName.trim()}
+                          className="text-[11px] font-medium text-ink hover:text-ink disabled:cursor-not-allowed disabled:text-faint"
+                          title={
+                            settings.fileName.trim()
+                              ? "Save the current file name as a reusable preset"
+                              : "Type a file name first"
+                          }
+                        >
+                          + Save current
+                        </button>
+                      </div>
+                      {fileNamePresets.length === 0 ? (
+                        <p className="mt-1 text-[11px] text-faint">
+                          No presets yet — type a file name and save it to reuse it on other layouts.
+                        </p>
+                      ) : (
+                        <div className="mt-1.5 space-y-1">
+                          {fileNamePresets.map((p) => {
+                            const active = settings.fileName === p.pattern;
+                            return (
+                              <div key={p.id} className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => updateSettings({ fileName: p.pattern })}
+                                  className={`min-w-0 flex-1 rounded border px-1.5 py-1 text-left ${
+                                    active
+                                      ? "border-line bg-surface"
+                                      : "border-transparent hover:border-line hover:bg-surface"
+                                  }`}
+                                  title={p.pattern}
+                                >
+                                  <span className="block truncate text-[11px] text-ink">{p.label}</span>
+                                  <span className="block truncate font-mono text-[11px] text-faint">{p.pattern}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteFileNamePreset(p)}
+                                  disabled={presetBusy}
+                                  className="text-faint hover:text-bad disabled:hover:text-faint"
+                                  aria-label={`Remove preset ${p.label}`}
+                                  title="Remove preset"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Carton numbering (X/Y) — eligibility only; standard
+                      generation is untouched. Surfaces the {{cartonNo}} /
+                      {{cartonTotal}} tokens and the Style-page "Carton numbers…"
+                      action. */}
+                  <div className="border-t border-line pt-3">
+                    <label className="flex items-center gap-2 text-sm text-ink">
+                      <input
+                        type="checkbox"
+                        checked={settings.cartonNumbering}
+                        onChange={(e) => updateSettings({ cartonNumbering: e.target.checked })}
+                        className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
                       />
-                      <HexColorField
-                        key={`${blockId(selBlock)}-invert-text`}
-                        label="Text"
-                        value={invertColors(selBlock).text}
-                        isDefault={selBlock.invertText === undefined}
-                        onChange={(hex) => updateAppearance({ invertText: hex })}
-                        onReset={() => updateAppearance({ invertText: undefined })}
-                        fallback={INVERT_TEXT}
+                      Carton numbering (X/Y)
+                    </label>
+                    <p className="mt-1 text-[11px] leading-relaxed text-faint">
+                      Lets operators print a numbered set (1/N … N/N) from the Style page. Place{" "}
+                      <code className="rounded bg-subtle px-1">{"{{cartonNo}}"}</code> /{" "}
+                      <code className="rounded bg-subtle px-1">{"{{cartonTotal}}"}</code> on the label.
+                    </p>
+                    {settings.cartonNumbering && !usesCartonTokens ? (
+                      <p className="mt-1.5 rounded-md bg-warn-soft px-2 py-1 text-[11px] leading-relaxed text-warn">
+                        ⚠ This layout doesn’t use {"{{cartonNo}}"}/{"{{cartonTotal}}"} yet — numbered prints
+                        would show no number.
+                      </p>
+                    ) : null}
+                  </div>
+
+                  {/* Multiple styles (Custom Carton Marking) — INDEPENDENT of
+                      carton numbering. Eligibility only; standard generation stays
+                      single-style. Surfaces the {{style2}}… slots + {{multipleStyles}}
+                      and lets the Style-page carton dialog pick same-PO siblings. */}
+                  <div className="border-t border-line pt-3">
+                    <label className="flex items-center gap-2 text-sm text-ink">
+                      <input
+                        type="checkbox"
+                        checked={settings.multipleStyles}
+                        onChange={(e) => updateSettings({ multipleStyles: e.target.checked })}
+                        className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
                       />
+                      Multiple styles on the box
+                    </label>
+                    <p className="mt-1 text-[11px] leading-relaxed text-faint">
+                      Lets operators place OTHER styles from the same PO on the box (a manual one-off).
+                      Branch with{" "}
+                      <code className="rounded bg-subtle px-1">{"{{if multipleStyles == true}}"}</code>{" "}
+                      and place{" "}
+                      <code className="rounded bg-subtle px-1">{"{{style2}}"}</code> /{" "}
+                      <code className="rounded bg-subtle px-1">{"{{style2Number}}"}</code> slots.
+                    </p>
+                  </div>
+
+                  {/* Custom logo — appears only when the design uses
+                      {{logo:custom}}. Uploaded per layout (not global); printed at
+                      a % of its block width, height auto. */}
+                  {usesCustomLogo ? (
+                    <div className="border-t border-line pt-3">
+                      <div className="text-sm text-ink">
+                        Custom logo <span className="font-mono text-[11px] text-faint">{"{{logo:custom}}"}</span>
+                      </div>
+                      <div className="mt-2 flex items-center gap-2">
+                        {customLogo ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={customLogo}
+                            alt="Custom logo"
+                            className="h-8 w-auto max-w-[7rem] rounded border border-line bg-surface object-contain p-0.5"
+                          />
+                        ) : (
+                          <span className="text-[11px] text-faint">none uploaded</span>
+                        )}
+                        <label
+                          className={`cursor-pointer rounded-md border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink hover:bg-subtle ${
+                            logoBusy ? "opacity-50" : ""
+                          }`}
+                        >
+                          {customLogo ? "Replace" : "Upload (SVG/PNG/JPG)"}
+                          <input
+                            type="file"
+                            accept="image/svg+xml,image/png,image/jpeg"
+                            className="hidden"
+                            disabled={logoBusy}
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) void uploadCustomLogo(f);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                        {customLogo ? (
+                          <button
+                            type="button"
+                            onClick={() => void removeCustomLogo()}
+                            disabled={logoBusy}
+                            className="text-xs text-faint hover:text-bad disabled:opacity-50"
+                          >
+                            Remove
+                          </button>
+                        ) : null}
+                      </div>
+                      {logoError ? <p className="mt-1 text-[11px] text-bad">{logoError}</p> : null}
+
+                      <div className="mt-3">
+                        <div className="flex items-baseline justify-between">
+                          <label className="text-xs text-muted">Logo width</label>
+                          <span className="font-mono text-[11px] text-faint">{settings.customLogoWidthPct}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={1}
+                          max={100}
+                          step={1}
+                          value={settings.customLogoWidthPct}
+                          onChange={(e) => updateSettings({ customLogoWidthPct: Number(e.target.value) })}
+                          className="mt-1 w-full accent-zinc-900"
+                        />
+                        <p className="mt-0.5 text-[11px] text-faint">% of the block&rsquo;s width — height scales to keep the aspect ratio.</p>
+                      </div>
                     </div>
                   ) : null}
                 </div>
-                <label className="flex items-center gap-2 text-xs text-muted">
-                  <input
-                    type="checkbox"
-                    checked={selBlock.fitWidth ?? false}
-                    onChange={(e) => updateAppearance({ fitWidth: e.target.checked })}
-                    className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
-                  />
-                  Fit width (one line, auto-scale to fill)
-                </label>
-                <label className="flex items-center gap-2 text-xs text-muted">
-                  <input
-                    type="checkbox"
-                    checked={selBlock.fitHeight ?? false}
-                    onChange={(e) => updateAppearance({ fitHeight: e.target.checked })}
-                    className="h-3.5 w-3.5 rounded border-line text-ink focus:ring-zinc-400"
-                  />
-                  Shrink text to fit cell (no overflow onto other blocks)
-                </label>
-
-                <div>
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs text-muted">Content — one line per printed row</label>
-                    <div className="flex gap-1">
-                      <button
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => wrapSelection("**")}
-                        className="rounded border border-line px-1.5 py-0.5 text-[11px] font-bold text-muted hover:bg-subtle"
-                        title="Bold — wraps the selection in ** **"
-                      >
-                        B
-                      </button>
-                      <button
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => wrapSelection("_")}
-                        className="rounded border border-line px-1.5 py-0.5 text-[11px] italic text-muted hover:bg-subtle"
-                        title="Italic — wraps the selection in _ _"
-                      >
-                        I
-                      </button>
-                      <button
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => setExpandedFor(sel)}
-                        className="rounded border border-line px-1.5 py-0.5 text-[11px] text-muted hover:bg-subtle"
-                        title="Expand — edit this content full width with the print preview beside it"
-                      >
-                        ⤢
-                      </button>
-                    </div>
-                  </div>
-                  <TokenAutocomplete
-                    ref={contentTaRef}
-                    value={selBlock.lines.join("\n")}
-                    onValueChange={(v) => updateBlock(blockId(selBlock), { lines: v.split("\n").slice(0, 100) })}
-                    suggestions={tokenSuggestions}
-                    values={tokenValues}
-                    valuesFrom={testStyle?.name}
-                    rows={6}
-                    spellCheck={false}
-                    className="mt-1 w-full rounded-md border border-line px-2.5 py-2 font-mono text-xs leading-relaxed"
-                  />
-                  <p className="mt-0.5 text-[11px] text-faint">
-                    Type <code className="rounded bg-subtle px-1">{"{{"}</code> for variable autofill · **bold** and
-                    _italic_ render in the print; the preview below shows the result. <b>⤢</b> opens the same content
-                    full width.
+              </InspectorSection>
+              <InspectorSection title="Edit as JSON" defaultOpen={false}>
+                <div className="">
+                  <p className="text-[11px] text-faint">
+                    The whole layout is one JSON document — page sizes, margins, blocks, repeat and file-name settings.
                   </p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-lg border border-line p-4">
-            <div className="flex items-baseline justify-between">
-              <div className="text-[11px] font-semibold text-faint">Variables</div>
-              <label className="flex items-center gap-1.5 text-[11px] text-muted" title="Resolve every variable against the selected test style">
-                <input
-                  type="checkbox"
-                  checked={showValues}
-                  onChange={(e) => setShowValues(e.target.checked)}
-                  className="accent-zinc-900"
-                />
-                Show values
-              </label>
-            </div>
-            <p className="mt-1 text-[11px] text-faint">
-              {selBlock ? "Click to insert at the cursor." : "Select a block first."}
-              {showValues && testStyle ? ` Values from ${testStyle.name}.` : ""}
-            </p>
-            {(["Style", "Order & carton"] as const).map((group) => (
-              <div key={group} className="mt-3">
-                <div className="text-[11px] font-semibold text-faint">{group}</div>
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {LAYOUT_TOKENS.filter((t) => t.group === group).flatMap((t) => {
-                    // A multi-number carton qty offers bare + :solid/:assort
-                    // (the split) + :inner/:outer (the pack pair) chips, a
-                    // size-scoped field bare + :size, a two-form size run
-                    // bare + :numeric/:year, the assortment table bare +
-                    // :total; every other token is a single bare chip.
-                    const args =
-                      t.arg === "cartonKind"
-                        ? ["", ...CARTON_QTY_KINDS]
-                        : t.arg === "sizeScope"
-                          ? ["", SIZE_SCOPE_ARG]
-                          : t.arg === "sizeForm"
-                            ? ["", ...SIZE_FORMS]
-                            : t.arg === "tableTotal"
-                              ? ["", TABLE_TOTAL_ARG]
-                              : [""];
-                    return args.map((a) => {
-                      const key = a ? `${t.key}:${a}` : t.key;
-                      return (
-                        <TokenChip
-                          key={key}
-                          token={`{{${key}}}`}
-                          title={`${t.label}${a ? ` (${a})` : ""}${t.example ? ` — e.g. ${t.example}` : ""}`}
-                          disabled={!selBlock}
-                          value={showValues ? (tokenValues[key] ?? "") : undefined}
-                          onClick={() => insertToken(`{{${key}}}`)}
+                  <div className="mt-3">
+                    {!jsonOpen ? (
+                      <button type="button" onClick={openJsonPanel} className="text-xs font-medium text-muted hover:text-ink">
+                        Edit JSON directly →
+                      </button>
+                    ) : (
+                      <>
+                        <textarea
+                          value={jsonText}
+                          onChange={(e) => setJsonText(e.target.value)}
+                          rows={16}
+                          spellCheck={false}
+                          className="w-full rounded-md border border-line px-2.5 py-2 font-mono text-[11px] leading-relaxed"
                         />
-                      );
-                    });
-                  })}
-                </div>
-              </div>
-            ))}
-            <div className="mt-3">
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-semibold text-faint">Per language</span>
-                <select
-                  value={langSel}
-                  onChange={(e) => setLangSel(e.target.value)}
-                  className="rounded border border-line px-1 py-0.5 text-[11px] text-muted"
-                >
-                  {languages.map((l) => (
-                    <option key={l.code} value={l.code}>
-                      {l.code}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {LAYOUT_TOKENS.filter((t) => t.arg === "lang").map((t) => (
-                  <TokenChip
-                    key={t.key}
-                    token={`{{${t.key}:${langSel}}}`}
-                    title={t.label}
-                    disabled={!selBlock}
-                    value={showValues ? (tokenValues[`${t.key}:${langSel}`] ?? "") : undefined}
-                    onClick={() => insertToken(`{{${t.key}:${langSel}}}`)}
-                  />
-                ))}
-              </div>
-            </div>
-            <div className="mt-3">
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-semibold text-faint">
-                  Sibling styles
-                </span>
-                <select
-                  value={siblingSlot}
-                  onChange={(e) => setSiblingSlot(Number(e.target.value))}
-                  className="rounded border border-line px-1 py-0.5 text-[11px] text-muted"
-                  title="Which carton slot these chips fill — other styles from the same PO"
-                >
-                  {Array.from({ length: MAX_SIBLING_SLOTS - 1 }, (_, i) => i + 2).map((n) => (
-                    <option key={n} value={n}>
-                      style{n}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <p className="mt-1 text-[11px] text-faint">
-                Other styles from the same PO, filled on a manual print. Turn on{" "}
-                <b>Multiple styles</b> in Settings, then branch:{" "}
-                <code className="rounded bg-subtle px-1 text-[11px]">
-                  {"{{if multipleStyles == true}}{{style2}}{{else}}{{style}}{{endif}}"}
-                </code>{" "}
-                (<code className="rounded bg-subtle px-1 text-[11px]">==</code>, not{" "}
-                <code className="rounded bg-subtle px-1 text-[11px]">===</code>).
-              </p>
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                <TokenChip
-                  token="{{if multipleStyles}}…{{endif}}"
-                  title="Insert the multi-style conditional skeleton"
-                  disabled={!selBlock}
-                  onClick={() => insertToken("{{if multipleStyles == true}}{{else}}{{endif}}")}
-                />
-                <TokenChip
-                  token="{{style}}"
-                  title="Base style number — the single-style branch"
-                  disabled={!selBlock}
-                  onClick={() => insertToken("{{style}}")}
-                />
-              </div>
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {SIBLING_FIELDS.map((f) => {
-                  const key = `style${siblingSlot}${f.suffix}`;
-                  return (
-                    <TokenChip
-                      key={key}
-                      token={`{{${key}}}`}
-                      title={`Style ${siblingSlot} · ${f.label}`}
-                      disabled={!selBlock}
-                      onClick={() => insertToken(`{{${key}}}`)}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-            <div className="mt-3">
-              <div className="text-[11px] font-semibold text-faint">Calculated</div>
-              <p className="mt-1 text-[11px] text-faint">
-                Arithmetic over field values: <code className="rounded bg-subtle px-1 text-[11px]">+ − × ÷</code>,{" "}
-                <code className="rounded bg-subtle px-1 text-[11px]">sum/count/min/max(field)</code> across the
-                styles on the carton (base + picked siblings — an empty slot counts as 0), and{" "}
-                <code className="rounded bg-subtle px-1 text-[11px]">round(…, decimals)</code>.
-              </p>
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                <TokenChip
-                  token="{{= sum(qtyPerCarton) }}"
-                  title="Total pcs in the carton — every style's qty per carton summed (just the base style's on a standard print)"
-                  disabled={!selBlock}
-                  onClick={() => insertToken("{{= sum(qtyPerCarton) }}")}
-                />
-                <TokenChip
-                  token="{{= count(styleNumber) }}"
-                  title="How many styles are on the carton"
-                  disabled={!selBlock}
-                  onClick={() => insertToken("{{= count(styleNumber) }}")}
-                />
-                <TokenChip
-                  token="{{= }}"
-                  title="Empty calculation — write your own expression, e.g. {{= qtyPerCarton * 2 }}"
-                  disabled={!selBlock}
-                  onClick={() => insertToken("{{= }}")}
-                />
-              </div>
-            </div>
-            <div className="mt-3">
-              <div className="text-[11px] font-semibold text-faint">Graphics</div>
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                <TokenChip
-                  token="{{barcode:cartonEan}}"
-                  title="Carton EAN as Code 128 bars + number — scales with the block font size"
-                  disabled={!selBlock}
-                  value={showValues ? (tokenValues["barcode:cartonEan"] ?? "") : undefined}
-                  onClick={() => insertToken("{{barcode:cartonEan}}")}
-                />
-                <TokenChip
-                  token="{{barcode:cartonEan13}}"
-                  title="Same carton EAN as true EAN-13 bars (digits in the symbol). Use this instead of {{barcode:cartonEan}} when the carton must print EAN-13 — no ProdSpec setting needed."
-                  disabled={!selBlock}
-                  value={showValues ? (tokenValues["barcode:cartonEan13"] ?? "") : undefined}
-                  onClick={() => insertToken("{{barcode:cartonEan13}}")}
-                />
-                <TokenChip
-                  token="{{barcode:ean13}}"
-                  title="First size EAN as EAN-13 bars — scales with the block font size"
-                  disabled={!selBlock}
-                  value={showValues ? (tokenValues["barcode:ean13"] ?? "") : undefined}
-                  onClick={() => insertToken("{{barcode:ean13}}")}
-                />
-                <TokenChip
-                  token="{{washSymbols}}"
-                  title="The style's wash care symbols as a row of icons — scales with the block font size. Add a mm gap with {{washSymbols:0}} (0 = flush together)."
-                  disabled={!selBlock}
-                  value={showValues ? (tokenValues["washSymbols"] ?? "") : undefined}
-                  onClick={() => insertToken("{{washSymbols}}")}
-                />
-                <TokenChip
-                  token="{{logo:contrast}}"
-                  title="The Contrast logo (public/logos/contrast.svg in the repo) — height scales with the block font size"
-                  disabled={!selBlock}
-                  onClick={() => insertToken("{{logo:contrast}}")}
-                />
-                <TokenChip
-                  token="{{logo:contrastAddress}}"
-                  title="The Contrast logo with address (public/logos/contrast-address.svg in the repo) — height scales with the block font size"
-                  disabled={!selBlock}
-                  onClick={() => insertToken("{{logo:contrastAddress}}")}
-                />
-                <TokenChip
-                  token="{{logo:custom}}"
-                  title="This layout's own uploaded logo (upload it under Settings → Custom logo when this token is used) — width set as a % of its block"
-                  disabled={!selBlock}
-                  onClick={() => insertToken("{{logo:custom}}")}
-                />
-                <TokenChip
-                  token="{{cert:oekotex}}"
-                  title="OEKO-TEX certification mark — prints only on styles whose Certificates field includes OEKO-TEX (no {{if}} wrapper needed). Artwork from Settings → Certificates (placeholder until the licensed mark is uploaded); height scales with the block font size"
-                  disabled={!selBlock}
-                  onClick={() => insertToken("{{cert:oekotex}}")}
-                />
-                <TokenChip
-                  token="{{cert:fsc}}"
-                  title="FSC certification mark — prints only on styles whose Certificates field includes FSC (no {{if}} wrapper needed). Artwork from Settings → Certificates (placeholder until the licensed mark is uploaded); height scales with the block font size"
-                  disabled={!selBlock}
-                  onClick={() => insertToken("{{cert:fsc}}")}
-                />
-              </div>
-            </div>
-            <div className="mt-3">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[11px] font-semibold text-faint">Images</span>
-                <a
-                  href="/settings/images"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[11px] text-faint underline hover:text-ink"
-                >
-                  Manage library →
-                </a>
-              </div>
-              <p className="mt-1 text-[11px] text-faint">
-                Shared pictures — place as many as you need on one output. Add a width to size one:{" "}
-                <code className="rounded bg-subtle px-1 text-[11px]">{"{{image:slug:40}}"}</code>{" "}
-                prints it at 40% of its block&apos;s width. Without a width it matches the block&apos;s
-                font size.
-              </p>
-              {libraryImages.length === 0 ? (
-                <p className="mt-1.5 text-[11px] text-warn">
-                  The library is empty —{" "}
-                  <a href="/settings/images" target="_blank" rel="noreferrer" className="underline">
-                    upload a picture
-                  </a>{" "}
-                  to place it here.
-                </p>
-              ) : (
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {libraryImages.map((img) => (
-                    <button
-                      key={img.slug}
-                      type="button"
-                      disabled={!selBlock}
-                      onClick={() => insertToken(`{{image:${img.slug}}}`)}
-                      title={`${img.name} — inserts {{image:${img.slug}}}. Add a width % to size it, e.g. {{image:${img.slug}:40}}`}
-                      className="flex items-center gap-1.5 rounded border border-line bg-surface px-1.5 py-1 text-[11px] text-ink hover:bg-subtle disabled:opacity-40"
-                    >
-                      {img.dataUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={img.dataUrl} alt="" className="h-4 w-4 object-contain" />
-                      ) : (
-                        <span className="text-warn" title="No artwork uploaded yet">
-                          ⚠
-                        </span>
-                      )}
-                      <span className="max-w-[9rem] truncate">{img.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="mt-3">
-              <div className="text-[11px] font-semibold text-faint">Logic</div>
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                <TokenChip
-                  token="{{if …}} {{else}} {{endif}}"
-                  title='Conditional content — e.g. {{if deliveryTerm == FOB}}{{customerOrderNo}}{{else}}{{poNumber}}{{endif}}. Compares case-insensitively; also supports !=.'
-                  disabled={!selBlock}
-                  onClick={() => insertToken("{{if deliveryTerm == FOB}}{{customerOrderNo}}{{else}}{{poNumber}}{{endif}}")}
-                />
-                <TokenChip
-                  token="{{if … contains …}}"
-                  title='Substring condition — e.g. {{if productGroup contains Set}}PER SÆT{{else}}KR.{{endif}}: true when the field MENTIONS the word, so "Set", "Gift Set" and "SET 2-PACK" all match. Case-insensitive. Also supports !contains. Use ==/!= instead when the value must be the whole field.'
-                  disabled={!selBlock}
-                  onClick={() =>
-                    insertToken("{{if productGroup contains Set}}PER SÆT{{else}}KR.{{endif}}")
-                  }
-                />
-                <TokenChip
-                  token="{{if … includes …}}"
-                  title='List condition — e.g. {{if certificates includes FSC}}FSC certified{{endif}}: true when one of the comma-separated values matches, ignoring case and punctuation (OEKO-TEX = OEKOTEX). Also supports !includes. Not a substring check — use contains for that. Note: the {{cert:…}} marks already self-gate on the Certificates field — this is for conditional TEXT.'
-                  disabled={!selBlock}
-                  onClick={() => insertToken("{{if certificates includes FSC}}FSC certified{{endif}}")}
-                />
-              </div>
-              <p className="mt-1 text-[11px] leading-relaxed text-faint">
-                One condition per line, no nesting. ==/!= compare the whole value; contains/!contains test for
-                a word anywhere in it; includes/!includes check a comma-separated list. The {"{{cert:…}}"} marks
-                already print only on styles that declare the certificate, so no wrapper is needed for them.
-              </p>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-line p-4">
-            <div className="text-[11px] font-semibold text-faint">Edit as JSON</div>
-            <p className="mt-1 text-[11px] text-faint">
-              The whole layout is one JSON document — page sizes, margins, blocks, repeat and file-name settings.
-            </p>
-            <div className="mt-3">
-              {!jsonOpen ? (
-                <button type="button" onClick={openJsonPanel} className="text-xs font-medium text-muted hover:text-ink">
-                  Edit JSON directly →
-                </button>
-              ) : (
-                <>
-                  <textarea
-                    value={jsonText}
-                    onChange={(e) => setJsonText(e.target.value)}
-                    rows={16}
-                    spellCheck={false}
-                    className="w-full rounded-md border border-line px-2.5 py-2 font-mono text-[11px] leading-relaxed"
-                  />
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={applyJson}
-                      className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Apply JSON
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setJsonOpen(false)}
-                      className="text-xs text-faint hover:text-ink"
-                    >
-                      Close
-                    </button>
-                    {jsonError ? <span className="text-[11px] text-bad">{jsonError}</span> : null}
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={applyJson}
+                            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[12px] font-medium text-ink transition-colors enabled:hover:bg-subtle hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Apply JSON
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setJsonOpen(false)}
+                            className="text-xs text-faint hover:text-ink"
+                          >
+                            Close
+                          </button>
+                          {jsonError ? <span className="text-[11px] text-bad">{jsonError}</span> : null}
+                        </div>
+                      </>
+                    )}
                   </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
+                </div>
+              </InspectorSection>
+            </>
+          )}
+        </aside>
       </div>
       </div>
       {/* ↑ closes the Customizer visibility wrapper */}
@@ -4088,6 +4298,28 @@ export function LayoutEditor({
 }
 
 // ---------------------------------------------------------------------------
+
+// One folding section of the inspector (Document, Page, Grid, …). Open by
+// default unless said otherwise; it remembers what the user did with it.
+function InspectorSection({
+  title,
+  defaultOpen = true,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <details open={defaultOpen} data-section={title} className="group border-line border-b">
+      <summary className="text-ink hover:bg-subtle/60 flex cursor-pointer list-none items-center justify-between px-4 py-3 text-[13px] font-semibold select-none [&::-webkit-details-marker]:hidden">
+        {title}
+        <ChevronDown size={14} aria-hidden="true" className="text-faint transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="px-4 pb-4">{children}</div>
+    </details>
+  );
+}
 
 // Compact −/value/+ stepper for a (possibly fractional) number — saves the
 // vertical space a slider takes. The middle field accepts a comma or dot and
