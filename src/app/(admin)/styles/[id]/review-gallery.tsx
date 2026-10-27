@@ -113,7 +113,7 @@ export function ReviewGallery({
           {items.length === 0 ? "Nothing generated yet. Re-run to generate the outputs." : "Nothing in this group."}
         </p>
       ) : (
-        <ul className="stagger grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
           {shown.map((it) => {
             const st = STATUS[it.status];
             return (
