@@ -1,29 +1,35 @@
-// Auto-fit: give one text block on a label face the largest size it can print
-// at, preserving the layout as much as possible. Read-only — it returns a
-// proposed definition and never saves anything.
+// Auto-fit: place one text block on a label face so it fits on every sample
+// style, keeping it where it is and the layout as it is wherever possible.
+// Read-only — it returns a proposed definition and never saves anything.
 //
-// Three tiers, cheapest change first:
+// Guard rails:
+//   • A floor (minPt, 2.5 pt): nothing smaller is ever proposed.
+//   • Keep-together phrases (a company name): glued with no-break spaces and
+//     verified in the rendered page never to wrap across two lines.
+//   • Position before size. The first placement that reaches the floor wins,
+//     in this order; size only decides between options of the same kind:
+//       1. in-place            today's cell, or the free space the cell sits
+//                              in, text hugging the cell. Nothing else moves.
+//       2. in-place-compacted  the blocks around it shrink to what they need
+//                              and close up (order and columns kept); the
+//                              text stays between the same neighbours.
+//       3. elsewhere           a free band elsewhere on the face, nearest
+//                              first. Nothing else moves.
+//       4. other-side          compacted onto the other side of the fold.
+//   • When nothing reaches the floor: OVERSHOOT — the most likely layout,
+//     text at the floor, overflowing — plus the budget that says where the
+//     section's millimetres go.
 //
-//   1. KEEP THE LAYOUT. Render the face with the target emptied over every
-//      sample style and read where ink really lands. Whatever stays clear of
-//      ink, seams and the fold is a free band; the target goes in the band
-//      where it prints largest. Today's own cell competes too. Nothing moves.
-//   2. MOVE BLOCKS. Refine the grid to ~1 mm rows, shrink every block in the
-//      target's section to its worst-case need, slide the blocks above up and
-//      below down (order and columns kept), stretch the target full width over
-//      what that frees, then re-render every sample: a block that overflows gets
-//      rows back and the loop runs again. The other side of the fold is tried
-//      too. Moving only wins when it gains enough over keeping.
-//   3. OVERSHOOT. When neither reaches a readable size, still return the most
-//      likely solution — the roomiest geometry with the target at a readable
-//      size, overflowing — plus the budget that says where the millimetres go.
-//
-// "Worst case" is always over the sample styles: white space on one style is
-// often the care text or a cert mark on another.
+// How space is found: the face is rendered with the target emptied over every
+// sample and ink is read back from the DOM (free bands = clear of ink, seams
+// and the fold). Compaction refines the grid to ~1 mm rows, shrinks blocks to
+// their worst-case need, re-renders every sample and gives an overflowing
+// block rows back until it holds. "Worst case" is always over the samples:
+// white space on one style is often the care text or a cert mark on another.
 
 import type { StyleData } from "@/lib/pdf/types";
 import { renderLayoutHtml, type LayoutRenderOptions } from "../render";
-import { pageGrid, type LayoutDef, type LayoutPage, type LayoutRect } from "../schema";
+import { pageGrid, type LayoutBlock, type LayoutDef, type LayoutPage, type LayoutRect } from "../schema";
 import { compactAround } from "./compact";
 import {
   bandRows,
@@ -38,44 +44,47 @@ import {
   type BandMm,
   type ClearZones,
   type InkBox,
+  type RowSpan,
 } from "./geometry";
-import { measurePage, type HtmlEvaluator, type PageMeasure } from "./measure";
+import { keepPhrasesTogether, measurePage, type HtmlEvaluator, type PageMeasure } from "./measure";
 
 export type AutoFitOptions = {
+  // Floor: never proposed smaller. Below it the result is an overshoot.
   minPt: number;
   // Largest size the target may take. Default: the face's body text size
   // (composition / care block), clamped to 5–7 pt.
   capPt?: number;
   stepPt: number;
+  // Phrases that must stay on one line, e.g. a company name.
+  keepTogether: string[];
   gapMm: number;
   clear: ClearZones;
   inkClearMm: number;
   minBandMm: number;
   targetRowMm: number;
-  // Keeping the layout is the answer at or above this size…
-  goodEnoughPt: number;
-  // …and below it, moving blocks must gain at least this much to win.
-  moveMustGainPt: number;
-  // Below this, the result is an overshoot proposal.
-  readablePt: number;
-  overshootPt: number;
+  // Size the overshoot proposal is drawn at. Default: minPt.
+  overshootPt?: number;
   maxIterations: number;
+  // Evaluate every placement (for a report) instead of stopping at the first
+  // kind that fits. The choice is the same either way.
+  exploreAll: boolean;
 };
 
 export const DEFAULT_AUTO_FIT_OPTIONS: AutoFitOptions = {
-  minPt: 2,
+  minPt: 2.5,
   stepPt: 0.25,
+  keepTogether: [],
   gapMm: 1,
   clear: DEFAULT_CLEAR_ZONES,
   inkClearMm: 0.8,
   minBandMm: 2.5,
   targetRowMm: 1.1,
-  goodEnoughPt: 5,
-  moveMustGainPt: 0.5,
-  readablePt: 3,
-  overshootPt: 4,
   maxIterations: 8,
+  exploreAll: false,
 };
+
+export const PLACEMENTS = ["in-place", "in-place-compacted", "elsewhere", "other-side"] as const;
+export type Placement = (typeof PLACEMENTS)[number];
 
 export type AutoFitSample = { styleData: StyleData; label: string };
 
@@ -91,15 +100,16 @@ export type AutoFitInput = {
   options?: Partial<AutoFitOptions>;
 };
 
-export type FitCandidate = { pt: number; page: LayoutPage };
-export type MovedCandidate = FitCandidate & {
-  iterations: number;
-  moved: number;
-  resized: number;
-  otherSide: boolean;
-  targetHeightMm: number;
-  sectionMm: number;
+export type FitCandidate = {
+  placement: Placement;
+  pt: number;
+  page: LayoutPage;
+  // How far the target's top moved from today's cell, mm.
+  shiftMm: number;
+  // Set when other blocks were compacted.
+  compacted?: { moved: number; resized: number; iterations: number; targetHeightMm: number; sectionMm: number };
 };
+
 export type FitBudget = {
   // The target's section, between seam allowance and fold.
   sectionMm: number;
@@ -107,7 +117,8 @@ export type FitBudget = {
   freeMm: number;
   // What the target needs at a few sizes, on samples[0].
   needAtMm: Record<number, number>;
-  // Largest size that fits once the target's blank lines are dropped.
+  // Largest size that fits once the target's blank lines are dropped (may be
+  // under the floor — it says how far off the floor is).
   noBlankPt: number;
   // Who else holds the section, largest first (worst-case heights).
   users: Array<{ block: number; firstLine: string; needMm: number; conditional: boolean }>;
@@ -116,12 +127,16 @@ export type FitBudget = {
 };
 
 export type AutoFitResult = {
+  // kept: no other block moved. moved: blocks were compacted.
   strategy: "kept" | "moved" | "overshoot";
+  placement: Placement | null;
   // Size the target prints at in `def`.
   pt: number;
   capPt: number;
   def: LayoutDef;
-  candidates: { band: FitCandidate | null; today: FitCandidate | null; moved: MovedCandidate | null };
+  // Every placement evaluated that reaches the floor (first-fitting kind
+  // only, unless exploreAll).
+  candidates: FitCandidate[];
   budget: FitBudget | null;
   // For a space map: page-mm geometry of the face as measured.
   space: { sectionsMm: BandMm[]; ink: InkBox[]; freeBandsMm: BandMm[] };
@@ -155,17 +170,37 @@ export function bodyCapPt(page: LayoutPage): number {
   return Math.min(7, Math.max(5, body.length ? Math.max(...body) : 7));
 }
 
+// Pick from what was found: the first placement kind with a candidate wins;
+// within a kind, "elsewhere" goes nearest first, the others largest first.
+export function chooseCandidate(candidates: readonly FitCandidate[]): FitCandidate | null {
+  for (const placement of PLACEMENTS) {
+    const pool = candidates.filter((c) => c.placement === placement);
+    if (!pool.length) continue;
+    return [...pool].sort((a, z) =>
+      placement === "elsewhere" ? a.shiftMm - z.shiftMm || z.pt - a.pt : z.pt - a.pt || a.shiftMm - z.shiftMm,
+    )[0];
+  }
+  return null;
+}
+
 export async function autoFitBlock(input: AutoFitInput): Promise<AutoFitResult> {
   const o = { ...DEFAULT_AUTO_FIT_OPTIONS, ...input.options };
-  const { def, pageIndex: pi, blockIndex: ti, samples } = input;
+  const { pageIndex: pi, blockIndex: ti, samples } = input;
   if (!samples.length) throw new Error("autoFitBlock: no sample styles");
-  const original = def.pages[pi];
-  if (!original?.blocks[ti]?.rect) throw new Error(`autoFitBlock: page ${pi} block ${ti} is not a rect block`);
+  if (!input.def.pages[pi]?.blocks[ti]?.rect) throw new Error(`autoFitBlock: page ${pi} block ${ti} is not a rect block`);
 
-  const { page: page0 } = refineGrid(original, o.targetRowMm);
+  // Keep-together phrases are glued in the definition itself, so the proposal
+  // carries them.
+  const def = structuredClone(input.def);
+  const target0 = def.pages[pi].blocks[ti];
+  target0.lines = target0.lines.map((l) => keepPhrasesTogether(l, o.keepTogether));
+
+  const { page: page0 } = refineGrid(def.pages[pi], o.targetRowMm);
   const rowMm = rowHeightMm(page0);
   const capPt = o.capPt ?? bodyCapPt(page0);
+  const floorPt = o.minPt;
   const targetLines = page0.blocks[ti].lines;
+  const cell = rectMm(page0, page0.blocks[ti].rect!);
   const conditional = new Set(
     page0.blocks.map((b, i) => (i !== ti && CONDITIONAL_RE.test(b.lines.join(" ")) ? i : -1)).filter((i) => i >= 0),
   );
@@ -175,59 +210,44 @@ export async function autoFitBlock(input: AutoFitInput): Promise<AutoFitResult> 
     d.pages[pi] = structuredClone(page);
     if (fitOff) for (const b of d.pages[pi].blocks) b.fitHeight = false;
     const html = await renderLayoutHtml(d, sd, { ...input.renderOptions, mode: "production", pageIndex: pi });
-    return measurePage(input.evaluate, html);
+    return measurePage(input.evaluate, html, o.keepTogether);
   };
-  const withTarget = (page: LayoutPage, patch: Partial<LayoutPage["blocks"][number]>) => {
+  const withTarget = (page: LayoutPage, patch: Partial<LayoutBlock>) => {
     const pg = structuredClone(page);
     pg.blocks[ti] = { ...pg.blocks[ti], fitHeight: false, ...patch };
     return pg;
   };
-  // Does the target fit at `pt` on every sample?
+  // Does the target fit at `pt` on every sample, phrases unbroken?
   const fitsAll = (page: LayoutPage) => async (pt: number) => {
     const pg = withTarget(page, { fontPt: pt });
     for (const s of samples) {
       const n = (await measure(pg, s.styleData, true)).blocks[ti];
-      if (!n || n.needMm > n.boxMm + FIT_TOLERANCE_MM) return false;
+      if (!n || n.split || n.needMm > n.boxMm + FIT_TOLERANCE_MM) return false;
     }
     return true;
   };
-  const largest = (page: LayoutPage) => largestFitting(o.minPt, capPt, o.stepPt, fitsAll(page));
+  const largest = (page: LayoutPage) => largestFitting(floorPt, capPt, o.stepPt, fitsAll(page));
+  const shiftOf = (page: LayoutPage) => Math.abs(rectMm(page, page.blocks[ti].rect!).top - cell.top);
 
-  // ---- Tier 1: keep the layout -------------------------------------------
+  // ---- What the face holds -------------------------------------------------
+  // Ink as printed, target emptied; blocks that print only on some styles
+  // keep their whole cell.
   const empty = withTarget(page0, { lines: [] });
   const ink: InkBox[] = [];
   for (const s of samples) ink.push(...(await measure(empty, s.styleData, false)).ink);
-  // A block that prints only on some styles keeps its whole cell.
   for (const i of conditional) {
     const r = page0.blocks[i].rect;
     if (r) ink.push({ block: i, ...rectMm(page0, r) });
   }
   const sections = sectionRows(page0, o.clear);
   const sectionsMm = sections.map((s) => sectionMm(page0, s));
-  const bands = freeBands(sectionsMm, ink, o.inkClearMm, o.minBandMm).slice(0, 5);
-  const { cols } = pageGrid(page0);
-  const targetTopMm = rectMm(page0, page0.blocks[ti].rect!).top;
-  let band: (FitCandidate & { distance: number }) | null = null;
-  for (const b of bands) {
-    const rows = bandRows(page0, b);
-    if (!rows) continue;
-    const rect: LayoutRect = { col: 0, row: rows[0], colSpan: cols, rowSpan: rows[1] - rows[0] + 1 };
-    const page = withTarget(page0, { rect, valign: "middle" });
-    const pt = await largest(page);
-    const distance = Math.abs(b[0] - targetTopMm);
-    if (pt && (!band || pt > band.pt || (pt === band.pt && distance < band.distance))) {
-      band = { pt, page: withTarget(page, { fontPt: pt }), distance };
-    }
-  }
-  const todayPt = await largest(page0);
-  const today: FitCandidate | null = todayPt ? { pt: todayPt, page: withTarget(page0, { fontPt: todayPt }) } : null;
-
-  // ---- Tier 2: move blocks -------------------------------------------------
+  const allBands = freeBands(sectionsMm, ink, o.inkClearMm, o.minBandMm);
+  const overlapsCell = ([a, b]: BandMm) => a < cell.bottom && b > cell.top;
+  // Worst-case need of every block, and the sample whose other blocks print most.
   const worst = new Array<number>(page0.blocks.length).fill(0);
   const othersInk: number[] = [];
-  const atMin = withTarget(page0, { fontPt: o.minPt });
   for (const s of samples) {
-    const m = await measure(atMin, s.styleData, true);
+    const m = await measure(withTarget(page0, { fontPt: floorPt }), s.styleData, true);
     m.blocks.forEach((n, i) => (worst[i] = Math.max(worst[i], n.needMm)));
     othersInk.push(m.blocks.reduce((sum, n, i) => sum + (i === ti ? 0 : n.needMm), 0));
   }
@@ -235,21 +255,33 @@ export async function autoFitBlock(input: AutoFitInput): Promise<AutoFitResult> 
   const targetRow = page0.blocks[ti].rect!.row;
   const home = sections.find(([a, b]) => targetRow >= a && targetRow <= b) ?? sections[0];
 
-  let moved: MovedCandidate | null = null;
-  for (const sec of sections) {
-    if ((sec[1] - sec[0] + 1) * rowMm < 5) continue;
-    const atHome = sec === home;
+  // ---- Placements, in order of preference ----------------------------------
+  const { cols } = pageGrid(page0);
+  const bandCandidate = async (band: BandMm, placement: Placement): Promise<FitCandidate | null> => {
+    const rows = bandRows(page0, band);
+    if (!rows) return null;
+    const rect: LayoutRect = { col: 0, row: rows[0], colSpan: cols, rowSpan: rows[1] - rows[0] + 1 };
+    // In place, the text hugs the side of the band its cell was on.
+    const mid = (cell.top + cell.bottom) / 2;
+    const third = (band[1] - band[0]) / 3;
+    const valign =
+      placement !== "in-place" ? "middle" : mid < band[0] + third ? "top" : mid > band[1] - third ? "bottom" : "middle";
+    const page = withTarget(page0, { rect, valign });
+    const pt = await largest(page);
+    return pt ? { placement, pt, page: withTarget(page, { fontPt: pt }), shiftMm: round1(Math.abs(band[0] - cell.top)) } : null;
+  };
+  const compacted = async (sec: RowSpan, placement: Placement): Promise<FitCandidate | null> => {
     const extra = new Array<number>(page0.blocks.length).fill(0);
     for (let iter = 1; iter <= o.maxIterations; iter++) {
       const solved = compactAround(page0, ti, sec, worst.map((w, i) => w + extra[i]), {
         gapMm: o.gapMm,
         conditional,
-        insertAtBottom: !atHome,
+        insertAtBottom: placement === "other-side",
       });
-      if (!solved) break;
+      if (!solved) return null;
       // Any block this pass touched that now overflows on some style gets rows back.
       let grow = false;
-      const probe = withTarget(solved.page, { fontPt: o.minPt });
+      const probe = withTarget(solved.page, { fontPt: floorPt });
       for (const s of samples) {
         const m = await measure(probe, s.styleData, true);
         m.blocks.forEach((n, i) => {
@@ -260,38 +292,58 @@ export async function autoFitBlock(input: AutoFitInput): Promise<AutoFitResult> 
       }
       if (grow) continue;
       const pt = await largest(solved.page);
-      const better = !moved || pt > moved.pt || (pt === moved.pt && atHome);
-      if (pt && better) {
-        moved = {
-          pt,
-          page: withTarget(solved.page, { fontPt: pt }),
-          iterations: iter,
+      if (!pt) return null;
+      return {
+        placement,
+        pt,
+        page: withTarget(solved.page, { fontPt: pt }),
+        shiftMm: round1(shiftOf(solved.page)),
+        compacted: {
           moved: solved.moved,
           resized: solved.resized,
-          otherSide: !atHome,
+          iterations: iter,
           targetHeightMm: round1(solved.targetHeightMm),
           sectionMm: round1((sec[1] - sec[0] + 1) * rowMm),
-        };
-      }
-      break;
+        },
+      };
     }
+    return null;
+  };
+  const steps: Record<Placement, () => Promise<Array<FitCandidate | null>>> = {
+    "in-place": async () => {
+      const todayPt = await largest(page0);
+      const today = todayPt ? { placement: "in-place" as const, pt: todayPt, page: withTarget(page0, { fontPt: todayPt }), shiftMm: 0 } : null;
+      const around = [];
+      for (const b of allBands.filter(overlapsCell)) around.push(await bandCandidate(b, "in-place"));
+      return [today, ...around];
+    },
+    "in-place-compacted": async () => [home ? await compacted(home, "in-place-compacted") : null],
+    elsewhere: async () => {
+      const out = [];
+      for (const b of allBands.filter((b) => !overlapsCell(b)).slice(0, 5)) out.push(await bandCandidate(b, "elsewhere"));
+      return out;
+    },
+    "other-side": async () => {
+      const out = [];
+      for (const sec of sections) {
+        if (sec === home || (sec[1] - sec[0] + 1) * rowMm < 5) continue;
+        out.push(await compacted(sec, "other-side"));
+      }
+      return out;
+    },
+  };
+  const candidates: FitCandidate[] = [];
+  for (const placement of PLACEMENTS) {
+    for (const c of await steps[placement]()) if (c) candidates.push(c);
+    if (!o.exploreAll && candidates.length) break;
   }
-  // Moving things must beat leaving them where they are.
-  if (moved && moved.pt <= todayPt) moved = null;
+  const space = { sectionsMm, ink, freeBandsMm: allBands };
 
-  // ---- Decide --------------------------------------------------------------
-  const kept = [band, today].filter((c): c is FitCandidate => !!c).sort((a, z) => z.pt - a.pt)[0] ?? null;
-  const keptPt = kept?.pt ?? 0;
-  const movedPt = moved?.pt ?? 0;
-  const choice =
-    keptPt >= o.goodEnoughPt || movedPt < keptPt + o.moveMustGainPt ? (kept ? "kept" : moved ? "moved" : null) : "moved";
-  const chosen = choice === "kept" ? kept : choice === "moved" ? moved : null;
-  const candidates = { band: band && { pt: band.pt, page: band.page }, today, moved };
-  const space = { sectionsMm, ink, freeBandsMm: bands };
-
-  if (chosen && chosen.pt >= o.readablePt) {
+  const chosen = chooseCandidate(candidates);
+  if (chosen) {
     return {
-      strategy: choice!,
+      strategy: chosen.compacted ? "moved" : "kept",
+      placement: chosen.placement,
       pt: chosen.pt,
       capPt,
       // A safety net for styles outside the sample: fitHeight only acts on overflow.
@@ -303,25 +355,28 @@ export async function autoFitBlock(input: AutoFitInput): Promise<AutoFitResult> 
     };
   }
 
-  // ---- Tier 3: overshoot -----------------------------------------------------
-  const compacted = compactAround(page0, ti, home, worst, { gapMm: o.gapMm, conditional });
+  // ---- Overshoot: the most likely layout, and where the millimetres go ------
+  const overshootPt = o.overshootPt ?? floorPt;
+  const squeezed = compactAround(page0, ti, home, worst, { gapMm: o.gapMm, conditional });
   const cellMm = page0.blocks[ti].rect!.rowSpan * rowMm;
-  const keepToday = !compacted || cellMm >= compacted.targetHeightMm;
-  const geometry = keepToday ? page0 : compacted.page;
-  const freeMm = keepToday ? cellMm : compacted.targetHeightMm;
+  const keepToday = !squeezed || cellMm >= squeezed.targetHeightMm;
+  const geometry = keepToday ? page0 : squeezed.page;
   const base = samples[0].styleData;
   const needAtMm: Record<number, number> = {};
-  for (const pt of [3, 4, 5]) {
+  for (const pt of [...new Set([floorPt, 3, 4])].sort((a, z) => a - z)) {
     needAtMm[pt] = round1((await measure(withTarget(geometry, { fontPt: pt, valign: "top" }), base, true)).blocks[ti].needMm);
   }
   const noBlank = withTarget(geometry, { lines: targetLines.filter((l) => l.trim()), valign: "top" });
   const noBlankPt = await largestFitting(1, capPt, o.stepPt, async (pt) => {
     const n = (await measure(withTarget(noBlank, { fontPt: pt }), base, true)).blocks[ti];
-    return n.needMm <= n.boxMm + FIT_TOLERANCE_MM;
+    return !n.split && n.needMm <= n.boxMm + FIT_TOLERANCE_MM;
   });
   const users = page0.blocks
     .map((b, i) => ({ b, i }))
-    .filter(({ b, i }) => i !== ti && b.rect && b.lines.some((l) => l.trim()) && b.rect.row >= home[0] && b.rect.row + b.rect.rowSpan - 1 <= home[1])
+    .filter(
+      ({ b, i }) =>
+        i !== ti && b.rect && b.lines.some((l) => l.trim()) && b.rect.row >= home[0] && b.rect.row + b.rect.rowSpan - 1 <= home[1],
+    )
     .map(({ b, i }) => ({
       block: i,
       firstLine: (b.lines.find((l) => l.trim()) ?? "").trim(),
@@ -331,13 +386,14 @@ export async function autoFitBlock(input: AutoFitInput): Promise<AutoFitResult> 
     .sort((a, z) => z.needMm - a.needMm);
   return {
     strategy: "overshoot",
-    pt: o.overshootPt,
+    placement: null,
+    pt: overshootPt,
     capPt,
-    def: replacePage(def, pi, withTarget(geometry, { fontPt: o.overshootPt, valign: "top" })),
+    def: replacePage(def, pi, withTarget(geometry, { fontPt: overshootPt, valign: "top" })),
     candidates,
     budget: {
       sectionMm: round1((home[1] - home[0] + 1) * rowMm),
-      freeMm: round1(freeMm),
+      freeMm: round1(keepToday ? cellMm : squeezed.targetHeightMm),
       needAtMm,
       noBlankPt,
       users,
@@ -358,4 +414,3 @@ function replacePage(def: LayoutDef, pageIndex: number, page: LayoutPage): Layou
 function round1(n: number) {
   return Math.round(n * 10) / 10;
 }
-

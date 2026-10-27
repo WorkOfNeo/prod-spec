@@ -13,6 +13,8 @@ let geo: Geometry;
 let compactAround: typeof import("./compact").compactAround;
 let autoFitBlock: typeof import("./fit-block").autoFitBlock;
 let largestFitting: typeof import("./fit-block").largestFitting;
+let chooseCandidate: typeof import("./fit-block").chooseCandidate;
+let keepPhrasesTogether: typeof import("./measure").keepPhrasesTogether;
 let pickCompleteSamples: typeof import("./completeness").pickCompleteSamples;
 let buildSampleStyleData: typeof import("../../pdf/sample-data").buildSampleStyleData;
 
@@ -20,7 +22,8 @@ before(async () => {
   ({ LayoutDefSchema } = await import("../schema"));
   geo = await import("./geometry");
   ({ compactAround } = await import("./compact"));
-  ({ autoFitBlock, largestFitting } = await import("./fit-block"));
+  ({ autoFitBlock, largestFitting, chooseCandidate } = await import("./fit-block"));
+  ({ keepPhrasesTogether } = await import("./measure"));
   ({ pickCompleteSamples } = await import("./completeness"));
   ({ buildSampleStyleData } = await import("../../pdf/sample-data"));
 });
@@ -148,93 +151,128 @@ test("samples are complete styles only; a token nobody fills disqualifies no one
   assert.deepEqual(pickCompleteSamples(scanned, 1).samples, ["B"]);
 });
 
-// ---- the three tiers, against a fake measurer -----------------------------------
+// ---- placement, against a fake measurer -----------------------------------
 //
 // Models every line as fontPt × lineHeight tall (no wrapping) and places it by
 // the block's valign — enough to drive the solver deterministically.
 
 const PT_MM = 25.4 / 72;
-function fakeEvaluate<T>(html: string): Promise<T> {
-  const blocks: Array<{ needMm: number; boxMm: number }> = [];
-  const ink: Array<{ block: number; top: number; bottom: number; left: number; right: number }> = [];
-  for (const chunk of html.split('<div class="ol-block').slice(1)) {
-    const style = /style="([^"]*)"/.exec(chunk)![1];
-    const num = (re: RegExp) => Number(re.exec(style)![1]);
-    const top = num(/top: ([\d.]+)mm/);
-    const box = num(/height: ([\d.]+)mm/);
-    const lineMm = num(/font-size: ([\d.]+)pt/) * num(/line-height: ([\d.]+)/) * PT_MM;
-    const texts = [...chunk.matchAll(/<div class="ol-line">(.*?)<\/div>/g)].map((m) => m[1]);
-    const inked = texts.filter((t) => t !== "&nbsp;");
-    const need = inked.length ? texts.length * lineMm : 0;
-    const offset = style.includes("justify-content: center")
-      ? (box - need) / 2
-      : style.includes("justify-content: flex-end")
-        ? box - need
-        : 0;
-    texts.forEach((t, i) => {
-      if (t === "&nbsp;") return;
-      ink.push({ block: blocks.length, top: top + offset + i * lineMm, bottom: top + offset + (i + 1) * lineMm, left: 0, right: 30 });
-    });
-    blocks.push({ needMm: need, boxMm: box });
-  }
-  return Promise.resolve({ blocks, ink } as T);
+// `splitAbovePt`: pretend a keep-together phrase wraps when the block is set
+// larger than this (the real check reads line boxes in the browser).
+function fakeEvaluator(splitAbovePt = Infinity) {
+  return <T>(html: string): Promise<T> => {
+    const blocks: Array<{ needMm: number; boxMm: number; split: boolean }> = [];
+    const ink: Array<{ block: number; top: number; bottom: number; left: number; right: number }> = [];
+    for (const chunk of html.split('<div class="ol-block').slice(1)) {
+      const style = /style="([^"]*)"/.exec(chunk)![1];
+      const num = (re: RegExp) => Number(re.exec(style)![1]);
+      const top = num(/top: ([\d.]+)mm/);
+      const box = num(/height: ([\d.]+)mm/);
+      const pt = num(/font-size: ([\d.]+)pt/);
+      const lineMm = pt * num(/line-height: ([\d.]+)/) * PT_MM;
+      const texts = [...chunk.matchAll(/<div class="ol-line">(.*?)<\/div>/g)].map((m) => m[1]);
+      const inked = texts.filter((t) => t !== "&nbsp;");
+      const need = inked.length ? texts.length * lineMm : 0;
+      const offset = style.includes("justify-content: center")
+        ? (box - need) / 2
+        : style.includes("justify-content: flex-end")
+          ? box - need
+          : 0;
+      texts.forEach((t, i) => {
+        if (t === "&nbsp;") return;
+        ink.push({ block: blocks.length, top: top + offset + i * lineMm, bottom: top + offset + (i + 1) * lineMm, left: 0, right: 30 });
+      });
+      blocks.push({ needMm: need, boxMm: box, split: pt > splitAbovePt && chunk.includes("Contrast Company") });
+    }
+    return Promise.resolve({ blocks, ink } as T);
+  };
 }
 
-async function fit(def: LayoutDef, blockIndex: number) {
+async function fit(def: LayoutDef, blockIndex: number, opts: { splitAbovePt?: number; keepTogether?: string[] } = {}) {
   return autoFitBlock({
     def,
     pageIndex: 0,
     blockIndex,
     samples: [{ styleData: buildSampleStyleData(), label: "sample" }],
-    evaluate: fakeEvaluate,
-    options: { capPt: 6 },
+    evaluate: fakeEvaluator(opts.splitAbovePt),
+    options: { capPt: 6, keepTogether: opts.keepTogether ?? [], exploreAll: true },
   });
 }
 
 const targetOf = (page: LayoutPage) => page.blocks.find((b) => b.id === "target")!;
+const stacked = (targetLines: string[]) =>
+  label([
+    { id: "a", rect: rect(2, 3), fontPt: 7, lines: lines(2), valign: "top" },
+    { id: "b", rect: rect(5, 3), fontPt: 7, lines: lines(2), valign: "middle" },
+    { id: "c", rect: rect(8, 2), fontPt: 7, lines: lines(2), valign: "bottom" },
+    { id: "target", rect: rect(10, 2), fontPt: 6, lines: targetLines },
+  ]);
 
-test("tier 1: free space on the face is used without moving anything", async () => {
+test("in place: the text grows into the free space its cell sits in, nothing else moves", async () => {
   const def = label([
     { id: "care", rect: rect(2, 4), fontPt: 7, lines: lines(2) }, // ink 10–16.9 mm
     { id: "target", rect: rect(10, 2), fontPt: 6, lines: lines(6) }, // needs 17.8 mm at 6 pt, has 10
   ]);
   const res = await fit(def, 1);
   assert.equal(res.strategy, "kept");
+  assert.equal(res.placement, "in-place");
   assert.equal(res.pt, 6);
   const careMm = (page: LayoutPage) => geo.rectMm(page, page.blocks[0].rect!);
   assert.deepEqual(careMm(res.def.pages[0]), careMm(def.pages[0])); // care untouched
+  assert.equal(targetOf(res.def.pages[0]).valign, "bottom", "hugs the side its cell was on");
   assert.ok(targetOf(res.def.pages[0]).fitHeight, "safety net on");
-  assert.equal(res.candidates.today?.pt, 3.25); // what today's cell alone allows
+  assert.ok(res.candidates.some((c) => c.placement === "in-place" && c.shiftMm === 0 && c.pt === 3.25)); // today's cell
 });
 
-test("tier 2: blocks move when keeping can't reach a readable size", async () => {
-  const def = label([
-    { id: "a", rect: rect(2, 3), fontPt: 7, lines: lines(2), valign: "top" },
-    { id: "b", rect: rect(5, 3), fontPt: 7, lines: lines(2), valign: "middle" },
-    { id: "c", rect: rect(8, 2), fontPt: 7, lines: lines(2), valign: "bottom" },
-    { id: "target", rect: rect(10, 2), fontPt: 6, lines: lines(6) },
-  ]);
-  const res = await fit(def, 3);
+test("position before size: today's cell at a smaller size beats a bigger move", async () => {
+  const res = await fit(stacked(lines(6)), 3);
+  assert.equal(res.placement, "in-place");
+  assert.equal(res.pt, 3.25);
+  const moved = res.candidates.find((c) => c.placement === "in-place-compacted");
+  assert.ok(moved && moved.pt > res.pt, "the bigger option existed and lost on position");
+});
+
+test("compacted in place when the cell can't reach the floor", async () => {
+  const res = await fit(stacked(lines(9)), 3); // today's cell: 2.25 pt < 2.5 floor
   assert.equal(res.strategy, "moved");
+  assert.equal(res.placement, "in-place-compacted");
   assert.equal(res.pt, 6);
-  assert.ok(res.candidates.moved && res.candidates.moved.moved > 0);
-  // order kept: a above b above c above the target
   const rows = res.def.pages[0].blocks.map((b) => b.rect!.row);
-  assert.ok(rows[0] < rows[1] && rows[1] < rows[2] && rows[2] < rows[3]);
+  assert.ok(rows[0] < rows[1] && rows[1] < rows[2] && rows[2] < rows[3], "order kept");
 });
 
-test("tier 3: no fit still returns the most likely layout and the budget", async () => {
-  const def = label([
-    { id: "a", rect: rect(2, 3), fontPt: 7, lines: lines(2), valign: "top" },
-    { id: "b", rect: rect(5, 3), fontPt: 7, lines: lines(2), valign: "middle" },
-    { id: "c", rect: rect(8, 2), fontPt: 7, lines: lines(2), valign: "bottom" },
-    { id: "target", rect: rect(10, 2), fontPt: 6, lines: lines(40) },
-  ]);
-  const res = await fit(def, 3);
+test("never below the floor: overshoot at 2.5 pt with the budget", async () => {
+  const res = await fit(stacked(lines(40)), 3);
   assert.equal(res.strategy, "overshoot");
-  assert.equal(res.pt, 4);
+  assert.equal(res.pt, 2.5);
+  assert.equal(res.candidates.length, 0);
   assert.ok(res.budget);
   assert.equal(res.budget.users.length, 3);
-  assert.ok(res.budget.needAtMm[4] > res.budget.freeMm, "it overshoots, and says by how much");
+  assert.ok(res.budget.needAtMm[2.5] > res.budget.freeMm, "it overshoots, and says by how much");
   assert.equal(targetOf(res.def.pages[0]).valign, "top");
+});
+
+test("keep-together: glued with no-break spaces, and a size that splits it is rejected", async () => {
+  const def = label([
+    { id: "care", rect: rect(2, 4), fontPt: 7, lines: lines(2) },
+    { id: "target", rect: rect(10, 2), fontPt: 6, lines: ["Produced under licence by Contrast Company A/S", ...lines(5)] },
+  ]);
+  const res = await fit(def, 1, { keepTogether: ["Contrast Company A/S"], splitAbovePt: 4 });
+  assert.equal(res.pt, 4);
+  assert.equal(targetOf(res.def.pages[0]).lines[0], "Produced under licence by Contrast Company A/S");
+});
+
+test("keepPhrasesTogether is idempotent and leaves other text alone", () => {
+  const once = keepPhrasesTogether("Licens af Contrast  Company A/S - DK", ["Contrast Company A/S"]);
+  assert.equal(once, "Licens af Contrast Company A/S - DK");
+  assert.equal(keepPhrasesTogether(once, ["Contrast Company A/S"]), once);
+});
+
+test("chooseCandidate: kind first, then size; elsewhere goes nearest first", () => {
+  const page = label([]).pages[0];
+  const c = (placement: Parameters<typeof chooseCandidate>[0][number]["placement"], pt: number, shiftMm: number) => ({ placement, pt, page, shiftMm });
+  assert.equal(chooseCandidate([c("other-side", 4.75, 30), c("in-place", 2.75, 0)])!.pt, 2.75);
+  assert.equal(chooseCandidate([c("in-place", 3, 0), c("in-place", 5, 0)])!.pt, 5);
+  assert.equal(chooseCandidate([c("elsewhere", 6, 20), c("elsewhere", 4, 5)])!.pt, 4);
+  assert.equal(chooseCandidate([]), null);
 });

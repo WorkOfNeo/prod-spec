@@ -2,16 +2,26 @@
 export {
   autoFitBlock,
   bodyCapPt,
+  chooseCandidate,
   DEFAULT_AUTO_FIT_OPTIONS,
   largestFitting,
+  PLACEMENTS,
   type AutoFitInput,
   type AutoFitOptions,
   type AutoFitResult,
   type AutoFitSample,
   type FitBudget,
   type FitCandidate,
-  type MovedCandidate,
+  type Placement,
 } from "./fit-block";
 export { compactAround, type CompactOptions, type CompactResult } from "./compact";
 export * from "./geometry";
-export { measurePage, MEASURE_PAGE_JS, type BlockMeasure, type HtmlEvaluator, type PageMeasure } from "./measure";
+export {
+  keepPhrasesTogether,
+  measurePage,
+  measurePageJs,
+  MEASURE_PAGE_JS,
+  type BlockMeasure,
+  type HtmlEvaluator,
+  type PageMeasure,
+} from "./measure";

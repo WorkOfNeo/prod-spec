@@ -6,16 +6,21 @@
  * PROPOSAL: PDFs to look at plus the proposed definition as JSON. Applying one
  * is a person's call in the Output Builder.
  *
- * For each target block it reports one of:
- *   kept       the text fits in free space on the face; nothing else moved
- *   moved      blocks were compacted (order and columns kept) to make room
- *   overshoot  no readable fit: the most likely layout, overflowing, plus the
- *              budget — section height, who holds it, what the text needs
+ * Guard rails: never below --min-pt (2.5); --keep-together phrases never wrap;
+ * position before size. The first placement that reaches the floor wins:
+ *   in-place            its own cell, or the free space the cell sits in
+ *   in-place-compacted  neighbours shrink to their need and close up
+ *   elsewhere           a free band elsewhere on the face, nearest first
+ *   other-side          compacted onto the other side of the fold
+ *   OVERSHOOT           nothing reaches the floor: the most likely layout at
+ *                       the floor, overflowing, plus the budget — section
+ *                       height, who holds it, what the text needs
+ * The report also lists the best size every other placement would have got.
  *
  * ONE BLOCK
  *   npx tsx --env-file=.env scripts/layout-autofit.ts --layout=<id> --page=<n|title> \
  *     --block=<id|index> [--lines=<file>] [--style=<id> …] [--spec=<prodSpecId>] \
- *     [--samples=8] [--scan=40] [--out=<dir>]
+ *     [--samples=8] [--scan=40] [--min-pt=2.5] [--keep-together="Contrast Company A/S" …] [--out=<dir>]
  *
  *   --lines   replace the block's lines with this file's lines first
  *   --style   measured and pictured first, if complete (repeatable)
@@ -30,10 +35,11 @@
  *   --page    1-based page number or page title
  *
  * A PLAN (many faces, text edits applied first)
- *   npx tsx --env-file=.env scripts/layout-autofit.ts --plan=<plan.json> [--only=<jobId>] [--out=<dir>]
+ *   npx tsx --env-file=.env scripts/layout-autofit.ts --plan=<plan.json> [--only=<jobId>] [same options]
  *
  *   [{ "id": "…", "layoutId": "…", "styleId": "…",
  *      "prodSpecId": "…" | "spec": ["<customer name>", "<business area name>"],
+ *      "keepTogether": ["…"],                          (optional, adds to --keep-together)
  *      "ops": [{ "page": "Page 1", "kind": "replacePara", "match": "{{logo:contrastAddress}}", "lines": ["…"] },
  *              { "page": "Page 1", "kind": "dropLine", "match": "Produced in {{country:en}}" }] }]
  *
@@ -48,7 +54,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { db } from "@/lib/db";
-import { autoFitBlock, type AutoFitResult } from "@/lib/output-layouts/auto-fit";
+import { autoFitBlock, PLACEMENTS, type AutoFitResult } from "@/lib/output-layouts/auto-fit";
 import { loadAutoFitSamples } from "@/lib/output-layouts/auto-fit/samples";
 import { renderLayoutHtml } from "@/lib/output-layouts/render";
 import { parseLayoutDef, type LayoutDef } from "@/lib/output-layouts/schema";
@@ -62,6 +68,7 @@ type PlanJob = {
   styleId?: string;
   prodSpecId?: string;
   spec?: [customer: string, businessArea: string];
+  keepTogether?: string[];
   ops: TextOp[];
 };
 type Face = { pageIndex: number; blockIndex: number };
@@ -133,15 +140,18 @@ async function specIdFor(job: Pick<PlanJob, "prodSpecId" | "spec" | "styleId">):
 }
 
 function summary(res: AutoFitResult): string {
-  const c = res.candidates;
-  const parts = [
-    `${res.strategy.toUpperCase().padEnd(9)} ${String(res.pt).padStart(5)} pt (cap ${res.capPt})`,
-    `free band ${c.band?.pt ?? "-"} · today's cell ${c.today?.pt ?? "-"} · moved ${c.moved?.pt ?? "-"}`,
-  ];
-  if (c.moved) parts.push(`(${c.moved.moved} moved, ${c.moved.resized} resized, ${c.moved.iterations} loop(s)${c.moved.otherSide ? ", other side of fold" : ""})`);
+  const best = new Map<string, number>();
+  for (const c of res.candidates) best.set(c.placement, Math.max(best.get(c.placement) ?? 0, c.pt));
+  const head =
+    res.strategy === "overshoot"
+      ? `OVERSHOOT ${String(res.pt).padStart(5)} pt`
+      : `${(res.placement ?? "").padEnd(18)} ${String(res.pt).padStart(5)} pt`;
+  const options = PLACEMENTS.map((p) => `${p} ${best.get(p) ?? "-"}`).join(" · ");
+  const parts = [`${head} (cap ${res.capPt})`, `options: ${options}`];
   if (res.budget) {
     const b = res.budget;
-    parts.push(`\n${" ".repeat(22)}section ${b.sectionMm} mm, text gets ${b.freeMm} mm, needs ${b.needAtMm[4]} mm at 4 pt; ` +
+    const needs = Object.entries(b.needAtMm).map(([pt, mm]) => `${mm} mm at ${pt} pt`).join(", ");
+    parts.push(`\n${" ".repeat(22)}section ${b.sectionMm} mm, text gets ${b.freeMm} mm, needs ${needs}; ` +
       `held by ${b.users.map((u) => `${u.firstLine.slice(0, 24)} ${u.needMm} mm`).join(", ")} + gaps ${b.gapsMm} mm`);
   }
   return parts.join("  ");
@@ -152,8 +162,19 @@ async function main() {
   mkdirSync(outDir, { recursive: true });
   const take = Number(arg("samples") ?? 8);
   const scan = Number(arg("scan") ?? 40);
+  const minPt = Number(arg("min-pt") ?? 2.5);
+  const keepTogetherArg = argsOf("keep-together");
 
-  type Work = { name: string; layoutId: string; before: LayoutDef; after: LayoutDef; faces: Face[]; styleIds: string[]; prodSpecId: string | null };
+  type Work = {
+    name: string;
+    layoutId: string;
+    before: LayoutDef;
+    after: LayoutDef;
+    faces: Face[];
+    styleIds: string[];
+    prodSpecId: string | null;
+    keepTogether: string[];
+  };
   const work: Work[] = [];
   const planPath = arg("plan");
   if (planPath) {
@@ -163,7 +184,16 @@ async function main() {
       const row = await db.outputLayout.findUniqueOrThrow({ where: { id: job.layoutId }, select: { definition: true } });
       const before = parseLayoutDef(row.definition);
       const { def: after, faces } = applyTextOps(before, job.ops);
-      work.push({ name: job.id, layoutId: job.layoutId, before, after, faces, styleIds: job.styleId ? [job.styleId] : [], prodSpecId: await specIdFor(job) });
+      work.push({
+        name: job.id,
+        layoutId: job.layoutId,
+        before,
+        after,
+        faces,
+        styleIds: job.styleId ? [job.styleId] : [],
+        prodSpecId: await specIdFor(job),
+        keepTogether: [...keepTogetherArg, ...(job.keepTogether ?? [])],
+      });
     }
   } else {
     const layoutId = arg("layout");
@@ -191,12 +221,14 @@ async function main() {
       faces: [{ pageIndex, blockIndex }],
       styleIds,
       prodSpecId: await specIdFor({ prodSpecId: arg("spec"), styleId: styleIds[0] }),
+      keepTogether: keepTogetherArg,
     });
   }
 
   const tab = await openMeasurePage();
   try {
     for (const w of work) {
+      const keepTogether = w.keepTogether;
       const { customLogo } = await db.outputLayout.findUniqueOrThrow({ where: { id: w.layoutId }, select: { customLogo: true } });
       const pdf = async (def: LayoutDef, pageIndex: number, sd: StyleData, file: string) =>
         writeFileSync(join(outDir, file), await renderPdf({ html: await renderLayoutHtml(def, sd, { mode: "production", pageIndex, customLogo }) }));
@@ -222,6 +254,7 @@ async function main() {
           samples,
           evaluate: tab.evaluate,
           renderOptions: { customLogo },
+          options: { minPt, keepTogether, exploreAll: true },
         });
         await pdf(w.before, face.pageIndex, samples[0].styleData, `${name}.before.pdf`);
         await pdf(res.def, face.pageIndex, samples[0].styleData, `${name}.proposal.pdf`);
@@ -242,11 +275,9 @@ async function main() {
               strategy: res.strategy,
               pt: res.pt,
               capPt: res.capPt,
-              candidates: {
-                band: res.candidates.band?.pt ?? null,
-                today: res.candidates.today?.pt ?? null,
-                moved: res.candidates.moved && { ...res.candidates.moved, page: undefined },
-              },
+              placement: res.placement,
+              keepTogether,
+              candidates: res.candidates.map((c) => ({ placement: c.placement, pt: c.pt, shiftMm: c.shiftMm, compacted: c.compacted })),
               budget: res.budget,
               fullestSample: samples[res.fullestSample].label,
               space: res.space,
