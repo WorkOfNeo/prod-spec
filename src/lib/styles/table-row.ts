@@ -98,6 +98,8 @@ export type StyleListRow = {
   resolved: Record<string, string>;
   // Review / approval rollup (null unless a review column is on).
   review: ReviewRollup | null;
+  // Open rejection-log threads (null unless the Comments column is on).
+  comments: { open: number; fixed: number } | null;
 };
 
 // The lowercase haystack the search box matches against: name + customer +

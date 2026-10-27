@@ -71,11 +71,11 @@ export default async function StylesPage() {
     <div className="px-6 py-5">
       <PageHeader
         title="Styles"
-        meta={`${listedCount} ${listedCount === 1 ? "style" : "styles"} on file, newest PO first. Search, or pick values in the filters and press Apply.`}
+        meta={`${listedCount} ${listedCount === 1 ? "style" : "styles"} from Monday\u2019s Pre-Order board with a PO number, newest PO first`}
         actions={
-          <Link href="/styles/new" className={buttonClass("secondary")}>
+          <Link href="/styles/new" className={buttonClass("primary")} title="A style entered by hand rather than synced from Monday">
             <Plus size={14} aria-hidden="true" />
-            New manual style
+            New style
           </Link>
         }
       >
@@ -84,7 +84,7 @@ export default async function StylesPage() {
         </div>
       </PageHeader>
 
-      <div className="mt-5">
+      <div className="mt-4">
         <StylesTable
           autoGenerateEnabled={autoGenerateEnabled}
           visibleColumns={visibleColumns}

@@ -14,6 +14,7 @@ import { loadLookalikeChips, type LookalikeChip } from "@/lib/styles/related";
 import {
   needsSupplierUploadData,
   needsReviewRollupData,
+  needsCommentData,
   visibleResolvedFieldKeys,
   type StyleColumnKey,
 } from "@/lib/styles/table-columns";
@@ -29,6 +30,7 @@ import { listPathColumnIds, loadProjectedRawData } from "@/lib/styles/rawdata-pr
 import { statusTitle, type StyleListRow } from "@/lib/styles/table-row";
 import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
 import { currentOutputBaseKeys } from "@/lib/tickets/orphan";
+import { loadStyleCommentCounts, type StyleCommentCounts } from "@/lib/dashboard/style-comment-counts";
 
 // =====================================================
 // The /styles list: load every listed style and build its table row. Lives
@@ -121,6 +123,8 @@ export type StyleListContext = {
   resolvedFieldKeys: readonly StyleColumnKey[];
   wantUpload: boolean;
   wantReview: boolean;
+  wantComments: boolean;
+  commentsByStyle: StyleCommentCounts;
   ignoredByStyle: ReadonlyMap<string, Set<string>>;
   lookalikeChips: ReadonlyMap<string, LookalikeChip>;
   reviewerByStyle: ReadonlyMap<string, string>;
@@ -160,7 +164,8 @@ export async function loadStyleListContext(
   const styleIds = styles.map((s) => s.id);
   const wantUpload = needsSupplierUploadData(opts.visibleColumns);
   const wantReview = needsReviewRollupData(opts.visibleColumns);
-  const [ignoredByStyle, lookalikeChips, supplierUploads, assetsByStyle, reviewerByStyle] =
+  const wantComments = needsCommentData(opts.visibleColumns);
+  const [ignoredByStyle, lookalikeChips, supplierUploads, assetsByStyle, reviewerByStyle, commentsByStyle] =
     await Promise.all([
       // Per-style operator ignores — ignored outputs drop out of the readiness
       // counts (they're decided, not pending work).
@@ -179,6 +184,7 @@ export async function loadStyleListContext(
       // Not column-gated: the "Reviewer" facet needs a value on every row to
       // build its option list, so this one always loads (one indexed query).
       loadReviewerByStyle(styleIds),
+      wantComments ? loadStyleCommentCounts(styleIds) : Promise.resolve({} as StyleCommentCounts),
     ]);
   return {
     autoGenerateEnabled: opts.autoGenerateEnabled,
@@ -187,6 +193,8 @@ export async function loadStyleListContext(
     resolvedFieldKeys: visibleResolvedFieldKeys(opts.visibleColumns),
     wantUpload,
     wantReview,
+    wantComments,
+    commentsByStyle,
     ignoredByStyle,
     lookalikeChips,
     reviewerByStyle,
@@ -339,6 +347,7 @@ export function buildStyleListRow(
     // ── Spec fields (resolved) + review rollup ──
     resolved,
     review,
+    comments: ctx.wantComments ? (ctx.commentsByStyle[s.id] ?? { open: 0, fixed: 0 }) : null,
     // Customer delivers their own goods — surfaced as a row chip so a
     // style isn't mistaken for one the app sends supplier delivery for.
     customerDeliversOwn: config.skipSupplierDelivery,
