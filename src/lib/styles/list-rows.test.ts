@@ -206,6 +206,8 @@ function context(overrides: Partial<StyleListContext> = {}): StyleListContext {
     resolvedFieldKeys: [...RESOLVED_FIELD_COLUMN_KEYS],
     wantUpload: true,
     wantReview: true,
+    wantComments: true,
+    commentsByStyle: { s1: { open: 2, fixed: 1 } },
     ignoredByStyle: new Map([["s2", new Set(["netto-dk-privatelabel-wash-care-label"])]]),
     lookalikeChips: new Map([["s3", { position: 1, total: 2, otherPoNumbers: ["C-PO2"] }]]),
     reviewerByStyle: new Map([["s1", "Ada"]]),

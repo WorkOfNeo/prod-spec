@@ -42,6 +42,8 @@ import { ColumnsPopover } from "./columns-popover";
 import { FacetFilter, type FacetOption } from "@/components/facet-filter";
 import { BulkRunOutputs } from "./bulk-run-outputs";
 import { buttonClass } from "@/components/ui/button";
+import { Pill } from "@/components/ui/pill";
+import { MessageSquare, SlidersHorizontal } from "lucide-react";
 
 // Hover hints on column headers.
 const HEADER_HINTS: Partial<Record<StyleColumnKey, string>> = {
@@ -51,7 +53,18 @@ const HEADER_HINTS: Partial<Record<StyleColumnKey, string>> = {
   status:
     "Review flow once PDFs exist (queued → ready for review → approved / rejected); before that, field readiness (awaiting data → partially ready → ready to generate).",
   ean: "PO → EAN resolution: auto-queued when a PO is filled, then the PO PDF is scraped for the per-size barcodes. Click Resolve to run it now.",
+  comments: "Open rejection-log comments on this style, and the ones marked fixed that the reviewer has yet to look at again.",
 };
+
+// The status shortcuts above the table — one click narrows to one status, the
+// way the Status facet does with a single value picked.
+const STATUS_SEGMENTS: Array<{ key: string | null; label: string }> = [
+  { key: null, label: "All" },
+  { key: "ready_for_review", label: "Ready for review" },
+  { key: "awaiting_data", label: "Awaiting data" },
+  { key: "approved", label: "Approved" },
+  { key: "rejected", label: "Rejected" },
+];
 
 // Attribute *presence* filters shown as chips below the facet bar. Each is
 // tri-state: "any" (ignored), "has" (row must HAVE the attribute), "no"
@@ -297,6 +310,40 @@ export function StylesTable({
   const missingPoCount = useMemo(() => missingPoFlags.filter(Boolean).length, [missingPoFlags]);
   const revealMissingPo = (attrFilters.po ?? "any") === "no";
 
+  // Counts for the status shortcuts, over the rows the table would list with
+  // no filter picked (archived and PO-less rows only when they're revealed).
+  const segmentCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: 0 };
+    rows.forEach((r, i) => {
+      if (!showArchived && archivedFlags[i]) return;
+      if (!revealMissingPo && missingPoFlags[i]) return;
+      counts.all += 1;
+      counts[r.statusView.key] = (counts[r.statusView.key] ?? 0) + 1;
+    });
+    return counts;
+  }, [rows, showArchived, archivedFlags, revealMissingPo, missingPoFlags]);
+
+  // Picking a shortcut or a customer filters straight away; the facets in the
+  // Filters panel wait for Apply, so several can be picked at once.
+  const commitFacet = (key: FacetKey, next: string[]) => {
+    setDraftFacets((p) => ({ ...p, [key]: next }));
+    setAppliedFacets((p) => ({ ...p, [key]: next }));
+  };
+  // Open from the start when the URL brought something the panel holds.
+  const [filtersOpen, setFiltersOpen] = useState(
+    () =>
+      seed.showArchived ||
+      Object.values(seed.attrFilters).some((v) => v !== "any") ||
+      FACET_KEYS.some((k) => k !== "customer" && k !== "status" && seed.facets[k].length > 0) ||
+      seed.facets.status.length > 1,
+  );
+  // What the Filters button counts: everything set in the panel.
+  const panelFilterCount =
+    FACET_KEYS.filter((k) => k !== "customer" && appliedFacets[k].length > 0).length +
+    activeAttrFilters.length +
+    (showArchived ? 1 : 0);
+  const activeSegment = appliedFacets.status.length === 1 ? appliedFacets.status[0] : appliedFacets.status.length === 0 ? null : undefined;
+
   // The search haystack per row, built once per row set rather than shipped
   // with every row (it only repeated the row's own values).
   const searchBlobs = useMemo(() => rows.map(styleSearchBlob), [rows]);
@@ -515,8 +562,10 @@ export function StylesTable({
       case "customer":
         return (
           <td key={key} className="px-3 py-2 text-muted">
-            <span className="flex items-center gap-1.5">
-              {s.customerName}
+            <span className="flex items-center gap-1.5 whitespace-nowrap">
+              <span className="block max-w-[200px] truncate" title={s.customerName}>
+                {s.customerName}
+              </span>
               {s.customerDeliversOwn && <SkipSupplierDeliveryBadge variant="chip" />}
             </span>
           </td>
@@ -529,7 +578,7 @@ export function StylesTable({
         );
       case "group":
         return (
-          <td key={key} className="px-3 py-2 text-xs text-muted">
+          <td key={key} className="px-3 py-2 text-[12px] whitespace-nowrap text-muted">
             {s.groupTitle ?? "—"}
           </td>
         );
@@ -545,23 +594,19 @@ export function StylesTable({
                   : "No Prod Spec linked — can't generate yet"
               }
             >
-              <div className="relative h-2 w-24 overflow-hidden rounded-full bg-subtle">
+              <div className="bg-subtle relative h-1.5 w-20 overflow-hidden rounded-full">
                 <div
-                  className={`h-full ${ready ? "bg-good" : "bg-primary"}`}
+                  className={`h-full rounded-full ${ready ? "bg-accent" : "bg-warn"}`}
                   style={{ width: `${s.completionPct}%` }}
                 />
                 {s.threshold != null && s.threshold < 100 && (
                   <div
-                    className="absolute top-0 h-full w-0.5 bg-zinc-500"
+                    className="bg-ink/40 absolute top-0 h-full w-px"
                     style={{ left: `${s.threshold}%` }}
                   />
                 )}
               </div>
-              <span
-                className={`text-xs tabular-nums ${ready ? "text-good" : "text-muted"}`}
-              >
-                {s.completionPct}%
-              </span>
+              <span className="text-muted text-[12px] tabular-nums">{s.completionPct}%</span>
             </div>
           </td>
         );
@@ -572,7 +617,7 @@ export function StylesTable({
             {s.requiredTotal > 0 ? (
               <span
                 title={`${s.requiredFilled} of ${s.requiredTotal} required fields have a value`}
-                className={`text-sm font-semibold tabular-nums ${
+                className={`text-[12px] font-medium tabular-nums ${
                   s.requiredFilled === s.requiredTotal ? "text-good" : "text-warn"
                 }`}
               >
@@ -766,14 +811,20 @@ export function StylesTable({
             {s.review && s.review.total > 0 ? (
               <span
                 title={`${s.review.approved} of ${s.review.total} outputs approved · ${s.review.generated} generated`}
-                className={`text-sm font-semibold tabular-nums ${
-                  s.review.fullyApproved ? "text-good" : "text-muted"
-                }`}
+                className="flex items-center gap-2"
               >
-                {s.review.approved}/{s.review.total}
+                <span className="bg-subtle flex h-1.5 w-20 gap-px overflow-hidden rounded-full">
+                  {s.review.approved > 0 ? <span className="bg-good h-full" style={{ flex: s.review.approved }} /> : null}
+                  {s.review.total > s.review.approved ? (
+                    <span className="h-full" style={{ flex: s.review.total - s.review.approved }} />
+                  ) : null}
+                </span>
+                <span className={`text-[12px] tabular-nums ${s.review.fullyApproved ? "text-good" : "text-muted"}`}>
+                  {s.review.approved}/{s.review.total}
+                </span>
               </span>
             ) : (
-              <span className="text-faint">—</span>
+              <span className="text-faint text-[12px]">Nothing generated</span>
             )}
           </td>
         );
@@ -819,6 +870,29 @@ export function StylesTable({
           </td>
         );
 
+      case "comments":
+        return (
+          <td key={key} className="px-3 py-2">
+            {s.comments && (s.comments.open > 0 || s.comments.fixed > 0) ? (
+              <Link href={`/styles/${s.id}?tab=review`} className="flex flex-wrap items-center gap-1">
+                {s.comments.open > 0 ? (
+                  <Pill tone="warn">
+                    <MessageSquare size={11} aria-hidden="true" />
+                    {s.comments.open} open
+                  </Pill>
+                ) : null}
+                {s.comments.fixed > 0 ? (
+                  <Pill tone="accent" title="Marked fixed: the reviewer has yet to look at them again">
+                    {s.comments.fixed} to check again
+                  </Pill>
+                ) : null}
+              </Link>
+            ) : (
+              <span className="text-faint">—</span>
+            )}
+          </td>
+        );
+
       default:
         // Any registry key without an explicit cell still renders an (empty)
         // <td> so the row's column count matches the header.
@@ -838,128 +912,165 @@ export function StylesTable({
           .
         </div>
       )}
-      <div data-section="Search" className="mb-3 flex items-center gap-3">
-        <div className="relative flex-1">
+      <div data-section="Search" className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="relative w-full sm:w-[260px]">
           <SearchIcon />
           <input
             type="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search by name, customer, business area, PO#, or status…"
+            placeholder="Search style, PO or customer"
+            aria-label="Search styles"
             className="border-line bg-surface text-ink placeholder:text-faint focus:border-accent h-8 w-full rounded-md border pr-3 pl-9 text-[13px] outline-none"
           />
         </div>
-        <label className="text-muted flex shrink-0 items-center gap-1.5 text-[12px]">
-          <input
-            type="checkbox"
-            checked={showArchived}
-            onChange={(e) => setShowArchived(e.target.checked)}
-          />
-          Show archived
-          {archivedCount > 0 && (
-            <span className="tabular-nums text-faint">({archivedCount})</span>
-          )}
-        </label>
-        <span className="text-muted text-[12px] tabular-nums">
-          {filtered.length} of {rows.length}
+        <div role="group" aria-label="Status" className="bg-seg inline-flex max-w-full overflow-x-auto rounded-lg p-0.5">
+          {STATUS_SEGMENTS.map((seg) => {
+            const on = activeSegment === seg.key;
+            return (
+              <button
+                key={seg.label}
+                type="button"
+                aria-pressed={on}
+                onClick={() => commitFacet("status", seg.key ? [seg.key] : [])}
+                className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12px] whitespace-nowrap transition-colors duration-150 ${
+                  on ? "bg-seg-on text-seg-on-ink font-medium shadow-[var(--shadow-pop)]" : "text-muted hover:text-ink"
+                }`}
+              >
+                {seg.label}
+                <span className="text-faint tabular-nums">{segmentCounts[seg.key ?? "all"] ?? 0}</span>
+              </button>
+            );
+          })}
+        </div>
+        <FacetFilter
+          label={FACET_LABELS.customer}
+          options={facetOptions.customer}
+          selected={appliedFacets.customer}
+          onChange={(n) => commitFacet("customer", n)}
+        />
+        <button
+          type="button"
+          aria-expanded={filtersOpen}
+          onClick={() => setFiltersOpen((o) => !o)}
+          className={buttonClass("secondary", "sm", filtersOpen ? "bg-subtle" : "")}
+        >
+          <SlidersHorizontal size={13} aria-hidden="true" />
+          Filters
+          {panelFilterCount > 0 ? (
+            <span className="bg-accent-soft text-accent-text rounded-full px-1.5 text-[11px] tabular-nums">
+              {panelFilterCount}
+            </span>
+          ) : null}
+        </button>
+        {(anyFacetActive || activeAttrFilters.length > 0) && (
+          <button
+            type="button"
+            onClick={() => {
+              clearAllFacets();
+              setAttrFilters({});
+            }}
+            className="text-muted hover:text-ink text-[12px] underline"
+          >
+            Clear filters
+          </button>
+        )}
+        <span className="flex-1" />
+        <span className="text-faint text-[12px] tabular-nums">
+          {filtered.length} of {segmentCounts.all} styles
         </span>
         {canConfigureColumns && <ColumnsPopover visible={visible} onChange={setVisible} />}
       </div>
 
-      <div data-section="Filters" className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="text-faint text-[12px]">Filter by</span>
-        <FacetFilter
-          label={FACET_LABELS.customer}
-          options={facetOptions.customer}
-          selected={draftFacets.customer}
-          onChange={(n) => setFacet("customer", n)}
-        />
-        <FacetFilter
-          label={FACET_LABELS.ba}
-          options={facetOptions.ba}
-          selected={draftFacets.ba}
-          onChange={(n) => setFacet("ba", n)}
-        />
-        <FacetFilter
-          label={FACET_LABELS.group}
-          options={facetOptions.group}
-          selected={draftFacets.group}
-          onChange={(n) => setFacet("group", n)}
-        />
-        <FacetFilter
-          label={FACET_LABELS.status}
-          options={facetOptions.status}
-          selected={draftFacets.status}
-          onChange={(n) => setFacet("status", n)}
-        />
-        {/* Who is reviewing — the claimer of the style's newest claimed job.
-            "(nobody yet)" is the unclaimed pile. */}
-        <FacetFilter
-          label={FACET_LABELS.reviewer}
-          options={facetOptions.reviewer}
-          selected={draftFacets.reviewer}
-          onChange={(n) => setFacet("reviewer", n)}
-        />
-        <FacetFilter
-          label={FACET_LABELS.ean}
-          options={facetOptions.ean}
-          selected={draftFacets.ean}
-          onChange={(n) => setFacet("ean", n)}
-        />
-        <button
-          type="button"
-          onClick={applyFacets}
-          disabled={!facetsDirty}
-          className={buttonClass("primary", "sm", "ml-1")}
-        >
-          Apply{facetsDirty ? " •" : ""}
-        </button>
-        {anyFacetActive && (
-          <button
-            type="button"
-            onClick={clearAllFacets}
-            className="text-muted hover:text-ink text-[12px] underline"
-          >
-            Clear all
-          </button>
-        )}
-      </div>
-
-      <div data-section="Attribute filters" className="mb-4 flex flex-wrap items-center gap-2">
-        <span className="text-faint text-[12px]">Attributes</span>
-        {ATTR_FILTERS.map((a) => (
-          <FilterChip
-            key={a.key}
-            label={a.label}
-            state={attrFilters[a.key] ?? "any"}
-            onClick={() => cycleAttr(a.key)}
-          />
-        ))}
-        {activeAttrFilters.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setAttrFilters({})}
-            className="ml-1 text-xs text-muted underline hover:text-ink"
-          >
-            Clear
-          </button>
-        )}
-        {/* Says out loud that rows are being withheld, and names the one
-            click that brings them back — a silent gate is how "my style
-            vanished" tickets get written. */}
-        {missingPoCount > 0 && !revealMissingPo && (
-          <span className="text-xs text-faint">
-            <span className="tabular-nums">{missingPoCount}</span> hidden — no PO number yet.{" "}
+      {filtersOpen ? (
+        <div data-section="Filters" className="border-line bg-surface reveal mb-3 flex flex-col gap-2.5 rounded-xl border p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-faint w-20 shrink-0 text-[12px]">Filter by</span>
+            <FacetFilter
+              label={FACET_LABELS.ba}
+              options={facetOptions.ba}
+              selected={draftFacets.ba}
+              onChange={(n) => setFacet("ba", n)}
+            />
+            <FacetFilter
+              label={FACET_LABELS.group}
+              options={facetOptions.group}
+              selected={draftFacets.group}
+              onChange={(n) => setFacet("group", n)}
+            />
+            <FacetFilter
+              label={FACET_LABELS.status}
+              options={facetOptions.status}
+              selected={draftFacets.status}
+              onChange={(n) => setFacet("status", n)}
+            />
+            {/* Who is reviewing — the claimer of the style's newest claimed job.
+                "(nobody yet)" is the unclaimed pile. */}
+            <FacetFilter
+              label={FACET_LABELS.reviewer}
+              options={facetOptions.reviewer}
+              selected={draftFacets.reviewer}
+              onChange={(n) => setFacet("reviewer", n)}
+            />
+            <FacetFilter
+              label={FACET_LABELS.ean}
+              options={facetOptions.ean}
+              selected={draftFacets.ean}
+              onChange={(n) => setFacet("ean", n)}
+            />
             <button
               type="button"
-              onClick={() => setAttrFilters((p) => ({ ...p, po: "no" }))}
-              className="underline hover:text-muted"
+              onClick={applyFacets}
+              disabled={!facetsDirty}
+              className={buttonClass("primary", "sm", "ml-1")}
             >
-              Show them
+              Apply{facetsDirty ? " •" : ""}
             </button>
-          </span>
-        )}
-      </div>
+          </div>
+          <div data-section="Attribute filters" className="flex flex-wrap items-center gap-2">
+            <span className="text-faint w-20 shrink-0 text-[12px]">Attributes</span>
+            {ATTR_FILTERS.map((a) => (
+              <FilterChip
+                key={a.key}
+                label={a.label}
+                state={attrFilters[a.key] ?? "any"}
+                onClick={() => cycleAttr(a.key)}
+              />
+            ))}
+            {activeAttrFilters.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setAttrFilters({})}
+                className="text-muted hover:text-ink ml-1 text-[12px] underline"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <label className="text-muted flex items-center gap-1.5 text-[12px]">
+            <span className="w-20 shrink-0" aria-hidden="true" />
+            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+            Show archived
+            {archivedCount > 0 && <span className="text-faint tabular-nums">({archivedCount})</span>}
+          </label>
+        </div>
+      ) : null}
+
+      {/* Says out loud that rows are being withheld, and names the one click
+          that brings them back — a silent gate is how "my style vanished"
+          tickets get written. */}
+      {missingPoCount > 0 && !revealMissingPo && (
+        <p className="text-faint mb-3 text-[12px]">
+          <span className="tabular-nums">{missingPoCount}</span> hidden — no PO number yet.{" "}
+          <button
+            type="button"
+            onClick={() => setAttrFilters((p) => ({ ...p, po: "no" }))}
+            className="hover:text-muted underline"
+          >
+            Show them
+          </button>
+        </p>
+      )}
 
       {isAdmin && <BulkRunOutputs styleIds={filteredIds} filterLabel={filterLabel} />}
 

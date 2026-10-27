@@ -90,7 +90,8 @@ export type StyleColumnKey =
   | "approved"
   | "fullyApproved"
   | "awaitingReview"
-  | "reviewer";
+  | "reviewer"
+  | "comments";
 
 export type StyleColumnDef = {
   key: StyleColumnKey;
@@ -198,12 +199,15 @@ export const STYLE_TABLE_COLUMNS: ReadonlyArray<StyleColumnDef> = [
   { key: "deliversOwn", label: "Delivers own", group: "delivery" },
 
   // ── Review & approval ────────────────────────────────────────────────────
-  { key: "approved", label: "Approved", group: "review" },
+  { key: "approved", label: "Outputs approved", group: "review" },
   { key: "fullyApproved", label: "Fully approved", group: "review" },
   { key: "awaitingReview", label: "Awaiting review", group: "review" },
   // Who claimed the review. Always hydrated (the Reviewer facet needs it for
   // every row), so unlike the rollup columns it costs nothing extra to show.
   { key: "reviewer", label: "Reviewer", group: "review" },
+  // Open rejection-log threads: with the admin, or fixed and waiting for a
+  // second look. One grouped query, only when the column is on.
+  { key: "comments", label: "Comments", group: "review" },
 ];
 
 // The standard view: the original core columns (everything except Completion).
@@ -213,10 +217,10 @@ export const STANDARD_VISIBLE: ReadonlyArray<StyleColumnKey> = [
   "po",
   "customer",
   "businessArea",
-  "group",
-  "generation",
+  "completion",
   "status",
-  "ean",
+  "approved",
+  "comments",
   "lastSynced",
 ];
 
@@ -232,6 +236,11 @@ export function needsSupplierUploadData(visible: readonly StyleColumnKey[]): boo
 const REVIEW_ROLLUP_KEYS = new Set<StyleColumnKey>(["approved", "fullyApproved", "awaitingReview"]);
 export function needsReviewRollupData(visible: readonly StyleColumnKey[]): boolean {
   return visible.some((k) => REVIEW_ROLLUP_KEYS.has(k));
+}
+
+// True when the Comments column is on (the open-thread counts query).
+export function needsCommentData(visible: readonly StyleColumnKey[]): boolean {
+  return visible.includes("comments");
 }
 
 // The visible resolved spec-field keys — the set page.tsx hydrates per row.
