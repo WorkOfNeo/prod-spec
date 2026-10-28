@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Check, History, Pencil, RotateCcw, Trash2, X } from "lucide-react";
+import { Check, History, Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react";
 
-// Client half of /settings/agent-memory: scope chips, the notes grouped by
-// what needs doing, per-note actions (PATCH /api/admin/agent-memory/[id] then
+// Client half of /settings/agent-memory: a note written by hand (POST
+// /api/admin/agent-memory), scope chips, the notes grouped by what needs
+// doing, per-note actions (PATCH /api/admin/agent-memory/[id] then
 // router.refresh()) and the follow-along log. The server decides which moves
 // are legal (memory.ts); the buttons shown per state just match it.
 
@@ -33,6 +34,8 @@ export type MemoryEventView = {
   whenLabel: string;
 };
 
+export type ScopeOption = { value: string; label: string };
+
 const SCOPE_CHIPS: Array<{ scope: string | null; label: string }> = [
   { scope: null, label: "All" },
   { scope: "GLOBAL", label: "Everywhere" },
@@ -56,7 +59,17 @@ const EVENT_DOT: Record<string, string> = {
   forgotten: "bg-zinc-300",
 };
 
-export function AgentMemoryClient({ memories, events }: { memories: MemoryView[]; events: MemoryEventView[] }) {
+export function AgentMemoryClient({
+  memories,
+  events,
+  customers,
+  docTypes,
+}: {
+  memories: MemoryView[];
+  events: MemoryEventView[];
+  customers: ScopeOption[];
+  docTypes: ScopeOption[];
+}) {
   const [scope, setScope] = useState<string | null>(null);
   const shown = scope ? memories.filter((m) => m.scope === scope) : memories;
   const count = (s: string | null) => (s ? memories.filter((m) => m.scope === s).length : memories.length);
@@ -68,7 +81,9 @@ export function AgentMemoryClient({ memories, events }: { memories: MemoryView[]
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="min-w-0">
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by scope">
+        <AddNote customers={customers} docTypes={docTypes} />
+
+        <div className="mt-6 flex flex-wrap gap-1.5" role="group" aria-label="Filter by scope">
           {SCOPE_CHIPS.map((chip) => {
             const active = scope === chip.scope;
             return (
@@ -96,8 +111,8 @@ export function AgentMemoryClient({ memories, events }: { memories: MemoryView[]
           <div className="mt-6 rounded-lg border border-zinc-200 bg-white p-8 text-center">
             <div className="text-sm font-semibold text-zinc-800">No notes yet.</div>
             <p className="mt-1 text-sm text-zinc-500">
-              When you correct a draft in a review, the agent may suggest a note. It shows up here
-              for you to keep or dismiss.
+              Write one above, or correct a draft in a review: the agent may suggest a note, and it
+              shows up here for you to keep or dismiss.
             </p>
           </div>
         ) : (
@@ -162,6 +177,149 @@ export function AgentMemoryClient({ memories, events }: { memories: MemoryView[]
         )}
       </aside>
     </div>
+  );
+}
+
+const NEW_NOTE_SCOPES: Array<{ scope: string; label: string; hint: string }> = [
+  { scope: "GLOBAL", label: "Everywhere", hint: "Every run reads it." },
+  { scope: "MONDAY", label: "Monday data", hint: "What a Monday column means and what it causes. Every run reads it." },
+  { scope: "CUSTOMER", label: "Customer", hint: "Runs on this customer's requests." },
+  { scope: "DOC_TYPE", label: "Doc type", hint: "Runs on outputs of this document type." },
+];
+const NOTE_MAX = 1000;
+
+// A note written by hand: kept at once, so the next matching run reads it.
+function AddNote({ customers, docTypes }: { customers: ScopeOption[]; docTypes: ScopeOption[] }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [scope, setScope] = useState("MONDAY");
+  const [scopeRef, setScopeRef] = useState("");
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const refOptions = scope === "CUSTOMER" ? customers : scope === "DOC_TYPE" ? docTypes : null;
+  const hint = NEW_NOTE_SCOPES.find((s) => s.scope === scope)?.hint;
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+      >
+        <Plus className="h-4 w-4" aria-hidden="true" />
+        Add a note
+      </button>
+    );
+  }
+
+  async function save() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/admin/agent-memory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope, scopeRef: refOptions ? scopeRef : null, text }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setErr(data.error ?? `Saving failed (${res.status})`);
+        return;
+      }
+      setText("");
+      setOpen(false);
+      router.refresh();
+    } catch {
+      setErr("Network error. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-lg border border-zinc-200 bg-white p-4">
+      <h2 className="text-sm font-semibold text-zinc-900">Add a note</h2>
+      <p className="mt-0.5 text-xs text-zinc-500">
+        Something the agent should know that it can&apos;t find in the data. Say what causes it and what to check
+        or tell the requester. Kept at once.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <label className="text-xs font-medium text-zinc-700" htmlFor="note-scope">
+          Applies to
+        </label>
+        <select
+          id="note-scope"
+          value={scope}
+          onChange={(e) => {
+            setScope(e.target.value);
+            setScopeRef("");
+          }}
+          disabled={busy}
+          className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm"
+        >
+          {NEW_NOTE_SCOPES.map((s) => (
+            <option key={s.scope} value={s.scope}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+        {refOptions && (
+          <select
+            aria-label={scope === "CUSTOMER" ? "Customer" : "Doc type"}
+            value={scopeRef}
+            onChange={(e) => setScopeRef(e.target.value)}
+            disabled={busy}
+            className="min-w-0 max-w-xs rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm"
+          >
+            <option value="">{scope === "CUSTOMER" ? "Pick a customer…" : "Pick a doc type…"}</option>
+            {refOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        )}
+        {hint && <span className="text-xs text-zinc-500">{hint}</span>}
+      </div>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={3}
+        maxLength={NOTE_MAX}
+        disabled={busy}
+        aria-label="Note"
+        placeholder="e.g. A certificate mark or page (OEKO-TEX, FSC) prints because the style's Monday Certificates column lists it…"
+        className="mt-3 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+      />
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={save}
+          disabled={busy || !text.trim() || (refOptions !== null && !scopeRef)}
+          className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+        >
+          <Check className="h-4 w-4" aria-hidden="true" />
+          Save note
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            setErr(null);
+          }}
+          disabled={busy}
+          className="rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100"
+        >
+          Cancel
+        </button>
+        <span className="ml-auto font-mono text-[11px] text-zinc-400 tabular-nums">
+          {text.length}/{NOTE_MAX}
+        </span>
+      </div>
+      {err && <p className="mt-2 text-xs text-red-600">{err}</p>}
+    </section>
   );
 }
 

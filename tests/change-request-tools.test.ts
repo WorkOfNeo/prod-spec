@@ -1325,3 +1325,12 @@ test("resumeAwaitingCode: before the tables exist it does nothing", async () => 
   });
   assert.deepEqual(ids, []);
 });
+
+test("finish: a summary past the cap is an input error the model can correct, with a reason", async () => {
+  const finish = tools.toolByName("finish")!;
+  const { FINISH_SUMMARY_MAX } = tools;
+  assert.equal(finish.input.safeParse({ summary: "Changed the size line; checked two styles." }).success, true);
+  const tooLong = finish.input.safeParse({ summary: "x".repeat(FINISH_SUMMARY_MAX + 1) });
+  assert.equal(tooLong.success, false);
+  assert.match(tooLong.error!.issues[0].message, /Lead with the outcome/);
+});

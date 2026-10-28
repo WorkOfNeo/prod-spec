@@ -1456,15 +1456,26 @@ async function proposeMemoryNote(
 
 // ── finish ───────────────────────────────────────────────────────────────────
 
+// The summary is read in a narrow panel next to the proofs. The prompt asks
+// for three short sentences; this cap is the backstop — a longer one comes
+// back as an input error and the model writes it again, shorter.
+export const FINISH_SUMMARY_MAX = 1500;
+
 const finish = defineTool({
   name: "finish",
   description:
-    "End the run with a plain-language message for the reviewer. After a draft: what you changed and why, which styles you checked " +
-    "(including the one that must not change), how many documents the impact list says would change, and anything they should look at; " +
-    "call it after propose_patch, render_proof and impact_list. If the reviewer only asked a question, or no layout change is needed or " +
-    "possible, answer with finish and explain — do not make a new draft. Either way the output goes to the reviewer, and a draft you did " +
-    "not change stays as it is.",
-  input: z.object({ summary: z.string().trim().min(1).max(4000) }),
+    "End the run with a SHORT plain-language message for the reviewer: at most three short sentences, or one line per point when the " +
+    "request has several. Lead with the outcome. After a draft: what you changed, the styles you checked (including the one that must not " +
+    "change) and how many documents would change; call it after propose_patch, render_proof and impact_list. If the reviewer only asked a " +
+    "question, or no layout change is needed or possible, answer with finish and say why — and when Monday data causes it, which column " +
+    "and value to change. Do not make a new draft. Either way the output goes to the reviewer, and a draft you did not change stays as it is.",
+  input: z.object({
+    summary: z
+      .string()
+      .trim()
+      .min(1)
+      .max(FINISH_SUMMARY_MAX, `Too long: keep the summary under ${FINISH_SUMMARY_MAX} characters. Lead with the outcome; drop the steps you took.`),
+  }),
   run: async (input, ctx) => {
     await note(ctx, "finish", clip(input.summary.replace(/\s+/g, " "), 300));
     return ok({ ok: true, summary: input.summary });

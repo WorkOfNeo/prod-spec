@@ -83,6 +83,24 @@ const fakeDb = {
       const row = memories.find((r) => r.id === args.where.id);
       return row ? structuredClone(row) : null;
     },
+    create: async (args: { data: Row }) => {
+      guard();
+      writes++;
+      const at = new Date(Date.UTC(2026, 9, 24, 9, ++seq));
+      const row: Row = {
+        id: `mem-${seq}`,
+        scopeRef: null,
+        sourceRequestId: null,
+        usedCount: 0,
+        lastUsedAt: null,
+        createdById: null,
+        createdAt: at,
+        updatedAt: at,
+        ...args.data,
+      };
+      memories.push(row);
+      return structuredClone(row);
+    },
     updateMany: async (args: { where: Row; data: Row }) => {
       guard();
       if (beforeUpdate) {
@@ -113,6 +131,10 @@ const fakeDb = {
   customer: {
     findMany: async (args: { where?: Row; select?: Row }) =>
       customers.filter((r) => matches(r, args.where)).map((r) => pick(r, args.select)),
+    findUnique: async (args: { where: { id: string }; select?: Row }) => {
+      const row = customers.find((r) => r.id === args.where.id);
+      return row ? pick(row, args.select) : null;
+    },
   },
 };
 
@@ -169,6 +191,12 @@ const patchReq = (body: unknown) =>
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
+const postReq = (body: unknown) =>
+  new NextRequest("http://localhost/api/admin/agent-memory", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: typeof body === "string" ? body : JSON.stringify(body),
+  });
 
 // ── Gate ────────────────────────────────────────────────────────────────────
 
@@ -421,4 +449,58 @@ test("memoryLog: newest first, a prompt read shows as 'Read by the agent'", asyn
   assert.ok(log[0].when.getTime() >= (used.updatedAt as Date).getTime());
   tableMissing = true;
   assert.deepEqual(await memoryLog(), []);
+});
+
+// ── POST: a note written by hand ────────────────────────────────────────────
+
+test("POST: flag off 404, anonymous 401, reviewer 403, and nothing is written", async () => {
+  const { POST } = await import("../src/app/api/admin/agent-memory/route");
+  const body = { scope: "MONDAY", text: "Certificates drive the cert marks." };
+  delete process.env.CHANGE_REQUESTS_ENABLED;
+  assert.equal((await POST(postReq(body))).status, 404);
+  process.env.CHANGE_REQUESTS_ENABLED = "true";
+  asAnon();
+  assert.equal((await POST(postReq(body))).status, 401);
+  as("REVIEWER");
+  assert.equal((await POST(postReq(body))).status, 403);
+  assert.equal(writes, 0);
+  assert.equal(memories.length, 0);
+});
+
+test("POST: a hand-written note is KEPT at once, MANUAL, by its author — and the next run reads it", async () => {
+  const { POST } = await import("../src/app/api/admin/agent-memory/route");
+  const res = await POST(postReq({ scope: "MONDAY", scopeRef: "dropped", text: "  Certificates drive the cert marks. " }));
+  assert.equal(res.status, 201);
+  const { memory } = (await res.json()) as { memory: Row };
+  assert.equal(memory.state, "KEPT");
+  assert.equal(memory.sourceKind, "MANUAL");
+  assert.equal(memory.scopeRef, null);
+  assert.equal(memory.text, "Certificates drive the cert marks.");
+  assert.equal(memory.createdById, "ADMIN-1");
+
+  const { memoriesForPrompt } = await import("../src/lib/change-requests/memory");
+  const prompt = await memoriesForPrompt({});
+  assert.match(prompt.text, /## Notes: Monday data\n- Certificates drive the cert marks\./);
+});
+
+test("POST: a customer note names a customer that exists; bad bodies are a 400 that write nothing", async () => {
+  const { POST } = await import("../src/app/api/admin/agent-memory/route");
+  const ok = await POST(postReq({ scope: "CUSTOMER", scopeRef: "cust-1", text: "Quantities in bold." }));
+  assert.equal(ok.status, 201);
+  assert.equal(((await ok.json()) as { memory: Row }).memory.scopeRef, "cust-1");
+  const before = memories.length;
+
+  for (const body of [
+    { scope: "CUSTOMER", scopeRef: "cust-gone", text: "x" },
+    { scope: "CUSTOMER", text: "x" },
+    { scope: "DOC_TYPE", text: "x" },
+    { scope: "SOMEWHERE", text: "x" },
+    { scope: "GLOBAL", text: "   " },
+    { scope: "GLOBAL", text: "x", state: "KEPT" },
+    "not json",
+  ]) {
+    const res = await POST(postReq(body));
+    assert.equal(res.status, 400, JSON.stringify(body));
+  }
+  assert.equal(memories.length, before);
 });
