@@ -560,6 +560,25 @@ test("a comment run with no current draft says the admin replied, not that they 
   assert.match(text, /- Reviewer: It was fixed on Monday/);
 });
 
+test("a run on the cover is told it can only suggest, and finishing without a draft goes to review", async () => {
+  Object.assign(outputs.get("out-1")!, { label: "Cover page (Prod Spec)", variantKey: "__cover__", layoutId: null });
+  loopImpl = async () => result({ stopReason: "end_turn", finalText: "Change the cover block in Settings › Cover page to …" });
+  const outcome = await job.runChangeRequestJob("out-1", { trigger: "new", userId: "admin-1" });
+
+  const text = firstText(loopCalls[0]);
+  assert.ok(text.includes(job.COVER_BRIEFING));
+  assert.doesNotMatch(text, /layout id/);
+  assert.equal(outcome.status, "IN_REVIEW");
+  assert.equal(outputs.get("out-1")!.currentRevisionId, null);
+  assert.ok(messages.some((m) => m.authorKind === "AGENT" && /Settings › Cover page/.test(m.body as string)));
+});
+
+test("a run on a layout output gets no cover briefing", async () => {
+  loopImpl = async () => result({ stopReason: "max_calls" });
+  await job.runChangeRequestJob("out-1", { trigger: "new", userId: "admin-1" });
+  assert.ok(!firstText(loopCalls[0]).includes(job.COVER_BRIEFING));
+});
+
 test("threadSinceLastDraft: the whole thread when there is no draft yet", () => {
   const thread = job.threadSinceLastDraft(
     [

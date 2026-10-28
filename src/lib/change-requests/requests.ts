@@ -13,6 +13,7 @@ import { baseVariantKey } from "@/lib/tickets/orphan";
 import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { outputPageMm } from "@/lib/output-layouts/render-output";
 import { getVariant } from "@/lib/pdf/template-registry";
+import { COVER_DISPLAY_NAME, COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 import { activeStylesWhere } from "@/lib/styles/active-filter";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
@@ -314,8 +315,11 @@ export function resolveRequestTargets(
     poNumber = picked.poNumber?.trim() || null;
   }
 
+  // The cover isn't one of the spec's outputs: every style with a spec gets
+  // one, framing its bundle.
   const prints = (style: StyleFacts, base: string) =>
-    style.prodSpecId !== null && (facts.enabledBaseKeys.get(style.prodSpecId)?.has(base) ?? false);
+    style.prodSpecId !== null &&
+    (base === COVER_VARIANT_KEY || (facts.enabledBaseKeys.get(style.prodSpecId)?.has(base) ?? false));
 
   const seen = new Set<string>();
   const outputs = input.outputs.map((o) => {
@@ -654,8 +658,15 @@ export type StyleOutputOption = {
   isLayout: boolean;
 };
 
-// The style's enabled outputs, labelled the way the style page labels them.
-// Null when the style doesn't exist.
+// How the cover reads in the picker and on the request: "Prod Spec" is what
+// the supplier sees it called; people asking for a change call it the cover.
+export const COVER_OUTPUT_LABEL = `Cover page (${COVER_DISPLAY_NAME})`;
+
+// The style's enabled outputs, labelled the way the style page labels them,
+// after its cover (first, as in the bundle) when it has a prod spec. The cover
+// is printed by code, not a layout: the agent can't draft it, so a request on
+// it gets a suggestion for the admin to apply by hand. Null when the style
+// doesn't exist.
 export async function outputsForStyle(styleId: string): Promise<StyleOutputOption[] | null> {
   const ctx = await loadStyleRenderContext(styleId);
   if (!ctx) return null;
@@ -681,7 +692,9 @@ export async function outputsForStyle(styleId: string): Promise<StyleOutputOptio
       : new Map<string, string>();
 
   const seen = new Set<string>();
-  const options: StyleOutputOption[] = [];
+  const options: StyleOutputOption[] = ctx.prodSpec
+    ? [{ variantKey: COVER_VARIANT_KEY, label: COVER_OUTPUT_LABEL, widthMm: 210, heightMm: 297, isLayout: false }]
+    : [];
   for (const o of ctx.outputs) {
     if (seen.has(o.variantKey)) continue;
     seen.add(o.variantKey);

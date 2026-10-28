@@ -177,6 +177,10 @@ const explicitDb: Record<string, unknown> = {
       record("style.groupBy", args);
       return styleCounts;
     },
+    count: async (args: unknown) => {
+      record("style.count", args);
+      return 4;
+    },
   },
   prodSpec: {
     findMany: async (args: unknown) => {
@@ -294,6 +298,7 @@ let impactImpl: (revisionId: string) => Promise<unknown>;
 
 // Email
 let dispatchImpl: (input: Row) => Promise<unknown>;
+let coverImpl: (styleId: string) => Promise<unknown>;
 
 let sampleStyle: () => StyleData;
 let tools: typeof import("@/lib/change-requests/agent/tools");
@@ -327,6 +332,14 @@ before(async () => {
         id === STYLE_ID
           ? { styleId: id, poSeq: null, styleData: sampleStyle(), prodSpec: null, outputs: [], readiness: [] }
           : null,
+    },
+  });
+  mock.module("@/lib/pdf/style-cover", {
+    namedExports: {
+      loadStyleCoverInput: async (id: string) => {
+        record("loadStyleCoverInput", id);
+        return coverImpl(id);
+      },
     },
   });
   mock.module("@/lib/email/dispatch", {
@@ -368,6 +381,29 @@ beforeEach(() => {
   requestDetailImpl = async (id) =>
     id === REQUEST_ID ? { ...request, outputs: [output, otherOutput], attachments, messages, steps: [] } : null;
   dispatchImpl = async (input) => ({ status: "SIMULATED", to: String(input.to), emailLogId: "log-1" });
+  coverImpl = async (styleId) =>
+    styleId === STYLE_ID
+      ? {
+          prodSpecId: "bogus-spec",
+          input: {
+            customerName: "Bogus Customer",
+            businessArea: "Bogus area",
+            styleName: "Bogus Tee",
+            styleNumber: "BOGUS-001",
+            poNumber: "PO-0000",
+            supplierName: null,
+            generatedAt: new Date(),
+            docs: [
+              { displayName: "Solid polybag sticker", widthMm: 50, heightMm: 60, fileCount: 1, approved: true },
+              { displayName: "Hang tag", widthMm: 40, heightMm: 70.25, fileCount: 2, approved: false },
+              { displayName: "Hanger", widthMm: null, heightMm: null, fileCount: null, kind: "info", sourceLabel: "Hanger: black" },
+            ],
+            settings: {},
+            generalInfo: { markdown: "  Pack flat.  ", settings: {} },
+            coverInfo: null,
+          },
+        }
+      : null;
   delete process.env.CHANGE_REQUEST_DEVELOPER_EMAIL;
   process.env.PROD_SPEC_BASE_URL = "https://prod-spec.example.com/";
 });
@@ -629,6 +665,43 @@ test("get_layout: with an open draft shows the draft and what it changes (live: 
   assert.match(content(missing).error, /not found/);
 });
 
+// ── get_cover ───────────────────────────────────────────────────────────────
+
+test("get_cover: what each part prints for this output's style, and where each part is changed", async () => {
+  const c = content(await run("get_cover", {}));
+  assert.deepEqual(calls.loadStyleCoverInput, [STYLE_ID]);
+  assert.equal(c.prints.header.styleNumber, "BOGUS-001");
+  assert.deepEqual(c.prints.requiredPackaging, [
+    { packaging: "Solid polybag sticker", size: "50×60 mm", files: 1, status: "confirmed", from: "app" },
+    { packaging: "Hang tag", size: "40×70.3 mm", files: 2, status: "waiting", from: "app" },
+    { packaging: "Hanger", size: null, files: null, status: null, from: "info", mondayTrim: "Hanger: black" },
+  ]);
+  assert.equal(c.prints.coverBlock, null);
+  assert.equal(c.prints.generalInformation, "Pack flat.");
+  const parts = Object.fromEntries((c.whereToChange as { part: string; changeIt: string }[]).map((p) => [p.part, p.changeIt]));
+  assert.match(parts["cover block"], /every cover/);
+  assert.match(parts["general information"], /4 styles of prod spec "Bogus spec A"/);
+  assert.match(parts["required packaging"], /\/prod-specs\/bogus-spec\?tab=outputs/);
+  assert.match(parts["required packaging"], /Trims on cover is OFF/);
+  assert.equal(logs.at(-1)?.kind, "read");
+});
+
+test("get_cover: no style to read, or a style without a prod spec, is an error result", async () => {
+  output.styleId = null;
+  request.styleId = null;
+  const none = await run("get_cover", {});
+  assert.equal(none.isError, true);
+  assert.match(content(none).error, /names no style/);
+
+  coverImpl = async () => ({ prodSpecId: null, input: {} });
+  const noSpec = await run("get_cover", { styleId: STYLE_ID });
+  assert.equal(noSpec.isError, true);
+  assert.match(content(noSpec).error, /no prod spec/);
+
+  const gone = await run("get_cover", { styleId: "bogus-missing" });
+  assert.equal(gone.isError, true);
+});
+
 // ── list_tokens ─────────────────────────────────────────────────────────────
 
 test("list_tokens: catalogue filtered by query, resolved for this output's style (en + the ProdSpec's first language)", async () => {
@@ -801,6 +874,16 @@ test("propose_patch: refuses without an output, on another layout, or on a coded
   const coded = await run("propose_patch", input);
   assert.equal(coded.isError, true);
   assert.match(content(coded).error, /coded template/);
+  assert.equal(calls.createDraft, undefined);
+});
+
+test("propose_patch: the cover is printed by code — refused with a pointer to get_cover", async () => {
+  output.layoutId = null;
+  output.variantKey = "__cover__";
+  const res = await run("propose_patch", { layoutId: LAYOUT_ID, ops: [ADD_QTY], note: "n" });
+  assert.equal(res.isError, true);
+  assert.match(content(res).error, /printed by code/);
+  assert.match(content(res).error, /get_cover/);
   assert.equal(calls.createDraft, undefined);
 });
 
