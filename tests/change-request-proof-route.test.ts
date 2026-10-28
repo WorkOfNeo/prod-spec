@@ -188,6 +188,7 @@ const renderHtmlPng = mock.fn(async (opts: { html: string; widthMm: number; heig
 
 type RouteModule = typeof import("@/app/api/admin/change-requests/revisions/[revisionId]/proof/route");
 let GET: RouteModule["GET"];
+let DOCUMENT_GET: typeof GET;
 let proofs: typeof import("@/lib/change-requests/proofs");
 
 before(async () => {
@@ -225,6 +226,7 @@ before(async () => {
 
   ({ buildSampleStyleData } = await import("@/lib/pdf/sample-data"));
   ({ GET } = await import("@/app/api/admin/change-requests/revisions/[revisionId]/proof/route"));
+  ({ GET: DOCUMENT_GET } = await import("@/app/api/admin/change-requests/revisions/[revisionId]/document/route"));
   proofs = await import("@/lib/change-requests/proofs");
 });
 
@@ -431,4 +433,52 @@ test("pickProofsForRevision: the new polybag block shown where it prints and pro
     proofs.ProofNotFoundError,
   );
   assert.equal(pngCalls.length, 0, "picking renders no pictures");
+});
+
+// ── The draft walkthrough's document route ──────────────────────────────────
+
+const docCall = (revisionId: string, qs: string) =>
+  DOCUMENT_GET(
+    new NextRequest(`http://localhost/api/admin/change-requests/revisions/${revisionId}/document?${qs}`),
+    params(revisionId),
+  );
+
+test("document: same gate as the proof — flag off 404, no session 401, REVIEWER 403, bad params 400", async () => {
+  delete process.env.CHANGE_REQUESTS_ENABLED;
+  assert.equal((await docCall("rev-draft", ok)).status, 404);
+  process.env.CHANGE_REQUESTS_ENABLED = "true";
+  asAnon();
+  assert.equal((await docCall("rev-draft", ok)).status, 401);
+  asReviewer();
+  assert.equal((await docCall("rev-draft", ok)).status, 403);
+  asAdmin();
+  assert.equal((await docCall("rev-draft", `styleId=${STYLE_ID}&side=both`)).status, 400);
+});
+
+test("document: the whole document as HTML — before is live, after is the draft; nothing rasterised or written", async () => {
+  const before = await docCall("rev-draft", `styleId=${STYLE_ID}&side=before`);
+  assert.equal(before.status, 200);
+  assert.equal(before.headers.get("cache-control"), "no-store");
+  const b = await before.json();
+  assert.match(b.html, /LIVE TEXT/);
+  assert.deepEqual([b.widthMm, b.heightMm, b.doc, b.suffix], [50, 30, 0, null]);
+  assert.deepEqual(b.documents, [{ suffix: null }]);
+
+  const after = await (await docCall("rev-draft", `styleId=${STYLE_ID}&side=after`)).json();
+  assert.match(after.html, /DRAFT TEXT/);
+  assert.doesNotMatch(after.html, /LIVE TEXT/);
+  assert.equal(pngCalls.length, 0, "no Chromium for the walkthrough");
+  assert.deepEqual(layout.definition, rawDef("LIVE TEXT"));
+});
+
+test("document: a split output lists its documents and ?suffix picks one; unknown ones are a 404", async () => {
+  const res = await docCall("rev-split", `${ok}&suffix=M`);
+  assert.equal(res.status, 200);
+  const d = await res.json();
+  assert.equal(d.suffix, "M");
+  assert.match(d.html, /SPLIT M\b/);
+  assert.ok(d.documents.length > 1);
+  assert.ok(d.documents.some((x: { suffix: string | null }) => x.suffix === "M"));
+  assert.equal((await docCall("rev-split", `${ok}&suffix=bogus-size`)).status, 404);
+  assert.equal((await docCall("rev-draft", `styleId=${OTHER_STYLE_ID}&side=before`)).status, 404);
 });

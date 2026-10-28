@@ -616,6 +616,25 @@ export type RenderProofInput = {
 
 export const DEFAULT_PROOF_SCALE = 3;
 
+// Which of an output's rendered documents is asked for: by suffix when given
+// (it stays right if the draft changes how many documents there are), else by
+// index (default 0).
+export function pickDocIndex(docs: readonly RenderedOutputDoc[], opts: { doc?: number; suffix?: string } = {}): number {
+  if (opts.suffix !== undefined) {
+    const index = docs.findIndex((d) => (d.suffix ?? "") === opts.suffix);
+    if (index < 0) throw new ProofNotFoundError("doc", `This output has no document "${opts.suffix}"`);
+    return index;
+  }
+  const index = opts.doc ?? 0;
+  if (!Number.isInteger(index) || index < 0 || index >= docs.length) {
+    throw new ProofNotFoundError(
+      "doc",
+      `Document ${index} is out of range (this output has ${docs.length} document${docs.length === 1 ? "" : "s"})`,
+    );
+  }
+  return index;
+}
+
 // The render step: pick one rendered document and rasterise its first page.
 // Exported so the picture can be tested against a real browser without a
 // database.
@@ -623,19 +642,7 @@ export async function rasteriseProofDoc(
   docs: readonly RenderedOutputDoc[],
   opts: { doc?: number; suffix?: string; scale?: number } = {},
 ): Promise<ProofImage> {
-  let index: number;
-  if (opts.suffix !== undefined) {
-    index = docs.findIndex((d) => (d.suffix ?? "") === opts.suffix);
-    if (index < 0) throw new ProofNotFoundError("doc", `This output has no document "${opts.suffix}"`);
-  } else {
-    index = opts.doc ?? 0;
-    if (!Number.isInteger(index) || index < 0 || index >= docs.length) {
-      throw new ProofNotFoundError(
-        "doc",
-        `Document ${index} is out of range (this output has ${docs.length} document${docs.length === 1 ? "" : "s"})`,
-      );
-    }
-  }
+  const index = pickDocIndex(docs, opts);
   const picked = docs[index];
   const png = await renderHtmlPng({
     html: picked.html,
@@ -682,6 +689,27 @@ export function clearProofCache(): void {
   proofCache.clear();
 }
 
+// Every document one side of a revision prints for a style — the faithful
+// per-output render the runner uses, as HTML.
+async function renderSide(defs: ProofDefinitions, styleId: string, side: ProofSide): Promise<RenderedOutputDoc[]> {
+  try {
+    const { docs } = await renderStyleOutput({
+      styleId,
+      variantKey: layoutVariantKey(defs.layoutId),
+      definition: side === "before" ? defs.before : defs.after,
+      mode: "production",
+      documents: "files",
+      withUnresolved: false,
+    });
+    return docs;
+  } catch (err) {
+    if (!(err instanceof RenderOutputError)) throw err;
+    // Unknown style, or a style whose ProdSpec doesn't print this layout.
+    if (err.status === 404) throw new ProofNotFoundError("style", err.message);
+    throw new ProofRenderError(err.message);
+  }
+}
+
 export async function renderProof(input: RenderProofInput): Promise<ProofImage> {
   const scale = input.scale ?? DEFAULT_PROOF_SCALE;
   const defs = await loadProofDefinitions(input.revisionId);
@@ -690,24 +718,37 @@ export async function renderProof(input: RenderProofInput): Promise<ProofImage> 
   const key = [input.revisionId, input.styleId, input.side, which, defKey, scale].join("|");
 
   return cachedProof(key, async () => {
-    let docs: RenderedOutputDoc[];
-    try {
-      ({ docs } = await renderStyleOutput({
-        styleId: input.styleId,
-        variantKey: layoutVariantKey(defs.layoutId),
-        definition: input.side === "before" ? defs.before : defs.after,
-        mode: "production",
-        documents: "files",
-        withUnresolved: false,
-      }));
-    } catch (err) {
-      if (!(err instanceof RenderOutputError)) throw err;
-      // Unknown style, or a style whose ProdSpec doesn't print this layout.
-      if (err.status === 404) throw new ProofNotFoundError("style", err.message);
-      throw new ProofRenderError(err.message);
-    }
+    const docs = await renderSide(defs, input.styleId, input.side);
     return rasteriseProofDoc(docs, { doc: input.doc, suffix: input.suffix, scale });
   });
+}
+
+// One whole document of one side, as HTML with every page — what the draft
+// walkthrough shows, so a person can page through a draft on any style
+// before approving it, not only the first page of the picked proofs. Also
+// lists the side's documents so a split output can be stepped through.
+export type RevisionDocument = {
+  html: string;
+  widthMm: number;
+  heightMm: number;
+  suffix: string | null;
+  doc: number;
+  documents: { suffix: string | null }[];
+};
+
+export async function renderRevisionDocument(input: Omit<RenderProofInput, "scale">): Promise<RevisionDocument> {
+  const defs = await loadProofDefinitions(input.revisionId);
+  const docs = await renderSide(defs, input.styleId, input.side);
+  const index = pickDocIndex(docs, { doc: input.doc, suffix: input.suffix });
+  const picked = docs[index];
+  return {
+    html: picked.html,
+    widthMm: picked.widthMm,
+    heightMm: picked.heightMm,
+    suffix: picked.suffix,
+    doc: index,
+    documents: docs.map((d) => ({ suffix: d.suffix })),
+  };
 }
 
 // ── Route query (pure) ───────────────────────────────────────────────────────

@@ -26,10 +26,15 @@ export function PreviewFrame({
   widthMm,
   heightMm,
   cornerRadiusMm,
+  maxScale = 1,
 }: {
   html: string;
   widthMm: number;
   heightMm: number;
+  // How far the frame may scale UP to fill its column. 1 (the default) never
+  // enlarges past actual size; the draft walkthrough passes more so a small
+  // label can be read in detail.
+  maxScale?: number;
   // The page's die corner radius, when it has one. The rendered page already
   // clips its own content to that shape, but the white sheet behind it would
   // still read as square — so the paper is rounded here too and you can see
@@ -50,13 +55,13 @@ export function PreviewFrame({
     if (!el) return;
     const update = () => {
       const w = el.clientWidth;
-      if (w > 0) setScale(Math.min(w / naturalW, 1));
+      if (w > 0) setScale(Math.min(w / naturalW, maxScale));
     };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [naturalW]);
+  }, [naturalW, maxScale]);
 
   // Measure the rendered content height so the wrapper hugs it (handles
   // single- and multi-page templates uniformly). Re-measure after a beat
