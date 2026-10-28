@@ -35,6 +35,7 @@ import { getContrastAddressLogoDataUrl, getContrastLogoDataUrl } from "./logos";
 import {
   applyConditionalsForStyle,
   augmentTranslatedFields,
+  blockShownForStyle,
   augmentCompositionTranslations,
   compositionLangsInDef,
   evaluateCalcForStyle,
@@ -51,7 +52,8 @@ import {
 //
 // Pipeline per line: conditionals first ({{if field == VALUE}}…
 // {{else}}…{{endif}} evaluated against StyleData — taken branch only),
-// then token resolution.
+// then token resolution. A block whose showWhen rules fail for the style
+// renders nothing at all.
 //
 // Modes:
 //   • production — empty tokens render as nothing; a line that contained
@@ -969,6 +971,10 @@ function blockTypography(block: LayoutBlock, fontScale: number): string {
 type RenderedBlock = { html: string; hasInk: boolean };
 
 function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx: RenderCtx): RenderedBlock {
+  // "Show only when…" (block.showWhen) — decided per style / repetition row,
+  // in preview too, so the true render is what prints. The cell stays empty;
+  // no ink, so a page holding only hidden blocks can still omitWhenEmpty.
+  if (!blockShownForStyle(block, style)) return { html: "", hasInk: false };
   const { cols: gridCols, rows: gridRows } = pageGrid(page);
   const marg = page.margins ?? { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 };
   // Physical content width of this block (page is already the FINAL print

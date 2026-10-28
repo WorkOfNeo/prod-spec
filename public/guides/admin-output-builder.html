@@ -321,6 +321,9 @@
           <li><span class="keyword">== / !=</span> compare the whole value, case-insensitively:<br><span class="ob-tok">{{if deliveryTerm == FOB}}…{{else}}…{{endif}}</span></li>
           <li><span class="keyword">contains / !contains</span> test for a word <i>anywhere</i> in the value:<br><span class="ob-tok">{{if productGroup contains Set}}PER SÆT{{else}}KR.{{endif}}</span></li>
           <li><span class="keyword">includes / !includes</span> test a comma-separated list:<br><span class="ob-tok">{{if certificates includes FSC}}FSC certified{{endif}}</span></li>
+          <li><span class="keyword">is set / is not set</span> ask whether the field prints anything:<br><span class="ob-tok">{{if polybagQty is set}}QTY: {{polybagQty}} PCS{{endif}}</span></li>
+          <li><span class="keyword">&gt; &lt; &gt;= &lt;=</span> compare numbers (read like the price):<br><span class="ob-tok">{{if price &gt; 100}}…{{else}}…{{endif}}</span></li>
+          <li><span class="keyword">starts with / ends with</span> test the start or end of the value:<br><span class="ob-tok">{{if styleNumber starts with IL}}…{{endif}}</span></li>
         </ul>
       </div>
       <div class="variant">
@@ -339,6 +342,12 @@
       <p>The requirement: <i>“If the Product Group on Monday is <b>Set</b>, the price label shows <b>PER SÆT</b>; otherwise <b>KR.</b> for individual pieces.”</i> That's one line in the block — no new output, no code:</p>
       <p style="margin-top:6px;"><span class="ob-tok">{{price}} {{if productGroup contains Set}}PER SÆT{{else}}KR.{{endif}}</span></p>
       <p style="margin-top:6px;">Use <span class="keyword">contains</span> rather than <span class="keyword">==</span> because the column isn't always the bare word: <b>Set</b>, <b>Gift Set</b> and <b>SET 2-PACK</b> all print PER SÆT, while <b>3-Pack Socks</b> prints KR. Switch to <span class="keyword">==</span> when the column really is exactly “Set” and a “Sunset”-style false positive would matter. The <b>Logic</b> palette inserts this exact line from the <span class="ob-tok it">{{if … contains …}}</span> chip.</p>
+    </div>
+
+    <div class="note">
+      <div class="h">No typing needed — <b>If…</b>, and conditions on a whole block</div>
+      <p><b>If…</b> beside <b>B</b> / <b>I</b> on the content editor opens a picker — field · operator · value, optionally an else — and wraps the selected text in the condition (or inserts an empty one at the cursor).</p>
+      <p style="margin-top:6px;">When a whole field should come and go, set it on the <b>block</b> instead: block panel → <b>Show only when…</b> → one or more rules with the same operators, matched on <b>all</b> or <b>any</b>. When they don't hold the block doesn't print, its cell stays empty, and its variables aren't waited on. On the canvas the block carries an <span class="ob-tok">if</span> tag and fades when the test style hides it.</p>
     </div>
 
     <div class="note warn">
