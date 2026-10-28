@@ -50,6 +50,7 @@ import { describeLayoutChanges } from "@/lib/output-layouts/ops";
 import type { LayoutDef } from "@/lib/output-layouts/schema";
 import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { getSystemPromptContent } from "@/lib/prompts/system-prompts";
+import { propagateAttributes, startActiveObservation, updateActiveObservation } from "@langfuse/tracing";
 import {
   AiNotConfiguredError,
   MAX_IMAGE_BYTES,
@@ -228,6 +229,12 @@ async function loadMemoryNotes(customerId: string | null, layoutId: string | nul
 
 // `isCurrent` answers whether this run still owns the output (see
 // startChangeRequestRun); a run that doesn't applies nothing when it ends.
+//
+// One Langfuse trace per run (src/lib/ai/tracing.ts): an `agent` observation
+// whose input is what the agent was asked and whose output is how the run
+// ended; the loop's turns and tool calls nest under it. The request is the
+// session, so every run on it (first draft, comment, answer, resume) reads
+// as one conversation.
 export async function runChangeRequestJob(
   outputId: string,
   opts: RunOptions,
@@ -235,6 +242,57 @@ export async function runChangeRequestJob(
 ): Promise<RunOutcome> {
   const output = await getOutputWithRequest(outputId);
   if (!output) throw new Error(`Change-request output ${outputId} not found`);
+  return propagateAttributes(
+    {
+      traceName: "handle-change-request",
+      sessionId: output.requestId,
+      ...(opts.userId ? { userId: opts.userId } : {}),
+      tags: ["change-requests"],
+      metadata: {
+        request: requestRef(output.request.number),
+        outputId,
+        trigger: opts.trigger,
+        ...(output.layoutId ? { layoutId: output.layoutId } : {}),
+        ...(output.variantKey ? { variantKey: output.variantKey } : {}),
+      },
+    },
+    () =>
+      startActiveObservation(
+        "handle-change-request",
+        async (agent) => {
+          agent.update({
+            input: {
+              request: `${requestRef(output.request.number)}: ${output.request.title}`,
+              output: output.label,
+              issue: output.text,
+              trigger: opts.trigger,
+            },
+          });
+          const said: { text?: string } = {};
+          const outcome = await runJob(output, opts, isCurrent, said);
+          agent.update({
+            output: {
+              status: outcome.status,
+              ...(said.text ? { message: said.text } : {}),
+              ...(outcome.reason ? { reason: outcome.reason } : {}),
+            },
+            ...(outcome.status === "FAILED" ? { level: "ERROR" as const, statusMessage: outcome.reason } : {}),
+          });
+          return outcome;
+        },
+        { asType: "agent" },
+      ),
+  );
+}
+
+async function runJob(
+  output: NonNullable<Awaited<ReturnType<typeof getOutputWithRequest>>>,
+  opts: RunOptions,
+  isCurrent: () => boolean,
+  // What the agent said when it handed back, for the trace's output.
+  said: { text?: string },
+): Promise<RunOutcome> {
+  const outputId = output.id;
   const requestId = output.requestId;
   const run = { requestId, outputId };
 
@@ -342,6 +400,12 @@ export async function runChangeRequestJob(
         ...(result.refusalCategory !== undefined ? { refusalCategory: result.refusalCategory } : {}),
       },
     });
+
+    said.text = summaryOf(result) || undefined;
+    updateActiveObservation(
+      { metadata: { stopReason: result.stopReason, turns: result.turns, toolCalls: result.calls.length, costUsd: result.costUsd } },
+      { asType: "agent" },
+    );
 
     if (!isCurrent()) return superseded(run);
     return await applyOutcome(run, result, before);

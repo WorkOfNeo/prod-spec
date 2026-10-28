@@ -1,6 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { propagateAttributes, startActiveObservation } from "@langfuse/tracing";
 import { z } from "zod";
+import { anthropicUsageDetails, chatMessages, langfuseConfigured } from "@/lib/ai/tracing";
+import { costUsd, tokenUsage } from "./client";
 
 // =====================================================
 // Split a pasted email into one issue per print output (design §5.7).
@@ -18,6 +21,9 @@ import { z } from "zod";
 //
 // No ANTHROPIC_API_KEY → no call: every picked output gets the full text and a
 // note says so. The form keeps working without AI.
+//
+// Traced in Langfuse as one `generation` ("split-request-email") with the
+// prompt, the structured answer, usage and cost (src/lib/ai/tracing.ts).
 // =====================================================
 
 export const SPLIT_MODEL_DEFAULT = "claude-haiku-5-5";
@@ -116,7 +122,7 @@ export type SplitClient = Pick<Anthropic, "messages">;
 
 export async function splitRequestByOutput(
   input: { text: string; outputs: SplitOutputRef[] },
-  deps: { client?: SplitClient } = {},
+  deps: { client?: SplitClient; userId?: string } = {},
 ): Promise<SplitResult> {
   const text = input.text.trim();
   if (!text || input.outputs.length === 0) return { issues: [] };
@@ -124,39 +130,78 @@ export async function splitRequestByOutput(
     return copyToEveryOutput(text, input.outputs, AI_NOT_CONFIGURED_NOTE);
   }
 
-  const client = deps.client ?? new Anthropic();
+  // The SDK's own OpenTelemetry spans are off: the call is traced below.
+  const client = deps.client ?? new Anthropic({ openTelemetry: false });
   const prompt = buildSplitPrompt(text, input.outputs);
-  let response;
-  try {
-    response = await client.messages.parse({
-      model: splitModel(),
-      max_tokens: 16000,
-      system: prompt.system,
-      messages: [{ role: "user", content: prompt.user }],
-      output_config: { effort: "low", format: zodOutputFormat(SplitResponseSchema) },
-    });
-  } catch (err) {
-    if (err instanceof Anthropic.RateLimitError) {
-      throw new SplitError("The AI is busy right now — try again in a minute, or split the text by hand.");
-    }
-    if (err instanceof Anthropic.APIError) {
-      throw new SplitError(`The AI could not split this text (${err.status ?? "network error"}) — split it by hand.`);
-    }
-    // A structured answer that didn't parse surfaces as a plain AnthropicError.
-    if (err instanceof Anthropic.AnthropicError) {
-      throw new SplitError("The AI answer could not be read — try again, or split the text by hand.");
-    }
-    throw err;
-  }
+  const model = splitModel();
+  return propagateAttributes(
+    {
+      traceName: "split-request-email",
+      tags: ["change-requests"],
+      ...(deps.userId ? { userId: deps.userId } : {}),
+      metadata: { outputs: String(input.outputs.length) },
+    },
+    () =>
+      startActiveObservation(
+        "split-request-email",
+        async (generation) => {
+          generation.update({
+            model,
+            modelParameters: { effort: "low", max_tokens: 16000 },
+            ...(langfuseConfigured()
+              ? { input: chatMessages(prompt.system, [{ role: "user", content: prompt.user }]) }
+              : {}),
+          });
+          const fail = (message: string) => {
+            generation.update({ level: "ERROR", statusMessage: message });
+            return new SplitError(message);
+          };
 
-  if (response.stop_reason === "refusal") {
-    throw new SplitError("The AI declined to split this text — split it by hand.");
-  }
-  if (response.stop_reason === "max_tokens") {
-    throw new SplitError("The text is too long to split in one go — split it by hand.");
-  }
-  if (!response.parsed_output) {
-    throw new SplitError("The AI answer could not be read — try again, or split the text by hand.");
-  }
-  return mapSplitResponse(response.parsed_output, input.outputs);
+          let response;
+          try {
+            response = await client.messages.parse({
+              model,
+              max_tokens: 16000,
+              system: prompt.system,
+              messages: [{ role: "user", content: prompt.user }],
+              output_config: { effort: "low", format: zodOutputFormat(SplitResponseSchema) },
+            });
+          } catch (err) {
+            if (err instanceof Anthropic.RateLimitError) {
+              throw fail("The AI is busy right now — try again in a minute, or split the text by hand.");
+            }
+            if (err instanceof Anthropic.APIError) {
+              throw fail(`The AI could not split this text (${err.status ?? "network error"}) — split it by hand.`);
+            }
+            // A structured answer that didn't parse surfaces as a plain AnthropicError.
+            if (err instanceof Anthropic.AnthropicError) {
+              throw fail("The AI answer could not be read — try again, or split the text by hand.");
+            }
+            throw err;
+          }
+
+          const usage = response.usage ? tokenUsage(response.usage) : null;
+          const cost = usage ? costUsd(response.model ?? model, usage) : null;
+          generation.update({
+            model: response.model ?? model,
+            output: response.parsed_output ?? null,
+            ...(usage ? { usageDetails: anthropicUsageDetails(usage) } : {}),
+            ...(cost !== null ? { costDetails: { total: cost } } : {}),
+            metadata: { stopReason: response.stop_reason },
+          });
+
+          if (response.stop_reason === "refusal") {
+            throw fail("The AI declined to split this text — split it by hand.");
+          }
+          if (response.stop_reason === "max_tokens") {
+            throw fail("The text is too long to split in one go — split it by hand.");
+          }
+          if (!response.parsed_output) {
+            throw fail("The AI answer could not be read — try again, or split the text by hand.");
+          }
+          return mapSplitResponse(response.parsed_output, input.outputs);
+        },
+        { asType: "generation" },
+      ),
+  );
 }
