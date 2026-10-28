@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 import {
   CONDITION_OPS,
   CONDITION_OP_LABELS,
@@ -14,6 +15,8 @@ import {
   type ConditionOp,
 } from "@/lib/output-layouts/schema";
 import { LAYOUT_TOKENS } from "@/lib/output-layouts/token-meta";
+import { buttonClass } from "@/components/ui/button";
+import { Popover } from "@/components/ui/popover";
 
 // =====================================================
 // The Output Builder's condition pickers — one field · operator · value row,
@@ -31,7 +34,7 @@ const DEFAULT_FIELD = CONDITION_FIELDS.some((t) => t.key === "productGroup")
   ? "productGroup"
   : (CONDITION_FIELDS[0]?.key ?? "");
 
-const inputCls = "rounded border border-zinc-200 bg-white px-1.5 py-1 text-xs text-zinc-700";
+const inputCls = "rounded border border-line bg-surface px-1.5 py-1 text-xs text-ink";
 
 // A palette label is written for the chip's tooltip ("Customer item no (bare =
 // this row's size). :product picks…"); the picker wants just the name. Cut at
@@ -61,6 +64,8 @@ const FIELD_NAMES = (() => {
 })();
 
 export type TextRange = { start: number; end: number };
+type CapturedSelection = { range: TextRange | null; spansLines: boolean };
+const NO_SELECTION: CapturedSelection = { range: null, spansLines: false };
 
 function ConditionRow({
   rule,
@@ -125,11 +130,11 @@ function ConditionRow({
           <button
             type="button"
             onClick={onRemove}
-            className="flex h-6 w-6 items-center justify-center rounded text-xs text-zinc-400 hover:bg-zinc-100 hover:text-red-600"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-faint hover:bg-subtle hover:text-bad"
             title="Remove this rule"
             aria-label="Remove this rule"
           >
-            ✕
+            <X size={14} aria-hidden="true" />
           </button>
         ) : null}
       </div>
@@ -180,7 +185,7 @@ export function BlockShowWhenEditor({
         <button
           type="button"
           onClick={() => set([{ field: DEFAULT_FIELD, op: "is set", value: "" }])}
-          className="text-xs font-medium text-zinc-500 hover:text-zinc-800"
+          className="text-xs font-medium text-muted hover:text-ink"
           title="Print this block only on styles that match — e.g. only when Product group contains Set, or only when the polybag quantity is set"
         >
           + Show only when…
@@ -194,9 +199,9 @@ export function BlockShowWhenEditor({
     active.length > 0 && evaluable(active, values) ? blockShown({ showWhen }, (f) => values[f] ?? "") : null;
 
   return (
-    <div className="rounded-md border border-zinc-200 bg-zinc-50/60 p-2">
+    <div className="rounded-md border border-line bg-subtle/60 p-2">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-xs text-zinc-600">
+        <div className="text-xs text-muted">
           Show only when{" "}
           {rules.length > 1 ? (
             <>
@@ -216,13 +221,13 @@ export function BlockShowWhenEditor({
         <button
           type="button"
           onClick={() => onChange(undefined)}
-          className="text-[11px] font-medium text-zinc-400 hover:text-red-600"
+          className="text-[11px] font-medium text-faint hover:text-bad"
           title="Remove the condition — the block prints on every style again"
         >
           Remove
         </button>
       </div>
-      <div className="mt-1.5 space-y-2 divide-y divide-zinc-200/70 [&>*+*]:pt-2">
+      <div className="mt-1.5 space-y-2 divide-y divide-line [&>*+*]:pt-2">
         {rules.map((rule, i) => (
           <ConditionRow
             key={i}
@@ -236,17 +241,17 @@ export function BlockShowWhenEditor({
         type="button"
         onClick={() => set([...rules, { field: DEFAULT_FIELD, op: "is set", value: "" }])}
         disabled={rules.length >= 20}
-        className="mt-1.5 text-[11px] font-medium text-zinc-500 hover:text-zinc-800 disabled:opacity-40"
+        className="mt-1.5 text-[11px] font-medium text-muted hover:text-ink disabled:opacity-40"
       >
         + Add rule
       </button>
       {status !== null && valuesFrom ? (
-        <p className={`mt-1 text-[11px] ${status ? "text-emerald-700" : "text-amber-700"}`}>
+        <p className={`mt-1 text-[11px] ${status ? "text-good" : "text-warn"}`}>
           {status ? "Prints" : "Hidden"} on {valuesFrom}
           {repeats ? " (checked against the whole style — a per-size field can differ row by row)" : ""}.
         </p>
       ) : null}
-      <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
+      <p className="mt-1 text-[11px] leading-relaxed text-faint">
         When the rules don&apos;t hold, the block doesn&apos;t print and its cell stays empty. Its variables aren&apos;t
         waited on either.
       </p>
@@ -256,17 +261,21 @@ export function BlockShowWhenEditor({
 
 // The "If…" button beside B / I on the content editor: pick a condition and
 // it wraps the selected text in {{if …}}…{{endif}} (or adds a fresh one).
-// The selection is captured on mousedown — picking the condition moves focus
-// off the textarea, which would otherwise lose it.
+// The selection is read on the button's mousedown — picking the condition
+// moves focus off the textarea, which would otherwise lose it. The picker
+// floats on the top layer (the shared Popover), so the narrow, scrolling
+// inspector doesn't clip it.
 export function InsertConditionButton({
+  anchor,
   captureSelection,
   onInsert,
-  disabled,
   size = "sm",
 }: {
-  captureSelection: () => { range: TextRange | null; spansLines: boolean };
+  // The picker's CSS anchor name, unique on the page: the inspector's button
+  // stays mounted under the expanded editor's.
+  anchor: `--${string}`;
+  captureSelection: () => CapturedSelection;
   onInsert: (condition: string, withElse: boolean, range: TextRange | null) => void;
-  disabled?: boolean;
   size?: "sm" | "md";
 }) {
   const [open, setOpen] = useState(false);
@@ -276,103 +285,97 @@ export function InsertConditionButton({
     value: "",
   });
   const [withElse, setWithElse] = useState(false);
-  const [captured, setCaptured] = useState<{
-    range: TextRange | null;
-    spansLines: boolean;
-  }>({
-    range: null,
-    spansLines: false,
-  });
-  const rootRef = useRef<HTMLDivElement>(null);
+  const [captured, setCaptured] = useState<CapturedSelection>(NO_SELECTION);
+  // Read on mousedown, taken when the picker opens. Opened from the keyboard
+  // there is none — focus is on the button, not the text.
+  const pressed = useRef<CapturedSelection | null>(null);
 
+  // Esc closes the picker only — not the expanded editor around it, which
+  // closes on any Esc that reaches the window.
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        setOpen(false);
-      }
+      if (e.key === "Escape") e.stopPropagation();
     };
-    document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey, true);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey, true);
-    };
+    return () => document.removeEventListener("keydown", onKey, true);
   }, [open]);
 
   const hasSelection = captured.range !== null && captured.range.end > captured.range.start;
   const btnCls =
     size === "md"
-      ? "rounded border border-zinc-200 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-50"
-      : "rounded border border-zinc-200 px-1.5 py-0.5 text-[11px] text-zinc-600 hover:bg-zinc-50";
+      ? "rounded border border-line px-2 py-1 font-mono text-xs text-muted hover:bg-subtle"
+      : "rounded border border-line px-1.5 py-0.5 font-mono text-[11px] text-muted hover:bg-subtle";
+  const close = (el: Element) => (el.closest("[popover]") as HTMLElement | null)?.hidePopover();
 
   return (
-    <div ref={rootRef} className="relative">
-      <button
-        type="button"
-        disabled={disabled}
-        onMouseDown={(e) => {
-          e.preventDefault();
-          if (!open) setCaptured(captureSelection());
+    <div
+      onMouseDown={(e) => {
+        // The button only — a press inside the open picker is the user picking.
+        if (e.target instanceof Element && e.target.closest("[popover]")) return;
+        e.preventDefault();
+        pressed.current = captureSelection();
+      }}
+    >
+      <Popover
+        anchor={anchor}
+        align="end"
+        label="If… — insert a condition"
+        className={btnCls}
+        trigger={
+          <span title="Insert a condition — wraps the selected text in {{if …}}…{{endif}} so it prints only when the condition holds">
+            If…
+          </span>
+        }
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (next) setCaptured(pressed.current ?? NO_SELECTION);
+          pressed.current = null;
         }}
-        onClick={() => setOpen((v) => !v)}
-        className={`${btnCls} font-mono disabled:opacity-40`}
-        title="Insert a condition — wraps the selected text in {{if …}}…{{endif}} so it prints only when the condition holds"
       >
-        If…
-      </button>
-      {open ? (
-        <div className="absolute right-0 z-30 mt-1 w-80 rounded-md border border-zinc-200 bg-white p-3 text-left shadow-lg">
-          <div className="text-xs font-medium text-zinc-700">
+        <div className="w-72 p-2 text-left">
+          <div className="text-xs font-medium text-ink">
             {hasSelection ? "Print the selected text only when…" : "Insert a condition where…"}
           </div>
           <div className="mt-2">
             <ConditionRow rule={rule} onChange={(patch) => setRule((r) => ({ ...r, ...patch }))} />
           </div>
-          <label className="mt-2 flex items-center gap-2 text-xs text-zinc-600">
+          <label className="mt-2 flex items-center gap-2 text-xs text-muted">
             <input
               type="checkbox"
               checked={withElse}
               onChange={(e) => setWithElse(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-zinc-300"
+              className="h-3.5 w-3.5 rounded border-line text-ink"
             />
             Add an {"{{else}}"} for when it doesn&apos;t
           </label>
-          <code className="mt-2 block break-all rounded bg-zinc-50 px-1.5 py-1 font-mono text-[10px] text-zinc-500">
+          <code className="mt-2 block break-all rounded bg-subtle px-1.5 py-1 font-mono text-[11px] text-muted">
             {`{{if ${conditionText(rule.field, rule.op, rule.value)}}}${hasSelection ? "…" : ""}${withElse ? "{{else}}" : ""}{{endif}}`}
           </code>
           {captured.spansLines ? (
-            <p className="mt-1 text-[11px] text-amber-700">
+            <p className="mt-1 text-[11px] text-warn">
               A condition lives on one line — select text within a single line, or use the block&apos;s &ldquo;Show only
               when…&rdquo; to hide several lines at once.
             </p>
           ) : null}
           <div className="mt-2 flex justify-end gap-1.5">
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100"
-            >
+            <button type="button" onClick={(e) => close(e.currentTarget)} className={buttonClass("ghost", "sm")}>
               Cancel
             </button>
             <button
               type="button"
               disabled={captured.spansLines || !rule.field}
-              onClick={() => {
+              onClick={(e) => {
                 onInsert(conditionText(rule.field, rule.op, rule.value), withElse, captured.range);
-                setOpen(false);
+                close(e.currentTarget);
               }}
-              className="rounded bg-zinc-900 px-2 py-1 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-40"
+              className={buttonClass("primary", "sm")}
             >
               {hasSelection ? "Wrap selection" : "Insert"}
             </button>
           </div>
         </div>
-      ) : null}
+      </Popover>
     </div>
   );
 }
