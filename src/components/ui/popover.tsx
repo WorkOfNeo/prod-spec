@@ -24,6 +24,7 @@ export function Popover({
   trigger,
   label,
   align = "start",
+  onOpenChange,
   children,
 }: {
   /** The CSS anchor name that ties the panel to its button, unique on the page. */
@@ -36,6 +37,8 @@ export function Popover({
   label?: string;
   /** Line the panel up with the button's left edge (start) or right edge (end). */
   align?: "start" | "end";
+  /** Told each time the panel opens or closes. */
+  onOpenChange?: (open: boolean) => void;
   children: ReactNode;
 }) {
   const id = useId();
@@ -91,7 +94,10 @@ export function Popover({
         onBeforeToggle={(e) => {
           if (e.newState === "open" && !anchorsWork()) place(button.current, panel.current, align);
         }}
-        onToggle={(e) => setOpen(e.newState === "open")}
+        onToggle={(e) => {
+          setOpen(e.newState === "open");
+          onOpenChange?.(e.newState === "open");
+        }}
         onClick={(e) => {
           if (e.target instanceof Element && e.target.closest("a")) hide();
         }}

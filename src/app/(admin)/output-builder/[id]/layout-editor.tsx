@@ -22,6 +22,7 @@ import {
   invertColors,
   layoutSettings,
   pageGrid,
+  showWhenText,
   tokensInDef,
   type BorderSides,
   type CenterHole,
@@ -60,6 +61,12 @@ import {
 import { validateCalcExpression } from "@/lib/output-layouts/calc";
 import { CARTON_QTY_KINDS } from "@/lib/output-layouts/carton-qty";
 import { PreviewFrame } from "@/components/output-preview";
+import {
+  BlockShowWhenEditor,
+  InsertConditionButton,
+  hiddenByValues,
+  type TextRange,
+} from "./condition-controls";
 import { OutputRulesEditor, type RuleFieldOption } from "@/components/output-rules-editor";
 import { TokenAutocomplete, buildTokenSuggestions } from "@/components/token-autocomplete";
 import type { LayoutHistoryData } from "@/lib/output-layouts/revision-history";
@@ -687,6 +694,9 @@ export function LayoutEditor({
         id: newBlockId(),
         rect: duplicateRect(src.rect, grid),
         lines: [...src.lines],
+        ...(src.showWhen
+          ? { showWhen: { ...src.showWhen, rules: src.showWhen.rules.map((r) => ({ ...r })) } }
+          : {}),
       };
       setDef((d) => ({
         ...d,
@@ -1369,6 +1379,40 @@ export function LayoutEditor({
     }, 0);
   }
 
+  // The content selection at the moment the If… button is pressed (its
+  // picker then takes focus). null when the textarea wasn't focused — the
+  // conditional then goes on a new line of its own.
+  function captureContentSelection(): { range: TextRange | null; spansLines: boolean } {
+    const ta = activeContentTa();
+    if (!ta || document.activeElement !== ta) return { range: null, spansLines: false };
+    const start = ta.selectionStart ?? 0;
+    const end = ta.selectionEnd ?? start;
+    return { range: { start, end }, spansLines: ta.value.slice(start, end).includes("\n") };
+  }
+
+  // Wrap `range` of the block content in {{if condition}}…{{endif}} (plus an
+  // empty {{else}} when asked), leaving the caret inside the if-branch.
+  function insertCondition(condition: string, withElse: boolean, range: TextRange | null) {
+    if (!selBlock) return;
+    const text = selBlock.lines.join("\n");
+    const open = `{{if ${condition}}}`;
+    const close = withElse ? "{{else}}{{endif}}" : "{{endif}}";
+    const start = range ? range.start : text.length;
+    const end = range ? range.end : text.length;
+    const lead = range || text.length === 0 ? "" : "\n";
+    const selected = text.slice(start, end);
+    const next = text.slice(0, start) + lead + open + selected + close + text.slice(end);
+    updateBlock(blockId(selBlock), { lines: next.split("\n").slice(0, 100) });
+    const caret = start + lead.length + open.length + selected.length;
+    window.setTimeout(() => {
+      const el = activeContentTa();
+      if (el) {
+        el.focus();
+        el.setSelectionRange(caret, caret);
+      }
+    }, 0);
+  }
+
   function insertToken(token: string) {
     if (!selBlock || !page) return;
     const ta = activeContentTa();
@@ -1739,6 +1783,12 @@ export function LayoutEditor({
                 >
                   I
                 </button>
+                <InsertConditionButton
+                  anchor="--if-expanded"
+                  size="md"
+                  captureSelection={captureContentSelection}
+                  onInsert={insertCondition}
+                />
                 <button
                   type="button"
                   onClick={() => setExpandedFor(null)}
@@ -2486,11 +2536,32 @@ export function LayoutEditor({
                       disabled={!selBlock}
                       onClick={() => insertToken("{{if certificates includes FSC}}FSC certified{{endif}}")}
                     />
+                    <TokenChip
+                      token="{{if … is set}}"
+                      title='Presence condition — e.g. {{if polybagQty is set}}QTY: {{polybagQty}} PCS{{endif}}: true when the field prints anything at all. Also "is not set". The same as the older != "" form, which still works.'
+                      disabled={!selBlock}
+                      onClick={() => insertToken("{{if polybagQty is set}}QTY: {{polybagQty}} PCS{{endif}}")}
+                    />
+                    <TokenChip
+                      token="{{if … > …}}"
+                      title="Number condition — e.g. {{if price > 100}}…{{else}}…{{endif}}. Also <, >= (at least) and <= (at most). Reads amounts the way {{price}} does (KR 69,95 = 69.95); a field that isn't one number (blank, two markets) matches no comparison at all."
+                      disabled={!selBlock}
+                      onClick={() => insertToken("{{if price > 100}}{{else}}{{endif}}")}
+                    />
+                    <TokenChip
+                      token="{{if … starts with …}}"
+                      title="Prefix condition — e.g. {{if styleNumber starts with IL}}…{{endif}}. Also ends with, and !starts with / !ends with. Case-insensitive."
+                      disabled={!selBlock}
+                      onClick={() => insertToken("{{if styleNumber starts with IL}}{{endif}}")}
+                    />
                   </div>
                   <p className="mt-1 text-[11px] leading-relaxed text-faint">
                     One condition per line, no nesting. ==/!= compare the whole value; contains/!contains test for
-                    a word anywhere in it; includes/!includes check a comma-separated list. The {"{{cert:…}}"} marks
-                    already print only on styles that declare the certificate, so no wrapper is needed for them.
+                    a word anywhere in it; includes/!includes check a comma-separated list; is set / is not set ask
+                    whether it prints anything; &gt; &lt; &gt;= &lt;= compare numbers; starts with / ends with test the
+                    edges. <b>If…</b> beside B / I builds one for you around the selected text, and a block&apos;s{" "}
+                    <b>Show only when…</b> hides the whole block instead. The {"{{cert:…}}"} marks already print only on
+                    styles that declare the certificate, so no wrapper is needed for them.
                   </p>
                 </div>
               </div>
@@ -2653,6 +2724,7 @@ export function LayoutEditor({
                       selected={sel === blockId(block)}
                       coSelected={sel !== blockId(block) && selIds.includes(blockId(block))}
                       highlighted={hoverBlock === blockId(block)}
+                      hiddenOnTestStyle={hiddenByValues(block, tokenValues)}
                       onSelect={(additive) => selectBlock(blockId(block), additive)}
                       onRemove={() => removeBlock(blockId(block))}
                     />
@@ -3198,6 +3270,17 @@ export function LayoutEditor({
                       />
                       Shrink text to fit cell (no overflow onto other blocks)
                     </label>
+                    {/* Block-level condition — the whole block comes and goes per
+                        style, without an {{if}} in its text. Per block, not part
+                        of "formatting": Copy/Paste format never carries it. */}
+                    <BlockShowWhenEditor
+                      key={`${blockId(selBlock)}-show-when`}
+                      showWhen={selBlock.showWhen}
+                      onChange={(next) => updateBlock(blockId(selBlock), { showWhen: next })}
+                      values={tokenValues}
+                      valuesFrom={previewSample ? "the sample data" : testStyle?.name}
+                      repeats={settings.repeatBy !== "none"}
+                    />
 
                     <div>
                       <div className="flex items-center justify-between">
@@ -3221,6 +3304,11 @@ export function LayoutEditor({
                           >
                             I
                           </button>
+                          <InsertConditionButton
+                            anchor="--if-inspector"
+                            captureSelection={captureContentSelection}
+                            onInsert={insertCondition}
+                          />
                           <button
                             type="button"
                             onMouseDown={(e) => e.preventDefault()}
@@ -4451,6 +4539,7 @@ function CanvasBlock({
   selected,
   coSelected,
   highlighted,
+  hiddenOnTestStyle,
   onSelect,
   onRemove,
 }: {
@@ -4465,10 +4554,14 @@ function CanvasBlock({
   // Hovered in the Blocks list — a blue locator ring + raised stack order so
   // it stands out from (and above) overlapping neighbours.
   highlighted: boolean;
+  // A "Show only when…" block that the test style's values hide — drawn
+  // faded so it stays editable but reads as "won't print here".
+  hiddenOnTestStyle: boolean;
   onSelect: (additive: boolean) => void;
   onRemove: () => void;
 }) {
   const fontPx = Math.max(block.fontPt * PT_TO_MM * scale, 7);
+  const condition = showWhenText(block);
 
   // The editor is grid-only — legacy corner blocks are converted to
   // rects by parseLayoutDef before they reach this component.
@@ -4523,9 +4616,17 @@ function CanvasBlock({
     <div
       data-block
       onClick={(e) => onSelect(e.shiftKey || e.metaKey || e.ctrlKey)}
-      className={`absolute cursor-pointer rounded-sm px-1 py-0.5 ${ringCls}    ${bgCls}`}
+      className={`absolute cursor-pointer rounded-sm px-1 py-0.5 ${ringCls} ${bgCls} ${hiddenOnTestStyle ? "opacity-40 outline-1 outline-dashed outline-warn" : ""}`}
       style={positionStyle}
     >
+      {condition ? (
+        <span
+          className={`absolute -top-2 right-1 z-10 rounded px-1 font-mono text-[9px] leading-[14px] shadow-sm ${hiddenOnTestStyle ? "bg-warn-soft text-warn" : "bg-primary text-primary-ink"}`}
+          title={`Prints only when ${condition}${hiddenOnTestStyle ? " — hidden on the test style" : ""}`}
+        >
+          if
+        </span>
+      ) : null}
       {selected ? (
         <button
           type="button"

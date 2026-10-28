@@ -48,6 +48,7 @@ import {
 import { requestRef, type OutputStatus } from "@/lib/change-requests/types";
 import { describeLayoutChanges } from "@/lib/output-layouts/ops";
 import type { LayoutDef } from "@/lib/output-layouts/schema";
+import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import { getSystemPromptContent } from "@/lib/prompts/system-prompts";
 import {
   AiNotConfiguredError,
@@ -553,6 +554,18 @@ function heartbeatFor(outputId: string): (force?: boolean) => Promise<void> {
 
 // ── The first user message ───────────────────────────────────────────────────
 
+// The cover isn't a layout, so the system prompt's "draft the smallest layout
+// change" doesn't fit it. Said here rather than in the (admin-editable)
+// prompt: a run on the cover gets it whatever the prompt says.
+export const COVER_BRIEFING =
+  'This output is the cover document ("Prod Spec", the first PDF of every bundle). It is printed by code, not drawn from an ' +
+  "Output Builder layout: you cannot draft a change to it, and nothing you do here changes it. Read it with get_cover, work out " +
+  "which part the request is about, and end with finish: a suggestion the admin applies by hand — the part to change, where it is " +
+  "changed (get_cover's whereToChange), the exact new wording when it is text, and how many covers that reaches (the cover block is on " +
+  "every cover; general information on every style of the prod spec). When only the cover's code can make the change (a new column, " +
+  "another order, anything no setting controls), say so in finish and describe the change for a developer; declare_gap is only for a " +
+  "missing layout variable. When it is unclear which part is meant, ask the reviewer.";
+
 type OutputRow = RequestDetail["outputs"][number];
 type MessageRow = RequestDetail["messages"][number];
 type AttachmentRow = Awaited<ReturnType<typeof getAttachmentImages>>[number];
@@ -587,6 +600,7 @@ export function buildFirstMessage(input: {
     output.styleId ? `representative style id ${output.styleId} (use it for proofs)` : null,
   ].filter(Boolean);
   if (hints.length) parts.push(`Known for this output: ${hints.join(" · ")}.`);
+  if (output.variantKey === COVER_VARIANT_KEY) parts.push(COVER_BRIEFING);
   const others = detail.outputs.filter((o) => o.id !== output.id).map((o) => `"${o.label}"`);
   if (others.length) {
     parts.push(`Other outputs in this request are handled in their own runs — leave them alone: ${others.join(", ")}.`);

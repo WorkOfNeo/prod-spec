@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
-import type { ToolContext } from "../agent/contract";
+import { AGENT_TOOL_NAMES, type ToolContext } from "../agent/contract";
 import { runAgentLoop, type AgentLoopClient } from "../agent/loop";
 import { DEFAULT_CHANGE_REQUEST_AGENT_PROMPT, buildSystemPrompt } from "../agent/prompt";
 import { loadBenchCase } from "./case-schema";
@@ -161,7 +161,7 @@ test("polybag-qty: get_layout → propose_patch → proofs + impact → finish s
   );
   // The production prompt and every bench tool reached the "model".
   assert.equal(requests[0].system, SYSTEM);
-  assert.equal(requests[0].tools?.length, 12);
+  assert.equal(requests[0].tools?.length, AGENT_TOOL_NAMES.length);
 
   const outcome = outcomeFromState(state);
   const impact = await fixtureImpact(c, outcome.drafts[0].definition);
