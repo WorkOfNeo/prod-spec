@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parsePriceAmount } from "@/lib/pdf/price-parse";
 
 // =====================================================
 // LayoutDef — the JSON artifact the Output Builder writes and
@@ -13,6 +14,8 @@ import { z } from "zod";
 //
 // Content is plain text lines with {{token}} variables plus single-level
 // conditionals:  {{if field == VALUE}}…{{else}}…{{endif}}
+// A whole BLOCK can also be conditional (block.showWhen) — same operators,
+// set on the block rather than typed into its text.
 // Anything richer still belongs in a coded template
 // (src/lib/pdf/templates/**), not here.
 // =====================================================
@@ -101,6 +104,47 @@ export const LayoutRectSchema = z.object({
 });
 export type LayoutRect = z.infer<typeof LayoutRectSchema>;
 
+// The comparison operators a condition can use — inline ({{if field OP
+// value}}) and on a block (showWhen) alike, spelled the same in both so the
+// JSON reads like the text syntax. Order = the order the builder offers them.
+export const CONDITION_OPS = [
+  "==",
+  "!=",
+  "is set",
+  "is not set",
+  "contains",
+  "!contains",
+  "includes",
+  "!includes",
+  "starts with",
+  "!starts with",
+  "ends with",
+  "!ends with",
+  ">",
+  "<",
+  ">=",
+  "<=",
+] as const;
+export type ConditionOp = (typeof CONDITION_OPS)[number];
+
+// One block-visibility rule. `field` is a text token key (validated at
+// publish, like an inline condition's field) — kept a plain string here so a
+// rule on a token that's later retired still round-trips instead of turning
+// the whole definition invalid. A rule with no field is inert.
+export const BlockConditionRuleSchema = z.object({
+  field: z.string().max(60).default(""),
+  op: z.enum(CONDITION_OPS).default("is set"),
+  value: z.string().max(200).default(""),
+});
+export type BlockConditionRule = z.infer<typeof BlockConditionRuleSchema>;
+
+export const BlockShowWhenSchema = z.object({
+  // "all": every rule must hold. "any": one is enough.
+  match: z.enum(["all", "any"]).default("all"),
+  rules: z.array(BlockConditionRuleSchema).max(20).default([]),
+});
+export type BlockShowWhen = z.infer<typeof BlockShowWhenSchema>;
+
 export const LayoutBlockSchema = z.object({
   // Stable identity within the page (selection, updates). Injected
   // deterministically by parseLayoutDef for defs written before ids.
@@ -176,6 +220,13 @@ export const LayoutBlockSchema = z.object({
   fitHeight: z.boolean().default(false),
   lineHeight: z.number().min(1).max(3).default(1.4),
   lines: z.array(z.string().max(500)).max(100).default([]),
+  // Print this block only when its rules hold for the style (or repetition
+  // row) being rendered — the block-level twin of an inline {{if}}, for when
+  // a whole field comes and goes rather than a word inside it. Same
+  // operators as {{if}} (see conditionMatches). Absent or no rules = always
+  // printed, so every block authored before this existed is untouched. A
+  // hidden block leaves its cell empty; nothing reflows into it.
+  showWhen: BlockShowWhenSchema.optional(),
 });
 export type LayoutBlock = z.infer<typeof LayoutBlockSchema>;
 
@@ -528,17 +579,57 @@ export const TOKEN_RE = /\{\{([a-zA-Z][a-zA-Z0-9]*)(?::([a-zA-Z0-9-]+))?(?::([0-
 //   {{if deliveryTerm == FOB}}{{customerOrderNo}}{{else}}{{poNumber}}{{endif}}
 //   {{if certificates includes FSC}}{{cert:fsc}}{{endif}}
 //   {{if productGroup contains Set}}PER SÆT{{else}}KR.{{endif}}
-// Value may be quoted. ==/!= compare the whole value, trimmed +
-// case-insensitive; includes/!includes check the comma-separated list
-// (per-item, punctuation-insensitive); contains/!contains are a plain
-// substring test — see conditionMatches. No nesting.
+//   {{if polybagQty is set}}QTY: {{polybagQty}} PCS{{endif}}
+//   {{if price > 100}}…{{endif}}   {{if styleNumber starts with 9}}…{{endif}}
+// Value may be quoted; "is set" / "is not set" take none. ==/!= compare the
+// whole value, trimmed + case-insensitive; includes/!includes check the
+// comma-separated list (per-item, punctuation-insensitive); contains,
+// starts with and ends with (and their ! forms) are plain text tests;
+// > < >= <= compare numbers — see conditionMatches. No nesting.
+//
+// Group 2 is the operator as typed (multi-word operators may carry extra
+// spaces) — normalise it with conditionOp(). Longer spellings come first so
+// ">=" never matches as ">" followed by a value of "=".
 export const IF_RE =
-  /\{\{if\s+([a-zA-Z][a-zA-Z0-9]*)\s*(==|!=|!includes|includes|!contains|contains)\s*"?([^"{}]*?)"?\s*\}\}([\s\S]*?)(?:\{\{else\}\}([\s\S]*?))?\{\{endif\}\}/g;
+  /\{\{if\s+([a-zA-Z][a-zA-Z0-9]*)\s*(is\s+not\s+set|is\s+set|!starts\s+with|starts\s+with|!ends\s+with|ends\s+with|==|!=|>=|<=|>|<|!includes|includes|!contains|contains)\s*"?([^"{}]*?)"?\s*\}\}([\s\S]*?)(?:\{\{else\}\}([\s\S]*?))?\{\{endif\}\}/g;
 
 // Control tags for canvas highlighting / orphan detection.
 export const CONTROL_RE = /\{\{(if\b[^{}]*|else|endif)\}\}/g;
 
-export type ConditionOp = "==" | "!=" | "includes" | "!includes" | "contains" | "!contains";
+// The operator IF_RE captured, in its canonical CONDITION_OPS spelling.
+export function conditionOp(typed: string): ConditionOp {
+  return typed.trim().replace(/\s+/g, " ") as ConditionOp;
+}
+
+// "is set" / "is not set" ask about presence and take no value.
+export function conditionOpTakesValue(op: ConditionOp): boolean {
+  return op !== "is set" && op !== "is not set";
+}
+
+// > < >= <= compare numbers; every other operator compares text.
+export function conditionOpIsNumeric(op: ConditionOp): boolean {
+  return op === ">" || op === "<" || op === ">=" || op === "<=";
+}
+
+// How the builder names each operator in its pickers.
+export const CONDITION_OP_LABELS: Record<ConditionOp, string> = {
+  "==": "equals",
+  "!=": "doesn't equal",
+  "is set": "is set",
+  "is not set": "is not set",
+  contains: "contains",
+  "!contains": "doesn't contain",
+  includes: "includes (list item)",
+  "!includes": "doesn't include (list item)",
+  "starts with": "starts with",
+  "!starts with": "doesn't start with",
+  "ends with": "ends with",
+  "!ends with": "doesn't end with",
+  ">": "is greater than",
+  "<": "is less than",
+  ">=": "is at least",
+  "<=": "is at most",
+};
 
 export type LineConditional = {
   field: string;
@@ -553,7 +644,7 @@ export function conditionalsInLine(line: string): LineConditional[] {
   for (const m of line.matchAll(new RegExp(IF_RE.source, "g"))) {
     out.push({
       field: m[1],
-      op: m[2] as ConditionOp,
+      op: conditionOp(m[2]),
       value: (m[3] ?? "").trim(),
       ifBody: m[4] ?? "",
       elseBody: m[5] ?? "",
@@ -571,6 +662,29 @@ function bareToken(s: string): string {
 }
 
 export function conditionMatches(actual: string, op: ConditionOp, value: string): boolean {
+  if (op === "is set" || op === "is not set") {
+    // Presence: does the field print anything at all? The readable form of
+    // the old {{if field != ""}} idiom (which still works).
+    const has = actual.trim() !== "";
+    return op === "is set" ? has : !has;
+  }
+  if (conditionOpIsNumeric(op)) {
+    // Numbers read with the same parser {{price}} and the generation rules'
+    // gt/lt use (src/lib/pdf/price-parse.ts), so "KR 69,95", "69.95" and
+    // "1.299,95" all compare as amounts and {{if price > 100}} agrees with
+    // an output rule "Price > 100". Either side not a single number — blank,
+    // "See customer order", "99 SEK, 69 DKK" — matches NOTHING, never 0: a
+    // label must not claim a comparison about a value it doesn't have. Gotcha
+    // carried over from that parser: three digits after the last separator
+    // are a thousands group, so "1.250" is 1250, not 1.25.
+    const a = parsePriceAmount(actual);
+    const v = parsePriceAmount(value);
+    if (a === undefined || v === undefined) return false;
+    if (op === ">") return a > v;
+    if (op === "<") return a < v;
+    if (op === ">=") return a >= v;
+    return a <= v;
+  }
   if (op === "contains" || op === "!contains") {
     // Plain SUBSTRING test, case-insensitive and trimmed — the same rule the
     // generation-rules engine's "contains" uses (src/lib/outputs/exclusion.ts),
@@ -582,6 +696,15 @@ export function conditionMatches(actual: string, op: ConditionOp, value: string)
     const want = value.trim().toLowerCase();
     const has = want !== "" && actual.toLowerCase().includes(want);
     return op === "contains" ? has : !has;
+  }
+  if (op === "starts with" || op === "!starts with" || op === "ends with" || op === "!ends with") {
+    // Prefix / suffix of the trimmed value, case-insensitive. Like contains,
+    // an empty search value matches nothing.
+    const want = value.trim().toLowerCase();
+    const got = actual.trim().toLowerCase();
+    const has =
+      want !== "" && (op.endsWith("starts with") ? got.startsWith(want) : got.endsWith(want));
+    return op.startsWith("!") ? !has : has;
   }
   if (op === "includes" || op === "!includes") {
     // List membership: true when one of the actual value's comma-separated
@@ -598,6 +721,51 @@ export function conditionMatches(actual: string, op: ConditionOp, value: string)
   return op === "==" ? a === v : a !== v;
 }
 
+// The rules of a block's showWhen that actually take part — a rule with no
+// field (a half-built row) is inert rather than "never matches".
+export function activeShowWhenRules(block: { showWhen?: BlockShowWhen }): BlockConditionRule[] {
+  return (block.showWhen?.rules ?? []).filter((r) => r.field.trim() !== "");
+}
+
+// Does this block depend on the style at all?
+export function blockIsConditional(block: { showWhen?: BlockShowWhen }): boolean {
+  return activeShowWhenRules(block).length > 0;
+}
+
+// Should this block print, given `getValue(field)`? Shared by the renderer
+// (StyleData-backed) and readiness (mapped-column-backed), exactly like
+// applyConditionals, so a block readiness waits on is a block that prints.
+export function blockShown(
+  block: { showWhen?: BlockShowWhen },
+  getValue: (field: string) => string,
+): boolean {
+  const rules = activeShowWhenRules(block);
+  if (rules.length === 0) return true;
+  const holds = (r: BlockConditionRule) => conditionMatches(getValue(r.field), r.op, r.value);
+  return block.showWhen?.match === "any" ? rules.some(holds) : rules.every(holds);
+}
+
+// A block's rules as one readable phrase — "productGroup contains Set and
+// polybagQty is set" — or "" when the block always prints. For change
+// summaries and the builder canvas.
+export function showWhenText(block: { showWhen?: BlockShowWhen }): string {
+  const joiner = block.showWhen?.match === "any" ? " or " : " and ";
+  return activeShowWhenRules(block)
+    .map((r) => conditionText(r.field, r.op, r.value))
+    .join(joiner);
+}
+
+// The text form of one condition, as it would be typed inside {{if …}}.
+// Used to insert an inline conditional from the builder's picker and to
+// describe a block's rules.
+export function conditionText(field: string, op: ConditionOp, value: string): string {
+  if (!conditionOpTakesValue(op)) return `${field} ${op}`;
+  // An empty value is written as "" (the old != "" idiom) so the tag still
+  // parses. IF_RE can't carry quotes or braces inside a value, so they drop.
+  const v = value.replace(/["{}]/g, "").trim();
+  return `${field} ${op} ${v === "" ? '""' : v}`;
+}
+
 // Evaluate every conditional in a line against `getValue(field)` and
 // substitute the taken branch. Shared by the renderer (StyleData-backed)
 // and readiness (mapped-column-backed) so they can never disagree.
@@ -606,12 +774,12 @@ export function applyConditionals(line: string, getValue: (field: string) => str
     const [, field, op, value, ifBody, elseBody] = m as unknown as [
       string,
       string,
-      ConditionOp,
+      string,
       string | undefined,
       string | undefined,
       string | undefined,
     ];
-    return conditionMatches(getValue(field), op, (value ?? "").trim())
+    return conditionMatches(getValue(field), conditionOp(op), (value ?? "").trim())
       ? (ifBody ?? "")
       : (elseBody ?? "");
   });

@@ -8,6 +8,15 @@
 import { CARTON_QTY_KINDS, SOLID_ASSORT_KINDS } from "./carton-qty";
 import { SIZE_FORMS } from "./size-form";
 import { IMAGE_SLUG_RE } from "./image-slug";
+import { parsePriceAmount } from "@/lib/pdf/price-parse";
+import {
+  activeShowWhenRules,
+  conditionOp,
+  conditionOpIsNumeric,
+  conditionOpTakesValue,
+  type BlockShowWhen,
+  type ConditionOp,
+} from "./schema";
 
 // The single accepted "sizeScope" argument — {{description:size}}.
 export const SIZE_SCOPE_ARG = "size";
@@ -647,9 +656,30 @@ export function validateTokenRef(key: string, arg?: string, arg2?: string): stri
 // the builder and the publish gate share it. Checks per LINE:
 //   • every {{if is consumed by a full, well-formed conditional
 //   • no orphan {{else}} / {{endif}}
-//   • the condition field is a known TEXT token (not barcode/symbols)
+//   • the condition itself is sound (validateCondition)
 // The regexes live in schema.ts (IF_RE / CONTROL_RE).
 // ---------------------------------------------------------------------
+
+// One condition — inline or a block's showWhen rule:
+//   • the field is a known TEXT token (not barcode/symbols)
+//   • "is set" / "is not set" carry no value
+//   • > < >= <= compare against a number
+export function validateCondition(field: string, op: ConditionOp, value: string): string[] {
+  const errs: string[] = [];
+  const meta = tokenMeta(field);
+  if (!meta) {
+    errs.push(`conditional checks unknown variable "${field}"`);
+  } else if (meta.kind !== "text") {
+    errs.push(`conditional can only check text variables ("${field}" is ${meta.kind})`);
+  }
+  if (!conditionOpTakesValue(op) && value.trim() !== "") {
+    errs.push(`"${field} ${op}" takes no value (got "${value.trim()}")`);
+  }
+  if (conditionOpIsNumeric(op) && parsePriceAmount(value.trim()) === undefined) {
+    errs.push(`"${field} ${op} ${value.trim()}" needs a number to compare against`);
+  }
+  return errs;
+}
 
 export function validateLineConditionals(
   line: string,
@@ -658,24 +688,30 @@ export function validateLineConditionals(
 ): string[] {
   const errs: string[] = [];
   let consumed = line;
-  const conds: Array<{ field: string }> = [];
-  consumed = consumed.replace(new RegExp(ifRe.source, "g"), (_m, field) => {
-    conds.push({ field });
+  const conds: Array<{ field: string; op: ConditionOp; value: string }> = [];
+  consumed = consumed.replace(new RegExp(ifRe.source, "g"), (_m, field, op, value) => {
+    conds.push({ field, op: conditionOp(op), value: value ?? "" });
     return "";
   });
   // Anything control-shaped left over is malformed / orphaned.
   for (const m of consumed.matchAll(new RegExp(controlRe.source, "g"))) {
     errs.push(
-      `malformed conditional near "{{${m[1]}}}" — expected {{if field == VALUE}}, {{if field contains VALUE}} or {{if field includes VALUE}} (…{{else}}…){{endif}} on one line`,
+      `malformed conditional near "{{${m[1]}}}" — expected {{if field == VALUE}}, {{if field is set}}, {{if field contains VALUE}}, {{if field > NUMBER}} … (…{{else}}…){{endif}} on one line`,
     );
   }
-  for (const c of conds) {
-    const meta = tokenMeta(c.field);
-    if (!meta) {
-      errs.push(`conditional checks unknown variable "${c.field}"`);
-    } else if (meta.kind !== "text") {
-      errs.push(`conditional can only check text variables ("${c.field}" is ${meta.kind})`);
-    }
+  for (const c of conds) errs.push(...validateCondition(c.field, c.op, c.value));
+  return errs;
+}
+
+// A block's "Show only when…" rules, prefixed with where they live so the
+// publish error points at the block rather than at a line.
+export function validateBlockShowWhen(block: { id?: string; showWhen?: BlockShowWhen }): string[] {
+  const where = `block ${block.id ?? "?"} "Show only when"`;
+  const errs: string[] = [];
+  const all = block.showWhen?.rules ?? [];
+  if (all.length > activeShowWhenRules(block).length) errs.push(`${where}: a rule has no field picked`);
+  for (const r of activeShowWhenRules(block)) {
+    for (const e of validateCondition(r.field, r.op, r.value)) errs.push(`${where}: ${e}`);
   }
   return errs;
 }
