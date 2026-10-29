@@ -462,11 +462,23 @@ export const CERT_SOURCES = ["oekotex", "fsc"] as const;
 export type CertSource = (typeof CERT_SOURCES)[number];
 
 // Allowed :arg values for source-typed tokens, per key.
-const SOURCES_BY_KEY: Record<string, readonly string[]> = {
+export const SOURCES_BY_KEY: Record<string, readonly string[]> = {
   barcode: BARCODE_SOURCES,
   logo: LOGO_SOURCES,
   cert: CERT_SOURCES,
 };
+
+// The source-typed tokens that take `source` as their argument — ["barcode"]
+// for "cartonEan13", [] for a key that is no source. A source is only ever
+// reached through its token ({{barcode:cartonEan13}}), never as a key of its
+// own, so "{{cartonEan13}} does not exist" and "{{barcode:cartonEan13}} does"
+// are both true; callers that ask "can a layout print this already?" (the
+// change-request gap check) look both ways.
+export function tokensWithSource(source: string): string[] {
+  return Object.entries(SOURCES_BY_KEY)
+    .filter(([, sources]) => sources.includes(source))
+    .map(([key]) => key);
+}
 
 // ---------------------------------------------------------------------
 // Sibling styles — "Custom Carton Marking". A carton-marking layout can

@@ -621,7 +621,8 @@ export function buildFirstMessage(input: {
   }
   if (trigger === "resume" && output.awaitingToken) {
     parts.push(
-      `This output was waiting for a new token, {{${output.awaitingToken}}}. It is now available: continue the change using it.`,
+      `This output was waiting for a new variable, "${output.awaitingToken}". It exists now — list_tokens shows how it is written ` +
+        "(as a variable, or as a source of a graphics token) and what it prints — so continue the change with it.",
     );
   }
 

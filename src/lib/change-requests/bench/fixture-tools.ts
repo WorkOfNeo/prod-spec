@@ -47,7 +47,8 @@ import { basename, extname } from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { StyleData } from "@/lib/pdf/types";
 import { applyLayoutOps, describeLayoutChanges, type LayoutOp } from "@/lib/output-layouts/ops";
-import type { LayoutDef } from "@/lib/output-layouts/schema";
+import { layoutSettings, type LayoutDef } from "@/lib/output-layouts/schema";
+import { ruleSentence } from "@/lib/outputs/exclusion";
 import { tokenMeta } from "@/lib/output-layouts/token-meta";
 import type { RenderedOutputDoc } from "@/lib/output-layouts/render-output";
 import type { AgentTool, AgentToolName, ToolContext, ToolImage, ToolResult } from "../agent/contract";
@@ -343,15 +344,6 @@ async function pictureOf(
 
 // ── The tools ────────────────────────────────────────────────────────────────
 
-// The syntax notes production list_tokens returns (private in agent/tools.ts),
-// mirrored so the result reads the same.
-const SYNTAX_NOTES = [
-  "A line holds text and variables: {{key}} or {{key:arg}} (no spaces inside the braces).",
-  'Conditionals (one level): {{if field op "value"}}…{{else}}…{{endif}} with op == != contains !contains includes !includes. {{if key != ""}}…{{endif}} prints only when the variable has a value.',
-  "Calculations: {{= expr }}.",
-  "Sibling-style slots ({{style2}}, {{style3Name}}, …) exist for multi-style carton markings only.",
-];
-
 // The case's styles as Monday columns: where each StyleData field comes from
 // (the mapped field production reports as `mappedAs`, whose default column id
 // is DEFAULT_COLUMN_MAPPING's) and a title. Only fields read from a board
@@ -388,6 +380,7 @@ const BOARD = { id: "bench-styles-board", name: "Styles" };
 type FindStylesInput = { text: string; columnHint?: string; customerId?: string; limit?: number };
 type GetLayoutInput = { layoutId: string; live?: boolean };
 type ListTokensInput = { styleId?: string; query?: string };
+type GetOutputSettingsInput = { styleId?: string };
 type ProposePatchInput = { layoutId: string; ops: LayoutOp[]; note: string };
 type RenderProofInput = { revisionId: string; styleId: string; side?: "before" | "after" | "both"; suffix?: string };
 type ImpactListInput = { revisionId: string };
@@ -492,7 +485,10 @@ export async function fixtureTools(benchCase: BenchCase, opts: FixtureToolsOptio
         values.push({ token: `{{${entry.key}:${arg}}}`, key: entry.key, arg, value });
       }
     }
-    return { styleId: s.id, styleLabel: base.styleName || base.styleNumber || s.id, languages, values, empty };
+    // A bench case has no prod spec output row, so the carton sources show the
+    // default symbology (production says so in the note too).
+    const barcodes = rt.gap.resolvedBarcodes(style, null);
+    return { styleId: s.id, styleLabel: base.styleName || base.styleNumber || s.id, languages, values, empty, barcodes };
   };
 
   const runs: Record<AgentToolName, FixtureRun> = {
@@ -632,7 +628,61 @@ export async function fixtureTools(benchCase: BenchCase, opts: FixtureToolsOptio
         tokens,
         resolved: narrowed,
         ...(!resolved ? { resolvedError: `Style ${styleId} not found.` } : {}),
-        syntax: SYNTAX_NOTES,
+        syntax: rt.tools.SYNTAX_NOTES,
+      });
+    },
+
+    // A bench case has no prod spec: the output prints at the layout's page
+    // size with nothing pinned, the default carton symbology and no per-style
+    // values — production's shape, so the model reads the same kind of answer.
+    get_output_settings: async (raw) => {
+      const input = raw as GetOutputSettingsInput;
+      const styleId = input.styleId ?? rep.id;
+      const s = styleById(styleId);
+      if (!s) return fail(`Style ${styleId} not found.`);
+      const page = live.pages[0];
+      const settings = layoutSettings(live);
+      const spec = { id: "bench-spec", name: "Sample ProdSpec", stylesOnSpec: c.styles.length };
+      const layoutInfo = { id: layout.id, name: layout.name, prodSpecs: 1, docTypeLabel: layout.docType };
+      return ok({
+        output: { label: c.request.outputLabel, variantKey: `layout:${layout.id}`, layoutId: layout.id, printsFrom: "layout" },
+        style: { id: s.id, label: s.label, poNumber: benchStyleData(c, s.id).poNumber ?? null },
+        prodSpec: spec,
+        outputRow: {
+          enabled: true,
+          widthMm: page.widthMm,
+          heightMm: page.heightMm,
+          printsAtMm: { widthMm: page.widthMm, heightMm: page.heightMm },
+          pins: {},
+          cartonBarcode: {
+            type: "ean128",
+            setting: rt.tools.CARTON_BARCODE_DEFAULT_SETTING,
+            heightMm: null,
+            appliesTo: rt.tools.CARTON_BARCODE_APPLIES_TO,
+          },
+          infoAreaSize: null,
+        },
+        otherOutputsOnSpec: [],
+        layout: {
+          ...layoutRow,
+          docTypeLabel: layout.docType,
+          isInfoArea: false,
+          autoApprove: false,
+          hasCustomLogo: false,
+          printedBy: { prodSpecs: 1, prodSpecNames: [spec.name] },
+          settings: { ...settings, rules: settings.rules.map((r) => ({ ...r, sentence: ruleSentence(r) })) },
+        },
+        docTypeRules: [],
+        thisStyle: {
+          fieldValues: {},
+          fieldValuesPerDocument: {},
+          lineValues: {},
+          lineValuesPerDocument: {},
+          ignored: false,
+          lineKeyFormat: rt.tools.LINE_KEY_FORMAT,
+        },
+        whereToChange: rt.tools.outputSettingPlaces({ prodSpec: spec, layout: layoutInfo, style: { id: s.id, label: s.label } }),
+        note: rt.tools.SETTINGS_NOTE,
       });
     },
 

@@ -122,6 +122,18 @@ export async function setOutputStatus(
   return out;
 }
 
+// Drop a NEEDS_CODE hand-off (the awaited token and its code spec) without
+// moving the output: the run that follows claims it. Conditional on the status
+// so a hand-off a developer already resolved (the sweep resumed it) is never
+// half-cleared under a running job. Returns how many rows changed (0 or 1).
+export async function clearCodeHandoff(outputId: string): Promise<number> {
+  const res = await db.changeRequestOutput.updateMany({
+    where: { id: outputId, status: "NEEDS_CODE" },
+    data: { awaitingToken: null, codeSpec: Prisma.DbNull },
+  });
+  return res.count;
+}
+
 export async function createProposedMemory(input: {
   scope: MemoryScope;
   scopeRef?: string | null;

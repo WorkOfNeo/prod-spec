@@ -4,24 +4,35 @@ import { dispatchEmail } from "@/lib/email/dispatch";
 import { changeRequestNeedsCodeEmail } from "@/lib/email/templates/change-request-needs-code";
 import { CARTON_QTY_KINDS, SOLID_ASSORT_KINDS } from "@/lib/output-layouts/carton-qty";
 import {
+  BARCODE_SOURCES,
   ITEM_NO_CARTON,
   ITEM_NO_PRODUCT,
   LAYOUT_TOKENS,
   SIZE_FORMS,
   SIZE_JOIN_ARG,
   SIZE_SCOPE_ARG,
+  SOURCES_BY_KEY,
   tokenMeta,
+  tokensWithSource,
+  type BarcodeSource,
   type LayoutTokenMeta,
 } from "@/lib/output-layouts/token-meta";
 import {
   augmentCompositionTranslations,
   augmentTranslatedFields,
+  barcodeSymbology,
+  resolveBarcodeValue,
   resolveTextToken,
+  type BarcodeSymbology,
 } from "@/lib/output-layouts/tokens";
+import { applyCartonBarcodePrefs } from "@/lib/pdf/pins";
+import type { StyleData } from "@/lib/pdf/types";
+import { baseVariantKey } from "@/lib/tickets/orphan";
 import { loadStyleRenderContext } from "@/lib/styles/render-context";
 import type { ToolContext, ToolResult } from "./agent/contract";
 import { orEmpty } from "./db-safe";
-import { appendMessage, getOutputWithRequest, setOutputStatus } from "./store";
+import { OutputNotFoundError, OutputStateError } from "./publish-errors";
+import { appendMessage, clearCodeHandoff, getOutputWithRequest, logStep, setOutputStatus } from "./store";
 import { requestRef, type CodeSpec, type GapDeclaration } from "./types";
 
 // =====================================================
@@ -34,12 +45,17 @@ import { requestRef, type CodeSpec, type GapDeclaration } from "./types";
 // happens to fit today's styles. This module is that handoff:
 //
 //   • tokenCatalogue / resolvedTokens — what the agent can already print: the
-//     LAYOUT_TOKENS catalogue (with examples) and, for one style, what every
-//     text variable resolves to. Most "missing" values turn out to exist.
+//     LAYOUT_TOKENS catalogue (with examples, and for the graphics tokens the
+//     sources they accept — {{barcode:cartonEan13}} is a source, not a key, and
+//     the agent once declared it missing because nothing listed it) and, for
+//     one style, what every text variable resolves to plus what each barcode
+//     source encodes and in which symbology. Most "missing" values turn out
+//     to exist.
 //   • declareGap — the agent's `declare_gap` tool. Refuses a token key that
-//     already exists (use it instead). Otherwise: output → NEEDS_CODE with the
-//     awaited token and a CodeSpec, a status note in the thread, and one email
-//     to the developer with a "Get build prompt" button.
+//     already exists — as a variable or as a source of one (use it instead).
+//     Otherwise: output → NEEDS_CODE with the awaited token and a CodeSpec, a
+//     status note in the thread, and one email to the developer with a "Get
+//     build prompt" button.
 //   • buildCodeSpec — the build prompt the developer pastes into a coding
 //     agent: what to print, where the value comes from (live examples with
 //     counts), exactly which files, the smoke-test cases, done criteria.
@@ -47,12 +63,24 @@ import { requestRef, type CodeSpec, type GapDeclaration } from "./types";
 //     token appears in LAYOUT_TOKENS and the waiting outputs are started
 //     again. The orchestrator wires it into the cron sweep with the job's
 //     starter; it is idempotent because a started output leaves NEEDS_CODE.
+//   • withdrawCodeGap — an admin says the hand-off was wrong (the value exists,
+//     or the fix is a setting): the hand-off is cleared, their correction goes
+//     in the thread and the agent starts again on it. The "Not a code gap"
+//     action on the review screen.
 //
 // SERVER-ONLY (db, email). tokenCatalogue, tokenArgVariants and buildCodeSpec
 // are pure and tested in gap.test.ts.
 // =====================================================
 
 // ── Catalogue (pure) ─────────────────────────────────────────────────────────
+
+export type TokenSourceEntry = {
+  source: string;
+  // As written in a layout line: "{{barcode:cartonEan13}}".
+  usage: string;
+  // One line on what this source prints and when to pick it.
+  note: string;
+};
 
 export type TokenCatalogueEntry = {
   key: string;
@@ -62,9 +90,57 @@ export type TokenCatalogueEntry = {
   arg?: LayoutTokenMeta["arg"];
   arg2?: LayoutTokenMeta["arg2"];
   example?: string;
+  // For a source-typed token (arg "source"): every source it accepts. The
+  // publish gate rejects any other argument, so this IS the list of what the
+  // token can draw.
+  sources?: TokenSourceEntry[];
 };
 
+// What each source prints, for the agent. The symbology and value rules are
+// the renderer's (barcodeSymbology / resolveBarcodeValue); this only says them
+// in words. A source without a note here still lists (with a generic line) —
+// gap.test.ts checks every source has one, so a new source gets its sentence.
+const SOURCE_NOTES: Record<string, Record<string, string>> = {
+  barcode: {
+    cartonEan:
+      "The carton EAN as Code 128 (EAN-128) bars with the number printed beneath — unless the prod spec's output row sets " +
+      "Carton barcode to EAN-13, which switches this source to a true EAN-13 for every style on that prod spec (get_output_settings " +
+      "shows the row). Follows the row's bar height too.",
+    cartonEan13:
+      "The SAME carton EAN as a true EAN-13 symbol (digits inside the symbol), whatever the output row says. Pick it when one " +
+      "layout must print EAN-13 while other outputs on the prod spec keep Code 128.",
+    assortEan:
+      "The assortment (master) carton EAN as Code 128 (EAN-128), following the output row's Carton barcode setting like cartonEan.",
+    assortEan13: "The SAME assortment (master) carton EAN as a true EAN-13, whatever the output row says.",
+    ean13:
+      "The per-size PRODUCT EAN-13 — the first size with a barcode, or the repetition row's size when the layout repeats per size " +
+      "or EAN. Never the carton EAN.",
+  },
+  logo: {
+    contrast: "The Contrast logo shipped with the app.",
+    contrastAddress: "The Contrast logo with the company address.",
+    custom:
+      "The layout's own uploaded logo (Output Builder › Settings › Custom logo); print width is the layout setting customLogoWidthPct.",
+  },
+  cert: {
+    oekotex:
+      "The OEKO-TEX mark — prints only on styles whose Certificates field declares it (no {{if}} needed); artwork from Settings › Certificates.",
+    fsc: "The FSC mark — prints only on styles whose Certificates field declares it (no {{if}} needed); artwork from Settings › Certificates.",
+  },
+};
+
+export function sourceNote(key: string, source: string): string {
+  return SOURCE_NOTES[key]?.[source] ?? `Accepted as {{${key}:${source}}}.`;
+}
+
+function sourcesOf(t: LayoutTokenMeta): TokenSourceEntry[] | undefined {
+  if (t.arg !== "source") return undefined;
+  const sources = SOURCES_BY_KEY[t.key] ?? [];
+  return sources.map((source) => ({ source, usage: `{{${t.key}:${source}}}`, note: sourceNote(t.key, source) }));
+}
+
 function toEntry(t: LayoutTokenMeta): TokenCatalogueEntry {
+  const sources = sourcesOf(t);
   return {
     key: t.key,
     label: t.label,
@@ -73,6 +149,7 @@ function toEntry(t: LayoutTokenMeta): TokenCatalogueEntry {
     ...(t.arg ? { arg: t.arg } : {}),
     ...(t.arg2 ? { arg2: t.arg2 } : {}),
     ...(t.example ? { example: t.example } : {}),
+    ...(sources ? { sources } : {}),
   };
 }
 
@@ -89,16 +166,20 @@ export function tokenCatalogue(query?: string): TokenCatalogueEntry[] {
   const all = LAYOUT_TOKENS.map(toEntry);
   if (words.length === 0) return all;
   return all.filter((t) => {
-    const hay = [t.key, t.label, t.group, t.example ?? ""].join(" ").toLowerCase();
+    // A source's name and note are searchable too, so "carton ean-13" finds
+    // the barcode token through its cartonEan13 source.
+    const sources = (t.sources ?? []).flatMap((s) => [s.source, s.note]);
+    const hay = [t.key, t.label, t.group, t.example ?? "", ...sources].join(" ").toLowerCase();
     return words.every((w) => hay.includes(w));
   });
 }
 
-// True when a layout can already use this key — the static catalogue or a
-// dynamic sibling slot key ({{style2Name}}). What declare_gap refuses and
-// resumeAwaitingCode waits for.
+// True when a layout can already use this key — the static catalogue, a
+// dynamic sibling slot key ({{style2Name}}), or a source of a graphics token
+// ({{barcode:cartonEan13}}: "cartonEan13" is not a variable, but a layout
+// prints it today). What declare_gap refuses and resumeAwaitingCode waits for.
 export function tokenExists(key: string): boolean {
-  return tokenMeta(key) !== null;
+  return tokenMeta(key) !== null || tokensWithSource(key).length > 0;
 }
 
 // The non-language arguments worth resolving next to the bare value, so the
@@ -134,6 +215,26 @@ export type ResolvedTokenValue = {
   value: string;
 };
 
+export type ResolvedBarcode = {
+  // As written in a layout line: "{{barcode:cartonEan13}}".
+  token: string;
+  source: BarcodeSource;
+  // The number the bars encode for this style ("" = nothing to draw).
+  value: string;
+  symbology: BarcodeSymbology;
+  // The symbology in words, as the label shows it.
+  prints: string;
+};
+
+export type ResolvedBarcodes = {
+  // The prod spec output row's Carton barcode setting when the row is known
+  // ("ean128" is also what an unset row means); null when no row was given, in
+  // which case cartonEan / assortEan show the default.
+  cartonBarcodeSetting: BarcodeSymbology | null;
+  values: ResolvedBarcode[];
+  note: string;
+};
+
 export type ResolvedTokens = {
   styleId: string;
   styleLabel: string;
@@ -145,6 +246,8 @@ export type ResolvedTokens = {
   values: ResolvedTokenValue[];
   // Text variables that resolve to "" for this style (bare form).
   empty: string[];
+  // What each {{barcode:…}} source would draw for this style.
+  barcodes: ResolvedBarcodes;
 };
 
 const RESOLVED_VALUE_MAX = 400;
@@ -153,15 +256,54 @@ function clipValue(v: string): string {
   return v.length > RESOLVED_VALUE_MAX ? `${v.slice(0, RESOLVED_VALUE_MAX - 1)}…` : v;
 }
 
+export const SYMBOLOGY_WORDS: Record<BarcodeSymbology, string> = {
+  ean128: "Code 128 (EAN-128) bars with the number printed beneath",
+  ean13: "EAN-13 (digits inside the symbol)",
+};
+
+// What every barcode source encodes for a style and how it is drawn — the
+// renderer's own value and symbology rules. Pure: `style` already carries the
+// output row's carton preference when the caller has one (applyCartonBarcodePrefs).
+export function resolvedBarcodes(style: StyleData, cartonBarcodeSetting: BarcodeSymbology | null): ResolvedBarcodes {
+  const values = BARCODE_SOURCES.map((source): ResolvedBarcode => {
+    const symbology = barcodeSymbology(style, source);
+    return {
+      token: `{{barcode:${source}}}`,
+      source,
+      value: resolveBarcodeValue(style, source),
+      symbology,
+      prints: SYMBOLOGY_WORDS[symbology],
+    };
+  });
+  const setting =
+    cartonBarcodeSetting === null
+      ? "The output row's Carton barcode setting is not known here, so cartonEan and assortEan show the default."
+      : `This output's row sets Carton barcode to ${cartonBarcodeSetting === "ean13" ? "EAN-13" : "EAN-128 (the default)"}.`;
+  return {
+    cartonBarcodeSetting,
+    values,
+    note:
+      "cartonEan and assortEan follow the prod spec output row's Carton barcode setting (a setting, not a layout change); " +
+      `cartonEan13, assortEan13 and ean13 always draw EAN-13. ${setting}`,
+  };
+}
+
 // What every TEXT variable prints for one style, from the same render context
 // the runner builds (mapping priority, fallbacks, EANs) plus the translation
 // augments renderLayoutHtml runs, so a per-language value here is the value
-// the label would show. Output pins are not applied (they are per output).
-// null when the style doesn't exist.
-export async function resolvedTokens(styleId: string): Promise<ResolvedTokens | null> {
+// the label would show. Output pins are not applied (they are per output);
+// with `variantKey` (this output's), the row's carton-barcode preference is,
+// so the barcode symbologies are the ones that output prints. null when the
+// style doesn't exist.
+export async function resolvedTokens(
+  styleId: string,
+  opts: { variantKey?: string | null } = {},
+): Promise<ResolvedTokens | null> {
   const ctx = await loadStyleRenderContext(styleId);
   if (!ctx) return null;
-  const base = ctx.styleData;
+  const baseKey = opts.variantKey ? baseVariantKey(opts.variantKey) : null;
+  const row = baseKey ? ctx.outputs.find((o) => o.variantKey === baseKey) : undefined;
+  const base = row ? applyCartonBarcodePrefs(ctx.styleData, row) : ctx.styleData;
   const firstLang = (base.outputLanguages ?? []).map((l) => l.toLowerCase()).find(Boolean);
   const languages = [...new Set(["en", ...(firstLang ? [firstLang] : [])])];
 
@@ -199,7 +341,14 @@ export async function resolvedTokens(styleId: string): Promise<ResolvedTokens | 
       values.push({ token: `{{${meta.key}:${arg}}}`, key: meta.key, arg, value: clipValue(value) });
     }
   }
-  return { styleId, styleLabel: base.styleName || base.styleNumber || styleId, languages, values, empty };
+  return {
+    styleId,
+    styleLabel: base.styleName || base.styleNumber || styleId,
+    languages,
+    values,
+    empty,
+    barcodes: resolvedBarcodes(base, row ? (row.cartonBarcodeType ?? "ean128") : null),
+  };
 }
 
 // ── Code spec + build prompt (pure) ──────────────────────────────────────────
@@ -366,6 +515,25 @@ export async function declareGap(ctx: ToolContext, decl: GapDeclaration): Promis
       },
     };
   }
+  // A source is reached through its token: "cartonEan13" is not a variable,
+  // but {{barcode:cartonEan13}} draws it today.
+  const viaTokens = tokensWithSource(decl.tokenKey);
+  if (viaTokens.length > 0) {
+    const usages = viaTokens.map((key) => `{{${key}:${decl.tokenKey}}}`);
+    return {
+      isError: true,
+      content: {
+        error:
+          `"${decl.tokenKey}" already exists as a source: a layout prints it as ${usages.join(" or ")}, so this is not a code gap. ` +
+          "Use that in the layout (list_tokens lists every source, what it prints and, for barcodes, the value and symbology per style).",
+        sources: viaTokens.map((key) => ({
+          token: key,
+          usage: `{{${key}:${decl.tokenKey}}}`,
+          note: sourceNote(key, decl.tokenKey),
+        })),
+      },
+    };
+  }
   if (!ctx.outputId) {
     return { isError: true, content: { error: "declare_gap needs the output this run works on; this run has none." } };
   }
@@ -456,6 +624,66 @@ export async function declareGap(ctx: ToolContext, decl: GapDeclaration): Promis
       next: "Stop here: the output waits for the developer and is resumed automatically once the variable is deployed.",
     },
   };
+}
+
+// ── Withdraw (DB) ────────────────────────────────────────────────────────────
+
+export type WithdrawGapResult = {
+  // The token the output was waiting for, now cleared.
+  tokenKey: string | null;
+  started: boolean;
+  reason?: string;
+};
+
+// An admin marks a NEEDS_CODE hand-off as not a code gap. In order: the
+// hand-off is cleared (conditional on NEEDS_CODE — a developer's deploy may
+// have resumed it meanwhile), the admin's note and a status line go in the
+// thread, then the agent starts again with trigger "comment", so its first
+// message carries the thread and the correction in it. `start` is the job's
+// starter, passed in like resumeAwaitingCode's so this module never imports
+// the job. Throws OutputNotFoundError / OutputStateError (publish-errors.ts)
+// for the route to map; a start that is refused is reported, not thrown — the
+// hand-off is gone either way and "Run the agent again" still works.
+export async function withdrawCodeGap(
+  outputId: string,
+  opts: { userId: string; note?: string | null },
+  start: (outputId: string) => Promise<{ started: boolean; reason?: string }>,
+): Promise<WithdrawGapResult> {
+  const output = await getOutputWithRequest(outputId);
+  if (!output) throw new OutputNotFoundError(outputId);
+  if (output.status !== "NEEDS_CODE") {
+    throw new OutputStateError(
+      `Only an output waiting for code can be marked as not a code gap; this one is ${output.status.toLowerCase().replace(/_/g, " ")}.`,
+      output.status,
+    );
+  }
+  const tokenKey = output.awaitingToken;
+  if ((await clearCodeHandoff(outputId)) === 0) {
+    const now = await getOutputWithRequest(outputId);
+    throw new OutputStateError("The output moved on meanwhile (its hand-off was already resolved), so nothing was changed.", now?.status ?? null);
+  }
+  const ref = { requestId: output.requestId, outputId };
+  const note = opts.note?.trim() ?? "";
+  if (note) {
+    await appendMessage({ ...ref, authorKind: "USER", authorUserId: opts.userId, kind: "message", body: note });
+  }
+  await appendMessage({
+    ...ref,
+    authorKind: "SYSTEM",
+    kind: "status",
+    body:
+      `Not a code gap: an admin withdrew the hand-off${tokenKey ? ` for {{${tokenKey}}}` : ""}. ` +
+      "The agent starts again with the thread.",
+    meta: { withdrawnToken: tokenKey },
+  });
+  await logStep({
+    ...ref,
+    kind: "gap",
+    summary: `Hand-off withdrawn by an admin (not a code gap)${tokenKey ? `: {{${tokenKey}}}` : ""}`,
+    detail: { tokenKey, userId: opts.userId, note: note.length > 0 },
+  });
+  const res = await start(outputId);
+  return { tokenKey, started: res.started, ...(res.started ? {} : { reason: res.reason ?? "The agent did not start" }) };
 }
 
 // ── Resume (DB) ──────────────────────────────────────────────────────────────

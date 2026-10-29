@@ -540,6 +540,25 @@ export function resolveBarcodeValue(style: StyleData, source: BarcodeSource): st
   return resolveTextToken(style, "ean13");
 }
 
+// Effective symbology for a barcode token: per-size EANs are always true
+// EAN-13; the carton EAN follows the per-spec preference carried on
+// StyleData.cartonBarcode (set from the ProdSpec output row by
+// applyCartonBarcodePrefs) — EAN-128 / Code 128 when absent, the
+// historic default. Beside resolveBarcodeValue so "what prints for this
+// source, and how" has one home (the renderer and the change-request agent's
+// token list both read it).
+export type BarcodeSymbology = "ean128" | "ean13";
+
+export function barcodeSymbology(style: StyleData, source: BarcodeSource): BarcodeSymbology {
+  // Only cartonEan / assortEan follow the style's carton symbology preference
+  // (Code128 by default, or EAN-13 when the ProdSpec row's dropdown is set).
+  // Every other source — the per-size product barcode (ean13) and the explicit
+  // cartonEan13 / assortEan13 sources — prints as a true EAN-13, so a layout
+  // picks EAN-128 vs EAN-13 per barcode for the same carton/master value.
+  if (source !== "cartonEan" && source !== "assortEan") return "ean13";
+  return style.cartonBarcode?.type ?? "ean128";
+}
+
 // Evaluate one line's conditionals against StyleData (render-side rule).
 export function applyConditionalsForStyle(line: string, style: StyleData): string {
   return applyConditionals(line, (field) => resolveTextToken(style, field));
