@@ -84,15 +84,19 @@ export function agentTaskBudget(): number | null {
 
 // ── Cost ─────────────────────────────────────────────────────────────────────
 // USD per million tokens. Cache writes are the 5-minute TTL (1.25× input) the
-// loop's automatic caching uses. The two fallback targets are listed so a turn
-// served by the refusal fallback is still priced. Haiku's long-prompt tier (over
-// 100K tokens) is not modelled: the split call stays far below it.
+// loop's automatic caching uses. Sonnet 5.5 is here so CHANGE_REQUEST_MODEL can
+// try it with the cost still shown. The refusal-fallback targets are listed too
+// (Opus 5 and Opus 4.8 for Opus 5.5, Sonnet 5 for Sonnet 5.5) so a turn served
+// by the fallback is still priced. Haiku's long-prompt tier (over 100K tokens)
+// is not modelled: the split call stays far below it.
 type Price = { input: number; output: number; cacheRead: number; cacheWrite: number };
 const PRICES: Record<string, Price> = {
   "claude-opus-5-5": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
+  "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
   "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
   "claude-opus-5": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
   "claude-opus-4-8": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+  "claude-sonnet-5": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
 };
 
 // Token counts as the API reports them: inputTokens is the UNCACHED input;

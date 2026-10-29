@@ -67,6 +67,13 @@ test("cost per MTok: input, output, cache reads and writes; unknown model → nu
     0.2 + 5,
   );
   assert.equal(costUsd("claude-haiku-5-5", { inputTokens: 2_000_000, outputTokens: 1_000_000 }), 0.7);
+  // Sonnet 5.5: half of Opus 5.5 except cache reads; its fallback (Sonnet 5) is priced the same.
+  assert.equal(costUsd("claude-sonnet-5-5", { inputTokens: 1_000_000, outputTokens: 1_000_000 }), 12);
+  assert.equal(
+    costUsd("claude-sonnet-5-5", { inputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000, cacheWriteTokens: 1_000_000 }),
+    0.2 + 2.5,
+  );
+  assert.equal(costUsd("claude-sonnet-5", { inputTokens: 1_000_000, outputTokens: 1_000_000 }), 12);
   assert.equal(costUsd("claude-opus-5-5", { inputTokens: 1234, outputTokens: 567 }), 0.016276);
   assert.equal(costUsd("some-future-model", { inputTokens: 10, outputTokens: 10 }), null);
 });
