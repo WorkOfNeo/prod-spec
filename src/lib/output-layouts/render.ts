@@ -38,6 +38,8 @@ import {
   blockShownForStyle,
   augmentCompositionTranslations,
   compositionLangsInDef,
+  barcodeSymbology,
+  type BarcodeSymbology,
   evaluateCalcForStyle,
   langArgsInDef,
   resolveBarcodeValue,
@@ -427,22 +429,10 @@ function defUsesToken(pages: LayoutPage[], key: string): boolean {
   return false;
 }
 
-// Effective symbology for a barcode token: per-size EANs are always true
-// EAN-13; the carton EAN follows the per-spec preference carried on
-// StyleData.cartonBarcode (set from the ProdSpec output row by
-// applyCartonBarcodePrefs) — EAN-128 / Code 128 when absent, the
-// historic default.
-type BarcodeSymbology = "ean128" | "ean13";
-
-export function barcodeSymbology(style: StyleData, source: BarcodeSource): BarcodeSymbology {
-  // Only cartonEan / assortEan follow the style's carton symbology preference
-  // (Code128 by default, or EAN-13 when the ProdSpec row's dropdown is set).
-  // Every other source — the per-size product barcode (ean13) and the explicit
-  // cartonEan13 / assortEan13 sources — prints as a true EAN-13, so a layout
-  // picks EAN-128 vs EAN-13 per barcode for the same carton/master value.
-  if (source !== "cartonEan" && source !== "assortEan") return "ean13";
-  return style.cartonBarcode?.type ?? "ean128";
-}
+// Effective symbology for a barcode token — defined beside resolveBarcodeValue
+// in tokens.ts (value and symbology per source have one home); re-exported so
+// the renderer's callers and tests keep reading it from here.
+export { barcodeSymbology, type BarcodeSymbology } from "./tokens";
 
 // Rendered barcode PNG + its true physical size in mm (bars AND the
 // human-readable digit row) — needed to print an explicit-height barcode at

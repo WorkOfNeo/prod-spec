@@ -23,6 +23,7 @@ export const AGENT_TOOL_NAMES = [
   "find_layouts",
   "get_layout",
   "list_tokens",
+  "get_output_settings",
   "get_cover",
   "propose_patch",
   "render_proof",

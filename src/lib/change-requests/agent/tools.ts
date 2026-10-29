@@ -2,11 +2,19 @@ import { z } from "zod";
 import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { DEFAULT_COLUMN_MAPPING, parseCustomerConfig } from "@/lib/customers/config";
-import { parseProdSpecOutputs } from "@/lib/prod-spec/config";
+import { ruleSentence, type DocTypeRulesMap } from "@/lib/outputs/exclusion";
+import { ignoreBaseKey, loadStyleFieldValues } from "@/lib/outputs/output-field-values";
+import { loadIgnoredOutputKeys } from "@/lib/outputs/output-ignores";
+import { loadStyleLineValues, splitLineValues } from "@/lib/outputs/output-line-values";
+import { docTypeLabel } from "@/lib/pdf/doc-types";
+import { loadDocTypeExclusionRules, loadDocTypeLabels } from "@/lib/pdf/doc-types-db";
+import { parseFieldOverrides } from "@/lib/pdf/pins-meta";
+import { parseProdSpecOutputs, type ProdSpecOutput } from "@/lib/prod-spec/config";
+import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 import { applyLayoutOps, describeLayoutChanges, LayoutOpSchema } from "@/lib/output-layouts/ops";
 import { createDraft, definitionsEqual, getRevision, reviseDraft } from "@/lib/output-layouts/revisions";
 import { layoutSettings, pageGrid, parseLayoutDef, type LayoutDef } from "@/lib/output-layouts/schema";
-import { layoutOutputsInSpecs } from "@/lib/output-layouts/usage";
+import { layoutOutputsInSpecs, prodSpecsUsingLayout } from "@/lib/output-layouts/usage";
 import {
   isLayoutVariantKey,
   layoutIdFromVariantKey,
@@ -56,7 +64,10 @@ import type { AgentTool, ToolContext, ToolResult } from "./contract";
 //     can only be pinned to a layout the request's style actually prints;
 //   • render_proof and impact_list only take this output's own drafts, and
 //     the heavy and noisy tools have a per-run budget (RUN_LIMITS);
-//   • the cover is printed by code: get_cover reads it, nothing drafts it.
+//   • the cover is printed by code: get_cover reads it, nothing drafts it;
+//   • the settings around an output (the prod spec's output row, the layout's
+//     Settings card, a style's review-tab values) are read by
+//     get_output_settings, never written — a draft changes blocks and lines.
 //
 // Results are plain JSON for the model. A refusal or a failure comes back as
 // an error result with a reason the model can act on ("this block id doesn't
@@ -819,20 +830,27 @@ const getLayout = defineTool({
 
 // ── list_tokens ──────────────────────────────────────────────────────────────
 
-const SYNTAX_NOTES = [
+// Exported for the bench (fixture-tools.ts), whose list_tokens must read the
+// same as production's.
+export const SYNTAX_NOTES = [
   "A line holds text and variables: {{key}} or {{key:arg}} (no spaces inside the braces).",
   'Conditionals (one level): {{if field op "value"}}…{{else}}…{{endif}} with op == != contains !contains includes !includes. {{if key != ""}}…{{endif}} prints only when the variable has a value.',
   "Calculations: {{= expr }}.",
+  "Graphics take a source, not a key: {{barcode:<source>}}, {{logo:<source>}}, {{cert:<source>}} — each token's `sources` lists the only " +
+    "sources the publish gate accepts (a source such as cartonEan13 is not a variable of its own). A barcode's optional bar height in mm " +
+    "comes last: {{barcode:cartonEan13:12}}.",
   "Sibling-style slots ({{style2}}, {{style3Name}}, …) exist for multi-style carton markings only.",
 ];
 
 const listTokens = defineTool({
   name: "list_tokens",
   description:
-    "List the layout variables ({{tokens}}) a layout line can use — key, label, group, kind, argument type and an example — optionally narrowed " +
-    "by a free-text query (every word must match key, label, group or example). With a style (styleId, else this output's style) it also " +
-    "returns what every text variable resolves to for that style, per language for the translated ones, and which resolve to empty. Use it to " +
-    "find an existing variable before you conclude a value is missing; prefer an existing variable plus a conditional over anything else.",
+    "List the layout variables ({{tokens}}) a layout line can use — key, label, group, kind, argument type and an example; for the graphics " +
+    "tokens (barcode, logo, cert) also every source they accept with what it prints, e.g. {{barcode:cartonEan13}} draws the carton EAN as a " +
+    "true EAN-13 — optionally narrowed by a free-text query (every word must match key, label, group, example or a source). With a style " +
+    "(styleId, else this output's style) it also returns what every text variable resolves to for that style, per language for the translated " +
+    "ones, which resolve to empty, and what each barcode source would encode and in which symbology for this output. Use it to find an " +
+    "existing variable or source before you conclude a value is missing; prefer an existing variable plus a conditional over anything else.",
   input: z.object({
     styleId: z.string().min(1).optional(),
     query: z.string().max(120).optional(),
@@ -840,12 +858,11 @@ const listTokens = defineTool({
   run: async (input, ctx) => {
     const { resolvedTokens, tokenCatalogue } = await import("../gap");
     const tokens = tokenCatalogue(input.query);
-    let styleId = input.styleId ?? null;
-    if (!styleId) {
-      const output = await thisOutput(ctx);
-      styleId = output?.styleId ?? output?.request.styleId ?? null;
-    }
-    const resolved = styleId ? await resolvedTokens(styleId) : null;
+    const output = await thisOutput(ctx);
+    const styleId = input.styleId ?? output?.styleId ?? output?.request.styleId ?? null;
+    // This output's row decides the carton barcode's symbology, so the barcode
+    // values are resolved for it.
+    const resolved = styleId ? await resolvedTokens(styleId, { variantKey: output?.variantKey ?? null }) : null;
     const keys = new Set(tokens.map((t) => t.key));
     const narrowed =
       resolved && input.query?.trim()
@@ -865,6 +882,250 @@ const listTokens = defineTool({
       resolved: narrowed,
       ...(styleId && !resolved ? { resolvedError: `Style ${styleId} not found.` } : {}),
       syntax: SYNTAX_NOTES,
+    });
+  },
+});
+
+// ── get_output_settings ──────────────────────────────────────────────────────
+
+// Where each setting that shapes an output is changed, and what the change
+// reaches — written for the suggestion the agent hands the admin (paths rather
+// than links: the agent quotes them). Exported for tests and the bench.
+export function outputSettingPlaces(input: {
+  prodSpec: { id: string; name: string; stylesOnSpec: number } | null;
+  layout: { id: string; name: string; prodSpecs: number; docTypeLabel: string } | null;
+  style: { id: string; label: string } | null;
+}): { part: string; changeIt: string }[] {
+  const places: { part: string; changeIt: string }[] = [];
+  places.push({
+    part: "prod spec output row",
+    changeIt: input.prodSpec
+      ? `The prod spec's Outputs tab (/prod-specs/${input.prodSpec.id}?tab=outputs), on this output's row: whether it prints, its print ` +
+        "size, admin pins (a field's value fixed for every style), Carton barcode (EAN-128 or EAN-13) and its bar height, an info area's " +
+        `size. Reaches every style of prod spec "${input.prodSpec.name}" (${plural(input.prodSpec.stylesOnSpec, "style")}) for THIS output ` +
+        "only; other prod specs printing the same layout keep their own row."
+      : "No prod spec is known for this output's style, so there is no output row to read: pass a styleId, or ask the reviewer which style " +
+        "it is about.",
+  });
+  if (input.layout) {
+    places.push({
+      part: "layout settings",
+      changeIt:
+        `Output Builder › the layout's Settings card (/output-builder/${input.layout.id}): repeat per size or EAN, file split, file name, ` +
+        "carton numbering, multi-style, custom logo width, generation rules. Reaches every prod spec that prints the layout " +
+        `(${plural(input.layout.prodSpecs, "prod spec")}) — a layout change does the same, through propose_patch.`,
+    });
+    places.push({
+      part: "document type rules",
+      changeIt:
+        `Output Builder › Document types: keyword rules that skip every "${input.layout.docTypeLabel}" output for the styles they match, ` +
+        "whatever the layout.",
+    });
+  }
+  places.push({
+    part: "this style's values",
+    changeIt: input.style
+      ? `The style's Review tab (/styles/${input.style.id}): field values and line rewrites on this output for "${input.style.label}" ` +
+        "alone, and the Ignore button that stops this output for that style. Reaches this one style only."
+      : "No style is known for this output, so its per-style values cannot be read.",
+  });
+  return places;
+}
+
+export const SETTINGS_NOTE =
+  "None of this is a layout change: propose_patch drafts blocks and lines, nothing here. When the fix is one of these settings, do not " +
+  "draft — finish with the setting, its new value, where it is changed (whereToChange) and what that reaches. Draft a layout change only " +
+  "when the setting would reach outputs that must not change.";
+
+export const CARTON_BARCODE_APPLIES_TO =
+  "{{barcode:cartonEan}} and {{barcode:assortEan}} on carton markings (coded templates and layouts alike); " +
+  "{{barcode:cartonEan13}}, {{barcode:assortEan13}} and {{barcode:ean13}} always draw EAN-13.";
+export const CARTON_BARCODE_DEFAULT_SETTING = "EAN-128 / Code 128 with the number beneath — the default; the row sets nothing";
+export const LINE_KEY_FORMAT = "<pageId>|<blockId>|<lineIndex>, as get_layout shows the page and block ids (line index 0-based).";
+
+const getOutputSettings = defineTool({
+  name: "get_output_settings",
+  description:
+    "Read the settings that shape this output besides its layout — none of which a draft can change: the prod spec's output row for the " +
+    "style (whether it prints, print size, admin field pins, the carton barcode's symbology — EAN-128 or EAN-13 — and bar height, an info " +
+    "area's size pick), the layout's Settings card in full (repeat per size/EAN, file split, file name, carton numbering, multi-style, " +
+    "custom logo width, generation rules) and its flags, the document type's keyword rules, and this style's own review-tab overrides " +
+    "(field values, line rewrites, ignore). Each with where it is changed and what that reaches. Read it before you draft and before you " +
+    "conclude a value or a symbology is missing: a carton EAN prints as EAN-13 by one setting on the output row. When the fix is a setting, " +
+    "do not draft — finish with the setting, its new value, where it is changed and what it reaches. styleId defaults to this output's style.",
+  input: z.object({ styleId: z.string().min(1).optional() }),
+  run: async (input, ctx) => {
+    const output = await thisOutput(ctx);
+    if (!output) return fail("get_output_settings needs the output this run works on; this run has none.");
+    if (output.variantKey === COVER_VARIANT_KEY) {
+      return fail(
+        "This output is the cover, which has no output row or layout settings: get_cover reads it, and its whereToChange lists where " +
+          "each part is changed.",
+      );
+    }
+    const layoutId = outputLayoutId(output);
+    const baseKey = output.variantKey ? baseVariantKey(output.variantKey) : layoutId ? layoutVariantKey(layoutId) : null;
+    const styleId = input.styleId ?? output.styleId ?? output.request.styleId ?? null;
+
+    const [style, layoutRow, docTypeRules, docTypeLabels, layoutUsage] = await Promise.all([
+      styleId
+        ? db.style.findUnique({ where: { id: styleId }, select: { id: true, name: true, poNumber: true, prodSpecId: true } })
+        : Promise.resolve(null),
+      layoutId
+        ? db.outputLayout.findUnique({
+            where: { id: layoutId },
+            select: {
+              id: true,
+              name: true,
+              docType: true,
+              status: true,
+              version: true,
+              definition: true,
+              isInfoArea: true,
+              autoApprove: true,
+              customLogo: true,
+            },
+          })
+        : Promise.resolve(null),
+      loadDocTypeExclusionRules().catch((): DocTypeRulesMap => ({})),
+      loadDocTypeLabels().catch((): Record<string, string> => ({})),
+      layoutId ? prodSpecsUsingLayout(layoutId).catch(() => []) : Promise.resolve([]),
+    ]);
+    if (styleId && !style) return fail(`Style ${styleId} not found.`);
+
+    // The style's prod spec and, on it, this output's row.
+    const spec = style?.prodSpecId
+      ? await db.prodSpec.findUnique({ where: { id: style.prodSpecId }, select: { id: true, name: true, outputs: true } })
+      : null;
+    let rows: ProdSpecOutput[] = [];
+    try {
+      rows = spec ? parseProdSpecOutputs(spec.outputs) : [];
+    } catch {
+      rows = [];
+    }
+    const row = baseKey ? (rows.find((o) => baseVariantKey(o.variantKey) === baseKey) ?? null) : null;
+
+    const [stylesOnSpec, sizeMap, fieldValues, lineValues, ignoredKeys] = await Promise.all([
+      spec ? db.style.count({ where: { prodSpecId: spec.id, deletedAt: null, archivedAt: null } }) : Promise.resolve(0),
+      row?.infoAreaSizeId ? loadInfoAreaSizeMap() : Promise.resolve(new Map()),
+      style ? loadStyleFieldValues(style.id) : Promise.resolve(new Map()),
+      style ? loadStyleLineValues(style.id) : Promise.resolve(new Map()),
+      style ? loadIgnoredOutputKeys(style.id) : Promise.resolve(new Set<string>()),
+    ]);
+
+    // The layout's Settings card, in full, with every rule in words.
+    let layout: Json | null = null;
+    if (layoutRow) {
+      let settings: Json | { error: string };
+      try {
+        const s = layoutSettings(parseLayoutDef(layoutRow.definition));
+        settings = { ...s, rules: s.rules.map((r) => ({ ...r, sentence: ruleSentence(r) })) };
+      } catch (err) {
+        settings = { error: `The live definition does not parse: ${errorText(err)}` };
+      }
+      layout = {
+        id: layoutRow.id,
+        name: layoutRow.name,
+        docType: layoutRow.docType,
+        docTypeLabel: docTypeLabel(layoutRow.docType, docTypeLabels),
+        status: layoutRow.status,
+        version: layoutRow.version,
+        isInfoArea: layoutRow.isInfoArea,
+        autoApprove: layoutRow.autoApprove,
+        hasCustomLogo: layoutRow.customLogo !== null,
+        printedBy: { prodSpecs: layoutUsage.length, prodSpecNames: layoutUsage.map((u) => u.prodSpecName).slice(0, 8) },
+        settings,
+      };
+    }
+
+    const ignoreKey = baseKey ? ignoreBaseKey(baseKey, layoutRow?.docType ?? "") : null;
+    const perDocPrefix = baseKey ? `${baseKey}#` : null;
+    const perDocument = <V>(all: ReadonlyMap<string, V>): Record<string, V> =>
+      Object.fromEntries([...all].filter(([k]) => perDocPrefix && k.startsWith(perDocPrefix)).map(([k, v]) => [k.slice(perDocPrefix!.length), v]));
+    const lines = baseKey ? splitLineValues(lineValues, baseKey) : { base: undefined, perDoc: new Map<string, Record<string, string>>() };
+
+    const kind = !output.variantKey || isLayoutVariantKey(output.variantKey) ? "layout" : "coded template";
+    await note(
+      ctx,
+      "read",
+      `Settings of "${output.label}"${style ? ` · ${style.name}` : ""}${spec ? ` · ${spec.name}` : ""}${row ? "" : " (no output row)"}`,
+    );
+    return ok({
+      output: { label: output.label, variantKey: output.variantKey, layoutId, printsFrom: kind },
+      style: style ? { id: style.id, label: style.name, poNumber: style.poNumber } : null,
+      prodSpec: spec ? { id: spec.id, name: spec.name, stylesOnSpec } : null,
+      outputRow: row
+        ? {
+            enabled: row.enabled !== false,
+            widthMm: row.widthMm,
+            heightMm: row.heightMm,
+            printsAtMm: effectiveOutputDims(row, layoutRow?.isInfoArea ?? false, sizeMap),
+            // Admin pins: a field's value fixed for every style of the spec on this output.
+            pins: parseFieldOverrides(row.fieldOverrides),
+            cartonBarcode: {
+              type: row.cartonBarcodeType ?? "ean128",
+              setting:
+                row.cartonBarcodeType === "ean13"
+                  ? "EAN-13 (digits inside the symbol)"
+                  : CARTON_BARCODE_DEFAULT_SETTING,
+              heightMm: row.cartonBarcodeHeightMm ?? null,
+              appliesTo: CARTON_BARCODE_APPLIES_TO,
+            },
+            infoAreaSize: row.infoAreaSizeId
+              ? (() => {
+                  const size = sizeMap.get(row.infoAreaSizeId!);
+                  return size
+                    ? { id: size.id, name: size.name, widthMm: size.widthMm, heightMm: size.heightMm, active: size.active }
+                    : { id: row.infoAreaSizeId, missing: true, note: "The size was deleted; the row's own widthMm × heightMm print." };
+                })()
+              : null,
+          }
+        : null,
+      ...(row
+        ? {}
+        : {
+            outputRowNote: !style
+              ? "No style to read a prod spec from: pass a styleId."
+              : !spec
+                ? `Style ${style.name} has no prod spec, so no output row.`
+                : baseKey
+                  ? `Prod spec "${spec.name}" has no row for ${baseKey}: this style does not print this output.`
+                  : "This output has no variant key or layout yet, so its row cannot be found.",
+          }),
+      otherOutputsOnSpec: rows
+        .filter((o) => baseVariantKey(o.variantKey) !== baseKey)
+        .map((o) => ({
+          variantKey: o.variantKey,
+          enabled: o.enabled !== false,
+          widthMm: o.widthMm,
+          heightMm: o.heightMm,
+          ...(o.cartonBarcodeType ? { cartonBarcodeType: o.cartonBarcodeType } : {}),
+        })),
+      layout,
+      docTypeRules: layoutRow ? (docTypeRules[layoutRow.docType] ?? []).map((r) => ({ ...r, sentence: ruleSentence(r) })) : [],
+      thisStyle: style
+        ? {
+            fieldValues: (ignoreKey ? fieldValues.get(ignoreKey) : undefined) ?? {},
+            fieldValuesPerDocument: perDocument(fieldValues),
+            lineValues: lines.base ?? {},
+            lineValuesPerDocument: Object.fromEntries(lines.perDoc),
+            ignored: ignoreKey ? ignoredKeys.has(ignoreKey) : false,
+            lineKeyFormat: LINE_KEY_FORMAT,
+          }
+        : null,
+      whereToChange: outputSettingPlaces({
+        prodSpec: spec ? { id: spec.id, name: spec.name, stylesOnSpec } : null,
+        layout: layoutRow
+          ? {
+              id: layoutRow.id,
+              name: layoutRow.name,
+              prodSpecs: layoutUsage.length,
+              docTypeLabel: docTypeLabel(layoutRow.docType, docTypeLabels),
+            }
+          : null,
+        style: style ? { id: style.id, label: style.name } : null,
+      }),
+      note: SETTINGS_NOTE,
     });
   },
 });
@@ -1480,6 +1741,7 @@ export const AGENT_TOOLS: AgentTool[] = [
   findLayouts,
   getLayout,
   listTokens,
+  getOutputSettings,
   getCover,
   proposePatch,
   renderProofTool,

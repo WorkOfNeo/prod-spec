@@ -13,6 +13,7 @@ import {
   Play,
   RotateCcw,
   TriangleAlert,
+  Undo2,
   X,
 } from "lucide-react";
 import type { OutputView, RequestView } from "@/lib/change-requests/review-view";
@@ -242,9 +243,11 @@ function AdminBody({
   const messages = messagesFor(view, output.id);
   const question = openQuestion(messages, output.id);
   // Every open state can be closed (Reject, with a reason) and, where the
-  // agent stopped, started again.
-  const actions = (run?: { label: string; again?: boolean }) => (
+  // agent stopped, started again. `first` is a state's own action, shown ahead
+  // of those two (NEEDS_CODE: "Not a code gap").
+  const actions = (run?: { label: string; again?: boolean }, first?: React.ReactNode) => (
     <div className="mt-3 flex flex-wrap items-start gap-2">
+      {first}
       {run && <RunButton requestId={view.id} outputId={output.id} label={run.label} again={run.again} onChanged={onChanged} />}
       <RejectControl outputId={output.id} onChanged={onChanged} />
     </div>
@@ -299,7 +302,10 @@ function AdminBody({
     case "NEEDS_CODE":
       return (
         <NeedsCodePanel view={view} output={output}>
-          {actions({ label: "Run the agent again", again: true })}
+          {actions(
+            { label: "Run the agent again", again: true },
+            <NotCodeGapControl outputId={output.id} tokenKey={output.awaitingToken} onChanged={onChanged} />,
+          )}
         </NeedsCodePanel>
       );
     case "FAILED": {
@@ -368,6 +374,10 @@ function NeedsCodePanel({
           {output.awaitingToken ? `Waiting for {{${output.awaitingToken}}}.` : "The agent handed this to the developer."}
         </p>
       )}
+      <p className="mt-2 text-xs text-zinc-500">
+        Wrong call? If the value already exists, or the fix is a setting rather than code, use <b>Not a code gap</b> and tell the agent
+        what to use instead.
+      </p>
       <a
         href={`/requests/${view.id}/build-prompt?output=${encodeURIComponent(output.id)}`}
         className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
@@ -499,6 +509,98 @@ export function Panel({
       </h2>
       {children && <div className="mt-2">{children}</div>}
     </section>
+  );
+}
+
+// NEEDS_CODE only: the hand-off was wrong — the value exists (as a variable or
+// a source), or the fix is a setting. Clears the hand-off and restarts the
+// agent on the thread with the admin's note (…/withdraw-gap).
+const NOTE_MAX = 5000;
+
+function NotCodeGapControl({
+  outputId,
+  tokenKey,
+  onChanged,
+}: {
+  outputId: string;
+  tokenKey: string | null;
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800"
+      >
+        <Undo2 className="h-4 w-4" aria-hidden />
+        Not a code gap…
+      </button>
+    );
+  }
+
+  const send = async () => {
+    setBusy(true);
+    setError(null);
+    const res = await sendJson<{ started?: boolean; reason?: string }>(
+      `/api/admin/change-request-outputs/${outputId}/withdraw-gap`,
+      "POST",
+      note.trim() ? { note: note.trim() } : {},
+    );
+    setBusy(false);
+    if (!res.ok) return setError(errorOf(res.data));
+    if (!res.data.started) setError(res.data.reason ?? "The hand-off was withdrawn, but the agent did not start. Use Run the agent again.");
+    else setOpen(false);
+    onChanged();
+  };
+
+  return (
+    <div className="basis-full rounded-md border border-zinc-200 bg-white p-3">
+      <label htmlFor={`not-gap-${outputId}`} className="text-sm font-medium text-zinc-900">
+        What should the agent use instead?
+      </label>
+      <p className="text-xs text-zinc-500">
+        Clears the developer hand-off{tokenKey ? ` for {{${tokenKey}}}` : ""} and starts the agent again with your note in the thread.
+        Name the variable, source or setting that does the job — or leave it empty to let the agent look again.
+      </p>
+      <textarea
+        id={`not-gap-${outputId}`}
+        value={note}
+        onChange={(e) => setNote(e.target.value.slice(0, NOTE_MAX))}
+        rows={3}
+        disabled={busy}
+        placeholder="e.g. {{barcode:cartonEan13}} already prints the carton EAN as EAN-13 — or set Carton barcode to EAN-13 on the prod spec's output row."
+        className="mt-2 w-full resize-y rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+      />
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={send}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+        >
+          {busy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden /> : <Undo2 className="h-4 w-4" aria-hidden />}
+          Send to the agent
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          disabled={busy}
+          className="rounded-md px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <span className="ml-auto text-[11px] text-zinc-400">
+          {note.length}/{NOTE_MAX}
+        </span>
+      </div>
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+    </div>
   );
 }
 
