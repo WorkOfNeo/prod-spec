@@ -56,7 +56,10 @@ let cached: { key: string; client: Anthropic } | null = null;
 export function getAgentClient(): Anthropic {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) throw new AiNotConfiguredError();
-  if (!cached || cached.key !== apiKey) cached = { key: apiKey, client: new Anthropic({ apiKey }) };
+  // The SDK's own OpenTelemetry spans are off: the loop records each call as
+  // a Langfuse generation itself (src/lib/ai/tracing.ts), with our usage
+  // types and cost, and both would otherwise reach Langfuse.
+  if (!cached || cached.key !== apiKey) cached = { key: apiKey, client: new Anthropic({ apiKey, openTelemetry: false }) };
   return cached.client;
 }
 

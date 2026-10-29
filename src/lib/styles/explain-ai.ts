@@ -150,6 +150,8 @@ export async function answerStyleQuestion(input: {
   question: string;
   bundle: unknown;
   pointers?: ExplainPointer[];
+  // For the trace: which style the question was about.
+  styleId?: string;
 }): Promise<StyleExplainAnswer> {
   const question = input.question.trim();
   if (!question) throw new StyleExplainError(400, "Ask a question first.");
@@ -164,7 +166,16 @@ export async function answerStyleQuestion(input: {
 
   // The answer is a few sentences plus a short id list — 1024 is ample, and
   // capping it keeps a runaway generation cheap.
-  const raw = await callClaudeForJson({ system, user, maxTokens: 1024 });
+  const raw = await callClaudeForJson({
+    system,
+    user,
+    maxTokens: 1024,
+    trace: {
+      name: "answer-style-question",
+      tags: ["style-explain"],
+      metadata: input.styleId ? { styleId: input.styleId } : undefined,
+    },
+  });
   const parsed = AiAnswerSchema.safeParse(raw);
   if (!parsed.success) {
     throw new StyleExplainError(502, "The AI response wasn't in the expected format — try again.");
