@@ -80,6 +80,19 @@ test("the measurement half keeps its own slashes and spacing", () => {
   assert.equal(pickSizeForm("86 / 92 cm / 1½-2 år", "year"), "1½-2 år");
 });
 
+test("a ½ typed as \"11/2\" is a half, not the cm/age separator", () => {
+  // The reported label: it used to print "80/86 cm/1/11" and "2 år".
+  assert.equal(pickSizeForm("80-86 cm / 1-11/2 år", "numeric"), "80-86 cm");
+  assert.equal(pickSizeForm("80-86 cm / 1-11/2 år", "year"), "1-1½ år");
+  assert.equal(pickSizeForm("86-92 cm / 11/2-2 år", "year"), "1½-2 år");
+  assert.equal(coop(makeStyle(["80-86 cm / 1-11/2 år"]), "numeric"), "80/86 cm");
+  assert.equal(coop(makeStyle(["80-86 cm / 1-11/2 år"]), "year"), "1/1½ år");
+  // A bare "1/2" may be the range "1-2", and slash sizes without an age
+  // unit are never read as halves.
+  assert.ok(!pickSizeForm("74-80 cm / 1/2 år", "year").includes("½"));
+  for (const label of ["11/2", "21/2"]) assert.equal(pickSizeForm(label, "year"), label, label);
+});
+
 test("either half may come first", () => {
   assert.equal(pickSizeForm("1½-2 år / 86-92 cm", "numeric"), "86-92 cm");
   assert.equal(pickSizeForm("1½-2 år / 86-92 cm", "year"), "1½-2 år");
