@@ -70,12 +70,25 @@ export function isAgePart(part: string): boolean {
   return AGE_UNIT_RE.test(part);
 }
 
+// "1½" typed as "11/2" on a keyboard without a ½ key — "80-86 cm / 1-11/2 år".
+// Split on the slash, that half reads as the size separator and the label
+// comes apart ("80/86 cm/1/11" + "2 år"). Read as a range it would be "11 down
+// to 2", which no size column means, so a whole number running straight into
+// "1/2" is a half. A bare "1/2" is left alone: in an age half it is just as
+// likely the slash-joined range "1-2". Only labels carrying an age unit are
+// touched — that's where halves live.
+const TYPED_HALF_RE = /(?<![\d.,])(\d+)1\/2(?!\d)/g;
+
+export function expandTypedHalves(label: string): string {
+  return isAgePart(label) ? label.replace(TYPED_HALF_RE, "$1½") : label;
+}
+
 // The requested half of a size label, or the label verbatim when it doesn't
 // carry that split. Parts are regrouped with "/" so a slash-joined
 // measurement ("86 / 92 cm / 1½-2 år" → "86 / 92 cm") keeps its shape.
 export function pickSizeForm(label: string, form: SizeForm | null): string {
   if (!form) return label;
-  const parts = label.split("/");
+  const parts = expandTypedHalves(label).split("/");
   const age = parts.filter(isAgePart);
   // No age half ⇒ not a two-form label. Print it as authored for BOTH forms
   // rather than blanking the field: a run given only in centimetres is still
