@@ -404,3 +404,40 @@ test("approve and reject post what the routes require: the reviewed draft's id, 
     { url: "/api/admin/change-request-outputs/out-1/reject", body: { reason: "Keep the old size" } },
   ]);
 });
+
+// ── Draft walkthrough ───────────────────────────────────────────────────────
+
+test("walkthroughStyles: the request's style first, then changed, then unchanged; changed documents first", async () => {
+  const { walkthroughStyles } = await import("@/app/(admin)/requests/[id]/shared");
+  const rows = [
+    row("s-unchanged", { changed: false }),
+    row("s-changed", { variantKey: "layout:bogus-layout#S", changed: false }),
+    row("s-changed", { variantKey: "layout:bogus-layout#M", changed: true }),
+    row("s-focus", { changed: false }),
+  ];
+  const styles = walkthroughStyles(rows, "s-focus");
+  assert.deepEqual(
+    styles.map((s) => [s.styleId, s.changed]),
+    [
+      ["s-focus", false],
+      ["s-changed", true],
+      ["s-unchanged", false],
+    ],
+  );
+  assert.deepEqual(
+    styles[1].docs.map((d) => [d.suffix, d.changed]),
+    [
+      ["M", true],
+      ["S", false],
+    ],
+  );
+  assert.equal(styles[0].docs[0].suffix, null);
+});
+
+test("documentUrl: the walkthrough's route, with the document's suffix", async () => {
+  const { documentUrl } = await import("@/app/(admin)/requests/[id]/shared");
+  assert.equal(
+    documentUrl("rev-1", "style-1", "after", "M Black"),
+    "/api/admin/change-requests/revisions/rev-1/document?styleId=style-1&side=after&suffix=M+Black",
+  );
+});

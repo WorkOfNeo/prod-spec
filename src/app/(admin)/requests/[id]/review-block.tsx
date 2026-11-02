@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Bot, FileDiff, LoaderCircle, TriangleAlert } from "lucide-react";
+import { useState } from "react";
+import { Bot, FileDiff, LoaderCircle, Maximize2, TriangleAlert } from "lucide-react";
 import type { ImpactCounts, ImpactSummary } from "@/lib/change-requests/types";
 import type { MessageView, OutputView, RevisionView } from "@/lib/change-requests/review-view";
 import { ApproveBar, type ApproveResult } from "./approve-bar";
 import { ImpactTable } from "./impact-table";
+import { DraftWalkthrough } from "./draft-walkthrough";
 import { ProofCard, type ProofPick } from "./proof-card";
-import { errorOf, getJson, latest } from "./shared";
+import { latest } from "./shared";
+import { useCachedFetch } from "./use-cached-fetch";
 
 // The review of one output's drafts (ADMIN): pick a draft (newest first, the
 // current one by default), look at its before/after proofs, read what the
@@ -22,27 +24,6 @@ type ProofsResponse = { picks: ProofPick[]; impactCounts: ImpactCounts; impact: 
 type LayoutChange = { kind: string; page: number; blockId?: string; summary: string };
 type DiffResponse = { changes: LayoutChange[]; before: unknown; after: unknown };
 
-type Load<T> = { state: "loading" } | { state: "error"; message: string } | { state: "ready"; data: T };
-
-// Fetch once per URL and remember the answer for the life of the component.
-// Not in the map yet = loading; an aborted fetch (the draft was switched
-// away from) stores nothing, so coming back fetches again.
-function useCachedFetch<T>(url: string | null): Load<T> | null {
-  const [results, setResults] = useState<Record<string, Load<T>>>({});
-  const known = url !== null && url in results;
-  useEffect(() => {
-    if (!url || known) return;
-    const controller = new AbortController();
-    getJson<T>(url, controller.signal)
-      .then((res) => {
-        const load: Load<T> = res.ok ? { state: "ready", data: res.data } : { state: "error", message: errorOf(res.data) };
-        setResults((prev) => ({ ...prev, [url]: load }));
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [url, known]);
-  return url ? (results[url] ?? { state: "loading" }) : null;
-}
 
 export function ReviewBlock({
   output,
@@ -77,6 +58,7 @@ export function ReviewBlock({
 
   // Draft 1, 2, 3 … in the order they were made (revisions come newest first).
   const ordinal = new Map(revisions.map((r, i) => [r.id, revisions.length - i]));
+  const [walking, setWalking] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -109,7 +91,28 @@ export function ReviewBlock({
 
         {/* Proofs */}
         <div className="mt-4">
-          <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">Before and after</h3>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">Before and after</h3>
+            {selected && impact && impact.rows.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setWalking(true)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+              >
+                <Maximize2 className="h-3.5 w-3.5" aria-hidden />
+                Walk through the draft
+              </button>
+            )}
+          </div>
+          {walking && selected && impact && (
+            <DraftWalkthrough
+              revisionId={selected.id}
+              title={`Draft ${ordinal.get(selected.id)} · ${output.label}`}
+              impact={impact}
+              focusStyleId={output.styleId}
+              onClose={() => setWalking(false)}
+            />
+          )}
           {!selected ? (
             <p className="mt-2 text-sm text-zinc-500">No draft yet.</p>
           ) : proofs?.state === "ready" ? (
