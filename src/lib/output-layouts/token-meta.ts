@@ -197,7 +197,7 @@ export const LAYOUT_TOKENS: LayoutTokenMeta[] = [
     group: "Style",
     kind: "text",
     arg: "sizeForm",
-    example: "98-104 cm / 3-4 år · {{size:numeric}} → 98/104 cm · {{size:year}} → 3/4 år",
+    example: "98-104 cm / 3-4 år · {{size:numeric}} → 98/104 cm · {{size:year}} → 3-4 år",
   },
   {
     key: "sizeRange",

@@ -31,7 +31,7 @@ import {
 import { pickCartonQtyPair, pickCartonQtyVariant, pickSolidAssortVariant } from "./carton-qty";
 import { resolvePolybagQty } from "./polybag-qty";
 import { pickSizeItems } from "./size-scoped-text";
-import { formatSizeFormRun, parseSizeForm, sizeFormRun } from "./size-form";
+import { formatSingleSizeForm, formatSizeFormRun, parseSizeForm, sizeFormRun } from "./size-form";
 import {
   formatSizeRatio,
   formatSizeRatioTotal,
@@ -199,9 +199,8 @@ const RESOLVERS: Record<string, TextResolver> = {
   // The optional form argument picks ONE half of a two-form label
   // ("86-92 cm / 1½-2 år"), same as {{sizeRangeCoop:numeric}} / :year — the
   // single current size prints in cm or in age instead of both. Bare is
-  // unchanged. Reuses sizeFormRun/formatSizeFormRun even for the one-label
-  // case so a unit-bearing label formats identically to the range token
-  // ("86/92 cm").
+  // unchanged. The centimetres format as the range token does ("86/92 cm");
+  // the age keeps its dash ("2-6 mdr") — see formatSingleSizeForm.
   size: (s, arg) => {
     const form = parseSizeForm(arg);
     if (s.isAssortment) {
@@ -209,7 +208,7 @@ const RESOLVERS: Record<string, TextResolver> = {
       return form ? formatSizeFormRun(sizeFormRun(labels, form)) : labels.join("-");
     }
     const label = s.sizes[0]?.label ?? "";
-    return form ? formatSizeFormRun(sizeFormRun([label], form)) : label;
+    return form ? formatSingleSizeForm(label, form) : label;
   },
   // EVERY size in the style's full run, listed — "S, M, L, XL, XXL", not
   // the "S–XXL" endpoints. That's what the print specs mean by a size range:
