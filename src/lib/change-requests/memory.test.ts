@@ -185,3 +185,32 @@ test("log event: a prompt read (lastUsedAt === updatedAt) shows as 'Read by the 
   // Used earlier, then re-kept/edited: shows as kept.
   assert.equal(m.memoryEvent({ ...base, state: "KEPT", updatedAt: later, lastUsedAt: at }).kind, "kept");
 });
+
+// ---- a note written by hand ------------------------------------------------
+
+test("new note: trimmed text, the scope's reference kept only where it means something", () => {
+  assert.deepEqual(m.planNewMemory({ scope: "MONDAY", scopeRef: "ignored", text: "  Certificates drive the cert marks.\r\n" }), {
+    ok: true,
+    data: { scope: "MONDAY", scopeRef: null, text: "Certificates drive the cert marks." },
+  });
+  assert.deepEqual(m.planNewMemory({ scope: "CUSTOMER", scopeRef: " cust-1 ", text: "Bold quantities." }), {
+    ok: true,
+    data: { scope: "CUSTOMER", scopeRef: "cust-1", text: "Bold quantities." },
+  });
+  assert.deepEqual(m.planNewMemory({ scope: "DOC_TYPE", scopeRef: "WASHCARE", text: "x" }), {
+    ok: true,
+    data: { scope: "DOC_TYPE", scopeRef: "WASHCARE", text: "x" },
+  });
+});
+
+test("new note: refused without text, past the limit, with an unknown scope or a missing customer/doc type", () => {
+  const code = (input: Parameters<typeof m.planNewMemory>[0]) => {
+    const plan = m.planNewMemory(input);
+    return plan.ok ? "ok" : plan.code;
+  };
+  assert.equal(code({ scope: "GLOBAL", text: "   " }), "invalid_text");
+  assert.equal(code({ scope: "GLOBAL", text: "x".repeat(m.MEMORY_TEXT_MAX + 1) }), "invalid_text");
+  assert.equal(code({ scope: "EVERYTHING", text: "x" }), "invalid_scope");
+  assert.equal(code({ scope: "CUSTOMER", text: "x" }), "invalid_scope");
+  assert.equal(code({ scope: "DOC_TYPE", scopeRef: "  ", text: "x" }), "invalid_scope");
+});

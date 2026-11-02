@@ -224,6 +224,34 @@ export class MemoryUpdateError extends Error {
   }
 }
 
+// ---------- a note written by hand (pure) ----------
+
+// A person writing a note is the knowledge base: what the agent can't find in
+// the data ("an OEKO-TEX page prints because Monday's Certificates column
+// says so"). It starts KEPT — a person wrote it, so there is nobody left to
+// approve it. The scope's reference is a customer id or a doc-type value;
+// GLOBAL and MONDAY take none.
+export type NewMemoryInput = { scope: string; scopeRef?: string | null; text: string };
+
+export type NewMemoryPlan =
+  | { ok: true; data: { scope: MemoryScope; scopeRef: string | null; text: string } }
+  | { ok: false; code: "invalid_scope" | "invalid_text"; message: string };
+
+export function planNewMemory(input: NewMemoryInput): NewMemoryPlan {
+  const scope = MemoryScopeSchema.safeParse(input.scope);
+  if (!scope.success) return { ok: false, code: "invalid_scope", message: `Unknown scope: ${input.scope}` };
+  const text = normaliseMemoryText(input.text);
+  if (!text) return { ok: false, code: "invalid_text", message: "A note can't be empty." };
+  if (text.length > MEMORY_TEXT_MAX) {
+    return { ok: false, code: "invalid_text", message: `Keep a note under ${MEMORY_TEXT_MAX} characters.` };
+  }
+  const ref = input.scopeRef?.trim() || null;
+  if (scope.data === "CUSTOMER" && !ref) return { ok: false, code: "invalid_scope", message: "Pick the customer." };
+  if (scope.data === "DOC_TYPE" && !ref) return { ok: false, code: "invalid_scope", message: "Pick the doc type." };
+  const needsRef = scope.data === "CUSTOMER" || scope.data === "DOC_TYPE";
+  return { ok: true, data: { scope: scope.data, scopeRef: needsRef ? ref : null, text } };
+}
+
 // ---------- the follow-along log (pure) ----------
 
 export type MemoryEventKind = "suggested" | "kept" | "dismissed" | "forgotten" | "used";
@@ -374,6 +402,36 @@ export async function memoriesForPrompt(
 }
 
 // ---------- writes ----------
+
+export class NewMemoryError extends Error {
+  constructor(
+    public code: "invalid_scope" | "invalid_text",
+    message: string,
+  ) {
+    super(message);
+    this.name = "NewMemoryError";
+  }
+}
+
+// A note written by hand on /settings/agent-memory: KEPT from the start, so
+// the next matching run reads it. A customer scope must name a customer that
+// exists. Throws NewMemoryError with a message the form shows.
+export async function createManualMemory(input: NewMemoryInput & { userId: string }): Promise<AgentMemory> {
+  const plan = planNewMemory(input);
+  if (!plan.ok) throw new NewMemoryError(plan.code, plan.message);
+  if (plan.data.scope === "CUSTOMER") {
+    const customer = await db.customer.findUnique({ where: { id: plan.data.scopeRef! }, select: { id: true } });
+    if (!customer) throw new NewMemoryError("invalid_scope", "That customer no longer exists.");
+  }
+  return db.agentMemory.create({
+    data: {
+      ...plan.data,
+      state: "KEPT" satisfies MemoryState,
+      sourceKind: "MANUAL" satisfies MemorySourceKind,
+      createdById: input.userId,
+    },
+  });
+}
 
 // Apply a PATCH (state and/or text). Throws MemoryUpdateError with a code the
 // route maps to 404 / 400 / 409.
