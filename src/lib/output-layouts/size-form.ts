@@ -109,21 +109,40 @@ export function pickSizeForm(label: string, form: SizeForm | null): string {
 // A half that still carries a unit after the trailing one is taken off (two
 // age forms slash-joined, say) is left exactly as authored with no unit at
 // all: better an odd-looking label than a mangled one.
-export function splitSizeUnit(half: string): { value: string; unit: string } {
+//
+// `pairJoiner` is what the pair is compacted WITH — "/" for a run; a size
+// printed on its own can ask for "-" instead (see formatSingleSizeForm).
+export function splitSizeUnit(half: string, pairJoiner = "/"): { value: string; unit: string } {
   const text = half.trim().replace(/\s+/g, " ");
   const m = UNIT_TAIL_RE.exec(text);
-  if (!m) return { value: compactSizeValue(text), unit: "" };
+  if (!m) return { value: compactSizeValue(text, pairJoiner), unit: "" };
   const value = m[1].trim();
   if (!value || UNIT_ANY_RE.test(value)) return { value: text, unit: "" };
-  return { value: compactSizeValue(value), unit: m[2] };
+  return { value: compactSizeValue(value, pairJoiner), unit: m[2] };
 }
 
 // "98-104" → "98/104"; "86 / 92" → "86/92"; "98" → "98". Dashes (ASCII and
 // the typographic ones) and slashes are all treated as the same internal
 // separator, so however the buyer wrote the pair it prints one way.
-function compactSizeValue(value: string): string {
+function compactSizeValue(value: string, pairJoiner: string): string {
   const parts = value.split(/\s*[-–—/]\s*/).filter(Boolean);
-  return parts.length > 0 ? parts.join("/") : value;
+  return parts.length > 0 ? parts.join(pairJoiner) : value;
+}
+
+// ONE size in the requested form — {{size:numeric}} / {{size:year}} on the
+// current row, with no run around it.
+//
+// The measurement prints as the run sets it ("62/68 cm", the way a cm size
+// is written on the label). The AGE keeps its dash — "2-6 mdr", "1-1½ år" —
+// because that's how an age is written, and a lone size has no run joiner
+// for the dash to be confused with. A label with no age half formats
+// exactly as the run would, for either form.
+export function formatSingleSizeForm(label: string, form: SizeForm): string {
+  if (form === "year" && isAgePart(label)) {
+    const { value, unit } = splitSizeUnit(pickSizeForm(label, form), "-");
+    return unit ? `${value} ${unit}` : value;
+  }
+  return formatSizeFormRun(sizeFormRun([label], form));
 }
 
 // One printed entry of a size run: the text to show and the raw label(s) it

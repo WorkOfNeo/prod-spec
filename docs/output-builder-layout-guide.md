@@ -76,9 +76,11 @@ Which half prints is a per-output choice, made with an argument on `{{sizeRangeC
 | `{{sizeRangeCoop:year}}` | `1½/2-3/4-5/6-7/8 år` |
 | `{{size}}` | `98-104 cm / 3-4 år` (as authored) |
 | `{{size:numeric}}` | `98/104 cm` |
-| `{{size:year}}` | `3/4 år` |
+| `{{size:year}}` | `3-4 år` |
 
 A form doesn't just pick a half — it prints as **one set**: the pair inside a single size is slash-joined and the unit is printed once, after the value(s). On `{{sizeRangeCoop}}` this also joins the sizes with `-`, so two delimiters do two jobs — `98/104-110/116` reads as two sizes where `98-104-110-116` would read as four. The input in Monday is unchanged; this is purely how it's recomputed for print.
+
+The one exception is the age on a single size: `{{size:year}}` keeps the dash (`2-6 mdr`, `1-1½ år`), the way an age is written. A lone size has no run joiner for it to clash with. On the assortment row, where `{{size}}` lists the whole run, it is set with slashes like `{{sizeRangeCoop:year}}`.
 
 Rules (`src/lib/output-layouts/size-form.ts`):
 
