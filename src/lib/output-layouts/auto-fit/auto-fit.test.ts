@@ -115,6 +115,18 @@ test("compactAround slides blocks to their needs and stretches the target", () =
   assert.deepEqual([...res.affected].sort(), [0, 1]);
 });
 
+test("compactAround keeps a width-sized target in its own columns", () => {
+  const def = label([
+    { id: "care", rect: rect(2, 5), lines: ["x"] },
+    { id: "target", rect: { col: 2, row: 10, colSpan: 8, rowSpan: 2 }, lines: ["{{image:logo:60}}"] },
+  ]);
+  const { page } = geo.refineGrid(def.pages[0], 1.1);
+  const kept = compactAround(page, 1, [6, 59], [8, 0], { keepTargetColumns: true })!;
+  assert.deepEqual([kept.page.blocks[1].rect!.col, kept.page.blocks[1].rect!.colSpan], [2, 8]);
+  const wide = compactAround(page, 1, [6, 59], [8, 0])!;
+  assert.deepEqual([wide.page.blocks[1].rect!.col, wide.page.blocks[1].rect!.colSpan], [0, 12]);
+});
+
 test("compactAround returns null when the blocks alone fill the section", () => {
   const def = label([
     { rect: rect(2, 9), lines: ["x"] },

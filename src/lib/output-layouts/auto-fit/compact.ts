@@ -18,6 +18,9 @@ export type CompactOptions = {
   // Put the target below every block in the section instead of where it sits
   // today — used when the target moves to the other side of the fold.
   insertAtBottom?: boolean;
+  // Keep the target in its own columns instead of stretching it full width —
+  // for a block whose content is sized by its width (a {{image:x:40}} logo).
+  keepTargetColumns?: boolean;
 };
 
 export type CompactResult = {
@@ -97,15 +100,16 @@ export function compactAround(
   // The target takes the full width between the two stacks; if a block that
   // shares only some columns sits in that gap, it keeps its own columns.
   const { cols } = pageGrid(d);
-  const full: LayoutRect = { col: 0, row: 0, colSpan: cols, rowSpan: 1 };
+  const lane: LayoutRect = opts.keepTargetColumns ? tRect : { col: 0, row: 0, colSpan: cols, rowSpan: 1 };
   let top = s0;
   let bottom = s1;
-  for (const q of placedAbove) if (overlapCols(q, full)) top = Math.max(top, q.row + q.rowSpan + gap);
-  for (const q of placedBelow) if (overlapCols(q, full)) bottom = Math.min(bottom, q.row - gap);
+  for (const q of placedAbove) if (overlapCols(q, lane)) top = Math.max(top, q.row + q.rowSpan + gap);
+  for (const q of placedBelow) if (overlapCols(q, lane)) bottom = Math.min(bottom, q.row - gap);
   if (bottom < top) return null;
+  const own: LayoutRect = { ...tRect, row: top, rowSpan: bottom - top + 1 };
   const wide: LayoutRect = { col: 0, row: top, colSpan: cols, rowSpan: bottom - top + 1 };
   const clash = placed.some((q) => overlapCols(q, wide) && q.row <= bottom && q.row + q.rowSpan - 1 >= top);
-  d.blocks[target].rect = clash ? { ...tRect, row: top, rowSpan: bottom - top + 1 } : wide;
+  d.blocks[target].rect = opts.keepTargetColumns || clash ? own : wide;
   return {
     page: d,
     moved,

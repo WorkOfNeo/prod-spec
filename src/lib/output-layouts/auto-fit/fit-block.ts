@@ -68,6 +68,10 @@ export type AutoFitOptions = {
   // Evaluate every placement (for a report) instead of stopping at the first
   // kind that fits. The choice is the same either way.
   exploreAll: boolean;
+  // Keep the target in its own columns rather than stretching it full width.
+  // Default: on when the block holds a width-sized image ({{image:x:40}}),
+  // whose printed size would otherwise change with the block's width.
+  keepTargetColumns?: boolean;
 };
 
 export const DEFAULT_AUTO_FIT_OPTIONS: AutoFitOptions = {
@@ -147,6 +151,7 @@ export type AutoFitResult = {
 const FIT_TOLERANCE_MM = 0.2;
 const OVERFLOW_TOLERANCE_MM = 0.3;
 const CONDITIONAL_RE = /\{\{(cert|if)\b/;
+const WIDTH_SIZED_IMAGE_RE = /\{\{image:[^}:]+:\d+\}\}/;
 const BODY_RE = /\{\{(composition|careInstructions)/;
 
 // Largest value on the step grid lo, lo+step, …, hi for which fits() holds,
@@ -195,6 +200,7 @@ export async function autoFitBlock(input: AutoFitInput): Promise<AutoFitResult> 
   const target0 = def.pages[pi].blocks[ti];
   target0.lines = target0.lines.map((l) => keepPhrasesTogether(l, o.keepTogether));
 
+  const keepColumns = o.keepTargetColumns ?? target0.lines.some((l) => WIDTH_SIZED_IMAGE_RE.test(l));
   const { page: page0 } = refineGrid(def.pages[pi], o.targetRowMm);
   const rowMm = rowHeightMm(page0);
   const capPt = o.capPt ?? bodyCapPt(page0);
@@ -260,7 +266,10 @@ export async function autoFitBlock(input: AutoFitInput): Promise<AutoFitResult> 
   const bandCandidate = async (band: BandMm, placement: Placement): Promise<FitCandidate | null> => {
     const rows = bandRows(page0, band);
     if (!rows) return null;
-    const rect: LayoutRect = { col: 0, row: rows[0], colSpan: cols, rowSpan: rows[1] - rows[0] + 1 };
+    const own = page0.blocks[ti].rect!;
+    const rect: LayoutRect = keepColumns
+      ? { ...own, row: rows[0], rowSpan: rows[1] - rows[0] + 1 }
+      : { col: 0, row: rows[0], colSpan: cols, rowSpan: rows[1] - rows[0] + 1 };
     // In place, the text hugs the side of the band its cell was on.
     const mid = (cell.top + cell.bottom) / 2;
     const third = (band[1] - band[0]) / 3;
@@ -277,6 +286,7 @@ export async function autoFitBlock(input: AutoFitInput): Promise<AutoFitResult> 
         gapMm: o.gapMm,
         conditional,
         insertAtBottom: placement === "other-side",
+        keepTargetColumns: keepColumns,
       });
       if (!solved) return null;
       // Any block this pass touched that now overflows on some style gets rows back.
@@ -357,7 +367,7 @@ export async function autoFitBlock(input: AutoFitInput): Promise<AutoFitResult> 
 
   // ---- Overshoot: the most likely layout, and where the millimetres go ------
   const overshootPt = o.overshootPt ?? floorPt;
-  const squeezed = compactAround(page0, ti, home, worst, { gapMm: o.gapMm, conditional });
+  const squeezed = compactAround(page0, ti, home, worst, { gapMm: o.gapMm, conditional, keepTargetColumns: keepColumns });
   const cellMm = page0.blocks[ti].rect!.rowSpan * rowMm;
   const keepToday = !squeezed || cellMm >= squeezed.targetHeightMm;
   const geometry = keepToday ? page0 : squeezed.page;

@@ -20,10 +20,13 @@
  * ONE BLOCK
  *   npx tsx --env-file=.env scripts/layout-autofit.ts --layout=<id> --page=<n|title> \
  *     --block=<id|index> [--lines=<file>] [--style=<id> …] [--spec=<prodSpecId>] \
- *     [--samples=8] [--scan=40] [--min-pt=2.5] [--keep-together="Contrast Company A/S" …] [--out=<dir>]
+ *     [--samples=8] [--scan=40] [--min-pt=2.5] [--keep-together="Contrast Company A/S" …]
+ *     [--images=<dir>] [--out=<dir>]
  *
  *   --lines   replace the block's lines with this file's lines first
  *   --style   measured and pictured first, if complete (repeatable)
+ *   --images  a folder of <slug>.svg files placed by {{image:<slug>}}, on top of
+ *             the live image library: try new artwork before it is uploaded
  *   --spec    ProdSpec whose newest live styles are scanned for samples
  *             (default: the first --style's spec)
  *   --samples complete styles to measure against (default 8)
@@ -51,10 +54,12 @@
  * proposed definition), <face>.before.pdf, <face>.proposal.pdf and, when it
  * overshoots, <face>.proposal-fullest.pdf on the style that prints the most.
  */
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
 import { db } from "@/lib/db";
 import { autoFitBlock, PLACEMENTS, type AutoFitResult } from "@/lib/output-layouts/auto-fit";
+import { normalizeImageSlug } from "@/lib/output-layouts/image-slug";
+import { loadLayoutImages, type LayoutImageMap } from "@/lib/output-layouts/images";
 import { loadAutoFitSamples } from "@/lib/output-layouts/auto-fit/samples";
 import { renderLayoutHtml } from "@/lib/output-layouts/render";
 import { parseLayoutDef, type LayoutDef } from "@/lib/output-layouts/schema";
@@ -164,6 +169,16 @@ async function main() {
   const scan = Number(arg("scan") ?? 40);
   const minPt = Number(arg("min-pt") ?? 2.5);
   const keepTogetherArg = argsOf("keep-together");
+  const imagesDir = arg("images");
+  let layoutImages: LayoutImageMap | undefined;
+  if (imagesDir) {
+    layoutImages = new Map(await loadLayoutImages());
+    for (const f of readdirSync(imagesDir).filter((n) => n.endsWith(".svg"))) {
+      const slug = basename(f, ".svg");
+      const dataUrl = `data:image/svg+xml;base64,${readFileSync(join(imagesDir, f)).toString("base64")}`;
+      layoutImages.set(normalizeImageSlug(slug), { slug, name: slug, dataUrl });
+    }
+  }
 
   type Work = {
     name: string;
@@ -231,7 +246,7 @@ async function main() {
       const keepTogether = w.keepTogether;
       const { customLogo } = await db.outputLayout.findUniqueOrThrow({ where: { id: w.layoutId }, select: { customLogo: true } });
       const pdf = async (def: LayoutDef, pageIndex: number, sd: StyleData, file: string) =>
-        writeFileSync(join(outDir, file), await renderPdf({ html: await renderLayoutHtml(def, sd, { mode: "production", pageIndex, customLogo }) }));
+        writeFileSync(join(outDir, file), await renderPdf({ html: await renderLayoutHtml(def, sd, { mode: "production", pageIndex, customLogo, layoutImages }) }));
       for (const face of w.faces) {
         const name = `${w.name}--p${face.pageIndex}`;
         const set = await loadAutoFitSamples({
@@ -253,7 +268,7 @@ async function main() {
           blockIndex: face.blockIndex,
           samples,
           evaluate: tab.evaluate,
-          renderOptions: { customLogo },
+          renderOptions: { customLogo, layoutImages },
           options: { minPt, keepTogether, exploreAll: true },
         });
         await pdf(w.before, face.pageIndex, samples[0].styleData, `${name}.before.pdf`);
