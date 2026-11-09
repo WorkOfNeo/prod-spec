@@ -23,11 +23,24 @@
 // History is append-only — system prompt, tools and earlier turns are never
 // edited — which keeps the prompt cache warm and the model's thinking blocks
 // valid from one turn to the next.
+//
+// Langfuse (src/lib/ai/tracing.ts): every model turn is a `generation`
+// ("decide-next-step") with the conversation it saw, its thinking, its tool
+// calls, usage and cost; every tool call a `tool` named after the tool. Both
+// attach to the observation active around the loop (the job's agent run).
 // =====================================================
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { BetaMessageStreamParams } from "@anthropic-ai/sdk/resources/beta/messages/messages";
+import { startObservation } from "@langfuse/tracing";
 import { z } from "zod";
+import {
+  anthropicUsageDetails,
+  assistantMessage,
+  chatMessages,
+  langfuseConfigured,
+  toolResultContent,
+} from "@/lib/ai/tracing";
 import { toolStepKind } from "../types";
 import { TERMINAL_TOOLS, type AgentTool, type AgentToolName, type ToolContext, type ToolResult } from "./contract";
 import {
@@ -132,6 +145,9 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<AgentLoop
   let turns = 0;
   let streamRetries = 0;
   let pauses = 0;
+  // Building trace payloads (the conversation, screenshots as data URIs) only
+  // pays off when traces are exported.
+  const traced = langfuseConfigured();
 
   const done = (stopReason: AgentStopReason, extra: Partial<AgentLoopResult> = {}): AgentLoopResult => ({
     stopReason,
@@ -160,11 +176,23 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<AgentLoop
       ...(toolDefs.length ? { tools: toolDefs, tool_choice: { type: "auto" as const } } : {}),
     };
 
+    const generation = startObservation(
+      "decide-next-step",
+      {
+        model,
+        modelParameters: { effort, max_tokens: AGENT_MAX_TOKENS, ...(budget ? { task_budget: budget } : {}) },
+        ...(traced ? { input: chatMessages(system, params.messages) } : {}),
+        metadata: { turn: turns + 1 },
+      },
+      { asType: "generation" },
+    );
+
     let message: BetaMessage;
     try {
       message = await client.beta.messages.stream(params).finalMessage();
       streamRetries = 0;
     } catch (err) {
+      generation.update({ level: "ERROR", statusMessage: describeError(err) }).end();
       if (!(err instanceof Anthropic.APIError) && streamRetries < MAX_CONSECUTIVE_STREAM_RETRIES) {
         streamRetries++;
         continue;
@@ -175,6 +203,18 @@ export async function runAgentLoop(opts: RunAgentLoopOptions): Promise<AgentLoop
     turns++;
     const turnUsage = tokenUsage(message.usage);
     const turnCost = priceUsage(message.model, turnUsage);
+    const stopped = message.stop_reason === "refusal" || message.stop_reason === "max_tokens";
+    generation
+      .update({
+        // The model that answered: a refusal fallback can differ from the one asked.
+        model: message.model,
+        ...(traced ? { output: assistantMessage(echoableContent(message.content)) } : {}),
+        usageDetails: anthropicUsageDetails(turnUsage),
+        ...(turnCost !== null ? { costDetails: { total: turnCost } } : {}),
+        metadata: { stopReason: message.stop_reason, fallback: servedByFallback(message) },
+        ...(stopped ? { level: "WARNING" as const, statusMessage: `Stopped: ${message.stop_reason}` } : {}),
+      })
+      .end();
     usage.inputTokens += turnUsage.inputTokens;
     usage.outputTokens += turnUsage.outputTokens;
     usage.cacheReadTokens += turnUsage.cacheReadTokens;
@@ -323,6 +363,11 @@ async function executeTool(
   ctx: ToolContext,
 ): Promise<Executed> {
   const started = Date.now();
+  const observation = startObservation(
+    block.name,
+    { input: block.input, metadata: { toolUseId: block.id } },
+    { asType: "tool" },
+  );
   const tool = byName.get(block.name);
   let input: unknown = block.input;
   let result: ToolResult | undefined;
@@ -352,6 +397,13 @@ async function executeTool(
 
   const durationMs = Date.now() - started;
   const text = typeof content === "string" ? content : textOfParams(content ?? []);
+  observation
+    .update({
+      ...(langfuseConfigured() ? { output: toolResultContent(content) } : {}),
+      metadata: { durationMs },
+      ...(isError ? { level: "ERROR" as const, statusMessage: text.replace(/\s+/g, " ").slice(0, 300) } : {}),
+    })
+    .end();
   await quietly(() =>
     ctx.log({
       kind: toolStepKind(block.name),

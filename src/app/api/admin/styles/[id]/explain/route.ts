@@ -4,6 +4,7 @@ import { canReview } from "@/lib/roles";
 import { buildStyleExplainBundle, explainPointers } from "@/lib/styles/explain";
 import { answerStyleQuestion, StyleExplainError } from "@/lib/styles/explain-ai";
 import { AiNotConfiguredError, AiResponseError } from "@/lib/rejection-ai/anthropic";
+import { propagateAttributes } from "@langfuse/tracing";
 
 // =====================================================
 // "What's up with this style?" — the free-text Q&A endpoint.
@@ -65,11 +66,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (!bundle) return NextResponse.json({ error: "Style not found" }, { status: 404 });
 
   try {
-    const answer = await answerStyleQuestion({
-      question,
-      bundle,
-      pointers: explainPointers(bundle),
-    });
+    // The person who asked, on the call's Langfuse trace.
+    const answer = await propagateAttributes({ userId: session.user.id }, () =>
+      answerStyleQuestion({ question, bundle, pointers: explainPointers(bundle), styleId: id }),
+    );
     // The bundle rides along with the answer so the panel can show the facts
     // the answer was drawn from — the reviewer can always check the working.
     return NextResponse.json({ answer, bundle });

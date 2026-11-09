@@ -192,6 +192,20 @@ test("targets: a variantKey the style's ProdSpec doesn't print (or has disabled)
   inputError(() => targets({ styleId: "style-spec-2" }), /isn't printed/);
 });
 
+test("targets: the cover is printed for every style with a spec, though no spec lists it", () => {
+  const t = targets({ styleId: "style-1", outputs: [output({ label: m.COVER_OUTPUT_LABEL, variantKey: "__cover__" })] });
+  assert.deepEqual(t.outputs[0], { variantKey: "__cover__", layoutId: null, styleId: "style-1" });
+  // On another style of the order, which has a spec of its own.
+  const other = targets({ styleId: "style-1", outputs: [output({ variantKey: "__cover__", styleId: "style-spec-2" })] });
+  assert.equal(other.outputs[0].variantKey, "__cover__");
+  // A style with no spec has no bundle, so no cover.
+  inputError(() => targets({ styleId: "style-no-spec", outputs: [output({ variantKey: "__cover__" })] }), /isn't printed/);
+  inputError(
+    () => targets({ styleId: "style-1", outputs: [output({ variantKey: "__cover__", styleId: "style-no-spec" })] }),
+    /isn't printed/,
+  );
+});
+
 test("targets: a variantKey with no style to check it against is a 400", () => {
   inputError(() => targets({ poNumber: "PO-0000", customerId: "cust-1" }), /pick the style first/);
   // No key, no style: a free-text issue is fine.

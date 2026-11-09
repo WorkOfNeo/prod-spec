@@ -80,6 +80,19 @@ test("the measurement half keeps its own slashes and spacing", () => {
   assert.equal(pickSizeForm("86 / 92 cm / 1½-2 år", "year"), "1½-2 år");
 });
 
+test("a ½ typed as \"11/2\" is a half, not the cm/age separator", () => {
+  // The reported label: it used to print "80/86 cm/1/11" and "2 år".
+  assert.equal(pickSizeForm("80-86 cm / 1-11/2 år", "numeric"), "80-86 cm");
+  assert.equal(pickSizeForm("80-86 cm / 1-11/2 år", "year"), "1-1½ år");
+  assert.equal(pickSizeForm("86-92 cm / 11/2-2 år", "year"), "1½-2 år");
+  assert.equal(coop(makeStyle(["80-86 cm / 1-11/2 år"]), "numeric"), "80/86 cm");
+  assert.equal(coop(makeStyle(["80-86 cm / 1-11/2 år"]), "year"), "1/1½ år");
+  // A bare "1/2" may be the range "1-2", and slash sizes without an age
+  // unit are never read as halves.
+  assert.ok(!pickSizeForm("74-80 cm / 1/2 år", "year").includes("½"));
+  for (const label of ["11/2", "21/2"]) assert.equal(pickSizeForm(label, "year"), label, label);
+});
+
 test("either half may come first", () => {
   assert.equal(pickSizeForm("1½-2 år / 86-92 cm", "numeric"), "86-92 cm");
   assert.equal(pickSizeForm("1½-2 år / 86-92 cm", "year"), "1½-2 år");
@@ -185,13 +198,27 @@ test("{{size}} is unchanged — the current row's label as authored", () => {
 
 test("{{size:numeric}} / {{size:year}} print one half of the current row's size", () => {
   assert.equal(size(makeStyle(), "numeric"), "86/92 cm");
-  assert.equal(size(makeStyle(), "year"), "1½/2 år");
+  // The age keeps its dash — a lone size has no run joiner to clash with.
+  assert.equal(size(makeStyle(), "year"), "1½-2 år");
 });
 
 test("{{size:numeric}} follows the repetition, not just the first size", () => {
   const rows = repetitionStyles(makeStyle(), "size");
   assert.equal(size(rows[1], "numeric"), "98/104 cm");
-  assert.equal(size(rows[1], "year"), "3/4 år");
+  assert.equal(size(rows[1], "year"), "3-4 år");
+});
+
+test("{{size:year}} prints each row's age with a dash, months and typed halves too", () => {
+  // The run as the buyer typed it — loose spacing round the slash, months
+  // then years, and a "1½" typed as "11/2".
+  const rows = repetitionStyles(
+    makeStyle(["50-56 cm/ 0-2 mdr", "62-68 cm/ 2-6 mdr", "74-80 cm/ 9-12 mdr", "80-86 cm / 1-11/2 år"]),
+    "size",
+  );
+  assert.deepEqual(rows.map((r) => size(r, "year")), ["0-2 mdr", "2-6 mdr", "9-12 mdr", "1-1½ år"]);
+  assert.deepEqual(rows.map((r) => size(r, "numeric")), ["50/56 cm", "62/68 cm", "74/80 cm", "80/86 cm"]);
+  // However the age pair was written, it prints one way.
+  assert.equal(size(makeStyle(["62-68 cm / 2 – 6 mdr"]), "year"), "2-6 mdr");
 });
 
 test("{{size:numeric}} on a run without an age half prints the plain size", () => {

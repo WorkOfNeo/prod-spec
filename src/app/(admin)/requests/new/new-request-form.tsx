@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Check, ImagePlus, Lightbulb, LoaderCircle, Search, Send, Sparkles, X } from "lucide-react";
 import { LazyOutputPreview } from "@/components/output-preview";
 import { downscaleImage, type PreparedImage } from "@/lib/images/downscale-image";
+import { COVER_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
 import type { OrderSearchResult, StyleOutputOption } from "@/lib/change-requests/requests";
 import type { SplitResult } from "@/lib/change-requests/agent/split";
 
@@ -16,7 +17,8 @@ import type { SplitResult } from "@/lib/change-requests/agent/split";
 //                          first style's outputs and files the request for the
 //                          whole order.
 //   2. Which outputs?      cards with a live thumbnail of what prints today
-//                          (the style output-preview route); click to pick.
+//                          (the style output-preview route; the cover's own
+//                          cover-preview); click to pick.
 //   3. What should change? one issue per picked output — text plus up to a few
 //                          screenshots (picker, drag-drop, or paste from the
 //                          clipboard). A pasted email can be split across the
@@ -632,7 +634,10 @@ function OutputCard({
   onToggle: () => void;
 }) {
   const ratio = output.heightMm > 0 ? output.widthMm / output.heightMm : 1;
-  const src = `/api/admin/styles/${encodeURIComponent(styleId)}/output-preview?variantKey=${encodeURIComponent(output.variantKey)}`;
+  const src =
+    output.variantKey === COVER_VARIANT_KEY
+      ? `/api/admin/styles/${encodeURIComponent(styleId)}/cover-preview`
+      : `/api/admin/styles/${encodeURIComponent(styleId)}/output-preview?variantKey=${encodeURIComponent(output.variantKey)}`;
   return (
     <button
       type="button"

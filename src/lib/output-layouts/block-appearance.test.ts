@@ -30,8 +30,10 @@ test("appearance keys cover every block field that isn't placement or content", 
   // The regression this guards: a new formatting field lands on
   // LayoutBlockSchema and nobody adds it to BLOCK_APPEARANCE_KEYS, so it
   // silently stops being inherited/copied/reset. Placement and content are
-  // per-block by definition and must stay OUT.
-  const perBlock = new Set(["id", "anchor", "rect", "cols", "lines"]);
+  // per-block by definition and must stay OUT — and so does showWhen, which
+  // decides WHETHER the block prints, not how it looks: Copy/Paste format
+  // and a new block's inherited look must never carry a condition along.
+  const perBlock = new Set(["id", "anchor", "rect", "cols", "lines", "showWhen"]);
   const expected = Object.keys(LayoutBlockSchema.shape)
     .filter((k) => !perBlock.has(k))
     .sort();

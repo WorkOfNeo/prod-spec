@@ -60,6 +60,11 @@ let styleCounts: Row[];
 let ghostColumns: Row[];
 let waitingOutputs: Row[];
 let admins: { email: string }[];
+// Per-style review-tab overrides and the doc-type catalogue (get_output_settings).
+let fieldValueRows: Row[];
+let lineValueRows: Row[];
+let ignoreRows: Row[];
+let docTypeRows: Row[];
 let queryRaw: (q: { sql: string; values: unknown[] }) => Promise<unknown[]>;
 
 function resetFixtures() {
@@ -147,6 +152,10 @@ function resetFixtures() {
   ];
   waitingOutputs = [];
   admins = [{ email: "admin@example.com" }, { email: "admin2@example.com" }];
+  fieldValueRows = [];
+  lineValueRows = [];
+  ignoreRows = [];
+  docTypeRows = [];
   queryRaw = async () => [];
 }
 
@@ -176,6 +185,10 @@ const explicitDb: Record<string, unknown> = {
     groupBy: async (args: unknown) => {
       record("style.groupBy", args);
       return styleCounts;
+    },
+    count: async (args: unknown) => {
+      record("style.count", args);
+      return 4;
     },
   },
   prodSpec: {
@@ -218,6 +231,11 @@ const explicitDb: Record<string, unknown> = {
       return admins;
     },
   },
+  // The loaders probe with findFirst (table present) and then read findMany.
+  styleOutputFieldValue: { findFirst: async () => null, findMany: async () => fieldValueRows },
+  styleOutputLineValue: { findFirst: async () => null, findMany: async () => lineValueRows },
+  styleOutputIgnore: { findFirst: async () => null, findMany: async () => ignoreRows },
+  docTypeDef: { findMany: async () => docTypeRows },
   $queryRaw: async (q: { sql: string; values: unknown[] }) => {
     record("$queryRaw", q);
     return queryRaw(q);
@@ -255,6 +273,10 @@ const store = {
     record("setOutputStatus", { outputId, status, patch });
     return { id: outputId, requestId: REQUEST_ID };
   },
+  clearCodeHandoff: async (outputId: string) => {
+    record("clearCodeHandoff", outputId);
+    return clearCount;
+  },
   createProposedMemory: async (input: Row) => {
     record("createProposedMemory", input);
     return { id: "mem-1", ...input };
@@ -267,6 +289,9 @@ const store = {
   rollUpRequestStatus: async () => "WORKING",
   getAttachmentImages: async () => [],
 };
+
+// clearCodeHandoff's answer: rows changed (0 = the output left NEEDS_CODE meanwhile).
+let clearCount = 1;
 
 // Revisions
 let revisionCounter = 0;
@@ -294,8 +319,11 @@ let impactImpl: (revisionId: string) => Promise<unknown>;
 
 // Email
 let dispatchImpl: (input: Row) => Promise<unknown>;
+let coverImpl: (styleId: string) => Promise<unknown>;
 
 let sampleStyle: () => StyleData;
+// The ProdSpec output rows the style's render context carries (enabled only).
+let contextOutputs: Row[];
 let tools: typeof import("@/lib/change-requests/agent/tools");
 let gap: typeof import("@/lib/change-requests/gap");
 let AGENT_TOOL_NAMES: readonly string[];
@@ -325,8 +353,16 @@ before(async () => {
     namedExports: {
       loadStyleRenderContext: async (id: string) =>
         id === STYLE_ID
-          ? { styleId: id, poSeq: null, styleData: sampleStyle(), prodSpec: null, outputs: [], readiness: [] }
+          ? { styleId: id, poSeq: null, styleData: sampleStyle(), prodSpec: null, outputs: contextOutputs, readiness: [] }
           : null,
+    },
+  });
+  mock.module("@/lib/pdf/style-cover", {
+    namedExports: {
+      loadStyleCoverInput: async (id: string) => {
+        record("loadStyleCoverInput", id);
+        return coverImpl(id);
+      },
     },
   });
   mock.module("@/lib/email/dispatch", {
@@ -357,6 +393,8 @@ beforeEach(() => {
   for (const k of Object.keys(calls)) delete calls[k];
   logs = [];
   revisionCounter = 0;
+  contextOutputs = [];
+  clearCount = 1;
   renderProofImpl = async (input) => ({
     png: Buffer.from(`png-${input.side}`),
     widthMm: 50,
@@ -368,6 +406,29 @@ beforeEach(() => {
   requestDetailImpl = async (id) =>
     id === REQUEST_ID ? { ...request, outputs: [output, otherOutput], attachments, messages, steps: [] } : null;
   dispatchImpl = async (input) => ({ status: "SIMULATED", to: String(input.to), emailLogId: "log-1" });
+  coverImpl = async (styleId) =>
+    styleId === STYLE_ID
+      ? {
+          prodSpecId: "bogus-spec",
+          input: {
+            customerName: "Bogus Customer",
+            businessArea: "Bogus area",
+            styleName: "Bogus Tee",
+            styleNumber: "BOGUS-001",
+            poNumber: "PO-0000",
+            supplierName: null,
+            generatedAt: new Date(),
+            docs: [
+              { displayName: "Solid polybag sticker", widthMm: 50, heightMm: 60, fileCount: 1, approved: true },
+              { displayName: "Hang tag", widthMm: 40, heightMm: 70.25, fileCount: 2, approved: false },
+              { displayName: "Hanger", widthMm: null, heightMm: null, fileCount: null, kind: "info", sourceLabel: "Hanger: black" },
+            ],
+            settings: {},
+            generalInfo: { markdown: "  Pack flat.  ", settings: {} },
+            coverInfo: null,
+          },
+        }
+      : null;
   delete process.env.CHANGE_REQUEST_DEVELOPER_EMAIL;
   process.env.PROD_SPEC_BASE_URL = "https://prod-spec.example.com/";
 });
@@ -629,6 +690,156 @@ test("get_layout: with an open draft shows the draft and what it changes (live: 
   assert.match(content(missing).error, /not found/);
 });
 
+// ── get_output_settings ─────────────────────────────────────────────────────
+
+test("get_output_settings: the prod spec's row, the layout's settings, doc-type rules, this style's values, and where each is changed", async () => {
+  specs[0].outputs = [
+    {
+      variantKey: `layout:${LAYOUT_ID}`,
+      widthMm: 50,
+      heightMm: 60,
+      enabled: true,
+      cartonBarcodeType: "ean13",
+      cartonBarcodeHeightMm: 12,
+      fieldOverrides: { customerName: "Bogus A/S", bogus: "dropped" },
+    },
+    { variantKey: `layout:${OTHER_LAYOUT_ID}`, widthMm: 150, heightMm: 75, enabled: true },
+  ];
+  layouts[0].definition = {
+    ...stickerDef(),
+    settings: { repeatBy: "ean", rules: [{ field: "productGroup", op: "contains", keywords: ["shoes"], mode: "exclude" }] },
+  };
+  layouts[0].isInfoArea = false;
+  layouts[0].autoApprove = true;
+  layouts[0].customLogo = null;
+  docTypeRows = [{ value: "STICKER", label: "Sticker", exclusionRules: [{ field: "productGroup", op: "contains", keywords: ["sock"] }] }];
+  fieldValueRows = [
+    { variantKey: `layout:${LAYOUT_ID}`, field: "lot", value: "LOT-9" },
+    { variantKey: `layout:${LAYOUT_ID}#M`, field: "colourName", value: "Red" },
+    { variantKey: `layout:${OTHER_LAYOUT_ID}`, field: "lot", value: "elsewhere" },
+  ];
+  lineValueRows = [{ variantKey: `layout:${LAYOUT_ID}`, lineKey: "p1|b-colour|0", value: "COLOUR: Red" }];
+  ignoreRows = [{ variantKey: `layout:${LAYOUT_ID}` }];
+
+  const res = await run("get_output_settings", {});
+  assert.equal(res.isError, undefined, JSON.stringify(res.content));
+  const c = content(res);
+  assert.deepEqual(c.output, { label: "Solid polybag sticker", variantKey: `layout:${LAYOUT_ID}`, layoutId: LAYOUT_ID, printsFrom: "layout" });
+  assert.deepEqual(c.style, { id: STYLE_ID, label: "Bogus Tee", poNumber: "PO-0000" });
+  assert.deepEqual(c.prodSpec, { id: "bogus-spec", name: "Bogus spec A", stylesOnSpec: 4 });
+
+  // The row: the carton barcode is a setting, pins are sanitised, the size is what prints.
+  assert.equal(c.outputRow.enabled, true);
+  assert.deepEqual(c.outputRow.printsAtMm, { widthMm: 50, heightMm: 60 });
+  assert.deepEqual(c.outputRow.pins, { customerName: "Bogus A/S" });
+  assert.equal(c.outputRow.cartonBarcode.type, "ean13");
+  assert.match(c.outputRow.cartonBarcode.setting, /^EAN-13/);
+  assert.equal(c.outputRow.cartonBarcode.heightMm, 12);
+  assert.match(c.outputRow.cartonBarcode.appliesTo, /\{\{barcode:cartonEan13\}\}.*always draw EAN-13/);
+  assert.equal(c.outputRow.infoAreaSize, null);
+  assert.equal(c.outputRowNote, undefined);
+  assert.deepEqual(c.otherOutputsOnSpec, [{ variantKey: `layout:${OTHER_LAYOUT_ID}`, enabled: true, widthMm: 150, heightMm: 75 }]);
+
+  // The layout's Settings card, in full, with rules in words; flags; who prints it.
+  assert.equal(c.layout.id, LAYOUT_ID);
+  assert.equal(c.layout.docTypeLabel, "Sticker");
+  assert.equal(c.layout.autoApprove, true);
+  assert.equal(c.layout.hasCustomLogo, false);
+  assert.equal(c.layout.settings.repeatBy, "ean");
+  assert.equal(c.layout.settings.splitBy, "ean");
+  assert.equal(c.layout.settings.fileName, "");
+  assert.equal(c.layout.settings.rules.length, 1);
+  assert.match(c.layout.settings.rules[0].sentence, /Never when Product group contains .shoes./);
+  // Only spec A prints the layout (spec B's row is disabled).
+  assert.deepEqual(c.layout.printedBy, { prodSpecs: 1, prodSpecNames: ["Bogus spec A"] });
+  assert.equal(c.docTypeRules.length, 1);
+  assert.match(c.docTypeRules[0].sentence, /sock/);
+
+  // This style's review-tab values for this output only, whole-output and per document.
+  assert.deepEqual(c.thisStyle.fieldValues, { lot: "LOT-9" });
+  assert.deepEqual(c.thisStyle.fieldValuesPerDocument, { M: { colourName: "Red" } });
+  assert.deepEqual(c.thisStyle.lineValues, { "p1|b-colour|0": "COLOUR: Red" });
+  assert.deepEqual(c.thisStyle.lineValuesPerDocument, {});
+  assert.equal(c.thisStyle.ignored, true);
+
+  // Where each is changed, with what it reaches.
+  assert.deepEqual(
+    c.whereToChange.map((p: { part: string }) => p.part),
+    ["prod spec output row", "layout settings", "document type rules", "this style's values"],
+  );
+  assert.match(c.whereToChange[0].changeIt, /\/prod-specs\/bogus-spec\?tab=outputs/);
+  assert.match(c.whereToChange[0].changeIt, /Carton barcode \(EAN-128 or EAN-13\)/);
+  assert.match(c.whereToChange[0].changeIt, /every style of prod spec "Bogus spec A" \(4 styles\) for THIS output/);
+  assert.match(c.whereToChange[1].changeIt, new RegExp(`/output-builder/${LAYOUT_ID}`));
+  assert.match(c.whereToChange[1].changeIt, /1 prod spec\)/);
+  assert.match(c.whereToChange[2].changeIt, /"Sticker" output/);
+  assert.match(c.whereToChange[3].changeIt, new RegExp(`/styles/${STYLE_ID}`));
+  assert.match(c.note, /do not draft/);
+  assert.deepEqual(
+    logs.map((l) => [l.kind, l.summary]),
+    [["read", 'Settings of "Solid polybag sticker" · Bogus Tee · Bogus spec A']],
+  );
+});
+
+test("get_output_settings: no row on the prod spec says so; an unknown style, no output, or the cover is an error", async () => {
+  specs[0].outputs = [{ variantKey: `layout:${OTHER_LAYOUT_ID}`, widthMm: 150, heightMm: 75, enabled: true }];
+  const c = content(await run("get_output_settings", {}));
+  assert.equal(c.outputRow, null);
+  assert.match(c.outputRowNote, /no row for layout:bogus-layout/);
+  assert.equal(c.otherOutputsOnSpec.length, 1);
+  assert.ok(c.layout, "the layout's settings are still read");
+  assert.match(logs[0].summary, /\(no output row\)$/);
+
+  const missing = await run("get_output_settings", { styleId: "bogus-missing" });
+  assert.equal(missing.isError, true);
+  assert.match(content(missing).error, /not found/);
+
+  const none = await run("get_output_settings", {}, ctx({ outputId: null }));
+  assert.equal(none.isError, true);
+
+  output.variantKey = "__cover__";
+  const cover = await run("get_output_settings", {});
+  assert.equal(cover.isError, true);
+  assert.match(content(cover).error, /get_cover/);
+});
+
+// ── get_cover ───────────────────────────────────────────────────────────────
+
+test("get_cover: what each part prints for this output's style, and where each part is changed", async () => {
+  const c = content(await run("get_cover", {}));
+  assert.deepEqual(calls.loadStyleCoverInput, [STYLE_ID]);
+  assert.equal(c.prints.header.styleNumber, "BOGUS-001");
+  assert.deepEqual(c.prints.requiredPackaging, [
+    { packaging: "Solid polybag sticker", size: "50×60 mm", files: 1, status: "confirmed", from: "app" },
+    { packaging: "Hang tag", size: "40×70.3 mm", files: 2, status: "waiting", from: "app" },
+    { packaging: "Hanger", size: null, files: null, status: null, from: "info", mondayTrim: "Hanger: black" },
+  ]);
+  assert.equal(c.prints.coverBlock, null);
+  assert.equal(c.prints.generalInformation, "Pack flat.");
+  const parts = Object.fromEntries((c.whereToChange as { part: string; changeIt: string }[]).map((p) => [p.part, p.changeIt]));
+  assert.match(parts["cover block"], /every cover/);
+  assert.match(parts["general information"], /4 styles of prod spec "Bogus spec A"/);
+  assert.match(parts["required packaging"], /\/prod-specs\/bogus-spec\?tab=outputs/);
+  assert.match(parts["required packaging"], /Trims on cover is OFF/);
+  assert.equal(logs.at(-1)?.kind, "read");
+});
+
+test("get_cover: no style to read, or a style without a prod spec, is an error result", async () => {
+  output.styleId = null;
+  request.styleId = null;
+  const none = await run("get_cover", {});
+  assert.equal(none.isError, true);
+  assert.match(content(none).error, /names no style/);
+
+  coverImpl = async () => ({ prodSpecId: null, input: {} });
+  const noSpec = await run("get_cover", { styleId: STYLE_ID });
+  assert.equal(noSpec.isError, true);
+  assert.match(content(noSpec).error, /no prod spec/);
+
+  const gone = await run("get_cover", { styleId: "bogus-missing" });
+  assert.equal(gone.isError, true);
+});
+
 // ── list_tokens ─────────────────────────────────────────────────────────────
 
 test("list_tokens: catalogue filtered by query, resolved for this output's style (en + the ProdSpec's first language)", async () => {
@@ -649,6 +860,37 @@ test("list_tokens: catalogue filtered by query, resolved for this output's style
   assert.equal(value("{{composition:en}}"), "100% Organic Cotton");
   assert.equal(value("{{composition:da}}"), "100% Økologisk Bomuld");
   assert.ok(all.resolved.empty.includes("cartonNo"));
+});
+
+test("list_tokens: the graphics tokens list their sources, and the barcode values follow this output's carton setting", async () => {
+  const all = content(await run("list_tokens", {}));
+  const barcode = all.tokens.find((t: { key: string }) => t.key === "barcode");
+  assert.deepEqual(
+    barcode.sources.map((s: { source: string }) => s.source),
+    ["cartonEan", "cartonEan13", "assortEan", "assortEan13", "ean13"],
+  );
+  assert.equal(barcode.sources[1].usage, "{{barcode:cartonEan13}}");
+  assert.ok(all.syntax.some((s: string) => s.includes("{{barcode:<source>}}")));
+  // No row for this output in the context: the carton sources show the default.
+  const style = sampleStyle();
+  const by = (r: typeof all, source: string) => r.resolved.barcodes.values.find((v: { source: string }) => v.source === source);
+  assert.equal(all.resolved.barcodes.cartonBarcodeSetting, null);
+  assert.equal(by(all, "cartonEan").value, style.carton.ean13);
+  assert.equal(by(all, "cartonEan").symbology, "ean128");
+  assert.equal(by(all, "cartonEan13").value, style.carton.ean13);
+  assert.equal(by(all, "cartonEan13").symbology, "ean13");
+  assert.notEqual(by(all, "ean13").value, style.carton.ean13);
+
+  // This output's prod spec row sets Carton barcode to EAN-13.
+  contextOutputs = [{ variantKey: `layout:${LAYOUT_ID}`, widthMm: 50, heightMm: 60, enabled: true, cartonBarcodeType: "ean13" }];
+  // A source name finds its token through the query.
+  const ean13 = content(await run("list_tokens", { query: "cartonEan13" }));
+  assert.equal(ean13.resolved.barcodes.cartonBarcodeSetting, "ean13");
+  assert.equal(by(ean13, "cartonEan").symbology, "ean13");
+  assert.match(ean13.resolved.barcodes.note, /sets Carton barcode to EAN-13/);
+  // The query narrows the text values, never the barcode list.
+  assert.equal(ean13.resolved.barcodes.values.length, 5);
+  assert.deepEqual(ean13.tokens.map((t: { key: string }) => t.key), ["barcode"]);
 });
 
 test("list_tokens: an unknown style says so instead of failing", async () => {
@@ -801,6 +1043,16 @@ test("propose_patch: refuses without an output, on another layout, or on a coded
   const coded = await run("propose_patch", input);
   assert.equal(coded.isError, true);
   assert.match(content(coded).error, /coded template/);
+  assert.equal(calls.createDraft, undefined);
+});
+
+test("propose_patch: the cover is printed by code — refused with a pointer to get_cover", async () => {
+  output.layoutId = null;
+  output.variantKey = "__cover__";
+  const res = await run("propose_patch", { layoutId: LAYOUT_ID, ops: [ADD_QTY], note: "n" });
+  assert.equal(res.isError, true);
+  assert.match(content(res).error, /printed by code/);
+  assert.match(content(res).error, /get_cover/);
   assert.equal(calls.createDraft, undefined);
 });
 
@@ -1114,6 +1366,17 @@ test("declare_gap: an existing token is refused and nothing moves", async () => 
   assert.equal(tool("declare_gap").input.safeParse({ ...GAP, tokenKey: "bogus pack" }).success, false);
 });
 
+test("declare_gap: a barcode source is refused too — it already prints as {{barcode:<source>}}", async () => {
+  const res = await run("declare_gap", { ...GAP, tokenKey: "cartonEan13" });
+  assert.equal(res.isError, true);
+  assert.match(content(res).error, /already exists as a source/);
+  assert.match(content(res).error, /\{\{barcode:cartonEan13\}\}/);
+  assert.equal(content(res).sources[0].usage, "{{barcode:cartonEan13}}");
+  assert.equal(calls.setOutputStatus, undefined);
+  assert.equal(calls.appendMessage, undefined);
+  assert.equal(calls.dispatchEmail, undefined);
+});
+
 // ── ask_reviewer ────────────────────────────────────────────────────────────
 
 test("ask_reviewer: a question in the thread; requester → NEEDS_INFO, admin → IN_REVIEW", async () => {
@@ -1208,6 +1471,8 @@ test("resumeAwaitingCode: starts only outputs whose awaited token now exists; a 
     { id: "o-fails", awaitingToken: "styleName" },
     { id: "o-busy", awaitingToken: "sizes" },
     { id: "o-ready-2", awaitingToken: "style2Name" },
+    // A barcode source declared as a gap: a layout prints it already.
+    { id: "o-ready-3", awaitingToken: "cartonEan13" },
   ];
   const started: string[] = [];
   const ids = await gap.resumeAwaitingCode(async (id) => {
@@ -1217,8 +1482,8 @@ test("resumeAwaitingCode: starts only outputs whose awaited token now exists; a 
     started.push(id);
     return { started: true };
   });
-  assert.deepEqual(ids, ["o-ready", "o-ready-2"]);
-  assert.deepEqual(started, ["o-ready", "o-ready-2"]);
+  assert.deepEqual(ids, ["o-ready", "o-ready-2", "o-ready-3"]);
+  assert.deepEqual(started, ["o-ready", "o-ready-2", "o-ready-3"]);
   const where = (calls["changeRequestOutput.findMany"][0] as { where: unknown }).where;
   assert.deepEqual(where, { status: "NEEDS_CODE", awaitingToken: { not: null } });
 });
@@ -1233,6 +1498,67 @@ test("resumeAwaitingCode: outputIds narrows it to those outputs; an empty list d
   const none = await gap.resumeAwaitingCode(async () => assert.fail("must not start"), { outputIds: [] });
   assert.deepEqual(none, []);
   assert.equal((calls["changeRequestOutput.findMany"] as unknown[]).length, 1, "no query for an empty list");
+});
+
+// ── withdrawCodeGap ─────────────────────────────────────────────────────────
+
+test("withdrawCodeGap: clears the hand-off, posts the note and a status line, then restarts the agent on the thread", async () => {
+  output.status = "NEEDS_CODE";
+  output.awaitingToken = "cartonEan13";
+  const started: string[] = [];
+  const res = await gap.withdrawCodeGap(OUTPUT_ID, { userId: "admin-1", note: "  {{barcode:cartonEan13}} already exists.  " }, async (id) => {
+    started.push(id);
+    return { started: true };
+  });
+  assert.deepEqual(res, { tokenKey: "cartonEan13", started: true });
+  assert.deepEqual(calls.clearCodeHandoff, [OUTPUT_ID]);
+  const [note, status] = calls.appendMessage as Row[];
+  assert.equal(note.authorKind, "USER");
+  assert.equal(note.authorUserId, "admin-1");
+  assert.equal(note.body, "{{barcode:cartonEan13}} already exists.");
+  assert.equal(status.authorKind, "SYSTEM");
+  assert.equal(status.kind, "status");
+  assert.match(String(status.body), /Not a code gap: an admin withdrew the hand-off for \{\{cartonEan13\}\}/);
+  assert.deepEqual(status.meta, { withdrawnToken: "cartonEan13" });
+  const step = (calls.logStep as Row[])[0];
+  assert.equal(step.kind, "gap");
+  assert.match(String(step.summary), /withdrawn by an admin/);
+  // The note went in before the run started, so the run reads it.
+  assert.ok((calls.appendMessage as Row[]).length === 2 && started.length === 1);
+  assert.deepEqual(started, [OUTPUT_ID]);
+  assert.equal(calls.setOutputStatus, undefined, "the run claims the output; nothing here moves its status");
+});
+
+test("withdrawCodeGap: no note posts only the status line; a refused start is reported, not thrown", async () => {
+  output.status = "NEEDS_CODE";
+  output.awaitingToken = null;
+  const res = await gap.withdrawCodeGap(OUTPUT_ID, { userId: "admin-1" }, async () => ({ started: false, reason: "busy" }));
+  assert.deepEqual(res, { tokenKey: null, started: false, reason: "busy" });
+  assert.equal((calls.appendMessage as Row[]).length, 1);
+  assert.match(String((calls.appendMessage as Row[])[0].body), /^Not a code gap: an admin withdrew the hand-off\. /);
+});
+
+test("withdrawCodeGap: refuses an unknown output, one that is not waiting for code, or one that moved on meanwhile", async () => {
+  const neverStart = async () => assert.fail("must not start");
+  await assert.rejects(gap.withdrawCodeGap("bogus-missing", { userId: "admin-1" }, neverStart), (err: Error & { httpStatus?: number }) => {
+    assert.equal(err.name, "OutputNotFoundError");
+    assert.equal(err.httpStatus, 404);
+    return true;
+  });
+  output.status = "IN_REVIEW";
+  await assert.rejects(gap.withdrawCodeGap(OUTPUT_ID, { userId: "admin-1" }, neverStart), (err: Error & { httpStatus?: number; status?: string }) => {
+    assert.equal(err.name, "OutputStateError");
+    assert.equal(err.httpStatus, 409);
+    assert.equal(err.status, "IN_REVIEW");
+    assert.match(err.message, /this one is in review/);
+    return true;
+  });
+  assert.equal(calls.clearCodeHandoff, undefined);
+  // NEEDS_CODE when read, resolved by the time the clear ran.
+  output.status = "NEEDS_CODE";
+  clearCount = 0;
+  await assert.rejects(gap.withdrawCodeGap(OUTPUT_ID, { userId: "admin-1" }, neverStart), /moved on meanwhile/);
+  assert.equal(calls.appendMessage, undefined);
 });
 
 test("resumeAwaitingCode: before the tables exist it does nothing", async () => {

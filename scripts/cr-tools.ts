@@ -38,6 +38,7 @@
 //   cr-tools.ts find_layouts '{}' --output <outputId>
 //   cr-tools.ts get_layout '{"layoutId":"<id>"}' --output <outputId>
 //   cr-tools.ts list_tokens '{"query":"polybag"}' --output <outputId>
+//   cr-tools.ts get_output_settings '{}' --output <outputId>
 //   cr-tools.ts propose_patch '{"layoutId":"<id>","ops":[…],"note":"…"}' --output <outputId>
 //   cr-tools.ts render_proof '{"revisionId":"<rev>","styleId":"<style>"}' --output <outputId>
 //   cr-tools.ts impact_list '{"revisionId":"<rev>"}' --output <outputId>

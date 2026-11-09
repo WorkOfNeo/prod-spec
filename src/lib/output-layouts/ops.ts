@@ -40,11 +40,13 @@ import {
   LayoutBlockSchema,
   LayoutDefSchema,
   TOKEN_RE,
+  activeShowWhenRules,
   effectiveBorderPad,
   effectiveBorderSides,
   layoutSettings,
   pageGrid,
   parseLayoutDef,
+  showWhenText,
   tokensInLine,
   type LayoutBlock,
   type LayoutDef,
@@ -804,6 +806,13 @@ function propChanges(a: LayoutBlock, b: LayoutBlock): string[] {
     if (!a.border && b.border) out.push(`Border added to block ${id} (${fmtNum(b.border.widthMm)} mm ${b.border.color})`);
     else if (a.border && !b.border) out.push(`Border removed from block ${id}`);
     else out.push(`Border changed on block ${id}`);
+  }
+  if (
+    !sameValue(activeShowWhenRules(a), activeShowWhenRules(b)) ||
+    (a.showWhen?.match ?? "all") !== (b.showWhen?.match ?? "all")
+  ) {
+    const text = showWhenText(b);
+    out.push(text ? `Block ${id} now shows only when ${text}` : `Block ${id} now always shows`);
   }
   return out;
 }

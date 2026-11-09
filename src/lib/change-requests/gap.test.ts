@@ -317,3 +317,106 @@ test("needs-code email: escapes HTML and caps the example list", () => {
   assert.ok(!mail.html.includes(">v8<"));
   assert.match(mail.html, /and 3 more in the build prompt/);
 });
+
+// ── Sources (graphics tokens) ───────────────────────────────────────────────
+
+test("tokenCatalogue: a source-typed token lists every source it accepts, with usage and a note; text tokens list none", async () => {
+  const { BARCODE_SOURCES, LOGO_SOURCES, CERT_SOURCES, SOURCES_BY_KEY } = await import("@/lib/output-layouts/token-meta");
+  const all = gap.tokenCatalogue();
+  const barcode = all.find((t) => t.key === "barcode");
+  assert.ok(barcode?.sources);
+  assert.deepEqual(
+    barcode.sources.map((s) => s.source),
+    [...BARCODE_SOURCES],
+  );
+  const carton13 = barcode.sources.find((s) => s.source === "cartonEan13");
+  assert.equal(carton13?.usage, "{{barcode:cartonEan13}}");
+  assert.match(carton13!.note, /SAME carton EAN as a true EAN-13/);
+  assert.match(barcode.sources.find((s) => s.source === "cartonEan")!.note, /Carton barcode to EAN-13/);
+  assert.match(barcode.sources.find((s) => s.source === "ean13")!.note, /Never the carton EAN/);
+  assert.deepEqual(all.find((t) => t.key === "logo")?.sources?.map((s) => s.source), [...LOGO_SOURCES]);
+  assert.deepEqual(all.find((t) => t.key === "cert")?.sources?.map((s) => s.source), [...CERT_SOURCES]);
+  assert.equal(all.find((t) => t.key === "polybagQty")?.sources, undefined);
+  // Every source has its own sentence, not the generic fallback.
+  for (const [key, sources] of Object.entries(SOURCES_BY_KEY)) {
+    for (const source of sources) {
+      assert.doesNotMatch(gap.sourceNote(key, source), /^Accepted as /, `${key}:${source}`);
+    }
+  }
+  assert.match(gap.sourceNote("barcode", "bogus"), /^Accepted as \{\{barcode:bogus\}\}/);
+});
+
+test("tokenCatalogue: a query matches a source's name or note, so the barcode token is found through cartonEan13", () => {
+  assert.deepEqual(
+    gap.tokenCatalogue("cartonEan13").map((t) => t.key),
+    ["barcode"],
+  );
+  assert.ok(gap.tokenCatalogue("true EAN-13").some((t) => t.key === "barcode"));
+});
+
+test("tokenExists: a source of a graphics token exists too", () => {
+  assert.equal(gap.tokenExists("cartonEan13"), true);
+  assert.equal(gap.tokenExists("assortEan13"), true);
+  assert.equal(gap.tokenExists("contrastAddress"), true);
+  assert.equal(gap.tokenExists("oekotex"), true);
+  assert.equal(gap.tokenExists("bogusEan13"), false);
+});
+
+test("declareGap: refuses a key that is a source of a graphics token, before touching anything", async () => {
+  const log: unknown[] = [];
+  const ctx: ToolContext = {
+    requestId: "bogus-req",
+    outputId: "bogus-out",
+    userId: null,
+    log: async (step) => {
+      log.push(step);
+    },
+  };
+  const res = await gap.declareGap(ctx, { ...DECL, tokenKey: "cartonEan13" });
+  assert.equal(res.isError, true);
+  const c = res.content as { error: string; sources: { token: string; usage: string; note: string }[] };
+  assert.match(c.error, /"cartonEan13" already exists as a source/);
+  assert.match(c.error, /\{\{barcode:cartonEan13\}\}/);
+  assert.deepEqual(
+    c.sources.map((s) => [s.token, s.usage]),
+    [["barcode", "{{barcode:cartonEan13}}"]],
+  );
+  assert.match(c.sources[0].note, /true EAN-13/);
+  assert.deepEqual(log, []);
+});
+
+test("resolvedBarcodes: what each barcode source encodes for a style and in which symbology", async () => {
+  const { buildSampleStyleData } = await import("@/lib/pdf/sample-data");
+  const style = buildSampleStyleData();
+  const r = gap.resolvedBarcodes(style, null);
+  const by = (source: string) => r.values.find((v) => v.source === source)!;
+  assert.deepEqual(
+    r.values.map((v) => v.token),
+    ["{{barcode:cartonEan}}", "{{barcode:cartonEan13}}", "{{barcode:assortEan}}", "{{barcode:assortEan13}}", "{{barcode:ean13}}"],
+  );
+  // The two carton sources encode the same number; so do the two assort sources.
+  assert.equal(by("cartonEan").value, style.carton.ean13);
+  assert.equal(by("cartonEan13").value, style.carton.ean13);
+  assert.equal(by("assortEan").value, style.carton.assortEan);
+  assert.equal(by("assortEan13").value, style.carton.assortEan);
+  assert.equal(by("ean13").value, style.sizes.find((s) => s.ean13)!.ean13);
+  assert.notEqual(by("ean13").value, by("cartonEan").value);
+  // Default symbologies: carton / assort as Code 128, the rest EAN-13.
+  assert.equal(by("cartonEan").symbology, "ean128");
+  assert.equal(by("assortEan").symbology, "ean128");
+  assert.equal(by("cartonEan13").symbology, "ean13");
+  assert.equal(by("assortEan13").symbology, "ean13");
+  assert.equal(by("ean13").symbology, "ean13");
+  assert.equal(by("cartonEan").prints, gap.SYMBOLOGY_WORDS.ean128);
+  assert.equal(r.cartonBarcodeSetting, null);
+  assert.match(r.note, /not known here/);
+
+  // The output row's Carton barcode = EAN-13 switches the carton sources.
+  const ean13Row = gap.resolvedBarcodes({ ...style, cartonBarcode: { type: "ean13" } }, "ean13");
+  assert.equal(ean13Row.values.find((v) => v.source === "cartonEan")!.symbology, "ean13");
+  assert.equal(ean13Row.values.find((v) => v.source === "assortEan")!.symbology, "ean13");
+  assert.equal(ean13Row.cartonBarcodeSetting, "ean13");
+  assert.match(ean13Row.note, /sets Carton barcode to EAN-13/);
+  const defaultRow = gap.resolvedBarcodes(style, "ean128");
+  assert.match(defaultRow.note, /EAN-128 \(the default\)/);
+});

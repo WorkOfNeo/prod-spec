@@ -17,9 +17,13 @@ export const runtime = "nodejs";
 // requester branch below stays for when filing opens to reviewers.
 //
 // A message on one output can restart the agent: an admin comment on a draft
-// in review (IN_REVIEW → trigger "comment") or an answer to the agent's
-// question (NEEDS_INFO → trigger "answer"). The message is stored first so the
-// run sees it in the thread. 201 { message, started }.
+// in review or on a failed run (IN_REVIEW / FAILED → trigger "comment", so the
+// run's first message carries the thread and the correction in it) or an
+// answer to the agent's question (NEEDS_INFO → trigger "answer"). A note on a
+// NEEDS_CODE output is stored only: withdrawing that hand-off is the explicit
+// "Not a code gap" action (…/change-request-outputs/[id]/withdraw-gap). The
+// message is stored first so the run sees it in the thread. 201 { message,
+// started }.
 //
 // 404 for everyone while CHANGE_REQUESTS_ENABLED is off.
 // =====================================================
@@ -75,7 +79,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   let trigger: RunTrigger | null = null;
   if (output?.status === "NEEDS_INFO") trigger = "answer";
-  else if (output?.status === "IN_REVIEW" && admin) trigger = "comment";
+  else if ((output?.status === "IN_REVIEW" || output?.status === "FAILED") && admin) trigger = "comment";
 
   let started = false;
   if (output && trigger) {

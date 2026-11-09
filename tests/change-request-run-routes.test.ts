@@ -211,6 +211,26 @@ test("messages: an ADMIN comment on a draft in review restarts the agent (trigge
   assert.deepEqual(startChangeRequestRun.mock.calls[0].arguments, ["out-review", { trigger: "comment", userId: "admin-1" }]);
 });
 
+test("messages: an ADMIN comment on a failed run restarts the agent with the thread (trigger comment)", async () => {
+  const { POST } = await import("../src/app/api/admin/change-requests/[id]/messages/route");
+  as("ADMIN");
+  const res = await POST(post("messages", { outputId: "out-failed", body: "Skip the impact list this time" }), ctx());
+  assert.equal(res.status, 201);
+  assert.equal((await res.json()).started, true);
+  assert.deepEqual(startChangeRequestRun.mock.calls[0].arguments, ["out-failed", { trigger: "comment", userId: "admin-1" }]);
+});
+
+test("messages: an ADMIN note on an output waiting for code is stored only — withdrawing the hand-off is its own action", async () => {
+  const { POST } = await import("../src/app/api/admin/change-requests/[id]/messages/route");
+  as("ADMIN");
+  detail!.outputs.push({ id: "out-code", status: "NEEDS_CODE", label: "Carton marking" });
+  const res = await POST(post("messages", { outputId: "out-code", body: "The developer is on it" }), ctx());
+  assert.equal(res.status, 201);
+  assert.equal((await res.json()).started, false);
+  assert.equal(appendMessage.mock.callCount(), 1);
+  assert.equal(startChangeRequestRun.mock.callCount(), 0);
+});
+
 test("messages: an ADMIN note elsewhere is stored without starting a run", async () => {
   const { POST } = await import("../src/app/api/admin/change-requests/[id]/messages/route");
   as("ADMIN");

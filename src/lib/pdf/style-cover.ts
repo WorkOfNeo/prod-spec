@@ -4,6 +4,7 @@ import { parseCustomerConfig } from "@/lib/customers/config";
 import { parseBundlePageSettings } from "@/lib/prod-spec/config";
 import { buildRequiredPackagingForStyle } from "@/lib/outputs/required-packaging";
 import { renderStyleCoverPdf } from "@/lib/pdf/cover";
+import type { CoverPageInput } from "@/lib/pdf/bundle-pages";
 import { getCoverPageInfoMd } from "@/lib/settings/app-settings";
 
 // Rebuild a style's cover PDF from scratch, off the job id, with a caller-
@@ -29,45 +30,59 @@ export async function buildStyleCoverPdf(
     forceTrims?: boolean;
   },
 ): Promise<Buffer | null> {
-  const job = await db.job.findUnique({
-    where: { id: jobId },
+  const job = await db.job.findUnique({ where: { id: jobId }, select: { styleId: true } });
+  if (!job) return null;
+  const cover = await loadStyleCoverInput(job.styleId, {
+    approvedBaseKeysOverride: approvedBaseKeys,
+    forceTrims: opts?.forceTrims,
+  });
+  if (!cover) return null;
+  return renderStyleCoverPdf(cover.input, cover.prodSpecId);
+}
+
+// Everything a style's cover prints, assembled the way every cover path does
+// it: the PDF builds above, and the live HTML previews of a style's cover (a
+// change request's output picker, the change-request agent's get_cover).
+// Without approvedBaseKeysOverride the packaging rows carry today's approval
+// state. Null when the style doesn't exist.
+export async function loadStyleCoverInput(
+  styleId: string,
+  opts?: { approvedBaseKeysOverride?: ReadonlySet<string>; forceTrims?: boolean },
+): Promise<{ input: CoverPageInput; prodSpecId: string | null } | null> {
+  const style = await db.style.findUnique({
+    where: { id: styleId },
     select: {
-      style: {
+      id: true,
+      name: true,
+      rawData: true,
+      poNumber: true,
+      cartonEan: true,
+      mondayBoardId: true,
+      businessArea: true,
+      businessAreaRef: { select: { name: true } },
+      customer: { select: { name: true, config: true } },
+      supplier: { select: { name: true, country: true } },
+      eans: {
+        orderBy: { position: "asc" },
+        select: { size: true, ean13: true, variantLabel: true, cartonEan: true, excluded: true },
+      },
+      qrImage: { select: { image: true } },
+      prodSpec: {
         select: {
           id: true,
-          name: true,
-          rawData: true,
-          poNumber: true,
-          cartonEan: true,
-          mondayBoardId: true,
-          businessArea: true,
-          businessAreaRef: { select: { name: true } },
-          customer: { select: { name: true, config: true } },
-          supplier: { select: { name: true, country: true } },
-          eans: {
-            orderBy: { position: "asc" },
-            select: { size: true, ean13: true, variantLabel: true, cartonEan: true, excluded: true },
-          },
-          qrImage: { select: { image: true } },
-          prodSpec: {
-            select: {
-              id: true,
-              logoSvg: true,
-              careInstructionsByLang: true,
-              outputLanguages: true,
-              columnMapping: true,
-              outputs: true,
-              bundlePageSettings: true,
-              generalInfoMd: true,
-            },
-          },
+          logoSvg: true,
+          careInstructionsByLang: true,
+          outputLanguages: true,
+          columnMapping: true,
+          outputs: true,
+          bundlePageSettings: true,
+          generalInfoMd: true,
         },
       },
     },
   });
-  if (!job) return null;
+  if (!style) return null;
 
-  const style = job.style;
   const prodSpec = style.prodSpec;
   const config = parseCustomerConfig(style.customer.config);
 
@@ -88,11 +103,11 @@ export async function buildStyleCoverPdf(
   );
 
   // Assets are persisted by publish time, so the required-packaging state is
-  // read live — except the approval flags, which the caller projects to the
+  // read live — except the approval flags, which publish projects to the
   // post-publish set (this job's about-to-be-approved outputs aren't APPROVED
   // in the DB yet at the moment we render).
   const docs = await buildRequiredPackagingForStyle(style.id, {
-    approvedBaseKeysOverride: approvedBaseKeys,
+    approvedBaseKeysOverride: opts?.approvedBaseKeysOverride,
     forceTrims: opts?.forceTrims,
   });
 
@@ -101,8 +116,8 @@ export async function buildStyleCoverPdf(
   const coverInfoMd = (await getCoverPageInfoMd().catch(() => "")).trim();
   const businessAreaName = style.businessAreaRef?.name ?? style.businessArea ?? null;
 
-  return renderStyleCoverPdf(
-    {
+  return {
+    input: {
       customerName: style.customer.name,
       businessArea: businessAreaName,
       styleName: style.name,
@@ -117,6 +132,6 @@ export async function buildStyleCoverPdf(
         : null,
       coverInfo: coverInfoMd ? { markdown: coverInfoMd } : null,
     },
-    prodSpec?.id ?? null,
-  );
+    prodSpecId: prodSpec?.id ?? null,
+  };
 }

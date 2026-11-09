@@ -115,6 +115,7 @@ main()
   .then(() => batch12())
   .then(() => batch13())
   .then(() => batch14())
+  .then(() => batch15())
   .catch((err) => {
     console.error(err);
     process.exit(1);
@@ -812,4 +813,42 @@ async function batch14() {
 
   await closeBrowser();
   console.log(process.exitCode ? "BATCH 14 FAILED" : "BATCH 14 PASSED");
+}
+
+// ---------------------------------------------------------------------
+// Batch 15 coverage: block-level "Show only when…" (block.showWhen) —
+// decided per REPETITION ROW, so on a repeat-per-size layout a rule on
+// {{size}} keeps the block on some pages and drops it from others; plus the
+// richer inline operators through the real renderer.
+// ---------------------------------------------------------------------
+async function batch15() {
+  const style = buildSampleStyleData();
+  const DEF = LayoutDefSchema.parse({
+    pages: [{ id: "p1", title: "", widthMm: 60, heightMm: 30,
+      blocks: [
+        { id: "b1", rect: { col: 0, row: 0, colSpan: 12, rowSpan: 6 },
+          lines: ["SIZE {{size}} {{if size starts with X}}EXTRA{{else}}REGULAR{{endif}}"] },
+        { id: "b2", rect: { col: 0, row: 6, colSpan: 12, rowSpan: 6 }, lines: ["BIG-SIZE NOTE"],
+          showWhen: { match: "any", rules: [
+            { field: "size", op: "ends with", value: "XL" },
+            { field: "size", op: "==", value: "L" },
+          ] } },
+      ] }],
+    settings: { repeatBy: "size", splitBy: "none" },
+  });
+  const html = await renderLayoutHtml(DEF, style, { mode: "production" });
+  const pages = html.split('class="ol-page ol-page-').slice(1);
+  assert(pages.length === style.sizes.length, `one page per size (got ${pages.length})`);
+  style.sizes.forEach((s, i) => {
+    const big = s.label === "L" || s.label.endsWith("XL");
+    assert(pages[i].includes("BIG-SIZE NOTE") === big,
+      `size ${s.label}: the conditional block ${big ? "prints" : "is hidden"}`);
+    const extra = s.label.startsWith("X");
+    assert(pages[i].includes(extra ? "EXTRA" : "REGULAR"), `size ${s.label}: inline starts with picks its branch`);
+  });
+  const pdf = await renderPdf({ html });
+  assert(pdf.length > 1000, `conditional-block layout renders a PDF (got ${pdf.length})`);
+
+  await closeBrowser();
+  console.log(process.exitCode ? "BATCH 15 FAILED" : "BATCH 15 PASSED");
 }

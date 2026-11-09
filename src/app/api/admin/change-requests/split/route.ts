@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    return NextResponse.json(await splitRequestByOutput(parsed.data));
+    return NextResponse.json(await splitRequestByOutput(parsed.data, { userId: session.user.id }));
   } catch (err) {
     if (err instanceof SplitError) return NextResponse.json({ error: err.message }, { status: 502 });
     throw err;

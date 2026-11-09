@@ -148,5 +148,8 @@ export function blocksForPaste(
     ...(b.border
       ? { border: { ...b.border, ...(b.border.pad ? { pad: { ...b.border.pad } } : {}) } }
       : {}),
+    ...(b.showWhen
+      ? { showWhen: { ...b.showWhen, rules: b.showWhen.rules.map((r) => ({ ...r })) } }
+      : {}),
   }));
 }

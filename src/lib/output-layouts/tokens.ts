@@ -31,7 +31,7 @@ import {
 import { pickCartonQtyPair, pickCartonQtyVariant, pickSolidAssortVariant } from "./carton-qty";
 import { resolvePolybagQty } from "./polybag-qty";
 import { pickSizeItems } from "./size-scoped-text";
-import { formatSizeFormRun, parseSizeForm, sizeFormRun } from "./size-form";
+import { formatSingleSizeForm, formatSizeFormRun, parseSizeForm, sizeFormRun } from "./size-form";
 import {
   formatSizeRatio,
   formatSizeRatioTotal,
@@ -48,10 +48,13 @@ import {
 } from "./calc";
 import {
   applyConditionals,
+  blockIsConditional,
+  blockShown,
   conditionalsInDef,
   lineWithoutConditionals,
   tokensInDef,
   tokensInLine,
+  type LayoutBlock,
   type LayoutDef,
   type TokenRef,
 } from "./schema";
@@ -67,7 +70,8 @@ import { isPinnableField, type PinnableField } from "@/lib/pdf/pins-meta";
 // Conditionals ({{if field == VALUE}}…{{else}}…{{endif}}) are evaluated
 // per line BEFORE token resolution — the renderer evaluates them against
 // StyleData, readiness against the mapped columns, both through
-// schema.ts's applyConditionals so the rule semantics are shared.
+// schema.ts's applyConditionals so the rule semantics are shared. A block's
+// showWhen rules work the same way, one level up (schema.ts blockShown).
 // =====================================================
 
 // The carton EAN sentinel the PO scraper writes when no EAN was found.
@@ -195,9 +199,8 @@ const RESOLVERS: Record<string, TextResolver> = {
   // The optional form argument picks ONE half of a two-form label
   // ("86-92 cm / 1½-2 år"), same as {{sizeRangeCoop:numeric}} / :year — the
   // single current size prints in cm or in age instead of both. Bare is
-  // unchanged. Reuses sizeFormRun/formatSizeFormRun even for the one-label
-  // case so a unit-bearing label formats identically to the range token
-  // ("86/92 cm").
+  // unchanged. The centimetres format as the range token does ("86/92 cm");
+  // the age keeps its dash ("2-6 mdr") — see formatSingleSizeForm.
   size: (s, arg) => {
     const form = parseSizeForm(arg);
     if (s.isAssortment) {
@@ -205,7 +208,7 @@ const RESOLVERS: Record<string, TextResolver> = {
       return form ? formatSizeFormRun(sizeFormRun(labels, form)) : labels.join("-");
     }
     const label = s.sizes[0]?.label ?? "";
-    return form ? formatSizeFormRun(sizeFormRun([label], form)) : label;
+    return form ? formatSingleSizeForm(label, form) : label;
   },
   // EVERY size in the style's full run, listed — "S, M, L, XL, XXL", not
   // the "S–XXL" endpoints. That's what the print specs mean by a size range:
@@ -536,9 +539,33 @@ export function resolveBarcodeValue(style: StyleData, source: BarcodeSource): st
   return resolveTextToken(style, "ean13");
 }
 
+// Effective symbology for a barcode token: per-size EANs are always true
+// EAN-13; the carton EAN follows the per-spec preference carried on
+// StyleData.cartonBarcode (set from the ProdSpec output row by
+// applyCartonBarcodePrefs) — EAN-128 / Code 128 when absent, the
+// historic default. Beside resolveBarcodeValue so "what prints for this
+// source, and how" has one home (the renderer and the change-request agent's
+// token list both read it).
+export type BarcodeSymbology = "ean128" | "ean13";
+
+export function barcodeSymbology(style: StyleData, source: BarcodeSource): BarcodeSymbology {
+  // Only cartonEan / assortEan follow the style's carton symbology preference
+  // (Code128 by default, or EAN-13 when the ProdSpec row's dropdown is set).
+  // Every other source — the per-size product barcode (ean13) and the explicit
+  // cartonEan13 / assortEan13 sources — prints as a true EAN-13, so a layout
+  // picks EAN-128 vs EAN-13 per barcode for the same carton/master value.
+  if (source !== "cartonEan" && source !== "assortEan") return "ean13";
+  return style.cartonBarcode?.type ?? "ean128";
+}
+
 // Evaluate one line's conditionals against StyleData (render-side rule).
 export function applyConditionalsForStyle(line: string, style: StyleData): string {
   return applyConditionals(line, (field) => resolveTextToken(style, field));
+}
+
+// Does this block print for this style (its showWhen rules, render-side)?
+export function blockShownForStyle(block: Pick<LayoutBlock, "showWhen">, style: StyleData): boolean {
+  return blockShown(block, (field) => resolveTextToken(style, field));
 }
 
 // ---------------------------------------------------------------------
@@ -684,11 +711,13 @@ function conditionColumn(field: string): keyof ColumnMapping | null {
   return CONDITION_COLUMN[field] ?? REQUIRED_COLUMNS[field]?.[0] ?? null;
 }
 
-// Token refs that render UNCONDITIONALLY (conditional branches stripped).
+// Token refs that render UNCONDITIONALLY (conditional branches stripped,
+// conditional blocks skipped — both are per-style, see layoutReadinessColumns).
 function staticTokenRefs(def: LayoutDef): TokenRef[] {
   const out: TokenRef[] = [];
   for (const page of def.pages) {
     for (const block of page.blocks) {
+      if (blockIsConditional(block)) continue;
       for (const line of block.lines) {
         out.push(...tokensInLine(lineWithoutConditionals(line)));
       }
@@ -715,8 +744,8 @@ function calcRequiredColumns(expr: string): Array<keyof ColumnMapping> {
 
 // Static required columns across a whole definition — the layout
 // variant's `requiredFields`. Branch-dependent content ({{orderNo}},
-// anything inside {{if}}…{{endif}}) is excluded here;
-// layoutReadinessColumns adds the taken branches per style.
+// anything inside {{if}}…{{endif}}, a block with showWhen rules) is
+// excluded here; layoutReadinessColumns adds the taken branches per style.
 export function staticRequiredColumns(def: LayoutDef): Array<keyof ColumnMapping> {
   const out = new Set<keyof ColumnMapping>();
   for (const ref of staticTokenRefs(def)) {
@@ -725,6 +754,7 @@ export function staticRequiredColumns(def: LayoutDef): Array<keyof ColumnMapping
   }
   for (const page of def.pages) {
     for (const block of page.blocks) {
+      if (blockIsConditional(block)) continue;
       for (const line of block.lines) {
         for (const expr of calcsInLine(lineWithoutConditionals(line))) {
           for (const c of calcRequiredColumns(expr)) out.add(c);
@@ -740,11 +770,13 @@ export function defUsesOrderNo(def: LayoutDef): boolean {
 }
 
 // Does readiness need per-style branch evaluation? True when the def
-// uses {{orderNo}} anywhere or contains conditionals.
+// uses {{orderNo}} anywhere or contains conditionals (inline or a block's
+// showWhen).
 export function defNeedsDynamicReadiness(def: LayoutDef): boolean {
   if (conditionalsInDef(def).length > 0) return true;
   for (const page of def.pages) {
     for (const block of page.blocks) {
+      if (blockIsConditional(block)) return true;
       for (const line of block.lines) {
         if (tokensInLine(line).some((r) => r.key === "orderNo")) return true;
       }
@@ -770,6 +802,8 @@ export function layoutReadinessColumns(
   let usesOrderNo = false;
   for (const page of def.pages) {
     for (const block of page.blocks) {
+      // A block this style won't print needs nothing from it.
+      if (!blockShown(block, getValue)) continue;
       for (const line of block.lines) {
         const effective = applyConditionals(line, getValue);
         for (const ref of tokensInLine(effective)) {
@@ -802,6 +836,7 @@ export function unresolvedTokens(def: LayoutDef, style: StyleData): string[] {
   const out: string[] = [];
   for (const page of def.pages) {
     for (const block of page.blocks) {
+      if (!blockShownForStyle(block, style)) continue;
       for (const line of block.lines) {
         const effective = applyConditionalsForStyle(line, style);
         // Calcs surface as one amber gap when they can't produce a value —

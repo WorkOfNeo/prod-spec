@@ -1,11 +1,12 @@
 import { CONTROL_RE, IF_RE, LayoutDefSchema, tokensInDef, type LayoutDef } from "./schema";
-import { validateLineConditionals, validateTokenRef } from "./token-meta";
+import { validateBlockShowWhen, validateLineConditionals, validateTokenRef } from "./token-meta";
 import { validateLineCalcs } from "./calc";
 
 // =====================================================
 // The strict gate a layout definition must pass before it may print.
 // Unknown variables and malformed args are publish blockers here, not just
-// preview warnings; so are malformed {{if}}/{{else}}/{{endif}} and calculated
+// preview warnings; so are malformed {{if}}/{{else}}/{{endif}}, a block's
+// "Show only when" rules on an unknown field, and calculated
 // fields ({{= …}}) with bad syntax or an unknown/unusable field, and a layout
 // with no blocks at all.
 //
@@ -39,6 +40,7 @@ export function validateLayoutForPublish(def: unknown): PublishValidation {
   }
   for (const page of parsed.pages) {
     for (const block of page.blocks) {
+      problems.push(...validateBlockShowWhen(block));
       for (const line of block.lines) {
         problems.push(...validateLineConditionals(line, IF_RE, CONTROL_RE));
         problems.push(...validateLineCalcs(line));

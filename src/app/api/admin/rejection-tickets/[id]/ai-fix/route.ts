@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/lib/auth-server";
 import { buildAiFixProposal, AiFixError } from "@/lib/rejection-ai/ai-fix";
 import { AiNotConfiguredError, AiResponseError } from "@/lib/rejection-ai/anthropic";
+import { propagateAttributes } from "@langfuse/tracing";
 
 export const runtime = "nodejs";
 // Style load + one Claude call — seconds, but give it headroom.
@@ -17,7 +18,8 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
 
   const { id } = await ctx.params;
   try {
-    const proposal = await buildAiFixProposal(id);
+    // The admin who asked, on the call's Langfuse trace.
+    const proposal = await propagateAttributes({ userId: auth.userId }, () => buildAiFixProposal(id));
     return NextResponse.json({ proposal });
   } catch (err) {
     if (err instanceof AiFixError) return NextResponse.json({ error: err.message }, { status: err.httpStatus });

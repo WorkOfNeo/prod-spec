@@ -11,8 +11,11 @@ import { errorOf, messagesFor, sendJson } from "./shared";
 // (PATCH /api/admin/agent-memory/[id]).
 //
 // The composer posts to …/messages. An admin's comment on an output in review
-// starts the agent on a new draft; an answer to a question restarts it. The
-// filing reviewer only gets a composer while the agent waits on their answer.
+// starts the agent on a new draft, a comment on a failed run restarts it with
+// the thread, and an answer to a question restarts it. A note on an output
+// waiting for code is stored only — "Not a code gap" on the panel is what sends
+// the agent back to work there. The filing reviewer only gets a composer while
+// the agent waits on their answer.
 
 export function Thread({ view, output, onChanged }: { view: RequestView; output: OutputView; onChanged: () => void }) {
   const messages = messagesFor(view, output.id);
@@ -153,6 +156,8 @@ function Composer({ view, output, onChanged }: { view: RequestView; output: Outp
 
   const answering = output.status === "NEEDS_INFO" || (output.status === "IN_REVIEW" && !output.currentRevisionId);
   const revising = view.admin && output.status === "IN_REVIEW" && Boolean(output.currentRevisionId);
+  const retrying = view.admin && output.status === "FAILED";
+  const waitingForCode = view.admin && output.status === "NEEDS_CODE";
   // In review without a draft the agent either asked something or answered;
   // only a question gets "Answer the question".
   const lastAgent = [...view.messages].reverse().find((m) => m.outputId === output.id && m.authorKind === "AGENT");
@@ -163,12 +168,18 @@ function Composer({ view, output, onChanged }: { view: RequestView; output: Outp
       : "Reply to the agent…"
     : revising
       ? "Ask for changes to this draft…"
-      : "Add a note to the thread…";
+      : retrying
+        ? "Tell the agent what to do differently…"
+        : "Add a note to the thread…";
   const hint = answering
     ? "Your answer goes to the agent, which continues with it."
     : revising
       ? "The agent makes a new draft from your comment."
-      : null;
+      : retrying
+        ? "Your note goes to the agent, which starts again with it."
+        : waitingForCode
+          ? "A note only. To send the agent back to work, use Not a code gap on this output's panel."
+          : null;
 
   const send = async () => {
     const text = body.trim();

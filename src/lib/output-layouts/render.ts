@@ -35,8 +35,11 @@ import { getContrastAddressLogoDataUrl, getContrastLogoDataUrl } from "./logos";
 import {
   applyConditionalsForStyle,
   augmentTranslatedFields,
+  blockShownForStyle,
   augmentCompositionTranslations,
   compositionLangsInDef,
+  barcodeSymbology,
+  type BarcodeSymbology,
   evaluateCalcForStyle,
   langArgsInDef,
   resolveBarcodeValue,
@@ -51,7 +54,8 @@ import {
 //
 // Pipeline per line: conditionals first ({{if field == VALUE}}…
 // {{else}}…{{endif}} evaluated against StyleData — taken branch only),
-// then token resolution.
+// then token resolution. A block whose showWhen rules fail for the style
+// renders nothing at all.
 //
 // Modes:
 //   • production — empty tokens render as nothing; a line that contained
@@ -425,22 +429,10 @@ function defUsesToken(pages: LayoutPage[], key: string): boolean {
   return false;
 }
 
-// Effective symbology for a barcode token: per-size EANs are always true
-// EAN-13; the carton EAN follows the per-spec preference carried on
-// StyleData.cartonBarcode (set from the ProdSpec output row by
-// applyCartonBarcodePrefs) — EAN-128 / Code 128 when absent, the
-// historic default.
-type BarcodeSymbology = "ean128" | "ean13";
-
-export function barcodeSymbology(style: StyleData, source: BarcodeSource): BarcodeSymbology {
-  // Only cartonEan / assortEan follow the style's carton symbology preference
-  // (Code128 by default, or EAN-13 when the ProdSpec row's dropdown is set).
-  // Every other source — the per-size product barcode (ean13) and the explicit
-  // cartonEan13 / assortEan13 sources — prints as a true EAN-13, so a layout
-  // picks EAN-128 vs EAN-13 per barcode for the same carton/master value.
-  if (source !== "cartonEan" && source !== "assortEan") return "ean13";
-  return style.cartonBarcode?.type ?? "ean128";
-}
+// Effective symbology for a barcode token — defined beside resolveBarcodeValue
+// in tokens.ts (value and symbology per source have one home); re-exported so
+// the renderer's callers and tests keep reading it from here.
+export { barcodeSymbology, type BarcodeSymbology } from "./tokens";
 
 // Rendered barcode PNG + its true physical size in mm (bars AND the
 // human-readable digit row) — needed to print an explicit-height barcode at
@@ -969,6 +961,10 @@ function blockTypography(block: LayoutBlock, fontScale: number): string {
 type RenderedBlock = { html: string; hasInk: boolean };
 
 function renderBlock(block: LayoutBlock, page: LayoutPage, style: StyleData, ctx: RenderCtx): RenderedBlock {
+  // "Show only when…" (block.showWhen) — decided per style / repetition row,
+  // in preview too, so the true render is what prints. The cell stays empty;
+  // no ink, so a page holding only hidden blocks can still omitWhenEmpty.
+  if (!blockShownForStyle(block, style)) return { html: "", hasInk: false };
   const { cols: gridCols, rows: gridRows } = pageGrid(page);
   const marg = page.margins ?? { topMm: 0, rightMm: 0, bottomMm: 0, leftMm: 0 };
   // Physical content width of this block (page is already the FINAL print

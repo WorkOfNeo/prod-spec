@@ -1,6 +1,6 @@
 import type { StyleData } from "@/lib/pdf/types";
 import { TOKEN_RE, type LayoutDef } from "./schema";
-import { applyConditionalsForStyle, resolveTextToken } from "./tokens";
+import { applyConditionalsForStyle, blockShownForStyle, resolveTextToken } from "./tokens";
 import { tokenMeta } from "./token-meta";
 import { lineOverrideKey } from "./line-keys";
 
@@ -100,6 +100,9 @@ export function documentLines(
       // parseLayoutDef guarantees an id on every block; skip defensively rather
       // than mint an unstable address that would bind an edit to the wrong line.
       if (!block.id) continue;
+      // A block whose "Show only when" rules fail doesn't print for this style,
+      // so its lines aren't part of the document a reviewer can correct.
+      if (!blockShownForStyle(block, style)) continue;
       block.lines.forEach((authored, lineIndex) => {
         const lineKey = lineOverrideKey(page.id, block.id!, lineIndex);
         const override = overrides?.[lineKey];

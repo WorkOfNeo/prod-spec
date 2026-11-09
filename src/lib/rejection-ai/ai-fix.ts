@@ -357,7 +357,16 @@ export async function buildAiFixProposal(ticketId: string): Promise<AiFixProposa
     unresolved: unresolvedTokens(currentDef, styleData),
   });
 
-  const raw = await callClaudeForJson({ system, user, maxTokens: 2048 });
+  const raw = await callClaudeForJson({
+    system,
+    user,
+    maxTokens: 2048,
+    trace: {
+      name: "fix-rejected-layout",
+      tags: ["rejection-log"],
+      metadata: { ticketId, layoutId, styleId: ticket.styleId },
+    },
+  });
   const parsed = AiResponseSchema.safeParse(raw);
   if (!parsed.success) {
     throw new AiFixError(400, "The AI response wasn't in the expected format — try again.");
