@@ -2,6 +2,8 @@ import Link from "next/link";
 import { DeliveredCard } from "./delivered-card";
 import { groupByDocType, DocTypeAccordion } from "./doc-type-groups";
 import { ManualTrimsPanel } from "./manual-trims-panel";
+import { lineEditsForCard } from "./line-edits-note";
+import type { LineEditNote } from "@/lib/outputs/line-edit-notes";
 import { UserAvatar } from "@/components/user-avatar";
 import { docTypeLabel } from "@/lib/pdf/doc-types";
 import { formatDate } from "@/lib/utils";
@@ -66,10 +68,14 @@ export function ReviewTab({
   styleId,
   current,
   jobs,
+  lineEdits = [],
 }: {
   styleId: string;
   current: ReviewTabCurrentFile[];
   jobs: ReviewTabJob[];
+  // The style's "Edit any line" rewrites (loadLineEditNotes) — surfaced on the
+  // card of every current output they apply to, and counted in the header.
+  lineEdits?: LineEditNote[];
 }) {
   // Current documents sorted by fileName — the runner's 00-cover / 01-general-
   // information prefixes are designed to open every bundle listing. Flattened
@@ -83,6 +89,12 @@ export function ReviewTab({
     assets: [...j.assets].sort((a, b) => a.fileName.localeCompare(b.fileName)),
   }));
   const latestJob = sortedJobs[0] ?? null;
+  // Hand edits per current document, and the header's roll-up of them.
+  const editsByAsset = new Map(currentItems.map((c) => [c.id, lineEditsForCard(lineEdits, c.variantKey)]));
+  const editedOutputs = currentItems.filter((c) => (editsByAsset.get(c.id)?.length ?? 0) > 0).length;
+  const flaggedOutputs = currentItems.filter((c) =>
+    editsByAsset.get(c.id)?.some((n) => n.emptyTokens.length > 0),
+  ).length;
 
   return (
     <div className="mt-6 flex flex-col gap-8">
@@ -95,6 +107,19 @@ export function ReviewTab({
                 ? `${currentItems.length} output${currentItems.length === 1 ? "" : "s"} · latest document per output across all runs`
                 : "No run yet — Re-run to generate."}
             </p>
+            {editedOutputs > 0 ? (
+              <p data-testid="line-edits-summary" className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-900">
+                  ✎ {editedOutputs} output{editedOutputs === 1 ? " has" : "s have"} lines edited by hand
+                </span>
+                {flaggedOutputs > 0 ? (
+                  <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-800">
+                    ⚠ {flaggedOutputs} with an edit that prints an empty value
+                  </span>
+                ) : null}
+                <span className="text-zinc-500">— details on each card below.</span>
+              </p>
+            ) : null}
             {latestJob?.claimedByName ? (
               <span data-private className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-zinc-600">
                 <UserAvatar name={latestJob.claimedByName} />
@@ -130,6 +155,7 @@ export function ReviewTab({
                       jobId={item.jobId}
                       styleId={styleId}
                       carton={item.carton ?? null}
+                      lineEdits={editsByAsset.get(item.id)}
                       asset={{
                         id: item.id,
                         docType: item.docType,

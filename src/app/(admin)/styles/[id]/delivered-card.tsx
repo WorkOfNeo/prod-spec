@@ -5,6 +5,8 @@ import { useState } from "react";
 import { ReviewCartonCustomize } from "./review/review-carton-customize";
 import { IgnoreConfirmModal } from "./review/ignore-confirm-modal";
 import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
+import type { LineEditNote } from "@/lib/outputs/line-edit-notes";
+import { LineEditsNote } from "./line-edits-note";
 
 type CartonInfo = {
   variantKey: string;
@@ -49,6 +51,7 @@ export function DeliveredCard({
   asset,
   styleId,
   carton,
+  lineEdits,
 }: {
   jobId: string;
   asset: Asset;
@@ -56,6 +59,9 @@ export function DeliveredCard({
   // action right here (same as the /review decide page).
   styleId?: string;
   carton?: CartonInfo | null;
+  // Reviewer "Edit any line" rewrites on this document — shown so a hand edit
+  // is never invisible (Review tab's current outputs only).
+  lineEdits?: LineEditNote[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -131,6 +137,8 @@ export function DeliveredCard({
             {asset.reviewStatus.replace("_", " ").toLowerCase()}
           </span>
         </div>
+
+        <LineEditsNote notes={lineEdits ?? []} />
 
         {asset.reviewStatus === "REJECTED" && asset.rejectReason && (
           <div className="mt-2 rounded-md bg-red-50 px-2 py-1.5 text-[11px] text-red-800">

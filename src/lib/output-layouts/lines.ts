@@ -86,6 +86,41 @@ function lineKind(line: string): DocumentLineKind {
   return "text";
 }
 
+// The layout's own authored text at a line address, or null when the layout no
+// longer has that line (a block was deleted, or lines were removed above it —
+// the positional index is the one soft spot of line addressing, see
+// line-keys.ts). The "before" side of a reviewer's line edit.
+export function authoredLineAt(def: LayoutDef, lineKey: string): string | null {
+  const [pageId, blockId, idx] = lineKey.split("|");
+  const block = def.pages.find((p) => p.id === pageId)?.blocks.find((b) => b.id === blockId);
+  const line = block?.lines[Number(idx)];
+  return line ?? null;
+}
+
+// Text tokens a line EDIT brought in that print nothing for this style — the
+// silent failure of a hand edit. A reviewer who types "{{composition:da}} /
+// {{composition:de}}" on a layout that only ever prints German gets a stray
+// "/" on the label: the Danish composition was never translated for that
+// layout, the token resolves to "", and nothing on the card says so.
+//
+// Only tokens the edit ADDED are reported. A token the layout's own line
+// already had and that is empty here prints nothing with or without the edit —
+// that is a data gap readiness already reports, not something the reviewer did.
+// Graphic tokens (barcode, symbols, logo, cert, table) draw rather than write,
+// so they are out of scope here. Conditionals apply first, so a token inside an
+// untaken {{if}} branch is not reported.
+export function emptyTokensAddedByEdit(edit: string, authored: string | null, style: StyleData): string[] {
+  const out = new Set<string>();
+  for (const m of applyConditionalsForStyle(edit, style).matchAll(new RegExp(TOKEN_RE.source, "g"))) {
+    const token = m[0];
+    if (authored?.includes(token)) continue;
+    const meta = tokenMeta(m[1]);
+    if (meta && meta.kind !== "text") continue;
+    if (!resolveTextToken(style, m[1], m[2]).trim()) out.add(token);
+  }
+  return [...out];
+}
+
 // Every line of the document, in render order. Blank authored lines (layout
 // spacers) are included — a reviewer can type into one to ADD a line the layout
 // never had, which is part of "anything that might occur".
