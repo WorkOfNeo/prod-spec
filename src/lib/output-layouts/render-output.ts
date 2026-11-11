@@ -427,7 +427,7 @@ export async function renderOutputTarget(
 
 // The same translation-bank augmentation renderLayoutHtml runs before it
 // renders (prepareLayoutRender), so the unresolved list agrees with the print.
-async function augmentForDef(style: StyleData, def: LayoutDef): Promise<StyleData> {
+export async function augmentForDef(style: StyleData, def: LayoutDef): Promise<StyleData> {
   let out = style;
   const compLangs = compositionLangsInDef(def);
   if (compLangs.length > 0) out = await augmentCompositionTranslations(out, compLangs);
@@ -441,7 +441,7 @@ async function augmentForDef(style: StyleData, def: LayoutDef): Promise<StyleDat
   });
 }
 
-async function publishedDef(layoutId: string): Promise<LayoutDef | null> {
+export async function publishedDef(layoutId: string): Promise<LayoutDef | null> {
   try {
     const row = await db.outputLayout.findUnique({ where: { id: layoutId }, select: { definition: true } });
     return row ? parseLayoutDef(row.definition) : null;

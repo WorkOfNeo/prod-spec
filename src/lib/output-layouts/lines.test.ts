@@ -9,6 +9,8 @@ process.env.DATABASE_URL ??= "postgresql://u:p@localhost:5432/db?sslmode=disable
 
 let documentLines: typeof import("./lines").documentLines;
 let resolveLinePlain: typeof import("./lines").resolveLinePlain;
+let authoredLineAt: typeof import("./lines").authoredLineAt;
+let emptyTokensAddedByEdit: typeof import("./lines").emptyTokensAddedByEdit;
 let lineOverrideKey: typeof import("./line-keys").lineOverrideKey;
 let isLineKey: typeof import("./line-keys").isLineKey;
 let mergeLineValues: typeof import("../outputs/output-line-values").mergeLineValues;
@@ -17,7 +19,7 @@ let parseLayoutDef: typeof import("./schema").parseLayoutDef;
 let buildSampleStyleData: typeof import("../pdf/sample-data").buildSampleStyleData;
 
 before(async () => {
-  ({ documentLines, resolveLinePlain } = await import("./lines"));
+  ({ documentLines, resolveLinePlain, authoredLineAt, emptyTokensAddedByEdit } = await import("./lines"));
   ({ lineOverrideKey, isLineKey } = await import("./line-keys"));
   ({ mergeLineValues, splitLineValues } = await import("../outputs/output-line-values"));
   ({ parseLayoutDef } = await import("./schema"));
@@ -168,6 +170,48 @@ test("conditionals still apply to an override, as they do to an authored line", 
 test("a missing value resolves to nothing rather than leaking the token", () => {
   const s = { ...style(), batchNo: undefined } as StyleData;
   assert.equal(resolveLinePlain("Batch: {{batchNo}}", s), "Batch:");
+});
+
+// ---------------------------------------------------------------------------
+// Making hand edits visible — the Review tab's "edited lines" note.
+// ---------------------------------------------------------------------------
+
+test("authoredLineAt finds the layout's own line, and null once it is gone", () => {
+  const d = def();
+  assert.equal(authoredLineAt(d, lineOverrideKey("p1", "b1", 1)), "Outer box: {{qtyPerCarton}} pair");
+  assert.equal(authoredLineAt(d, lineOverrideKey("p1", "b1", 7)), null);
+  assert.equal(authoredLineAt(d, lineOverrideKey("p1", "nope", 0)), null);
+  assert.equal(authoredLineAt(d, lineOverrideKey("p9", "b1", 0)), null);
+});
+
+// The live case: a German-only layout prints {{composition:de}}; a reviewer
+// copied the Danish+German edit from a bilingual layout. Danish was never
+// translated for this layout, so the label printed "/" and the padding.
+test("an empty token the edit ADDED is flagged — the stray-separator case", () => {
+  const s = { ...style(), composition: [{ language: "en", text: "100% Paper straw" }, { language: "de", text: "100% Papierstroh" }] } as StyleData;
+  const edit = "{{composition:da}} /                         {{composition:de}}";
+  assert.deepEqual(emptyTokensAddedByEdit(edit, "{{composition:de}}", s), ["{{composition:da}}"]);
+  assert.equal(resolveLinePlain(edit, s), "/                         100% Papierstroh");
+});
+
+test("an edit whose tokens all print is not flagged", () => {
+  const edit = "{{composition:da}} / {{composition:de}}";
+  assert.deepEqual(emptyTokensAddedByEdit(edit, "{{composition:de}}", style()), []);
+});
+
+test("a token the layout's own line already had is not blamed on the edit", () => {
+  const s = { ...style(), batchNo: undefined } as StyleData;
+  assert.deepEqual(emptyTokensAddedByEdit("Batch no. {{batchNo}}", "Batch: {{batchNo}}", s), []);
+});
+
+test("graphic tokens and untaken conditional branches are never flagged", () => {
+  const s = { ...style(), multipleStyles: false, batchNo: undefined } as StyleData;
+  assert.deepEqual(emptyTokensAddedByEdit("{{barcode:ean13}}", null, s), []);
+  assert.deepEqual(
+    emptyTokensAddedByEdit("{{if multipleStyles == true}}{{batchNo}}{{else}}one{{endif}}", null, s),
+    [],
+  );
+  assert.deepEqual(emptyTokensAddedByEdit("Batch: {{batchNo}}", null, s), ["{{batchNo}}"]);
 });
 
 // ---------------------------------------------------------------------------

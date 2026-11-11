@@ -105,6 +105,32 @@ export async function loadStyleLineValues(
   return map;
 }
 
+// The style's line overrides as ROWS — with who saved each one and when — for
+// surfaces that show a person the edits rather than render them (the style
+// page's Review tab). Same fail-soft contract as loadStyleLineValues.
+export type StyleLineValueRow = {
+  id: string;
+  variantKey: string;
+  lineKey: string;
+  value: string;
+  updatedById: string | null;
+  updatedAt: Date;
+};
+
+export async function loadStyleLineValueRows(styleId: string): Promise<StyleLineValueRow[]> {
+  if (!(await tableAvailable())) return [];
+  try {
+    const rows = await db.styleOutputLineValue.findMany({
+      where: { styleId },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, variantKey: true, lineKey: true, value: true, updatedById: true, updatedAt: true },
+    });
+    return rows.filter((r) => isLineKey(r.lineKey) && r.value.trim());
+  } catch {
+    return [];
+  }
+}
+
 // A frozen empty inner map for the `?? EMPTY` read pattern.
 export const EMPTY_LINE_VALUES: ReadonlyMap<string, StyleLineValues> = new Map();
 

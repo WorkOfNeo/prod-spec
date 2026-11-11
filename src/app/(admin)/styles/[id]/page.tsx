@@ -33,6 +33,7 @@ import { StyleOutputCard, type StyleOutputCardProps } from "./style-output-card"
 import { OutputsAccordion } from "./outputs-accordion";
 import { ProdSpecTab } from "./prod-spec-tab";
 import { ReviewTab } from "./review-tab";
+import { loadLineEditNotes } from "@/lib/outputs/line-edit-notes";
 import { HistoryTab } from "./history-tab";
 import { EanPanel } from "./ean-panel";
 import { PoPreview } from "./po-preview";
@@ -245,6 +246,7 @@ export default async function StyleDetail({
     useStyleBoardColour,
     currentOutputs,
     relatedRows,
+    lineEditNotes,
   ] = await Promise.all([
     getSessionWithRole(),
     loadStyle(id),
@@ -302,6 +304,10 @@ export default async function StyleDetail({
     // The lookalike-rows card's data — loaded here, not by the card itself
     // (see loadRelatedRowsCardProps for why).
     loadRelatedRowsCardProps(id),
+    // Reviewer "Edit any line" rewrites, for the Review tab's cards. One
+    // indexed query, and nothing more for the (vast majority of) styles with
+    // no line edits. Fails soft to [].
+    tab === "review" ? loadLineEditNotes(id) : Promise.resolve([]),
     // Output Builder layouts resolve as variants in the readiness walks below.
     ensureLayoutVariantsLoaded(),
   ]);
@@ -936,7 +942,7 @@ export default async function StyleDetail({
       )}
 
       {tab === "review" && (
-        <ReviewTab styleId={style.id} current={currentFiles} jobs={reviewJobs} />
+        <ReviewTab styleId={style.id} current={currentFiles} jobs={reviewJobs} lineEdits={lineEditNotes} />
       )}
       {tab === "history" && <HistoryTab styleId={style.id} />}
     </div>
