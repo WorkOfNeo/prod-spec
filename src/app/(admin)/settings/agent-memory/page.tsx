@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAdminPage } from "@/lib/auth-server";
+import { db } from "@/lib/db";
+import { loadDocTypes } from "@/lib/pdf/doc-types-db";
 import { changeRequestsEnabled } from "@/lib/change-requests/flags";
 import { listMemories, memoryLog } from "@/lib/change-requests/memory";
-import { AgentMemoryClient, type MemoryEventView, type MemoryView } from "./agent-memory-client";
+import { AgentMemoryClient, type MemoryEventView, type MemoryView, type ScopeOption } from "./agent-memory-client";
 
 export const dynamic = "force-dynamic";
 
@@ -19,13 +21,22 @@ const STAMP = new Intl.DateTimeFormat("en-GB", {
 // Settings → Agent memory (design §5.9). Every note the change-request agent
 // has suggested, kept or been told to forget, with who-did-what as a follow-
 // along log. Only KEPT notes are ever read by the agent; this page is where a
-// person reads, rewords, forgets or restores them. Behind
+// person reads, rewords, forgets or restores them, and writes their own (the
+// knowledge the agent can't find in the data). Behind
 // CHANGE_REQUESTS_ENABLED (404 when off) and ADMIN only.
 export default async function AgentMemoryPage() {
   if (!changeRequestsEnabled()) notFound();
   await requireAdminPage();
 
-  const [memories, log] = await Promise.all([listMemories(), memoryLog(30)]);
+  const [memories, log, customerRows, docTypes] = await Promise.all([
+    listMemories(),
+    memoryLog(30),
+    db.customer.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    loadDocTypes(),
+  ]);
+  // What a new note can be scoped to. Blank customer names exist in live data.
+  const customers: ScopeOption[] = customerRows.map((c) => ({ value: c.id, label: c.name.trim() || "Unnamed client" }));
+  const docTypeOptions: ScopeOption[] = docTypes.map((d) => ({ value: d.value, label: d.label }));
 
   const views: MemoryView[] = memories.map((m) => ({
     id: m.id,
@@ -58,12 +69,13 @@ export default async function AgentMemoryPage() {
       <div className="mt-2 mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Agent memory</h1>
         <p className="mt-1 max-w-3xl text-sm text-zinc-500">
-          Corrections you make in a review can become notes the agent reads next time. You can read,
-          edit and delete every note. The agent only suggests a note; it reads it once you keep it.
+          What the agent should know that it can&apos;t find in the data. Write a note yourself, or keep
+          one the agent suggests after you correct it in a review; the agent reads kept notes on every
+          run they apply to. You can edit and delete every note.
         </p>
       </div>
 
-      <AgentMemoryClient memories={views} events={events} />
+      <AgentMemoryClient memories={views} events={events} customers={customers} docTypes={docTypeOptions} />
     </div>
   );
 }
