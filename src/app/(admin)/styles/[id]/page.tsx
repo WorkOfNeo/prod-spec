@@ -544,6 +544,7 @@ export default async function StyleDetail({
       ready: o.ready,
       missing: o.missing.map((m) => m.label),
       excluded: o.excluded ?? false,
+      ignored: o.ignored ?? false,
       exclusionReason: o.exclusionReason ?? null,
       widthMm: dims.widthMm,
       heightMm: dims.heightMm,

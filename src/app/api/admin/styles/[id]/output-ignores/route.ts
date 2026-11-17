@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getSessionWithRole } from "@/lib/auth-server";
 import { canReview } from "@/lib/roles";
+import { scheduleCoverRegen } from "@/lib/pdf/cover-regen-schedule";
 
 export const runtime = "nodejs";
 
@@ -41,6 +42,9 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
         message: `output ${variantKey} un-ignored for style ${id} by ${session.user.email} — back in the normal generation/review flow`,
       },
     });
+    // The output is required packaging again, so the cover's list is stale —
+    // the mirror of the ignore route. Debounced refresh + supplier push.
+    await scheduleCoverRegen(id);
   }
 
   return NextResponse.json({ ok: true, removed });

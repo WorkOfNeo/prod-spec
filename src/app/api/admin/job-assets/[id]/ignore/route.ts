@@ -7,6 +7,7 @@ import { resolveRejectionTicketsFor } from "@/lib/tickets/rejection-tickets";
 import { maybeSettleJob } from "@/lib/publish/settle-job";
 import { ignoreBaseKey } from "@/lib/outputs/output-ignores";
 import { COVER_VARIANT_KEY, GENERAL_INFO_VARIANT_KEY } from "@/lib/pdf/bundle-page-keys";
+import { scheduleCoverRegen } from "@/lib/pdf/cover-regen-schedule";
 
 export const runtime = "nodejs";
 // Ignoring the LAST open asset rolls the job up and publishes the remaining
@@ -102,6 +103,13 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
         (resolved > 0 ? ` · resolved ${resolved} rejection ticket(s)` : ""),
     },
   });
+
+  // An ignored output drops off the cover's "required packaging" list, so the
+  // cover is now stale. Nothing else rebuilds it: the job can't settle (the
+  // cover asset itself is still pending), and a re-run of a style whose other
+  // outputs are approved used to end before the cover step. Same debounced
+  // refresh + supplier push an approval schedules. Fail-soft.
+  await scheduleCoverRegen(styleId);
 
   // The ignored asset no longer holds the review open — settle the job if
   // everything else is decided (publishes the approved remainder).
