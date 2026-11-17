@@ -41,8 +41,12 @@ export type StyleOutputCardProps = {
   name: string;
   ready: boolean;
   missing: string[];
-  // A doc-type keyword rule skips this output for this style — won't generate.
+  // Skipped for this style — won't generate. Either a keyword rule hit (the
+  // output's own or its doc type's) or, when `ignored`, a reviewer pressed
+  // Ignore. Both ride the same `excluded` flag; `ignored` tells them apart so
+  // the badge doesn't call a person's decision a rule.
   excluded?: boolean;
+  ignored?: boolean;
   exclusionReason?: string | null;
   widthMm: number;
   heightMm: number;
@@ -105,13 +109,28 @@ export function StyleOutputCard(p: StyleOutputCardProps) {
           <span
             aria-hidden="true"
             className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${
-              p.excluded ? "bg-amber-400" : p.ready ? "bg-emerald-500" : "bg-zinc-300"
+              p.excluded && p.ignored
+                ? "bg-zinc-400"
+                : p.excluded
+                  ? "bg-amber-400"
+                  : p.ready
+                    ? "bg-emerald-500"
+                    : "bg-zinc-300"
             }`}
           />
           <span className="truncate text-sm font-semibold text-zinc-900" title={p.name}>
             {p.name}
           </span>
-          {p.excluded && (
+          {/* Same pill the review page's "Excluded / ignored" list uses. */}
+          {p.excluded && p.ignored && (
+            <span
+              title={p.exclusionReason ?? "Ignored for this style by a reviewer"}
+              className="shrink-0 rounded-full border border-zinc-300 bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-600"
+            >
+              ⊘ Ignored
+            </span>
+          )}
+          {p.excluded && !p.ignored && (
             <span
               title={p.exclusionReason ?? "Skipped by a document-type keyword rule"}
               className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700"

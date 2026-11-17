@@ -31,6 +31,7 @@ import { resolveAndPersistStyleEans } from "@/lib/po/ean-runner";
 import { effectiveOutputDims, loadInfoAreaSizeMap } from "@/lib/prod-spec/info-area";
 import { enqueueApprovedAssetsForJob } from "@/lib/publish/supplier-send-queue";
 import { enqueueCoverForSupplier } from "@/lib/publish/requeue-cover";
+import { settleEmptyFullRun } from "@/lib/queue/empty-run";
 import {
   coverNotifiesSupplier,
   runKeepsApprovedDocuments,
@@ -700,18 +701,26 @@ export async function processJob(jobId: string): Promise<void> {
     }
   }
 
-  // FULL run where EVERY output is excluded by a doc-type keyword rule → this
-  // style needs no documents. Finish CLEANLY (terminal APPROVED; no assets,
-  // bundle pages or reviewer ping) so it settles instead of NO_OUTPUTS-failing
-  // (which reads as an error and poisons the bulk-run float). Scoped/partial
-  // runs fall through to the WARN path below — there `outputs` is only the
-  // targeted/ready subset, so an all-excluded subset isn't the whole style.
-  if (
-    generated.length === 0 &&
-    scopedKeys.length === 0 &&
-    excludedOutputs.length > 0 &&
-    excludedOutputs.length === outputs.length
-  ) {
+  // A FULL run that rendered nothing ends one of two clean ways — see
+  // settleEmptyFullRun for why "approved + the rest skipped" must take the
+  // ending that rebuilds the cover, not the one that skips it.
+  const emptyRunEnding = settleEmptyFullRun({
+    generated: generated.length,
+    scoped: scopedKeys.length,
+    approvedSkips,
+    missingFieldSkips,
+    skippedForStyle: excludedOutputs.length,
+    reachedLoop: outputs.length,
+  });
+
+  // FULL run where EVERY output is skipped for this style (a keyword rule or a
+  // reviewer's Ignore) and none is approved → this style needs no documents.
+  // Finish CLEANLY (terminal APPROVED; no assets, bundle pages or reviewer
+  // ping) so it settles instead of NO_OUTPUTS-failing (which reads as an error
+  // and poisons the bulk-run float). Scoped/partial runs fall through to the
+  // WARN path below — there `outputs` is only the targeted/ready subset, so an
+  // all-excluded subset isn't the whole style.
+  if (emptyRunEnding === "needs-none") {
     await db.$transaction([
       db.jobAsset.deleteMany({ where: { jobId: job.id } }),
       db.job.update({ where: { id: job.id }, data: { status: "APPROVED", finishedAt: new Date() } }),
@@ -725,8 +734,8 @@ export async function processJob(jobId: string): Promise<void> {
           jobId: job.id,
           level: "INFO",
           message:
-            `no documents generated — all ${outputs.length} output(s) excluded by document-type ` +
-            `keyword rules (${excludedOutputs.join(", ")}); this style needs none`,
+            `no documents generated — all ${outputs.length} output(s) skipped for this style by a ` +
+            `keyword rule or a reviewer's Ignore (${excludedOutputs.join(", ")}); this style needs none`,
         },
       }),
     ]);
@@ -734,21 +743,15 @@ export async function processJob(jobId: string): Promise<void> {
   }
 
   // FULL run where every renderable output was carried forward as
-  // already-approved (durable approval) and nothing else was left to generate.
-  // The style is fully approved — settle it that way WITHOUT deleting any
-  // assets (this job produced none; the approved assets live on PRIOR jobs and
-  // must survive) and WITHOUT superseding tickets (there's nothing to re-review;
-  // an approved output has no open ticket). This finishes cleanly instead of
-  // NO_OUTPUTS-failing. Guarded to the pure-approval case: if fields were also
-  // missing / outputs excluded, fall through to the WARN path below so those
-  // still surface as "awaiting data" / excluded on review.
-  if (
-    generated.length === 0 &&
-    scopedKeys.length === 0 &&
-    approvedSkips > 0 &&
-    missingFieldSkips === 0 &&
-    excludedOutputs.length === 0
-  ) {
+  // already-approved (durable approval) and the rest, if any, is skipped for
+  // this style (keyword rule or reviewer Ignore) — nothing was left to
+  // generate. The style is fully approved — settle it that way WITHOUT deleting
+  // any assets (this job produced none; the approved assets live on PRIOR jobs
+  // and must survive). This finishes cleanly instead of NO_OUTPUTS-failing.
+  // Outputs still missing Monday fields never land here (settleEmptyFullRun):
+  // they fall through to the WARN path below so they keep surfacing as
+  // "awaiting data" on review.
+  if (emptyRunEnding === "fully-approved") {
     // The style is fully approved and this run rendered nothing. The old
     // short-circuit returned HERE — before the cover step — so the cover kept
     // whatever it last showed, rendered while these outputs were still pending
@@ -809,13 +812,22 @@ export async function processJob(jobId: string): Promise<void> {
         : []),
       db.job.update({ where: { id: job.id }, data: { status: "APPROVED", finishedAt: new Date() } }),
       db.style.update({ where: { id: job.styleId }, data: { status: "APPROVED" } }),
+      // Outputs skipped for this style used to settle through the "needs none"
+      // ending, which moves every open ticket to history so a skipped output
+      // can't pin the style to the active rejection log. Keep that for them
+      // here. A pure-approval run still touches no tickets.
+      ...(excludedOutputs.length > 0 ? [supersedeOpenTicketsForStyleOp(job.styleId)] : []),
       db.log.create({
         data: {
           jobId: job.id,
           level: "INFO",
           message:
-            `no new documents generated — all ${approvedSkips} output(s) already approved and ` +
-            `carried forward; ${coverPdf ? "cover refreshed to approved state, " : ""}style settled APPROVED`,
+            `no new documents generated — ${approvedSkips} output(s) already approved and ` +
+            `carried forward` +
+            (excludedOutputs.length > 0
+              ? `, ${excludedOutputs.length} skipped for this style (${excludedOutputs.join(", ")})`
+              : "") +
+            `; ${coverPdf ? "cover refreshed to approved state, " : ""}style settled APPROVED`,
         },
       }),
     ]);
