@@ -46,6 +46,11 @@ test("the default covers the rules of design §5.7", () => {
       /If the reviewer only asked a question, or no layout change is needed or possible, answer with finish and explain — do not make a new draft\./,
       "an answer is not a draft",
     ],
+    // From an early trial: a page nothing in the layout explained, which a
+    // Monday value switched on — find that cause, and keep the answer short.
+    [/find the data that switches it on before you conclude/, "explain what prints from the data before 'nothing to change'"],
+    [/name the column and the value: changing it on Monday is the fix/, "tell the requester which Monday value to change"],
+    [/at most three short sentences, or one line per point/, "keep messages short"],
   ];
   for (const [re, what] of must) assert.match(p, re, what);
 });
