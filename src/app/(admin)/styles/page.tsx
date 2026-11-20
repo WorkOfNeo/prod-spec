@@ -9,6 +9,7 @@ import { ensureLayoutVariantsLoaded } from "@/lib/output-layouts/variants";
 import { activeStylesWhere, resolveDoneCutoffIds } from "@/lib/styles/active-filter";
 import { loadStyleListRows } from "@/lib/styles/list-rows";
 import { loadStyleIdsWithPdfs } from "@/lib/styles/table-rollups";
+import { isDefaultHiddenCustomer } from "@/lib/styles/table-filter";
 import { StylesTable } from "./styles-table";
 import { DonePoCutoffSetting } from "./done-po-cutoff-setting";
 
@@ -62,7 +63,11 @@ export default async function StylesPage() {
   // The headline count is the LISTED set, not the loaded set — the PO-less
   // rows ride along in the payload (see includeMissingPo above) but they are
   // not on the board yet, so counting them here would overstate the work.
-  const listedCount = rows.filter((r) => !r.missingPo).length;
+  // JYSK styles ride along the same way (hidden by default in the table, see
+  // isDefaultHiddenCustomer) and are left out of the count for the same reason.
+  const listedCount = rows.filter(
+    (r) => !r.missingPo && !isDefaultHiddenCustomer(r.customerName),
+  ).length;
 
   return (
     <div className="px-8 py-8">

@@ -119,3 +119,23 @@ export function sameSet(a: string[], b: string[]): boolean {
   const s = new Set(a);
   return b.every((v) => s.has(v));
 }
+
+// ── Default-hidden customers ──────────────────────────────────────────────
+// JYSK styles aren't worked in this app, so /styles leaves them out of the
+// default view (and out of the headline count). Matched on the customer
+// name's FIRST WORD, because JYSK is nine separate Customer rows on the live
+// data — "JYSK A/S", "JYSK SE", "Jysk Sp. z o.o.", "Jysk DBL Iberia S.L.U", …
+// — and any new country entity should be hidden without a code change.
+//
+// Hidden, not filtered out in SQL: the rows still ship to the browser, so the
+// "Show them" link and picking a JYSK customer in the Customer facet both
+// bring them back (same pattern as the No-PO gate).
+export function isDefaultHiddenCustomer(customerName: string): boolean {
+  return /^jysk\b/i.test(customerName.trim());
+}
+
+// Whether the applied Customer facet explicitly asks for a default-hidden
+// customer — then the gate steps aside, or the selection would show nothing.
+export function facetsPickHiddenCustomer(applied: Record<FacetKey, string[]>): boolean {
+  return applied.customer.some(isDefaultHiddenCustomer);
+}
