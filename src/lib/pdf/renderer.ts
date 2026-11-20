@@ -81,6 +81,27 @@ export async function renderPdf(opts: RenderOptions): Promise<Buffer> {
   }
 }
 
+// One page reused for many measure passes (the Output Builder auto-fit solver
+// re-renders the same label face dozens of times). Each document loads exactly
+// as renderPdf loads it — print media, fonts settled, fit scripts re-run — so
+// what is measured is what prints. `script` is evaluated as a string.
+export type MeasurePage = {
+  evaluate<T>(html: string, script: string): Promise<T>;
+  close(): Promise<void>;
+};
+
+export async function openMeasurePage(): Promise<MeasurePage> {
+  const browser = await getBrowser();
+  const page = await browser.newPage();
+  return {
+    async evaluate<T>(html: string, script: string) {
+      await loadForRender(page, html);
+      return (await page.evaluate(script)) as T;
+    },
+    close: () => page.close().catch(() => undefined),
+  };
+}
+
 // CSS pixels per millimetre (96 dpi).
 const PX_PER_MM = 96 / 25.4;
 
