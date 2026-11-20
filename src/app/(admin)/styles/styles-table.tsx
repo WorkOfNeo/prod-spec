@@ -28,6 +28,8 @@ import {
   buildFacetMatcher,
   customerValue,
   baValue,
+  facetsPickHiddenCustomer,
+  isDefaultHiddenCustomer,
   groupValue,
   reviewerValue,
   sameSet,
@@ -130,6 +132,7 @@ function parseAttrsFromUrl(sp: ParamReader): Record<string, TriState> {
 function serializeFilters(state: {
   q: string;
   showArchived: boolean;
+  showJysk: boolean;
   attrFilters: Record<string, TriState>;
   appliedFacets: Record<FacetKey, string[]>;
 }): URLSearchParams {
@@ -142,6 +145,7 @@ function serializeFilters(state: {
     else if (s === "no") params.append("without", a.key);
   }
   if (state.showArchived) params.set("archived", "1");
+  if (state.showJysk) params.set("jysk", "1");
   return params;
 }
 
@@ -179,6 +183,7 @@ export function StylesTable({
     () => ({
       q: searchParams.get("q") ?? "",
       showArchived: searchParams.get("archived") === "1",
+      showJysk: searchParams.get("jysk") === "1",
       attrFilters: parseAttrsFromUrl(searchParams),
       facets: parseFacetsFromUrl(searchParams),
     }),
@@ -191,6 +196,9 @@ export function StylesTable({
   // optimistically by the Columns popover.
   const [visible, setVisible] = useState<StyleColumnKey[]>(visibleColumns);
   const [showArchived, setShowArchived] = useState(seed.showArchived);
+  // JYSK customers are hidden by default (isDefaultHiddenCustomer) — this is
+  // the explicit "show them anyway" toggle, persisted as ?jysk=1.
+  const [showJysk, setShowJysk] = useState(seed.showJysk);
   // Per-attribute tri-state presence filters (keyed by ATTR_FILTERS.key).
   const [attrFilters, setAttrFilters] = useState<Record<string, TriState>>(seed.attrFilters);
 
@@ -230,8 +238,8 @@ export function StylesTable({
   // The same string keys the row window below: any change to it is a new
   // result set, which starts again from the top.
   const filterKey = useMemo(
-    () => serializeFilters({ q, showArchived, attrFilters, appliedFacets }).toString(),
-    [q, showArchived, attrFilters, appliedFacets],
+    () => serializeFilters({ q, showArchived, showJysk, attrFilters, appliedFacets }).toString(),
+    [q, showArchived, showJysk, attrFilters, appliedFacets],
   );
   useEffect(() => {
     const qs = filterKey;
@@ -293,8 +301,26 @@ export function StylesTable({
   // toggle, and the chip's own filter already narrows to it, so the two agree
   // by construction.
   const missingPoFlags = useMemo(() => rows.map((r) => r.missingPo), [rows]);
-  const missingPoCount = useMemo(() => missingPoFlags.filter(Boolean).length, [missingPoFlags]);
   const revealMissingPo = (attrFilters.po ?? "any") === "no";
+
+  // JYSK customers: not worked in this app, so out of the default view. The
+  // gate lifts on the explicit toggle, or when the applied Customer facet
+  // names a JYSK customer (picking one must show it, not an empty table).
+  const jyskFlags = useMemo(
+    () => rows.map((r) => isDefaultHiddenCustomer(r.customerName)),
+    [rows],
+  );
+  const revealJysk = showJysk || facetsPickHiddenCustomer(appliedFacets);
+  // Both "N hidden" hints count only rows the OTHER gate isn't already
+  // hiding, so the two numbers never double-count a JYSK style with no PO.
+  const jyskCount = useMemo(
+    () => jyskFlags.filter((j, i) => j && !missingPoFlags[i]).length,
+    [jyskFlags, missingPoFlags],
+  );
+  const missingPoCount = useMemo(
+    () => missingPoFlags.filter((m, i) => m && (revealJysk || !jyskFlags[i])).length,
+    [missingPoFlags, jyskFlags, revealJysk],
+  );
 
   // The search haystack per row, built once per row set rather than shipped
   // with every row (it only repeated the row's own values).
@@ -364,6 +390,7 @@ export function StylesTable({
     const kept = rows.filter((r, i) => {
       if (!showArchived && archivedFlags[i]) return false;
       if (!revealMissingPo && missingPoFlags[i]) return false;
+      if (!revealJysk && jyskFlags[i]) return false;
       // Value facets: OR within a facet, AND across facets.
       if (!matchFacets(r)) return false;
       // Attribute presence filters (AND across all active chips).
@@ -387,6 +414,8 @@ export function StylesTable({
     archivedFlags,
     revealMissingPo,
     missingPoFlags,
+    revealJysk,
+    jyskFlags,
     searchBlobs,
     attrFilters,
     activeAttrFilters,
@@ -957,6 +986,27 @@ export function StylesTable({
               Show them
             </button>
           </span>
+        )}
+        {jyskCount > 0 && !revealJysk && (
+          <span className="text-xs text-zinc-400">
+            <span className="tabular-nums">{jyskCount}</span> hidden — JYSK customers.{" "}
+            <button
+              type="button"
+              onClick={() => setShowJysk(true)}
+              className="underline hover:text-zinc-600"
+            >
+              Show them
+            </button>
+          </span>
+        )}
+        {showJysk && (
+          <button
+            type="button"
+            onClick={() => setShowJysk(false)}
+            className="text-xs text-zinc-400 underline hover:text-zinc-600"
+          >
+            Hide JYSK customers
+          </button>
         )}
       </div>
 

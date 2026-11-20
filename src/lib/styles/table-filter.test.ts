@@ -7,6 +7,8 @@ import {
   matchesFacets,
   reviewerValue,
   customerValue,
+  facetsPickHiddenCustomer,
+  isDefaultHiddenCustomer,
   sameSet,
   type FacetKey,
   type FacetableRow,
@@ -87,4 +89,31 @@ test("sameSet ignores order", () => {
   assert.ok(sameSet(["a", "b"], ["b", "a"]));
   assert.ok(!sameSet(["a"], ["a", "b"]));
   assert.ok(sameSet([], []));
+});
+
+// ── Default-hidden customers (JYSK) ───────────────────────────────────────
+test("every JYSK entity is default-hidden, whatever the casing or suffix", () => {
+  for (const name of [
+    "JYSK A/S",
+    "JYSK SE",
+    "Jysk Sp. z o.o.",
+    "Jysk DBL Iberia S.L.U",
+    "JYSK LINEN'N FURNITURE Inc.",
+    "  JYSK BV ",
+    "JYSK",
+  ]) {
+    assert.equal(isDefaultHiddenCustomer(name), true, name);
+  }
+});
+
+test("other customers stay visible, even ones that merely contain 'jysk'", () => {
+  for (const name of ["Netto", "Coop", "Jyskebank", "Salling (JYSK area)", ""]) {
+    assert.equal(isDefaultHiddenCustomer(name), false, name);
+  }
+});
+
+test("picking a JYSK customer in the facet lifts the gate", () => {
+  assert.equal(facetsPickHiddenCustomer(facets({})), false);
+  assert.equal(facetsPickHiddenCustomer(facets({ customer: ["Netto"] })), false);
+  assert.equal(facetsPickHiddenCustomer(facets({ customer: ["Netto", "JYSK SE"] })), true);
 });
