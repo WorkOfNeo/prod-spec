@@ -186,3 +186,39 @@ export function proofUrl(revisionId: string, styleId: string, side: "before" | "
   if (suffix !== null) q.set("suffix", suffix);
   return `/api/admin/change-requests/revisions/${revisionId}/proof?${q.toString()}`;
 }
+
+// ── Draft walkthrough ────────────────────────────────────────────────────────
+
+export type WalkthroughDoc = { suffix: string | null; changed: boolean; reviewStatus: ImpactReviewStatus };
+export type WalkthroughStyle = {
+  styleId: string;
+  styleLabel: string;
+  poNumber: string | null;
+  changed: boolean;
+  docs: WalkthroughDoc[];
+};
+
+// The styles a draft can be walked through on, from its impact rows (one row
+// per document): the request's own style first, then the ones the draft
+// changes, then the rest, each keeping the impact list's order. A style's
+// changed documents come first too, so the first thing shown is a change.
+export function walkthroughStyles(rows: readonly ImpactRow[], focusStyleId: string | null): WalkthroughStyle[] {
+  const byStyle = new Map<string, WalkthroughStyle>();
+  for (const r of rows) {
+    let s = byStyle.get(r.styleId);
+    if (!s) {
+      s = { styleId: r.styleId, styleLabel: r.styleLabel, poNumber: r.poNumber, changed: false, docs: [] };
+      byStyle.set(r.styleId, s);
+    }
+    s.changed ||= r.changed;
+    s.docs.push({ suffix: docSuffix(r.variantKey), changed: r.changed, reviewStatus: r.reviewStatus });
+  }
+  const rank = (s: WalkthroughStyle) => (s.styleId === focusStyleId ? 0 : s.changed ? 1 : 2);
+  return [...byStyle.values()]
+    .map((s) => ({ ...s, docs: [...s.docs].sort((a, b) => Number(b.changed) - Number(a.changed)) }))
+    .sort((a, b) => rank(a) - rank(b));
+}
+
+export function documentUrl(revisionId: string, styleId: string, side: "before" | "after", suffix: string | null): string {
+  return proofUrl(revisionId, styleId, side, suffix).replace(/\/proof\?/, "/document?");
+}
